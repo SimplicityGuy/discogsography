@@ -1,4 +1,10 @@
 ###
+# Discogs files
+###
+discogs_*.txt
+discogs_*.xml.gz
+
+###
 # Environments
 ###
 .env
