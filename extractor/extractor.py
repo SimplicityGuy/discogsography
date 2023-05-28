@@ -55,22 +55,21 @@ class Extractor:
         # `routing_keys` for each data type to be handled by different workers concurrently. Further, data is
         # ingested into both PostgreSQL and neo4j, which allows different workers to handle those queues
         # independently.
+        graphinator_queue_name = f"discogsography-graphinator-{self.data_type}"
+        tableinator_queue_name = f"discogsography-tableinator-{self.data_type}"
+
         self.amqp_channel.queue_declare(
-            auto_delete=True, durable=True, queue=f"discogsography-graphinator-{self.data_type}"
+            auto_delete=True, durable=True, queue=graphinator_queue_name
         )
         self.amqp_channel.queue_bind(
-            exchange=AMQP_EXCHANGE,
-            queue=f"discogsography-graphinator-{self.data_type}",
-            routing_key=self.data_type,
+            exchange=AMQP_EXCHANGE, queue=graphinator_queue_name, routing_key=self.data_type
         )
 
         self.amqp_channel.queue_declare(
-            auto_delete=True, durable=True, queue=f"discogsography-tableinator-{self.data_type}"
+            auto_delete=True, durable=True, queue=tableinator_queue_name
         )
         self.amqp_channel.queue_bind(
-            exchange=AMQP_EXCHANGE,
-            queue=f"discogsography-tableinator-{self.data_type}",
-            routing_key=self.data_type,
+            exchange=AMQP_EXCHANGE, queue=tableinator_queue_name, routing_key=self.data_type
         )
 
         return self
