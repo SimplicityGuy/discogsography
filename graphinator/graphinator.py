@@ -19,15 +19,16 @@ def on_artist_message(message: AbstractIncomingMessage) -> None:
     artist = message.body
     print(f" --: received message {artist} :-- ")
 
+    # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
-        # If the old and new sha256 hashes match, no update/creation necessary.
         existing_artist_hashes = session.execute_read(
             "MATCH (a:Artist {id: $id}) return a['sha256']", artist
         )
         for existing_artist_hash in existing_artist_hashes:
-            if existing_artist_hash == artist["sha256]"]:
+            if existing_artist_hash == artist["sha256"]:
                 return
 
+    with graph.session() as session:
         resources = f"https://api.discogs.com/artists/{artist['id']}"
         releases = f"{resources}/releases"
 
@@ -64,15 +65,16 @@ def on_label_message(message: AbstractIncomingMessage) -> None:
     label = message.body
     print(f" --: received message {label} :-- ")
 
+    # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
-        # If the old and new sha256 hashes match, no update/creation necessary.
         existing_label_hashes = session.execute_read(
             "MATCH (l:Label {id: $id}) return l['sha256']", label
         )
         for existing_label_hash in existing_label_hashes:
-            if existing_label_hash == label["sha256]"]:
+            if existing_label_hash == label["sha256"]:
                 return
 
+    with graph.session() as session:
         query = "MERGE (l:Label {id: $id}) ON CREATE SET l.name = $name ON MATCH SET l.name = $name"
         session.run(query, label)
 
@@ -95,15 +97,16 @@ def on_master_message(message: AbstractIncomingMessage) -> None:
     master = message.body
     print(f" --: received message {master} :-- ")
 
+    # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
-        # If the old and new sha256 hashes match, no update/creation necessary.
         existing_master_hashes = session.execute_read(
             "MATCH (m:Master {id: $id}) return m['sha256']", master
         )
         for existing_master_hash in existing_master_hashes:
-            if existing_master_hash == master["sha256]"]:
+            if existing_master_hash == master["sha256"]:
                 return
 
+    with graph.session() as session:
         query = "MERGE (m:Master {id: $id}) ON CREATE SET m.title = $title, m.year = $year ON MATCH SET m.title = $title, m.year = $year"
         session.run(query, master)
 
@@ -141,15 +144,16 @@ def on_release_message(message: AbstractIncomingMessage) -> None:
     release = message.body
     print(f" --: received message {release} :-- ")
 
+    # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
-        # If the old and new sha256 hashes match, no update/creation necessary.
         existing_release_hashes = session.execute_read(
             "MATCH (r:Release {id: $id}) return m['sha256']", release
         )
         for existing_release_hash in existing_release_hashes:
-            if existing_release_hash == release["sha256]"]:
+            if existing_release_hash == release["sha256"]:
                 return
 
+    with graph.session() as session:
         query = "MERGE (r:Release {id: $id}) ON CREATE SET r.title = $title ON MATCH SET r.title = $title"
         session.run(query, release)
 
