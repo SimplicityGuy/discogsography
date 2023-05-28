@@ -266,18 +266,19 @@ async def main():
     amqp_connection = await connect(AMQP_CONNECTION)
     async with amqp_connection:
         channel = await amqp_connection.channel()
+        prefix = "discogsography-graphinator"
 
         artists_queue = await channel.declare_queue(
-            auto_delete=True, durable=True, name="discogsography-graphinator-artists"
+            auto_delete=True, durable=True, name=f"{prefix}-artists"
         )
         labels_queue = await channel.declare_queue(
-            auto_delete=True, durable=True, name="discogsography-graphinator-labels"
+            auto_delete=True, durable=True, name=f"{prefix}-labels"
         )
         masters_queue = await channel.declare_queue(
-            auto_delete=True, durable=True, name="discogsography-graphinator-masters"
+            auto_delete=True, durable=True, name=f"{prefix}-masters"
         )
         releases_queue = await channel.declare_queue(
-            auto_delete=True, durable=True, name="discogsography-graphinator-releases"
+            auto_delete=True, durable=True, name=f"{prefix}-releases"
         )
 
         await artists_queue.consume(on_artist_message)
