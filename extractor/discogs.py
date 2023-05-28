@@ -56,8 +56,16 @@ def download_discogs_data(output_directory: str) -> List[str]:
 
             path = Path(output_directory, filename)
             desc = f"{filename:33}"
+            bar_format = "{desc}{percentage:3.0f}%|{bar:80}{r_bar}"
             with path.open("wb") as f:
-                with tqdm(desc=desc, ncols=150, total=s3file.size, unit="B", unit_scale=True) as t:
+                with tqdm(
+                    desc=desc,
+                    bar_format=bar_format,
+                    ncols=155,
+                    total=s3file.size,
+                    unit="B",
+                    unit_scale=True,
+                ) as t:
                     s3.download_fileobj(bucket, s3file.name, f, Callback=progress(t))
 
             hash = sha256()
