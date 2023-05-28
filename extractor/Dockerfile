@@ -21,6 +21,7 @@ COPY --chown=discogsography:discogsography . .
 
 RUN pip install --upgrade --no-cache-dir --requirement requirements.txt
 
-ENV AMQP_CONNECTION="amqp://user:pass@server:port"
+# format: amqp://user:pass@server:port
+ENV AMQP_CONNECTION=""
 
 CMD ["python3", "extractor.py"]

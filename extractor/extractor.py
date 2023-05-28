@@ -3,8 +3,9 @@ from gzip import GzipFile
 from os import getenv
 from pathlib import Path
 
+from dict_hash import sha256
 from discogs import download_discogs_data
-from orjson import OPT_INDENT_2, OPT_SORT_KEYS, dumps
+from orjson import OPT_INDENT_2, OPT_SORT_KEYS, dumps, loads
 from pika import BlockingConnection, DeliveryMode, URLParameters
 from pika.spec import BasicProperties
 from xmltodict import parse
@@ -87,6 +88,7 @@ class Extractor:
         # `path` is in the format of:
         #   [('masters', None), ('master', OrderedDict([('id', '2'), ('status', 'Accepted')]))]
         #   [('releases', None), ('release', OrderedDict([('id', '2'), ('status', 'Accepted')]))]
+
         data_type = path[0][0]
         if data_type != self.data_type:
             print(
@@ -100,6 +102,9 @@ class Extractor:
             data["id"] = path[1][1]["id"]
 
         print(f" --: processing {self.data_type} [{data['id']:10}] :-- ")
+
+        data = loads(dumps(data, option=OPT_SORT_KEYS | OPT_INDENT_2))
+        data["sha256"] = sha256(data)  # sha256 is computed on the original data, without the hash
 
         self.amqp_channel.basic_publish(
             body=dumps(data, option=OPT_SORT_KEYS | OPT_INDENT_2),

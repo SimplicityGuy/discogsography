@@ -73,7 +73,7 @@ def download_discogs_data(output_directory: str) -> List[str]:
                 correct = "✅"
                 if checksums[parts[1]] != parts[0]:
                     correct = "❌"
-                print(f"  checksum for {parts[1]:33}: {correct}")
+                print(f"  [{correct}]: checksum for {parts[1]:33}")
 
         # Since the most recent Discogs export has been downloaded, stop trying to find a complete export.
         return data
