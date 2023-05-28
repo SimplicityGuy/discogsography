@@ -16,8 +16,8 @@ graph = GraphDatabase.driver(
 
 
 def on_artist_message(message: AbstractIncomingMessage) -> None:
+    print(f" --: received message :-- ")
     artist = message.body
-    print(f" --: received message {artist} :-- ")
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
@@ -62,8 +62,8 @@ def on_artist_message(message: AbstractIncomingMessage) -> None:
 
 
 def on_label_message(message: AbstractIncomingMessage) -> None:
+    print(f" --: received message :-- ")
     label = message.body
-    print(f" --: received message {label} :-- ")
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
@@ -94,8 +94,8 @@ def on_label_message(message: AbstractIncomingMessage) -> None:
 
 
 def on_master_message(message: AbstractIncomingMessage) -> None:
+    print(f" --: received message :-- ")
     master = message.body
-    print(f" --: received message {master} :-- ")
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
@@ -141,8 +141,8 @@ def on_master_message(message: AbstractIncomingMessage) -> None:
 
 
 def on_release_message(message: AbstractIncomingMessage) -> None:
+    print(f" --: received message :-- ")
     release = message.body
-    print(f" --: received message {release} :-- ")
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:

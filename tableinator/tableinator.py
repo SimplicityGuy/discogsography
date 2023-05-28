@@ -24,8 +24,8 @@ register_adapter(dict, Json)
 
 
 def on_data_message(message: AbstractIncomingMessage) -> None:
-    data = message.body
     print(f" --: received message :-- ")
+    data = message.body
     data_type = message.routing_key
     data_id = data["id"]
 
