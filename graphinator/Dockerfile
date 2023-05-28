@@ -23,8 +23,8 @@ RUN pip install --upgrade --no-cache-dir --requirement requirements.txt
 ENV AMQP_CONNECTION=""
 
 # format: bolt://server:port
-ENV NEO4J_ADDRESS = ""
-ENV NEO4J_USERNAME = ""
-ENV NEO4J_PASSWORD = ""
+ENV NEO4J_ADDRESS=""
+ENV NEO4J_USERNAME=""
+ENV NEO4J_PASSWORD=""
 
 CMD ["python3", "graphinator.py"]
