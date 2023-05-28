@@ -3,7 +3,7 @@ from os import getenv
 
 from aio_pika import connect
 from aio_pika.abc import AbstractIncomingMessage
-from psycopg2 import OperationalError, connect, sql
+from psycopg2 import connect, sql
 from psycopg2.extensions import register_adapter
 from psycopg2.extras import Json
 
