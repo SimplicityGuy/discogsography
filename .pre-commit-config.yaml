@@ -4,7 +4,6 @@ repos:
     rev: v4.4.0
     hooks:
       - id: check-added-large-files
-      - id: check-json
       - id: check-shebang-scripts-are-executable
       - id: check-toml
       - id: check-yaml
@@ -12,9 +11,15 @@ repos:
       - id: detect-private-key
       - id: end-of-file-fixer
       - id: mixed-line-ending
-      - id: pretty-format-json
-        args: [--autofix]
       - id: trailing-whitespace
+
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 0.7.16
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-black
 
   - repo: https://github.com/PyCQA/isort
     rev: 5.12.0
