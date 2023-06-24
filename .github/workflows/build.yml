@@ -58,6 +58,11 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
+      - name: Anchore security scan - discogsography/${{ matrix.sub-project }}.
+        uses: anchore/scan-action@v3
+        with:
+          path: ${{ matrix.sub-project }}
+
       - name: Extract metadata (tags, labels) for Docker.
         id: meta
         uses: docker/metadata-action@v4
@@ -77,7 +82,7 @@ jobs:
         with:
           platforms: linux/amd64, linux/arm64
 
-      - name: Build and push Docker image to GitHub Container Registry.
+      - name: Build and push Docker image to GitHub Container Registry - discogsography/${{ matrix.sub-project }}.
         uses: docker/build-push-action@v4
         with:
           context: ${{ matrix.sub-project }}
