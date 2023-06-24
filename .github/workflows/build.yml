@@ -1,0 +1,96 @@
+---
+name: discogsography
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  schedule:
+      - cron: '0 1 * * 6'
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.actor }}/discogsography
+
+jobs:
+  list-sub-projects:
+    runs-on: ubuntu-latest
+
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+
+    steps:
+      - name: Checkout repository.
+        uses: actions/checkout@v3
+
+      - name: Get all sub-projects.
+        id: set-matrix
+        run: echo "::set-output name=matrix::$(ls -d */ | sed -r 's/\///g' | jq -R -s -c 'split("\n")[:-1]')"
+
+  build-discogsography:
+    needs: list-sub-projects
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        sub-project: ${{ fromJson(needs.list-sub-projects.outputs.matrix) }}
+
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository.
+        uses: actions/checkout@v3
+        with:
+          submodules: true
+
+      - name: Log in to the GitHub Container Registry.
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Extract metadata (tags, labels) for Docker.
+        id: meta
+        uses: docker/metadata-action@v4
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.sub-project }}
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=ref,event=pr
+            type=schedule,pattern={{date 'YYYYMMDD'}}
+
+      - name: Set up QEMU.
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx.
+        uses: docker/setup-buildx-action@v2
+        with:
+          platforms: linux/amd64, linux/arm64
+
+      - name: Build and push Docker image to GitHub Container Registry.
+        uses: docker/build-push-action@v4
+        with:
+          context: discogsography/${{ matrix.sub-project }}
+          platforms: linux/amd64, linux/arm64
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          sbom: true
+
+      - name: Send notification to Discord.
+        uses: sarisia/actions-status-discord@v1.12.0
+        if: always()
+        with:
+          title: discogsography/${{ matrix.sub-project }}
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
