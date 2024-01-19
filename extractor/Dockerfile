@@ -1,4 +1,4 @@
-FROM python:3-alpine
+FROM python:3.13.0a3-alpine
 
 LABEL org.opencontainers.image.title="discogsography: discogs exporter" \
       org.opencontainers.image.description="Downloads the latest discogs data, extracts all data, and pushes the data to AMQP." \
