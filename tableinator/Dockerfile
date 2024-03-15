@@ -1,4 +1,4 @@
-FROM python:3-alpine
+FROM python:3.13.0a4-alpine
 
 LABEL org.opencontainers.image.title="discogsography: table importer" \
       org.opencontainers.image.description="Listens to AMQP and imports data into PostgreSQL." \
