@@ -1,0 +1,25 @@
+{
+    "pythonVersion": "3.13",
+    "include": [
+        "extractor",
+        "graphinator", 
+        "tableinator",
+        "config.py"
+    ],
+    "extraPaths": [
+        ".",
+        "extractor",
+        "graphinator",
+        "tableinator"
+    ],
+    "typeCheckingMode": "strict",
+    "useLibraryCodeForTypes": true,
+    "reportMissingImports": true,
+    "reportMissingTypeStubs": false,
+    "reportUntypedFunctionDecorator": false,
+    "reportUnknownParameterType": false,
+    "reportUnknownArgumentType": false,
+    "reportUnknownVariableType": false,
+    "reportUnknownMemberType": false,
+    "reportPrivateUsage": false
+}

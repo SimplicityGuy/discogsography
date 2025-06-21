@@ -1,69 +1,85 @@
-from asyncio import Future, run
-from os import getenv
+import asyncio
+import logging
+from asyncio import run
+from pathlib import Path
+from typing import Any
 
 from aio_pika import connect
 from aio_pika.abc import AbstractIncomingMessage
-from neo4j import GraphDatabase, basic_auth
+from neo4j import GraphDatabase
+from orjson import loads
 
-AMQP_CONNECTION = getenv("AMQP_CONNECTION")  # format: amqp://user:password@server:port
-NEO4J_ADDRESS = getenv("NEO4J_ADDRESS")  # format: bolt://server:port
-NEO4J_USERNAME = getenv("NEO4J_USERNAME")
-NEO4J_PASSWORD = getenv("NEO4J_PASSWORD")
+from config import GraphinatorConfig, setup_logging
 
+logger = logging.getLogger(__name__)
+
+config = GraphinatorConfig.from_env()
 graph = GraphDatabase.driver(
-    NEO4J_ADDRESS, auth=basic_auth(NEO4J_USERNAME, NEO4J_PASSWORD), encrypted=False
+    config.neo4j_address, auth=(config.neo4j_username, config.neo4j_password), encrypted=False
 )
 
 
-def on_artist_message(message: AbstractIncomingMessage) -> None:
-    print(f" --: received message :-- ")
-    artist = message.body
+async def on_artist_message(message: AbstractIncomingMessage) -> None:
+    try:
+        logger.debug("Processing artist message")
+        artist: dict[str, Any] = loads(message.body)
 
-    # If the old and new sha256 hashes match, no update/creation necessary.
-    with graph.session() as session:
-        existing_artist_hashes = session.execute_read(
-            "MATCH (a:Artist {id: $id}) return a['sha256']", artist
-        )
-        for existing_artist_hash in existing_artist_hashes:
-            if existing_artist_hash == artist["sha256"]:
-                return
+        # If the old and new sha256 hashes match, no update/creation necessary.
+        with graph.session() as session:
+            existing_artist_hashes = session.execute_read(
+                "MATCH (a:Artist {id: $id}) return a['sha256']", artist
+            )
+            for existing_artist_hash in existing_artist_hashes:
+                if existing_artist_hash == artist["sha256"]:
+                    return
 
-    with graph.session() as session:
-        resources = f"https://api.discogs.com/artists/{artist['id']}"
-        releases = f"{resources}/releases"
+        with graph.session() as session:
+            resources: str = f"https://api.discogs.com/artists/{artist['id']}"
+            releases: str = f"{resources}/releases"
 
-        query = (
-            "MERGE (a:Artist {id: $id}) "
-            "ON CREATE SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url "
-            "ON MATCH SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url"
-        )
-        session.run(query, artist, resource_url=resources, releases_url=releases)
+            query = (
+                "MERGE (a:Artist {id: $id}) "
+                "ON CREATE SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url "
+                "ON MATCH SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url"
+            )
+            session.run(query, artist, resource_url=resources, releases_url=releases)
 
-        members = artist.get("members")
-        if members is not None:
-            query = "MATCH (a:Artist {id: $id}) MERGE (m_a:Artist {id: $m_id}) MERGE (m_a)-[:MEMBER_OF]->(a)"
-            members = members["name"] if isinstance(members["name"], list) else [members["name"]]
-            for member in members:
-                session.run(query, artist, m_id=member["@id"])
+            members: dict[str, Any] | None = artist.get("members")
+            if members is not None:
+                query = "MATCH (a:Artist {id: $id}) MERGE (m_a:Artist {id: $m_id}) MERGE (m_a)-[:MEMBER_OF]->(a)"
+                members = (
+                    members["name"] if isinstance(members["name"], list) else [members["name"]]
+                )
+                for member in members:
+                    session.run(query, artist, m_id=member["@id"])
 
-        groups = artist.get("groups")
-        if groups is not None:
-            query = "MATCH (a:Artist {id: $id}) MERGE (g_a:Artist {id: $g_id}) MERGE (a)-[:MEMBER_OF]->(g_a)"
-            groups = groups["name"] if isinstance(groups["name"], list) else [groups["name"]]
-            for group in groups:
-                session.run(query, artist, g_id=group["@id"])
+            groups: dict[str, Any] | None = artist.get("groups")
+            if groups is not None:
+                query = "MATCH (a:Artist {id: $id}) MERGE (g_a:Artist {id: $g_id}) MERGE (a)-[:MEMBER_OF]->(g_a)"
+                groups = groups["name"] if isinstance(groups["name"], list) else [groups["name"]]
+                for group in groups:
+                    session.run(query, artist, g_id=group["@id"])
 
-        aliases = artist.get("aliases")
-        if aliases is not None:
-            query = "MATCH (a:Artist {id: $id}) MERGE (a_a:Artist {id: $a_id}) MERGE (a_a)-[:ALIAS_OF]->(a)"
-            aliases = aliases["name"] if isinstance(aliases["name"], list) else [aliases["name"]]
-            for alias in aliases:
-                session.run(query, artist, a_id=alias["@id"])
+            aliases: dict[str, Any] | None = artist.get("aliases")
+            if aliases is not None:
+                query = "MATCH (a:Artist {id: $id}) MERGE (a_a:Artist {id: $a_id}) MERGE (a_a)-[:ALIAS_OF]->(a)"
+                aliases = (
+                    aliases["name"] if isinstance(aliases["name"], list) else [aliases["name"]]
+                )
+                for alias in aliases:
+                    session.run(query, artist, a_id=alias["@id"])
+        await message.ack()
+    except Exception as e:
+        logger.error(f"Failed to process artist message: {e}")
+        try:
+            await message.nack(requeue=True)
+        except Exception as nack_error:
+            logger.warning(f"Failed to nack message: {nack_error}")
 
 
-def on_label_message(message: AbstractIncomingMessage) -> None:
-    print(f" --: received message :-- ")
-    label = message.body
+async def on_label_message(message: AbstractIncomingMessage) -> None:
+    logger.debug("Processing label message")
+    label: dict[str, Any] = loads(message.body)
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
@@ -78,12 +94,12 @@ def on_label_message(message: AbstractIncomingMessage) -> None:
         query = "MERGE (l:Label {id: $id}) ON CREATE SET l.name = $name ON MATCH SET l.name = $name"
         session.run(query, label)
 
-        parent = label.get("parentLabel")
+        parent: dict[str, Any] | None = label.get("parentLabel")
         if parent is not None:
             query = "MATCH (l:Label {id: $id}) MERGE (p_l:Label {id: $p_id}) MERGE (l)-[:SUBLABEL_OF]->(p_l)"
             session.run(query, label, p_id=parent["@id"])
 
-        sublabels = label.get("sublabels")
+        sublabels: dict[str, Any] | None = label.get("sublabels")
         if sublabels is not None:
             query = "MATCH (l:Label {id: $id}) MERGE (s_l:Label {id: $s_id}) MERGE (s_l)-[:SUBLABEL_OF]->(l)"
             sublabels = (
@@ -93,9 +109,9 @@ def on_label_message(message: AbstractIncomingMessage) -> None:
                 session.run(query, label, s_id=sublabel["@id"])
 
 
-def on_master_message(message: AbstractIncomingMessage) -> None:
-    print(f" --: received message :-- ")
-    master = message.body
+async def on_master_message(message: AbstractIncomingMessage) -> None:
+    logger.debug("Processing master message")
+    master: dict[str, Any] = loads(message.body)
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
@@ -110,7 +126,7 @@ def on_master_message(message: AbstractIncomingMessage) -> None:
         query = "MERGE (m:Master {id: $id}) ON CREATE SET m.title = $title, m.year = $year ON MATCH SET m.title = $title, m.year = $year"
         session.run(query, master)
 
-        artists = master.get("artists")
+        artists: dict[str, Any] | None = master.get("artists")
         if artists is not None:
             query = "MATCH (m:Master {id: $id}),(a_m:Artist {id: $a_id}) MERGE (m)-[:BY]->(a_m)"
             artists = (
@@ -119,14 +135,14 @@ def on_master_message(message: AbstractIncomingMessage) -> None:
             for artist in artists:
                 session.run(query, master, a_id=artist["id"])
 
-        genres = master.get("genres")
+        genres: dict[str, Any] | None = master.get("genres")
         if genres is not None:
             query = "MATCH (m:Master {id: $id}) MERGE (g:Genre {name: $name}) MERGE (m)-[:IS]->(g)"
             genres = genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
             for genre in genres:
                 session.run(query, master, name=genre)
 
-        styles = master.get("styles")
+        styles: dict[str, Any] | None = master.get("styles")
         if styles is not None:
             query = "MATCH (m:Master {id: $id}) MERGE (s:Style {name: $name}) MERGE (m)-[:IS]->(s)"
             styles = styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
@@ -140,14 +156,14 @@ def on_master_message(message: AbstractIncomingMessage) -> None:
                     session.run(query, g_name=genre, s_name=style)
 
 
-def on_release_message(message: AbstractIncomingMessage) -> None:
-    print(f" --: received message :-- ")
-    release = message.body
+async def on_release_message(message: AbstractIncomingMessage) -> None:
+    logger.debug("Processing release message")
+    release: dict[str, Any] = loads(message.body)
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
         existing_release_hashes = session.execute_read(
-            "MATCH (r:Release {id: $id}) return m['sha256']", release
+            "MATCH (r:Release {id: $id}) return r['sha256']", release
         )
         for existing_release_hash in existing_release_hashes:
             if existing_release_hash == release["sha256"]:
@@ -157,7 +173,7 @@ def on_release_message(message: AbstractIncomingMessage) -> None:
         query = "MERGE (r:Release {id: $id}) ON CREATE SET r.title = $title ON MATCH SET r.title = $title"
         session.run(query, release)
 
-        artists = release.get("artists")
+        artists: dict[str, Any] | None = release.get("artists")
         if artists is not None:
             query = "MATCH (r:Release {id: $id}),(a_r:Artist {id: $a_id}) MERGE (r)-[:BY]-(a_r)"
             artists = (
@@ -166,26 +182,26 @@ def on_release_message(message: AbstractIncomingMessage) -> None:
             for artist in artists:
                 session.run(query, release, a_id=artist["id"])
 
-        labels = release.get("labels")
+        labels: dict[str, Any] | None = release.get("labels")
         if labels is not None:
             query = "MATCH (r:Release {id: $id}),(l_r:Label {id: $l_id}) MERGE (r)-[:ON]->(l_r)"
             labels = labels["label"] if isinstance(labels["label"], list) else [labels["label"]]
             for label in labels:
                 session.run(query, release, l_id=label["@id"])
 
-        master_id = release.get("master_id")
+        master_id: dict[str, Any] | None = release.get("master_id")
         if master_id is not None:
             query = "MATCH (r:Release {id: $id}),(m_r:Master {id: $m_id}) MERGE (r)-[:DERIVED_FROM]->(m_r)"
             session.run(query, release, m_id=master_id["#text"])
 
-        genres = release.get("genres")
+        genres: dict[str, Any] | None = release.get("genres")
         if genres is not None:
             query = "MATCH (r:Release {id: $id}) MERGE (g:Genre {name: $name}) MERGE (r)-[:IS]->(g)"
             genres = genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
             for genre in genres:
                 session.run(query, release, name=genre)
 
-        styles = release.get("styles")
+        styles: dict[str, Any] | None = release.get("styles")
         if styles is not None:
             query = "MATCH (r:Release {id: $id}) MERGE (s:Style {name: $name}) MERGE (r)-[:IS]->(s)"
             styles = styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
@@ -198,7 +214,7 @@ def on_release_message(message: AbstractIncomingMessage) -> None:
                 for style in styles:
                     session.run(query, g_name=genre, s_name=style)
 
-        tracklist = release.get("tracklist")
+        tracklist: dict[str, Any] | None = release.get("tracklist")
         if tracklist is not None:
             query = (
                 "MATCH (r:Release {id: $id}) "
@@ -209,13 +225,13 @@ def on_release_message(message: AbstractIncomingMessage) -> None:
                 tracklist["track"] if isinstance(tracklist["track"], list) else [tracklist["track"]]
             )
             for n, track in enumerate(tracklist):
-                t_position = track.get("position")
+                t_position: str | None = track.get("position")
                 if t_position is None:
                     t_position = f"<missing-{n}>"
-                t_title = track.get("title")
+                t_title: str | None = track.get("title")
                 if t_title is None:
                     t_title = "<missing>"
-                t_id = f"{release['id']}:{t_position}:{t_title}"
+                t_id: str = f"{release['id']}:{t_position}:{t_title}"
                 session.run(query, release, t_id=t_id, t_title=t_title, t_position=t_position)
 
                 artist_types = ["artists", "extraartists"]
@@ -253,7 +269,9 @@ def on_release_message(message: AbstractIncomingMessage) -> None:
                             session.run(t_artist_query, t_id=t_id, a_id=t_artist["id"])
 
 
-async def main():
+async def main() -> None:
+    setup_logging("graphinator", log_file=Path("graphinator.log"))
+    logger.info("Starting Neo4j graphinator service")
     print("        ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·           ")
     print("        ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.           ")
     print("        ▐█· ▐█▌▐█·▄▀▀▀█▄██ ▄▄ ▄█▀▄ ▄█ ▀█▄▄▀▀▀█▄          ")
@@ -265,9 +283,8 @@ async def main():
     print("▐█▄▪▐█▐█•█▌▐█ ▪▐▌▐█▪·•██▌▐▀▐█▌██▐█▌▐█ ▪▐▌ ▐█▌·▐█▌.▐▌▐█•█▌")
     print("·▀▀▀▀ .▀  ▀ ▀  ▀ .▀   ▀▀▀ ·▀▀▀▀▀ █▪ ▀  ▀  ▀▀▀  ▀█▄▀▪.▀  ▀")
     print()
-    print(f" -=: Importing the most recent Discogs data into neo4j :=- ")
 
-    amqp_connection = await connect(AMQP_CONNECTION)
+    amqp_connection = await connect(config.amqp_connection)
     async with amqp_connection:
         channel = await amqp_connection.channel()
         prefix = "discogsography-graphinator"
@@ -290,9 +307,12 @@ async def main():
         await masters_queue.consume(on_master_message)
         await releases_queue.consume(on_release_message)
 
-        print(f" --: [⭐️] Waiting for messages. To exit press CTRL+C [⭐️] :-- ")
+        logger.info("Waiting for messages. Press CTRL+C to exit")
 
-        await Future()
+        try:
+            await asyncio.Event().wait()
+        except KeyboardInterrupt:
+            logger.info("Received interrupt signal, shutting down gracefully")
 
 
 if __name__ == "__main__":

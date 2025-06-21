@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "discogsography-graphinator"
+version = "0.1.0"
+description = "Discogs data Neo4j graph service"
+requires-python = ">=3.13"
+dependencies = [
+    "aio-pika>=9.0.0",
+    "neo4j>=5.15.0",
+    "orjson>=3.9.0",
+]
+
+[project.scripts]
+graphinator = "graphinator:main"

@@ -1,50 +1,53 @@
-from datetime import datetime
+import logging
+from datetime import datetime, timedelta
 from gzip import GzipFile
-from os import getenv
 from pathlib import Path
+from typing import Any
 
 from dict_hash import sha256
 from discogs import download_discogs_data
 from orjson import OPT_INDENT_2, OPT_SORT_KEYS, dumps, loads
 from pika import BlockingConnection, DeliveryMode, URLParameters
+from pika.adapters.blocking_connection import BlockingChannel
 from pika.spec import BasicProperties
 from xmltodict import parse
 
-AMQP_CONNECTION = getenv("AMQP_CONNECTION")  # format: amqp://user:password@server:port
-AMQP_EXCHANGE = "discogsography-extractor"
-DISCOGS_ROOT = "/discogs-data"
+from config import ExtractorConfig, setup_logging
 
-MAX_TEMP_SIZE = 1e9  # 1000 Mb
+logger = logging.getLogger(__name__)
+
+AMQP_EXCHANGE = "discogsography-extractor"
 
 
 class Extractor:
-    def __init__(self, input_file: str):
+    def __init__(self, input_file: str, config: ExtractorConfig):
         # `input_file` is in the format of: discogs_YYYYMMDD_datatype.xml.gz
         self.data_type = input_file.split("_")[2].split(".")[0]
         self.input_file = input_file
-        self.input_path = Path(DISCOGS_ROOT, self.input_file)
+        self.input_path = Path(config.discogs_root, self.input_file)
+        self.config = config
         self.total_count: int = 0
         self.start_time = datetime.now()
         self.end_time = datetime.now()
-        self.amqp_connection = None
-        self.amqp_channel = None
+        self.amqp_connection: BlockingConnection | None = None
+        self.amqp_channel: BlockingChannel | None = None
         self.amqp_properties = BasicProperties(
             content_encoding="application/json", delivery_mode=DeliveryMode.Persistent
         )
 
-    def _get_elapsed_time(self):
+    def _get_elapsed_time(self) -> timedelta:
         return self.end_time - self.start_time
 
     elapsed_time = property(fget=_get_elapsed_time)
 
-    def _get_tps(self):
+    def _get_tps(self) -> float:
         self.end_time = datetime.now()
         return self.total_count / self.elapsed_time.total_seconds()
 
     tps = property(fget=_get_tps)
 
-    def __enter__(self):
-        self.amqp_connection = BlockingConnection(URLParameters(AMQP_CONNECTION))
+    def __enter__(self) -> "Extractor":
+        self.amqp_connection = BlockingConnection(URLParameters(self.config.amqp_connection))
         self.amqp_channel = self.amqp_connection.channel()
 
         # Create the exchange to send the messages to.
@@ -75,25 +78,23 @@ class Extractor:
 
         return self
 
-    def __exit__(self, exc_type, exc_value, exc_tb):
+    def __exit__(self, exc_type: Any, exc_value: Any, exc_tb: Any) -> None:
         self.amqp_connection.close()
 
-    def extract(self):
-        print(f" -=: Extracting {self.data_type} from the most recent Discogs data :=- ")
+    def extract(self) -> None:
+        logger.info(f"Starting extraction of {self.data_type} from Discogs data")
         self.start_time = datetime.now()
         parse(GzipFile(self.input_path.resolve()), item_depth=2, item_callback=self.__loader)
         self.end_time = datetime.now()
 
-    def __loader(self, path, data):
+    def __loader(self, path: list[tuple[str, dict[str, Any] | None]], data: dict[str, Any]) -> bool:
         # `path` is in the format of:
         #   [('masters', None), ('master', OrderedDict([('id', '2'), ('status', 'Accepted')]))]
         #   [('releases', None), ('release', OrderedDict([('id', '2'), ('status', 'Accepted')]))]
 
         data_type = path[0][0]
         if data_type != self.data_type:
-            print(
-                f"data type ({data_type}) is not the same as the data type specified for this instance ({self.data_type})"
-            )
+            logger.warning(f"Data type mismatch: expected {self.data_type}, got {data_type}")
             return False
 
         self.total_count += 1
@@ -101,7 +102,7 @@ class Extractor:
         if data_type in ["masters", "releases"]:
             data["id"] = path[1][1]["id"]
 
-        print(f" --: processing {self.data_type} [{data['id']:10}] :-- ")
+        logger.debug(f"Processing {self.data_type} item {data['id']}")
 
         data = loads(dumps(data, option=OPT_SORT_KEYS | OPT_INDENT_2))
         data["sha256"] = sha256(data)  # sha256 is computed on the original data, without the hash
@@ -116,7 +117,10 @@ class Extractor:
         return True
 
 
-def main():
+def main() -> None:
+    config = ExtractorConfig.from_env()
+    setup_logging("extractor", log_file=Path("extractor.log"))
+
     print("    ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·      ")
     print("    ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.      ")
     print("    ▐█· ▐█▌▐█·▄▀▀▀█▄██ ▄▄ ▄█▀▄ ▄█ ▀█▄▄▀▀▀█▄     ")
@@ -128,13 +132,15 @@ def main():
     print("▐█▄▄▌▪▐█·█▌ ▐█▌·▐█•█▌▐█ ▪▐▌▐███▌ ▐█▌·▐█▌.▐▌▐█•█▌")
     print(" ▀▀▀ •▀▀ ▀▀ ▀▀▀ .▀  ▀ ▀  ▀ ·▀▀▀  ▀▀▀  ▀█▄▀▪.▀  ▀")
     print()
-    discogs_data = download_discogs_data(DISCOGS_ROOT)
+
+    logger.info("Starting Discogs data extractor")
+    discogs_data = download_discogs_data(str(config.discogs_root))
 
     for discogs_data_file in discogs_data:
         if "CHECKSUM" in discogs_data_file:
             continue
 
-        with Extractor(discogs_data_file) as extractor:
+        with Extractor(discogs_data_file, config) as extractor:
             extractor.extract()
 
 
