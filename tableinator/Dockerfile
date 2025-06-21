@@ -13,7 +13,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 # Create user
 RUN addgroup --system discogsography && \
-    adduser --system --group discogsography
+    adduser --system --group --home /home/discogsography discogsography && \
+    mkdir -p /home/discogsography/.cache/uv && \
+    chown -R discogsography:discogsography /home/discogsography
 
 WORKDIR /app
 
@@ -23,15 +25,25 @@ COPY --chown=discogsography:discogsography tableinator/*.py ./
 
 # Install dependencies with uv
 ENV UV_SYSTEM_PYTHON=1
-RUN uv sync --frozen --no-dev --extra tableinator
+ENV UV_CACHE_DIR=/home/discogsography/.cache/uv
+RUN uv sync --frozen --no-dev --extra tableinator && \
+    chown -R discogsography:discogsography .venv && \
+    touch tableinator.log && chown discogsography:discogsography tableinator.log && \
+    echo '#!/bin/bash' > /app/start.sh && \
+    echo "sleep \${STARTUP_DELAY:-0}" >> /app/start.sh && \
+    echo 'exec uv run python tableinator.py "$@"' >> /app/start.sh && \
+    chmod +x /app/start.sh && \
+    chown discogsography:discogsography /app/start.sh
 
 USER discogsography:discogsography
 
 # Environment variables
+ENV HOME=/home/discogsography
+ENV UV_NO_CACHE=1
 ENV AMQP_CONNECTION=""
 ENV POSTGRES_ADDRESS=""
 ENV POSTGRES_USERNAME=""
 ENV POSTGRES_PASSWORD=""
 ENV POSTGRES_DATABASE=""
 
-CMD ["uv", "run", "python", "tableinator.py"]
+CMD ["/app/start.sh"]

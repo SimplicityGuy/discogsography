@@ -2,7 +2,7 @@
     "pythonVersion": "3.13",
     "include": [
         "extractor",
-        "graphinator", 
+        "graphinator",
         "tableinator",
         "config.py"
     ],

@@ -119,7 +119,7 @@ def setup_logging(
     log_file: Path | None = None,
 ) -> None:
     """Set up logging configuration."""
-    handlers: list[logging.Handler[Any]] = [logging.StreamHandler()]
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
 
     if log_file:
         handlers.append(logging.FileHandler(log_file))

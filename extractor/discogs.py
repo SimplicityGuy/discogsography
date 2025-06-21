@@ -70,7 +70,7 @@ def download_discogs_data(output_directory: str) -> list[str]:
             path = Path(output_directory, filename)
             desc = f"{filename:33}"
             bar_format = "{desc}{percentage:3.0f}%|{bar:80}{r_bar}"
-            with path.open("wb") as f:
+            with path.open("wb") as download_file:
                 with tqdm(
                     desc=desc,
                     bar_format=bar_format,
@@ -80,15 +80,17 @@ def download_discogs_data(output_directory: str) -> list[str]:
                     unit_scale=True,
                 ) as t:
                     try:
-                        s3.download_fileobj(bucket, s3file.name, f, Callback=progress(t))
+                        s3.download_fileobj(
+                            bucket, s3file.name, download_file, Callback=progress(t)
+                        )
                     except Exception as e:
                         logger.error(f"Failed to download {s3file.name}: {e}")
                         raise
 
             try:
                 hash = sha256()
-                with path.open("rb") as f:
-                    for byte_block in iter(lambda: f.read(4096), b""):
+                with path.open("rb") as hash_file:
+                    for byte_block in iter(lambda: hash_file.read(4096), b""):
                         hash.update(byte_block)
                     checksums[filename] = hash.hexdigest()
             except Exception as e:
@@ -96,8 +98,8 @@ def download_discogs_data(output_directory: str) -> list[str]:
                 raise
 
         checksum = Path(output_directory, data[0])
-        with checksum.open("r") as f:
-            while line := f.readline():
+        with checksum.open("r") as checksum_file:
+            while line := checksum_file.readline():
                 parts = line.strip().split(" ")
                 correct = "✅"
                 if checksums[parts[1]] != parts[0]:

@@ -16,8 +16,18 @@ from config import TableinatorConfig, setup_logging
 logger = logging.getLogger(__name__)
 
 config = TableinatorConfig.from_env()
+
+# Parse host and port from address
+if ":" in config.postgres_address:
+    host, port_str = config.postgres_address.split(":", 1)
+    port = int(port_str)
+else:
+    host = config.postgres_address
+    port = 5432
+
 database: psycopg.Connection[Any] = psycopg.connect(
-    host=config.postgres_address,
+    host=host,
+    port=port,
     dbname=config.postgres_database,
     user=config.postgres_username,
     password=config.postgres_password,
@@ -28,7 +38,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
     try:
         logger.debug(f"Processing {message.routing_key} message")
         data: dict[str, Any] = loads(message.body)
-        data_type: str = message.routing_key
+        data_type: str = message.routing_key or "unknown"
         data_id: str = data["id"]
     except Exception as e:
         logger.error(f"Failed to parse message: {e}")
@@ -37,7 +47,6 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     try:
-        result: tuple[str] | None = None
         with database.cursor() as cursor:
             cursor.execute(
                 sql.SQL("SELECT hash FROM {table} WHERE data_id = %s;").format(
@@ -79,6 +88,27 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 async def main() -> None:
     setup_logging("tableinator", log_file=Path("tableinator.log"))
     logger.info("Starting PostgreSQL tableinator service")
+
+    # Create tables if they don't exist
+    try:
+        with database.cursor() as cursor:
+            for table_name in ["artists", "labels", "masters", "releases"]:
+                cursor.execute(
+                    sql.SQL(
+                        """
+                        CREATE TABLE IF NOT EXISTS {table} (
+                            data_id VARCHAR PRIMARY KEY,
+                            hash VARCHAR NOT NULL,
+                            data JSONB NOT NULL
+                        )
+                    """
+                    ).format(table=sql.Identifier(table_name))
+                )
+            database.commit()
+        logger.info("Database tables created/verified")
+    except Exception as e:
+        logger.error(f"Failed to create database tables: {e}")
+        raise
     print("        ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·           ")
     print("        ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.           ")
     print("        ▐█· ▐█▌▐█·▄▀▀▀█▄██ ▄▄ ▄█▀▄ ▄█ ▀█▄▄▀▀▀█▄          ")

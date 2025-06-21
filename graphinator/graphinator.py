@@ -26,9 +26,12 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
 
         # If the old and new sha256 hashes match, no update/creation necessary.
         with graph.session() as session:
-            existing_artist_hashes = session.execute_read(
-                "MATCH (a:Artist {id: $id}) return a['sha256']", artist
-            )
+
+            def get_artist_hash(tx: Any) -> list[str]:
+                result = tx.run("MATCH (a:Artist {id: $id}) return a.sha256", id=artist["id"])
+                return [record["a.sha256"] for record in result]
+
+            existing_artist_hashes = session.execute_read(get_artist_hash)
             for existing_artist_hash in existing_artist_hashes:
                 if existing_artist_hash == artist["sha256"]:
                     return
@@ -47,26 +50,28 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
             members: dict[str, Any] | None = artist.get("members")
             if members is not None:
                 query = "MATCH (a:Artist {id: $id}) MERGE (m_a:Artist {id: $m_id}) MERGE (m_a)-[:MEMBER_OF]->(a)"
-                members = (
+                members_list = (
                     members["name"] if isinstance(members["name"], list) else [members["name"]]
                 )
-                for member in members:
+                for member in members_list:
                     session.run(query, artist, m_id=member["@id"])
 
             groups: dict[str, Any] | None = artist.get("groups")
             if groups is not None:
                 query = "MATCH (a:Artist {id: $id}) MERGE (g_a:Artist {id: $g_id}) MERGE (a)-[:MEMBER_OF]->(g_a)"
-                groups = groups["name"] if isinstance(groups["name"], list) else [groups["name"]]
-                for group in groups:
+                groups_list = (
+                    groups["name"] if isinstance(groups["name"], list) else [groups["name"]]
+                )
+                for group in groups_list:
                     session.run(query, artist, g_id=group["@id"])
 
             aliases: dict[str, Any] | None = artist.get("aliases")
             if aliases is not None:
                 query = "MATCH (a:Artist {id: $id}) MERGE (a_a:Artist {id: $a_id}) MERGE (a_a)-[:ALIAS_OF]->(a)"
-                aliases = (
+                aliases_list = (
                     aliases["name"] if isinstance(aliases["name"], list) else [aliases["name"]]
                 )
-                for alias in aliases:
+                for alias in aliases_list:
                     session.run(query, artist, a_id=alias["@id"])
         await message.ack()
     except Exception as e:
@@ -83,9 +88,12 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
-        existing_label_hashes = session.execute_read(
-            "MATCH (l:Label {id: $id}) return l['sha256']", label
-        )
+
+        def get_label_hash(tx: Any) -> list[str]:
+            result = tx.run("MATCH (l:Label {id: $id}) return l.sha256", id=label["id"])
+            return [record["l.sha256"] for record in result]
+
+        existing_label_hashes = session.execute_read(get_label_hash)
         for existing_label_hash in existing_label_hashes:
             if existing_label_hash == label["sha256"]:
                 return
@@ -102,11 +110,13 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         sublabels: dict[str, Any] | None = label.get("sublabels")
         if sublabels is not None:
             query = "MATCH (l:Label {id: $id}) MERGE (s_l:Label {id: $s_id}) MERGE (s_l)-[:SUBLABEL_OF]->(l)"
-            sublabels = (
+            sublabels_list = (
                 sublabels["label"] if isinstance(sublabels["label"], list) else [sublabels["label"]]
             )
-            for sublabel in sublabels:
+            for sublabel in sublabels_list:
                 session.run(query, label, s_id=sublabel["@id"])
+
+    await message.ack()
 
 
 async def on_master_message(message: AbstractIncomingMessage) -> None:
@@ -115,9 +125,12 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
-        existing_master_hashes = session.execute_read(
-            "MATCH (m:Master {id: $id}) return m['sha256']", master
-        )
+
+        def get_master_hash(tx: Any) -> list[str]:
+            result = tx.run("MATCH (m:Master {id: $id}) return m.sha256", id=master["id"])
+            return [record["m.sha256"] for record in result]
+
+        existing_master_hashes = session.execute_read(get_master_hash)
         for existing_master_hash in existing_master_hashes:
             if existing_master_hash == master["sha256"]:
                 return
@@ -129,31 +142,39 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         artists: dict[str, Any] | None = master.get("artists")
         if artists is not None:
             query = "MATCH (m:Master {id: $id}),(a_m:Artist {id: $a_id}) MERGE (m)-[:BY]->(a_m)"
-            artists = (
+            artists_list = (
                 artists["artist"] if isinstance(artists["artist"], list) else [artists["artist"]]
             )
-            for artist in artists:
+            for artist in artists_list:
                 session.run(query, master, a_id=artist["id"])
 
         genres: dict[str, Any] | None = master.get("genres")
+        genres_list: list[str] = []
         if genres is not None:
             query = "MATCH (m:Master {id: $id}) MERGE (g:Genre {name: $name}) MERGE (m)-[:IS]->(g)"
-            genres = genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
-            for genre in genres:
+            genres_list = (
+                genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
+            )
+            for genre in genres_list:
                 session.run(query, master, name=genre)
 
         styles: dict[str, Any] | None = master.get("styles")
+        styles_list: list[str] = []
         if styles is not None:
             query = "MATCH (m:Master {id: $id}) MERGE (s:Style {name: $name}) MERGE (m)-[:IS]->(s)"
-            styles = styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
-            for style in styles:
+            styles_list = (
+                styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
+            )
+            for style in styles_list:
                 session.run(query, master, name=style)
 
-        if genres is not None and styles is not None:
+        if genres_list and styles_list:
             query = "MATCH (g:Genre {name: $g_name}),(s:Style {name: $s_name}) MERGE (s)-[:PART_OF]->(g)"
-            for genre in genres:
-                for style in styles:
+            for genre in genres_list:
+                for style in styles_list:
                     session.run(query, g_name=genre, s_name=style)
+
+    await message.ack()
 
 
 async def on_release_message(message: AbstractIncomingMessage) -> None:
@@ -162,9 +183,12 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
 
     # If the old and new sha256 hashes match, no update/creation necessary.
     with graph.session() as session:
-        existing_release_hashes = session.execute_read(
-            "MATCH (r:Release {id: $id}) return r['sha256']", release
-        )
+
+        def get_release_hash(tx: Any) -> list[str]:
+            result = tx.run("MATCH (r:Release {id: $id}) return r.sha256", id=release["id"])
+            return [record["r.sha256"] for record in result]
+
+        existing_release_hashes = session.execute_read(get_release_hash)
         for existing_release_hash in existing_release_hashes:
             if existing_release_hash == release["sha256"]:
                 return
@@ -176,17 +200,19 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         artists: dict[str, Any] | None = release.get("artists")
         if artists is not None:
             query = "MATCH (r:Release {id: $id}),(a_r:Artist {id: $a_id}) MERGE (r)-[:BY]-(a_r)"
-            artists = (
+            artists_list = (
                 artists["artist"] if isinstance(artists["artist"], list) else [artists["artist"]]
             )
-            for artist in artists:
+            for artist in artists_list:
                 session.run(query, release, a_id=artist["id"])
 
         labels: dict[str, Any] | None = release.get("labels")
         if labels is not None:
             query = "MATCH (r:Release {id: $id}),(l_r:Label {id: $l_id}) MERGE (r)-[:ON]->(l_r)"
-            labels = labels["label"] if isinstance(labels["label"], list) else [labels["label"]]
-            for label in labels:
+            labels_list = (
+                labels["label"] if isinstance(labels["label"], list) else [labels["label"]]
+            )
+            for label in labels_list:
                 session.run(query, release, l_id=label["@id"])
 
         master_id: dict[str, Any] | None = release.get("master_id")
@@ -195,23 +221,29 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
             session.run(query, release, m_id=master_id["#text"])
 
         genres: dict[str, Any] | None = release.get("genres")
+        genres_list: list[str] = []
         if genres is not None:
             query = "MATCH (r:Release {id: $id}) MERGE (g:Genre {name: $name}) MERGE (r)-[:IS]->(g)"
-            genres = genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
-            for genre in genres:
+            genres_list = (
+                genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
+            )
+            for genre in genres_list:
                 session.run(query, release, name=genre)
 
         styles: dict[str, Any] | None = release.get("styles")
+        styles_list: list[str] = []
         if styles is not None:
             query = "MATCH (r:Release {id: $id}) MERGE (s:Style {name: $name}) MERGE (r)-[:IS]->(s)"
-            styles = styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
-            for style in styles:
+            styles_list = (
+                styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
+            )
+            for style in styles_list:
                 session.run(query, release, name=style)
 
-        if genres is not None and styles is not None:
+        if genres_list and styles_list:
             query = "MATCH (g:Genre {name: $g_name}),(s:Style {name: $s_name}) MERGE (s)-[:PART_OF]->(g)"
-            for genre in genres:
-                for style in styles:
+            for genre in genres_list:
+                for style in styles_list:
                     session.run(query, g_name=genre, s_name=style)
 
         tracklist: dict[str, Any] | None = release.get("tracklist")
@@ -221,10 +253,10 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                 "MERGE (t:Track {id: $t_id, title: $t_title, position: $t_position}) "
                 "MERGE (r)-[:CONTAINS]->(t) "
             )
-            tracklist = (
+            tracklist_list = (
                 tracklist["track"] if isinstance(tracklist["track"], list) else [tracklist["track"]]
             )
-            for n, track in enumerate(tracklist):
+            for n, track in enumerate(tracklist_list):
                 t_position: str | None = track.get("position")
                 if t_position is None:
                     t_position = f"<missing-{n}>"
@@ -246,12 +278,12 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                         "MATCH (t:Track {id: $t_id}),(a_t:Artist {id: $a_id}) "
                         "MERGE (t)-[:BY {role: $a_role}]-(a_t)"
                     )
-                    t_artists = (
+                    t_artists_list = (
                         t_artists["artist"]
                         if isinstance(t_artists["artist"], list)
                         else [t_artists["artist"]]
                     )
-                    for t_artist in t_artists:
+                    for t_artist in t_artists_list:
                         t_artist_role = t_artist.get("role")
                         if t_artist_role is not None:
                             t_artist_query = (
@@ -267,6 +299,8 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                                 "MERGE (t)-[:BY]-(a_t)"
                             )
                             session.run(t_artist_query, t_id=t_id, a_id=t_artist["id"])
+
+    await message.ack()
 
 
 async def main() -> None:

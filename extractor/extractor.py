@@ -42,7 +42,10 @@ class Extractor:
 
     def _get_tps(self) -> float:
         self.end_time = datetime.now()
-        return self.total_count / self.elapsed_time.total_seconds()
+        elapsed_seconds: float = self.elapsed_time.total_seconds()
+        if elapsed_seconds == 0:
+            return 0.0
+        return float(self.total_count) / elapsed_seconds
 
     tps = property(fget=_get_tps)
 
@@ -79,7 +82,8 @@ class Extractor:
         return self
 
     def __exit__(self, exc_type: Any, exc_value: Any, exc_tb: Any) -> None:
-        self.amqp_connection.close()
+        if self.amqp_connection is not None:
+            self.amqp_connection.close()
 
     def extract(self) -> None:
         logger.info(f"Starting extraction of {self.data_type} from Discogs data")
@@ -99,7 +103,7 @@ class Extractor:
 
         self.total_count += 1
 
-        if data_type in ["masters", "releases"]:
+        if data_type in ["masters", "releases"] and len(path) > 1 and path[1][1] is not None:
             data["id"] = path[1][1]["id"]
 
         logger.debug(f"Processing {self.data_type} item {data['id']}")
@@ -107,12 +111,13 @@ class Extractor:
         data = loads(dumps(data, option=OPT_SORT_KEYS | OPT_INDENT_2))
         data["sha256"] = sha256(data)  # sha256 is computed on the original data, without the hash
 
-        self.amqp_channel.basic_publish(
-            body=dumps(data, option=OPT_SORT_KEYS | OPT_INDENT_2),
-            exchange=AMQP_EXCHANGE,
-            properties=self.amqp_properties,
-            routing_key=self.data_type,
-        )
+        if self.amqp_channel is not None:
+            self.amqp_channel.basic_publish(
+                body=dumps(data, option=OPT_SORT_KEYS | OPT_INDENT_2),
+                exchange=AMQP_EXCHANGE,
+                properties=self.amqp_properties,
+                routing_key=self.data_type,
+            )
 
         return True
 

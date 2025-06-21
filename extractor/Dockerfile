@@ -13,9 +13,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
 # Create user and directories
 RUN addgroup --system discogsography && \
-    adduser --system --group discogsography && \
-    mkdir /discogs-data && \
-    chown discogsography:discogsography /discogs-data
+    adduser --system --group --home /home/discogsography discogsography && \
+    mkdir -p /discogs-data /home/discogsography/.cache/uv && \
+    chown -R discogsography:discogsography /discogs-data /home/discogsography
 
 WORKDIR /app
 
@@ -25,12 +25,22 @@ COPY --chown=discogsography:discogsography extractor/*.py ./
 
 # Install dependencies with uv
 ENV UV_SYSTEM_PYTHON=1
-RUN uv sync --frozen --no-dev --extra extractor
+ENV UV_CACHE_DIR=/home/discogsography/.cache/uv
+RUN uv sync --frozen --no-dev --extra extractor && \
+    chown -R discogsography:discogsography .venv && \
+    touch extractor.log && chown discogsography:discogsography extractor.log && \
+    echo '#!/bin/bash' > /app/start.sh && \
+    echo "sleep \${STARTUP_DELAY:-0}" >> /app/start.sh && \
+    echo 'exec uv run python extractor.py "$@"' >> /app/start.sh && \
+    chmod +x /app/start.sh && \
+    chown discogsography:discogsography /app/start.sh
 
 USER discogsography:discogsography
 
 # Environment variables
+ENV HOME=/home/discogsography
+ENV UV_NO_CACHE=1
 ENV AMQP_CONNECTION=""
 ENV DISCOGS_ROOT="/discogs-data"
 
-CMD ["uv", "run", "python", "extractor.py"]
+CMD ["/app/start.sh"]
