@@ -17,7 +17,7 @@ repos:
       - id: trailing-whitespace
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 06e4cc849d03f3a59ca223a4046f4bb5bb2aba6d  # frozen: 0.33.0
+    rev: a1419a25b3ec6c91a963e044f03f6dc197930b10  # frozen: 0.33.1
     hooks:
       - id: check-github-workflows
 
@@ -28,15 +28,30 @@ repos:
         additional_dependencies:
           - mdformat-black
 
-  - repo: https://github.com/PyCQA/isort
-    rev: c8ab4a5b21bac924d106e3103dd7c979fdd0f9bc  # frozen: 6.0.1
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: 7445ed19e95ffaa6aad0d9bd4123025f7039511a  # frozen: v0.12.1
     hooks:
-      - id: isort
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
 
   - repo: https://github.com/psf/black
     rev: 8a737e727ac5ab2f1d4cf5876720ed276dc8dc4b  # frozen: 25.1.0
     hooks:
       - id: black
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: 0f86793af5ef5f6dc63c8d04a3cabfa3ea8f9c6a  # frozen: v1.16.1
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - types-tqdm
+          - types-xmltodict
+          - orjson
+          - dict-hash
+          - aio-pika
+          - neo4j
+          - psycopg[binary]
 
   - repo: https://github.com/PyCQA/bandit
     rev: 23d269a665abd84597785fdf8fdda04ea89f59f3  # frozen: 1.8.5

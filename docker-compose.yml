@@ -1,3 +1,5 @@
+---
+
 x-logging: &default-logging
   driver: "json-file"
   options:
@@ -38,12 +40,6 @@ services:
           - message-broker
           - amqp
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
     logging: *default-logging
 
   # PostgreSQL database
@@ -72,12 +68,6 @@ services:
           - postgres-db
           - database
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-        reservations:
-          memory: 256M
     logging: *default-logging
 
   # Neo4j graph database
@@ -107,19 +97,13 @@ services:
       timeout: 10s
       retries: 20
       start_period: 60s
-    logging: *default-logging
     networks:
       discogsography:
         aliases:
           - graph-db
           - neo4j-db
     restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-        reservations:
-          memory: 512M
+    logging: *default-logging
 
   # Extractor service
   extractor:
@@ -144,20 +128,13 @@ services:
         condition: service_healthy
     networks:
       - discogsography
-    restart: on-failure:3
-    deploy:
-      resources:
-        limits:
-          memory: 1G
-          cpus: '1.0'
-        reservations:
-          memory: 256M
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f extractor.py > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    restart: on-failure
     logging: *default-logging
 
   # Graphinator service
@@ -181,20 +158,13 @@ services:
         condition: service_healthy
     networks:
       - discogsography
-    restart: on-failure:3
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 128M
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f graphinator.py > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+    restart: on-failure
     logging: *default-logging
 
   # Tableinator service
@@ -219,20 +189,14 @@ services:
         condition: service_healthy
     networks:
       - discogsography
-    restart: on-failure:5
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-          cpus: '0.5'
-        reservations:
-          memory: 128M
     healthcheck:
       test: ["CMD-SHELL", "pgrep -f tableinator.py > /dev/null || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 90s
+    restart: on-failure
+    logging: *default-logging
 
 volumes:
   rabbitmq_data:
