@@ -10,6 +10,26 @@ This is a modern Python 3.13+ system for processing Discogs database exports int
 - **graphinator/**: Consumes AMQP messages and stores data in Neo4j graph database
 - **tableinator/**: Consumes AMQP messages and stores data in PostgreSQL relational database
 
+## Development Setup
+
+### Initial Setup
+
+1. **Install uv**: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+1. **Sync dependencies**: `uv sync --all-extras` (installs all optional dependencies)
+1. **Setup pre-commit hooks**: `uv run pre-commit install`
+1. **Verify setup**: `uv run ruff check . && uv run mypy .`
+
+### Workspace Structure
+
+This project uses uv workspaces with the following structure:
+
+- **Root**: Shared configuration and dependencies (`config.py`)
+- **extractor/**: Discogs XML processing service with its own `pyproject.toml`
+- **graphinator/**: Neo4j graph database service with its own `pyproject.toml`
+- **tableinator/**: PostgreSQL relational database service with its own `pyproject.toml`
+
+Each service maintains its own dependencies while sharing common configuration.
+
 ## Development Commands
 
 ### Package Management (uv)
@@ -25,12 +45,28 @@ This is a modern Python 3.13+ system for processing Discogs database exports int
 
 ### Code Quality
 
-- `uv run pre-commit run --all-files` - Run all pre-commit hooks
+- `uv run pre-commit run --all-files` - Run all pre-commit hooks (all versions frozen for consistency)
 - `uv run ruff check .` - Run modern Python linting
-- `uv run ruff format .` - Format Python code (alternative to black)
-- `uv run mypy .` - Run type checking
-- `uv run black .` - Format Python code (line length: 100)
+- `uv run ruff format .` - Format Python code
+- `uv run mypy .` - Run type checking (from root, or individual services from their directories)
+- `uv run black .` - Format Python code using Black formatter
 - `uv run isort .` - Sort Python imports
+- `uv run bandit -r .` - Security analysis for Python code
+
+**All tools use configuration from `pyproject.toml`** for consistent settings across the project.
+
+**Code Standards**:
+
+- **No tabs allowed**: All Python files must use spaces for indentation (4 spaces)
+- **Line length**: 100 characters maximum
+- **Python version**: 3.13+ with modern type hints
+- **Import sorting**: Organized using isort with black profile
+
+Each service can also run linting and type checking independently:
+
+- `cd extractor && uv run mypy .` - Type check extractor service
+- `cd graphinator && uv run mypy .` - Type check graphinator service
+- `cd tableinator && uv run mypy .` - Type check tableinator service
 
 ### Testing
 
@@ -45,17 +81,34 @@ This is a modern Python 3.13+ system for processing Discogs database exports int
 
 ### Docker
 
-Each service can be built independently:
+#### Docker Compose (Recommended)
 
-- `docker build extractor/` - Build extractor service
-- `docker build graphinator/` - Build graphinator service
-- `docker build tableinator/` - Build tableinator service
+- `docker-compose up -d` - Start all services in background
+- `docker-compose down` - Stop and remove all containers
+- `docker-compose logs -f <service>` - Follow logs for specific service
+- `docker-compose ps` - Show running containers status
+- `docker-compose restart <service>` - Restart specific service
+- `docker-compose exec <service> bash` - Shell into running container
+
+#### Service URLs (when running via Docker Compose)
+
+- **RabbitMQ Management**: http://localhost:15672 (user: discogsography, pass: discogsography)
+- **Neo4j Browser**: http://localhost:7474 (user: neo4j, pass: discogsography)
+- **PostgreSQL**: localhost:5432 (user: discogsography, pass: discogsography, db: discogsography)
+
+#### Individual Service Builds
+
+Each service can be built independently (uses root context due to shared dependencies):
+
+- `docker build -f extractor/Dockerfile .` - Build extractor service
+- `docker build -f graphinator/Dockerfile .` - Build graphinator service
+- `docker build -f tableinator/Dockerfile .` - Build tableinator service
 
 ## Modern Python Features Used
 
 - **Python 3.13**: Requires latest Python with cutting-edge type hints and performance improvements
 - **uv package manager**: 10-100x faster than pip with built-in lock files
-- **Workspace architecture**: Multi-service monorepo with shared dependencies
+- **Workspace architecture**: Multi-service monorepo with shared dependencies (defined in `[tool.uv.workspace]`)
 - **Modern type annotations**: Uses Python 3.13 built-in generics (dict, list, tuple) instead of typing imports
 - **Dataclasses**: Used for configuration and data structures
 - **Pathlib**: Consistent path handling throughout
@@ -105,3 +158,25 @@ Uses modern dataclass-based configuration with environment variable validation:
 - Implements progress tracking with tqdm for long-running operations
 - Modern JSON handling with orjson for performance
 - Type-safe database operations with proper connection pooling
+
+## Debugging & Monitoring
+
+### Health Checks
+
+All services include health checks that can be monitored:
+
+- `docker-compose ps` - View health status of all services
+- `docker inspect discogsography-<service> | grep -A5 Health` - Detailed health info
+
+### Logging
+
+- `docker-compose logs -f` - Follow all service logs
+- `docker-compose logs -f extractor` - Follow specific service logs
+- `docker-compose logs --tail=100 graphinator` - Last 100 lines from service
+
+### Development Tools
+
+- **Pyright**: VS Code language server configuration in `pyrightconfig.json`
+- **Pre-commit**: Automated code quality checks before commits
+- **Coverage**: `uv run pytest --cov` for test coverage reports
+- **Type checking**: `uv run mypy .` for comprehensive type validation
