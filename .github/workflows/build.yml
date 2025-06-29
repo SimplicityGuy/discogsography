@@ -25,11 +25,11 @@ jobs:
 
     steps:
       - name: Checkout repository.
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Get all sub-projects.
         id: set-matrix
-        run: echo "::set-output name=matrix::$(ls -d */ | sed -r 's/\///g' | jq -R -s -c 'split("\n")[:-1]')"
+        run: echo "matrix=$(ls -d */ | sed -r 's/\///g' | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
 
   build-discogsography:
     needs: list-sub-projects
@@ -46,25 +46,25 @@ jobs:
 
     steps:
       - name: Checkout repository.
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           submodules: true
 
       - name: Log in to the GitHub Container Registry.
         if: github.event_name != 'pull_request'
-        uses: docker/login-action@v2
+        uses: docker/login-action@465a07811f14bebb1938fbed4728c6a1ff8901fc # v2
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GHCR_TOKEN }}
 
       - name: Anchore security scan - discogsography/${{ matrix.sub-project }}.
-        uses: anchore/scan-action@v3
+        uses: anchore/scan-action@3343887d815d7b07465f6fdcd395bd66508d486a # v3
         with:
           path: ${{ matrix.sub-project }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v4
+        uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a # v4
         with:
           version: "latest"
 
@@ -78,7 +78,7 @@ jobs:
 
       - name: Extract metadata (tags, labels) for Docker.
         id: meta
-        uses: docker/metadata-action@v4
+        uses: docker/metadata-action@818d4b7b91585d195f67373fd9cb0332e31a7175 # v4
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.sub-project }}
           tags: |
@@ -88,15 +88,15 @@ jobs:
             type=schedule,pattern={{date 'YYYYMMDD'}}
 
       - name: Set up QEMU.
-        uses: docker/setup-qemu-action@v2
+        uses: docker/setup-qemu-action@2b82ce82d56a2a04d2637cd93a637ae1b359c0a7 # v2
 
       - name: Set up Docker Buildx.
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@885d1462b80bc1c1c7f0b00334ad271f09369c55 # v2
         with:
           platforms: linux/amd64, linux/arm64
 
       - name: Build and push Docker image to GitHub Container Registry - discogsography/${{ matrix.sub-project }}.
-        uses: docker/build-push-action@v4
+        uses: docker/build-push-action@0a97817b6ade9f46837855d676c4cca3a2471fc9 # v4
         with:
           context: ${{ matrix.sub-project }}
           platforms: linux/amd64, linux/arm64
@@ -107,7 +107,7 @@ jobs:
           sbom: true
 
       - name: Send notification to Discord.
-        uses: sarisia/actions-status-discord@v1.12.0
+        uses: sarisia/actions-status-discord@82409b29f4bd859ae6d4b6b6ab8d7f7b9c4d7b66 # v1.12.0
         if: always()
         with:
           title: discogsography/${{ matrix.sub-project }}
