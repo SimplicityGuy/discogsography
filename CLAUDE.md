@@ -180,3 +180,8 @@ All services include health checks that can be monitored:
 - **Pre-commit**: Automated code quality checks before commits
 - **Coverage**: `uv run pytest --cov` for test coverage reports
 - **Type checking**: `uv run mypy .` for comprehensive type validation
+
+## Workflow Memories
+
+- Always run from the project root.
+- Always fix all ruff and mypy errors before completing.
