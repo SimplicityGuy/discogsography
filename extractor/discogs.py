@@ -9,6 +9,7 @@ from botocore import UNSIGNED
 from botocore.config import Config
 from tqdm import tqdm
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -70,22 +71,22 @@ def download_discogs_data(output_directory: str) -> list[str]:
             path = Path(output_directory, filename)
             desc = f"{filename:33}"
             bar_format = "{desc}{percentage:3.0f}%|{bar:80}{r_bar}"
-            with path.open("wb") as download_file:
-                with tqdm(
+            with (
+                path.open("wb") as download_file,
+                tqdm(
                     desc=desc,
                     bar_format=bar_format,
                     ncols=155,
                     total=s3file.size,
                     unit="B",
                     unit_scale=True,
-                ) as t:
-                    try:
-                        s3.download_fileobj(
-                            bucket, s3file.name, download_file, Callback=progress(t)
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to download {s3file.name}: {e}")
-                        raise
+                ) as t,
+            ):
+                try:
+                    s3.download_fileobj(bucket, s3file.name, download_file, Callback=progress(t))
+                except Exception as e:
+                    logger.error(f"Failed to download {s3file.name}: {e}")
+                    raise
 
             try:
                 hash = sha256()

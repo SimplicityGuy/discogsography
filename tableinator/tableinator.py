@@ -13,6 +13,7 @@ from psycopg.types.json import Jsonb
 
 from config import TableinatorConfig, setup_logging
 
+
 logger = logging.getLogger(__name__)
 
 config = TableinatorConfig.from_env()
@@ -36,10 +37,28 @@ database: psycopg.Connection[Any] = psycopg.connect(
 
 async def on_data_message(message: AbstractIncomingMessage) -> None:
     try:
-        logger.debug(f"Processing {message.routing_key} message")
         data: dict[str, Any] = loads(message.body)
         data_type: str = message.routing_key or "unknown"
         data_id: str = data["id"]
+
+        # Extract record details for logging
+        record_name = None
+        if data_type == "artists":
+            record_name = data.get("name", "Unknown Artist")
+        elif data_type == "labels":
+            record_name = data.get("name", "Unknown Label")
+        elif data_type == "releases":
+            record_name = data.get("title", "Unknown Release")
+        elif data_type == "masters":
+            record_name = data.get("title", "Unknown Master")
+
+        # Log each individual record being processed
+        if record_name:
+            logger.info(f"Processing {data_type[:-1]} ID={data_id}: {record_name}")
+        else:
+            logger.info(f"Processing {data_type[:-1]} ID={data_id}")
+
+        logger.debug(f"Processing {message.routing_key} message")
     except Exception as e:
         logger.error(f"Failed to parse message: {e}")
         await message.nack(requeue=False)
@@ -75,6 +94,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
                 ),
             )
             database.commit()
+            logger.debug(f"Stored {data_type[:-1]} ID={data_id} in PostgreSQL")
         await message.ack()
     except Exception as e:
         logger.error(f"Failed to process {data_type} message: {e}")

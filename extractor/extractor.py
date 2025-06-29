@@ -2,17 +2,20 @@ import logging
 from datetime import datetime, timedelta
 from gzip import GzipFile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from dict_hash import sha256
-from discogs import download_discogs_data
 from orjson import OPT_INDENT_2, OPT_SORT_KEYS, dumps, loads
 from pika import BlockingConnection, DeliveryMode, URLParameters
-from pika.adapters.blocking_connection import BlockingChannel
 from pika.spec import BasicProperties
 from xmltodict import parse
 
 from config import ExtractorConfig, setup_logging
+from discogs import download_discogs_data
+
+
+if TYPE_CHECKING:
+    from pika.adapters.blocking_connection import BlockingChannel
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +32,8 @@ class Extractor:
         self.total_count: int = 0
         self.start_time = datetime.now()
         self.end_time = datetime.now()
+        self.last_progress_log = datetime.now()
+        self.progress_log_interval = 1000  # Log progress every 1000 records
         self.amqp_connection: BlockingConnection | None = None
         self.amqp_channel: BlockingChannel | None = None
         self.amqp_properties = BasicProperties(
@@ -86,10 +91,18 @@ class Extractor:
             self.amqp_connection.close()
 
     def extract(self) -> None:
-        logger.info(f"Starting extraction of {self.data_type} from Discogs data")
+        logger.info(f"Starting extraction of {self.data_type} from {self.input_file}")
         self.start_time = datetime.now()
         parse(GzipFile(self.input_path.resolve()), item_depth=2, item_callback=self.__loader)
         self.end_time = datetime.now()
+
+        # Log final extraction statistics
+        elapsed = self.end_time - self.start_time
+        final_tps = self.total_count / elapsed.total_seconds() if elapsed.total_seconds() > 0 else 0
+        logger.info(
+            f"Completed extraction of {self.data_type}: {self.total_count:,} records processed "
+            f"in {elapsed} (avg {final_tps:.1f} records/sec)"
+        )
 
     def __loader(self, path: list[tuple[str, dict[str, Any] | None]], data: dict[str, Any]) -> bool:
         # `path` is in the format of:
@@ -106,7 +119,25 @@ class Extractor:
         if data_type in ["masters", "releases"] and len(path) > 1 and path[1][1] is not None:
             data["id"] = path[1][1]["id"]
 
-        logger.debug(f"Processing {self.data_type} item {data['id']}")
+        # Extract record details for logging
+        record_id = data.get("id", "unknown")
+        record_name = None
+
+        # Extract name/title based on data type
+        if self.data_type == "artists":
+            record_name = data.get("name", "Unknown Artist")
+        elif self.data_type == "labels":
+            record_name = data.get("name", "Unknown Label")
+        elif self.data_type == "releases":
+            record_name = data.get("title", "Unknown Release")
+        elif self.data_type == "masters":
+            record_name = data.get("title", "Unknown Master")
+
+        # Log each individual record being processed
+        if record_name:
+            logger.info(f"Processing {self.data_type[:-1]} ID={record_id}: {record_name}")
+        else:
+            logger.info(f"Processing {self.data_type[:-1]} ID={record_id}")
 
         data = loads(dumps(data, option=OPT_SORT_KEYS | OPT_INDENT_2))
         data["sha256"] = sha256(data)  # sha256 is computed on the original data, without the hash
@@ -118,6 +149,21 @@ class Extractor:
                 properties=self.amqp_properties,
                 routing_key=self.data_type,
             )
+            logger.debug(f"Published {self.data_type[:-1]} ID={record_id} to AMQP exchange")
+
+        # Log progress statistics periodically
+        if self.total_count % self.progress_log_interval == 0:
+            current_time = datetime.now()
+            elapsed = current_time - self.start_time
+            current_tps = (
+                self.total_count / elapsed.total_seconds() if elapsed.total_seconds() > 0 else 0
+            )
+
+            logger.info(
+                f"Progress: {self.total_count:,} {self.data_type} processed "
+                f"({current_tps:.1f} records/sec, elapsed: {elapsed})"
+            )
+            self.last_progress_log = current_time
 
         return True
 
