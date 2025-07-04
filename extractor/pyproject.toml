@@ -6,7 +6,17 @@ build-backend = "setuptools.build_meta"
 name = "discogsography-extractor"
 version = "0.1.0"
 description = "Discogs data extractor service"
+authors = [{name = "Robert Simmons", email = "robert@simplicityguy.com"}]
+readme = "../README.md"
 requires-python = ">=3.13"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
+license = {text = "MIT"}
 dependencies = [
     "boto3>=1.34.0",
     "dict-hash>=1.1.0",
@@ -31,7 +41,7 @@ docstring-code-line-length = "dynamic"
 lines-after-imports = 2
 combine-as-imports = true
 split-on-trailing-comma = true
-known-first-party = ["config", "discogs"]
+known-first-party = ["config"]
 
 [tool.ruff]
 line-length = 100
@@ -89,10 +99,13 @@ mypy_path = ".."
 # Ignore missing imports for third-party libraries without stubs
 [[tool.mypy.overrides]]
 module = [
+    "aio_pika.*",
     "boto3.*",
     "botocore.*",
     "discogs",
+    "neo4j.*",
     "pika.*",
+    "psycopg.*",
 ]
 ignore_missing_imports = true
 

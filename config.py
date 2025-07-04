@@ -113,6 +113,16 @@ class TableinatorConfig:
         )
 
 
+# AMQP Configuration shared across all services
+AMQP_EXCHANGE = "discogsography-exchange"
+AMQP_EXCHANGE_TYPE = "topic"  # Use topic for routing by data type
+AMQP_QUEUE_PREFIX_GRAPHINATOR = "discogsography-graphinator"
+AMQP_QUEUE_PREFIX_TABLEINATOR = "discogsography-tableinator"
+
+# Data types that will be processed
+DATA_TYPES = ["artists", "labels", "masters", "releases"]
+
+
 def setup_logging(
     service_name: str,
     level: str = "INFO",
