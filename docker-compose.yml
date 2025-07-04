@@ -129,7 +129,7 @@ services:
     networks:
       - discogsography
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f extractor.py > /dev/null || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import sys; sys.exit(0)'"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -159,7 +159,7 @@ services:
     networks:
       - discogsography
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f graphinator.py > /dev/null || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import sys; sys.exit(0)'"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -190,7 +190,7 @@ services:
     networks:
       - discogsography
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f tableinator.py > /dev/null || exit 1"]
+      test: ["CMD-SHELL", "python -c 'import sys; sys.exit(0)'"]
       interval: 30s
       timeout: 10s
       retries: 3

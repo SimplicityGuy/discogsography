@@ -3,6 +3,7 @@ import contextlib
 import logging
 import signal
 import threading
+import time
 from asyncio import run
 from collections.abc import Generator
 from contextlib import contextmanager
@@ -36,6 +37,7 @@ config = TableinatorConfig.from_env()
 # Progress tracking
 message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
+last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
 
 # Parse host and port from address
 if ":" in config.postgres_address:
@@ -163,6 +165,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
         # Increment counter and log progress
         if data_type in message_counts:
             message_counts[data_type] += 1
+            last_message_time[data_type] = time.time()
             if message_counts[data_type] % progress_interval == 0:
                 logger.info(f"Processed {message_counts[data_type]} {data_type} in PostgreSQL")
 
@@ -336,17 +339,59 @@ async def main() -> None:
             "Ready to process messages into PostgreSQL. Press CTRL+C to exit"
         )
 
-        # Start periodic progress reporting
+        # Start periodic progress reporting and consumer health monitoring
         async def progress_reporter() -> None:
+            report_count = 0
             while not shutdown_requested:
-                await asyncio.sleep(30)  # Report every 30 seconds
+                # More frequent reports initially, then every 30 seconds
+                if report_count < 3:
+                    await asyncio.sleep(10)  # First 3 reports every 10 seconds
+                else:
+                    await asyncio.sleep(30)  # Then every 30 seconds
+                report_count += 1
                 total = sum(message_counts.values())
-                if total > 0:
-                    logger.info(
-                        f"📊 PostgreSQL Progress: {total} total messages processed "
-                        f"(Artists: {message_counts['artists']}, Labels: {message_counts['labels']}, "
-                        f"Masters: {message_counts['masters']}, Releases: {message_counts['releases']})"
+                current_time = time.time()
+
+                # Check for stalled consumers
+                stalled_consumers = []
+                for data_type, last_time in last_message_time.items():
+                    if (
+                        last_time > 0 and (current_time - last_time) > 120
+                    ):  # No messages for 2 minutes
+                        stalled_consumers.append(data_type)
+
+                if stalled_consumers:
+                    logger.error(
+                        f"⚠️ Stalled consumers detected: {stalled_consumers}. "
+                        f"No messages processed for >2 minutes."
                     )
+
+                # Always show progress, even if no messages processed yet
+                logger.info(
+                    f"📊 PostgreSQL Progress: {total} total messages processed "
+                    f"(Artists: {message_counts['artists']}, Labels: {message_counts['labels']}, "
+                    f"Masters: {message_counts['masters']}, Releases: {message_counts['releases']})"
+                )
+
+                # Log current processing state
+                if total == 0:
+                    logger.info("⏳ Waiting for messages to process...")
+                elif all(
+                    current_time - last_time < 5
+                    for last_time in last_message_time.values()
+                    if last_time > 0
+                ):
+                    logger.info("✅ All consumers actively processing")
+                elif any(
+                    last_time > 0 and 5 < current_time - last_time < 120
+                    for last_time in last_message_time.values()
+                ):
+                    slow_consumers = [
+                        dt
+                        for dt, lt in last_message_time.items()
+                        if lt > 0 and 5 < current_time - lt < 120
+                    ]
+                    logger.warning(f"⚠️ Slow consumers detected: {slow_consumers}")
 
         progress_task = asyncio.create_task(progress_reporter())
 

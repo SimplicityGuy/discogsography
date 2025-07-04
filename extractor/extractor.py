@@ -39,6 +39,10 @@ RETRY_DELAY = 5
 # Global shutdown flag
 shutdown_requested = False
 
+# Progress tracking for monitoring
+extraction_progress = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+last_extraction_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+
 
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
@@ -374,6 +378,11 @@ class ConcurrentExtractor:
 
         self.total_count += 1
 
+        # Update global progress tracking
+        if self.data_type in extraction_progress:
+            extraction_progress[self.data_type] += 1
+            last_extraction_time[self.data_type] = time.time()
+
         if data_type in ["masters", "releases"] and len(path) > 1 and path[1][1] is not None:
             data["id"] = path[1][1]["id"]
 
@@ -632,16 +641,80 @@ async def main_async() -> None:
             break
         tasks.append(asyncio.create_task(process_with_semaphore(data_file)))
 
+    # Start periodic progress reporting and monitoring
+    async def progress_reporter() -> None:
+        report_count = 0
+        while not shutdown_requested:
+            # More frequent reports initially, then every 30 seconds
+            if report_count < 3:
+                await asyncio.sleep(10)  # First 3 reports every 10 seconds
+            else:
+                await asyncio.sleep(30)  # Then every 30 seconds
+            report_count += 1
+            total = sum(extraction_progress.values())
+            current_time = time.time()
+
+            # Check for stalled extractors
+            stalled_extractors = []
+            for data_type, last_time in last_extraction_time.items():
+                if (
+                    last_time > 0
+                    and extraction_progress[data_type] > 0
+                    and (current_time - last_time) > 120
+                ):  # No extraction for 2 minutes
+                    stalled_extractors.append(data_type)
+
+            if stalled_extractors:
+                logger.error(
+                    f"⚠️ Stalled extractors detected: {stalled_extractors}. "
+                    f"No data extracted for >2 minutes."
+                )
+
+            # Always show progress
+            logger.info(
+                f"📊 Extraction Progress: {total} total records extracted "
+                f"(Artists: {extraction_progress['artists']}, Labels: {extraction_progress['labels']}, "
+                f"Masters: {extraction_progress['masters']}, Releases: {extraction_progress['releases']})"
+            )
+
+            # Log current extraction state
+            if total == 0:
+                logger.info("⏳ Starting extraction process...")
+            else:
+                # Check which files are actively being extracted
+                active_extractors = []
+                slow_extractors = []
+                for data_type, last_time in last_extraction_time.items():
+                    if last_time > 0:
+                        time_since_last = current_time - last_time
+                        if time_since_last < 5:
+                            active_extractors.append(data_type)
+                        elif 5 < time_since_last < 120:
+                            slow_extractors.append(data_type)
+
+                if active_extractors:
+                    logger.info(f"✅ Active extractors: {active_extractors}")
+                if slow_extractors:
+                    logger.warning(f"⚠️ Slow extractors detected: {slow_extractors}")
+
+    progress_task = asyncio.create_task(progress_reporter())
+
     if tasks:
         logger.info(f"Processing {len(tasks)} files concurrently (max 3 at once)")
 
-        # Wait for all tasks to complete, handling exceptions gracefully
-        results = await asyncio.gather(*tasks, return_exceptions=True)
+        try:
+            # Wait for all tasks to complete, handling exceptions gracefully
+            results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        # Log any exceptions
-        for i, result in enumerate(results):
-            if isinstance(result, Exception):
-                logger.error(f"File {data_files[i]} failed: {result}")
+            # Log any exceptions
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    logger.error(f"File {data_files[i]} failed: {result}")
+        finally:
+            # Cancel progress reporting
+            progress_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await progress_task
 
     logger.info("Extractor service shutdown complete")
 

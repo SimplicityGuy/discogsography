@@ -82,6 +82,11 @@ def safe_execute_query(session: Any, query: str, parameters: dict[str, Any]) -> 
 
 
 async def on_artist_message(message: AbstractIncomingMessage) -> None:
+    if shutdown_requested:
+        logger.info("Shutdown requested, rejecting new messages")
+        await message.nack(requeue=True)
+        return
+
     try:
         logger.debug("Received artist message")
         artist: dict[str, Any] = loads(message.body)
@@ -211,6 +216,11 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
 
 
 async def on_label_message(message: AbstractIncomingMessage) -> None:
+    if shutdown_requested:
+        logger.info("Shutdown requested, rejecting new messages")
+        await message.nack(requeue=True)
+        return
+
     try:
         logger.debug("Received label message")
         label: dict[str, Any] = loads(message.body)
@@ -299,6 +309,11 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
 
 
 async def on_master_message(message: AbstractIncomingMessage) -> None:
+    if shutdown_requested:
+        logger.info("Shutdown requested, rejecting new messages")
+        await message.nack(requeue=True)
+        return
+
     try:
         logger.debug("Received master message")
         master: dict[str, Any] = loads(message.body)
@@ -423,6 +438,11 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
 
 
 async def on_release_message(message: AbstractIncomingMessage) -> None:
+    if shutdown_requested:
+        logger.info("Shutdown requested, rejecting new messages")
+        await message.nack(requeue=True)
+        return
+
     try:
         logger.debug("Received release message")
         release: dict[str, Any] = loads(message.body)

@@ -140,4 +140,12 @@ def setup_logging(
         handlers=handlers,
     )
 
+    # Suppress verbose pika logs
+    logging.getLogger("pika").setLevel(logging.WARNING)
+    logging.getLogger("pika.adapters").setLevel(logging.WARNING)
+    logging.getLogger("pika.adapters.utils.io_services_utils").setLevel(logging.WARNING)
+    logging.getLogger("pika.adapters.utils.connection_workflow").setLevel(logging.WARNING)
+    logging.getLogger("pika.adapters.blocking_connection").setLevel(logging.WARNING)
+    logging.getLogger("pika.connection").setLevel(logging.WARNING)
+
     logger.info(f"Logging configured for {service_name}")
