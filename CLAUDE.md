@@ -181,7 +181,35 @@ All services include health checks that can be monitored:
 - **Coverage**: `uv run pytest --cov` for test coverage reports
 - **Type checking**: `uv run mypy .` for comprehensive type validation
 
+### Debugging Utilities
+
+The `utilities/` directory contains debugging tools for development:
+
+- `check_errors.py`: Analyze service logs for errors and warnings
+- `check_queues.py`: Display RabbitMQ queue statistics
+- `debug_message.py`: Send test messages to AMQP queues
+- `monitor_queues.py`: Real-time queue monitoring
+- `system_monitor.py`: Comprehensive system health dashboard
+
+## Security Practices
+
+### Bandit Security Analysis
+
+The codebase passes all bandit security checks. Development utilities use proper security annotations:
+
+- **Subprocess calls**: Annotated with `# nosec B603 B607` for trusted Docker commands
+- **Hardcoded defaults**: Annotated with `# nosec B105/B107` and `# noqa: S107` for local dev passwords
+- **URL requests**: Annotated with `# nosec B310` and `# noqa: S310` for localhost-only connections
+
+**Security principles**:
+
+- All suppressions are line-specific, not broadly disabled
+- Each suppression includes justification (development tools, no user input)
+- Environment variables override all hardcoded defaults
+- No user input is passed to subprocess commands
+
 ## Workflow Memories
 
 - Always run from the project root.
 - Always fix all ruff and mypy errors before completing.
+- Run `uv run bandit -r .` to verify security compliance after changes.
