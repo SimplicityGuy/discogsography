@@ -1,0 +1,112 @@
+---
+name: Validate Docker Files
+
+on:
+  pull_request:
+    paths:
+      - "**/Dockerfile"
+      - "docker-compose*.yml"
+      - ".dockerignore"
+      - ".github/workflows/docker-validate.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "**/Dockerfile"
+      - "docker-compose*.yml"
+      - ".dockerignore"
+      - ".github/workflows/docker-validate.yml"
+
+jobs:
+  validate-docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate Dockerfiles with hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          recursive: true
+          failure-threshold: error
+
+      - name: Test Docker builds
+        run: |
+          # Test building each service
+          for service in extractor graphinator tableinator; do
+            echo "🔨 Testing build for $service..."
+            docker build --build-arg PYTHON_VERSION=3.13 -f $service/Dockerfile . --target builder
+            echo "✅ $service builder stage built successfully"
+          done
+
+      - name: Validate docker-compose syntax
+        run: |
+          docker-compose config --quiet
+          echo "✅ docker-compose.yml is valid"
+
+          if [ -f docker-compose.prod.yml ]; then
+            docker-compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
+            echo "✅ docker-compose.prod.yml overlay is valid"
+          fi
+
+      - name: Check docker-compose services
+        run: |
+          services=$(docker-compose config --services | sort | tr "\n" " " | sed "s/ $//")
+          expected="extractor graphinator neo4j postgres rabbitmq tableinator"
+
+          if [ "$services" != "$expected" ]; then
+            echo "❌ Service mismatch!"
+            echo "Expected: $expected"
+            echo "Got: $services"
+            exit 1
+          fi
+          echo "✅ All expected services are defined"
+
+      - name: Validate service dependencies
+        run: |
+          # Check that services have correct dependencies
+          deps=$(docker-compose config | yq eval '.services.extractor.depends_on | keys | .[]' -)
+          if [ "$deps" != "rabbitmq" ]; then
+            echo "❌ Extractor should only depend on rabbitmq"
+            exit 1
+          fi
+
+          deps=$(docker-compose config | yq eval '.services.graphinator.depends_on | keys | sort | join(" ")' -)
+          if [ "$deps" != "neo4j rabbitmq" ]; then
+            echo "❌ Graphinator should depend on neo4j and rabbitmq"
+            exit 1
+          fi
+
+          deps=$(docker-compose config | yq eval '.services.tableinator.depends_on | keys | sort | join(" ")' -)
+          if [ "$deps" != "postgres rabbitmq" ]; then
+            echo "❌ Tableinator should depend on postgres and rabbitmq"
+            exit 1
+          fi
+
+          echo "✅ Service dependencies are correct"
+
+      - name: Check for security best practices
+        run: |
+          # Check that services run as non-root user
+          for service in extractor graphinator tableinator; do
+            user=$(docker-compose config | yq eval ".services.$service.user" -)
+            if [ "$user" != "1000:1000" ]; then
+              echo "❌ $service should run as user 1000:1000"
+              exit 1
+            fi
+          done
+          echo "✅ All services run as non-root user"
+
+          # Check security options
+          for service in extractor graphinator tableinator; do
+            security_opt=$(docker-compose config | yq eval ".services.$service.security_opt[]" - | grep "no-new-privileges:true" || true)
+            if [ -z "$security_opt" ]; then
+              echo "❌ $service should have no-new-privileges security option"
+              exit 1
+            fi
+          done
+          echo "✅ Security options are properly set"

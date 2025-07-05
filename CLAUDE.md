@@ -19,6 +19,22 @@ This is a modern Python 3.13+ system for processing Discogs database exports int
 1. **Setup pre-commit hooks**: `uv run pre-commit install`
 1. **Verify setup**: `uv run ruff check . && uv run mypy .`
 
+### Python Version Management
+
+The Python version (currently 3.13) is centralized and can be managed through:
+
+1. **Environment Variable**: Set `PYTHON_VERSION` in your `.env` file (see `.env.example`)
+1. **Update Script**: Run `./scripts/update-python-version.sh 3.14` to update all files
+1. **Docker Builds**: Use `--build-arg PYTHON_VERSION=3.14` or set in `.env`
+1. **GitHub Actions**: Controlled by `PYTHON_VERSION` env variable in workflow files
+
+The Python version is automatically propagated to:
+
+- All Dockerfiles (via build arguments)
+- All pyproject.toml files (requires-python, tool configurations)
+- GitHub Actions workflows
+- pyrightconfig.json
+
 ### Workspace Structure
 
 This project uses uv workspaces with the following structure:
@@ -47,7 +63,14 @@ Each service maintains its own dependencies while sharing common configuration.
 
 ### Code Quality
 
-- `uv run pre-commit run --all-files` - Run all pre-commit hooks (all versions frozen for consistency)
+- `uv run pre-commit run --all-files` - Run all pre-commit hooks (all versions frozen to commit SHAs)
+  - Includes Python linting (ruff, mypy, bandit)
+  - Validates Dockerfiles (hadolint)
+  - Validates docker-compose files
+  - Validates GitHub workflows (check-jsonschema, actionlint)
+  - Validates all YAML files (yamllint)
+  - Validates shell scripts (shellcheck, shfmt)
+- `uv run pre-commit autoupdate --freeze` - Update and freeze pre-commit hooks to latest versions
 - `uv run ruff check .` - Run modern Python linting (includes flake8, isort, and more)
 - `uv run ruff format .` - Format Python code (ruff's built-in formatter)
 - `uv run mypy .` - Run type checking with strict settings
@@ -70,9 +93,11 @@ Each service maintains its own dependencies while sharing common configuration.
 **Code Standards**:
 
 - **No tabs allowed**: All Python files must use spaces for indentation (4 spaces)
-- **Line length**: 100 characters maximum
+- **Line length**: 100 characters maximum (150 for YAML files)
 - **Python version**: 3.13+ with modern type hints
 - **Import sorting**: Organized using isort with black profile
+- **YAML formatting**: Validated with yamllint (config in .yamllint)
+- **GitHub workflows**: Validated with check-jsonschema and actionlint
 
 Each service can also run linting and type checking independently:
 
@@ -130,7 +155,10 @@ PERIODIC_CHECK_DAYS=1 uv run python extractor/extractor.py
 
 #### Docker Compose (Recommended)
 
+**Basic Commands**:
+
 - `docker-compose up -d` - Start all services in background
+- `docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d` - Start with production settings
 - `docker-compose down` - Stop and remove all containers
 - `docker-compose logs -f <service>` - Follow logs for specific service
 - `docker-compose ps` - Show running containers status
@@ -147,9 +175,21 @@ PERIODIC_CHECK_DAYS=1 uv run python extractor/extractor.py
 
 Each service can be built independently (uses root context due to shared dependencies):
 
-- `docker build -f extractor/Dockerfile .` - Build extractor service
-- `docker build -f graphinator/Dockerfile .` - Build graphinator service
-- `docker build -f tableinator/Dockerfile .` - Build tableinator service
+- `docker build --build-arg PYTHON_VERSION=3.13 -f extractor/Dockerfile .` - Build extractor service
+- `docker build --build-arg PYTHON_VERSION=3.13 -f graphinator/Dockerfile .` - Build graphinator service
+- `docker build --build-arg PYTHON_VERSION=3.13 -f tableinator/Dockerfile .` - Build tableinator service
+
+#### Docker Compose Improvements
+
+The docker-compose.yml file includes:
+
+1. **Health checks** - Uses pgrep to verify processes are running
+1. **Security options** - `no-new-privileges:true` for service containers
+1. **User mapping** - Services run as UID/GID 1000 matching Dockerfile
+1. **Optimized dependencies** - Only necessary service dependencies
+1. **Alpine/slim images** - Uses postgres:16-alpine and python:3.13-slim
+1. **Production overlay** - docker-compose.prod.yml for production deployments
+1. **Environment files** - .env.docker template for configuration
 
 #### Docker Build Optimizations
 
@@ -314,9 +354,35 @@ logger.error("❌ Failed to connect to database")
 logger.warning("⚠️ Connection timeout, retrying...")
 ```
 
-## GitHub Actions Caching
+## GitHub Actions
 
-The GitHub workflows implement comprehensive caching to speed up CI/CD:
+### Workflows
+
+1. **build.yml** - Main CI/CD workflow that:
+
+   - Runs code quality checks (pre-commit, tests)
+   - Validates docker-compose files
+   - Builds and pushes Docker images to GitHub Container Registry
+   - Includes comprehensive caching strategies
+
+1. **docker-validate.yml** - Dedicated Docker validation that:
+
+   - Validates Dockerfiles with hadolint
+   - Tests Docker builds
+   - Validates docker-compose syntax and services
+   - Checks security best practices
+
+1. **cleanup.yml** - Registry cleanup workflow
+
+### Docker Compose Validation
+
+The workflows validate docker-compose files by:
+
+- Checking YAML syntax (via pre-commit yamllint hook)
+- Validating configuration with `docker-compose config`
+- Verifying all expected services are defined
+- Checking service dependencies are correct
+- Ensuring security options are properly set
 
 ### Caching Strategies
 

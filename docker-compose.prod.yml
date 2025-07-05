@@ -1,0 +1,77 @@
+---
+# Production overrides for docker-compose.yml
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+services:
+  rabbitmq:
+    restart: always
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
+    deploy:
+      resources:
+        limits:
+          memory: ${RABBITMQ_MEMORY_LIMIT:-1G}
+          cpus: "1.0"
+
+  postgres:
+    restart: always
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    deploy:
+      resources:
+        limits:
+          memory: ${POSTGRES_MEMORY_LIMIT:-2G}
+          cpus: "2.0"
+
+  neo4j:
+    restart: always
+    environment:
+      NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
+      NEO4J_dbms_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-2G}
+    deploy:
+      resources:
+        limits:
+          memory: ${NEO4J_MEMORY_LIMIT:-4G}
+          cpus: "2.0"
+
+  extractor:
+    restart: always
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          memory: ${EXTRACTOR_MEMORY_LIMIT:-2G}
+          cpus: "1.0"
+
+  graphinator:
+    restart: always
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          memory: ${GRAPHINATOR_MEMORY_LIMIT:-1G}
+          cpus: "1.0"
+
+  tableinator:
+    restart: always
+    deploy:
+      replicas: 2
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+      resources:
+        limits:
+          memory: ${TABLEINATOR_MEMORY_LIMIT:-1G}
+          cpus: "1.0"

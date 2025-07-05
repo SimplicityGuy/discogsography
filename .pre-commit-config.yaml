@@ -9,6 +9,7 @@ repos:
       - id: check-shebang-scripts-are-executable
       - id: check-toml
       - id: check-yaml
+        args: [--unsafe]  # Allow custom tags like GitHub Actions
       - id: detect-aws-credentials
         args: [--allow-missing-credentials]
       - id: detect-private-key
@@ -21,6 +22,7 @@ repos:
     rev: 54da05914997e6b04e4db33ed6757d744984c68b  # frozen: 0.33.2
     hooks:
       - id: check-github-workflows
+      - id: check-github-actions
 
   - repo: https://github.com/executablebooks/mdformat
     rev: ff29be1a1ba8029d9375882aa2c812b62112a593  # frozen: 0.7.22
@@ -50,7 +52,7 @@ repos:
           - psycopg[binary]
 
   - repo: https://github.com/PyCQA/bandit
-    rev: 23d269a665abd84597785fdf8fdda04ea89f59f3  # frozen: 1.8.5
+    rev: 2d0b675b04c80ae42277e10500db06a0a37bae17  # frozen: 1.8.6
     hooks:
       - id: bandit
         args: [-x, "tests"]
@@ -59,3 +61,33 @@ repos:
     rev: c3dc18df7a501f02a560a2cc7ba3c69a85ca01d3  # frozen: v2.13.1-beta
     hooks:
       - id: hadolint
+
+  - repo: https://github.com/IamTheFij/docker-pre-commit
+    rev: f626253b23de45412865c07fd076ff95d4cd77a7  # frozen: v3.0.1
+    hooks:
+      - id: docker-compose-check
+        files: ^docker-compose\.yml$  # Only check main file, not overlays like .prod.yml
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: 03d0035246f3e81f36aed592ffb4bebf33a03106  # frozen: v1.7.7
+    hooks:
+      - id: actionlint
+        args: ["-ignore", "SC2129"]  # Ignore "consider using { cmd1; cmd2; }" suggestion
+
+  - repo: https://github.com/adrienverge/yamllint
+    rev: 79a6b2b1392eaf49cdd32ac4f14be1a809bbd8f7  # frozen: v1.37.1
+    hooks:
+      - id: yamllint
+        args: [--strict, -c=.yamllint]
+
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: a23f6b85d0fdd5bb9d564e2579e678033debbdff  # frozen: v0.10.0.1
+    hooks:
+      - id: shellcheck
+        args: ["--severity=warning"]  # Show warnings and errors
+
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: 119ed76a0da67a4a09fff7ab55c42f5519680289  # frozen: v3.11.0-1
+    hooks:
+      - id: shfmt
+        args: ["-i", "2", "-ci", "-bn", "-sr"]  # 2 space indent, indent case, binary next line, redirect operators

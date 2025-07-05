@@ -1,5 +1,9 @@
 # syntax=docker/dockerfile:1
-FROM python:3.13-slim AS builder
+
+# Python version build argument
+ARG PYTHON_VERSION=3.13
+
+FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
@@ -24,9 +28,10 @@ COPY config.py ./
 COPY graphinator/ ./graphinator/
 
 # Final stage
-FROM python:3.13-slim
+FROM python:${PYTHON_VERSION}-slim
 
 # Build arguments for dynamic labels
+ARG PYTHON_VERSION=3.13
 ARG BUILD_DATE
 ARG BUILD_VERSION
 ARG VCS_REF
@@ -44,10 +49,10 @@ LABEL org.opencontainers.image.title="Discogsography Graphinator" \
       org.opencontainers.image.version="${BUILD_VERSION:-0.1.0}" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
-      org.opencontainers.image.base.name="docker.io/library/python:3.13-slim" \
+      org.opencontainers.image.base.name="docker.io/library/python:${PYTHON_VERSION}-slim" \
       com.discogsography.service="graphinator" \
       com.discogsography.dependencies="neo4j,aio-pika" \
-      com.discogsography.python.version="3.13" \
+      com.discogsography.python.version="${PYTHON_VERSION}" \
       com.discogsography.database="neo4j"
 
 # Install security updates
