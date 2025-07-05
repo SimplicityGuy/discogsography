@@ -112,3 +112,37 @@ skips = ["B101"]  # Skip assert_used test
 
 [tool.setuptools.packages.find]
 include = ["graphinator*"]
+
+[tool.coverage.run]
+source = ["graphinator"]
+omit = ["*/tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "def __repr__",
+    "if __name__ == .__main__.:",
+    "pragma: no cover",
+    "raise AssertionError",
+    "raise NotImplementedError",
+]
+
+[tool.pytest.ini_options]
+minversion = "6.0"
+addopts = "-ra -q --strict-markers"
+testpaths = ["../tests/graphinator"]
+python_files = ["*_test.py", "test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+
+[tool.black]
+line-length = 100
+target-version = ["py313"]
+
+[tool.isort]
+profile = "black"
+line_length = 100
+known_first_party = ["config", "graphinator"]
+lines_after_imports = 2
+combine_as_imports = true
+split_on_trailing_comma = true

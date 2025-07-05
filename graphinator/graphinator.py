@@ -29,20 +29,16 @@ logger = logging.getLogger(__name__)
 # Suppress Neo4j notifications for missing labels/properties during initial setup
 logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
 
-config = GraphinatorConfig.from_env()
+# Config will be initialized in main
+config: GraphinatorConfig | None = None
 
 # Progress tracking
 message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
-graph = GraphDatabase.driver(
-    config.neo4j_address,
-    auth=(config.neo4j_username, config.neo4j_password),
-    encrypted=False,
-    max_connection_lifetime=30 * 60,  # 30 minutes
-    max_connection_pool_size=50,
-    connection_acquisition_timeout=60.0,
-)
+
+# Driver will be initialized in main
+graph: Any = None
 
 # Global shutdown flag
 shutdown_requested = False
@@ -598,12 +594,31 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
 
 
 async def main() -> None:
+    global config, graph
+
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
     setup_logging("graphinator", log_file=Path("graphinator.log"))
     logger.info("🚀 Starting Neo4j graphinator service")
+
+    # Initialize configuration
+    try:
+        config = GraphinatorConfig.from_env()
+    except ValueError as e:
+        logger.error(f"❌ Configuration error: {e}")
+        return
+
+    # Initialize Neo4j driver
+    graph = GraphDatabase.driver(
+        config.neo4j_address,
+        auth=(config.neo4j_username, config.neo4j_password),
+        encrypted=False,
+        max_connection_lifetime=30 * 60,  # 30 minutes
+        max_connection_pool_size=50,
+        connection_acquisition_timeout=60.0,
+    )
 
     # Test Neo4j connectivity
     try:

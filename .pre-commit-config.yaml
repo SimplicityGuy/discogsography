@@ -53,6 +53,7 @@ repos:
     rev: 23d269a665abd84597785fdf8fdda04ea89f59f3  # frozen: 1.8.5
     hooks:
       - id: bandit
+        args: [-x, "tests"]
 
   - repo: https://github.com/hadolint/hadolint
     rev: c3dc18df7a501f02a560a2cc7ba3c69a85ca01d3  # frozen: v2.13.1-beta

@@ -41,19 +41,31 @@ Each service maintains its own dependencies while sharing common configuration.
 - `uv sync --extra extractor` - Install extractor-specific dependencies
 - `uv sync --extra graphinator` - Install graphinator-specific dependencies
 - `uv sync --extra tableinator` - Install tableinator-specific dependencies
+- `uv sync --extra utilities` - Install utilities dependencies (psutil, requests)
 - `uv sync --extra dev` - Install development dependencies
+- `uv sync --all-extras` - Install all optional dependencies
 
 ### Code Quality
 
 - `uv run pre-commit run --all-files` - Run all pre-commit hooks (all versions frozen for consistency)
-- `uv run ruff check .` - Run modern Python linting
-- `uv run ruff format .` - Format Python code
-- `uv run mypy .` - Run type checking (from root, or individual services from their directories)
+- `uv run ruff check .` - Run modern Python linting (includes flake8, isort, and more)
+- `uv run ruff format .` - Format Python code (ruff's built-in formatter)
+- `uv run mypy .` - Run type checking with strict settings
 - `uv run black .` - Format Python code using Black formatter
-- `uv run isort .` - Sort Python imports
-- `uv run bandit -r .` - Security analysis for Python code
+- `uv run isort .` - Sort Python imports (also handled by ruff)
+- `uv run bandit -r . -x "./.venv/*,./tests/*"` - Security analysis excluding virtual env and tests
 
 **All tools use configuration from `pyproject.toml`** for consistent settings across the project.
+
+**Tool Configurations**:
+
+- **Ruff**: Configured with comprehensive linting rules including security (S), simplification (SIM), and more
+- **MyPy**: Strict mode enabled with full type checking
+- **Black**: Line length 100, targeting Python 3.13
+- **isort**: Black-compatible profile with custom first-party imports
+- **Bandit**: Configured to skip assert warnings (B101) for development
+- **Coverage**: Configured to track all service modules
+- **Pytest**: Auto-discovery with asyncio support and pythonpath configuration
 
 **Code Standards**:
 
@@ -70,8 +82,28 @@ Each service can also run linting and type checking independently:
 
 ### Testing
 
-- `uv run pytest` - Run all tests
-- `uv run pytest --cov` - Run tests with coverage
+- `uv run pytest` - Run all tests (pythonpath configured in pyproject.toml)
+- `uv run pytest --cov` - Run tests with coverage report
+- `uv run pytest tests/test_config.py -v` - Run specific test file
+- `uv run pytest -k "test_name" -v` - Run tests matching pattern
+- `uv run pytest -xvs` - Run tests with verbose output, stop on first failure
+- `uv run pytest --tb=short` - Run tests with shorter traceback format
+
+**Test Structure**:
+
+- `tests/conftest.py` - Shared pytest fixtures and test configuration
+- `tests/test_config.py` - Tests for configuration management
+- `tests/test_integration.py` - Integration tests for services
+- `tests/extractor/test_discogs.py` - Tests for Discogs download functionality
+- `tests/graphinator/test_graphinator.py` - Tests for Neo4j graphinator service
+- `tests/tableinator/test_tableinator.py` - Tests for PostgreSQL tableinator service
+
+**Test Configuration**:
+
+- **pytest.ini_options**: Configured in pyproject.toml with pythonpath, asyncio mode, and test discovery
+- **Fixtures**: Common fixtures for AMQP, Neo4j, and PostgreSQL mocking
+- **Environment**: Test environment variables automatically set by conftest.py
+- **Coverage**: Configured to track all service modules, excluding test files
 
 ### Running Services
 
@@ -122,16 +154,26 @@ Each service can be built independently (uses root context due to shared depende
 ## Modern Python Features Used
 
 - **Python 3.13**: Requires latest Python with cutting-edge type hints and performance improvements
-- **uv package manager**: 10-100x faster than pip with built-in lock files
+- **uv package manager**: 10-100x faster than pip with built-in lock files and workspace support
 - **Workspace architecture**: Multi-service monorepo with shared dependencies (defined in `[tool.uv.workspace]`)
 - **Modern type annotations**: Uses Python 3.13 built-in generics (dict, list, tuple) instead of typing imports
-- **Dataclasses**: Used for configuration and data structures
-- **Pathlib**: Consistent path handling throughout
-- **Modern async**: Uses asyncio.Event() instead of deprecated patterns
-- **Structured logging**: JSON-structured logs with proper levels
-- **Exception handling**: Comprehensive error handling with retries
-- **Modern dependencies**: psycopg3, latest neo4j driver, orjson for performance
+- **Dataclasses**: Used for configuration and data structures with frozen=True for immutability
+- **Pathlib**: Consistent path handling throughout all services
+- **Modern async**: Uses asyncio.Event() and async/await patterns consistently
+- **Structured logging**: JSON-structured logs with emoji prefixes for visual clarity
+- **Exception handling**: Comprehensive error handling with retries and graceful degradation
+- **Modern dependencies**:
+  - psycopg3 with binary support for PostgreSQL
+  - Latest neo4j driver with async support
+  - orjson for high-performance JSON parsing
+  - aio-pika for async AMQP operations
 - **Python 3.13 features**: Enhanced performance, better error messages, and improved typing system
+- **Development tools**:
+  - Ruff for fast, comprehensive linting
+  - Black for consistent code formatting
+  - MyPy with strict mode for type safety
+  - Pytest with asyncio support for testing
+  - Pre-commit hooks for code quality
 
 ## Architecture Details
 
@@ -259,8 +301,13 @@ logger.warning("⚠️ Connection timeout, retrying...")
 
 - Always run from the project root.
 - Always fix all ruff and mypy errors before completing.
-- Run `uv run bandit -r .` to verify security compliance after changes.
+- Run `uv run bandit -r . -x "./.venv/*,./tests/*"` to verify security compliance after changes.
 - Scope pragmas for disabling rules to the affected lines. Avoid disabling rules for the entire file.
-- Always run `pre-commit run --all-files` once code changes are complete.
+- Always run `uv run pre-commit run --all-files` once code changes are complete.
 - All logger calls must include appropriate emojis with exactly one space after them.
 - For any github actions used in the github workflows, if the action is from github or docker using the version tag is fine, but for any other, use the sha with a comment of the version.
+- When updating dependencies, use `uv add` instead of manually editing pyproject.toml.
+- Run `uv sync --all-extras` after any dependency changes to update the lock file.
+- Use `# noqa` comments sparingly and only when absolutely necessary (e.g., `# noqa: S108` for test temp directories).
+- Prefer ruff's built-in formatter over running black separately.
+- Always ensure pytest tests can be run without manually setting PYTHONPATH (configured in pyproject.toml).

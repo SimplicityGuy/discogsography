@@ -157,6 +157,7 @@ def setup_logging(
         level=getattr(logging, level.upper()),
         format=f"%(asctime)s - {service_name} - %(name)s - %(levelname)s - %(message)s",
         handlers=handlers,
+        force=True,
     )
 
     # Suppress verbose pika logs

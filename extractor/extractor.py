@@ -26,7 +26,7 @@ from config import (
     ExtractorConfig,
     setup_logging,
 )
-from discogs import download_discogs_data
+from extractor.discogs import download_discogs_data
 
 
 if TYPE_CHECKING:

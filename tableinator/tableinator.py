@@ -32,29 +32,16 @@ from config import (
 
 logger = logging.getLogger(__name__)
 
-config = TableinatorConfig.from_env()
+# Config will be initialized in main
+config: TableinatorConfig | None = None
 
 # Progress tracking
 message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
 
-# Parse host and port from address
-if ":" in config.postgres_address:
-    host, port_str = config.postgres_address.split(":", 1)
-    port = int(port_str)
-else:
-    host = config.postgres_address
-    port = 5432
-
-# Connection parameters
-connection_params: dict[str, Any] = {
-    "host": str(host),
-    "port": int(port),
-    "dbname": str(config.postgres_database),
-    "user": str(config.postgres_username),
-    "password": str(config.postgres_password),
-}
+# Connection parameters will be initialized in main
+connection_params: dict[str, Any] = {}
 
 
 # Simple connection pool implementation
@@ -243,7 +230,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
 
 async def main() -> None:
-    global connection_pool
+    global connection_pool, config, connection_params
 
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
@@ -251,6 +238,30 @@ async def main() -> None:
 
     setup_logging("tableinator", log_file=Path("tableinator.log"))
     logger.info("🚀 Starting PostgreSQL tableinator service with connection pooling")
+
+    # Initialize configuration
+    try:
+        config = TableinatorConfig.from_env()
+    except ValueError as e:
+        logger.error(f"❌ Configuration error: {e}")
+        return
+
+    # Parse host and port from address
+    if ":" in config.postgres_address:
+        host, port_str = config.postgres_address.split(":", 1)
+        port = int(port_str)
+    else:
+        host = config.postgres_address
+        port = 5432
+
+    # Set connection parameters
+    connection_params = {
+        "host": str(host),
+        "port": int(port),
+        "dbname": str(config.postgres_database),
+        "user": str(config.postgres_username),
+        "password": str(config.postgres_password),
+    }
 
     # Initialize connection pool for concurrent access
     try:
