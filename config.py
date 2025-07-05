@@ -16,6 +16,7 @@ class ExtractorConfig:
     amqp_connection: str
     discogs_root: Path
     max_temp_size: int = int(1e9)  # 1000 MB
+    periodic_check_days: int = 15  # Default to 15 days
 
     @classmethod
     def from_env(cls) -> "ExtractorConfig":
@@ -26,9 +27,27 @@ class ExtractorConfig:
 
         discogs_root = Path(getenv("DISCOGS_ROOT", "/discogs-data"))
 
+        # Parse periodic check interval from environment
+        periodic_check_days = 15  # Default
+        periodic_check_env = getenv("PERIODIC_CHECK_DAYS")
+        if periodic_check_env:
+            try:
+                periodic_check_days = int(periodic_check_env)
+                if periodic_check_days < 1:
+                    logger.warning(
+                        f"Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days."
+                    )
+                    periodic_check_days = 15
+            except ValueError:
+                logger.warning(
+                    f"Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days."
+                )
+                periodic_check_days = 15
+
         return cls(
             amqp_connection=amqp_connection,
             discogs_root=discogs_root,
+            periodic_check_days=periodic_check_days,
         )
 
 

@@ -75,9 +75,24 @@ Each service can also run linting and type checking independently:
 
 ### Running Services
 
-- `uv run python extractor/extractor.py` - Run extractor service
+- `uv run python extractor/extractor.py` - Run extractor service (with periodic checks)
 - `uv run python graphinator/graphinator.py` - Run graphinator service
 - `uv run python tableinator/tableinator.py` - Run tableinator service
+
+#### Extractor Periodic Checks
+
+The extractor service now includes automatic periodic checking for new or updated Discogs data:
+
+- **Default interval**: 15 days
+- **Configurable via**: `PERIODIC_CHECK_DAYS` environment variable
+- **Behavior**: After initial processing, the service continues running and checks for updates
+- **Change detection**: Uses checksums and metadata to detect new versions or file changes
+
+Example: Run with custom check interval (e.g., daily checks):
+
+```bash
+PERIODIC_CHECK_DAYS=1 uv run python extractor/extractor.py
+```
 
 ### Docker
 
@@ -140,6 +155,7 @@ Uses modern dataclass-based configuration with environment variable validation:
 
 - `AMQP_CONNECTION`: RabbitMQ connection string
 - `DISCOGS_ROOT`: Path for downloaded files (default: /discogs-data)
+- `PERIODIC_CHECK_DAYS`: Interval for checking new Discogs data (default: 15 days)
 - `NEO4J_ADDRESS`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
 - `POSTGRES_ADDRESS`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`: PostgreSQL connection
 
@@ -213,3 +229,5 @@ The codebase passes all bandit security checks. Development utilities use proper
 - Always run from the project root.
 - Always fix all ruff and mypy errors before completing.
 - Run `uv run bandit -r .` to verify security compliance after changes.
+- Scope pragmas for disabling rules to the affected lines. Avoid disabling rules for the entire file.
+- Always run `pre-commit run --all-files` once code changes are complete.

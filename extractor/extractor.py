@@ -43,6 +43,8 @@ shutdown_requested = False
 extraction_progress = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 last_extraction_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
 
+# Periodic check configuration will be loaded from config
+
 
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
@@ -585,46 +587,26 @@ async def process_file_async(discogs_data_file: str, config: ExtractorConfig) ->
         raise
 
 
-async def main_async() -> None:
-    """Main async function with concurrent file processing."""
-    # Set up signal handlers for graceful shutdown
-    signal.signal(signal.SIGINT, signal_handler)
-    signal.signal(signal.SIGTERM, signal_handler)
+async def process_discogs_data(config: ExtractorConfig) -> bool:
+    """Process Discogs data files. Returns True if successful."""
+    global extraction_progress, last_extraction_time
 
-    try:
-        config = ExtractorConfig.from_env()
-    except ValueError as e:
-        print(f"Configuration error: {e}", file=sys.stderr)
-        sys.exit(1)
-
-    setup_logging("extractor", log_file=Path("extractor.log"))
-
-    print("    ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·      ")
-    print("    ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.      ")
-    print("    ▐█· ▐█▌▐█·▄▀▀▀█▄██ ▄▄ ▄█▀▄ ▄█ ▀█▄▄▀▀▀█▄     ")
-    print("    ██. ██ ▐█▌▐█▄▪▐█▐███▌▐█▌.▐▌▐█▄▪▐█▐█▄▪▐█     ")
-    print("    ▀▀▀▀▀• ▀▀▀ ▀▀▀▀ ·▀▀▀  ▀█▄▀▪·▀▀▀▀  ▀▀▀▀      ")
-    print("▄▄▄ .▐▄• ▄ ▄▄▄▄▄▄▄▄   ▄▄▄·  ▄▄· ▄▄▄▄▄      ▄▄▄  ")
-    print("▀▄.▀· █▌█▌▪•██  ▀▄ █·▐█ ▀█ ▐█ ▌▪•██  ▪     ▀▄ █·")
-    print("▐▀▀▪▄ ·██·  ▐█.▪▐▀▀▄ ▄█▀▀█ ██ ▄▄ ▐█.▪ ▄█▀▄ ▐▀▀▄ ")
-    print("▐█▄▄▌▪▐█·█▌ ▐█▌·▐█•█▌▐█ ▪▐▌▐███▌ ▐█▌·▐█▌.▐▌▐█•█▌")
-    print(" ▀▀▀ •▀▀ ▀▀ ▀▀▀ .▀  ▀ ▀  ▀ ·▀▀▀  ▀▀▀  ▀█▄▀▪.▀  ▀")
-    print()
-
-    logger.info("Starting Discogs data extractor with concurrent processing")
+    # Reset progress counters for new processing run
+    extraction_progress = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+    last_extraction_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
 
     try:
         discogs_data = download_discogs_data(str(config.discogs_root))
     except Exception as e:
         logger.error(f"Failed to download Discogs data: {e}")
-        sys.exit(1)
+        return False
 
     # Filter out checksum files
     data_files = [file for file in discogs_data if "CHECKSUM" not in file]
 
     if not data_files:
         logger.warning("⚠️ No data files to process")
-        return
+        return True
 
     # Process files concurrently with a semaphore to limit concurrent files
     semaphore = asyncio.Semaphore(3)  # Limit to 3 concurrent files
@@ -710,11 +692,117 @@ async def main_async() -> None:
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
                     logger.error(f"File {data_files[i]} failed: {result}")
+                    # Don't return False here - continue with periodic checks even if some files failed
         finally:
             # Cancel progress reporting
             progress_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await progress_task
+
+    return True
+
+
+async def periodic_check_loop(config: ExtractorConfig) -> None:
+    """Run periodic checks for new or updated files at configured interval."""
+    periodic_check_days = config.periodic_check_days
+    periodic_check_seconds = periodic_check_days * 24 * 60 * 60
+
+    logger.info(f"Starting periodic check loop (interval: {periodic_check_days} days)")
+
+    while True:
+        # Wait for the specified interval
+        logger.info(f"⏰ Waiting {periodic_check_days} days before next check...")
+
+        # Use shorter sleep intervals to check for shutdown more frequently
+        elapsed_seconds = 0
+        check_interval = 60  # Check every minute for shutdown
+
+        while elapsed_seconds < periodic_check_seconds:
+            if shutdown_requested:
+                logger.info("Shutdown requested during wait period")
+                return
+
+            await asyncio.sleep(min(check_interval, periodic_check_seconds - elapsed_seconds))
+            elapsed_seconds += check_interval
+
+            # Log progress every hour
+            if elapsed_seconds % 3600 == 0 and not shutdown_requested:
+                hours_elapsed = elapsed_seconds // 3600
+                hours_remaining = (periodic_check_seconds - elapsed_seconds) // 3600
+                logger.info(
+                    f"⏰ Periodic check timer: {hours_elapsed} hours elapsed, "
+                    f"{hours_remaining} hours remaining"
+                )
+
+        if shutdown_requested:
+            logger.info("Shutdown requested before periodic check")
+            return
+
+        # Perform the periodic check
+        logger.info("🔄 Starting periodic check for new or updated Discogs files...")
+        check_start_time = datetime.now()
+
+        try:
+            success = await process_discogs_data(config)
+            check_duration = datetime.now() - check_start_time
+
+            if success:
+                logger.info(
+                    f"✅ Periodic check completed successfully in {check_duration}. "
+                    f"Next check in {periodic_check_days} days."
+                )
+            else:
+                logger.error(
+                    f"❌ Periodic check failed after {check_duration}. "
+                    f"Will retry in {periodic_check_days} days."
+                )
+        except Exception as e:
+            logger.error(f"Error during periodic check: {e}")
+            logger.info(f"Will retry in {periodic_check_days} days.")
+
+
+async def main_async() -> None:
+    """Main async function with concurrent file processing and periodic checks."""
+    # Set up signal handlers for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+    signal.signal(signal.SIGTERM, signal_handler)
+
+    try:
+        config = ExtractorConfig.from_env()
+    except ValueError as e:
+        print(f"Configuration error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    setup_logging("extractor", log_file=Path("extractor.log"))
+
+    print("    ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·      ")
+    print("    ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.      ")
+    print("    ▐█· ▐█▌▐█·▄▀▀▀█▄██ ▄▄ ▄█▀▄ ▄█ ▀█▄▄▀▀▀█▄     ")
+    print("    ██. ██ ▐█▌▐█▄▪▐█▐███▌▐█▌.▐▌▐█▄▪▐█▐█▄▪▐█     ")
+    print("    ▀▀▀▀▀• ▀▀▀ ▀▀▀▀ ·▀▀▀  ▀█▄▀▪·▀▀▀▀  ▀▀▀▀      ")
+    print("▄▄▄ .▐▄• ▄ ▄▄▄▄▄▄▄▄   ▄▄▄·  ▄▄· ▄▄▄▄▄      ▄▄▄  ")
+    print("▀▄.▀· █▌█▌▪•██  ▀▄ █·▐█ ▀█ ▐█ ▌▪•██  ▪     ▀▄ █·")
+    print("▐▀▀▪▄ ·██·  ▐█.▪▐▀▀▄ ▄█▀▀█ ██ ▄▄ ▐█.▪ ▄█▀▄ ▐▀▀▄ ")
+    print("▐█▄▄▌▪▐█·█▌ ▐█▌·▐█•█▌▐█ ▪▐▌▐███▌ ▐█▌·▐█▌.▐▌▐█•█▌")
+    print(" ▀▀▀ •▀▀ ▀▀ ▀▀▀ .▀  ▀ ▀  ▀ ·▀▀▀  ▀▀▀  ▀█▄▀▪.▀  ▀")
+    print()
+
+    logger.info("Starting Discogs data extractor with concurrent processing and periodic checks")
+
+    # Process initial data
+    logger.info("📥 Starting initial data processing...")
+    initial_success = await process_discogs_data(config)
+
+    if not initial_success:
+        logger.error("Initial data processing failed")
+        sys.exit(1)
+
+    logger.info("✅ Initial data processing completed successfully")
+
+    # Start periodic check loop
+    if not shutdown_requested:
+        logger.info("🔄 Starting periodic check service...")
+        await periodic_check_loop(config)
 
     logger.info("Extractor service shutdown complete")
 

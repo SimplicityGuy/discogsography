@@ -104,6 +104,7 @@ def download_discogs_data(output_directory: str) -> list[str]:
 
     # Load metadata about previously downloaded files
     metadata = _load_metadata(output_path)
+    logger.info(f"Loaded metadata for {len(metadata)} previously downloaded files")
 
     bucket = "discogs-data-dumps"
     try:
@@ -135,8 +136,6 @@ def download_discogs_data(output_directory: str) -> list[str]:
                 existing_version = id
                 break
 
-        if existing_version:
-            logger.info(f"Version {id} already downloaded, checking if files are valid...")
         prefix = f"discogs_{id}"
         data = [
             f"{prefix}_CHECKSUM.txt",
@@ -149,6 +148,27 @@ def download_discogs_data(output_directory: str) -> list[str]:
         # Ensure that the Discogs export for `id` has all of the data, skipping if it doesn't.
         if len(ids[id]) != len(data):
             continue
+
+        if existing_version:
+            logger.info(f"Version {id} already downloaded, checking if files are valid...")
+            # Check if all files for this version exist with correct checksums
+            all_files_valid = True
+            for filename in data:
+                if "CHECKSUM" not in filename:
+                    if filename not in metadata:
+                        logger.info(f"Missing file {filename} from metadata for version {id}")
+                        all_files_valid = False
+                        break
+                    else:
+                        # Check if file exists on disk
+                        file_path = output_path / filename
+                        if not file_path.exists():
+                            logger.info(f"File {filename} missing from disk for version {id}")
+                            all_files_valid = False
+                            break
+
+            if all_files_valid:
+                logger.info(f"All files present for version {id}, will verify checksums...")
 
         # First, download the checksum file to get expected checksums
         checksum_file = None
@@ -295,6 +315,15 @@ def download_discogs_data(output_directory: str) -> list[str]:
         _save_metadata(output_path, new_metadata)
 
         logger.info(f"Successfully validated version {id}")
+
+        # Check if we're on a newer version than what was previously downloaded
+        previous_versions = {info.version for info in metadata.values()}
+        if previous_versions and id not in previous_versions:
+            logger.info(
+                f"🆕 Found newer version {id} (previously had: {sorted(previous_versions, reverse=True)[:1]})"
+            )
+        elif id in previous_versions:
+            logger.info(f"✅ Version {id} is up to date")
 
         # Since the most recent Discogs export has been validated, stop trying to find a complete export.
         return data
