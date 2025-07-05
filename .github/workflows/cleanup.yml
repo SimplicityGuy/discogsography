@@ -6,7 +6,7 @@ on:
     - cron: '0 0 15 * *'
 
 env:
-  IMAGE_NAME: ${{ github.actor }}/discogsography
+  REGISTRY: ghcr.io
 
 jobs:
   list-sub-projects:
@@ -41,6 +41,11 @@ jobs:
       packages: write
 
     steps:
+      - name: Set lowercase image name
+        id: image
+        run: |
+          echo "IMAGE_NAME=$(echo ${{ github.actor }}/discogsography | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Delete Docker images older than a month.
         id: cleanup-images
         uses: snok/container-retention-policy@4f22ef80902ad409ed55a99dc5133cc1250a0d03 # v3.0.0

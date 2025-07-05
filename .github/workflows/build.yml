@@ -14,7 +14,6 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.actor }}/discogsography
 
 jobs:
   list-sub-projects:
@@ -39,6 +38,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Set lowercase image name
+        id: image
+        run: |
+          echo "IMAGE_NAME=$(echo ${{ github.actor }}/discogsography | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Checkout repository.
         uses: actions/checkout@v4
 
@@ -119,6 +123,11 @@ jobs:
       packages: write
 
     steps:
+      - name: Set lowercase image name
+        id: image
+        run: |
+          echo "IMAGE_NAME=$(echo ${{ github.actor }}/discogsography | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+
       - name: Checkout repository.
         uses: actions/checkout@v4
         with:
