@@ -1,5 +1,6 @@
 """Tests for graphinator module."""
 
+import asyncio
 import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -239,8 +240,8 @@ class TestMain:
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.connect")
-    @patch("graphinator.graphinator.graph")
-    async def test_main_execution(self, mock_graph: MagicMock, mock_connect: AsyncMock) -> None:
+    @patch("graphinator.graphinator.GraphDatabase")
+    async def test_main_execution(self, mock_graph_db: MagicMock, mock_connect: AsyncMock) -> None:
         """Test successful main execution."""
         # Setup mocks
         mock_amqp = AsyncMock()
@@ -252,27 +253,41 @@ class TestMain:
         mock_queue = AsyncMock()
         mock_channel.declare_queue.return_value = mock_queue
 
-        # Mock Neo4j connectivity test
+        # Mock Neo4j driver and connectivity test
+        mock_driver = MagicMock()
+        mock_graph_db.driver.return_value = mock_driver
         mock_session = MagicMock()
-        mock_graph.session.return_value.__enter__.return_value = mock_session
+        mock_driver.session.return_value.__enter__.return_value = mock_session
         mock_session.run.return_value.single.return_value = {"test": 1}
 
-        # Set up the shutdown event to trigger immediately
-        with patch("graphinator.graphinator.shutdown_event") as mock_shutdown_event:
-            mock_shutdown_event.wait = AsyncMock(side_effect=[TimeoutError, None])
+        # Simulate shutdown by setting shutdown_requested
+        with patch("graphinator.graphinator.shutdown_requested", False):
+            # Create a mock task that can be properly awaited
+            async def mock_coro() -> None:
+                pass
 
-            # Simulate shutdown by raising KeyboardInterrupt
-            with (
-                patch("graphinator.graphinator.shutdown_requested", False),
-                patch("asyncio.sleep", AsyncMock(side_effect=KeyboardInterrupt)),
-                pytest.raises(KeyboardInterrupt),
-            ):
-                await main()
+            mock_task = asyncio.create_task(mock_coro())
+            mock_task.cancel()  # Pre-cancel it
+
+            with patch("asyncio.create_task", return_value=mock_task):
+                # Make the main loop exit after setup
+                async def mock_wait_for(coro: Any, timeout: float) -> None:  # noqa: ARG001
+                    # First call times out, second call sets shutdown_requested
+                    import graphinator.graphinator
+
+                    graphinator.graphinator.shutdown_requested = True
+                    raise TimeoutError()
+
+                with patch("asyncio.wait_for", mock_wait_for):
+                    await main()
 
         # Verify setup was performed
         mock_connect.assert_called_once()
         mock_channel.declare_exchange.assert_called_once()
         assert mock_channel.declare_queue.call_count == 4  # 4 data types
+
+        # Verify driver was closed
+        mock_driver.close.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.graph")

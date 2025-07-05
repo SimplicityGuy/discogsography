@@ -297,6 +297,46 @@ logger.error("❌ Failed to connect to database")
 logger.warning("⚠️ Connection timeout, retrying...")
 ```
 
+## GitHub Actions Caching
+
+The GitHub workflows implement comprehensive caching to speed up CI/CD:
+
+### Caching Strategies
+
+1. **uv Package Manager Cache**:
+
+   - Built-in caching via `enable-cache: true` in setup-uv action
+   - Additional cache for `~/.cache/uv` and `.venv` directories
+   - Cache key includes both `uv.lock` and `pyproject.toml` hashes
+
+1. **Pre-commit Hooks Cache**:
+
+   - Caches `~/.cache/pre-commit` directory
+   - Cache key based on `.pre-commit-config.yaml` hash
+
+1. **Pytest Cache**:
+
+   - Caches `.pytest_cache` directory
+   - Helps speed up test discovery and execution
+
+1. **Docker Build Cache**:
+
+   - Multiple cache sources: GitHub Actions cache, registry cache, local cache
+   - Registry-based cache stored as `:buildcache` tags
+   - Local cache in `/tmp/.buildx-cache` with proper rotation
+   - BuildKit inline cache enabled for layer caching
+
+1. **Arkade Tools Cache**:
+
+   - Caches `~/.arkade` directory for hadolint and other tools
+
+### Cache Configuration
+
+- All caches use restore keys for fallback to older caches
+- Docker caches use multiple sources for maximum hit rate
+- Cache rotation implemented to prevent unbounded growth
+- Platform-specific caches (Linux) for consistency
+
 ## Workflow Memories
 
 - Always run from the project root.
@@ -311,3 +351,4 @@ logger.warning("⚠️ Connection timeout, retrying...")
 - Use `# noqa` comments sparingly and only when absolutely necessary (e.g., `# noqa: S108` for test temp directories).
 - Prefer ruff's built-in formatter over running black separately.
 - Always ensure pytest tests can be run without manually setting PYTHONPATH (configured in pyproject.toml).
+- GitHub workflows implement comprehensive caching for dependencies, Docker builds, and tools.
