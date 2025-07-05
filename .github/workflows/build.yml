@@ -46,6 +46,8 @@ jobs:
         uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba # v6.3.1
         with:
           version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -58,9 +60,33 @@ jobs:
           path: |
             ~/.cache/uv
             .venv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-
+
+      - name: Cache pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pre-commit-
+
+      - name: Cache pytest
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: ${{ runner.os }}-pytest-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pytest-
+
+      - name: Cache arkade tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.arkade
+          key: ${{ runner.os }}-arkade-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-arkade-
 
       - name: Install arkade
         uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
@@ -115,6 +141,8 @@ jobs:
         uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba # v6.3.1
         with:
           version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -127,9 +155,18 @@ jobs:
           path: |
             ~/.cache/uv
             .venv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock') }}
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-
+
+      - name: Cache Docker layers
+        uses: actions/cache@v4
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ matrix.sub-project }}-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-${{ matrix.sub-project }}-
+            ${{ runner.os }}-buildx-
 
       - name: Generate uv.lock for Docker build
         run: uv sync --frozen
@@ -152,6 +189,9 @@ jobs:
         uses: docker/setup-buildx-action@v3
         with:
           platforms: linux/amd64, linux/arm64
+          driver-opts: |
+            image=moby/buildkit:latest
+            network=host
 
       - name: Build and push Docker image to GitHub Container Registry - discogsography/${{ matrix.sub-project }}.
         uses: docker/build-push-action@v6
@@ -164,8 +204,21 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true
           sbom: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: |
+            type=gha
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.sub-project }}:buildcache
+            type=local,src=/tmp/.buildx-cache
+          cache-to: |
+            type=gha,mode=max
+            type=registry,ref=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.sub-project }}:buildcache,mode=max
+            type=local,dest=/tmp/.buildx-cache-new,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+
+      - name: Move cache
+        run: |
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
       - name: Send notification to Discord.
         uses: sarisia/actions-status-discord@5ddd3b114a98457dd80a39b2f00b6a998cd69008 # v1.15.3
