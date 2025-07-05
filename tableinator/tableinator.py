@@ -126,7 +126,7 @@ shutdown_requested = False
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    logger.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
     shutdown_requested = True
 
 
@@ -144,16 +144,16 @@ def safe_execute_query(cursor: Any, query: Any, parameters: tuple[Any, ...]) -> 
         cursor.execute(query, parameters)
         return True
     except DatabaseError as e:
-        logger.error(f"Database error executing query: {e}")
+        logger.error(f"❌ Database error executing query: {e}")
         return False
     except Exception as e:
-        logger.error(f"Unexpected error executing query: {e}")
+        logger.error(f"❌ Unexpected error executing query: {e}")
         return False
 
 
 async def on_data_message(message: AbstractIncomingMessage) -> None:
     if shutdown_requested:
-        logger.info("Shutdown requested, rejecting new messages")
+        logger.info("🛑 Shutdown requested, rejecting new messages")
         await message.nack(requeue=True)
         return
 
@@ -167,7 +167,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             message_counts[data_type] += 1
             last_message_time[data_type] = time.time()
             if message_counts[data_type] % progress_interval == 0:
-                logger.info(f"Processed {message_counts[data_type]} {data_type} in PostgreSQL")
+                logger.info(f"📊 Processed {message_counts[data_type]} {data_type} in PostgreSQL")
 
         # Extract record details for logging
         record_name = None
@@ -187,7 +187,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             logger.debug(f"Processing {data_type[:-1]} ID={data_id}")
 
     except Exception as e:
-        logger.error(f"Failed to parse message: {e}")
+        logger.error(f"❌ Failed to parse message: {e}")
         await message.nack(requeue=False)
         return
 
@@ -235,7 +235,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
         logger.warning(f"⚠️ Database connection issue, will retry: {e}")
         await message.nack(requeue=True)
     except Exception as e:
-        logger.error(f"Failed to process {data_type} message: {e}")
+        logger.error(f"❌ Failed to process {data_type} message: {e}")
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
@@ -250,14 +250,14 @@ async def main() -> None:
     signal.signal(signal.SIGTERM, signal_handler)
 
     setup_logging("tableinator", log_file=Path("tableinator.log"))
-    logger.info("Starting PostgreSQL tableinator service with connection pooling")
+    logger.info("🚀 Starting PostgreSQL tableinator service with connection pooling")
 
     # Initialize connection pool for concurrent access
     try:
         connection_pool = SimpleConnectionPool(max_connections=20)
-        logger.info("Connection pool initialized (max 20 connections)")
+        logger.info("✅ Connection pool initialized (max 20 connections)")
     except Exception as e:
-        logger.error(f"Failed to initialize connection pool: {e}")
+        logger.error(f"❌ Failed to initialize connection pool: {e}")
         return
 
     # Initialize database tables
@@ -279,9 +279,9 @@ async def main() -> None:
                     ).format(table=sql.Identifier(table_name))
                 )
             # Autocommit is enabled, so tables are created immediately
-        logger.info("Database tables created/verified")
+        logger.info("✅ Database tables created/verified")
     except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
+        logger.error(f"❌ Failed to initialize database: {e}")
         if connection_pool:
             connection_pool.close()
         return
@@ -300,7 +300,7 @@ async def main() -> None:
     try:
         amqp_connection = await connect(config.amqp_connection)
     except AMQPConnectionError as e:
-        logger.error(f"Failed to connect to AMQP broker: {e}")
+        logger.error(f"❌ Failed to connect to AMQP broker: {e}")
         return
 
     async with amqp_connection:
@@ -408,7 +408,7 @@ async def main() -> None:
                     continue
 
         except KeyboardInterrupt:
-            logger.info("Received interrupt signal, shutting down gracefully")
+            logger.info("🛑 Received interrupt signal, shutting down gracefully")
         finally:
             # Cancel progress reporting
             progress_task.cancel()
@@ -419,7 +419,7 @@ async def main() -> None:
             try:
                 if connection_pool:
                     connection_pool.close()
-                    logger.info("Connection pool closed")
+                    logger.info("✅ Connection pool closed")
             except Exception as e:
                 logger.warning(f"⚠️ Error closing connection pool: {e}")
 
@@ -428,8 +428,8 @@ if __name__ == "__main__":
     try:
         run(main())
     except KeyboardInterrupt:
-        logger.info("Application interrupted")
+        logger.info("⚠️ Application interrupted")
     except Exception as e:
-        logger.error(f"Application error: {e}")
+        logger.error(f"❌ Application error: {e}")
     finally:
-        logger.info("Tableinator service shutdown complete")
+        logger.info("✅ Tableinator service shutdown complete")

@@ -51,7 +51,7 @@ shutdown_requested = False
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    logger.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
     shutdown_requested = True
 
 
@@ -74,16 +74,16 @@ def safe_execute_query(session: Any, query: str, parameters: dict[str, Any]) -> 
         session.run(query, parameters)
         return True
     except Neo4jError as e:
-        logger.error(f"Neo4j error executing query: {e}")
+        logger.error(f"❌ Neo4j error executing query: {e}")
         return False
     except Exception as e:
-        logger.error(f"Unexpected error executing query: {e}")
+        logger.error(f"❌ Unexpected error executing query: {e}")
         return False
 
 
 async def on_artist_message(message: AbstractIncomingMessage) -> None:
     if shutdown_requested:
-        logger.info("Shutdown requested, rejecting new messages")
+        logger.info("🛑 Shutdown requested, rejecting new messages")
         await message.nack(requeue=True)
         return
 
@@ -97,7 +97,7 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         message_counts["artists"] += 1
         last_message_time["artists"] = time.time()
         if message_counts["artists"] % progress_interval == 0:
-            logger.info(f"Processed {message_counts['artists']} artists in Neo4j")
+            logger.info(f"📊 Processed {message_counts['artists']} artists in Neo4j")
 
         logger.debug(f"Received artist message ID={artist_id}: {artist_name}")
 
@@ -201,14 +201,14 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                 else:
                     logger.debug(f"Skipped artist ID={artist_id} (no changes needed)")
         except Exception as neo4j_error:
-            logger.error(f"Neo4j error processing artist ID={artist_id}: {neo4j_error}")
+            logger.error(f"❌ Neo4j error processing artist ID={artist_id}: {neo4j_error}")
             raise
 
         logger.debug(f"Acknowledging artist message ID={artist_id}")
         await message.ack()
         logger.debug(f"Completed artist message ID={artist_id}")
     except Exception as e:
-        logger.error(f"Failed to process artist message ID={artist_id}: {e}")
+        logger.error(f"❌ Failed to process artist message ID={artist_id}: {e}")
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
@@ -217,7 +217,7 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
 
 async def on_label_message(message: AbstractIncomingMessage) -> None:
     if shutdown_requested:
-        logger.info("Shutdown requested, rejecting new messages")
+        logger.info("🛑 Shutdown requested, rejecting new messages")
         await message.nack(requeue=True)
         return
 
@@ -231,7 +231,7 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         message_counts["labels"] += 1
         last_message_time["labels"] = time.time()
         if message_counts["labels"] % progress_interval == 0:
-            logger.info(f"Processed {message_counts['labels']} labels in Neo4j")
+            logger.info(f"📊 Processed {message_counts['labels']} labels in Neo4j")
 
         logger.debug(f"Processing label ID={label_id}: {label_name}")
 
@@ -301,7 +301,7 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
 
         await message.ack()
     except Exception as e:
-        logger.error(f"Failed to process label message: {e}")
+        logger.error(f"❌ Failed to process label message: {e}")
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
@@ -310,7 +310,7 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
 
 async def on_master_message(message: AbstractIncomingMessage) -> None:
     if shutdown_requested:
-        logger.info("Shutdown requested, rejecting new messages")
+        logger.info("🛑 Shutdown requested, rejecting new messages")
         await message.nack(requeue=True)
         return
 
@@ -324,7 +324,7 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         message_counts["masters"] += 1
         last_message_time["masters"] = time.time()
         if message_counts["masters"] % progress_interval == 0:
-            logger.info(f"Processed {message_counts['masters']} masters in Neo4j")
+            logger.info(f"📊 Processed {message_counts['masters']} masters in Neo4j")
 
         logger.debug(f"Processing master ID={master_id}: {master_title}")
 
@@ -430,7 +430,7 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
 
         await message.ack()
     except Exception as e:
-        logger.error(f"Failed to process master message: {e}")
+        logger.error(f"❌ Failed to process master message: {e}")
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
@@ -439,7 +439,7 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
 
 async def on_release_message(message: AbstractIncomingMessage) -> None:
     if shutdown_requested:
-        logger.info("Shutdown requested, rejecting new messages")
+        logger.info("🛑 Shutdown requested, rejecting new messages")
         await message.nack(requeue=True)
         return
 
@@ -453,7 +453,7 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         message_counts["releases"] += 1
         last_message_time["releases"] = time.time()
         if message_counts["releases"] % progress_interval == 0:
-            logger.info(f"Processed {message_counts['releases']} releases in Neo4j")
+            logger.info(f"📊 Processed {message_counts['releases']} releases in Neo4j")
 
         logger.debug(f"Processing release ID={release_id}: {release_title}")
 
@@ -590,7 +590,7 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         await message.ack()
         logger.debug(f"Stored release ID={release_id} in Neo4j")
     except Exception as e:
-        logger.error(f"Failed to process release message: {e}")
+        logger.error(f"❌ Failed to process release message: {e}")
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
@@ -603,17 +603,17 @@ async def main() -> None:
     signal.signal(signal.SIGTERM, signal_handler)
 
     setup_logging("graphinator", log_file=Path("graphinator.log"))
-    logger.info("Starting Neo4j graphinator service")
+    logger.info("🚀 Starting Neo4j graphinator service")
 
     # Test Neo4j connectivity
     try:
         with graph.session(database="neo4j") as session:
             result = session.run("RETURN 1 as test")
             result.single()
-            logger.info("Neo4j connectivity verified")
+            logger.info("✅ Neo4j connectivity verified")
 
             # Create indexes for better performance
-            logger.info("Creating Neo4j indexes...")
+            logger.info("🔧 Creating Neo4j indexes...")
             constraints_to_create = [
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (a:Artist) REQUIRE a.id IS UNIQUE",
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (l:Label) REQUIRE l.id IS UNIQUE",
@@ -625,15 +625,15 @@ async def main() -> None:
                 try:
                     session.run(constraint)
                     logger.info(
-                        f"Created/verified constraint: {constraint.split('FOR')[1].split('REQUIRE')[0].strip()}"
+                        f"✅ Created/verified constraint: {constraint.split('FOR')[1].split('REQUIRE')[0].strip()}"
                     )
                 except Exception as constraint_error:
-                    logger.warning(f"Constraint creation note: {constraint_error}")
+                    logger.warning(f"⚠️ Constraint creation note: {constraint_error}")
 
-            logger.info("Neo4j indexes setup complete")
+            logger.info("✅ Neo4j indexes setup complete")
 
     except Exception as e:
-        logger.error(f"Failed to connect to Neo4j: {e}")
+        logger.error(f"❌ Failed to connect to Neo4j: {e}")
         return
     print("        ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·           ")
     print("        ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.           ")
@@ -650,7 +650,7 @@ async def main() -> None:
     try:
         amqp_connection = await connect(config.amqp_connection)
     except AMQPConnectionError as e:
-        logger.error(f"Failed to connect to AMQP broker: {e}")
+        logger.error(f"❌ Failed to connect to AMQP broker: {e}")
         return
 
     async with amqp_connection:
@@ -731,9 +731,9 @@ async def main() -> None:
                             max_connection_pool_size=50,
                             connection_acquisition_timeout=60.0,
                         )
-                        logger.info("Graph database driver reconnected")
+                        logger.info("✅ Graph database driver reconnected")
                     except Exception as reconnect_error:
-                        logger.error(f"Failed to reconnect graph database: {reconnect_error}")
+                        logger.error(f"❌ Failed to reconnect graph database: {reconnect_error}")
 
                 # Always show progress, even if no messages processed yet
                 logger.info(
@@ -777,7 +777,7 @@ async def main() -> None:
                     continue
 
         except KeyboardInterrupt:
-            logger.info("Received interrupt signal, shutting down gracefully")
+            logger.info("🛑 Received interrupt signal, shutting down gracefully")
         finally:
             # Cancel progress reporting
             progress_task.cancel()
@@ -787,7 +787,7 @@ async def main() -> None:
             # Close Neo4j driver
             try:
                 graph.close()
-                logger.info("Neo4j driver closed")
+                logger.info("✅ Neo4j driver closed")
             except Exception as e:
                 logger.warning(f"⚠️ Error closing Neo4j driver: {e}")
 
@@ -796,8 +796,8 @@ if __name__ == "__main__":
     try:
         run(main())
     except KeyboardInterrupt:
-        logger.info("Application interrupted")
+        logger.info("⚠️ Application interrupted")
     except Exception as e:
-        logger.error(f"Application error: {e}")
+        logger.error(f"❌ Application error: {e}")
     finally:
-        logger.info("Graphinator service shutdown complete")
+        logger.info("✅ Graphinator service shutdown complete")

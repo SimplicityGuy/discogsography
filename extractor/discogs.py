@@ -81,7 +81,7 @@ def _calculate_file_checksum(file_path: Path) -> str | None:
                 hash_obj.update(byte_block)
         return hash_obj.hexdigest()
     except Exception as e:
-        logger.error(f"Failed to calculate checksum for {file_path}: {e}")
+        logger.error(f"❌ Failed to calculate checksum for {file_path}: {e}")
         return None
 
 
@@ -98,13 +98,13 @@ def _validate_existing_file(file_path: Path, expected_checksum: str) -> bool:
 
 
 def download_discogs_data(output_directory: str) -> list[str]:
-    logger.info("Starting download of most recent Discogs data")
+    logger.info("📥 Starting download of most recent Discogs data")
     output_path = Path(output_directory)
     output_path.mkdir(parents=True, exist_ok=True)
 
     # Load metadata about previously downloaded files
     metadata = _load_metadata(output_path)
-    logger.info(f"Loaded metadata for {len(metadata)} previously downloaded files")
+    logger.info(f"📋 Loaded metadata for {len(metadata)} previously downloaded files")
 
     bucket = "discogs-data-dumps"
     try:
@@ -114,7 +114,7 @@ def download_discogs_data(output_directory: str) -> list[str]:
         if not contents:
             raise ValueError("No contents found in S3 bucket")
     except Exception as e:
-        logger.error(f"Failed to connect to S3 or fetch data: {e}")
+        logger.error(f"❌ Failed to connect to S3 or fetch data: {e}")
         raise
 
     ids: dict[str, list[S3FileInfo]] = {}
@@ -150,25 +150,25 @@ def download_discogs_data(output_directory: str) -> list[str]:
             continue
 
         if existing_version:
-            logger.info(f"Version {id} already downloaded, checking if files are valid...")
+            logger.info(f"🔍 Version {id} already downloaded, checking if files are valid...")
             # Check if all files for this version exist with correct checksums
             all_files_valid = True
             for filename in data:
                 if "CHECKSUM" not in filename:
                     if filename not in metadata:
-                        logger.info(f"Missing file {filename} from metadata for version {id}")
+                        logger.info(f"⚠️ Missing file {filename} from metadata for version {id}")
                         all_files_valid = False
                         break
                     else:
                         # Check if file exists on disk
                         file_path = output_path / filename
                         if not file_path.exists():
-                            logger.info(f"File {filename} missing from disk for version {id}")
+                            logger.info(f"⚠️ File {filename} missing from disk for version {id}")
                             all_files_valid = False
                             break
 
             if all_files_valid:
-                logger.info(f"All files present for version {id}, will verify checksums...")
+                logger.info(f"✅ All files present for version {id}, will verify checksums...")
 
         # First, download the checksum file to get expected checksums
         checksum_file = None
@@ -186,13 +186,13 @@ def download_discogs_data(output_directory: str) -> list[str]:
 
         # Download checksum file first
         checksum_path = output_path / Path(checksum_file.name).name
-        logger.info(f"Downloading checksum file: {Path(checksum_file.name).name}")
+        logger.info(f"⬇️ Downloading checksum file: {Path(checksum_file.name).name}")
 
         try:
             with checksum_path.open("wb") as download_file:
                 s3.download_fileobj(bucket, checksum_file.name, download_file)
         except Exception as e:
-            logger.error(f"Failed to download checksum file: {e}")
+            logger.error(f"❌ Failed to download checksum file: {e}")
             continue
 
         # Parse expected checksums
@@ -203,7 +203,7 @@ def download_discogs_data(output_directory: str) -> list[str]:
                     if len(parts) >= 2:
                         expected_checksums[parts[1]] = parts[0]
         except Exception as e:
-            logger.error(f"Failed to parse checksum file: {e}")
+            logger.error(f"❌ Failed to parse checksum file: {e}")
             continue
 
         # Check which files need to be downloaded
@@ -226,14 +226,14 @@ def download_discogs_data(output_directory: str) -> list[str]:
             # Check if file exists and has correct checksum
             if _validate_existing_file(file_path, expected_checksum):
                 logger.info(
-                    f"File {filename} already exists with correct checksum, skipping download"
+                    f"✅ File {filename} already exists with correct checksum, skipping download"
                 )
                 checksums[filename] = expected_checksum
             else:
                 if file_path.exists():
-                    logger.info(f"File {filename} exists but checksum mismatch, will re-download")
+                    logger.info(f"⚠️ File {filename} exists but checksum mismatch, will re-download")
                 else:
-                    logger.info(f"File {filename} does not exist, will download")
+                    logger.info(f"📄 File {filename} does not exist, will download")
                 files_to_download.append(s3file)
 
         # Download only the files that need downloading
@@ -264,7 +264,7 @@ def download_discogs_data(output_directory: str) -> list[str]:
                 try:
                     s3.download_fileobj(bucket, s3file.name, download_file, Callback=progress(t))
                 except Exception as e:
-                    logger.error(f"Failed to download {s3file.name}: {e}")
+                    logger.error(f"❌ Failed to download {s3file.name}: {e}")
                     raise
 
             # Calculate checksum for downloaded file
@@ -272,7 +272,7 @@ def download_discogs_data(output_directory: str) -> list[str]:
             if calculated_checksum:
                 checksums[filename] = calculated_checksum
             else:
-                logger.error(f"Failed to calculate checksum for {filename}")
+                logger.error(f"❌ Failed to calculate checksum for {filename}")
                 raise ValueError(f"Checksum calculation failed for {filename}")
 
         # Verify all checksums
@@ -314,7 +314,7 @@ def download_discogs_data(output_directory: str) -> list[str]:
         # Save updated metadata
         _save_metadata(output_path, new_metadata)
 
-        logger.info(f"Successfully validated version {id}")
+        logger.info(f"✅ Successfully validated version {id}")
 
         # Check if we're on a newer version than what was previously downloaded
         previous_versions = {info.version for info in metadata.values()}

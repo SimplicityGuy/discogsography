@@ -7,7 +7,7 @@ name = "discogsography-graphinator"
 version = "0.1.0"
 description = "Discogs data Neo4j graph service"
 authors = [{name = "Robert Simmons", email = "robert@simplicityguy.com"}]
-readme = "../README.md"
+# readme = "../README.md"  # Commented out as it's outside the package directory
 requires-python = ">=3.13"
 classifiers = [
     "Development Status :: 3 - Alpha",

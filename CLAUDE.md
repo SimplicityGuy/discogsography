@@ -224,6 +224,37 @@ The codebase passes all bandit security checks. Development utilities use proper
 - Environment variables override all hardcoded defaults
 - No user input is passed to subprocess commands
 
+## Logging Conventions
+
+All logger calls must follow the project's emoji pattern for visual consistency:
+
+- **Format**: `logger.[info|warning|error]("emoji message")` with exactly one space after the emoji
+- **Emoji usage**:
+  - 🚀 for startup messages
+  - ✅ for success/completion messages
+  - ❌ for errors
+  - ⚠️ for warnings
+  - 🛑 for shutdown/stop messages
+  - 📊 for progress/statistics
+  - 📥 for downloads
+  - ⬇️ for downloading files
+  - 🔄 for processing operations
+  - ⏳ for waiting/pending
+  - 📋 for metadata operations
+  - 🔍 for checking/searching
+  - 📄 for file operations
+  - 🆕 for new versions
+  - ⏰ for periodic operations
+  - 🔧 for setup/configuration
+
+**Examples**:
+
+```python
+logger.info("🚀 Starting service...")
+logger.error("❌ Failed to connect to database")
+logger.warning("⚠️ Connection timeout, retrying...")
+```
+
 ## Workflow Memories
 
 - Always run from the project root.
@@ -231,3 +262,5 @@ The codebase passes all bandit security checks. Development utilities use proper
 - Run `uv run bandit -r .` to verify security compliance after changes.
 - Scope pragmas for disabling rules to the affected lines. Avoid disabling rules for the entire file.
 - Always run `pre-commit run --all-files` once code changes are complete.
+- All logger calls must include appropriate emojis with exactly one space after them.
+- For any github actions used in the github workflows, if the action is from github or docker using the version tag is fine, but for any other, use the sha with a comment of the version.

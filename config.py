@@ -35,12 +35,12 @@ class ExtractorConfig:
                 periodic_check_days = int(periodic_check_env)
                 if periodic_check_days < 1:
                     logger.warning(
-                        f"Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days."
+                        f"⚠️ Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days."
                     )
                     periodic_check_days = 15
             except ValueError:
                 logger.warning(
-                    f"Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days."
+                    f"⚠️ Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days."
                 )
                 periodic_check_days = 15
 
@@ -167,4 +167,4 @@ def setup_logging(
     logging.getLogger("pika.adapters.blocking_connection").setLevel(logging.WARNING)
     logging.getLogger("pika.connection").setLevel(logging.WARNING)
 
-    logger.info(f"Logging configured for {service_name}")
+    logger.info(f"✅ Logging configured for {service_name}")

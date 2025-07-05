@@ -49,7 +49,7 @@ last_extraction_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+    logger.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
     shutdown_requested = True
 
 
@@ -149,7 +149,7 @@ class ConcurrentExtractor:
                 )
 
                 logger.info(
-                    f"Successfully connected to AMQP broker for {self.data_type} "
+                    f"✅ Successfully connected to AMQP broker for {self.data_type} "
                     f"(exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE})"
                 )
                 return self
@@ -160,12 +160,12 @@ class ConcurrentExtractor:
                     f"⚠️ AMQP connection failed (attempt {retry_count}/{MAX_RETRIES}): {e}"
                 )
                 if retry_count < MAX_RETRIES:
-                    logger.info(f"Retrying in {RETRY_DELAY} seconds...")
+                    logger.info(f"⏳ Retrying in {RETRY_DELAY} seconds...")
                     import time
 
                     time.sleep(RETRY_DELAY)
                 else:
-                    logger.error("Max retries exceeded for AMQP connection")
+                    logger.error("❌ Max retries exceeded for AMQP connection")
                     raise
 
         return self
@@ -181,19 +181,19 @@ class ConcurrentExtractor:
             try:
                 if not self.amqp_connection.is_closed:
                     self.amqp_connection.close()
-                logger.info("AMQP connection closed gracefully")
+                logger.info("✅ AMQP connection closed gracefully")
             except Exception as e:
                 logger.warning(f"⚠️ Error closing AMQP connection: {e}")
 
     async def extract_async(self) -> None:
         """Async extraction with concurrent record processing."""
-        logger.info(f"Starting extraction of {self.data_type} from {self.input_file}")
+        logger.info(f"🚀 Starting extraction of {self.data_type} from {self.input_file}")
         self.start_time = datetime.now()
 
         try:
             # Check if shutdown was requested before starting
             if shutdown_requested:
-                logger.info("Shutdown requested before extraction started")
+                logger.info("🛑 Shutdown requested before extraction started")
                 return
 
             # Initialize the queue and event loop reference in async context
@@ -233,17 +233,17 @@ class ConcurrentExtractor:
             try:
                 self._flush_pending_messages()
             except Exception as flush_error:
-                logger.error(f"Failed to flush final messages: {flush_error}")
+                logger.error(f"❌ Failed to flush final messages: {flush_error}")
 
         except KeyboardInterrupt:
-            logger.info("Extraction interrupted by user")
+            logger.info("⚠️ Extraction interrupted by user")
             try:
                 self._flush_pending_messages()
             except Exception as flush_error:
                 logger.warning(f"⚠️ Failed to flush messages during interrupt: {flush_error}")
             raise
         except Exception as e:
-            logger.error(f"Error during extraction: {e}")
+            logger.error(f"❌ Error during extraction: {e}")
             try:
                 self._flush_pending_messages()
             except Exception as flush_error:
@@ -279,7 +279,7 @@ class ConcurrentExtractor:
             with GzipFile(self.input_path.resolve()) as gz_file:
                 parse(gz_file, item_depth=2, item_callback=self.__queue_record)
         except Exception as e:
-            logger.error(f"Error parsing XML: {e}")
+            logger.error(f"❌ Error parsing XML: {e}")
             raise
 
     async def _process_records_async(self) -> None:
@@ -308,7 +308,7 @@ class ConcurrentExtractor:
                     break
                 continue
             except Exception as e:
-                logger.error(f"Error processing record: {e}")
+                logger.error(f"❌ Error processing record: {e}")
                 self.error_count += 1
 
     async def _amqp_flush_worker(self) -> None:
@@ -364,7 +364,7 @@ class ConcurrentExtractor:
         except Exception as e:
             self.error_count += 1
             record_id = data.get("id", "unknown")
-            logger.error(f"Error processing {self.data_type[:-1]} ID={record_id}: {e}")
+            logger.error(f"❌ Error processing {self.data_type[:-1]} ID={record_id}: {e}")
 
     def __queue_record(
         self, path: list[tuple[str, dict[str, Any] | None]], data: dict[str, Any]
@@ -390,7 +390,7 @@ class ConcurrentExtractor:
 
         # Check for shutdown signal
         if shutdown_requested:
-            logger.info("Shutdown requested, stopping extraction")
+            logger.info("🛑 Shutdown requested, stopping extraction")
             return False
 
         # Extract record details for logging
@@ -409,9 +409,9 @@ class ConcurrentExtractor:
 
         # Log only at debug level for individual records to reduce noise
         if record_name:
-            logger.debug(f"Processing {self.data_type[:-1]} ID={record_id}: {record_name}")
+            logger.debug(f"🔄 Processing {self.data_type[:-1]} ID={record_id}: {record_name}")
         else:
-            logger.debug(f"Processing {self.data_type[:-1]} ID={record_id}")
+            logger.debug(f"🔄 Processing {self.data_type[:-1]} ID={record_id}")
 
         try:
             # Queue the record for async processing
@@ -507,12 +507,12 @@ class ConcurrentExtractor:
                     exchange_type=AMQP_EXCHANGE_TYPE,
                 )
 
-                logger.info("AMQP connection re-established successfully")
+                logger.info("✅ AMQP connection re-established successfully")
 
             return True
 
         except Exception as e:
-            logger.error(f"Failed to establish AMQP connection: {e}")
+            logger.error(f"❌ Failed to establish AMQP connection: {e}")
             return False
 
     def _flush_pending_messages(self) -> None:
@@ -527,7 +527,7 @@ class ConcurrentExtractor:
 
         # Ensure connection is available
         if not self._ensure_amqp_connection():
-            logger.error("Cannot flush messages - AMQP connection unavailable")
+            logger.error("❌ Cannot flush messages - AMQP connection unavailable")
             # Put messages back if connection failed
             with self.pending_messages_lock:
                 self.pending_messages.extend(messages_to_send)
@@ -535,7 +535,7 @@ class ConcurrentExtractor:
 
         # After _ensure_amqp_connection(), channel should be available
         if self.amqp_channel is None:
-            logger.error("AMQP channel is None after connection check")
+            logger.error("❌ AMQP channel is None after connection check")
             # Put messages back if channel is not available
             with self.pending_messages_lock:
                 self.pending_messages.extend(messages_to_send)
@@ -556,13 +556,13 @@ class ConcurrentExtractor:
                     if published is False:
                         logger.warning("⚠️ Message was not routed properly")
                 except Exception as publish_error:
-                    logger.error(f"Failed to publish message: {publish_error}")
+                    logger.error(f"❌ Failed to publish message: {publish_error}")
                     raise
 
-            logger.debug(f"Flushed {len(messages_to_send)} messages to AMQP exchange")
+            logger.debug(f"✅ Flushed {len(messages_to_send)} messages to AMQP exchange")
 
         except Exception as e:
-            logger.error(f"Error flushing messages to AMQP: {e}")
+            logger.error(f"❌ Error flushing messages to AMQP: {e}")
             # Put messages back for retry
             with self.pending_messages_lock:
                 self.pending_messages.extend(messages_to_send)
@@ -583,7 +583,7 @@ async def process_file_async(discogs_data_file: str, config: ExtractorConfig) ->
         with extractor:
             await extractor.extract_async()
     except Exception as e:
-        logger.error(f"Failed to process {discogs_data_file}: {e}")
+        logger.error(f"❌ Failed to process {discogs_data_file}: {e}")
         raise
 
 
@@ -598,7 +598,7 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
     try:
         discogs_data = download_discogs_data(str(config.discogs_root))
     except Exception as e:
-        logger.error(f"Failed to download Discogs data: {e}")
+        logger.error(f"❌ Failed to download Discogs data: {e}")
         return False
 
     # Filter out checksum files
@@ -682,7 +682,7 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
     progress_task = asyncio.create_task(progress_reporter())
 
     if tasks:
-        logger.info(f"Processing {len(tasks)} files concurrently (max 3 at once)")
+        logger.info(f"🔄 Processing {len(tasks)} files concurrently (max 3 at once)")
 
         try:
             # Wait for all tasks to complete, handling exceptions gracefully
@@ -691,7 +691,7 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
             # Log any exceptions
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
-                    logger.error(f"File {data_files[i]} failed: {result}")
+                    logger.error(f"❌ File {data_files[i]} failed: {result}")
                     # Don't return False here - continue with periodic checks even if some files failed
         finally:
             # Cancel progress reporting
@@ -707,7 +707,7 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
     periodic_check_days = config.periodic_check_days
     periodic_check_seconds = periodic_check_days * 24 * 60 * 60
 
-    logger.info(f"Starting periodic check loop (interval: {periodic_check_days} days)")
+    logger.info(f"🔄 Starting periodic check loop (interval: {periodic_check_days} days)")
 
     while True:
         # Wait for the specified interval
@@ -719,7 +719,7 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
 
         while elapsed_seconds < periodic_check_seconds:
             if shutdown_requested:
-                logger.info("Shutdown requested during wait period")
+                logger.info("🛑 Shutdown requested during wait period")
                 return
 
             await asyncio.sleep(min(check_interval, periodic_check_seconds - elapsed_seconds))
@@ -735,7 +735,7 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
                 )
 
         if shutdown_requested:
-            logger.info("Shutdown requested before periodic check")
+            logger.info("🛑 Shutdown requested before periodic check")
             return
 
         # Perform the periodic check
@@ -757,8 +757,8 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
                     f"Will retry in {periodic_check_days} days."
                 )
         except Exception as e:
-            logger.error(f"Error during periodic check: {e}")
-            logger.info(f"Will retry in {periodic_check_days} days.")
+            logger.error(f"❌ Error during periodic check: {e}")
+            logger.info(f"⏳ Will retry in {periodic_check_days} days.")
 
 
 async def main_async() -> None:
@@ -767,13 +767,13 @@ async def main_async() -> None:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    setup_logging("extractor", log_file=Path("extractor.log"))
+
     try:
         config = ExtractorConfig.from_env()
     except ValueError as e:
-        print(f"Configuration error: {e}", file=sys.stderr)
+        logger.error(f"❌ Configuration error: {e}")
         sys.exit(1)
-
-    setup_logging("extractor", log_file=Path("extractor.log"))
 
     print("    ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·      ")
     print("    ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.      ")
@@ -787,14 +787,14 @@ async def main_async() -> None:
     print(" ▀▀▀ •▀▀ ▀▀ ▀▀▀ .▀  ▀ ▀  ▀ ·▀▀▀  ▀▀▀  ▀█▄▀▪.▀  ▀")
     print()
 
-    logger.info("Starting Discogs data extractor with concurrent processing and periodic checks")
+    logger.info("🚀 Starting Discogs data extractor with concurrent processing and periodic checks")
 
     # Process initial data
     logger.info("📥 Starting initial data processing...")
     initial_success = await process_discogs_data(config)
 
     if not initial_success:
-        logger.error("Initial data processing failed")
+        logger.error("❌ Initial data processing failed")
         sys.exit(1)
 
     logger.info("✅ Initial data processing completed successfully")
@@ -804,7 +804,7 @@ async def main_async() -> None:
         logger.info("🔄 Starting periodic check service...")
         await periodic_check_loop(config)
 
-    logger.info("Extractor service shutdown complete")
+    logger.info("✅ Extractor service shutdown complete")
 
 
 def main() -> None:
@@ -812,9 +812,9 @@ def main() -> None:
     try:
         asyncio.run(main_async())
     except KeyboardInterrupt:
-        logger.info("Extractor interrupted by user")
+        logger.info("⚠️ Extractor interrupted by user")
     except Exception as e:
-        logger.error(f"Extractor failed: {e}")
+        logger.error(f"❌ Extractor failed: {e}")
         sys.exit(1)
 
 
