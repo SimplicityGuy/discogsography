@@ -70,18 +70,6 @@ jobs:
         run: |
           uv run pre-commit run --all-files
 
-      - name: Run ruff
-        run: |
-          uv run ruff check .
-
-      - name: Run mypy
-        run: |
-          uv run mypy .
-
-      - name: Run bandit security analysis
-        run: |
-          uv run bandit -r .
-
       - name: Run tests with coverage
         run: |
           uv run pytest --cov
