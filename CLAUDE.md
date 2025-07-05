@@ -151,6 +151,23 @@ Each service can be built independently (uses root context due to shared depende
 - `docker build -f graphinator/Dockerfile .` - Build graphinator service
 - `docker build -f tableinator/Dockerfile .` - Build tableinator service
 
+#### Docker Build Optimizations
+
+The Dockerfiles implement several best practices:
+
+1. **Multi-stage builds** - Separate builder stage reduces final image size
+1. **BuildKit mount caching** - Uses `--mount=type=cache` for dependency caching
+1. **Security updates** - Applies latest security patches in each image
+1. **Non-root user** - Runs as UID/GID 1000 for consistency
+1. **Health checks** - Built-in health monitoring for container orchestration
+1. **Minimal layers** - Combines RUN commands to reduce layer count
+1. **.dockerignore** - Excludes unnecessary files from build context
+1. **Specific versions** - Pins uv version for reproducible builds
+1. **Proper Python setup** - Sets PYTHONUNBUFFERED and PYTHONDONTWRITEBYTECODE
+1. **Volume support** - Declares /discogs-data as volume for extractor
+1. **OCI-compliant labels** - Comprehensive metadata following OCI Image Spec
+1. **Dynamic build args** - Support for BUILD_DATE, BUILD_VERSION, and VCS_REF
+
 ## Modern Python Features Used
 
 - **Python 3.13**: Requires latest Python with cutting-edge type hints and performance improvements

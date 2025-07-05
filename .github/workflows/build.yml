@@ -223,6 +223,9 @@ jobs:
             type=local,dest=/tmp/.buildx-cache-new,mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
+            BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
+            BUILD_VERSION=${{ steps.meta.outputs.version }}
+            VCS_REF=${{ github.sha }}
 
       - name: Move cache
         run: |

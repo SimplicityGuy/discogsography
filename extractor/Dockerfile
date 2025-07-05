@@ -1,46 +1,96 @@
-FROM python:3.13-slim
-
-LABEL org.opencontainers.image.title="discogsography: discogs extractor" \
-      org.opencontainers.image.description="Downloads the latest discogs data, extracts all data, and pushes the data to AMQP." \
-      org.opencontainers.image.authors="robert@simplicityguy.com" \
-      org.opencontainers.image.source="https://github.com/SimplicityGuy/discogsography/blob/main/extractor/Dockerfile" \
-      org.opencontainers.image.licenses="MIT" \
-      org.opencontainers.image.created="$(date +'%Y-%m-%d')" \
-      org.opencontainers.image.base.name="docker.io/library/python:3.13-slim"
+# syntax=docker/dockerfile:1
+FROM python:3.13-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
 
-# Create user and directories
-RUN addgroup --system discogsography && \
-    adduser --system --group --home /home/discogsography discogsography && \
-    mkdir -p /discogs-data /home/discogsography/.cache/uv && \
-    chown -R discogsography:discogsography /discogs-data /home/discogsography
+# Set environment for build
+ENV UV_SYSTEM_PYTHON=1 \
+    UV_CACHE_DIR=/tmp/.cache/uv \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
 WORKDIR /app
 
-# Copy project files
-COPY --chown=discogsography:discogsography pyproject.toml config.py uv.lock ./
-COPY --chown=discogsography:discogsography extractor/*.py ./
+# Copy dependency files first for better caching
+COPY pyproject.toml uv.lock ./
 
-# Install dependencies with uv
-ENV UV_SYSTEM_PYTHON=1
-ENV UV_CACHE_DIR=/home/discogsography/.cache/uv
-RUN uv sync --frozen --no-dev --extra extractor && \
-    chown -R discogsography:discogsography .venv && \
-    touch extractor.log && chown discogsography:discogsography extractor.log && \
-    echo '#!/bin/bash' > /app/start.sh && \
-    echo "sleep \${STARTUP_DELAY:-0}" >> /app/start.sh && \
-    echo 'exec uv run python extractor.py "$@"' >> /app/start.sh && \
-    chmod +x /app/start.sh && \
-    chown discogsography:discogsography /app/start.sh
+# Install dependencies
+RUN --mount=type=cache,target=/tmp/.cache/uv \
+    uv sync --frozen --no-dev --extra extractor
+
+# Copy source files
+COPY config.py ./
+COPY extractor/ ./extractor/
+
+# Final stage
+FROM python:3.13-slim
+
+# Build arguments for dynamic labels
+ARG BUILD_DATE
+ARG BUILD_VERSION
+ARG VCS_REF
+
+# OCI Image Spec Annotations
+# https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.title="Discogsography Extractor" \
+      org.opencontainers.image.description="Downloads Discogs database exports from S3, validates checksums, extracts XML data, and publishes to AMQP message queues. Includes periodic checking for updates." \
+      org.opencontainers.image.authors="Robert Wlodarczyk <robert@simplicityguy.com>" \
+      org.opencontainers.image.url="https://github.com/SimplicityGuy/discogsography" \
+      org.opencontainers.image.documentation="https://github.com/SimplicityGuy/discogsography/blob/main/README.md" \
+      org.opencontainers.image.source="https://github.com/SimplicityGuy/discogsography" \
+      org.opencontainers.image.vendor="SimplicityGuy" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${BUILD_VERSION:-0.1.0}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.base.name="docker.io/library/python:3.13-slim" \
+      com.discogsography.service="extractor" \
+      com.discogsography.dependencies="boto3,xmltodict,pika" \
+      com.discogsography.python.version="3.13"
+
+# Install security updates
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create user and directories
+RUN groupadd -r -g 1000 discogsography && \
+    useradd -r -u 1000 -g discogsography -m -s /bin/bash discogsography && \
+    mkdir -p /discogs-data && \
+    chown -R discogsography:discogsography /discogs-data
+
+WORKDIR /app
+
+# Copy from builder
+COPY --from=builder --chown=discogsography:discogsography /app /app
+
+# Install uv for runtime
+COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
+
+# Create startup script
+# hadolint ignore=SC2016
+RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec uv run python -m extractor.extractor "$@"\n' > /app/start.sh && \
+    chmod +x /app/start.sh
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD pgrep -f "python.*extractor" > /dev/null || exit 1
 
 USER discogsography:discogsography
 
 # Environment variables
-ENV HOME=/home/discogsography
-ENV UV_NO_CACHE=1
-ENV AMQP_CONNECTION=""
-ENV DISCOGS_ROOT="/discogs-data"
+ENV HOME=/home/discogsography \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_SYSTEM_PYTHON=1 \
+    UV_NO_CACHE=1 \
+    PATH="/app/.venv/bin:$PATH" \
+    AMQP_CONNECTION="" \
+    DISCOGS_ROOT="/discogs-data" \
+    PERIODIC_CHECK_DAYS="15"
+
+VOLUME ["/discogs-data"]
 
 CMD ["/app/start.sh"]

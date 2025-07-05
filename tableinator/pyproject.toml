@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "discogsography-tableinator"
 version = "0.1.0"
 description = "Discogs data PostgreSQL table service"
-authors = [{name = "Robert Simmons", email = "robert@simplicityguy.com"}]
+authors = [{name = "Robert Wlodarczyk", email = "robert@simplicityguy.com"}]
 # readme = "../README.md"  # Commented out as it's outside the package directory
 requires-python = ">=3.13"
 classifiers = [
