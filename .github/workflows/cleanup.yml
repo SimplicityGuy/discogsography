@@ -21,7 +21,11 @@ jobs:
 
       - name: Get all sub-projects.
         id: set-matrix
-        run: echo "matrix=$(ls -d */ | sed -r 's/\///g' | jq -R -s -c 'split("\n")[:-1]')" >> $GITHUB_OUTPUT
+        run: |
+          # Only include actual service directories
+          services=("extractor" "graphinator" "tableinator")
+          matrix=$(printf '%s\n' "${services[@]}" | jq -R -s -c 'split("\n")[:-1]')
+          echo "matrix=$matrix" >> $GITHUB_OUTPUT
 
   cleanup-discogsography:
     needs: list-sub-projects
@@ -39,7 +43,7 @@ jobs:
     steps:
       - name: Delete Docker images older than a month.
         id: cleanup-images
-        uses: snok/container-retention-policy@b56f4ff7539c1f94f01e5dc726671cd619aa8072 # v2
+        uses: snok/container-retention-policy@4f22ef80902ad409ed55a99dc5133cc1250a0d03 # v3.0.0
         with:
           account-type: personal
           cut-off: One month ago UTC
@@ -49,7 +53,7 @@ jobs:
           token: ${{ secrets.GHCR_TOKEN }}
 
       - name: Send notification to Discord.
-        uses: sarisia/actions-status-discord@82409b29f4bd859ae6d4b6b6ab8d7f7b9c4d7b66 # v1.12.0
+        uses: sarisia/actions-status-discord@5ddd3b114a98457dd80a39b2f00b6a998cd69008 # v1.15.3
         if: always()
         with:
           title: discogsography/${{ matrix.sub-project }}
