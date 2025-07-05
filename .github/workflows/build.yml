@@ -62,6 +62,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-uv-
 
+      - name: Install arkade
+        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
+        with:
+          hadolint: latest
+
       - name: Install dependencies
         run: |
           uv sync --all-extras --frozen
