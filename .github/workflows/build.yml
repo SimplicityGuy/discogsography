@@ -13,8 +13,9 @@ on:
     - cron: "0 1 * * 6"
 
 env:
-  REGISTRY: ghcr.io
+  COMPOSE_VERSION: "v2.32.0"
   PYTHON_VERSION: "3.13"
+  REGISTRY: ghcr.io
 
 jobs:
   list-sub-projects:
@@ -97,6 +98,24 @@ jobs:
         uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
         with:
           hadolint: latest
+
+      - name: Cache docker-compose
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/bin/docker-compose
+          key: ${{ runner.os }}-docker-compose-${{ hashFiles('.github/workflows/build.yml') }}
+          restore-keys: |
+            ${{ runner.os }}-docker-compose-
+
+      - name: Install docker-compose
+        run: |
+          if ! command -v docker-compose &> /dev/null; then
+            echo "Installing docker-compose..."
+            sudo curl -L "https://github.com/docker/compose/releases/download/${{ env.COMPOSE_VERSION }}/docker-compose-$(uname -s)-$(uname -m)" \
+              -o /usr/local/bin/docker-compose
+            sudo chmod +x /usr/local/bin/docker-compose
+          fi
+          docker-compose --version
 
       - name: Install dependencies
         run: |
