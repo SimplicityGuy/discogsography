@@ -108,8 +108,26 @@ jobs:
   test-playwright:
     needs: [determine-tests]
     if: needs.determine-tests.outputs.run-playwright == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: E2E ${{ matrix.browser }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Just test core browsers for the test-all workflow
+          - os: ubuntu-latest
+            browser: chromium
+            browser-install: chromium
+
+          - os: ubuntu-latest
+            browser: firefox
+            browser-install: firefox
+
+          - os: macos-latest
+            browser: webkit
+            browser-install: webkit
 
     steps:
       - name: Checkout repository
@@ -141,8 +159,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .pytest_cache
-          key: ${{ runner.os }}-pytest-playwright-${{ github.sha }}
+          key: ${{ runner.os }}-pytest-playwright-${{ matrix.browser }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-pytest-playwright-${{ matrix.browser }}-
             ${{ runner.os }}-pytest-playwright-
             ${{ runner.os }}-pytest-
 
@@ -152,8 +171,9 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('**/pyproject.toml') }}
+          key: ${{ runner.os }}-playwright-${{ matrix.browser }}-${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
+            ${{ runner.os }}-playwright-${{ matrix.browser }}-
             ${{ runner.os }}-playwright-
 
       - name: Install dependencies
@@ -167,11 +187,11 @@ jobs:
         run: |
           # Set Playwright to run in CI mode
           export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
-          uv run playwright install chromium
-          # Install system dependencies for headless Chrome
-          uv run playwright install-deps chromium
+          uv run playwright install ${{ matrix.browser-install }}
+          # Install system dependencies
+          uv run playwright install-deps ${{ matrix.browser-install }}
 
       - name: Run dashboard E2E tests
         run: |
           # Run E2E tests - server is started automatically by pytest fixture
-          uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e --browser chromium
+          uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e --browser ${{ matrix.browser }}

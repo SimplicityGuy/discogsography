@@ -31,9 +31,38 @@ env:
 
 jobs:
   playwright-test:
-    name: Test Playwright
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+    name: Test ${{ matrix.browser }} ${{ matrix.device && format('- {0}', matrix.device) || '' }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Desktop browsers
+          - os: ubuntu-latest
+            browser: chromium
+            browser-install: chromium
+
+          - os: ubuntu-latest
+            browser: firefox
+            browser-install: firefox
+
+          - os: macos-latest
+            browser: webkit
+            browser-install: webkit
+
+          # Mobile Safari on iPhone
+          - os: macos-latest
+            browser: webkit
+            browser-install: webkit
+            device: "iPhone 15"
+
+          # Mobile Safari on iPad
+          - os: macos-latest
+            browser: webkit
+            browser-install: webkit
+            device: "iPad Pro 11"
 
     steps:
       - name: Checkout repository
@@ -65,8 +94,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .pytest_cache
-          key: ${{ runner.os }}-pytest-playwright-${{ github.sha }}
+          key: ${{ runner.os }}-pytest-playwright-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-pytest-playwright-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-
             ${{ runner.os }}-pytest-playwright-
             ${{ runner.os }}-pytest-
 
@@ -76,8 +106,9 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('**/pyproject.toml') }}
+          key: ${{ runner.os }}-playwright-${{ matrix.browser }}-${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
+            ${{ runner.os }}-playwright-${{ matrix.browser }}-
             ${{ runner.os }}-playwright-
 
       - name: Install dependencies
@@ -91,11 +122,37 @@ jobs:
         run: |
           # Set Playwright to run in CI mode
           export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
-          uv run playwright install chromium
-          # Install system dependencies for headless Chrome
-          uv run playwright install-deps chromium
+          uv run playwright install ${{ matrix.browser-install }}
+          # Install system dependencies
+          uv run playwright install-deps ${{ matrix.browser-install }}
 
-      - name: Run dashboard E2E tests
+      - name: Run dashboard E2E tests (Desktop)
+        if: matrix.device == null
         run: |
           # Run E2E tests - server is started automatically by pytest fixture
-          uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e --browser chromium
+          uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e \
+            --browser ${{ matrix.browser }}
+
+      - name: Run dashboard E2E tests (Mobile)
+        if: matrix.device != null
+        run: |
+          # Run E2E tests with device emulation
+          uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e \
+            --browser ${{ matrix.browser }} \
+            --device "${{ matrix.device }}"
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results-${{ matrix.os }}-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}
+          path: test-results/
+          retention-days: 7
+
+      - name: Upload test videos
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-videos-${{ matrix.os }}-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}
+          path: test-results/**/*.webm
+          retention-days: 7

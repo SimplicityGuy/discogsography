@@ -62,6 +62,8 @@ def browser_context_args(browser_context_args: dict[str, Any]) -> dict[str, Any]
         "ignore_https_errors": True,
         "locale": "en-US",
         "timezone_id": "UTC",
+        "record_video_dir": "test-results/videos",
+        "record_video_size": {"width": 1280, "height": 720},
     }
 
 
