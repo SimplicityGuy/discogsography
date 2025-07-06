@@ -70,8 +70,8 @@ RUN apt-get update && \
 # Create user and directories with configurable UID/GID
 RUN groupadd -r -g ${GID} discogsography && \
     useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
-    mkdir -p /tmp /app /discogs-data && \
-    chown -R discogsography:discogsography /tmp /app /discogs-data
+    mkdir -p /tmp /app /discogs-data /logs && \
+    chown -R discogsography:discogsography /tmp /app /discogs-data /logs
 
 WORKDIR /app
 
@@ -103,7 +103,7 @@ ENV HOME=/home/discogsography \
     DISCOGS_ROOT="/discogs-data" \
     PERIODIC_CHECK_DAYS="15"
 
-VOLUME ["/discogs-data"]
+VOLUME ["/discogs-data", "/logs"]
 
 # Security: This container should be run with:
 # docker run --cap-drop=ALL --security-opt=no-new-privileges:true ...

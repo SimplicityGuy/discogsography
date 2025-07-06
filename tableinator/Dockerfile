@@ -73,8 +73,8 @@ RUN apt-get update && \
 # Create user and directories with configurable UID/GID
 RUN groupadd -r -g ${GID} discogsography && \
     useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
-    mkdir -p /tmp /app && \
-    chown -R discogsography:discogsography /tmp /app
+    mkdir -p /tmp /app /logs && \
+    chown -R discogsography:discogsography /tmp /app /logs
 
 WORKDIR /app
 
@@ -107,6 +107,9 @@ ENV HOME=/home/discogsography \
     POSTGRES_USERNAME="" \
     POSTGRES_PASSWORD="" \
     POSTGRES_DATABASE=""
+
+# Declare volume for logs
+VOLUME ["/logs"]
 
 # Security: This container should be run with:
 # docker run --cap-drop=ALL --security-opt=no-new-privileges:true ...
