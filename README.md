@@ -61,9 +61,9 @@ Discogsography consists of four microservices that work together to process and 
 - **Concurrent Processing**: Multi-threaded XML parsing and concurrent message processing
 - **Fault Tolerance**: Message acknowledgment, automatic retries, and graceful shutdown
 - **Progress Tracking**: Real-time progress monitoring with detailed statistics
-- **Docker Support**: Full Docker Compose setup for easy deployment
+- **Docker Support**: Full Docker Compose setup with security hardening (non-root, read-only filesystems, capability dropping) - see [DOCKER_SECURITY.md](DOCKER_SECURITY.md) and [DOCKERFILE_STANDARDS.md](DOCKERFILE_STANDARDS.md)
 - **Type Safety**: Comprehensive type hints and mypy validation
-- **Security**: Bandit security scanning and secure coding practices
+- **Security**: Bandit security scanning, secure coding practices, and container security best practices
 
 ## Quick Start
 
@@ -290,8 +290,28 @@ uv run pre-commit run --all-files
 Run the test suite:
 
 ```bash
-uv run pytest
-uv run pytest --cov  # with coverage
+uv run pytest                    # Run all tests
+uv run pytest --cov              # Run with coverage report
+uv run pytest -m "not e2e"       # Run all tests except E2E
+uv run pytest tests/dashboard/   # Run dashboard tests only
+```
+
+For E2E tests with Playwright:
+
+```bash
+# One-time setup
+uv run playwright install chromium        # Install browser
+uv run playwright install-deps chromium   # Install system dependencies
+
+# Run E2E tests (starts test server automatically)
+./scripts/test-e2e.sh
+
+# Or manually:
+# Terminal 1: Start test dashboard
+uv run python -m uvicorn tests.dashboard.dashboard_test_app:create_test_app --factory --host 127.0.0.1 --port 8003
+
+# Terminal 2: Run E2E tests
+uv run pytest tests/dashboard/test_dashboard_ui.py -m e2e
 ```
 
 ### Project Structure
@@ -501,4 +521,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - **Issues**: [GitHub Issues](https://github.com/SimplicityGuy/discogsography/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/SimplicityGuy/discogsography/discussions)
-- **Documentation**: See [CLAUDE.md](CLAUDE.md) for detailed technical documentation
+- **Documentation**:
+  - [CLAUDE.md](CLAUDE.md) - Detailed technical documentation for development
+  - [DOCKER_SECURITY.md](DOCKER_SECURITY.md) - Container security best practices
+  - [DOCKERFILE_STANDARDS.md](DOCKERFILE_STANDARDS.md) - Dockerfile implementation standards
