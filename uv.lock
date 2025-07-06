@@ -277,6 +277,7 @@ all = [
 dashboard = [
     { name = "fastapi" },
     { name = "httpx" },
+    { name = "neo4j" },
     { name = "prometheus-client" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
@@ -346,6 +347,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'dashboard'", specifier = ">=0.27.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.13.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
+    { name = "neo4j", marker = "extra == 'dashboard'", specifier = ">=5.15.0" },
     { name = "neo4j", marker = "extra == 'graphinator'", specifier = ">=5.15.0" },
     { name = "orjson", specifier = ">=3.9.0" },
     { name = "pika", marker = "extra == 'extractor'", specifier = ">=1.3.0" },

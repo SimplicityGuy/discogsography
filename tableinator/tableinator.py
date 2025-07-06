@@ -7,7 +7,6 @@ import time
 from asyncio import run
 from collections.abc import Generator
 from contextlib import contextmanager
-from pathlib import Path
 from queue import Queue
 from typing import Any
 
@@ -259,7 +258,7 @@ async def main() -> None:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    setup_logging("tableinator", log_file=Path("tableinator.log"))
+    setup_logging("tableinator")
     logger.info("🚀 Starting PostgreSQL tableinator service with connection pooling")
 
     # Start health server

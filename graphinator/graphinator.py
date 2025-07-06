@@ -4,7 +4,6 @@ import logging
 import signal
 import time
 from asyncio import run
-from pathlib import Path
 from typing import Any
 
 from aio_pika import connect
@@ -650,7 +649,7 @@ async def main() -> None:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    setup_logging("graphinator", log_file=Path("graphinator.log"))
+    setup_logging("graphinator")
     logger.info("🚀 Starting Neo4j graphinator service")
 
     # Start health server
