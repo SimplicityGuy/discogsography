@@ -247,24 +247,41 @@ all = [
     { name = "bandit" },
     { name = "black" },
     { name = "boto3" },
+    { name = "fastapi" },
+    { name = "httpx" },
     { name = "isort" },
     { name = "mypy" },
     { name = "neo4j" },
     { name = "pika" },
     { name = "playwright" },
     { name = "pre-commit" },
+    { name = "prometheus-client" },
     { name = "psutil" },
     { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
     { name = "pytest-cov" },
     { name = "pytest-playwright" },
+    { name = "python-multipart" },
     { name = "requests" },
     { name = "ruff" },
     { name = "types-psutil" },
     { name = "types-tqdm" },
     { name = "types-xmltodict" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
     { name = "xmltodict" },
+]
+dashboard = [
+    { name = "fastapi" },
+    { name = "httpx" },
+    { name = "prometheus-client" },
+    { name = "psycopg", extra = ["binary"] },
+    { name = "pydantic" },
+    { name = "python-multipart" },
+    { name = "uvicorn", extra = ["standard"] },
+    { name = "websockets" },
 ]
 dev = [
     { name = "bandit" },
@@ -321,7 +338,9 @@ requires-dist = [
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "boto3", marker = "extra == 'extractor'", specifier = ">=1.34.0" },
     { name = "dict-hash", specifier = ">=1.1.0" },
-    { name = "discogsography", extras = ["extractor", "graphinator", "tableinator", "dev", "utilities"], marker = "extra == 'all'" },
+    { name = "discogsography", extras = ["dashboard", "extractor", "graphinator", "tableinator", "dev", "utilities"], marker = "extra == 'all'" },
+    { name = "fastapi", marker = "extra == 'dashboard'", specifier = ">=0.115.6" },
+    { name = "httpx", marker = "extra == 'dashboard'", specifier = ">=0.27.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.13.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "neo4j", marker = "extra == 'graphinator'", specifier = ">=5.15.0" },
@@ -329,21 +348,27 @@ requires-dist = [
     { name = "pika", marker = "extra == 'extractor'", specifier = ">=1.3.0" },
     { name = "playwright", marker = "extra == 'dev'", specifier = ">=1.40.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.5.0" },
+    { name = "prometheus-client", marker = "extra == 'dashboard'", specifier = ">=0.21.1" },
     { name = "psutil", marker = "extra == 'utilities'", specifier = ">=5.9.0" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'dashboard'", specifier = ">=3.1.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'tableinator'", specifier = ">=3.1.0" },
+    { name = "pydantic", marker = "extra == 'dashboard'", specifier = ">=2.10.5" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.21.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.1.0" },
     { name = "pytest-playwright", marker = "extra == 'dev'", specifier = ">=0.4.3" },
+    { name = "python-multipart", marker = "extra == 'dashboard'", specifier = ">=0.0.20" },
     { name = "requests", marker = "extra == 'utilities'", specifier = ">=2.31.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "tqdm", specifier = ">=4.65.0" },
     { name = "types-psutil", marker = "extra == 'dev'", specifier = ">=6.1.0.20241102" },
     { name = "types-tqdm", marker = "extra == 'dev'", specifier = ">=4.67.0.20250516" },
     { name = "types-xmltodict", marker = "extra == 'dev'", specifier = ">=0.14.0.20241009" },
+    { name = "uvicorn", extras = ["standard"], marker = "extra == 'dashboard'", specifier = ">=0.34.0" },
+    { name = "websockets", marker = "extra == 'dashboard'", specifier = ">=14.2" },
     { name = "xmltodict", marker = "extra == 'extractor'", specifier = ">=0.13.0" },
 ]
-provides-extras = ["extractor", "graphinator", "tableinator", "dev", "utilities", "all"]
+provides-extras = ["dashboard", "extractor", "graphinator", "tableinator", "dev", "utilities", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -383,40 +408,19 @@ dependencies = [
     { name = "websockets" },
 ]
 
-[package.optional-dependencies]
-dev = [
-    { name = "bandit" },
-    { name = "mypy" },
-    { name = "pre-commit" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-    { name = "types-aiofiles" },
-]
-
 [package.metadata]
 requires-dist = [
     { name = "aio-pika", specifier = ">=9.0.0" },
-    { name = "bandit", extras = ["toml"], marker = "extra == 'dev'", specifier = ">=1.8.0" },
     { name = "fastapi", specifier = ">=0.115.6" },
     { name = "httpx", specifier = ">=0.27.0" },
-    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.14.1" },
-    { name = "orjson", specifier = ">=3.10.14" },
-    { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=4.0.1" },
+    { name = "orjson", specifier = ">=3.9.0" },
     { name = "prometheus-client", specifier = ">=0.21.1" },
-    { name = "psycopg", extras = ["binary"], specifier = ">=3.2.4" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.1.0" },
     { name = "pydantic", specifier = ">=2.10.5" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.3.4" },
-    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25.2" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
     { name = "python-multipart", specifier = ">=0.0.20" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.1" },
-    { name = "types-aiofiles", marker = "extra == 'dev'", specifier = ">=24.1.0.20241221" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
     { name = "websockets", specifier = ">=14.2" },
 ]
-provides-extras = ["dev"]
 
 [[package]]
 name = "discogsography-extractor"
@@ -447,6 +451,7 @@ version = "0.1.0"
 source = { editable = "graphinator" }
 dependencies = [
     { name = "aio-pika" },
+    { name = "dict-hash" },
     { name = "neo4j" },
     { name = "orjson" },
 ]
@@ -454,6 +459,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aio-pika", specifier = ">=9.0.0" },
+    { name = "dict-hash", specifier = ">=1.1.0" },
     { name = "neo4j", specifier = ">=5.15.0" },
     { name = "orjson", specifier = ">=3.9.0" },
 ]
@@ -464,6 +470,7 @@ version = "0.1.0"
 source = { editable = "tableinator" }
 dependencies = [
     { name = "aio-pika" },
+    { name = "dict-hash" },
     { name = "orjson" },
     { name = "psycopg", extra = ["binary"] },
 ]
@@ -471,6 +478,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "aio-pika", specifier = ">=9.0.0" },
+    { name = "dict-hash", specifier = ">=1.1.0" },
     { name = "orjson", specifier = ">=3.9.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1.0" },
 ]
@@ -1314,15 +1322,6 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737, upload-time = "2024-11-24T20:12:22.481Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2", size = 78540, upload-time = "2024-11-24T20:12:19.698Z" },
-]
-
-[[package]]
-name = "types-aiofiles"
-version = "24.1.0.20250606"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/64/6e/fac4ffc896cb3faf2ac5d23747b65dd8bae1d9ee23305d1a3b12111c3989/types_aiofiles-24.1.0.20250606.tar.gz", hash = "sha256:48f9e26d2738a21e0b0f19381f713dcdb852a36727da8414b1ada145d40a18fe", size = 14364, upload-time = "2025-06-06T03:09:26.515Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/71/de/f2fa2ab8a5943898e93d8036941e05bfd1e1f377a675ee52c7c307dccb75/types_aiofiles-24.1.0.20250606-py3-none-any.whl", hash = "sha256:e568c53fb9017c80897a9aa15c74bf43b7ee90e412286ec1e0912b6e79301aee", size = 14276, upload-time = "2025-06-06T03:09:25.662Z" },
 ]
 
 [[package]]

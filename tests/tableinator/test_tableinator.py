@@ -156,6 +156,7 @@ class TestOnDataMessage:
     """Test on_data_message handler."""
 
     @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_process_new_record(
         self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock
     ) -> None:
@@ -182,6 +183,7 @@ class TestOnDataMessage:
         assert mock_cursor.execute.call_count == 2  # SELECT and INSERT
 
     @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_skip_unchanged_record(
         self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock
     ) -> None:
@@ -218,6 +220,7 @@ class TestOnDataMessage:
         mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_handle_connection_error(self, sample_artist_data: dict[str, Any]) -> None:
         """Test handling connection errors."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -235,6 +238,7 @@ class TestOnDataMessage:
         mock_message.nack.assert_called_once_with(requeue=True)
 
     @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_invalid_message_format(self) -> None:
         """Test handling invalid message format."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -250,11 +254,18 @@ class TestMain:
     """Test main function."""
 
     @pytest.mark.asyncio
+    @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.connect")
     @patch("tableinator.tableinator.SimpleConnectionPool")
     @patch("tableinator.tableinator.shutdown_requested", False)
-    async def test_main_execution(self, mock_pool_class: Mock, mock_connect: AsyncMock) -> None:
+    async def test_main_execution(
+        self, mock_pool_class: Mock, mock_connect: AsyncMock, mock_health_server: Mock
+    ) -> None:
         """Test successful main execution."""
+        # Mock health server
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
         # Setup mocks
         mock_pool = MagicMock()
         mock_pool_class.return_value = mock_pool
@@ -296,9 +307,16 @@ class TestMain:
         assert mock_cursor.execute.call_count == 4  # 4 CREATE TABLE statements
 
     @pytest.mark.asyncio
+    @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.SimpleConnectionPool")
-    async def test_main_pool_initialization_failure(self, mock_pool_class: Mock) -> None:
+    async def test_main_pool_initialization_failure(
+        self, mock_pool_class: Mock, mock_health_server: Mock
+    ) -> None:
         """Test main when connection pool initialization fails."""
+        # Mock health server
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
         # Make pool initialization fail
         mock_pool_class.side_effect = Exception("Cannot create pool")
 
@@ -306,12 +324,17 @@ class TestMain:
         await main()
 
     @pytest.mark.asyncio
+    @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.connect")
     @patch("tableinator.tableinator.SimpleConnectionPool")
     async def test_main_amqp_connection_failure(
-        self, mock_pool_class: Mock, mock_connect: AsyncMock
+        self, mock_pool_class: Mock, mock_connect: AsyncMock, mock_health_server: Mock
     ) -> None:
         """Test main when AMQP connection fails."""
+        # Mock health server
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
         # Setup pool success
         mock_pool = MagicMock()
         mock_pool_class.return_value = mock_pool
@@ -334,14 +357,20 @@ class TestMain:
         mock_pool.close.assert_not_called()
 
     @pytest.mark.asyncio
+    @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.connect")
     @patch("tableinator.tableinator.SimpleConnectionPool")
     async def test_main_table_creation_failure(
         self,
         mock_pool_class: Mock,
         mock_connect: AsyncMock,  # noqa: ARG002
+        mock_health_server: Mock,
     ) -> None:
         """Test main when table creation fails."""
+        # Mock health server
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
         # Setup pool
         mock_pool = MagicMock()
         mock_pool_class.return_value = mock_pool

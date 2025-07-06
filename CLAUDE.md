@@ -114,8 +114,12 @@ Each service can also run linting and type checking independently:
 - `uv run pytest --cov` - Run tests with coverage report
 - `uv run pytest tests/test_config.py -v` - Run specific test file
 - `uv run pytest -k "test_name" -v` - Run tests matching pattern
-- `uv run playwright install` - Install Playwright browsers (first time only)
-- `uv run pytest tests/dashboard/` - Run dashboard UI tests with Playwright
+- `uv run playwright install chromium` - Install Playwright Chromium browser
+- `uv run playwright install-deps chromium` - Install system dependencies for Chromium
+- `uv run pytest tests/dashboard/test_dashboard_api.py` - Run dashboard API tests
+- `uv run pytest tests/dashboard/test_dashboard_api_integration.py` - Run dashboard integration tests
+- `uv run pytest -m "not e2e"` - Run all tests except E2E tests
+- `./scripts/test-e2e.sh` - Run dashboard E2E tests with Playwright (starts test server automatically)
 - `uv run pytest -xvs` - Run tests with verbose output, stop on first failure
 - `uv run pytest --tb=short` - Run tests with shorter traceback format
 
@@ -127,6 +131,9 @@ Each service can also run linting and type checking independently:
 - `tests/extractor/test_discogs.py` - Tests for Discogs download functionality
 - `tests/graphinator/test_graphinator.py` - Tests for Neo4j graphinator service
 - `tests/tableinator/test_tableinator.py` - Tests for PostgreSQL tableinator service
+- `tests/dashboard/test_dashboard_api.py` - API tests for dashboard using TestClient
+- `tests/dashboard/test_dashboard_ui.py` - Playwright E2E tests (requires running dashboard)
+- `tests/dashboard/conftest.py` - Mock fixtures for dashboard external dependencies
 
 **Test Configuration**:
 
@@ -134,6 +141,8 @@ Each service can also run linting and type checking independently:
 - **Fixtures**: Common fixtures for AMQP, Neo4j, and PostgreSQL mocking
 - **Environment**: Test environment variables automatically set by conftest.py
 - **Coverage**: Configured to track all service modules, excluding test files
+- **Dashboard Testing**: API tests use FastAPI TestClient with mocked dependencies; E2E tests use Playwright and require running dashboard
+- **E2E Testing**: Dashboard E2E tests are marked with `@pytest.mark.e2e` and require the dashboard to be running. Use `./scripts/test-e2e.sh` for automated setup and execution. Tests run in headless mode by default (configured in `tests/dashboard/conftest.py`)
 
 ### Running Services
 
@@ -414,6 +423,15 @@ The workflows validate docker-compose files by:
 - Checking service dependencies are correct
 - Ensuring security options are properly set
 
+### Playwright Setup
+
+The CI workflow includes Playwright support for dashboard UI tests:
+
+- Installs Chromium browser and system dependencies
+- Caches browser binaries for faster subsequent runs
+- Configures environment variables for headless operation
+- Dashboard UI tests currently excluded until service mocking is implemented
+
 ### Caching Strategies
 
 1. **uv Package Manager Cache**:
@@ -442,6 +460,12 @@ The workflows validate docker-compose files by:
 1. **Arkade Tools Cache**:
 
    - Caches `~/.arkade` directory for hadolint and other tools
+
+1. **Playwright Browser Cache**:
+
+   - Caches `~/.cache/ms-playwright` directory
+   - Cache key based on `pyproject.toml` files
+   - Includes system dependencies for headless Chrome
 
 ### Cache Configuration
 
@@ -476,24 +500,24 @@ All logger calls must follow the format: emoji + single space + message. Here ar
 ## Workflow Memories
 
 - Always run from the project root.
-- Always fix all ruff and mypy errors before completing.
+- Always fix all `ruff` and `mypy` errors before completing.
 - Run `uv run bandit -r . -x "./.venv/*,./tests/*"` to verify security compliance after changes.
 - Scope pragmas for disabling rules to the affected lines. Avoid disabling rules for the entire file.
 - Logger calls must use emoji + single space + message format.
-- Always run `uv run pre-commit run --all-files` once code changes are complete.
-- All logger calls must include appropriate emojis with exactly one space after them.
-- For any github actions used in the github workflows, if the action is from github or docker using the version tag is fine, but for any other, use the sha with a comment of the version.
+- For any GitHub actions used in the GitHub workflows, if the action is from GitHub or Docker using the version tag is fine, but for any other, use the sha with a comment of the version.
 - When updating dependencies, use `uv add` instead of manually editing pyproject.toml.
-- When using multiple suppression pragmas (noqa, nosec), sort them alphabetically: `# noqa` comes before `# nosec`.
-- Always sort lists: apt-get install packages, service lists, TOML configuration arrays, etc.
-- Use DEBIAN_FRONTEND=noninteractive for all apt-get commands in Dockerfiles.
-- When using docker-compose deploy.replicas, container_name must be removed to avoid conflicts.
+- When using multiple suppression pragmas (`noqa`, `nosec`), sort them alphabetically: `# noqa` comes before `# nosec`.
+- Always sort lists: `apt-get install` packages, service lists, TOML configuration arrays, etc.
+- Use `DEBIAN_FRONTEND=noninteractive` for all `apt-get` commands in Dockerfiles.
+- In GitHub workflows, always define environment variables in the global `env:` section, not in individual steps.
+- Sort environment variables alphabetically in GitHub workflows.
+- When using `docker-compose` `deploy.replicas`, `container_name` must be removed to avoid conflicts.
 - Configure git with co-author: `git config --local user.name "Claude Code" && git config --local user.email "noreply@anthropic.com"`
-- After completing work, always run pre-commit and commit changes with meaningful messages.
-- Common code (config.py, health_server.py) lives in the common/ directory.
+- After completing work, always run tests and `uv run pre-commit run --all-files`. Commit changes with meaningful messages.
+- Common code (`config.py`, `health_server.py`) lives in the common/ directory.
 - Run `uv sync --all-extras` after any dependency changes to update the lock file.
 - Use `# noqa` comments sparingly and only when absolutely necessary (e.g., `# noqa: S108` for test temp directories).
-- Prefer ruff's built-in formatter over running black separately.
-- Always ensure pytest tests can be run without manually setting PYTHONPATH (configured in pyproject.toml).
+- Prefer `ruff`'s built-in formatter over running black separately.
+- Always ensure `pytest` tests can be run without manually setting `PYTHONPATH` (configured in `pyproject.toml`).
 - GitHub workflows implement comprehensive caching for dependencies, Docker builds, and tools.
-- Do not set resource limits in docker-compose files.
+- Do not set resource limits in `docker-compose` files.

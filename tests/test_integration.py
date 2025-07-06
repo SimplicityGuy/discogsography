@@ -34,7 +34,7 @@ class TestServiceIntegration:
 
     def test_service_configs_consistent(self) -> None:
         """Test that all services use consistent configuration."""
-        from config import AMQP_EXCHANGE, AMQP_EXCHANGE_TYPE, DATA_TYPES
+        from common.config import AMQP_EXCHANGE, AMQP_EXCHANGE_TYPE, DATA_TYPES
 
         # Verify shared constants
         assert AMQP_EXCHANGE == "discogsography-exchange"

@@ -65,7 +65,9 @@ def get_health_data() -> dict[str, Any]:
 class SimpleConnectionPool:
     def __init__(self, max_connections: int = 10):
         self.max_connections = max_connections
-        self.connections: Queue[psycopg.Connection[Any]] = Queue(maxsize=max_connections)
+        self.connections: Queue[psycopg.Connection[Any]] = Queue(
+            maxsize=max_connections
+        )
         self.lock = threading.Lock()
         self._closed = False
 
@@ -173,7 +175,9 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             global current_task
             current_task = f"Processing {data_type}"
             if message_counts[data_type] % progress_interval == 0:
-                logger.info(f"📊 Processed {message_counts[data_type]} {data_type} in PostgreSQL")
+                logger.info(
+                    f"📊 Processed {message_counts[data_type]} {data_type} in PostgreSQL"
+                )
 
         # Extract record details for logging
         record_name = None
@@ -188,9 +192,9 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
         # Log at debug level to reduce noise
         if record_name:
-            logger.debug(f"Processing {data_type[:-1]} ID={data_id}: {record_name}")
+            logger.debug(f"🔄 Processing {data_type[:-1]} ID={data_id}: {record_name}")
         else:
-            logger.debug(f"Processing {data_type[:-1]} ID={data_id}")
+            logger.debug(f"🔄 Processing {data_type[:-1]} ID={data_id}")
 
     except Exception as e:
         logger.error(f"❌ Failed to parse message: {e}")
@@ -233,7 +237,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             )
 
             # Commit is automatic when exiting the connection context
-            logger.debug(f"Updated {data_type[:-1]} ID={data_id} in PostgreSQL")
+            logger.debug(f"💾 Updated {data_type[:-1]} ID={data_id} in PostgreSQL")
 
         await message.ack()
 
@@ -353,7 +357,9 @@ async def main() -> None:
         queues = {}
         for data_type in DATA_TYPES:
             queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{data_type}"
-            queue = await channel.declare_queue(auto_delete=False, durable=True, name=queue_name)
+            queue = await channel.declare_queue(
+                auto_delete=False, durable=True, name=queue_name
+            )
             await queue.bind(exchange, routing_key=data_type)
             queues[data_type] = queue
 

@@ -13,7 +13,9 @@ on:
     - cron: "0 1 * * 6"
 
 env:
+  CI: true
   COMPOSE_VERSION: "v2.32.0"
+  PLAYWRIGHT_BROWSERS_PATH: "0"  # Use default location
   PYTHON_VERSION: "3.13"
   REGISTRY: ghcr.io
 
@@ -94,6 +96,16 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-arkade-
 
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
       - name: Install arkade
         uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
         with:
@@ -120,6 +132,17 @@ jobs:
       - name: Install dependencies
         run: |
           uv sync --all-extras --frozen
+          # Install workspace packages
+          uv pip install -e dashboard
+          uv pip install -e common
+
+      - name: Install Playwright browsers
+        run: |
+          # Set Playwright to run in CI mode
+          export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
+          uv run playwright install chromium
+          # Install system dependencies for headless Chrome
+          uv run playwright install-deps chromium
 
       - name: Run pre-commit hooks
         run: |

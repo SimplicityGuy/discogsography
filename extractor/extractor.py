@@ -95,9 +95,13 @@ class ConcurrentExtractor:
         self.progress_log_interval = 1000  # Log progress every 1000 records
         self.batch_size = 100  # Batch AMQP messages for better performance
         self.pending_messages: list[dict[str, Any]] = []
-        self.pending_messages_lock = threading.Lock()  # Thread safety for concurrent access
+        self.pending_messages_lock = (
+            threading.Lock()
+        )  # Thread safety for concurrent access
         self.record_queue: asyncio.Queue[dict[str, Any] | None] | None = None
-        self.flush_queue: asyncio.Queue[bool] | None = None  # Queue to trigger AMQP flushes
+        self.flush_queue: asyncio.Queue[bool] | None = (
+            None  # Queue to trigger AMQP flushes
+        )
         self.event_loop: asyncio.AbstractEventLoop | None = None
         self.amqp_connection: BlockingConnection | None = None
         self.amqp_channel: BlockingChannel | None = None
@@ -146,22 +150,30 @@ class ConcurrentExtractor:
 
                 # The topic exchange routes messages by data type to both graphinator and tableinator
                 # This ensures the same data reaches both services for concurrent processing
-                graphinator_queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{self.data_type}"
-                tableinator_queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{self.data_type}"
+                graphinator_queue_name = (
+                    f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{self.data_type}"
+                )
+                tableinator_queue_name = (
+                    f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{self.data_type}"
+                )
 
                 # Declare queues for this data type (other extractors may have already created them)
                 self.amqp_channel.queue_declare(
                     auto_delete=False, durable=True, queue=graphinator_queue_name
                 )
                 self.amqp_channel.queue_bind(
-                    exchange=AMQP_EXCHANGE, queue=graphinator_queue_name, routing_key=self.data_type
+                    exchange=AMQP_EXCHANGE,
+                    queue=graphinator_queue_name,
+                    routing_key=self.data_type,
                 )
 
                 self.amqp_channel.queue_declare(
                     auto_delete=False, durable=True, queue=tableinator_queue_name
                 )
                 self.amqp_channel.queue_bind(
-                    exchange=AMQP_EXCHANGE, queue=tableinator_queue_name, routing_key=self.data_type
+                    exchange=AMQP_EXCHANGE,
+                    queue=tableinator_queue_name,
+                    routing_key=self.data_type,
                 )
 
                 logger.info(
@@ -203,7 +215,9 @@ class ConcurrentExtractor:
 
     async def extract_async(self) -> None:
         """Async extraction with concurrent record processing."""
-        logger.info(f"🚀 Starting extraction of {self.data_type} from {self.input_file}")
+        logger.info(
+            f"🚀 Starting extraction of {self.data_type} from {self.input_file}"
+        )
         self.start_time = datetime.now()
 
         try:
@@ -220,7 +234,8 @@ class ConcurrentExtractor:
 
             # Start record processing tasks
             processing_tasks = [
-                asyncio.create_task(self._process_records_async()) for _ in range(self.max_workers)
+                asyncio.create_task(self._process_records_async())
+                for _ in range(self.max_workers)
             ]
 
             # Start dedicated AMQP flush worker
@@ -256,14 +271,18 @@ class ConcurrentExtractor:
             try:
                 self._flush_pending_messages()
             except Exception as flush_error:
-                logger.warning(f"⚠️ Failed to flush messages during interrupt: {flush_error}")
+                logger.warning(
+                    f"⚠️ Failed to flush messages during interrupt: {flush_error}"
+                )
             raise
         except Exception as e:
             logger.error(f"❌ Error during extraction: {e}")
             try:
                 self._flush_pending_messages()
             except Exception as flush_error:
-                logger.warning(f"⚠️ Failed to flush messages during error handling: {flush_error}")
+                logger.warning(
+                    f"⚠️ Failed to flush messages during error handling: {flush_error}"
+                )
             raise
         finally:
             self.end_time = datetime.now()
@@ -271,7 +290,9 @@ class ConcurrentExtractor:
             # Log final extraction statistics
             elapsed = self.end_time - self.start_time
             final_tps = (
-                self.total_count / elapsed.total_seconds() if elapsed.total_seconds() > 0 else 0
+                self.total_count / elapsed.total_seconds()
+                if elapsed.total_seconds() > 0
+                else 0
             )
             logger.info(
                 f"✅ Extractor Complete: {self.total_count:,} {self.data_type} processed "
@@ -345,7 +366,9 @@ class ConcurrentExtractor:
                     break
 
                 # Process flush request
-                await asyncio.get_event_loop().run_in_executor(None, self._flush_pending_messages)
+                await asyncio.get_event_loop().run_in_executor(
+                    None, self._flush_pending_messages
+                )
 
                 # Mark flush request as done
                 self.flush_queue.task_done()
@@ -380,7 +403,9 @@ class ConcurrentExtractor:
         except Exception as e:
             self.error_count += 1
             record_id = data.get("id", "unknown")
-            logger.error(f"❌ Error processing {self.data_type[:-1]} ID={record_id}: {e}")
+            logger.error(
+                f"❌ Error processing {self.data_type[:-1]} ID={record_id}: {e}"
+            )
 
     def __queue_record(
         self, path: list[tuple[str, dict[str, Any] | None]], data: dict[str, Any]
@@ -391,7 +416,9 @@ class ConcurrentExtractor:
 
         data_type = path[0][0]
         if data_type != self.data_type:
-            logger.warning(f"⚠️ Data type mismatch: expected {self.data_type}, got {data_type}")
+            logger.warning(
+                f"⚠️ Data type mismatch: expected {self.data_type}, got {data_type}"
+            )
             return False
 
         self.total_count += 1
@@ -403,7 +430,11 @@ class ConcurrentExtractor:
             last_extraction_time[self.data_type] = time.time()
             current_task = f"Processing {self.data_type}"
 
-        if data_type in ["masters", "releases"] and len(path) > 1 and path[1][1] is not None:
+        if (
+            data_type in ["masters", "releases"]
+            and len(path) > 1
+            and path[1][1] is not None
+        ):
             data["id"] = path[1][1]["id"]
 
         # Check for shutdown signal
@@ -427,7 +458,9 @@ class ConcurrentExtractor:
 
         # Log only at debug level for individual records to reduce noise
         if record_name:
-            logger.debug(f"🔄 Processing {self.data_type[:-1]} ID={record_id}: {record_name}")
+            logger.debug(
+                f"🔄 Processing {self.data_type[:-1]} ID={record_id}: {record_name}"
+            )
         else:
             logger.debug(f"🔄 Processing {self.data_type[:-1]} ID={record_id}")
 
@@ -451,7 +484,9 @@ class ConcurrentExtractor:
                         self.record_queue.put(data), self.event_loop
                     )
                     # Use a longer timeout but only wait once
-                    future.result(timeout=30.0)  # 30 second timeout, but should be much faster
+                    future.result(
+                        timeout=30.0
+                    )  # 30 second timeout, but should be much faster
                 except TimeoutError:
                     # If we still get timeout after 30 seconds, there's a serious issue
                     logger.error(
@@ -468,7 +503,7 @@ class ConcurrentExtractor:
         except Exception as e:
             self.error_count += 1
             logger.error(
-                f"Error queuing {self.data_type[:-1]} ID={record_id}: {e.__class__.__name__}: {str(e) if str(e) else 'Unknown error'}"
+                f"❌ Error queuing {self.data_type[:-1]} ID={record_id}: {e.__class__.__name__}: {str(e) if str(e) else 'Unknown error'}"
             )
             # Continue processing other records
 
@@ -477,7 +512,9 @@ class ConcurrentExtractor:
             current_time = datetime.now()
             elapsed = current_time - self.start_time
             current_tps = (
-                self.total_count / elapsed.total_seconds() if elapsed.total_seconds() > 0 else 0
+                self.total_count / elapsed.total_seconds()
+                if elapsed.total_seconds() > 0
+                else 0
             )
 
             logger.info(
@@ -498,7 +535,9 @@ class ConcurrentExtractor:
                 or self.amqp_channel is None
                 or self.amqp_channel.is_closed
             ):
-                logger.warning("⚠️ AMQP connection/channel closed, attempting to reconnect...")
+                logger.warning(
+                    "⚠️ AMQP connection/channel closed, attempting to reconnect..."
+                )
 
                 # Close existing connection if partially open
                 if self.amqp_connection and not self.amqp_connection.is_closed:
@@ -577,7 +616,9 @@ class ConcurrentExtractor:
                     logger.error(f"❌ Failed to publish message: {publish_error}")
                     raise
 
-            logger.debug(f"✅ Flushed {len(messages_to_send)} messages to AMQP exchange")
+            logger.debug(
+                f"✅ Flushed {len(messages_to_send)} messages to AMQP exchange"
+            )
 
         except Exception as e:
             logger.error(f"❌ Error flushing messages to AMQP: {e}")
@@ -611,7 +652,12 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
 
     # Reset progress counters for new processing run
     extraction_progress = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
-    last_extraction_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+    last_extraction_time = {
+        "artists": 0.0,
+        "labels": 0.0,
+        "masters": 0.0,
+        "releases": 0.0,
+    }
 
     try:
         discogs_data = download_discogs_data(str(config.discogs_root))
@@ -725,7 +771,9 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
     periodic_check_days = config.periodic_check_days
     periodic_check_seconds = periodic_check_days * 24 * 60 * 60
 
-    logger.info(f"🔄 Starting periodic check loop (interval: {periodic_check_days} days)")
+    logger.info(
+        f"🔄 Starting periodic check loop (interval: {periodic_check_days} days)"
+    )
 
     while True:
         # Wait for the specified interval
@@ -740,7 +788,9 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
                 logger.info("🛑 Shutdown requested during wait period")
                 return
 
-            await asyncio.sleep(min(check_interval, periodic_check_seconds - elapsed_seconds))
+            await asyncio.sleep(
+                min(check_interval, periodic_check_seconds - elapsed_seconds)
+            )
             elapsed_seconds += check_interval
 
             # Log progress every hour
@@ -805,7 +855,9 @@ async def main_async() -> None:
     print(" ▀▀▀ •▀▀ ▀▀ ▀▀▀ .▀  ▀ ▀  ▀ ·▀▀▀  ▀▀▀  ▀█▄▀▪.▀  ▀")
     print()
 
-    logger.info("🚀 Starting Discogs data extractor with concurrent processing and periodic checks")
+    logger.info(
+        "🚀 Starting Discogs data extractor with concurrent processing and periodic checks"
+    )
 
     # Start health server
     health_server = HealthServer(8000, get_health_data)

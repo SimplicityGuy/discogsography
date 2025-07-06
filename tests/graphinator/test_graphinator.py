@@ -85,6 +85,8 @@ class TestOnArtistMessage:
     """Test on_artist_message handler."""
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    @patch("graphinator.graphinator.graph", None)
     async def test_process_new_artist(
         self, sample_artist_data: dict[str, Any], mock_neo4j_driver: MagicMock
     ) -> None:
@@ -116,6 +118,7 @@ class TestOnArtistMessage:
         mock_session.execute_write.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
     async def test_skip_unchanged_artist(
         self, sample_artist_data: dict[str, Any], mock_neo4j_driver: MagicMock
     ) -> None:
@@ -144,6 +147,7 @@ class TestOnArtistMessage:
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", True)
+    @patch("graphinator.graphinator.graph", None)
     async def test_reject_on_shutdown(self) -> None:
         """Test message rejection during shutdown."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -154,6 +158,8 @@ class TestOnArtistMessage:
         mock_message.ack.assert_not_called()
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    @patch("graphinator.graphinator.graph", None)
     async def test_handle_processing_error(self, sample_artist_data: dict[str, Any]) -> None:
         """Test error handling during processing."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -173,6 +179,8 @@ class TestOnLabelMessage:
     """Test on_label_message handler."""
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    @patch("graphinator.graphinator.graph", None)
     async def test_process_label_with_parent(
         self, sample_label_data: dict[str, Any], mock_neo4j_driver: MagicMock
     ) -> None:
@@ -195,6 +203,8 @@ class TestOnMasterMessage:
     """Test on_master_message handler."""
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    @patch("graphinator.graphinator.graph", None)
     async def test_process_master_with_genres_styles(
         self, sample_master_data: dict[str, Any], mock_neo4j_driver: MagicMock
     ) -> None:
@@ -217,6 +227,8 @@ class TestOnReleaseMessage:
     """Test on_release_message handler."""
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    @patch("graphinator.graphinator.graph", None)
     async def test_process_release_with_all_relationships(
         self, sample_release_data: dict[str, Any], mock_neo4j_driver: MagicMock
     ) -> None:
@@ -239,10 +251,17 @@ class TestMain:
     """Test main function."""
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.HealthServer")
     @patch("graphinator.graphinator.connect")
     @patch("graphinator.graphinator.GraphDatabase")
-    async def test_main_execution(self, mock_graph_db: MagicMock, mock_connect: AsyncMock) -> None:
+    async def test_main_execution(
+        self, mock_graph_db: MagicMock, mock_connect: AsyncMock, mock_health_server: MagicMock
+    ) -> None:
         """Test successful main execution."""
+        # Mock health server
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
         # Setup mocks
         mock_amqp = AsyncMock()
         mock_connect.return_value = mock_amqp
@@ -290,9 +309,16 @@ class TestMain:
         mock_driver.close.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.HealthServer")
     @patch("graphinator.graphinator.graph")
-    async def test_main_neo4j_connection_failure(self, mock_graph: MagicMock) -> None:
+    async def test_main_neo4j_connection_failure(
+        self, mock_graph: MagicMock, mock_health_server: MagicMock
+    ) -> None:
         """Test main when Neo4j connection fails."""
+        # Mock health server
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
         # Make Neo4j connection fail
         mock_graph.session.side_effect = Exception("Cannot connect to Neo4j")
 
@@ -300,12 +326,17 @@ class TestMain:
         await main()
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.HealthServer")
     @patch("graphinator.graphinator.connect")
     @patch("graphinator.graphinator.graph")
     async def test_main_amqp_connection_failure(
-        self, mock_graph: MagicMock, mock_connect: AsyncMock
+        self, mock_graph: MagicMock, mock_connect: AsyncMock, mock_health_server: MagicMock
     ) -> None:
         """Test main when AMQP connection fails."""
+        # Mock health server
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
         # Setup Neo4j success
         mock_session = MagicMock()
         mock_graph.session.return_value.__enter__.return_value = mock_session

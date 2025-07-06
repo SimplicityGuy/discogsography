@@ -108,7 +108,9 @@ def download_discogs_data(output_directory: str) -> list[str]:
 
     bucket = "discogs-data-dumps"
     try:
-        s3 = client("s3", region_name="us-west-2", config=Config(signature_version=UNSIGNED))
+        s3 = client(
+            "s3", region_name="us-west-2", config=Config(signature_version=UNSIGNED)
+        )
         response = s3.list_objects_v2(Bucket=bucket, Prefix="data/")
         contents = response.get("Contents")
         if not contents:
@@ -150,25 +152,33 @@ def download_discogs_data(output_directory: str) -> list[str]:
             continue
 
         if existing_version:
-            logger.info(f"🔍 Version {id} already downloaded, checking if files are valid...")
+            logger.info(
+                f"🔍 Version {id} already downloaded, checking if files are valid..."
+            )
             # Check if all files for this version exist with correct checksums
             all_files_valid = True
             for filename in data:
                 if "CHECKSUM" not in filename:
                     if filename not in metadata:
-                        logger.info(f"⚠️ Missing file {filename} from metadata for version {id}")
+                        logger.info(
+                            f"⚠️ Missing file {filename} from metadata for version {id}"
+                        )
                         all_files_valid = False
                         break
                     else:
                         # Check if file exists on disk
                         file_path = output_path / filename
                         if not file_path.exists():
-                            logger.info(f"⚠️ File {filename} missing from disk for version {id}")
+                            logger.info(
+                                f"⚠️ File {filename} missing from disk for version {id}"
+                            )
                             all_files_valid = False
                             break
 
             if all_files_valid:
-                logger.info(f"✅ All files present for version {id}, will verify checksums...")
+                logger.info(
+                    f"✅ All files present for version {id}, will verify checksums..."
+                )
 
         # First, download the checksum file to get expected checksums
         checksum_file = None
@@ -231,7 +241,9 @@ def download_discogs_data(output_directory: str) -> list[str]:
                 checksums[filename] = expected_checksum
             else:
                 if file_path.exists():
-                    logger.info(f"⚠️ File {filename} exists but checksum mismatch, will re-download")
+                    logger.info(
+                        f"⚠️ File {filename} exists but checksum mismatch, will re-download"
+                    )
                 else:
                     logger.info(f"📄 File {filename} does not exist, will download")
                 files_to_download.append(s3file)
@@ -262,7 +274,9 @@ def download_discogs_data(output_directory: str) -> list[str]:
                 ) as t,
             ):
                 try:
-                    s3.download_fileobj(bucket, s3file.name, download_file, Callback=progress(t))
+                    s3.download_fileobj(
+                        bucket, s3file.name, download_file, Callback=progress(t)
+                    )
                 except Exception as e:
                     logger.error(f"❌ Failed to download {s3file.name}: {e}")
                     raise
@@ -297,7 +311,10 @@ def download_discogs_data(output_directory: str) -> list[str]:
             file_path = output_path / filename
             if file_path.exists():
                 new_metadata[filename] = LocalFileInfo(
-                    path=file_path, checksum=checksum, version=id, size=file_path.stat().st_size
+                    path=file_path,
+                    checksum=checksum,
+                    version=id,
+                    size=file_path.stat().st_size,
                 )
 
         # Add checksum file to metadata

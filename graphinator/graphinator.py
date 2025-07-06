@@ -101,7 +101,7 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         return
 
     try:
-        logger.debug("Received artist message")
+        logger.debug("📥 Received artist message")
         artist: dict[str, Any] = loads(message.body)
         artist_id = artist.get("id", "unknown")
         artist_name = artist.get("name", "Unknown Artist")
@@ -114,11 +114,11 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         if message_counts["artists"] % progress_interval == 0:
             logger.info(f"📊 Processed {message_counts['artists']} artists in Neo4j")
 
-        logger.debug(f"Received artist message ID={artist_id}: {artist_name}")
+        logger.debug(f"🔄 Received artist message ID={artist_id}: {artist_name}")
 
         # Process entire artist in a single session with proper transaction handling
         try:
-            logger.debug(f"Starting transaction for artist ID={artist_id}")
+            logger.debug(f"🔄 Starting transaction for artist ID={artist_id}")
             # Add timeout to prevent hanging transactions
             with graph.session(database="neo4j") as session:
 
@@ -126,7 +126,8 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                     """Process artist within a single transaction for atomicity."""
                     # Check if update is needed by comparing hashes
                     existing_result = tx.run(
-                        "MATCH (a:Artist {id: $id}) RETURN a.sha256 AS hash", id=artist["id"]
+                        "MATCH (a:Artist {id: $id}) RETURN a.sha256 AS hash",
+                        id=artist["id"],
                     )
                     existing_record = existing_result.single()
                     if existing_record and existing_record["hash"] == artist["sha256"]:
@@ -163,7 +164,9 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                                 "MATCH (a:Artist {id: $artist_id}) "
                                 "MERGE (m_a:Artist {id: member.id}) "
                                 "MERGE (m_a)-[:MEMBER_OF]->(a)",
-                                members=[{"id": member["@id"]} for member in members_list],
+                                members=[
+                                    {"id": member["@id"]} for member in members_list
+                                ],
                                 artist_id=artist["id"],
                             )
 
@@ -171,7 +174,9 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                     groups: dict[str, Any] | None = artist.get("groups")
                     if groups is not None:
                         groups_list = (
-                            groups["name"] if isinstance(groups["name"], list) else [groups["name"]]
+                            groups["name"]
+                            if isinstance(groups["name"], list)
+                            else [groups["name"]]
                         )
                         if groups_list:
                             # Batch create group relationships
@@ -199,29 +204,35 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                                 "MATCH (a:Artist {id: $artist_id}) "
                                 "MERGE (a_a:Artist {id: alias.id}) "
                                 "MERGE (a_a)-[:ALIAS_OF]->(a)",
-                                aliases=[{"id": alias["@id"]} for alias in aliases_list],
+                                aliases=[
+                                    {"id": alias["@id"]} for alias in aliases_list
+                                ],
                                 artist_id=artist["id"],
                             )
 
                     return True  # Updated successfully
 
                 # Execute the transaction with explicit timeout
-                logger.debug(f"Executing transaction for artist ID={artist_id}")
+                logger.debug(f"🔄 Executing transaction for artist ID={artist_id}")
                 # Session configuration is done at creation time
                 updated = session.execute_write(process_artist_tx)
-                logger.debug(f"Transaction completed for artist ID={artist_id}")
+                logger.debug(f"✅ Transaction completed for artist ID={artist_id}")
 
                 if updated:
-                    logger.debug(f"Updated artist ID={artist_id} in Neo4j")
+                    logger.debug(f"💾 Updated artist ID={artist_id} in Neo4j")
                 else:
-                    logger.debug(f"Skipped artist ID={artist_id} (no changes needed)")
+                    logger.debug(
+                        f"⏩ Skipped artist ID={artist_id} (no changes needed)"
+                    )
         except Exception as neo4j_error:
-            logger.error(f"❌ Neo4j error processing artist ID={artist_id}: {neo4j_error}")
+            logger.error(
+                f"❌ Neo4j error processing artist ID={artist_id}: {neo4j_error}"
+            )
             raise
 
-        logger.debug(f"Acknowledging artist message ID={artist_id}")
+        logger.debug(f"✅ Acknowledging artist message ID={artist_id}")
         await message.ack()
-        logger.debug(f"Completed artist message ID={artist_id}")
+        logger.debug(f"✅ Completed artist message ID={artist_id}")
     except Exception as e:
         logger.error(f"❌ Failed to process artist message ID={artist_id}: {e}")
         try:
@@ -237,7 +248,7 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         return
 
     try:
-        logger.debug("Received label message")
+        logger.debug("📥 Received label message")
         label: dict[str, Any] = loads(message.body)
         label_id = label.get("id", "unknown")
         label_name = label.get("name", "Unknown Label")
@@ -250,7 +261,7 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         if message_counts["labels"] % progress_interval == 0:
             logger.info(f"📊 Processed {message_counts['labels']} labels in Neo4j")
 
-        logger.debug(f"Processing label ID={label_id}: {label_name}")
+        logger.debug(f"🔄 Processing label ID={label_id}: {label_name}")
 
         # Process entire label in a single session with proper transaction handling
         with graph.session(database="neo4j") as session:
@@ -301,7 +312,9 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
                             "MATCH (l:Label {id: $label_id}) "
                             "MERGE (s_l:Label {id: sublabel.id}) "
                             "MERGE (s_l)-[:SUBLABEL_OF]->(l)",
-                            sublabels=[{"id": sublabel["@id"]} for sublabel in sublabels_list],
+                            sublabels=[
+                                {"id": sublabel["@id"]} for sublabel in sublabels_list
+                            ],
                             label_id=label["id"],
                         )
 
@@ -312,9 +325,9 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
             updated = session.execute_write(process_label_tx)
 
             if updated:
-                logger.debug(f"Updated label ID={label_id} in Neo4j")
+                logger.debug(f"💾 Updated label ID={label_id} in Neo4j")
             else:
-                logger.debug(f"Skipped label ID={label_id} (no changes needed)")
+                logger.debug(f"⏩ Skipped label ID={label_id} (no changes needed)")
 
         await message.ack()
     except Exception as e:
@@ -332,7 +345,7 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         return
 
     try:
-        logger.debug("Received master message")
+        logger.debug("📥 Received master message")
         master: dict[str, Any] = loads(message.body)
         master_id = master.get("id", "unknown")
         master_title = master.get("title", "Unknown Master")
@@ -345,7 +358,7 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         if message_counts["masters"] % progress_interval == 0:
             logger.info(f"📊 Processed {message_counts['masters']} masters in Neo4j")
 
-        logger.debug(f"Processing master ID={master_id}: {master_title}")
+        logger.debug(f"🔄 Processing master ID={master_id}: {master_title}")
 
         # Process entire master in a single session with proper transaction handling
         with graph.session(database="neo4j") as session:
@@ -354,7 +367,8 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
                 """Process master within a single transaction for atomicity."""
                 # Check if update is needed by comparing hashes
                 existing_result = tx.run(
-                    "MATCH (m:Master {id: $id}) RETURN m.sha256 AS hash", id=master["id"]
+                    "MATCH (m:Master {id: $id}) RETURN m.sha256 AS hash",
+                    id=master["id"],
                 )
                 existing_record = existing_result.single()
                 if existing_record and existing_record["hash"] == master["sha256"]:
@@ -394,7 +408,9 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
                 genres_list: list[str] = []
                 if genres is not None:
                     genres_list = (
-                        genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
+                        genres["genre"]
+                        if isinstance(genres["genre"], list)
+                        else [genres["genre"]]
                     )
                     if genres_list:
                         tx.run(
@@ -410,7 +426,9 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
                 styles_list: list[str] = []
                 if styles is not None:
                     styles_list = (
-                        styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
+                        styles["style"]
+                        if isinstance(styles["style"], list)
+                        else [styles["style"]]
                     )
                     if styles_list:
                         tx.run(
@@ -443,9 +461,9 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
             updated = session.execute_write(process_master_tx)
 
             if updated:
-                logger.debug(f"Updated master ID={master_id} in Neo4j")
+                logger.debug(f"💾 Updated master ID={master_id} in Neo4j")
             else:
-                logger.debug(f"Skipped master ID={master_id} (no changes needed)")
+                logger.debug(f"⏩ Skipped master ID={master_id} (no changes needed)")
 
         await message.ack()
     except Exception as e:
@@ -463,7 +481,7 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         return
 
     try:
-        logger.debug("Received release message")
+        logger.debug("📥 Received release message")
         release: dict[str, Any] = loads(message.body)
         release_id = release.get("id", "unknown")
         release_title = release.get("title", "Unknown Release")
@@ -476,7 +494,7 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         if message_counts["releases"] % progress_interval == 0:
             logger.info(f"📊 Processed {message_counts['releases']} releases in Neo4j")
 
-        logger.debug(f"Processing release ID={release_id}: {release_title}")
+        logger.debug(f"🔄 Processing release ID={release_id}: {release_title}")
 
         # Process entire release in a single session with proper transaction handling
         with graph.session(database="neo4j") as session:
@@ -485,7 +503,8 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                 """Process release within a single transaction for atomicity."""
                 # Check if update is needed by comparing hashes
                 existing_result = tx.run(
-                    "MATCH (r:Release {id: $id}) RETURN r.sha256 AS hash", id=release["id"]
+                    "MATCH (r:Release {id: $id}) RETURN r.sha256 AS hash",
+                    id=release["id"],
                 )
                 existing_record = existing_result.single()
                 if existing_record and existing_record["hash"] == release["sha256"]:
@@ -524,7 +543,9 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                 labels: dict[str, Any] | None = release.get("labels")
                 if labels is not None:
                     labels_list = (
-                        labels["label"] if isinstance(labels["label"], list) else [labels["label"]]
+                        labels["label"]
+                        if isinstance(labels["label"], list)
+                        else [labels["label"]]
                     )
                     if labels_list:
                         tx.run(
@@ -551,7 +572,9 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                 genres_list: list[str] = []
                 if genres is not None:
                     genres_list = (
-                        genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
+                        genres["genre"]
+                        if isinstance(genres["genre"], list)
+                        else [genres["genre"]]
                     )
                     if genres_list:
                         tx.run(
@@ -567,7 +590,9 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                 styles_list: list[str] = []
                 if styles is not None:
                     styles_list = (
-                        styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
+                        styles["style"]
+                        if isinstance(styles["style"], list)
+                        else [styles["style"]]
                     )
                     if styles_list:
                         tx.run(
@@ -604,12 +629,12 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
             updated = session.execute_write(process_release_tx)
 
             if updated:
-                logger.debug(f"Updated release ID={release_id} in Neo4j")
+                logger.debug(f"💾 Updated release ID={release_id} in Neo4j")
             else:
-                logger.debug(f"Skipped release ID={release_id} (no changes needed)")
+                logger.debug(f"⏩ Skipped release ID={release_id} (no changes needed)")
 
         await message.ack()
-        logger.debug(f"Stored release ID={release_id} in Neo4j")
+        logger.debug(f"💾 Stored release ID={release_id} in Neo4j")
     except Exception as e:
         logger.error(f"❌ Failed to process release message: {e}")
         try:
@@ -714,7 +739,9 @@ async def main() -> None:
         queues = {}
         for data_type in DATA_TYPES:
             queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
-            queue = await channel.declare_queue(auto_delete=False, durable=True, name=queue_name)
+            queue = await channel.declare_queue(
+                auto_delete=False, durable=True, name=queue_name
+            )
             await queue.bind(exchange, routing_key=data_type)
             queues[data_type] = queue
 
@@ -725,10 +752,16 @@ async def main() -> None:
         releases_queue = queues["releases"]
 
         # Start consumers with consumer tags for better debugging
-        await artists_queue.consume(on_artist_message, consumer_tag="graphinator-artists")
+        await artists_queue.consume(
+            on_artist_message, consumer_tag="graphinator-artists"
+        )
         await labels_queue.consume(on_label_message, consumer_tag="graphinator-labels")
-        await masters_queue.consume(on_master_message, consumer_tag="graphinator-masters")
-        await releases_queue.consume(on_release_message, consumer_tag="graphinator-releases")
+        await masters_queue.consume(
+            on_master_message, consumer_tag="graphinator-masters"
+        )
+        await releases_queue.consume(
+            on_release_message, consumer_tag="graphinator-releases"
+        )
 
         logger.info(
             f"🚀 Graphinator started! Connected to AMQP broker (exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE}). "
@@ -778,7 +811,9 @@ async def main() -> None:
                         )
                         logger.info("✅ Graph database driver reconnected")
                     except Exception as reconnect_error:
-                        logger.error(f"❌ Failed to reconnect graph database: {reconnect_error}")
+                        logger.error(
+                            f"❌ Failed to reconnect graph database: {reconnect_error}"
+                        )
 
                 # Always show progress, even if no messages processed yet
                 logger.info(

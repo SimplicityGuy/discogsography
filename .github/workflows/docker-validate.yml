@@ -1,14 +1,17 @@
 ---
-name: docker validate
+name: Docker Validate
 
 on:
-  pull_request:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
     paths:
       - "**/Dockerfile"
       - "docker-compose*.yml"
       - ".dockerignore"
       - ".github/workflows/docker-validate.yml"
-  push:
+  pull_request:
     branches:
       - main
     paths:
@@ -19,6 +22,7 @@ on:
 
 env:
   COMPOSE_VERSION: "v2.32.0"
+  PYTHON_VERSION: "3.13"
 
 jobs:
   list-sub-projects:
@@ -63,7 +67,7 @@ jobs:
       - name: Test Docker build for ${{ matrix.sub-project }}
         run: |
           echo "🔨 Testing build for ${{ matrix.sub-project }}..."
-          docker build --build-arg PYTHON_VERSION=3.13 -f ${{ matrix.sub-project }}/Dockerfile . --target builder
+          docker build --build-arg PYTHON_VERSION=${{ env.PYTHON_VERSION }} -f ${{ matrix.sub-project }}/Dockerfile . --target builder
           echo "✅ ${{ matrix.sub-project }} builder stage built successfully"
 
   validate-compose:
