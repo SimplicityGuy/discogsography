@@ -7,7 +7,7 @@ name = "discogsography"
 version = "0.1.0"
 description = "Using the discogs database export for local graph exploration"
 authors = [{name = "Robert Wlodarczyk", email = "robert@simplicityguy.com"}]
-readme = "README.md"
+# readme = "README.md"  # Commented out to avoid Docker build issues
 requires-python = ">=3.13"
 classifiers = [
     "Development Status :: 3 - Alpha",

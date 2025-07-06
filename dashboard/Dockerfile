@@ -20,6 +20,8 @@ WORKDIR /app
 
 # Copy dependency files first for better caching
 COPY pyproject.toml uv.lock README.md ./
+COPY common/pyproject.toml ./common/
+COPY dashboard/pyproject.toml ./dashboard/
 
 # Install dependencies with cache mount
 RUN --mount=type=cache,target=/tmp/.cache/uv \

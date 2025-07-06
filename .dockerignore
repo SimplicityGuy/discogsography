@@ -75,8 +75,10 @@ Dockerfile*
 .pre-commit-config.yaml
 pyrightconfig.json
 CLAUDE.md
-README.md
-*.md
+# Note: README.md is needed by Dockerfiles for uv sync
+# Exclude all markdown files except README.md
+**/*.md
+!README.md
 
 # Temporary files
 *.tmp
