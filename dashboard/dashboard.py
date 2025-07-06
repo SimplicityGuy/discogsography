@@ -33,10 +33,23 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Metrics
-WEBSOCKET_CONNECTIONS = Gauge(
-    "dashboard_websocket_connections", "Number of active WebSocket connections"
-)
-API_REQUESTS = Counter("dashboard_api_requests", "Total API requests", ["endpoint", "method"])
+try:
+    WEBSOCKET_CONNECTIONS = Gauge(
+        "dashboard_websocket_connections", "Number of active WebSocket connections"
+    )
+except ValueError:
+    # Metric already registered (happens during reload)
+    from prometheus_client import REGISTRY
+
+    WEBSOCKET_CONNECTIONS = REGISTRY._names_to_collectors["dashboard_websocket_connections"]
+
+try:
+    API_REQUESTS = Counter("dashboard_api_requests", "Total API requests", ["endpoint", "method"])
+except ValueError:
+    # Metric already registered (happens during reload)
+    from prometheus_client import REGISTRY
+
+    API_REQUESTS = REGISTRY._names_to_collectors["dashboard_api_requests_total"]
 
 
 class ServiceStatus(BaseModel):
@@ -496,9 +509,9 @@ if __name__ == "__main__":
     import uvicorn
 
     uvicorn.run(
-        "dashboard:app",
+        "dashboard.dashboard:app",
         host="0.0.0.0",  # noqa: S104  # nosec B104
         port=8003,
-        reload=True,
+        reload=False,
         log_level="info",
     )

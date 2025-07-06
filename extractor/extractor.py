@@ -835,7 +835,7 @@ async def main_async() -> None:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    setup_logging("extractor")
+    setup_logging("extractor", log_file=Path("/logs/extractor.log"))
 
     try:
         config = ExtractorConfig.from_env()

@@ -251,11 +251,16 @@ class TestMain:
     """Test main function."""
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.setup_logging")
     @patch("graphinator.graphinator.HealthServer")
     @patch("graphinator.graphinator.connect")
     @patch("graphinator.graphinator.GraphDatabase")
     async def test_main_execution(
-        self, mock_graph_db: MagicMock, mock_connect: AsyncMock, mock_health_server: MagicMock
+        self,
+        mock_graph_db: MagicMock,
+        mock_connect: AsyncMock,
+        mock_health_server: MagicMock,
+        mock_setup_logging: MagicMock,  # noqa: ARG002
     ) -> None:
         """Test successful main execution."""
         # Mock health server
@@ -309,10 +314,14 @@ class TestMain:
         mock_driver.close.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.setup_logging")
     @patch("graphinator.graphinator.HealthServer")
     @patch("graphinator.graphinator.graph")
     async def test_main_neo4j_connection_failure(
-        self, mock_graph: MagicMock, mock_health_server: MagicMock
+        self,
+        mock_graph: MagicMock,
+        mock_health_server: MagicMock,
+        mock_setup_logging: MagicMock,  # noqa: ARG002
     ) -> None:
         """Test main when Neo4j connection fails."""
         # Mock health server
@@ -326,11 +335,16 @@ class TestMain:
         await main()
 
     @pytest.mark.asyncio
+    @patch("graphinator.graphinator.setup_logging")
     @patch("graphinator.graphinator.HealthServer")
     @patch("graphinator.graphinator.connect")
     @patch("graphinator.graphinator.graph")
     async def test_main_amqp_connection_failure(
-        self, mock_graph: MagicMock, mock_connect: AsyncMock, mock_health_server: MagicMock
+        self,
+        mock_graph: MagicMock,
+        mock_connect: AsyncMock,
+        mock_health_server: MagicMock,
+        mock_setup_logging: MagicMock,  # noqa: ARG002
     ) -> None:
         """Test main when AMQP connection fails."""
         # Mock health server

@@ -151,6 +151,8 @@ def setup_logging(
     handlers: list[logging.Handler] = [logging.StreamHandler()]
 
     if log_file:
+        # Create parent directory if it doesn't exist
+        log_file.parent.mkdir(parents=True, exist_ok=True)
         handlers.append(logging.FileHandler(log_file))
 
     logging.basicConfig(
