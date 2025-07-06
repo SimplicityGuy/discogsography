@@ -84,7 +84,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
 
 # Create startup script
 # hadolint ignore=SC2016
-RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec uv run python -m dashboard.dashboard "$@"\n' > /app/start.sh && \
+RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec uv run --no-sync python -m dashboard.dashboard "$@"\n' > /app/start.sh && \
     chmod +x /app/start.sh
 
 # Health check

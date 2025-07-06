@@ -1,6 +1,7 @@
 """Integration tests for dashboard API using FastAPI TestClient."""
 
 import asyncio
+import typing
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,7 +13,7 @@ class TestDashboardAPIIntegration:
     """Test dashboard API endpoints with mocked dependencies."""
 
     @pytest.fixture
-    def client(self) -> TestClient:
+    def client(self) -> typing.Generator[TestClient]:
         """Create test client with mocked app."""
         app = create_test_app()
         with TestClient(app) as test_client:
