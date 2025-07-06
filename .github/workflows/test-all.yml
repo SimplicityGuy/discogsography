@@ -173,5 +173,5 @@ jobs:
 
       - name: Run dashboard E2E tests
         run: |
-          # Run the E2E test script which handles server startup
-          ./scripts/test-e2e.sh
+          # Run E2E tests - server is started automatically by pytest fixture
+          uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e --browser chromium

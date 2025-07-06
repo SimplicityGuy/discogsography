@@ -8,17 +8,14 @@ from playwright.async_api import Page, expect
 
 
 @pytest.mark.e2e
+@pytest.mark.usefixtures("test_server")
 class TestDashboardUI:
     """Test the dashboard user interface.
 
-    Note: These tests require the dashboard to be running on http://localhost:8003.
-    Use scripts/test-e2e.sh to run these tests with proper setup.
+    The test server is automatically started by the test_server fixture.
 
     To run these tests:
-    1. Start the dashboard: uv run python dashboard/dashboard.py
-    2. Run tests: uv run pytest tests/dashboard/test_dashboard_ui.py -m e2e
-
-    Or use the convenience script: ./scripts/test-e2e.sh
+    uv run pytest tests/dashboard/test_dashboard_ui.py -m e2e --browser chromium
     """
 
     @pytest.mark.asyncio

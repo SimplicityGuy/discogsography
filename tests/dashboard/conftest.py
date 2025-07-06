@@ -1,11 +1,56 @@
 """Pytest configuration for dashboard tests."""
 
+import time
+from multiprocessing import Process
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import uvicorn
 
 from common import DashboardConfig
+
+
+def run_test_server() -> None:
+    """Run the test server in a separate process."""
+    from tests.dashboard.dashboard_test_app import create_test_app
+
+    app = create_test_app()
+    uvicorn.run(app, host="127.0.0.1", port=8003, log_level="info")
+
+
+@pytest.fixture(scope="session")
+def test_server() -> Any:
+    """Start the test dashboard server for E2E tests.
+
+    This fixture is only used when running E2E tests.
+    """
+    # Start server in a separate process
+    server_process = Process(target=run_test_server)
+    server_process.start()
+
+    # Wait for server to be ready
+    import httpx
+
+    for _ in range(20):
+        try:
+            response = httpx.get("http://127.0.0.1:8003/api/metrics")
+            if response.status_code == 200:
+                break
+        except Exception:  # noqa: S110
+            pass  # Server might not be ready yet
+        time.sleep(0.5)
+    else:
+        server_process.terminate()
+        raise RuntimeError("Test server failed to start")
+
+    yield
+
+    # Cleanup
+    server_process.terminate()
+    server_process.join(timeout=5)
+    if server_process.is_alive():
+        server_process.kill()
 
 
 @pytest.fixture(scope="session")
