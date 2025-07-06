@@ -19,7 +19,7 @@ ENV UV_SYSTEM_PYTHON=1 \
 WORKDIR /app
 
 # Copy dependency files first for better caching
-COPY pyproject.toml uv.lock ./
+COPY pyproject.toml uv.lock README.md ./
 
 # Install dependencies with cache mount
 RUN --mount=type=cache,target=/tmp/.cache/uv \
