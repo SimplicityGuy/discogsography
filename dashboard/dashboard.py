@@ -479,7 +479,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "dashboard:app",
-        host="0.0.0.0",  # nosec B104  # noqa: S104
+        host="0.0.0.0",  # noqa: S104  # nosec B104
         port=8003,
         reload=True,
         log_level="info",

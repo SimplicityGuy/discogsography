@@ -343,8 +343,8 @@ The `utilities/` directory contains debugging tools for development:
 The codebase passes all bandit security checks. Development utilities use proper security annotations:
 
 - **Subprocess calls**: Annotated with `# nosec B603 B607` for trusted Docker commands
-- **Hardcoded defaults**: Annotated with `# nosec B105/B107` and `# noqa: S107` for local dev passwords
-- **URL requests**: Annotated with `# nosec B310` and `# noqa: S310` for localhost-only connections
+- **Hardcoded defaults**: Annotated with `# noqa: S107` and `# nosec B105/B107` for local dev passwords
+- **URL requests**: Annotated with `# noqa: S310` and `# nosec B310` for localhost-only connections
 
 **Security principles**:
 
@@ -484,6 +484,7 @@ All logger calls must follow the format: emoji + single space + message. Here ar
 - All logger calls must include appropriate emojis with exactly one space after them.
 - For any github actions used in the github workflows, if the action is from github or docker using the version tag is fine, but for any other, use the sha with a comment of the version.
 - When updating dependencies, use `uv add` instead of manually editing pyproject.toml.
+- When using multiple suppression pragmas (noqa, nosec), sort them alphabetically: `# noqa` comes before `# nosec`.
 - Always sort lists: apt-get install packages, service lists, TOML configuration arrays, etc.
 - Use DEBIAN_FRONTEND=noninteractive for all apt-get commands in Dockerfiles.
 - When using docker-compose deploy.replicas, container_name must be removed to avoid conflicts.

@@ -44,7 +44,7 @@ class HealthServer(HTTPServer):
             port: Port to listen on
             health_func: Function that returns current health data
         """
-        super().__init__(("0.0.0.0", port), HealthHandler)  # nosec B104  # noqa: S104
+        super().__init__(("0.0.0.0", port), HealthHandler)  # noqa: S104  # nosec B104
         self.health_func = health_func
         self.thread: Thread | None = None
 
