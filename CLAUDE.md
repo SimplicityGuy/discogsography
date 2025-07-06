@@ -512,8 +512,8 @@ All logger calls must follow the format: emoji + single space + message. Here ar
 - In GitHub workflows, always define environment variables in the global `env:` section, not in individual steps.
 - Sort environment variables alphabetically in GitHub workflows.
 - When using `docker-compose` `deploy.replicas`, `container_name` must be removed to avoid conflicts.
-- Configure git with co-author: `git config --local user.name "Claude Code" && git config --local user.email "noreply@anthropic.com"`
-- After completing work, always run tests and `uv run pre-commit run --all-files`. Commit changes with meaningful messages.
+- After completing work, always run tests and `uv run pre-commit run --all-files`.
+- Periodically commit changes with meaningful messages once tests and `pre-commit` are clean.
 - Common code (`config.py`, `health_server.py`) lives in the common/ directory.
 - Run `uv sync --all-extras` after any dependency changes to update the lock file.
 - Use `# noqa` comments sparingly and only when absolutely necessary (e.g., `# noqa: S108` for test temp directories).
