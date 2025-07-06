@@ -21,8 +21,31 @@ env:
   COMPOSE_VERSION: "v2.32.0"
 
 jobs:
-  validate-docker:
+  list-sub-projects:
     runs-on: ubuntu-latest
+
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get all sub-projects
+        id: set-matrix
+        run: |
+          # Only include actual service directories (sorted alphabetically)
+          services=("dashboard" "extractor" "graphinator" "tableinator")
+          matrix=$(printf "%s\n" "${services[@]}" | jq -R -s -c 'split("\n")[:-1]')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  validate-dockerfiles:
+    needs: list-sub-projects
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        sub-project: ${{ fromJson(needs.list-sub-projects.outputs.matrix) }}
 
     steps:
       - name: Checkout repository
@@ -30,6 +53,25 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+
+      - name: Validate Dockerfile with hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ matrix.sub-project }}/Dockerfile
+          failure-threshold: error
+
+      - name: Test Docker build for ${{ matrix.sub-project }}
+        run: |
+          echo "🔨 Testing build for ${{ matrix.sub-project }}..."
+          docker build --build-arg PYTHON_VERSION=3.13 -f ${{ matrix.sub-project }}/Dockerfile . --target builder
+          echo "✅ ${{ matrix.sub-project }} builder stage built successfully"
+
+  validate-compose:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Cache docker-compose
         uses: actions/cache@v4
@@ -49,21 +91,6 @@ jobs:
           fi
           docker-compose --version
 
-      - name: Validate Dockerfiles with hadolint
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          recursive: true
-          failure-threshold: error
-
-      - name: Test Docker builds
-        run: |
-          # Test building each service
-          for service in extractor graphinator tableinator; do
-            echo "🔨 Testing build for $service..."
-            docker build --build-arg PYTHON_VERSION=3.13 -f $service/Dockerfile . --target builder
-            echo "✅ $service builder stage built successfully"
-          done
-
       - name: Validate docker-compose syntax
         run: |
           docker-compose config --quiet
@@ -77,7 +104,7 @@ jobs:
       - name: Check docker-compose services
         run: |
           services=$(docker-compose config --services | sort | tr "\n" " " | sed "s/ $//")
-          expected="extractor graphinator neo4j postgres rabbitmq tableinator"
+          expected="dashboard extractor graphinator neo4j postgres rabbitmq tableinator"
 
           if [ "$services" != "$expected" ]; then
             echo "❌ Service mismatch!"
@@ -90,6 +117,12 @@ jobs:
       - name: Validate service dependencies
         run: |
           # Check that services have correct dependencies
+          deps=$(docker-compose config | yq eval '.services.dashboard.depends_on | keys | sort | join(" ")' -)
+          if [ "$deps" != "neo4j postgres rabbitmq" ]; then
+            echo "❌ Dashboard should depend on neo4j, postgres, and rabbitmq"
+            exit 1
+          fi
+
           deps=$(docker-compose config | yq eval '.services.extractor.depends_on | keys | .[]' -)
           if [ "$deps" != "rabbitmq" ]; then
             echo "❌ Extractor should only depend on rabbitmq"
@@ -113,7 +146,7 @@ jobs:
       - name: Check for security best practices
         run: |
           # Check that services run as non-root user
-          for service in extractor graphinator tableinator; do
+          for service in dashboard extractor graphinator tableinator; do
             user=$(docker-compose config | yq eval ".services.$service.user" -)
             if [ "$user" != "1000:1000" ]; then
               echo "❌ $service should run as user 1000:1000"
@@ -123,7 +156,7 @@ jobs:
           echo "✅ All services run as non-root user"
 
           # Check security options
-          for service in extractor graphinator tableinator; do
+          for service in dashboard extractor graphinator tableinator; do
             security_opt=$(docker-compose config | yq eval ".services.$service.security_opt[]" - | grep "no-new-privileges:true" || true)
             if [ -z "$security_opt" ]; then
               echo "❌ $service should have no-new-privileges security option"
