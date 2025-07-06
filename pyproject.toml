@@ -57,6 +57,7 @@ dev = [
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
     "pytest-playwright>=0.4.3",
+    "pytest-timeout>=2.4.0",
     "pre-commit>=3.5.0",
     "ruff>=0.1.0",
     "types-tqdm>=4.67.0.20250516",
@@ -180,6 +181,8 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "auto"
 pythonpath = ["."]
+timeout = 30
+timeout_method = "thread"
 markers = [
     "e2e: End-to-end tests requiring external services (deselect with '-m \"not e2e\"')",
 ]
@@ -202,6 +205,7 @@ dev = [
     "types-tqdm>=4.67.0.20250516",
     "types-xmltodict>=0.14.0.20241009",
     "types-psutil>=6.1.0.20241102",
+    "pytest-timeout>=2.4.0",
 ]
 
 [tool.bandit]

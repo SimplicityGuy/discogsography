@@ -42,6 +42,13 @@ done
 
 # Run the E2E tests
 echo "🧪 Running E2E tests..."
-uv run pytest tests/dashboard/test_dashboard_ui.py -v --browser chromium
+# Add timeout and proper markers for CI environment
+export PYTEST_TIMEOUT=30
+uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e \
+    --browser chromium --headed=false \
+    --browser-channel chromium \
+    --timeout 30000 \
+    -o log_cli=true \
+    -o log_cli_level=INFO
 
 echo "✅ E2E tests completed!"

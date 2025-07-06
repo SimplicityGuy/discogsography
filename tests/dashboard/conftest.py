@@ -15,6 +15,8 @@ def browser_context_args(browser_context_args: dict[str, Any]) -> dict[str, Any]
         **browser_context_args,
         "viewport": {"width": 1280, "height": 720},
         "ignore_https_errors": True,
+        "locale": "en-US",
+        "timezone_id": "UTC",
     }
 
 
@@ -24,6 +26,13 @@ def browser_type_launch_args(browser_type_launch_args: dict[str, Any]) -> dict[s
     return {
         **browser_type_launch_args,
         "headless": True,  # Always run headless
+        "timeout": 30000,  # 30 second timeout for browser launch
+        "args": [
+            "--no-sandbox",  # Required for CI environments
+            "--disable-setuid-sandbox",  # Required for CI environments
+            "--disable-dev-shm-usage",  # Overcome limited resource problems
+            "--disable-gpu",  # Disable GPU hardware acceleration
+        ],
     }
 
 
