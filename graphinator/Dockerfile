@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
-# Python version build argument
+# Build arguments
 ARG PYTHON_VERSION=3.13
+ARG UID=1000
+ARG GID=1000
 
 FROM python:${PYTHON_VERSION}-slim AS builder
 
@@ -30,11 +32,12 @@ COPY graphinator/ ./graphinator/
 # Final stage
 FROM python:${PYTHON_VERSION}-slim
 
-# Build arguments for dynamic labels
-ARG PYTHON_VERSION=3.13
+# Build arguments for labels
 ARG BUILD_DATE
 ARG BUILD_VERSION
 ARG VCS_REF
+ARG UID=1000
+ARG GID=1000
 
 # OCI Image Spec Annotations
 # https://github.com/opencontainers/image-spec/blob/main/annotations.md
@@ -63,9 +66,11 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Create user
-RUN groupadd -r -g 1000 discogsography && \
-    useradd -r -u 1000 -g discogsography -m -s /bin/bash discogsography
+# Create user and directories with configurable UID/GID
+RUN groupadd -r -g ${GID} discogsography && \
+    useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
+    mkdir -p /tmp /app && \
+    chown -R discogsography:discogsography /tmp /app
 
 WORKDIR /app
 
@@ -97,5 +102,8 @@ ENV HOME=/home/discogsography \
     NEO4J_ADDRESS="" \
     NEO4J_USERNAME="" \
     NEO4J_PASSWORD=""
+
+# Security: This container should be run with:
+# docker run --cap-drop=ALL --security-opt=no-new-privileges:true ...
 
 CMD ["/app/start.sh"]

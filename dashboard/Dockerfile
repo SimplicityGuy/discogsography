@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
-# Python version build argument
+# Build arguments
 ARG PYTHON_VERSION=3.13
+ARG UID=1000
+ARG GID=1000
 
 FROM python:${PYTHON_VERSION}-slim AS builder
 
@@ -18,14 +20,14 @@ WORKDIR /app
 
 # Copy dependency files first for better caching
 COPY pyproject.toml uv.lock ./
-COPY common/pyproject.toml ./common/
-COPY dashboard/pyproject.toml ./dashboard/
 
-# Copy source code needed for build
+# Install dependencies with cache mount
+RUN --mount=type=cache,target=/tmp/.cache/uv \
+    uv sync --frozen --no-dev --extra dashboard
+
+# Copy source files after dependencies for better layer caching
 COPY common/ ./common/
-
-# Install dependencies
-RUN uv sync --frozen --no-dev
+COPY dashboard/ ./dashboard/
 
 # Runtime stage
 FROM python:${PYTHON_VERSION}-slim
@@ -34,7 +36,8 @@ FROM python:${PYTHON_VERSION}-slim
 ARG BUILD_DATE
 ARG BUILD_VERSION
 ARG VCS_REF
-ARG PYTHON_VERSION
+ARG UID=1000
+ARG GID=1000
 
 # OCI annotations
 # https://github.com/opencontainers/image-spec/blob/main/annotations.md
@@ -56,16 +59,18 @@ LABEL org.opencontainers.image.title="Discogsography Dashboard" \
 
 # Install security updates and curl for healthcheck
 # hadolint ignore=DL3008
-RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
         curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Create user and directories
-RUN groupadd -r -g 1000 discogsography && \
-    useradd -r -u 1000 -g discogsography -m -s /bin/bash discogsography
+# Create user and directories with configurable UID/GID
+RUN groupadd -r -g ${GID} discogsography && \
+    useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
+    mkdir -p /tmp /app && \
+    chown -R discogsography:discogsography /tmp /app
 
 WORKDIR /app
 
@@ -81,8 +86,8 @@ RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec uv run python -
     chmod +x /app/start.sh
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8003/api/metrics || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:8003/health || exit 1
 
 USER discogsography:discogsography
 
@@ -104,7 +109,8 @@ ENV HOME=/home/discogsography \
 
 EXPOSE 8003
 
-# No additional runtime configuration needed
+# Security: This container should be run with:
+# docker run --cap-drop=ALL --security-opt=no-new-privileges:true ...
 
 # Run the dashboard
 CMD ["/app/start.sh"]

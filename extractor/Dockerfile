@@ -1,7 +1,9 @@
 # syntax=docker/dockerfile:1
 
-# Python version build argument
+# Build arguments
 ARG PYTHON_VERSION=3.13
+ARG UID=1000
+ARG GID=1000
 
 FROM python:${PYTHON_VERSION}-slim AS builder
 
@@ -30,11 +32,12 @@ COPY extractor/ ./extractor/
 # Final stage
 FROM python:${PYTHON_VERSION}-slim
 
-# Build arguments for dynamic labels
-ARG PYTHON_VERSION=3.13
+# Build arguments for labels
 ARG BUILD_DATE
 ARG BUILD_VERSION
 ARG VCS_REF
+ARG UID=1000
+ARG GID=1000
 
 # OCI Image Spec Annotations
 # https://github.com/opencontainers/image-spec/blob/main/annotations.md
@@ -62,11 +65,11 @@ RUN apt-get update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Create user and directories
-RUN groupadd -r -g 1000 discogsography && \
-    useradd -r -u 1000 -g discogsography -m -s /bin/bash discogsography && \
-    mkdir -p /discogs-data && \
-    chown -R discogsography:discogsography /discogs-data
+# Create user and directories with configurable UID/GID
+RUN groupadd -r -g ${GID} discogsography && \
+    useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
+    mkdir -p /tmp /app /discogs-data && \
+    chown -R discogsography:discogsography /tmp /app /discogs-data
 
 WORKDIR /app
 
@@ -83,7 +86,7 @@ RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec uv run python -
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD pgrep -f "python.*extractor" > /dev/null || exit 1
+    CMD curl -f http://localhost:8000/health || exit 1
 
 USER discogsography:discogsography
 
@@ -99,5 +102,8 @@ ENV HOME=/home/discogsography \
     PERIODIC_CHECK_DAYS="15"
 
 VOLUME ["/discogs-data"]
+
+# Security: This container should be run with:
+# docker run --cap-drop=ALL --security-opt=no-new-privileges:true ...
 
 CMD ["/app/start.sh"]
