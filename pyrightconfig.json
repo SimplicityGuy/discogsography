@@ -1,25 +1,30 @@
 {
-    "pythonVersion": "3.13",
-    "include": [
-        "extractor",
-        "graphinator",
-        "tableinator",
-        "config.py"
-    ],
-    "extraPaths": [
-        ".",
-        "extractor",
-        "graphinator",
-        "tableinator"
-    ],
-    "typeCheckingMode": "strict",
-    "useLibraryCodeForTypes": true,
-    "reportMissingImports": true,
-    "reportMissingTypeStubs": false,
-    "reportUntypedFunctionDecorator": false,
-    "reportUnknownParameterType": false,
-    "reportUnknownArgumentType": false,
-    "reportUnknownVariableType": false,
-    "reportUnknownMemberType": false,
-    "reportPrivateUsage": false
+  "extraPaths": [
+    ".",
+    "common",
+    "dashboard",
+    "extractor",
+    "graphinator",
+    "tableinator"
+  ],
+  "include": [
+    "common",
+    "dashboard",
+    "extractor",
+    "graphinator",
+    "tableinator",
+    "utilities",
+    "config.py"
+  ],
+  "pythonVersion": "3.13",
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportPrivateUsage": false,
+  "reportUnknownArgumentType": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownParameterType": false,
+  "reportUnknownVariableType": false,
+  "reportUntypedFunctionDecorator": false,
+  "typeCheckingMode": "strict",
+  "useLibraryCodeForTypes": true
 }

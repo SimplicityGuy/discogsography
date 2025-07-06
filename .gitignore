@@ -105,7 +105,7 @@ ipython_config.py
 # pyenv
 #   For a library or package, you might want to ignore these files since the code is
 #   intended to run in multiple environments; otherwise, check them in:
-# .python-version
+.python-version
 
 # pipenv
 #   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
@@ -162,6 +162,39 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# Modern Python tools
+.pdm-python
+.ruff_cache/
+
+# Docker
+.env.docker
+docker-compose.override.yml
+/discogs-data/
+
+# Additional IDEs
+.idea/
+*.swp
+*.swo
+*~
+\#*#
+.#*
+
+# Security
+*.pem
+*.key
+*.crt
+*.cer
+.env.local
+.env.production
+.env.*.local
+
+# Dashboard/Frontend (if applicable)
+node_modules/
+static/build/
+
+# uv lock file - DO NOT IGNORE (needed for reproducible builds)
+# uv.lock
 
 ###
 # macOS

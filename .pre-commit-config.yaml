@@ -18,6 +18,8 @@ repos:
       - id: mixed-line-ending
       - id: requirements-txt-fixer
       - id: trailing-whitespace
+      - id: pretty-format-json
+        args: [--autofix, --indent=2]
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
     rev: 54da05914997e6b04e4db33ed6757d744984c68b  # frozen: 0.33.2

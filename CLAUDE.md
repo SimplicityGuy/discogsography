@@ -496,3 +496,4 @@ All logger calls must follow the format: emoji + single space + message. Here ar
 - Prefer ruff's built-in formatter over running black separately.
 - Always ensure pytest tests can be run without manually setting PYTHONPATH (configured in pyproject.toml).
 - GitHub workflows implement comprehensive caching for dependencies, Docker builds, and tools.
+- Do not set resource limits in docker-compose files.

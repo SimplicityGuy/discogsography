@@ -2,6 +2,11 @@
 # Production overrides for docker-compose.yml
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # Note: When using deploy.replicas, container_name from base config is ignored
+#
+# Additional environment variables for production:
+# - UID/GID: User/Group ID for container processes (default: 1000)
+# - Memory limits: <SERVICE>_MEMORY_LIMIT (e.g., DASHBOARD_MEMORY_LIMIT)
+# - Database credentials: RABBITMQ_USER, POSTGRES_USER, NEO4J_USER, etc.
 
 services:
   rabbitmq:
@@ -9,11 +14,7 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
-    deploy:
-      resources:
-        limits:
-          memory: ${RABBITMQ_MEMORY_LIMIT:-1G}
-          cpus: "1.0"
+    # No resource limits per project convention
 
   postgres:
     restart: always
@@ -21,22 +22,14 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-    deploy:
-      resources:
-        limits:
-          memory: ${POSTGRES_MEMORY_LIMIT:-2G}
-          cpus: "2.0"
+    # No resource limits per project convention
 
   neo4j:
     restart: always
     environment:
       NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
       NEO4J_dbms_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-2G}
-    deploy:
-      resources:
-        limits:
-          memory: ${NEO4J_MEMORY_LIMIT:-4G}
-          cpus: "2.0"
+    # No resource limits per project convention
 
   extractor:
     restart: always
@@ -46,10 +39,6 @@ services:
         condition: any
         delay: 5s
         max_attempts: 3
-      resources:
-        limits:
-          memory: ${EXTRACTOR_MEMORY_LIMIT:-2G}
-          cpus: "1.0"
 
   graphinator:
     restart: always
@@ -58,10 +47,6 @@ services:
         condition: any
         delay: 5s
         max_attempts: 3
-      resources:
-        limits:
-          memory: ${GRAPHINATOR_MEMORY_LIMIT:-1G}
-          cpus: "1.0"
 
   tableinator:
     restart: always
@@ -70,7 +55,11 @@ services:
         condition: any
         delay: 5s
         max_attempts: 3
-      resources:
-        limits:
-          memory: ${TABLEINATOR_MEMORY_LIMIT:-1G}
-          cpus: "1.0"
+
+  dashboard:
+    restart: always
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3

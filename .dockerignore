@@ -43,6 +43,24 @@ tests/
 docs/
 utilities/
 
+# Environment files
+.env
+.env.docker
+.env.local
+.env.production
+.env.*.local
+
+# Modern Python
+.pdm-python
+.python-version
+# Note: uv.lock should be included in Docker context for reproducible builds
+
+# Security
+*.pem
+*.key
+*.crt
+*.cer
+
 # Build artifacts
 build/
 dist/
@@ -64,3 +82,14 @@ README.md
 *.tmp
 *.temp
 .cache/
+
+# Additional IDEs
+*.swp
+*.swo
+*~
+\#*#
+.#*
+
+# Frontend (if applicable)
+node_modules/
+static/build/
