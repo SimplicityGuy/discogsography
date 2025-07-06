@@ -11,6 +11,7 @@ env:
 jobs:
   list-sub-projects:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -31,6 +32,7 @@ jobs:
     needs: list-sub-projects
 
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     strategy:
       matrix:

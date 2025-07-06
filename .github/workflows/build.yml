@@ -22,6 +22,7 @@ env:
 jobs:
   list-sub-projects:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -40,6 +41,7 @@ jobs:
 
   code-quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Set lowercase image name
@@ -96,16 +98,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-arkade-
 
-      - name: Cache Playwright browsers
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/ms-playwright
-            ~/Library/Caches/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
-
       - name: Install arkade
         uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
         with:
@@ -136,21 +128,13 @@ jobs:
           uv pip install -e dashboard
           uv pip install -e common
 
-      - name: Install Playwright browsers
-        run: |
-          # Set Playwright to run in CI mode
-          export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
-          uv run playwright install chromium
-          # Install system dependencies for headless Chrome
-          uv run playwright install-deps chromium
-
       - name: Run pre-commit hooks
         run: |
           uv run pre-commit run --all-files
 
-      - name: Run tests with coverage
+      - name: Run tests with coverage (excluding E2E)
         run: |
-          uv run pytest --cov
+          uv run pytest --cov -m "not e2e"
 
       - name: Validate docker-compose files
         run: |
@@ -179,6 +163,7 @@ jobs:
     needs: [list-sub-projects, code-quality]
 
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     strategy:
       matrix:

@@ -399,10 +399,12 @@ logger.warning("⚠️ Connection timeout, retrying...")
 
 1. **build.yml** - Main CI/CD workflow that:
 
-   - Runs code quality checks (pre-commit, tests)
+   - Runs code quality checks (pre-commit)
+   - Runs unit tests (excluding E2E/Playwright tests)
    - Validates docker-compose files
    - Builds and pushes Docker images to GitHub Container Registry
    - Includes comprehensive caching strategies
+   - **Timeout**: 15 minutes for code quality, 30 minutes for builds
 
 1. **docker-validate.yml** - Dedicated Docker validation that:
 
@@ -410,8 +412,27 @@ logger.warning("⚠️ Connection timeout, retrying...")
    - Tests Docker builds
    - Validates docker-compose syntax and services
    - Checks security best practices
+   - **Timeout**: 10 minutes for validation tasks
 
-1. **cleanup.yml** - Registry cleanup workflow
+1. **playwright-test.yml** - Dashboard E2E testing workflow:
+
+   - Runs only when dashboard or test files change
+   - Installs Playwright browsers and dependencies
+   - Executes dashboard UI tests
+   - **Timeout**: 15 minutes
+
+1. **test-all.yml** - Comprehensive test workflow:
+
+   - Determines if dashboard tests are needed based on changed files
+   - Runs unit tests separately from E2E tests
+   - Conditionally runs Playwright tests only when relevant files change
+   - Prevents duplicate test execution
+   - **Timeout**: 15 minutes for each test job
+
+1. **cleanup.yml** - Registry cleanup workflow:
+
+   - Scheduled monthly cleanup of old Docker images
+   - **Timeout**: 10 minutes
 
 ### Docker Compose Validation
 
@@ -425,12 +446,35 @@ The workflows validate docker-compose files by:
 
 ### Playwright Setup
 
-The CI workflow includes Playwright support for dashboard UI tests:
+Playwright tests are handled in dedicated workflows:
 
+- **playwright-test.yml**: Runs only when dashboard files change
+- **test-all.yml**: Conditionally includes Playwright tests based on changed files
+- Tests are marked with `@pytest.mark.e2e` for easy filtering
 - Installs Chromium browser and system dependencies
 - Caches browser binaries for faster subsequent runs
 - Configures environment variables for headless operation
-- Dashboard UI tests currently excluded until service mocking is implemented
+- Uses `./scripts/test-e2e.sh` for automated test execution
+
+### Test Execution Strategy
+
+1. **Separation of Concerns**:
+
+   - Unit tests run on every push/PR in `build.yml`
+   - E2E tests run only when dashboard code changes
+   - Prevents unnecessary Playwright browser downloads
+
+1. **Conditional Execution**:
+
+   - `test-all.yml` checks git diff for dashboard changes
+   - Supports workflow_dispatch for manual full test runs
+   - Avoids duplicate test execution across workflows
+
+1. **Performance Optimization**:
+
+   - Dashboard tests isolated to reduce CI time
+   - Playwright browser cache shared across workflows
+   - Separate pytest cache keys for unit vs E2E tests
 
 ### Caching Strategies
 

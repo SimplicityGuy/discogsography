@@ -27,6 +27,7 @@ env:
 jobs:
   list-sub-projects:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
 
     outputs:
       matrix: ${{ steps.set-matrix.outputs.matrix }}
@@ -46,6 +47,7 @@ jobs:
   validate-dockerfiles:
     needs: list-sub-projects
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     strategy:
       matrix:
@@ -72,6 +74,7 @@ jobs:
 
   validate-compose:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
 
     steps:
       - name: Checkout repository

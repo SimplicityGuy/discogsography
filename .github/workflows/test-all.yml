@@ -1,0 +1,177 @@
+---
+name: Test All
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "dashboard/**"
+      - "tests/dashboard/**"
+      - "common/**"
+  pull_request:
+    branches:
+      - main
+
+env:
+  CI: true
+  PLAYWRIGHT_BROWSERS_PATH: "0"  # Use default location
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  determine-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run-playwright: ${{ steps.check.outputs.run-playwright }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if dashboard tests needed
+        id: check
+        run: |
+          # For workflow_dispatch or when dashboard files are changed
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            echo "run-playwright=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.event_name }}" == "push" ]]; then
+            # Check if any dashboard files changed in the last commit
+            if git diff --name-only HEAD~1..HEAD | grep -E "(dashboard/|tests/dashboard/|common/)" > /dev/null; then
+              echo "run-playwright=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "run-playwright=false" >> "$GITHUB_OUTPUT"
+            fi
+          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            # Check if any dashboard files changed in the PR
+            if git diff --name-only origin/${{ github.base_ref }}..HEAD | grep -E "(dashboard/|tests/dashboard/|common/)" > /dev/null; then
+              echo "run-playwright=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "run-playwright=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "run-playwright=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  test-unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba # v6.3.1
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            .venv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Cache pytest
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: ${{ runner.os }}-pytest-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pytest-
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --frozen
+          # Install workspace packages
+          uv pip install -e dashboard
+          uv pip install -e common
+
+      - name: Run unit tests with coverage (excluding E2E)
+        run: |
+          uv run pytest --cov -m "not e2e"
+
+  test-playwright:
+    needs: [determine-tests]
+    if: needs.determine-tests.outputs.run-playwright == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba # v6.3.1
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            .venv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Cache pytest
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: ${{ runner.os }}-pytest-playwright-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pytest-playwright-
+            ${{ runner.os }}-pytest-
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/ms-playwright
+            ~/Library/Caches/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --frozen
+          # Install workspace packages
+          uv pip install -e dashboard
+          uv pip install -e common
+
+      - name: Install Playwright browsers
+        run: |
+          # Set Playwright to run in CI mode
+          export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
+          uv run playwright install chromium
+          # Install system dependencies for headless Chrome
+          uv run playwright install-deps chromium
+
+      - name: Run dashboard E2E tests
+        run: |
+          # Run the E2E test script which handles server startup
+          ./scripts/test-e2e.sh

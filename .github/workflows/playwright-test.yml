@@ -33,6 +33,7 @@ jobs:
   playwright-test:
     name: Test Playwright
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout repository
@@ -59,6 +60,15 @@ jobs:
           key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-uv-
+
+      - name: Cache pytest
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: ${{ runner.os }}-pytest-playwright-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pytest-playwright-
+            ${{ runner.os }}-pytest-
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
