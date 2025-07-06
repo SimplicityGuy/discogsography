@@ -7,6 +7,7 @@ import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import aio_pika
@@ -369,13 +370,15 @@ class DashboardApp:
 
 
 # Create the dashboard app instance
-dashboard = DashboardApp()
+dashboard: DashboardApp | None = None
 
 
 # Create FastAPI app with lifespan
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifecycle."""
+    global dashboard
+    dashboard = DashboardApp()
     await dashboard.startup()
     yield
     await dashboard.shutdown()
@@ -403,50 +406,63 @@ async def get_metrics() -> ORJSONResponse:
     """Get current system metrics."""
     API_REQUESTS.labels(endpoint="/api/metrics", method="GET").inc()
 
-    if dashboard.latest_metrics:
-        return dashboard.latest_metrics
-    else:
+    if dashboard and dashboard.latest_metrics:
+        return ORJSONResponse(content=dashboard.latest_metrics.model_dump())
+    elif dashboard:
         # Collect metrics on demand if not available
-        return await dashboard.collect_all_metrics()
+        metrics = await dashboard.collect_all_metrics()
+        return ORJSONResponse(content=metrics.model_dump())
+    else:
+        return ORJSONResponse(content={})
 
 
 @app.get("/api/services")  # type: ignore[misc]
 async def get_services() -> ORJSONResponse:
     """Get service statuses."""
     API_REQUESTS.labels(endpoint="/api/services", method="GET").inc()
-    return await dashboard.get_service_statuses()
+    if not dashboard:
+        return ORJSONResponse(content=[])
+    services = await dashboard.get_service_statuses()
+    return ORJSONResponse(content=[s.model_dump() for s in services])
 
 
 @app.get("/api/queues")  # type: ignore[misc]
 async def get_queues() -> ORJSONResponse:
     """Get queue information."""
     API_REQUESTS.labels(endpoint="/api/queues", method="GET").inc()
-    return await dashboard.get_queue_info()
+    if not dashboard:
+        return ORJSONResponse(content=[])
+    queues = await dashboard.get_queue_info()
+    return ORJSONResponse(content=[q.model_dump() for q in queues])
 
 
 @app.get("/api/databases")  # type: ignore[misc]
 async def get_databases() -> ORJSONResponse:
     """Get database information."""
     API_REQUESTS.labels(endpoint="/api/databases", method="GET").inc()
-    return await dashboard.get_database_info()
+    if not dashboard:
+        return ORJSONResponse(content=[])
+    databases = await dashboard.get_database_info()
+    return ORJSONResponse(content=[d.model_dump() for d in databases])
 
 
 @app.get("/metrics")  # type: ignore[misc]
 async def prometheus_metrics() -> Response:
     """Expose Prometheus metrics."""
-    return generate_latest()
+    return Response(content=generate_latest(), media_type="text/plain")
 
 
 @app.websocket("/ws")  # type: ignore[misc]
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await websocket.accept()
-    dashboard.websocket_connections.add(websocket)
+    if dashboard:
+        dashboard.websocket_connections.add(websocket)
     WEBSOCKET_CONNECTIONS.inc()
 
     try:
         # Send initial metrics
-        if dashboard.latest_metrics:
+        if dashboard and dashboard.latest_metrics:
             await websocket.send_text(
                 orjson.dumps(
                     {
@@ -461,17 +477,19 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             await websocket.receive_text()
 
     except WebSocketDisconnect:
-        dashboard.websocket_connections.remove(websocket)
+        if dashboard:
+            dashboard.websocket_connections.remove(websocket)
         WEBSOCKET_CONNECTIONS.dec()
     except Exception as e:
         logger.error(f"❌ WebSocket error: {e}")
-        if websocket in dashboard.websocket_connections:
+        if dashboard and websocket in dashboard.websocket_connections:
             dashboard.websocket_connections.remove(websocket)
             WEBSOCKET_CONNECTIONS.dec()
 
 
 # Mount static files for the UI
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+static_dir = Path(__file__).parent / "static"
+app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 
 if __name__ == "__main__":

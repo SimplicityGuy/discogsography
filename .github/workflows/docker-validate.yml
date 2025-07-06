@@ -1,5 +1,5 @@
 ---
-name: Validate Docker Files
+name: docker validate
 
 on:
   pull_request:
