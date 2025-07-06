@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/tmp/.cache/uv \
     uv sync --frozen --no-dev --extra tableinator
 
 # Copy source files
-COPY config.py ./
+COPY common/ ./common/
 COPY tableinator/ ./tableinator/
 
 # Final stage
@@ -55,11 +55,12 @@ LABEL org.opencontainers.image.title="Discogsography Tableinator" \
       com.discogsography.python.version="${PYTHON_VERSION}" \
       com.discogsography.database="postgresql"
 
-# Install security updates and PostgreSQL client libraries
+# Install security updates, PostgreSQL client libraries, and curl for healthcheck
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
+        curl \
         libpq5 && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*

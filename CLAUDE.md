@@ -4,8 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Overview
 
-This is a modern Python 3.13+ system for processing Discogs database exports into different storage backends. The architecture consists of three main microservices:
+This is a modern Python 3.13+ system for processing Discogs database exports into different storage backends. The architecture consists of four main microservices:
 
+- **dashboard/**: Real-time monitoring dashboard for all services with WebSocket updates
 - **extractor/**: Downloads and parses Discogs XML exports, publishing data to AMQP queues
 - **graphinator/**: Consumes AMQP messages and stores data in Neo4j graph database
 - **tableinator/**: Consumes AMQP messages and stores data in PostgreSQL relational database
@@ -39,12 +40,14 @@ The Python version is automatically propagated to:
 
 This project uses uv workspaces with the following structure:
 
-- **Root**: Shared configuration and dependencies (`config.py`)
+- **Root**: Main project configuration and shared dependencies
+- **common/**: Shared utilities (`config.py`, `health_server.py`)
+- **dashboard/**: Monitoring dashboard with FastAPI backend and static frontend
 - **extractor/**: Discogs XML processing service with its own `pyproject.toml`
 - **graphinator/**: Neo4j graph database service with its own `pyproject.toml`
 - **tableinator/**: PostgreSQL relational database service with its own `pyproject.toml`
 
-Each service maintains its own dependencies while sharing common configuration.
+Each service maintains its own dependencies while sharing common utilities.
 
 ## Development Commands
 
@@ -111,6 +114,8 @@ Each service can also run linting and type checking independently:
 - `uv run pytest --cov` - Run tests with coverage report
 - `uv run pytest tests/test_config.py -v` - Run specific test file
 - `uv run pytest -k "test_name" -v` - Run tests matching pattern
+- `uv run playwright install` - Install Playwright browsers (first time only)
+- `uv run pytest tests/dashboard/` - Run dashboard UI tests with Playwright
 - `uv run pytest -xvs` - Run tests with verbose output, stop on first failure
 - `uv run pytest --tb=short` - Run tests with shorter traceback format
 
@@ -132,6 +137,7 @@ Each service can also run linting and type checking independently:
 
 ### Running Services
 
+- `uv run python dashboard/dashboard.py` - Run monitoring dashboard
 - `uv run python extractor/extractor.py` - Run extractor service (with periodic checks)
 - `uv run python graphinator/graphinator.py` - Run graphinator service
 - `uv run python tableinator/tableinator.py` - Run tableinator service
@@ -167,6 +173,7 @@ PERIODIC_CHECK_DAYS=1 uv run python extractor/extractor.py
 
 #### Service URLs (when running via Docker Compose)
 
+- **Dashboard**: http://localhost:8003 (Real-time monitoring dashboard)
 - **RabbitMQ Management**: http://localhost:15672 (user: discogsography, pass: discogsography)
 - **Neo4j Browser**: http://localhost:7474 (user: neo4j, pass: discogsography)
 - **PostgreSQL**: localhost:5432 (user: discogsography, pass: discogsography, db: discogsography)
@@ -175,6 +182,7 @@ PERIODIC_CHECK_DAYS=1 uv run python extractor/extractor.py
 
 Each service can be built independently (uses root context due to shared dependencies):
 
+- `docker build --build-arg PYTHON_VERSION=3.13 -f dashboard/Dockerfile .` - Build dashboard service
 - `docker build --build-arg PYTHON_VERSION=3.13 -f extractor/Dockerfile .` - Build extractor service
 - `docker build --build-arg PYTHON_VERSION=3.13 -f graphinator/Dockerfile .` - Build graphinator service
 - `docker build --build-arg PYTHON_VERSION=3.13 -f tableinator/Dockerfile .` - Build tableinator service
@@ -239,10 +247,13 @@ The Dockerfiles implement several best practices:
 1. **extractor** downloads Discogs XML dumps from S3, validates checksums, parses XML to JSON
 1. Parsed data is published to AMQP exchange "discogsography-extractor" with routing keys by data type
 1. **graphinator** and **tableinator** consume from queues and store in their respective databases
+1. **dashboard** monitors all services via health endpoints and RabbitMQ management API
 
 ### Key Components
 
-- `config.py`: Centralized configuration management with validation
+- `common/config.py`: Centralized configuration management with validation
+- `common/health_server.py`: Simple HTTP health check server for service monitoring
+- `dashboard/dashboard.py`: FastAPI-based monitoring dashboard with WebSocket support
 - `extractor/discogs.py`: S3 download logic with proper error handling
 - `extractor/extractor.py`: Main XML parsing and AMQP publishing logic
 - `graphinator/graphinator.py`: Neo4j graph database consumer with modern driver
@@ -276,9 +287,28 @@ Uses modern dataclass-based configuration with environment variable validation:
 
 ## Debugging & Monitoring
 
+### Dashboard
+
+The monitoring dashboard provides real-time visibility into all services:
+
+- **Service Health**: Live status of extractor, graphinator, and tableinator
+- **Queue Metrics**: RabbitMQ queue sizes, consumer counts, and message rates
+- **Database Stats**: Connection counts and sizes for PostgreSQL and Neo4j
+- **Activity Log**: Recent system events and status changes
+- **WebSocket Updates**: Real-time data streaming without page refresh
+
+Access the dashboard at http://localhost:8003 when running via Docker Compose.
+
 ### Health Checks
 
-All services include health checks that can be monitored:
+All services expose health endpoints for monitoring:
+
+- Dashboard: http://localhost:8003/api/metrics
+- Extractor: http://localhost:8000/health
+- Graphinator: http://localhost:8001/health
+- Tableinator: http://localhost:8002/health
+
+Docker Compose health checks:
 
 - `docker-compose ps` - View health status of all services
 - `docker inspect discogsography-<service> | grep -A5 Health` - Detailed health info
@@ -420,16 +450,46 @@ The workflows validate docker-compose files by:
 - Cache rotation implemented to prevent unbounded growth
 - Platform-specific caches (Linux) for consistency
 
+## Logging Emoji Convention
+
+All logger calls must follow the format: emoji + single space + message. Here are the standard emoji used:
+
+- 🚀 Starting/launching services
+- ✅ Success/completion messages
+- ❌ Errors and failures
+- ⚠️ Warnings
+- 📊 Progress updates and statistics
+- 📥 Downloading/receiving data
+- 📤 Uploading/sending data
+- 🔄 Processing/updating/retrying
+- 🏥 Health server messages
+- 🐰 RabbitMQ connections
+- 🔗 Neo4j connections
+- 🐘 PostgreSQL connections
+- 💾 Database operations
+- 🔧 Configuration/setup operations
+- 🛑 Shutdown/stop operations
+- ⏳ Waiting/delay messages
+- 📁 File operations
+- 🔍 Search/discovery operations
+
 ## Workflow Memories
 
 - Always run from the project root.
 - Always fix all ruff and mypy errors before completing.
 - Run `uv run bandit -r . -x "./.venv/*,./tests/*"` to verify security compliance after changes.
 - Scope pragmas for disabling rules to the affected lines. Avoid disabling rules for the entire file.
+- Logger calls must use emoji + single space + message format.
 - Always run `uv run pre-commit run --all-files` once code changes are complete.
 - All logger calls must include appropriate emojis with exactly one space after them.
 - For any github actions used in the github workflows, if the action is from github or docker using the version tag is fine, but for any other, use the sha with a comment of the version.
 - When updating dependencies, use `uv add` instead of manually editing pyproject.toml.
+- Always sort lists: apt-get install packages, service lists, TOML configuration arrays, etc.
+- Use DEBIAN_FRONTEND=noninteractive for all apt-get commands in Dockerfiles.
+- When using docker-compose deploy.replicas, container_name must be removed to avoid conflicts.
+- Configure git with co-author: `git config --local user.name "Claude Code" && git config --local user.email "noreply@anthropic.com"`
+- After completing work, always run pre-commit and commit changes with meaningful messages.
+- Common code (config.py, health_server.py) lives in the common/ directory.
 - Run `uv sync --all-extras` after any dependency changes to update the lock file.
 - Use `# noqa` comments sparingly and only when absolutely necessary (e.g., `# noqa: S108` for test temp directories).
 - Prefer ruff's built-in formatter over running black separately.

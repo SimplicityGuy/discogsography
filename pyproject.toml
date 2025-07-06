@@ -42,9 +42,11 @@ dev = [
     "black>=24.0.0",
     "isort>=5.13.0",
     "mypy>=1.8.0",
+    "playwright>=1.40.0",
     "pytest>=7.4.0",
     "pytest-asyncio>=0.21.0",
     "pytest-cov>=4.1.0",
+    "pytest-playwright>=0.4.3",
     "pre-commit>=3.5.0",
     "ruff>=0.1.0",
     "types-tqdm>=4.67.0.20250516",
@@ -208,4 +210,4 @@ split_on_trailing_comma = true
 
 # uv workspace configuration
 [tool.uv.workspace]
-members = ["extractor", "graphinator", "tableinator"]
+members = ["common", "dashboard", "extractor", "graphinator", "tableinator"]

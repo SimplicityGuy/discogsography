@@ -1,0 +1,15 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[project]
+authors = [{ name = "Robert Wlodarczyk" }]
+dependencies = []
+description = "Common utilities and configuration for discogsography services"
+name = "discogsography-common"
+readme = "README.md"
+requires-python = ">=3.13"
+version = "0.1.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]

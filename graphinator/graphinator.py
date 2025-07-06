@@ -10,18 +10,18 @@ from typing import Any
 from aio_pika import connect
 from aio_pika.abc import AbstractIncomingMessage
 from aio_pika.exceptions import AMQPConnectionError
-from neo4j import GraphDatabase
-from neo4j.exceptions import Neo4jError
-from orjson import loads
-
-from config import (
+from common import (
     AMQP_EXCHANGE,
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_GRAPHINATOR,
     DATA_TYPES,
     GraphinatorConfig,
+    HealthServer,
     setup_logging,
 )
+from neo4j import GraphDatabase
+from neo4j.exceptions import Neo4jError
+from orjson import loads
 
 
 logger = logging.getLogger(__name__)
@@ -36,12 +36,29 @@ config: GraphinatorConfig | None = None
 message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+current_task = None
+current_progress = 0.0
 
 # Driver will be initialized in main
 graph: Any = None
 
 # Global shutdown flag
 shutdown_requested = False
+
+
+def get_health_data() -> dict[str, Any]:
+    """Get current health data for monitoring."""
+    from datetime import datetime
+
+    return {
+        "status": "healthy" if graph else "unhealthy",
+        "service": "graphinator",
+        "current_task": current_task,
+        "progress": current_progress,
+        "message_counts": message_counts.copy(),
+        "last_message_time": last_message_time.copy(),
+        "timestamp": datetime.now().isoformat(),
+    }
 
 
 def signal_handler(signum: int, _frame: Any) -> None:
@@ -92,6 +109,8 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         # Increment counter and log progress
         message_counts["artists"] += 1
         last_message_time["artists"] = time.time()
+        global current_task
+        current_task = "Processing artists"
         if message_counts["artists"] % progress_interval == 0:
             logger.info(f"📊 Processed {message_counts['artists']} artists in Neo4j")
 
@@ -226,6 +245,8 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         # Increment counter and log progress
         message_counts["labels"] += 1
         last_message_time["labels"] = time.time()
+        global current_task
+        current_task = "Processing labels"
         if message_counts["labels"] % progress_interval == 0:
             logger.info(f"📊 Processed {message_counts['labels']} labels in Neo4j")
 
@@ -319,6 +340,8 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         # Increment counter and log progress
         message_counts["masters"] += 1
         last_message_time["masters"] = time.time()
+        global current_task
+        current_task = "Processing masters"
         if message_counts["masters"] % progress_interval == 0:
             logger.info(f"📊 Processed {message_counts['masters']} masters in Neo4j")
 
@@ -448,6 +471,8 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         # Increment counter and log progress
         message_counts["releases"] += 1
         last_message_time["releases"] = time.time()
+        global current_task
+        current_task = "Processing releases"
         if message_counts["releases"] % progress_interval == 0:
             logger.info(f"📊 Processed {message_counts['releases']} releases in Neo4j")
 
@@ -602,6 +627,11 @@ async def main() -> None:
 
     setup_logging("graphinator", log_file=Path("graphinator.log"))
     logger.info("🚀 Starting Neo4j graphinator service")
+
+    # Start health server
+    health_server = HealthServer(8001, get_health_data)
+    health_server.start_background()
+    logger.info("🏥 Health server started on port 8001")
 
     # Initialize configuration
     try:
@@ -805,6 +835,9 @@ async def main() -> None:
                 logger.info("✅ Neo4j driver closed")
             except Exception as e:
                 logger.warning(f"⚠️ Error closing Neo4j driver: {e}")
+
+        # Stop health server
+        health_server.stop()
 
 
 if __name__ == "__main__":

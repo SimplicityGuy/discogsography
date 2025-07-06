@@ -11,6 +11,15 @@ from gzip import GzipFile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from common import (
+    AMQP_EXCHANGE,
+    AMQP_EXCHANGE_TYPE,
+    AMQP_QUEUE_PREFIX_GRAPHINATOR,
+    AMQP_QUEUE_PREFIX_TABLEINATOR,
+    ExtractorConfig,
+    HealthServer,
+    setup_logging,
+)
 from dict_hash import sha256
 from orjson import OPT_INDENT_2, OPT_SORT_KEYS, dumps, loads
 from pika import BlockingConnection, DeliveryMode, URLParameters
@@ -18,14 +27,6 @@ from pika.exceptions import AMQPChannelError, AMQPConnectionError
 from pika.spec import BasicProperties
 from xmltodict import parse
 
-from config import (
-    AMQP_EXCHANGE,
-    AMQP_EXCHANGE_TYPE,
-    AMQP_QUEUE_PREFIX_GRAPHINATOR,
-    AMQP_QUEUE_PREFIX_TABLEINATOR,
-    ExtractorConfig,
-    setup_logging,
-)
 from extractor.discogs import download_discogs_data
 
 
@@ -42,8 +43,23 @@ shutdown_requested = False
 # Progress tracking for monitoring
 extraction_progress = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 last_extraction_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+current_task = None
+current_progress = 0.0
 
 # Periodic check configuration will be loaded from config
+
+
+def get_health_data() -> dict[str, Any]:
+    """Get current health data for monitoring."""
+    return {
+        "status": "healthy",
+        "service": "extractor",
+        "current_task": current_task,
+        "progress": current_progress,
+        "extraction_progress": extraction_progress.copy(),
+        "last_extraction_time": last_extraction_time.copy(),
+        "timestamp": datetime.now().isoformat(),
+    }
 
 
 def signal_handler(signum: int, _frame: Any) -> None:
@@ -381,9 +397,11 @@ class ConcurrentExtractor:
         self.total_count += 1
 
         # Update global progress tracking
+        global current_task
         if self.data_type in extraction_progress:
             extraction_progress[self.data_type] += 1
             last_extraction_time[self.data_type] = time.time()
+            current_task = f"Processing {self.data_type}"
 
         if data_type in ["masters", "releases"] and len(path) > 1 and path[1][1] is not None:
             data["id"] = path[1][1]["id"]
@@ -789,6 +807,11 @@ async def main_async() -> None:
 
     logger.info("🚀 Starting Discogs data extractor with concurrent processing and periodic checks")
 
+    # Start health server
+    health_server = HealthServer(8000, get_health_data)
+    health_server.start_background()
+    logger.info("🏥 Health server started on port 8000")
+
     # Process initial data
     logger.info("📥 Starting initial data processing...")
     initial_success = await process_discogs_data(config)
@@ -804,6 +827,8 @@ async def main_async() -> None:
         logger.info("🔄 Starting periodic check service...")
         await periodic_check_loop(config)
 
+    # Stop health server
+    health_server.stop()
     logger.info("✅ Extractor service shutdown complete")
 
 

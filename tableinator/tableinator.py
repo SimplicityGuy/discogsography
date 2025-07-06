@@ -15,19 +15,19 @@ import psycopg
 from aio_pika import connect
 from aio_pika.abc import AbstractIncomingMessage
 from aio_pika.exceptions import AMQPConnectionError
-from orjson import loads
-from psycopg import sql
-from psycopg.errors import DatabaseError, InterfaceError
-from psycopg.types.json import Jsonb
-
-from config import (
+from common import (
     AMQP_EXCHANGE,
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_TABLEINATOR,
     DATA_TYPES,
+    HealthServer,
     TableinatorConfig,
     setup_logging,
 )
+from orjson import loads
+from psycopg import sql
+from psycopg.errors import DatabaseError, InterfaceError
+from psycopg.types.json import Jsonb
 
 
 logger = logging.getLogger(__name__)
@@ -39,9 +39,26 @@ config: TableinatorConfig | None = None
 message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+current_task = None
+current_progress = 0.0
 
 # Connection parameters will be initialized in main
 connection_params: dict[str, Any] = {}
+
+
+def get_health_data() -> dict[str, Any]:
+    """Get current health data for monitoring."""
+    from datetime import datetime
+
+    return {
+        "status": "healthy",
+        "service": "tableinator",
+        "current_task": current_task,
+        "progress": current_progress,
+        "message_counts": message_counts.copy(),
+        "last_message_time": last_message_time.copy(),
+        "timestamp": datetime.now().isoformat(),
+    }
 
 
 # Simple connection pool implementation
@@ -153,6 +170,8 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
         if data_type in message_counts:
             message_counts[data_type] += 1
             last_message_time[data_type] = time.time()
+            global current_task
+            current_task = f"Processing {data_type}"
             if message_counts[data_type] % progress_interval == 0:
                 logger.info(f"📊 Processed {message_counts[data_type]} {data_type} in PostgreSQL")
 
@@ -238,6 +257,11 @@ async def main() -> None:
 
     setup_logging("tableinator", log_file=Path("tableinator.log"))
     logger.info("🚀 Starting PostgreSQL tableinator service with connection pooling")
+
+    # Start health server
+    health_server = HealthServer(8002, get_health_data)
+    health_server.start_background()
+    logger.info("🏥 Health server started on port 8002")
 
     # Initialize configuration
     try:
@@ -433,6 +457,9 @@ async def main() -> None:
                     logger.info("✅ Connection pool closed")
             except Exception as e:
                 logger.warning(f"⚠️ Error closing connection pool: {e}")
+
+        # Stop health server
+        health_server.stop()
 
 
 if __name__ == "__main__":

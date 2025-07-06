@@ -169,3 +169,40 @@ def setup_logging(
     logging.getLogger("pika.connection").setLevel(logging.WARNING)
 
     logger.info(f"✅ Logging configured for {service_name}")
+
+
+@dataclass(frozen=True)
+class DashboardConfig:
+    """Configuration for the dashboard service."""
+
+    amqp_connection: str
+    neo4j_address: str
+    neo4j_username: str
+    neo4j_password: str
+    postgres_address: str
+    postgres_username: str
+    postgres_password: str
+    postgres_database: str
+
+    @classmethod
+    def from_env(cls) -> "DashboardConfig":
+        """Create configuration from environment variables."""
+        # Reuse other configs for consistency
+        graphinator_config = GraphinatorConfig.from_env()
+        tableinator_config = TableinatorConfig.from_env()
+
+        return cls(
+            amqp_connection=graphinator_config.amqp_connection,
+            neo4j_address=graphinator_config.neo4j_address,
+            neo4j_username=graphinator_config.neo4j_username,
+            neo4j_password=graphinator_config.neo4j_password,
+            postgres_address=tableinator_config.postgres_address,
+            postgres_username=tableinator_config.postgres_username,
+            postgres_password=tableinator_config.postgres_password,
+            postgres_database=tableinator_config.postgres_database,
+        )
+
+
+def get_config() -> DashboardConfig:
+    """Get dashboard configuration from environment."""
+    return DashboardConfig.from_env()

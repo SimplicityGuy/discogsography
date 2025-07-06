@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discogsography Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Discogsography Dashboard</h1>
+            <div class="connection-status" id="connectionStatus">
+                <span class="status-indicator"></span>
+                <span class="status-text">Connecting...</span>
+            </div>
+        </header>
+
+        <main>
+            <!-- Services Section -->
+            <section class="dashboard-section">
+                <h2>Services</h2>
+                <div class="services-grid" id="servicesGrid">
+                    <!-- Service cards will be dynamically added here -->
+                </div>
+            </section>
+
+            <!-- Queues Section -->
+            <section class="dashboard-section">
+                <h2>Message Queues</h2>
+                <div class="queues-container">
+                    <div class="queues-grid" id="queuesGrid">
+                        <!-- Queue cards will be dynamically added here -->
+                    </div>
+                    <div class="queue-charts">
+                        <canvas id="queueChart"></canvas>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Databases Section -->
+            <section class="dashboard-section">
+                <h2>Databases</h2>
+                <div class="databases-grid" id="databasesGrid">
+                    <!-- Database cards will be dynamically added here -->
+                </div>
+            </section>
+
+            <!-- Activity Log Section -->
+            <section class="dashboard-section">
+                <h2>Recent Activity</h2>
+                <div class="activity-log" id="activityLog">
+                    <div class="log-entry">Waiting for data...</div>
+                </div>
+            </section>
+        </main>
+
+        <footer>
+            <p>Last updated: <span id="lastUpdated">-</span></p>
+        </footer>
+    </div>
+
+    <script src="dashboard.js"></script>
+</body>
+</html>

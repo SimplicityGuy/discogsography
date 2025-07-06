@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from config import ExtractorConfig, GraphinatorConfig, TableinatorConfig, setup_logging
+from common import ExtractorConfig, GraphinatorConfig, TableinatorConfig, setup_logging
 
 
 class TestExtractorConfig:

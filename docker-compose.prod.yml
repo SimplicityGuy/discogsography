@@ -1,6 +1,7 @@
 ---
 # Production overrides for docker-compose.yml
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# Note: When using deploy.replicas, container_name from base config is ignored
 
 services:
   rabbitmq:
@@ -53,7 +54,6 @@ services:
   graphinator:
     restart: always
     deploy:
-      replicas: 2
       restart_policy:
         condition: any
         delay: 5s
@@ -66,7 +66,6 @@ services:
   tableinator:
     restart: always
     deploy:
-      replicas: 2
       restart_policy:
         condition: any
         delay: 5s

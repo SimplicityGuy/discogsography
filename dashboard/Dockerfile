@@ -18,28 +18,28 @@ WORKDIR /app
 
 # Copy dependency files first for better caching
 COPY pyproject.toml uv.lock ./
+COPY common/pyproject.toml ./common/
+COPY dashboard/pyproject.toml ./dashboard/
+
+# Copy source code needed for build
+COPY common/ ./common/
 
 # Install dependencies
-RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --extra graphinator
+RUN uv sync --frozen --no-dev
 
-# Copy source files
-COPY common/ ./common/
-COPY graphinator/ ./graphinator/
-
-# Final stage
+# Runtime stage
 FROM python:${PYTHON_VERSION}-slim
 
-# Build arguments for dynamic labels
-ARG PYTHON_VERSION=3.13
+# Build arguments for labels
 ARG BUILD_DATE
 ARG BUILD_VERSION
 ARG VCS_REF
+ARG PYTHON_VERSION
 
-# OCI Image Spec Annotations
+# OCI annotations
 # https://github.com/opencontainers/image-spec/blob/main/annotations.md
-LABEL org.opencontainers.image.title="Discogsography Graphinator" \
-      org.opencontainers.image.description="Consumes messages from AMQP queues and imports Discogs data into Neo4j graph database. Creates nodes for artists, labels, masters, and releases with their relationships." \
+LABEL org.opencontainers.image.title="Discogsography Dashboard" \
+      org.opencontainers.image.description="Real-time monitoring dashboard for discogsography services with WebSocket updates" \
       org.opencontainers.image.authors="Robert Wlodarczyk <robert@simplicityguy.com>" \
       org.opencontainers.image.url="https://github.com/SimplicityGuy/discogsography" \
       org.opencontainers.image.documentation="https://github.com/SimplicityGuy/discogsography/blob/main/README.md" \
@@ -50,20 +50,20 @@ LABEL org.opencontainers.image.title="Discogsography Graphinator" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.base.name="docker.io/library/python:${PYTHON_VERSION}-slim" \
-      com.discogsography.service="graphinator" \
-      com.discogsography.dependencies="neo4j,aio-pika" \
-      com.discogsography.python.version="${PYTHON_VERSION}" \
-      com.discogsography.database="neo4j"
+      com.discogsography.service="dashboard" \
+      com.discogsography.dependencies="fastapi,uvicorn,websockets,httpx" \
+      com.discogsography.python.version="${PYTHON_VERSION}"
 
 # Install security updates and curl for healthcheck
 # hadolint ignore=DL3008
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends curl && \
+RUN DEBIAN_FRONTEND=noninteractive apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get upgrade -y && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-# Create user
+# Create user and directories
 RUN groupadd -r -g 1000 discogsography && \
     useradd -r -u 1000 -g discogsography -m -s /bin/bash discogsography
 
@@ -77,12 +77,12 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
 
 # Create startup script
 # hadolint ignore=SC2016
-RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec uv run python -m graphinator.graphinator "$@"\n' > /app/start.sh && \
+RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec uv run python -m dashboard.dashboard "$@"\n' > /app/start.sh && \
     chmod +x /app/start.sh
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD pgrep -f "python.*graphinator" > /dev/null || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8003/api/metrics || exit 1
 
 USER discogsography:discogsography
 
@@ -96,6 +96,15 @@ ENV HOME=/home/discogsography \
     AMQP_CONNECTION="" \
     NEO4J_ADDRESS="" \
     NEO4J_USERNAME="" \
-    NEO4J_PASSWORD=""
+    NEO4J_PASSWORD="" \
+    POSTGRES_ADDRESS="" \
+    POSTGRES_USERNAME="" \
+    POSTGRES_PASSWORD="" \
+    POSTGRES_DATABASE=""
 
+EXPOSE 8003
+
+# No additional runtime configuration needed
+
+# Run the dashboard
 CMD ["/app/start.sh"]

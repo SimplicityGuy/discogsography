@@ -31,8 +31,8 @@ jobs:
       - name: Get all sub-projects
         id: set-matrix
         run: |
-          # Only include actual service directories
-          services=("extractor" "graphinator" "tableinator")
+          # Only include actual service directories (sorted alphabetically)
+          services=("dashboard" "extractor" "graphinator" "tableinator")
           matrix=$(printf "%s\n" "${services[@]}" | jq -R -s -c 'split("\n")[:-1]')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
@@ -143,7 +143,7 @@ jobs:
 
           # Validate all services are defined
           services=$(docker-compose config --services)
-          expected_services="rabbitmq postgres neo4j extractor graphinator tableinator"
+          expected_services="dashboard extractor graphinator neo4j postgres rabbitmq tableinator"
           for service in $expected_services; do
             if ! echo "$services" | grep -q "^$service$"; then
               echo "❌ Missing expected service: $service"

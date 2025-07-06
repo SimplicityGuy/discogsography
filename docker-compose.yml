@@ -136,7 +136,7 @@ services:
     networks:
       - discogsography
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'python.*extractor' > /dev/null || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -172,7 +172,7 @@ services:
     networks:
       - discogsography
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'python.*graphinator' > /dev/null || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -209,12 +209,55 @@ services:
     networks:
       - discogsography
     healthcheck:
-      test: ["CMD-SHELL", "pgrep -f 'python.*tableinator' > /dev/null || exit 1"]
+      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 90s
     restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+
+  # Dashboard service
+  dashboard:
+    build:
+      context: .
+      dockerfile: dashboard/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
+    image: discogsography/dashboard:latest
+    container_name: discogsography-dashboard
+    hostname: dashboard
+    user: "1000:1000"
+    environment:
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      NEO4J_ADDRESS: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: discogsography
+      POSTGRES_ADDRESS: postgres:5432
+      POSTGRES_USERNAME: discogsography
+      POSTGRES_PASSWORD: discogsography
+      POSTGRES_DATABASE: discogsography
+      PYTHONUNBUFFERED: "1"
+    ports:
+      - "8003:8003"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/api/metrics"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 40s
+    restart: unless-stopped
     logging: *default-logging
     security_opt:
       - no-new-privileges:true

@@ -1,0 +1,39 @@
+[build-system]
+build-backend = "hatchling.build"
+requires = ["hatchling"]
+
+[project]
+authors = [{ name = "Robert Wlodarczyk" }]
+dependencies = [
+  "aio-pika>=9.0.0",
+  "fastapi>=0.115.6",
+  "httpx>=0.27.0",
+  "orjson>=3.10.14",
+  "prometheus-client>=0.21.1",
+  "psycopg[binary]>=3.2.4",
+  "pydantic>=2.10.5",
+  "python-multipart>=0.0.20",
+  "uvicorn[standard]>=0.34.0",
+  "websockets>=14.2",
+]
+description = "Dashboard for monitoring discogsography services"
+name = "discogsography-dashboard"
+readme = "README.md"
+
+requires-python = ">=3.13"
+version = "0.1.0"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+[project.optional-dependencies]
+dev = [
+  "bandit[toml]>=1.8.0",
+  "mypy>=1.14.1",
+  "pre-commit>=4.0.1",
+  "pytest-asyncio>=0.25.2",
+  "pytest-cov>=6.0.0",
+  "pytest>=8.3.4",
+  "ruff>=0.9.1",
+  "types-aiofiles>=24.1.0.20241221",
+]

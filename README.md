@@ -14,8 +14,9 @@ A modern Python 3.13+ microservices system for processing [Discogs](https://www.
 
 ## Overview
 
-Discogsography consists of three microservices that work together to process the complete Discogs database:
+Discogsography consists of four microservices that work together to process and monitor the complete Discogs database:
 
+1. **Dashboard** - Real-time monitoring dashboard with WebSocket updates for all services
 1. **Extractor** - Downloads Discogs XML dumps from S3, validates checksums, parses XML to JSON, and publishes to message queues
 1. **Graphinator** - Consumes messages and builds a graph database in Neo4j with relationships between artists, labels, releases, and masters
 1. **Tableinator** - Consumes messages and stores denormalized data in PostgreSQL for fast queries and full-text search
@@ -96,6 +97,7 @@ Discogsography consists of three microservices that work together to process the
 
 1. Access the services:
 
+   - **Dashboard**: http://localhost:8003 (real-time monitoring UI)
    - **RabbitMQ Management**: http://localhost:15672 (user: discogsography, pass: discogsography)
    - **Neo4j Browser**: http://localhost:7474 (user: neo4j, pass: discogsography)
    - **PostgreSQL**: localhost:5432 (user: discogsography, pass: discogsography, db: discogsography)
@@ -136,13 +138,16 @@ Discogsography consists of three microservices that work together to process the
 1. Run services:
 
    ```bash
-   # Terminal 1 - Extractor
+   # Terminal 1 - Dashboard
+   uv run python dashboard/dashboard.py
+
+   # Terminal 2 - Extractor
    uv run python extractor/extractor.py
 
-   # Terminal 2 - Graphinator
+   # Terminal 3 - Graphinator
    uv run python graphinator/graphinator.py
 
-   # Terminal 3 - Tableinator
+   # Terminal 4 - Tableinator
    uv run python tableinator/tableinator.py
    ```
 
@@ -155,13 +160,13 @@ Discogsography consists of three microservices that work together to process the
 | `AMQP_CONNECTION` | RabbitMQ connection string | Required | All |
 | `DISCOGS_ROOT` | Path for downloaded files | `/discogs-data` | Extractor |
 | `PERIODIC_CHECK_DAYS` | Days between update checks | `15` | Extractor |
-| `NEO4J_ADDRESS` | Neo4j bolt address | Required | Graphinator |
-| `NEO4J_USERNAME` | Neo4j username | Required | Graphinator |
-| `NEO4J_PASSWORD` | Neo4j password | Required | Graphinator |
-| `POSTGRES_ADDRESS` | PostgreSQL host:port | Required | Tableinator |
-| `POSTGRES_USERNAME` | PostgreSQL username | Required | Tableinator |
-| `POSTGRES_PASSWORD` | PostgreSQL password | Required | Tableinator |
-| `POSTGRES_DATABASE` | PostgreSQL database | Required | Tableinator |
+| `NEO4J_ADDRESS` | Neo4j bolt address | Required | Dashboard, Graphinator |
+| `NEO4J_USERNAME` | Neo4j username | Required | Dashboard, Graphinator |
+| `NEO4J_PASSWORD` | Neo4j password | Required | Dashboard, Graphinator |
+| `POSTGRES_ADDRESS` | PostgreSQL host:port | Required | Dashboard, Tableinator |
+| `POSTGRES_USERNAME` | PostgreSQL username | Required | Dashboard, Tableinator |
+| `POSTGRES_PASSWORD` | PostgreSQL password | Required | Dashboard, Tableinator |
+| `POSTGRES_DATABASE` | PostgreSQL database | Required | Dashboard, Tableinator |
 
 ### Data Volume
 
@@ -293,6 +298,11 @@ uv run pytest --cov  # with coverage
 
 ```
 discogsography/
+├── common/             # Shared configuration and utilities
+│   ├── config.py       # Configuration management
+│   └── health_server.py # Health check endpoints
+├── dashboard/          # Real-time monitoring dashboard
+│   └── dashboard.py    # Web UI with WebSocket updates
 ├── extractor/          # XML parsing and message publishing
 │   ├── extractor.py    # Main service
 │   └── discogs.py      # S3 download logic
@@ -301,7 +311,6 @@ discogsography/
 ├── tableinator/        # PostgreSQL service
 │   └── tableinator.py  # Relational data storage
 ├── utilities/          # Debugging and monitoring tools
-├── config.py           # Shared configuration
 ├── docker-compose.yml  # Container orchestration
 └── pyproject.toml      # Project metadata and dependencies
 ```

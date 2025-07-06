@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/tmp/.cache/uv \
     uv sync --frozen --no-dev --extra extractor
 
 # Copy source files
-COPY config.py ./
+COPY common/ ./common/
 COPY extractor/ ./extractor/
 
 # Final stage
@@ -54,9 +54,11 @@ LABEL org.opencontainers.image.title="Discogsography Extractor" \
       com.discogsography.dependencies="boto3,xmltodict,pika" \
       com.discogsography.python.version="${PYTHON_VERSION}"
 
-# Install security updates
+# Install security updates and curl for healthcheck
+# hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
