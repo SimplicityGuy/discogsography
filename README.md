@@ -23,35 +23,36 @@ Discogsography consists of four microservices that work together to process and 
 
 ### Architecture
 
-```
-┌─────────────────┐
-│  Discogs S3     │
-│  Data Dumps     │
-└────────┬────────┘
-         │ Download & Parse
-         ▼
-┌─────────────────┐
-│   Extractor     │
-│  (XML → JSON)   │
-└────────┬────────┘
-         │ Publish
-         ▼
-┌─────────────────┐
-│   RabbitMQ      │
-│  Message Queue  │
-└───┬─────────┬───┘
-    │         │
-    ▼         ▼
-┌─────────┐ ┌─────────────┐
-│ Neo4j   │ │ PostgreSQL  │
-│ Graph   │ │ Relational  │
-└─────────┘ └─────────────┘
-    ▲           ▲
-    │           │
-┌─────────┐ ┌─────────────┐
-│Graphi-  │ │Tableinator  │
-│nator    │ │             │
-└─────────┘ └─────────────┘
+```mermaid
+graph TD
+    S3[("Discogs S3<br/>Data Dumps")]
+    EXT[["Extractor<br/>(XML → JSON)"]]
+    RMQ{{"RabbitMQ<br/>Message Queue"}}
+    NEO4J[(Neo4j<br/>Graph DB)]
+    PG[(PostgreSQL<br/>Relational DB)]
+    GRAPH[["Graphinator"]]
+    TABLE[["Tableinator"]]
+    DASH[["Dashboard<br/>(Monitoring)"]]
+
+    S3 -->|Download & Parse| EXT
+    EXT -->|Publish Messages| RMQ
+    RMQ -->|Consume| GRAPH
+    RMQ -->|Consume| TABLE
+    GRAPH -->|Store| NEO4J
+    TABLE -->|Store| PG
+
+    DASH -.->|Monitor| EXT
+    DASH -.->|Monitor| GRAPH
+    DASH -.->|Monitor| TABLE
+    DASH -.->|Query Stats| RMQ
+    DASH -.->|Query Stats| NEO4J
+    DASH -.->|Query Stats| PG
+
+    style S3 fill:#e1f5fe
+    style RMQ fill:#fff3e0
+    style NEO4J fill:#f3e5f5
+    style PG fill:#e8f5e9
+    style DASH fill:#fce4ec
 ```
 
 ### Features
@@ -61,7 +62,7 @@ Discogsography consists of four microservices that work together to process and 
 - **Concurrent Processing**: Multi-threaded XML parsing and concurrent message processing
 - **Fault Tolerance**: Message acknowledgment, automatic retries, and graceful shutdown
 - **Progress Tracking**: Real-time progress monitoring with detailed statistics
-- **Docker Support**: Full Docker Compose setup with security hardening (non-root, read-only filesystems, capability dropping) - see [DOCKER_SECURITY.md](DOCKER_SECURITY.md) and [DOCKERFILE_STANDARDS.md](DOCKERFILE_STANDARDS.md)
+- **Docker Support**: Full Docker Compose setup with security hardening (non-root, read-only filesystems, capability dropping) - see [Docker Security](docs/docker-security.md) and [Dockerfile Standards](docs/dockerfile-standards.md)
 - **Type Safety**: Comprehensive type hints and mypy validation
 - **Security**: Bandit security scanning, secure coding practices, and container security best practices
 
@@ -304,13 +305,9 @@ uv run playwright install chromium        # Install browser
 uv run playwright install-deps chromium   # Install system dependencies
 
 # Run E2E tests (starts test server automatically)
-./scripts/test-e2e.sh
+uv run task test-e2e
 
-# Or manually:
-# Terminal 1: Start test dashboard
-uv run python -m uvicorn tests.dashboard.dashboard_test_app:create_test_app --factory --host 127.0.0.1 --port 8003
-
-# Terminal 2: Run E2E tests
+# Or using pytest directly:
 uv run pytest tests/dashboard/test_dashboard_ui.py -m e2e
 ```
 
@@ -523,5 +520,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Discussions**: [GitHub Discussions](https://github.com/SimplicityGuy/discogsography/discussions)
 - **Documentation**:
   - [CLAUDE.md](CLAUDE.md) - Detailed technical documentation for development
-  - [DOCKER_SECURITY.md](DOCKER_SECURITY.md) - Container security best practices
-  - [DOCKERFILE_STANDARDS.md](DOCKERFILE_STANDARDS.md) - Dockerfile implementation standards
+  - [Task Automation](docs/task-automation.md) - Taskipy commands and workflows
+  - [Docker Security](docs/docker-security.md) - Container security best practices
+  - [Dockerfile Standards](docs/dockerfile-standards.md) - Dockerfile implementation standards

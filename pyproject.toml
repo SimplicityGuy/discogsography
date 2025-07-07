@@ -62,6 +62,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pre-commit>=3.5.0",
     "ruff>=0.1.0",
+    "taskipy>=1.14.0",
     "types-tqdm>=4.67.0.20250516",
     "types-xmltodict>=0.14.0.20241009",
     "types-psutil>=6.1.0.20241102",
@@ -230,3 +231,56 @@ split_on_trailing_comma = true
 # uv workspace configuration
 [tool.uv.workspace]
 members = ["common", "dashboard", "extractor", "graphinator", "tableinator"]
+
+# taskipy configuration for task automation
+[tool.taskipy.tasks]
+# Development tasks
+install = "uv sync --all-extras"
+lint = "uv run pre-commit run --all-files"
+lint-python = "uv run ruff check . && uv run mypy ."
+format = "uv run ruff format ."
+test = "uv run pytest -m 'not e2e'"
+test-cov = "uv run pytest --cov -m 'not e2e'"
+test-e2e = "uv run pytest tests/dashboard/test_dashboard_ui.py -v"
+test-all = "uv run pytest"
+security = "uv run bandit -r . -x './.venv/*,./tests/*'"
+
+# Cleanup tasks
+clean = """
+find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true;
+find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true;
+find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true;
+find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true;
+find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true;
+find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true;
+find . -type d -name "dist" -exec rm -rf {} + 2>/dev/null || true;
+find . -type d -name "build" -exec rm -rf {} + 2>/dev/null || true;
+find . -type f -name "*.pyc" -delete 2>/dev/null || true;
+find . -type f -name "*.pyo" -delete 2>/dev/null || true;
+find . -type f -name ".coverage" -delete 2>/dev/null || true;
+find . -type f -name "coverage.xml" -delete 2>/dev/null || true;
+echo "✅ Cleanup complete!"
+"""
+clean-all = "task clean && rm -rf .venv && echo '✅ Deep cleanup complete! Run task install to reinstall.'"
+
+# Service tasks
+dashboard = "uv run python dashboard/dashboard.py"
+extractor = "uv run python extractor/extractor.py"
+graphinator = "uv run python graphinator/graphinator.py"
+tableinator = "uv run python tableinator/tableinator.py"
+
+# Docker tasks
+up = "docker-compose up -d"
+down = "docker-compose down"
+logs = "docker-compose logs -f"
+rebuild = "docker-compose down && docker-compose build && docker-compose up -d"
+build-prod = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml build"
+deploy-prod = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
+
+# Utility tasks
+monitor = "uv run python utilities/monitor_queues.py"
+check-errors = "uv run python utilities/check_errors.py"
+system-monitor = "uv run python utilities/system_monitor.py"
+check-updates = "uv pip list --outdated"
+update-hooks = "uv run pre-commit autoupdate --freeze"
+init = "uv run pre-commit install && echo '✅ Pre-commit hooks installed!'"

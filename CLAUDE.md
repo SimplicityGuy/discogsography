@@ -51,6 +51,45 @@ Each service maintains its own dependencies while sharing common utilities.
 
 ## Development Commands
 
+### Task Automation (taskipy)
+
+The project uses taskipy for streamlined development workflows. All tasks are run with `uv run task <task-name>`.
+
+See `docs/task-automation.md` for detailed task documentation.
+
+**Development Tasks**:
+
+- `uv run task install` - Install all dependencies including dev extras
+- `uv run task lint` - Run all linting tools (ruff check and mypy)
+- `uv run task format` - Format code with ruff
+- `uv run task test` - Run all tests (excluding E2E by default)
+- `uv run task test-e2e` - Run dashboard E2E tests with Playwright
+- `uv run task security` - Run bandit security checks
+- `uv run task pre-commit` - Run all pre-commit hooks
+- `uv run task clean` - Clean Python cache files
+- `uv run task clean-all` - Clean all generated files (cache, logs, data)
+
+**Service Tasks**:
+
+- `uv run task dashboard` - Run the monitoring dashboard
+- `uv run task extractor` - Run the extractor service
+- `uv run task graphinator` - Run the graphinator service
+- `uv run task tableinator` - Run the tableinator service
+
+**Docker Tasks**:
+
+- `uv run task up` - Start all services with Docker Compose
+- `uv run task down` - Stop all services
+- `uv run task logs` - Follow logs for all services
+- `uv run task rebuild` - Rebuild and start services
+- `uv run task build-prod` - Build with production configuration
+
+**Monitoring Tasks**:
+
+- `uv run task monitor` - Monitor queue activity
+- `uv run task check-errors` - Check service logs for errors
+- `uv run task system-monitor` - Run comprehensive system monitor
+
 ### Package Management (uv)
 
 - `uv sync` - Install/update all dependencies from lock file
@@ -119,7 +158,7 @@ Each service can also run linting and type checking independently:
 - `uv run pytest tests/dashboard/test_dashboard_api.py` - Run dashboard API tests
 - `uv run pytest tests/dashboard/test_dashboard_api_integration.py` - Run dashboard integration tests
 - `uv run pytest -m "not e2e"` - Run all tests except E2E tests
-- `./scripts/test-e2e.sh` - Run dashboard E2E tests with Playwright (starts test server automatically)
+- `uv run task test-e2e` - Run dashboard E2E tests with Playwright (starts test server automatically)
 - `uv run pytest -xvs` - Run tests with verbose output, stop on first failure
 - `uv run pytest --tb=short` - Run tests with shorter traceback format
 
@@ -141,10 +180,19 @@ Each service can also run linting and type checking independently:
 - **Fixtures**: Common fixtures for AMQP, Neo4j, and PostgreSQL mocking
 - **Environment**: Test environment variables automatically set by conftest.py
 - **Coverage**: Configured to track all service modules, excluding test files
-- **Dashboard Testing**: API tests use FastAPI TestClient with mocked dependencies; E2E tests use Playwright and require running dashboard
-- **E2E Testing**: Dashboard E2E tests are marked with `@pytest.mark.e2e` and require the dashboard to be running. Use `./scripts/test-e2e.sh` for automated setup and execution. Tests run in headless mode by default (configured in `tests/dashboard/conftest.py`)
+- **Dashboard Testing**: API tests use FastAPI TestClient with mocked dependencies; E2E tests use Playwright with automatic server management
+- **E2E Testing**: Dashboard E2E tests are marked with `@pytest.mark.e2e` and use a `test_server` fixture for automatic server lifecycle. Tests run in headless mode by default (configured in `tests/dashboard/conftest.py`). Multi-browser testing supported (Chromium, Firefox, WebKit)
 
 ### Running Services
+
+**Using taskipy (recommended)**:
+
+- `uv run task dashboard` - Run monitoring dashboard
+- `uv run task extractor` - Run extractor service (with periodic checks)
+- `uv run task graphinator` - Run graphinator service
+- `uv run task tableinator` - Run tableinator service
+
+**Direct execution**:
 
 - `uv run python dashboard/dashboard.py` - Run monitoring dashboard
 - `uv run python extractor/extractor.py` - Run extractor service (with periodic checks)
@@ -170,7 +218,15 @@ PERIODIC_CHECK_DAYS=1 uv run python extractor/extractor.py
 
 #### Docker Compose (Recommended)
 
-**Basic Commands**:
+**Using taskipy**:
+
+- `uv run task up` - Start all services in background
+- `uv run task down` - Stop and remove all containers
+- `uv run task logs` - Follow logs for all services
+- `uv run task rebuild` - Rebuild images and restart services
+- `uv run task build-prod` - Build with production configuration
+
+**Direct Commands**:
 
 - `docker-compose up -d` - Start all services in background
 - `docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d` - Start with production settings
@@ -238,9 +294,11 @@ The Dockerfiles implement several best practices:
 - **Exception handling**: Comprehensive error handling with retries and graceful degradation
 - **Modern dependencies**:
   - psycopg3 with binary support for PostgreSQL
-  - Latest neo4j driver with async support
+  - Latest neo4j driver (5.15.0+) with async support
   - orjson for high-performance JSON parsing
   - aio-pika for async AMQP operations
+  - multidict for efficient multi-value mappings
+  - taskipy for Python-native task automation
 - **Python 3.13 features**: Enhanced performance, better error messages, and improved typing system
 - **Development tools**:
   - Ruff for fast, comprehensive linting
@@ -257,6 +315,7 @@ The Dockerfiles implement several best practices:
 1. Parsed data is published to AMQP exchange "discogsography-extractor" with routing keys by data type
 1. **graphinator** and **tableinator** consume from queues and store in their respective databases
 1. **dashboard** monitors all services via health endpoints and RabbitMQ management API
+1. All services write logs to both console and `/logs` directory for debugging
 
 ### Key Components
 
@@ -324,9 +383,21 @@ Docker Compose health checks:
 
 ### Logging
 
+**Container Logs**:
+
 - `docker-compose logs -f` - Follow all service logs
 - `docker-compose logs -f extractor` - Follow specific service logs
 - `docker-compose logs --tail=100 graphinator` - Last 100 lines from service
+- `uv run task logs` - Follow all logs using taskipy
+
+**Log Files**:
+All services write to log files in the `/logs` directory:
+
+- `/logs/extractor.log` - Extractor service logs
+- `/logs/graphinator.log` - Graphinator service logs
+- `/logs/tableinator.log` - Tableinator service logs
+
+These logs persist across container restarts and provide historical debugging information.
 
 ### Development Tools
 
@@ -337,7 +408,15 @@ Docker Compose health checks:
 
 ### Debugging Utilities
 
-The `utilities/` directory contains debugging tools for development:
+The `utilities/` directory contains debugging tools for development. Access via taskipy or direct execution:
+
+**Using taskipy**:
+
+- `uv run task check-errors` - Analyze service logs for errors and warnings
+- `uv run task monitor` - Real-time queue monitoring
+- `uv run task system-monitor` - Comprehensive system health dashboard
+
+**Direct execution**:
 
 - `check_errors.py`: Analyze service logs for errors and warnings
 - `check_queues.py`: Display RabbitMQ queue statistics
@@ -419,6 +498,10 @@ logger.warning("⚠️ Connection timeout, retrying...")
    - Runs only when dashboard or test files change
    - Installs Playwright browsers and dependencies
    - Executes dashboard UI tests
+   - Supports multi-browser testing (Chromium, Firefox, WebKit)
+   - Platform-specific testing (Ubuntu for Chrome/Firefox, macOS for Safari)
+   - Mobile device emulation (iPhone 15, iPad Pro 11)
+   - Video recording enabled for debugging
    - **Timeout**: 15 minutes
 
 1. **test-all.yml** - Comprehensive test workflow:
@@ -451,10 +534,12 @@ Playwright tests are handled in dedicated workflows:
 - **playwright-test.yml**: Runs only when dashboard files change
 - **test-all.yml**: Conditionally includes Playwright tests based on changed files
 - Tests are marked with `@pytest.mark.e2e` for easy filtering
-- Installs Chromium browser and system dependencies
+- Installs multiple browsers (Chromium, Firefox, WebKit) and system dependencies
+- Supports cross-browser and mobile device testing
 - Caches browser binaries for faster subsequent runs
 - Configures environment variables for headless operation
-- Uses `./scripts/test-e2e.sh` for automated test execution
+- Uses `test_server` pytest fixture for automatic server lifecycle management
+- Video recording enabled for better debugging of failures
 
 ### Test Execution Strategy
 
@@ -565,3 +650,9 @@ All logger calls must follow the format: emoji + single space + message. Here ar
 - Always ensure `pytest` tests can be run without manually setting `PYTHONPATH` (configured in `pyproject.toml`).
 - GitHub workflows implement comprehensive caching for dependencies, Docker builds, and tools.
 - Do not set resource limits in `docker-compose` files.
+- Use taskipy commands (e.g., `uv run task lint`) instead of direct commands when available.
+- Dashboard E2E tests use `test_server` fixture, not `scripts/test-e2e.sh`.
+- All services write logs to both console and `/logs` directory.
+- Multi-browser testing is supported for dashboard E2E tests.
+- Use `--no-sync` instead of `--frozen` in Docker startup scripts.
+- Video recording is enabled for Playwright tests for debugging.
