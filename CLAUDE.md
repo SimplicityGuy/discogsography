@@ -463,6 +463,11 @@ All logger calls must follow the project's emoji pattern for visual consistency:
   - 🆕 for new versions
   - ⏰ for periodic operations
   - 🔧 for setup/configuration
+  - 🐰 for RabbitMQ connections
+  - 🔗 for Neo4j connections
+  - 💾 for database operations
+  - 🏥 for health server messages
+  - ⏩ for skipping operations
 
 **Examples**:
 
@@ -613,18 +618,21 @@ All logger calls must follow the format: emoji + single space + message. Here ar
 - ⚠️ Warnings
 - 📊 Progress updates and statistics
 - 📥 Downloading/receiving data
-- 📤 Uploading/sending data
 - 🔄 Processing/updating/retrying
 - 🏥 Health server messages
 - 🐰 RabbitMQ connections
 - 🔗 Neo4j connections
-- 🐘 PostgreSQL connections
 - 💾 Database operations
 - 🔧 Configuration/setup operations
 - 🛑 Shutdown/stop operations
 - ⏳ Waiting/delay messages
-- 📁 File operations
+- 📄 File operations
 - 🔍 Search/discovery operations
+- ⬇️ Downloading files
+- 📋 Metadata operations
+- 🆕 New versions
+- ⏰ Periodic operations
+- ⏩ Skipping operations (no changes needed)
 
 ## Workflow Memories
 
@@ -656,3 +664,4 @@ All logger calls must follow the format: emoji + single space + message. Here ar
 - Multi-browser testing is supported for dashboard E2E tests.
 - Use `--no-sync` instead of `--frozen` in Docker startup scripts.
 - Video recording is enabled for Playwright tests for debugging.
+- Always use `git mv` for moving tracked files - This preserves git history and shows the operation as a rename rather than delete/add
