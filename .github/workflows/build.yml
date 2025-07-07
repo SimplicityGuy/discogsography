@@ -1,5 +1,5 @@
 ---
-name: discogsography
+name: Build
 
 on:
   workflow_dispatch:
@@ -103,24 +103,6 @@ jobs:
         with:
           hadolint: latest
 
-      - name: Cache docker-compose
-        uses: actions/cache@v4
-        with:
-          path: /usr/local/bin/docker-compose
-          key: ${{ runner.os }}-docker-compose-${{ hashFiles('.github/workflows/build.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-docker-compose-
-
-      - name: Install docker-compose
-        run: |
-          if ! command -v docker-compose &> /dev/null; then
-            echo "Installing docker-compose..."
-            sudo curl -L "https://github.com/docker/compose/releases/download/${{ env.COMPOSE_VERSION }}/docker-compose-$(uname -s)-$(uname -m)" \
-              -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
-          fi
-          docker-compose --version
-
       - name: Install dependencies
         run: |
           uv sync --all-extras --frozen
@@ -135,29 +117,6 @@ jobs:
       - name: Run tests with coverage (excluding E2E)
         run: |
           uv run pytest --cov -m "not e2e"
-
-      - name: Validate docker-compose files
-        run: |
-          # Check main docker-compose.yml
-          docker-compose config --quiet
-          echo "✅ docker-compose.yml is valid"
-
-          # Check production overlay if it exists
-          if [ -f docker-compose.prod.yml ]; then
-            docker-compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
-            echo "✅ docker-compose.prod.yml overlay is valid"
-          fi
-
-          # Validate all services are defined
-          services=$(docker-compose config --services)
-          expected_services="dashboard extractor graphinator neo4j postgres rabbitmq tableinator"
-          for service in $expected_services; do
-            if ! echo "$services" | grep -q "^$service$"; then
-              echo "❌ Missing expected service: $service"
-              exit 1
-            fi
-          done
-          echo "✅ All expected services are defined"
 
   build-discogsography:
     needs: [list-sub-projects, code-quality]

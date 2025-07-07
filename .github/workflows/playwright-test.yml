@@ -32,6 +32,7 @@ env:
 jobs:
   playwright-test:
     name: Test ${{ matrix.browser }} ${{ matrix.device && format('- {0}', matrix.device) || '' }}
+
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
 

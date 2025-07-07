@@ -46,6 +46,7 @@ jobs:
 
   validate-dockerfiles:
     needs: list-sub-projects
+
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
