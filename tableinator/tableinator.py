@@ -237,7 +237,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             )
 
             # Commit is automatic when exiting the connection context
-            logger.debug(f"💾 Updated {data_type[:-1]} ID={data_id} in PostgreSQL")
+            logger.debug(f"🐘 Updated {data_type[:-1]} ID={data_id} in PostgreSQL")
 
         await message.ack()
 
@@ -294,6 +294,7 @@ async def main() -> None:
     # Initialize connection pool for concurrent access
     try:
         connection_pool = SimpleConnectionPool(max_connections=20)
+        logger.info("🐘 Connected to PostgreSQL")
         logger.info("✅ Connection pool initialized (max 20 connections)")
     except Exception as e:
         logger.error(f"❌ Failed to initialize connection pool: {e}")

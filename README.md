@@ -358,7 +358,8 @@ All logger calls (`logger.info`, `logger.warning`, `logger.error`) in this proje
 | 🔧 | Setup/configuration | `logger.info("🔧 Creating database indexes")` |
 | 🐰 | RabbitMQ connections | `logger.info("🐰 Connected to RabbitMQ")` |
 | 🔗 | Neo4j connections | `logger.info("🔗 Connected to Neo4j")` |
-| 💾 | Database operations | `logger.info("💾 Updated artist ID=123 in Neo4j")` |
+| 🐘 | PostgreSQL operations | `logger.info("🐘 Connected to PostgreSQL")` |
+| 💾 | Database save operations | `logger.info("💾 Updated artist ID=123 in Neo4j")` |
 | 🏥 | Health server | `logger.info("🏥 Health server started on port 8001")` |
 | ⏩ | Skipping operations | `logger.info("⏩ Skipped artist ID=123 (no changes)")` |
 

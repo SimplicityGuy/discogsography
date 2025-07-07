@@ -465,7 +465,8 @@ All logger calls must follow the project's emoji pattern for visual consistency:
   - 🔧 for setup/configuration
   - 🐰 for RabbitMQ connections
   - 🔗 for Neo4j connections
-  - 💾 for database operations
+  - 🐘 for PostgreSQL operations
+  - 💾 for database save operations
   - 🏥 for health server messages
   - ⏩ for skipping operations
 
@@ -622,7 +623,8 @@ All logger calls must follow the format: emoji + single space + message. Here ar
 - 🏥 Health server messages
 - 🐰 RabbitMQ connections
 - 🔗 Neo4j connections
-- 💾 Database operations
+- 🐘 PostgreSQL operations
+- 💾 Database save operations
 - 🔧 Configuration/setup operations
 - 🛑 Shutdown/stop operations
 - ⏳ Waiting/delay messages
