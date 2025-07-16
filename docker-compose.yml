@@ -153,6 +153,58 @@ services:
     tmpfs:
       - /tmp
 
+  exporter:
+    build:
+      context: ./exporter
+      dockerfile: Dockerfile
+    container_name: exporter
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_ADDRESS: postgres:5432
+      POSTGRES_USERNAME: discogsography
+      POSTGRES_PASSWORD: discogsography
+      POSTGRES_DATABASE: discogsography
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - discogsography
+    restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  analyzer:
+    build:
+      context: ./analyzer
+      dockerfile: Dockerfile
+    container_name: analyzer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_ADDRESS: postgres:5432
+      POSTGRES_USERNAME: discogsography
+      POSTGRES_PASSWORD: discogsography
+      POSTGRES_DATABASE: discogsography
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - discogsography
+    restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+
   # Graphinator service
   graphinator:
     build:
@@ -281,6 +333,34 @@ services:
       retries: 3
       start_period: 40s
     restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+
+  visualizer:
+    build:
+      context: ./visualizer
+      dockerfile: Dockerfile
+    container_name: visualizer
+    ports:
+      - "8004:8004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_ADDRESS: postgres:5432
+      POSTGRES_USERNAME: discogsography
+      POSTGRES_PASSWORD: discogsography
+      POSTGRES_DATABASE: discogsography
+      PYTHONUNBUFFERED: "1"
+    networks:
+      - discogsography
+    restart: on-failure
     logging: *default-logging
     security_opt:
       - no-new-privileges:true
