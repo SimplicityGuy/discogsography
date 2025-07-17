@@ -41,6 +41,7 @@ dashboard = [
 extractor = [
     "boto3>=1.34.0",
     "pika>=1.3.0",
+    "psycopg[binary]>=3.1.0",
     "xmltodict>=0.13.0",
 ]
 graphinator = [
@@ -161,6 +162,7 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = "tests.*"
 disallow_untyped_decorators = false
+disallow_untyped_defs = false
 
 [tool.coverage.run]
 source = ["common", "dashboard", "extractor", "graphinator", "tableinator"]
@@ -284,3 +286,8 @@ system-monitor = "uv run python utilities/system_monitor.py"
 check-updates = "uv pip list --outdated"
 update-hooks = "uv run pre-commit autoupdate --freeze"
 init = "uv run pre-commit install && echo '✅ Pre-commit hooks installed!'"
+
+# Incremental processing tasks
+migrate = "uv run python scripts/run_migrations.py"
+switch-mode = "uv run python scripts/switch_extractor_mode.py"
+incremental-extractor = "uv run python extractor/incremental_extractor.py"

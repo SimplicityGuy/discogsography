@@ -61,9 +61,11 @@ graph TD
 
 - 🔄 **Automatic Updates**: Periodic checking for new Discogs data releases (configurable interval, default 15 days)
 - ⚡ **Efficient Processing**: Hash-based deduplication to avoid reprocessing unchanged records
+- 📈 **Incremental Processing**: Track changes and only process modified records (saves hours on updates)
 - 🚀 **High Performance**: Multi-threaded XML parsing and concurrent message processing
 - 🛡️ **Fault Tolerance**: Message acknowledgment, automatic retries, and graceful shutdown
 - 📊 **Progress Tracking**: Real-time progress monitoring with detailed statistics
+- 🔔 **Real-time Updates**: WebSocket notifications for data changes
 - 🐋 **Production-Ready Docker**: Full Docker Compose setup with security hardening
 - 🔒 **Type Safety**: Comprehensive type hints and strict mypy validation
 - 🔐 **Security First**: Bandit scanning, secure coding practices, and container hardening
@@ -71,6 +73,7 @@ graph TD
 ### Documentation
 
 - 📖 **[CLAUDE.md](CLAUDE.md)** - Detailed technical documentation for development
+- 📈 **[Incremental Processing](docs/incremental-processing.md)** - Efficient change tracking for large datasets
 - 🤖 **[Task Automation](docs/task-automation.md)** - Taskipy commands and workflows
 - 🔒 **[Docker Security](docs/docker-security.md)** - Container security best practices
 - 🏗️ **[Dockerfile Standards](docs/dockerfile-standards.md)** - Dockerfile implementation standards
@@ -444,6 +447,8 @@ All logger calls (`logger.info`, `logger.warning`, `logger.error`) in this proje
 | 💾 | Database save operations | `logger.info("💾 Updated artist ID=123 in Neo4j")` |
 | 🏥 | Health server | `logger.info("🏥 Health server started on port 8001")` |
 | ⏩ | Skipping operations | `logger.info("⏩ Skipped artist ID=123 (no changes)")` |
+| 📡 | Real-time notifications | `logger.info("📡 Started changes consumer for notifications")` |
+| 🗑️ | Deleted records | `logger.info("🗑️ Detected 5 deleted records")` |
 
 ### Example Usage
 

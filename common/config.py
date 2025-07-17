@@ -17,6 +17,11 @@ class ExtractorConfig:
     discogs_root: Path
     max_temp_size: int = int(1e9)  # 1000 MB
     periodic_check_days: int = 15  # Default to 15 days
+    # Optional PostgreSQL connection for incremental processing
+    postgres_address: str | None = None
+    postgres_username: str | None = None
+    postgres_password: str | None = None
+    postgres_database: str | None = None
 
     @classmethod
     def from_env(cls) -> "ExtractorConfig":
@@ -44,10 +49,20 @@ class ExtractorConfig:
                 )
                 periodic_check_days = 15
 
+        # Optional PostgreSQL configuration for incremental processing
+        postgres_address = getenv("POSTGRES_ADDRESS")
+        postgres_username = getenv("POSTGRES_USERNAME")
+        postgres_password = getenv("POSTGRES_PASSWORD")
+        postgres_database = getenv("POSTGRES_DATABASE")
+
         return cls(
             amqp_connection=amqp_connection,
             discogs_root=discogs_root,
             periodic_check_days=periodic_check_days,
+            postgres_address=postgres_address,
+            postgres_username=postgres_username,
+            postgres_password=postgres_password,
+            postgres_database=postgres_database,
         )
 
 

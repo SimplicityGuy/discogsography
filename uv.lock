@@ -308,6 +308,7 @@ dev = [
 extractor = [
     { name = "boto3" },
     { name = "pika" },
+    { name = "psycopg", extra = ["binary"] },
     { name = "xmltodict" },
 ]
 graphinator = [
@@ -360,6 +361,7 @@ requires-dist = [
     { name = "prometheus-client", marker = "extra == 'dashboard'", specifier = ">=0.21.1" },
     { name = "psutil", marker = "extra == 'utilities'", specifier = ">=5.9.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'dashboard'", specifier = ">=3.1.0" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'extractor'", specifier = ">=3.1.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'tableinator'", specifier = ">=3.1.0" },
     { name = "pydantic", marker = "extra == 'dashboard'", specifier = ">=2.10.5" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.4.0" },
