@@ -71,8 +71,18 @@ utilities = [
     "psutil>=5.9.0",
     "requests>=2.31.0",
 ]
+discovery = [
+    "networkx>=3.2.1",           # Graph algorithms
+    "numpy>=1.26.0",             # Numerical computations
+    "pandas>=2.1.0",             # Data analysis
+    "scikit-learn>=1.3.0",       # Machine learning
+    "sentence-transformers>=2.2.0",  # Semantic search
+    "plotly>=5.17.0",            # Advanced visualizations
+    "sqlalchemy[asyncio]>=2.0.0",  # Async SQL toolkit
+    "asyncpg>=0.29.0",           # Async PostgreSQL driver
+]
 all = [
-    "discogsography[dashboard,extractor,graphinator,tableinator,dev,utilities]",
+    "discogsography[dashboard,discovery,extractor,graphinator,tableinator,dev,utilities]",
 ]
 
 [tool.ruff.format]
@@ -155,6 +165,14 @@ module = [
     "psycopg.*",
     "tqdm",
     "xmltodict",
+    "pandas.*",
+    "plotly.*",
+    "sklearn.*",
+    "networkx.*",
+    "sentence_transformers.*",
+    "fastapi.*",
+    "uvicorn.*",
+    "pydantic.*",
 ]
 ignore_missing_imports = true
 
@@ -163,7 +181,7 @@ module = "tests.*"
 disallow_untyped_decorators = false
 
 [tool.coverage.run]
-source = ["common", "dashboard", "extractor", "graphinator", "tableinator"]
+source = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
 
 [tool.coverage.report]
@@ -230,7 +248,7 @@ split_on_trailing_comma = true
 
 # uv workspace configuration
 [tool.uv.workspace]
-members = ["common", "dashboard", "extractor", "graphinator", "tableinator"]
+members = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
 
 # taskipy configuration for task automation
 [tool.taskipy.tasks]
@@ -265,6 +283,7 @@ clean-all = "task clean && rm -rf .venv && echo '✅ Deep cleanup complete! Run 
 
 # Service tasks
 dashboard = "uv run python dashboard/dashboard.py"
+discovery = "uv run python discovery/discovery.py"
 extractor = "uv run python extractor/extractor.py"
 graphinator = "uv run python graphinator/graphinator.py"
 tableinator = "uv run python tableinator/tableinator.py"

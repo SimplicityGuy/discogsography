@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Discogsography Discovery</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.26.0/plotly.min.js"></script>
+    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <div class="nav-brand">
+                <h1><i class="fas fa-music"></i> Discovery</h1>
+            </div>
+
+            <!-- Hamburger Menu -->
+            <div class="hamburger" id="hamburger">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+
+            <!-- Navigation Menu -->
+            <div class="nav-menu" id="navMenu">
+                <a href="#recommendations" class="nav-item" data-section="recommendations">
+                    <i class="fas fa-magic"></i> AI Recommendations
+                </a>
+                <a href="#analytics" class="nav-item" data-section="analytics">
+                    <i class="fas fa-chart-line"></i> Industry Analytics
+                </a>
+                <a href="#graph" class="nav-item" data-section="graph">
+                    <i class="fas fa-project-diagram"></i> Graph Explorer
+                </a>
+                <a href="http://localhost:8003" class="nav-item external" target="_blank">
+                    <i class="fas fa-tachometer-alt"></i> Dashboard
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Recommendations Section -->
+        <section id="recommendations" class="content-section active">
+            <div class="section-header">
+                <h2><i class="fas fa-magic"></i> AI-Powered Music Discovery</h2>
+                <p>Discover new music through intelligent recommendations based on collaboration networks and semantic analysis.</p>
+            </div>
+
+            <div class="discovery-controls">
+                <div class="input-group">
+                    <label for="artistInput">Artist Name:</label>
+                    <input type="text" id="artistInput" placeholder="Enter artist name (e.g., Miles Davis)">
+                </div>
+
+                <div class="input-group">
+                    <label for="recommendationType">Recommendation Type:</label>
+                    <select id="recommendationType">
+                        <option value="similar">Similar Artists</option>
+                        <option value="trending">Trending Music</option>
+                        <option value="discovery">Semantic Discovery</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label for="genreFilter">Genre Filter (optional):</label>
+                    <input type="text" id="genreFilter" placeholder="Jazz, Rock, Electronic...">
+                </div>
+
+                <button id="getRecommendations" class="btn btn-primary">
+                    <i class="fas fa-search"></i> Get Recommendations
+                </button>
+            </div>
+
+            <div id="recommendationsResults" class="results-container">
+                <!-- Recommendations will be populated here -->
+            </div>
+        </section>
+
+        <!-- Analytics Section -->
+        <section id="analytics" class="content-section">
+            <div class="section-header">
+                <h2><i class="fas fa-chart-line"></i> Music Industry Analytics</h2>
+                <p>Explore trends, patterns, and insights from the music industry data.</p>
+            </div>
+
+            <div class="analytics-controls">
+                <div class="input-group">
+                    <label for="analysisType">Analysis Type:</label>
+                    <select id="analysisType">
+                        <option value="genre_trends">Genre Popularity Trends</option>
+                        <option value="artist_evolution">Artist Career Evolution</option>
+                        <option value="label_insights">Record Label Insights</option>
+                        <option value="market_analysis">Market Format Analysis</option>
+                    </select>
+                </div>
+
+                <div class="input-group" id="artistAnalysisGroup" style="display: none;">
+                    <label for="artistAnalysisInput">Artist Name:</label>
+                    <input type="text" id="artistAnalysisInput" placeholder="Enter artist name">
+                </div>
+
+                <div class="input-group" id="labelAnalysisGroup" style="display: none;">
+                    <label for="labelAnalysisInput">Label Name (optional):</label>
+                    <input type="text" id="labelAnalysisInput" placeholder="Enter label name">
+                </div>
+
+                <div class="input-group">
+                    <label for="timeRange">Time Range:</label>
+                    <select id="timeRange">
+                        <option value="1990,2023">1990-2023</option>
+                        <option value="2000,2023">2000-2023</option>
+                        <option value="2010,2023">2010-2023</option>
+                        <option value="1970,2023">1970-2023</option>
+                        <option value="1950,2023">All Years (1950-2023)</option>
+                    </select>
+                </div>
+
+                <button id="runAnalysis" class="btn btn-primary">
+                    <i class="fas fa-chart-bar"></i> Run Analysis
+                </button>
+            </div>
+
+            <div id="analyticsChart" class="chart-container">
+                <!-- Analytics chart will be populated here -->
+            </div>
+
+            <div id="analyticsInsights" class="insights-container">
+                <!-- Insights will be populated here -->
+            </div>
+        </section>
+
+        <!-- Graph Explorer Section -->
+        <section id="graph" class="content-section">
+            <div class="section-header">
+                <h2><i class="fas fa-project-diagram"></i> Music Knowledge Graph Explorer</h2>
+                <p>Explore interactive relationships between artists, releases, labels, and genres.</p>
+            </div>
+
+            <div class="graph-controls">
+                <div class="input-group">
+                    <label for="graphQuery">Search Query:</label>
+                    <input type="text" id="graphQuery" placeholder="Search for artists, releases, labels...">
+                </div>
+
+                <div class="input-group">
+                    <label for="queryType">Query Type:</label>
+                    <select id="queryType">
+                        <option value="search">Search Nodes</option>
+                        <option value="expand">Expand Node</option>
+                        <option value="path">Find Path</option>
+                        <option value="neighborhood">Show Neighborhood</option>
+                        <option value="semantic">Semantic Search</option>
+                    </select>
+                </div>
+
+                <div class="input-group" id="pathControls" style="display: none;">
+                    <label for="targetNode">Target Node ID:</label>
+                    <input type="text" id="targetNode" placeholder="Target node ID for path finding">
+                </div>
+
+                <div class="input-group">
+                    <label for="maxDepth">Max Depth:</label>
+                    <select id="maxDepth">
+                        <option value="1">1</option>
+                        <option value="2" selected>2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                    </select>
+                </div>
+
+                <button id="exploreGraph" class="btn btn-primary">
+                    <i class="fas fa-search"></i> Explore Graph
+                </button>
+
+                <button id="clearGraph" class="btn btn-secondary">
+                    <i class="fas fa-trash"></i> Clear Graph
+                </button>
+            </div>
+
+            <div id="graphVisualization" class="graph-container">
+                <!-- Graph visualization will be rendered here -->
+            </div>
+
+            <div id="graphInfo" class="info-panel">
+                <h3>Graph Information</h3>
+                <div id="nodeInfo" class="node-info">
+                    Click on a node to see details
+                </div>
+            </div>
+
+            <div id="pathResult" class="path-result" style="display: none;">
+                <!-- Path finding results will be shown here -->
+            </div>
+        </section>
+    </main>
+
+    <!-- Loading Spinner -->
+    <div id="loadingSpinner" class="loading-spinner" style="display: none;">
+        <div class="spinner"></div>
+        <p>Processing your request...</p>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="toast" style="display: none;">
+        <div class="toast-content">
+            <span id="toastMessage"></span>
+            <button id="toastClose" class="toast-close">&times;</button>
+        </div>
+    </div>
+
+    <!-- JavaScript -->
+    <script src="/static/js/app.js"></script>
+    <script src="/static/js/recommendations.js"></script>
+    <script src="/static/js/analytics.js"></script>
+    <script src="/static/js/graph.js"></script>
+</body>
+</html>
