@@ -23,6 +23,7 @@ from prometheus_client import Counter, Gauge, generate_latest
 from pydantic import BaseModel
 
 from common import get_config
+from common.changes_consumer import ChangesConsumer
 
 
 # Configure logging
@@ -61,6 +62,8 @@ class ServiceStatus(BaseModel):
     current_task: str | None
     progress: float | None  # 0.0 to 1.0
     error: str | None
+    # Incremental processing stats
+    change_stats: dict[str, dict[str, int]] | None = None
 
 
 class QueueInfo(BaseModel):
@@ -94,6 +97,38 @@ class SystemMetrics(BaseModel):
     timestamp: datetime
 
 
+class ChangeNotification(BaseModel):
+    """Model for change notifications from incremental processing."""
+
+    data_type: str
+    record_id: str
+    change_type: str  # created, updated, deleted
+    processing_run_id: str
+    timestamp: datetime
+
+
+class DashboardChangesConsumer(ChangesConsumer):
+    """Changes consumer that broadcasts to WebSocket connections."""
+
+    def __init__(self, amqp_connection_url: str, dashboard_app: "DashboardApp"):
+        super().__init__(amqp_connection_url, "dashboard")
+        self.dashboard_app = dashboard_app
+
+    async def process_change(self, change_data: dict[str, Any]) -> None:
+        """Process a change notification and broadcast to WebSocket clients."""
+        # Create a ChangeNotification model
+        notification = ChangeNotification(
+            data_type=change_data["data_type"],
+            record_id=change_data["record_id"],
+            change_type=change_data["change_type"],
+            processing_run_id=change_data["processing_run_id"],
+            timestamp=datetime.fromisoformat(change_data["timestamp"]),
+        )
+
+        # Broadcast to all connected WebSocket clients
+        await self.dashboard_app.broadcast_change(notification)
+
+
 class DashboardApp:
     """Main dashboard application."""
 
@@ -105,6 +140,8 @@ class DashboardApp:
         self.amqp_connection: aio_pika.abc.AbstractConnection | None = None
         self.neo4j_driver: Any | None = None
         self.update_task: asyncio.Task | None = None
+        self.changes_consumer: DashboardChangesConsumer | None = None
+        self.changes_task: asyncio.Task | None = None
 
     async def startup(self) -> None:
         """Initialize connections on startup."""
@@ -124,6 +161,15 @@ class DashboardApp:
             self.update_task = asyncio.create_task(self.collect_metrics_loop())
             logger.info("📊 Started metrics collection")
 
+            # Start changes consumer for real-time notifications
+            try:
+                self.changes_consumer = DashboardChangesConsumer(self.config.amqp_connection, self)
+                await self.changes_consumer.connect()
+                self.changes_task = asyncio.create_task(self.changes_consumer.start_consuming())
+                logger.info("📡 Started changes consumer for real-time notifications")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not start changes consumer: {e}")
+
         except Exception as e:
             logger.error(f"❌ Startup error: {e}")
             raise
@@ -136,6 +182,16 @@ class DashboardApp:
                 self.update_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await self.update_task
+
+            # Cancel changes task
+            if self.changes_task:
+                self.changes_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self.changes_task
+
+            # Close changes consumer
+            if self.changes_consumer:
+                await self.changes_consumer.close()
 
             # Close connections
             if self.amqp_connection:
@@ -208,6 +264,7 @@ class DashboardApp:
                                 current_task=data.get("current_task"),
                                 progress=data.get("progress"),
                                 error=None,
+                                change_stats=data.get("change_stats"),
                             )
                         )
                     else:
@@ -367,6 +424,29 @@ class DashboardApp:
             {
                 "type": "metrics_update",
                 "data": metrics.model_dump(mode="json"),
+            }
+        ).decode()
+
+        disconnected = set()
+        for websocket in self.websocket_connections:
+            try:
+                await websocket.send_text(message)
+            except Exception:
+                disconnected.add(websocket)
+
+        # Remove disconnected websockets
+        self.websocket_connections -= disconnected
+        WEBSOCKET_CONNECTIONS.set(len(self.websocket_connections))
+
+    async def broadcast_change(self, notification: ChangeNotification) -> None:
+        """Broadcast a change notification to all connected websockets."""
+        if not self.websocket_connections:
+            return
+
+        message = orjson.dumps(
+            {
+                "type": "change_notification",
+                "data": notification.model_dump(mode="json"),
             }
         ).decode()
 

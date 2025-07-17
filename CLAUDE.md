@@ -12,6 +12,7 @@ A modern Python 3.13+ microservices system for processing Discogs database expor
 |---------|---------|------------------|
 | **📊 dashboard/** | Real-time monitoring & visualization | FastAPI, WebSocket, HTML/JS |
 | **📥 extractor/** | Downloads & parses Discogs XML data | aio-pika, orjson, tqdm |
+| **📈 incremental_extractor/** | Tracks changes, processes only modified records | psycopg3, aio-pika, orjson |
 | **🔗 graphinator/** | Builds Neo4j graph relationships | neo4j-driver, aio-pika |
 | **🐘 tableinator/** | Stores data in PostgreSQL | psycopg3, aio-pika |
 | **📦 common/** | Shared utilities & configuration | dataclasses, typing |
@@ -151,6 +152,14 @@ The project uses **taskipy** for streamlined workflows. All tasks run with `uv r
 | `uv run task monitor` | Real-time queue monitoring |
 | `uv run task check-errors` | Analyze logs for errors |
 | `uv run task system-monitor` | Comprehensive system dashboard |
+
+#### 📈 Incremental Processing Tasks
+
+| Command | Description |
+|---------|-------------|
+| `uv run task migrate` | Run database migrations for incremental processing |
+| `uv run task switch-mode <mode>` | Switch between 'normal' and 'incremental' extractor modes |
+| `uv run task incremental-extractor` | Run the incremental extractor directly |
 
 ### Package Management (uv)
 
@@ -469,6 +478,54 @@ sequenceDiagram
     D->>Q: Query metrics
 ```
 
+### 📈 Incremental Processing Mode
+
+The incremental extractor provides efficient processing of large Discogs data dumps by tracking changes:
+
+```mermaid
+sequenceDiagram
+    participant S3 as Discogs S3
+    participant IE as Incremental Extractor
+    participant PS as PostgreSQL (State)
+    participant Q as RabbitMQ
+    participant C as Changes Queue
+    participant WS as WebSocket
+
+    S3->>IE: Check file metadata
+    IE->>PS: Get last processing state
+    PS-->>IE: Previous checksum & state
+
+    alt File unchanged
+        IE->>IE: Skip processing
+    else File changed
+        IE->>S3: Download new file
+        IE->>PS: Start processing run
+
+        loop For each record
+            IE->>PS: Check record hash
+            PS-->>IE: Previous hash
+
+            alt Record changed/new
+                IE->>Q: Publish full record
+                IE->>C: Publish change notification
+                C->>WS: Broadcast to dashboard
+            else Record unchanged
+                IE->>IE: Skip record
+            end
+        end
+
+        IE->>PS: Detect deleted records
+        IE->>PS: Complete processing run
+    end
+```
+
+**Key Benefits:**
+
+- ⚡ **Performance**: Only process changed records (minutes vs hours)
+- 💾 **State Tracking**: PostgreSQL stores processing history
+- 🔔 **Real-time Updates**: WebSocket notifications for changes
+- 📊 **Change Analytics**: Track created/updated/deleted records
+
 ### 🔑 Key Components
 
 | Component | Purpose | Key Features |
@@ -653,6 +710,8 @@ All logger calls follow: `logger.{level}("{emoji} {message}")`
 | 💾 | Save | `logger.info("💾 Saved 100 records")` |
 | 🏥 | Health | `logger.info("🏥 Health server on :8000")` |
 | ⏩ | Skip | `logger.info("⏩ Skipped (no changes)")` |
+| 📡 | Real-time | `logger.info("📡 Started changes consumer")` |
+| 🗑️ | Deleted | `logger.info("🗑️ Detected 5 deleted records")` |
 
 ## 🔧 GitHub Actions
 
@@ -773,6 +832,13 @@ if: |
    - Run `uv run bandit -r . -x "./.venv/*,./tests/*"`
    - Line-specific suppressions only
    - Environment variables override hardcoded defaults
+
+1. **Incremental Processing**
+
+   - Run migrations before switching to incremental mode
+   - PostgreSQL environment variables required for state tracking
+   - Use `uv run task switch-mode` to toggle between modes
+   - Monitor change statistics in dashboard
 
 ### Best Practices
 
