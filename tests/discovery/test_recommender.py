@@ -18,7 +18,7 @@ class TestMusicRecommender:
     """Test the MusicRecommender class."""
 
     @pytest.fixture
-    async def recommender(self, mock_neo4j_driver):
+    async def recommender(self, mock_neo4j_driver: Any) -> Any:
         """Create a MusicRecommender instance with mocked dependencies."""
         with patch("discovery.recommender.get_config") as mock_config:
             mock_config.return_value = MagicMock(
@@ -72,7 +72,7 @@ class TestMusicRecommender:
             assert isinstance(recommendations, list)
             assert len(recommendations) <= 5
 
-    async def test_get_trending_music(self, recommender, mock_neo4j_driver: Any) -> None:
+    async def test_get_trending_music(self, recommender: Any, mock_neo4j_driver: Any) -> None:
         """Test getting trending music."""
         # Mock database results
         mock_result = AsyncMock()
@@ -86,10 +86,10 @@ class TestMusicRecommender:
                 "recent_year": 1959,
             }
         ]
-        mock_result.__aiter__ = AsyncMock(return_value=iter(mock_records))
-        mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value = (
-            mock_result
+        mock_result = (
+            mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
         )
+        mock_result.__aiter__.return_value = iter(mock_records)
 
         trending = await recommender.get_trending_music(["Jazz"], 10)
 
@@ -111,7 +111,7 @@ class TestMusicRecommender:
             assert isinstance(results, list)
             assert len(results) <= 5
 
-    async def test_get_artist_info(self, recommender, mock_neo4j_driver: Any) -> None:
+    async def test_get_artist_info(self, recommender: Any, mock_neo4j_driver: Any) -> None:
         """Test getting artist information."""
         # Mock database result
         mock_result = AsyncMock()
@@ -181,7 +181,7 @@ class TestRecommendationAPI:
 
     @pytest.mark.asyncio
     async def test_get_recommendations_similar(
-        self, mock_recommender, sample_recommendation_data: Any
+        self, mock_recommender: Any, sample_recommendation_data: Any
     ) -> None:
         """Test getting similar artist recommendations."""
         with patch("discovery.recommender.recommender", mock_recommender):
@@ -198,7 +198,7 @@ class TestRecommendationAPI:
 
     @pytest.mark.asyncio
     async def test_get_recommendations_trending(
-        self, mock_recommender, sample_recommendation_data: Any
+        self, mock_recommender: Any, sample_recommendation_data: Any
     ) -> None:
         """Test getting trending music recommendations."""
         with patch("discovery.recommender.recommender", mock_recommender):
@@ -212,8 +212,8 @@ class TestRecommendationAPI:
 
     @pytest.mark.asyncio
     async def test_get_recommendations_discovery(
-        self, mock_recommender, sample_recommendation_data
-    ):
+        self, mock_recommender: Any, sample_recommendation_data: Any
+    ) -> None:
         """Test discovery search recommendations."""
         with patch("discovery.recommender.recommender", mock_recommender):
             mock_recommender.discovery_search.return_value = sample_recommendation_data

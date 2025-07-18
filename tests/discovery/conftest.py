@@ -1,7 +1,7 @@
 """Discovery service test configuration and fixtures."""
 
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,9 +16,9 @@ def discovery_client() -> TestClient:
 
 
 @pytest.fixture
-async def mock_neo4j_driver() -> AsyncMock:
+async def mock_neo4j_driver() -> MagicMock:
     """Mock Neo4j driver for testing."""
-    mock_driver = AsyncMock()
+    mock_driver = MagicMock()
     mock_session = AsyncMock()
 
     # Configure session context manager
@@ -27,9 +27,12 @@ async def mock_neo4j_driver() -> AsyncMock:
     mock_context_manager.__aexit__ = AsyncMock(return_value=None)
     mock_driver.session.return_value = mock_context_manager
 
+    # Configure driver close method to be async
+    mock_driver.close = AsyncMock()
+
     # Mock query results
     mock_result = AsyncMock()
-    mock_result.__aiter__ = AsyncMock(return_value=iter([]))
+    mock_result.__aiter__.return_value = iter([])
     mock_session.run.return_value = mock_result
     mock_session.run = AsyncMock(return_value=mock_result)
 

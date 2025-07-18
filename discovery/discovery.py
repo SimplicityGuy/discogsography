@@ -127,14 +127,14 @@ discovery_app = DiscoveryApp()
 
 
 # API Routes
-@app.get("/")
+@app.get("/")  # type: ignore[misc]
 async def root() -> Response:
     """Serve the main discovery interface."""
     with (static_path / "index.html").open() as f:
         return Response(content=f.read(), media_type="text/html")
 
 
-@app.get("/health")
+@app.get("/health")  # type: ignore[misc]
 async def health_check() -> dict[str, Any]:
     """Health check endpoint."""
     return {
@@ -146,7 +146,7 @@ async def health_check() -> dict[str, Any]:
 
 
 # Recommendation API
-@app.post("/api/recommendations")
+@app.post("/api/recommendations")  # type: ignore[misc]
 async def get_recommendations_api(request: RecommendationRequest) -> dict[str, Any]:
     """Get music recommendations."""
     try:
@@ -154,7 +154,7 @@ async def get_recommendations_api(request: RecommendationRequest) -> dict[str, A
         return {
             "recommendations": recommendations,
             "total": len(recommendations),
-            "request": request.dict(),
+            "request": request.model_dump(),
         }
     except Exception as e:
         logger.error(f"❌ Error getting recommendations: {e}")
@@ -162,7 +162,7 @@ async def get_recommendations_api(request: RecommendationRequest) -> dict[str, A
 
 
 # Analytics API
-@app.post("/api/analytics")
+@app.post("/api/analytics")  # type: ignore[misc]
 async def get_analytics_api(request: AnalyticsRequest) -> AnalyticsResult:
     """Get music industry analytics."""
     try:
@@ -174,13 +174,13 @@ async def get_analytics_api(request: AnalyticsRequest) -> AnalyticsResult:
 
 
 # Graph Explorer API
-@app.post("/api/graph/explore")
+@app.post("/api/graph/explore")  # type: ignore[misc]
 async def explore_graph_api(query: GraphQuery) -> dict[str, Any]:
     """Explore the music knowledge graph."""
     try:
         graph_data, path_result = await explore_graph(query)
 
-        response = {"graph": graph_data, "query": query.dict()}
+        response = {"graph": graph_data, "query": query.model_dump()}
 
         if path_result:
             response["path"] = path_result
@@ -192,7 +192,7 @@ async def explore_graph_api(query: GraphQuery) -> dict[str, Any]:
 
 
 # WebSocket endpoint for real-time updates
-@app.websocket("/ws")
+@app.websocket("/ws")  # type: ignore[misc]
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await discovery_app.connect_websocket(websocket)
@@ -237,7 +237,7 @@ if __name__ == "__main__":
         # Start main FastAPI server
         config = uvicorn.Config(
             app="discovery.discovery:app",
-            host="0.0.0.0",  # noqa: S104
+            host="0.0.0.0",  # nosec B104  # noqa: S104
             port=8005,  # Different port from dashboard
             log_level="info",
             reload=False,
