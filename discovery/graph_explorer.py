@@ -96,14 +96,14 @@ class MusicGraphExplorer:
         """Search for nodes by name/title."""
         logger.info(f"🔍 Searching for nodes: {search_term}")
 
-        assert self.driver is not None, "Driver must be initialized before searching nodes"
+        assert self.driver is not None, "Driver must be initialized before searching nodes"  # nosec B101
         # Build type filter
         type_filter = ""
         if node_types:
             type_labels = " OR ".join([f"n:{node_type}" for node_type in node_types])
             type_filter = f"WHERE ({type_labels})"
 
-        assert self.driver is not None, "Driver must be initialized"
+        assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
             result = await session.run(
                 f"""
@@ -152,7 +152,7 @@ class MusicGraphExplorer:
         """Expand around a specific node to show its relationships."""
         logger.info(f"📈 Expanding node: {node_id}")
 
-        assert self.driver is not None, "Driver must be initialized"
+        assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
             # Get the central node
             central_result = await session.run(
@@ -257,7 +257,7 @@ class MusicGraphExplorer:
         """Find shortest paths between two nodes."""
         logger.info(f"🛤️ Finding path from {source_node} to {target_node}")
 
-        assert self.driver is not None, "Driver must be initialized"
+        assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
             # Find shortest paths
             result = await session.run(
@@ -355,7 +355,7 @@ class MusicGraphExplorer:
         """Get the neighborhood around a node up to a certain radius."""
         logger.info(f"🏘️ Getting neighborhood for node: {node_id}")
 
-        assert self.driver is not None, "Driver must be initialized"
+        assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
             # Get neighborhood using variable-length paths
             result = await session.run(
@@ -455,7 +455,7 @@ class MusicGraphExplorer:
         # For now, implement as enhanced text search
         # Could be extended with embedding-based similarity
 
-        assert self.driver is not None, "Driver must be initialized"
+        assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
             result = await session.run(
                 """
