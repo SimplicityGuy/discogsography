@@ -414,6 +414,19 @@ app.add_middleware(
 )
 
 
+@app.get("/health")  # type: ignore[misc]
+async def health_check() -> ORJSONResponse:
+    """Health check endpoint for Docker and monitoring."""
+    return ORJSONResponse(
+        content={
+            "status": "healthy",
+            "service": "dashboard",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "uptime": "running",
+        }
+    )
+
+
 @app.get("/api/metrics")  # type: ignore[misc]
 async def get_metrics() -> ORJSONResponse:
     """Get current system metrics."""

@@ -54,7 +54,7 @@ services:
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Changed from 5432 to avoid conflict
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -263,6 +263,7 @@ services:
       POSTGRES_PASSWORD: discogsography
       POSTGRES_DATABASE: discogsography
       PYTHONUNBUFFERED: "1"
+      UV_CACHE_DIR: "/tmp/.cache/uv"
     ports:
       - "8003:8003"
     depends_on:
@@ -289,6 +290,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+      - /.cache
 
   # Discovery service
   discovery:
@@ -313,6 +315,10 @@ services:
       POSTGRES_PASSWORD: discogsography
       POSTGRES_DATABASE: discogsography
       PYTHONUNBUFFERED: "1"
+      UV_CACHE_DIR: "/tmp/.cache/uv"
+      HF_HOME: "/tmp/.cache/huggingface"
+      TRANSFORMERS_CACHE: "/tmp/.cache/transformers"
+      XDG_CACHE_HOME: "/tmp/.cache"
     ports:
       - "8004:8004"      # Health check port
       - "8005:8005"      # Discovery service port
@@ -340,6 +346,7 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+      - /.cache
 
 volumes:
   rabbitmq_data:

@@ -2,7 +2,6 @@
 """Discovery service for music exploration and analytics."""
 
 import asyncio
-import contextlib
 import logging
 from contextlib import asynccontextmanager
 from datetime import datetime
@@ -204,6 +203,20 @@ async def websocket_endpoint(websocket: WebSocket):
         discovery_app.disconnect_websocket(websocket)
 
 
+def get_health_data() -> dict[str, Any]:
+    """Get current health data for monitoring."""
+    from datetime import datetime
+
+    return {
+        "status": "healthy",
+        "service": "discovery",
+        "ai_features": "active",
+        "semantic_search": "ready",
+        "visualization_engine": "online",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
 
@@ -212,8 +225,8 @@ if __name__ == "__main__":
 
     async def start_servers():
         # Start health server
-        health_server = HealthServer(port=8004)
-        health_task = asyncio.create_task(health_server.start())
+        health_server = HealthServer(8004, get_health_data)
+        health_server.start_background()
 
         # Start main FastAPI server
         config = uvicorn.Config(
@@ -233,8 +246,7 @@ if __name__ == "__main__":
         except KeyboardInterrupt:
             logger.info("🛑 Received shutdown signal")
         finally:
-            health_task.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await health_task
+            # Health server runs in background thread, will stop when process exits
+            logger.info("🏥 Health server will stop with main process")
 
     asyncio.run(start_servers())

@@ -1,54 +1,122 @@
-# Discovery Service Dockerfile
+# syntax=docker/dockerfile:1
+
+# Build arguments
 ARG PYTHON_VERSION=3.13
-FROM python:${PYTHON_VERSION}-slim
+ARG UID=1000
+ARG GID=1000
 
-# Metadata
-LABEL org.opencontainers.image.title="Discogsography Discovery"
-LABEL org.opencontainers.image.description="Music discovery and analytics service"
-LABEL org.opencontainers.image.version="1.0.0"
-LABEL org.opencontainers.image.source="https://github.com/SimplicityGuy/discogsography"
+FROM python:${PYTHON_VERSION}-slim AS builder
 
-# Security: Create non-root user
-RUN groupadd -r discovery && useradd -r -g discovery discovery
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
 
-# System dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    g++ \
-    && rm -rf /var/lib/apt/lists/*
+# Set environment for build
+ENV UV_SYSTEM_PYTHON=1 \
+    UV_CACHE_DIR=/tmp/.cache/uv \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
 
-# Set working directory
 WORKDIR /app
 
-# Copy dependency files
-COPY pyproject.toml uv.lock ./
+# Copy dependency files first for better caching
+COPY pyproject.toml uv.lock README.md ./
+COPY common/pyproject.toml ./common/
 COPY discovery/pyproject.toml ./discovery/
 
-# Install uv and dependencies
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-install-project
+# Install dependencies
+RUN --mount=type=cache,target=/tmp/.cache/uv \
+    uv sync --frozen --no-dev --extra discovery
 
-# Copy application code
+# Copy source files
 COPY common/ ./common/
 COPY discovery/ ./discovery/
 
-# Install discovery service
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen
+# Final stage
+FROM python:${PYTHON_VERSION}-slim
 
-# Create logs directory
-RUN mkdir -p /logs && chown discovery:discovery /logs
+# Build arguments for labels
+ARG BUILD_DATE
+ARG BUILD_VERSION
+ARG VCS_REF
+ARG UID=1000
+ARG GID=1000
 
-# Security hardening
-USER discovery
+# OCI Image Spec Annotations
+# https://github.com/opencontainers/image-spec/blob/main/annotations.md
+LABEL org.opencontainers.image.title="Discogsography Discovery" \
+      org.opencontainers.image.description="Music discovery and analytics service with AI-powered recommendations, semantic search, and advanced visualizations." \
+      org.opencontainers.image.authors="Robert Wlodarczyk <robert@simplicityguy.com>" \
+      org.opencontainers.image.url="https://github.com/SimplicityGuy/discogsography" \
+      org.opencontainers.image.documentation="https://github.com/SimplicityGuy/discogsography/blob/main/README.md" \
+      org.opencontainers.image.source="https://github.com/SimplicityGuy/discogsography" \
+      org.opencontainers.image.vendor="SimplicityGuy" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.version="${BUILD_VERSION:-0.1.0}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.base.name="docker.io/library/python:${PYTHON_VERSION}-slim" \
+      com.discogsography.service="discovery" \
+      com.discogsography.dependencies="fastapi,sentence-transformers,scikit-learn,plotly" \
+      com.discogsography.python.version="${PYTHON_VERSION}"
+
+# Install security updates, curl for healthcheck, and gcc/g++ for numpy/pandas
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        gcc \
+        g++ && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Create user and directories with configurable UID/GID
+RUN groupadd -r -g ${GID} discogsography && \
+    useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
+    mkdir -p /tmp /app /logs && \
+    chown -R discogsography:discogsography /tmp /app /logs
+
+WORKDIR /app
+
+# Copy from builder
+COPY --from=builder --chown=discogsography:discogsography /app /app
+
+# Install uv for runtime
+COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
+
+# Create startup script
+# hadolint ignore=SC2016
+RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m discovery.discovery "$@"\n' > /app/start.sh && \
+    chmod +x /app/start.sh
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8004/health || exit 1
+
+USER discogsography:discogsography
+
+# Environment variables
+ENV HOME=/home/discogsography \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_SYSTEM_PYTHON=1 \
+    UV_NO_CACHE=1 \
+    PATH="/app/.venv/bin:$PATH" \
+    AMQP_CONNECTION="" \
+    NEO4J_ADDRESS="" \
+    NEO4J_USERNAME="" \
+    NEO4J_PASSWORD="" \
+    POSTGRES_ADDRESS="" \
+    POSTGRES_USERNAME="" \
+    POSTGRES_PASSWORD="" \
+    POSTGRES_DATABASE=""
+
+VOLUME ["/logs"]
 
 # Expose ports
 EXPOSE 8004 8005
 
-# Start discovery service
-CMD ["uv", "run", "python", "discovery/discovery.py"]
+# Security: This container should be run with:
+# docker run --cap-drop=ALL --security-opt=no-new-privileges:true ...
+
+CMD ["/app/start.sh"]
