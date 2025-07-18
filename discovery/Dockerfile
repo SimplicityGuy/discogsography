@@ -111,6 +111,7 @@ ENV HOME=/home/discogsography \
     POSTGRES_PASSWORD="" \
     POSTGRES_DATABASE=""
 
+# Declare volume for logs
 VOLUME ["/logs"]
 
 # Expose ports

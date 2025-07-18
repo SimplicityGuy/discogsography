@@ -103,6 +103,7 @@ ENV HOME=/home/discogsography \
     DISCOGS_ROOT="/discogs-data" \
     PERIODIC_CHECK_DAYS="15"
 
+# Declare volumes
 VOLUME ["/discogs-data", "/logs"]
 
 # Security: This container should be run with:
