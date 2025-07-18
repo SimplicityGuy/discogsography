@@ -16,12 +16,13 @@ Transform the entire Discogs music database into queryable graph and relational 
 
 ## Overview
 
-Discogsography consists of four microservices that work together to process and monitor the complete Discogs database:
+Discogsography consists of five microservices that work together to process, monitor, and explore the complete Discogs database:
 
 1. **Dashboard** - Real-time monitoring dashboard with WebSocket updates for all services
 1. **Extractor** - Downloads Discogs XML dumps from S3, validates checksums, parses XML to JSON, and publishes to message queues
 1. **Graphinator** - Consumes messages and builds a graph database in Neo4j with relationships between artists, labels, releases, and masters
 1. **Tableinator** - Consumes messages and stores denormalized data in PostgreSQL for fast queries and full-text search
+1. **Discovery** - AI-powered music discovery service with semantic search, recommendations, and advanced analytics
 
 ### Architecture
 
@@ -35,6 +36,7 @@ graph TD
     GRAPH[["Graphinator"]]
     TABLE[["Tableinator"]]
     DASH[["Dashboard<br/>(Monitoring)"]]
+    DISCO[["Discovery<br/>(AI Analytics)"]]
 
     S3 -->|Download & Parse| EXT
     EXT -->|Publish Messages| RMQ
@@ -43,9 +45,14 @@ graph TD
     GRAPH -->|Store| NEO4J
     TABLE -->|Store| PG
 
+    DISCO -.->|Query & Analyze| NEO4J
+    DISCO -.->|Query & Analyze| PG
+    DISCO -.->|AI Processing| DISCO
+
     DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
+    DASH -.->|Monitor| DISCO
     DASH -.->|Query Stats| RMQ
     DASH -.->|Query Stats| NEO4J
     DASH -.->|Query Stats| PG
@@ -55,6 +62,7 @@ graph TD
     style NEO4J fill:#f3e5f5
     style PG fill:#e8f5e9
     style DASH fill:#fce4ec
+    style DISCO fill:#e3f2fd
 ```
 
 ### Key Features
@@ -111,9 +119,10 @@ graph TD
    | Service | URL/Connection | Credentials |
    |---------|----------------|-------------|
    | 📊 **Dashboard** | http://localhost:8003 | No auth required |
+   | 🎵 **Discovery** | http://localhost:8005 | No auth required |
    | 🐰 **RabbitMQ** | http://localhost:15672 | discogsography / discogsography |
    | 🔗 **Neo4j Browser** | http://localhost:7474 | neo4j / discogsography |
-   | 🐘 **PostgreSQL** | localhost:5432 | discogsography / discogsography |
+   | 🐘 **PostgreSQL** | localhost:5433 | discogsography / discogsography |
 
 ### Local Development
 
@@ -142,7 +151,7 @@ graph TD
    export NEO4J_ADDRESS="bolt://localhost:7687"
    export NEO4J_USERNAME="neo4j"
    export NEO4J_PASSWORD="password"
-   export POSTGRES_ADDRESS="localhost:5432"
+   export POSTGRES_ADDRESS="localhost:5433"
    export POSTGRES_USERNAME="postgres"
    export POSTGRES_PASSWORD="password"
    export POSTGRES_DATABASE="discogsography"
@@ -674,6 +683,7 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
    curl http://localhost:8001/health  # Graphinator
    curl http://localhost:8002/health  # Tableinator
    curl http://localhost:8003/health  # Dashboard
+   curl http://localhost:8004/health  # Discovery
    ```
 
 1. **📊 Monitor Real-time Logs**

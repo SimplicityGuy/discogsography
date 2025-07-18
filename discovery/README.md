@@ -49,7 +49,7 @@ uv sync --extra discovery
 export NEO4J_ADDRESS="bolt://localhost:7687"
 export NEO4J_USERNAME="neo4j"
 export NEO4J_PASSWORD="password"
-export POSTGRES_ADDRESS="localhost:5432"
+export POSTGRES_ADDRESS="localhost:5433"
 export POSTGRES_USERNAME="postgres"
 export POSTGRES_PASSWORD="password"
 export POSTGRES_DATABASE="discogsography"
@@ -161,7 +161,7 @@ Content-Type: application/json
 | `NEO4J_ADDRESS` | Neo4j connection URL | `bolt://localhost:7687` |
 | `NEO4J_USERNAME` | Neo4j username | `neo4j` |
 | `NEO4J_PASSWORD` | Neo4j password | Required |
-| `POSTGRES_ADDRESS` | PostgreSQL host:port | `localhost:5432` |
+| `POSTGRES_ADDRESS` | PostgreSQL host:port | `localhost:5433` |
 | `POSTGRES_USERNAME` | PostgreSQL username | Required |
 | `POSTGRES_PASSWORD` | PostgreSQL password | Required |
 | `POSTGRES_DATABASE` | PostgreSQL database | `discogsography` |

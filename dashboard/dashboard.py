@@ -192,6 +192,7 @@ class DashboardApp:
             ("extractor", "http://extractor:8000/health"),
             ("graphinator", "http://graphinator:8001/health"),
             ("tableinator", "http://tableinator:8002/health"),
+            ("discovery", "http://discovery:8004/health"),
         ]
 
         async with httpx.AsyncClient(timeout=5.0) as client:
