@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Music Industry Analytics & Insights engine for trend analysis."""
 
 import logging
@@ -66,6 +65,7 @@ class MusicAnalytics:
         """Analyze genre popularity trends over time."""
         logger.info("🎵 Analyzing genre trends over time...")
 
+        assert self.neo4j_driver is not None, "Neo4j driver must be initialized"
         # Default to last 30 years if no range specified
         current_year = datetime.now().year
         start_year, end_year = time_range or (current_year - 30, current_year)
@@ -151,7 +151,7 @@ class MusicAnalytics:
                 growth_rates[genre] = growth_rate
 
         if growth_rates:
-            fastest_growing = max(growth_rates, key=growth_rates.get)
+            fastest_growing = max(growth_rates, key=lambda x: growth_rates[x])
             growth_rate = growth_rates[fastest_growing]
             insights.append(
                 f"Fastest growing genre (last 5 years): {fastest_growing} (+{growth_rate:.1f}%)"
@@ -180,6 +180,7 @@ class MusicAnalytics:
         """Analyze an artist's career evolution and collaboration patterns."""
         logger.info(f"🎤 Analyzing career evolution for {artist_name}...")
 
+        assert self.neo4j_driver is not None, "Neo4j driver must be initialized"
         async with self.neo4j_driver.session() as session:
             # Get artist's releases over time with genres
             result = await session.run(
@@ -313,6 +314,7 @@ class MusicAnalytics:
         """Analyze record label market insights and artist rosters."""
         logger.info("🏢 Analyzing record label market insights...")
 
+        assert self.neo4j_driver is not None, "Neo4j driver must be initialized"
         async with self.neo4j_driver.session() as session:
             if label_name:
                 # Specific label analysis
@@ -417,6 +419,7 @@ class MusicAnalytics:
         """Analyze music market trends and format adoption."""
         logger.info(f"📈 Analyzing market trends focused on {analysis_focus}...")
 
+        assert self.neo4j_driver is not None, "Neo4j driver must be initialized"
         async with self.neo4j_driver.session() as session:
             if analysis_focus == "format":
                 # Format adoption over time

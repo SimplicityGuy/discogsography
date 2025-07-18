@@ -1,5 +1,6 @@
 """Discovery service test configuration and fixtures."""
 
+from typing import Any
 from unittest.mock import AsyncMock
 
 import pytest
@@ -15,7 +16,7 @@ def discovery_client() -> TestClient:
 
 
 @pytest.fixture
-async def mock_neo4j_driver():
+async def mock_neo4j_driver() -> AsyncMock:
     """Mock Neo4j driver for testing."""
     mock_driver = AsyncMock()
     mock_session = AsyncMock()
@@ -36,14 +37,14 @@ async def mock_neo4j_driver():
 
 
 @pytest.fixture
-async def mock_postgres_engine():
+async def mock_postgres_engine() -> AsyncMock:
     """Mock PostgreSQL engine for testing."""
     mock_engine = AsyncMock()
     return mock_engine
 
 
 @pytest.fixture
-def mock_recommender():
+def mock_recommender() -> AsyncMock:
     """Mock music recommender for testing."""
     mock = AsyncMock()
     mock.initialize = AsyncMock()
@@ -55,7 +56,7 @@ def mock_recommender():
 
 
 @pytest.fixture
-def mock_analytics():
+def mock_analytics() -> AsyncMock:
     """Mock analytics engine for testing."""
     mock = AsyncMock()
     mock.initialize = AsyncMock()
@@ -70,7 +71,7 @@ def mock_analytics():
 
 
 @pytest.fixture
-def mock_graph_explorer():
+def mock_graph_explorer() -> AsyncMock:
     """Mock graph explorer for testing."""
     mock = AsyncMock()
     mock.initialize = AsyncMock()
@@ -80,7 +81,7 @@ def mock_graph_explorer():
 
 
 @pytest.fixture
-def sample_recommendation_data():
+def sample_recommendation_data() -> list[dict[str, Any]]:
     """Sample recommendation data for testing."""
     return [
         {
@@ -105,7 +106,7 @@ def sample_recommendation_data():
 
 
 @pytest.fixture
-def sample_analytics_data():
+def sample_analytics_data() -> dict[str, Any]:
     """Sample analytics data for testing."""
     return {
         "chart_type": "line",
@@ -135,7 +136,7 @@ def sample_analytics_data():
 
 
 @pytest.fixture
-def sample_graph_data():
+def sample_graph_data() -> dict[str, Any]:
     """Sample graph data for testing."""
     return {
         "nodes": [

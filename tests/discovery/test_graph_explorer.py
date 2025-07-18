@@ -25,7 +25,7 @@ class TestMusicGraphExplorer:
             mock_config.return_value = MagicMock(
                 neo4j_address="bolt://localhost:7687",
                 neo4j_username="neo4j",
-                neo4j_password="password",
+                neo4j_password="password",  # noqa: S106
             )
 
             explorer = MusicGraphExplorer()

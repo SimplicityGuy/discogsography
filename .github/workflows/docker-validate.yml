@@ -40,7 +40,7 @@ jobs:
         id: set-matrix
         run: |
           # Only include actual service directories (sorted alphabetically)
-          services=("dashboard" "extractor" "graphinator" "tableinator")
+          services=("dashboard" "discovery" "extractor" "graphinator" "tableinator")
           matrix=$(printf "%s\n" "${services[@]}" | jq -R -s -c 'split("\n")[:-1]')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
@@ -112,7 +112,7 @@ jobs:
       - name: Check docker-compose services
         run: |
           services=$(docker-compose config --services | sort | tr "\n" " " | sed "s/ $//")
-          expected="dashboard extractor graphinator neo4j postgres rabbitmq tableinator"
+          expected="dashboard discovery extractor graphinator neo4j postgres rabbitmq tableinator"
 
           if [ "$services" != "$expected" ]; then
             echo "❌ Service mismatch!"
@@ -128,6 +128,12 @@ jobs:
           deps=$(docker-compose config | yq eval '.services.dashboard.depends_on | keys | sort | join(" ")' -)
           if [ "$deps" != "neo4j postgres rabbitmq" ]; then
             echo "❌ Dashboard should depend on neo4j, postgres, and rabbitmq"
+            exit 1
+          fi
+
+          deps=$(docker-compose config | yq eval '.services.discovery.depends_on | keys | sort | join(" ")' -)
+          if [ "$deps" != "neo4j postgres rabbitmq" ]; then
+            echo "❌ Discovery should depend on neo4j, postgres, and rabbitmq"
             exit 1
           fi
 
@@ -154,7 +160,7 @@ jobs:
       - name: Check for security best practices
         run: |
           # Check that services run as non-root user
-          for service in dashboard extractor graphinator tableinator; do
+          for service in dashboard discovery extractor graphinator tableinator; do
             user=$(docker-compose config | yq eval ".services.$service.user" -)
             if [ "$user" != "1000:1000" ]; then
               echo "❌ $service should run as user 1000:1000"
@@ -164,7 +170,7 @@ jobs:
           echo "✅ All services run as non-root user"
 
           # Check security options
-          for service in dashboard extractor graphinator tableinator; do
+          for service in dashboard discovery extractor graphinator tableinator; do
             security_opt=$(docker-compose config | yq eval ".services.$service.security_opt[]" - | grep "no-new-privileges:true" || true)
             if [ -z "$security_opt" ]; then
               echo "❌ $service should have no-new-privileges security option"

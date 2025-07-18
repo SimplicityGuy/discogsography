@@ -23,7 +23,7 @@ class TestMusicRecommender:
             mock_config.return_value = MagicMock(
                 neo4j_address="bolt://localhost:7687",
                 neo4j_username="neo4j",
-                neo4j_password="password",
+                neo4j_password="password",  # noqa: S106
             )
 
             recommender = MusicRecommender()
@@ -47,11 +47,13 @@ class TestMusicRecommender:
 
     async def test_initialize(self, recommender):
         """Test recommender initialization."""
-        with patch.object(recommender, "_build_collaboration_graph") as mock_build:
-            with patch.object(recommender, "_generate_artist_embeddings") as mock_embeddings:
-                await recommender.initialize()
-                mock_build.assert_called_once()
-                mock_embeddings.assert_called_once()
+        with (
+            patch.object(recommender, "_build_collaboration_graph") as mock_build,
+            patch.object(recommender, "_generate_artist_embeddings") as mock_embeddings,
+        ):
+            await recommender.initialize()
+            mock_build.assert_called_once()
+            mock_embeddings.assert_called_once()
 
     async def test_get_similar_artists(self, recommender):
         """Test getting similar artists."""

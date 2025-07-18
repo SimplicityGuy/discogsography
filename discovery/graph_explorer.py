@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Real-time Music Knowledge Graph Explorer for interactive relationship discovery."""
 
 import logging
@@ -97,12 +96,14 @@ class MusicGraphExplorer:
         """Search for nodes by name/title."""
         logger.info(f"🔍 Searching for nodes: {search_term}")
 
+        assert self.driver is not None, "Driver must be initialized before searching nodes"
         # Build type filter
         type_filter = ""
         if node_types:
             type_labels = " OR ".join([f"n:{node_type}" for node_type in node_types])
             type_filter = f"WHERE ({type_labels})"
 
+        assert self.driver is not None, "Driver must be initialized"
         async with self.driver.session() as session:
             result = await session.run(
                 f"""
@@ -151,6 +152,7 @@ class MusicGraphExplorer:
         """Expand around a specific node to show its relationships."""
         logger.info(f"📈 Expanding node: {node_id}")
 
+        assert self.driver is not None, "Driver must be initialized"
         async with self.driver.session() as session:
             # Get the central node
             central_result = await session.run(
@@ -255,6 +257,7 @@ class MusicGraphExplorer:
         """Find shortest paths between two nodes."""
         logger.info(f"🛤️ Finding path from {source_node} to {target_node}")
 
+        assert self.driver is not None, "Driver must be initialized"
         async with self.driver.session() as session:
             # Find shortest paths
             result = await session.run(
@@ -352,6 +355,7 @@ class MusicGraphExplorer:
         """Get the neighborhood around a node up to a certain radius."""
         logger.info(f"🏘️ Getting neighborhood for node: {node_id}")
 
+        assert self.driver is not None, "Driver must be initialized"
         async with self.driver.session() as session:
             # Get neighborhood using variable-length paths
             result = await session.run(
@@ -451,6 +455,7 @@ class MusicGraphExplorer:
         # For now, implement as enhanced text search
         # Could be extended with embedding-based similarity
 
+        assert self.driver is not None, "Driver must be initialized"
         async with self.driver.session() as session:
             result = await session.run(
                 """
@@ -484,7 +489,7 @@ class MusicGraphExplorer:
                 RETURN g as node, labels(g) as node_labels, 'Genre' as search_type
                 LIMIT 5
             """,
-                query=query,
+                {"query": query},
             )
 
             nodes = []

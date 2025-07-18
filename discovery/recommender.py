@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """AI-Powered Music Discovery Engine using graph algorithms and ML."""
 
 import logging
@@ -81,6 +80,7 @@ class MusicRecommender:
         """Build NetworkX graph from Neo4j artist relationships."""
         logger.info("🔗 Building artist collaboration graph...")
 
+        assert self.driver is not None, "Driver must be initialized before building graph"
         self.graph = nx.Graph()
 
         async with self.driver.session() as session:
@@ -108,6 +108,7 @@ class MusicRecommender:
         """Generate semantic embeddings for artists based on their profiles."""
         logger.info("🧬 Generating artist embeddings...")
 
+        assert self.driver is not None, "Driver must be initialized before generating embeddings"
         artists_data = []
 
         async with self.driver.session() as session:
@@ -139,6 +140,7 @@ class MusicRecommender:
             return
 
         # Generate embeddings
+        assert self.embedding_model is not None, "Embedding model must be initialized"
         artist_texts = [data["text"] for data in artists_data]
         self.artist_embeddings = self.embedding_model.encode(artist_texts)
 
@@ -235,6 +237,7 @@ class MusicRecommender:
         self, genres: list[str] | None = None, limit: int = 10
     ) -> list[RecommendationResult]:
         """Get trending music based on collaboration frequency and recent activity."""
+        assert self.driver is not None, "Driver must be initialized before getting trending music"
         trending = []
 
         async with self.driver.session() as session:
@@ -319,6 +322,7 @@ class MusicRecommender:
 
     async def _get_artist_info(self, artist_name: str) -> dict[str, Any] | None:
         """Get detailed artist information from Neo4j."""
+        assert self.driver is not None, "Driver must be initialized before getting artist info"
         async with self.driver.session() as session:
             result = await session.run(
                 """
