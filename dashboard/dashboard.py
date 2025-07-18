@@ -192,6 +192,7 @@ class DashboardApp:
             ("extractor", "http://extractor:8000/health"),
             ("graphinator", "http://graphinator:8001/health"),
             ("tableinator", "http://tableinator:8002/health"),
+            ("discovery", "http://discovery:8004/health"),
         ]
 
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -412,6 +413,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.get("/health")  # type: ignore[misc]
+async def health_check() -> ORJSONResponse:
+    """Health check endpoint for Docker and monitoring."""
+    return ORJSONResponse(
+        content={
+            "status": "healthy",
+            "service": "dashboard",
+            "timestamp": datetime.now(UTC).isoformat(),
+            "uptime": "running",
+        }
+    )
 
 
 @app.get("/api/metrics")  # type: ignore[misc]

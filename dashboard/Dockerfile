@@ -23,15 +23,15 @@ COPY pyproject.toml uv.lock README.md ./
 COPY common/pyproject.toml ./common/
 COPY dashboard/pyproject.toml ./dashboard/
 
-# Install dependencies with cache mount
+# Install dependencies
 RUN --mount=type=cache,target=/tmp/.cache/uv \
     uv sync --frozen --no-dev --extra dashboard
 
-# Copy source files after dependencies for better layer caching
+# Copy source files
 COPY common/ ./common/
 COPY dashboard/ ./dashboard/
 
-# Runtime stage
+# Final stage
 FROM python:${PYTHON_VERSION}-slim
 
 # Build arguments for labels
@@ -41,10 +41,10 @@ ARG VCS_REF
 ARG UID=1000
 ARG GID=1000
 
-# OCI annotations
+# OCI Image Spec Annotations
 # https://github.com/opencontainers/image-spec/blob/main/annotations.md
 LABEL org.opencontainers.image.title="Discogsography Dashboard" \
-      org.opencontainers.image.description="Real-time monitoring dashboard for discogsography services with WebSocket updates" \
+      org.opencontainers.image.description="Real-time monitoring dashboard for Discogsography services with WebSocket updates, health checks, and metrics visualization." \
       org.opencontainers.image.authors="Robert Wlodarczyk <robert@simplicityguy.com>" \
       org.opencontainers.image.url="https://github.com/SimplicityGuy/discogsography" \
       org.opencontainers.image.documentation="https://github.com/SimplicityGuy/discogsography/blob/main/README.md" \
@@ -63,8 +63,7 @@ LABEL org.opencontainers.image.title="Discogsography Dashboard" \
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-        curl && \
+    apt-get install -y --no-install-recommends curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -84,7 +83,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
 
 # Create startup script
 # hadolint ignore=SC2016
-RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec uv run --no-sync python -m dashboard.dashboard "$@"\n' > /app/start.sh && \
+RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m dashboard.dashboard "$@"\n' > /app/start.sh && \
     chmod +x /app/start.sh
 
 # Health check
@@ -117,5 +116,4 @@ VOLUME ["/logs"]
 # Security: This container should be run with:
 # docker run --cap-drop=ALL --security-opt=no-new-privileges:true ...
 
-# Run the dashboard
 CMD ["/app/start.sh"]

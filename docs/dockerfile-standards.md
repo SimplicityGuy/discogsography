@@ -1,110 +1,118 @@
-# Dockerfile Standards
+# Dockerfile Standards and Guidelines
 
-This document defines the standards and best practices for all Dockerfiles in the discogsography project.
+This document defines the standardized patterns and best practices for all Dockerfiles in the Discogsography project.
 
-## Structure
+## 🎯 Overview
 
-All Dockerfiles follow a consistent multi-stage build pattern:
+All Dockerfiles must follow these standards to ensure consistency, security, and maintainability across the project.
 
-1. **Builder Stage**: Compile dependencies and prepare the application
-1. **Runtime Stage**: Minimal runtime environment with security hardening
-
-## Build Arguments
+## 📐 Structure Template
 
 ```dockerfile
-# Build arguments (at top of file)
+# syntax=docker/dockerfile:1
+
+# Build arguments
 ARG PYTHON_VERSION=3.13
 ARG UID=1000
 ARG GID=1000
 
-# Runtime stage arguments (for labels)
+# === BUILDER STAGE ===
+FROM python:${PYTHON_VERSION}-slim AS builder
+
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
+
+# Set environment for build
+ENV UV_SYSTEM_PYTHON=1 \
+    UV_CACHE_DIR=/tmp/.cache/uv \
+    PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+WORKDIR /app
+
+# Copy dependency files first for better caching
+COPY pyproject.toml uv.lock README.md ./
+COPY common/pyproject.toml ./common/
+COPY <service>/pyproject.toml ./<service>/
+
+# Install dependencies
+RUN --mount=type=cache,target=/tmp/.cache/uv \
+    uv sync --frozen --no-dev --extra <service>
+
+# Copy source files
+COPY common/ ./common/
+COPY <service>/ ./<service>/
+
+# === FINAL STAGE ===
+FROM python:${PYTHON_VERSION}-slim
+
+# Build arguments for labels
 ARG BUILD_DATE
 ARG BUILD_VERSION
 ARG VCS_REF
 ARG UID=1000
 ARG GID=1000
-```
 
-## Best Practices
+# OCI Image Spec Annotations
+# [Labels section - see below]
 
-### 1. Build Caching
+# Install security updates and service-specific packages
+# [Package installation section - see below]
 
-Always use cache mounts for dependency installation:
+# Create user and directories
+# [User creation section - see below]
 
-```dockerfile
-RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --extra <service-name>
-```
+WORKDIR /app
 
-### 2. Layer Optimization
+# Copy from builder
+COPY --from=builder --chown=discogsography:discogsography /app /app
 
-Copy dependency files before source code:
+# Install uv for runtime
+COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
 
-```dockerfile
-# Copy dependency files first
-COPY pyproject.toml uv.lock ./
+# Create startup script
+# [Startup script section - see below]
 
-# Install dependencies
-RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --extra <service-name>
+# Health check
+# [Health check section - see below]
 
-# Copy source files after dependencies
-COPY common/ ./common/
-COPY <service>/ ./<service>/
-```
+USER discogsography:discogsography
 
-### 3. User Creation
+# Environment variables
+# [Environment section - see below]
 
-Create users with configurable UID/GID and the `-l` flag:
+# Expose ports (if applicable)
+# [Port exposure section - see below]
 
-```dockerfile
-RUN groupadd -r -g ${GID} discogsography && \
-    useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
-    mkdir -p /tmp /app && \
-    chown -R discogsography:discogsography /tmp /app
-```
+# Declare volumes
+VOLUME ["/logs"]
 
-### 4. Package Installation
-
-Never use `DEBIAN_FRONTEND` in ENV, only in RUN commands:
-
-```dockerfile
-RUN apt-get update && \
-    apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends \
-        curl \
-        <other-packages> && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-```
-
-### 5. Health Checks
-
-Use HTTP endpoint checks for all services:
-
-```dockerfile
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-```
-
-### 6. Security
-
-Add security documentation:
-
-```dockerfile
+# Security comment
 # Security: This container should be run with:
 # docker run --cap-drop=ALL --security-opt=no-new-privileges:true ...
 
 CMD ["/app/start.sh"]
 ```
 
-### 7. Labels
+## 📋 Section Standards
 
-Use OCI Image Spec annotations:
+### 1. Build Arguments
+
+Always define at the top:
+
+```dockerfile
+ARG PYTHON_VERSION=3.13
+ARG UID=1000
+ARG GID=1000
+```
+
+### 2. OCI Labels
+
+Standardized format with service-specific variations:
 
 ```dockerfile
 LABEL org.opencontainers.image.title="Discogsography <Service>" \
-      org.opencontainers.image.description="<Description>" \
+      org.opencontainers.image.description="<Service description>" \
       org.opencontainers.image.authors="Robert Wlodarczyk <robert@simplicityguy.com>" \
       org.opencontainers.image.url="https://github.com/SimplicityGuy/discogsography" \
       org.opencontainers.image.documentation="https://github.com/SimplicityGuy/discogsography/blob/main/README.md" \
@@ -115,14 +123,82 @@ LABEL org.opencontainers.image.title="Discogsography <Service>" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.base.name="docker.io/library/python:${PYTHON_VERSION}-slim" \
-      com.discogsography.service="<service-name>" \
-      com.discogsography.dependencies="<comma-separated-deps>" \
+      com.discogsography.service="<service>" \
+      com.discogsography.dependencies="<comma-separated-list>" \
       com.discogsography.python.version="${PYTHON_VERSION}"
 ```
 
-### 8. Environment Variables
+Additional labels for database services:
 
-Set minimal environment variables, with empty defaults for secrets:
+- `com.discogsography.database="postgresql"` (tableinator)
+- `com.discogsography.database="neo4j"` (graphinator)
+
+### 3. Package Installation
+
+Base template:
+
+```dockerfile
+# Install security updates and curl for healthcheck
+# hadolint ignore=DL3008
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y --no-install-recommends \
+        curl && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+```
+
+Service-specific additions:
+
+- **discovery**: Add `gcc g++` for numpy/pandas compilation
+- **tableinator**: Add `libpq5` for PostgreSQL client libraries
+
+### 4. User and Directory Creation
+
+Standard format for all services:
+
+```dockerfile
+# Create user and directories with configurable UID/GID
+RUN groupadd -r -g ${GID} discogsography && \
+    useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
+    mkdir -p /tmp /app /logs && \
+    chown -R discogsography:discogsography /tmp /app /logs
+```
+
+Additional directories:
+
+- **extractor**: Add `/discogs-data` directory
+
+### 5. Startup Script
+
+Standard format:
+
+```dockerfile
+# Create startup script
+# hadolint ignore=SC2016
+RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m <service>.<service> "$@"\n' > /app/start.sh && \
+    chmod +x /app/start.sh
+```
+
+### 6. Health Check
+
+HTTP-based (default):
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:<port>/health || exit 1
+```
+
+Process-based (graphinator only):
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD pgrep -f "python.*graphinator" > /dev/null || exit 1
+```
+
+### 7. Environment Variables
+
+Base environment (all services):
 
 ```dockerfile
 ENV HOME=/home/discogsography \
@@ -131,41 +207,96 @@ ENV HOME=/home/discogsography \
     UV_SYSTEM_PYTHON=1 \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
-    # Service-specific vars with empty defaults
-    AMQP_CONNECTION="" \
-    <OTHER_SERVICE_VARS>=""
+    AMQP_CONNECTION=""
 ```
 
-## Service-Specific Additions
+Service-specific additions:
+
+- **dashboard**: All database connections
+- **discovery**: All database connections
+- **extractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
+- **graphinator**: Neo4j connections
+- **tableinator**: PostgreSQL connections
+
+### 8. Port Exposure
+
+Only expose ports for services with HTTP endpoints:
+
+- **dashboard**: `EXPOSE 8003`
+- **discovery**: `EXPOSE 8004 8005`
+
+### 9. Volume Declaration
+
+Standard volume:
+
+```dockerfile
+VOLUME ["/logs"]
+```
+
+Additional volumes:
+
+- **extractor**: Add `"/discogs-data"`
+
+## 🔧 Service-Specific Requirements
 
 ### Dashboard
 
-- Expose port: `EXPOSE 8003`
-- Health check endpoint: `/health` or `/api/metrics`
+- Standard configuration
+- Expose port 8003
+- All database connections in environment
+
+### Discovery
+
+- Install gcc/g++ for ML libraries
+- Expose ports 8004 and 8005
+- All database connections in environment
 
 ### Extractor
 
-- Volume for data: `VOLUME ["/discogs-data"]`
-- Additional env: `DISCOGS_ROOT="/discogs-data"`
+- Create /discogs-data directory
+- Add /discogs-data volume
+- Special environment variables for Discogs configuration
+
+### Graphinator
+
+- Process-based health check (no HTTP endpoint)
+- Neo4j connection environment variables
 
 ### Tableinator
 
-- Additional package: `libpq5` for PostgreSQL client
+- Install libpq5 for PostgreSQL
+- PostgreSQL connection environment variables
 
-## Validation
+## ✅ Quality Checklist
 
-Run hadolint on all Dockerfiles:
+Before committing any Dockerfile:
 
-```bash
-docker run --rm -v "$PWD":/workspace:ro hadolint/hadolint:latest \
-    hadolint /workspace/*/Dockerfile
-```
+1. **Structure**: Follows the standard template order
+1. **Comments**: Includes all standard comments and hadolint ignores
+1. **Labels**: All OCI labels present with correct values
+1. **Security**: Security comment present at bottom
+1. **Health Check**: Appropriate health check for service type
+1. **Environment**: All required environment variables defined
+1. **Volumes**: /logs volume declared (plus service-specific)
+1. **User**: Runs as discogsography user
+1. **Caching**: Uses BuildKit cache mounts
+1. **Linting**: Passes hadolint validation
 
-## Security Considerations
+## 🛡️ Security Standards
 
-1. **No hardcoded secrets**: All credentials use empty environment variables
-1. **Non-root user**: All containers run as UID/GID 1000 (configurable)
-1. **Minimal attack surface**: Only install required packages
-1. **Capability dropping**: Document `--cap-drop=ALL` usage
-1. **No new privileges**: Document `--security-opt=no-new-privileges:true`
-1. **Read-only root filesystem**: Compatible with `--read-only` flag
+1. **Non-root execution**: All containers run as UID/GID 1000
+1. **Minimal packages**: Only install what's needed
+1. **Security updates**: Always run `apt-get upgrade`
+1. **Clean up**: Remove apt lists after installation
+1. **Capability dropping**: Document in security comment
+1. **Read-only root**: Can be enabled with tmpfs mounts
+
+## 📝 Maintenance
+
+When updating Dockerfiles:
+
+1. Update this document if adding new patterns
+1. Apply changes consistently across all services
+1. Test builds for all services
+1. Update docker-compose.yml if needed
+1. Verify health checks still function

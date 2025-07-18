@@ -54,7 +54,7 @@ services:
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --lc-collate=en_US.UTF-8 --lc-ctype=en_US.UTF-8"
       PGDATA: /var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "5433:5432"  # Changed from 5432 to avoid conflict
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -263,6 +263,7 @@ services:
       POSTGRES_PASSWORD: discogsography
       POSTGRES_DATABASE: discogsography
       PYTHONUNBUFFERED: "1"
+      UV_CACHE_DIR: "/tmp/.cache/uv"
     ports:
       - "8003:8003"
     depends_on:
@@ -289,6 +290,63 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+      - /.cache
+
+  # Discovery service
+  discovery:
+    build:
+      context: .
+      dockerfile: discovery/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: discogsography/discovery:latest
+    container_name: discogsography-discovery
+    hostname: discovery
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      NEO4J_ADDRESS: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: discogsography
+      POSTGRES_ADDRESS: postgres:5432
+      POSTGRES_USERNAME: discogsography
+      POSTGRES_PASSWORD: discogsography
+      POSTGRES_DATABASE: discogsography
+      PYTHONUNBUFFERED: "1"
+      UV_CACHE_DIR: "/tmp/.cache/uv"
+      HF_HOME: "/tmp/.cache/huggingface"
+      TRANSFORMERS_CACHE: "/tmp/.cache/transformers"
+      XDG_CACHE_HOME: "/tmp/.cache"
+    ports:
+      - "8004:8004"      # Health check port
+      - "8005:8005"      # Discovery service port
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /.cache
 
 volumes:
   rabbitmq_data:

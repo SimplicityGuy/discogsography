@@ -11,6 +11,7 @@ A modern Python 3.13+ microservices system for processing Discogs database expor
 | Service | Purpose | Technology Stack |
 |---------|---------|------------------|
 | **📊 dashboard/** | Real-time monitoring & visualization | FastAPI, WebSocket, HTML/JS |
+| **🎵 discovery/** | AI-powered music discovery & analytics | FastAPI, transformers, scikit-learn, plotly |
 | **📥 extractor/** | Downloads & parses Discogs XML data | aio-pika, orjson, tqdm |
 | **🔗 graphinator/** | Builds Neo4j graph relationships | neo4j-driver, aio-pika |
 | **🐘 tableinator/** | Stores data in PostgreSQL | psycopg3, aio-pika |
@@ -130,6 +131,7 @@ The project uses **taskipy** for streamlined workflows. All tasks run with `uv r
 | Command | Description |
 |---------|-------------|
 | `uv run task dashboard` | Start monitoring dashboard |
+| `uv run task discovery` | Start AI discovery service |
 | `uv run task extractor` | Start data extractor service |
 | `uv run task graphinator` | Start Neo4j service |
 | `uv run task tableinator` | Start PostgreSQL service |
@@ -289,6 +291,7 @@ tests/
 ```bash
 # Start individual services
 uv run task dashboard      # Monitoring dashboard (port 8003)
+uv run task discovery      # AI discovery service (port 8005)
 uv run task extractor      # Data extractor (periodic checks)
 uv run task graphinator    # Neo4j service
 uv run task tableinator    # PostgreSQL service
@@ -303,6 +306,7 @@ uv run task logs          # Follow all logs
 ```bash
 # Run services directly
 uv run python dashboard/dashboard.py
+uv run python discovery/discovery.py
 uv run python extractor/extractor.py
 uv run python graphinator/graphinator.py
 uv run python tableinator/tableinator.py
@@ -360,9 +364,10 @@ docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 | Service | URL | Credentials |
 |---------|-----|-------------|
 | 📊 Dashboard | http://localhost:8003 | No auth |
+| 🎵 Discovery | http://localhost:8005 | No auth |
 | 🐰 RabbitMQ | http://localhost:15672 | discogsography / discogsography |
 | 🔗 Neo4j | http://localhost:7474 | neo4j / discogsography |
-| 🐘 PostgreSQL | localhost:5432 | discogsography / discogsography |
+| 🐘 PostgreSQL | localhost:5433 | discogsography / discogsography |
 
 #### 🏗️ Building Images
 
@@ -547,6 +552,7 @@ curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
+curl http://localhost:8004/health  # Discovery
 
 # Docker health status
 docker-compose ps

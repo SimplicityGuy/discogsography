@@ -37,12 +37,21 @@ def mock_amqp_connection() -> AsyncMock:
 def mock_neo4j_driver() -> MagicMock:
     """Mock Neo4j driver for testing."""
     mock_driver = MagicMock()
-    mock_session = MagicMock()
+    mock_session = AsyncMock()
+
+    # Configure async context manager for session
+    mock_context_manager = AsyncMock()
+    mock_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+    # Important: Make session() return the context manager, not a coroutine
+    mock_driver.session.return_value = mock_context_manager
 
     # Setup mock returns
-    mock_driver.session.return_value.__enter__.return_value = mock_session
     mock_session.execute_write.return_value = True
     mock_session.run.return_value.single.return_value = None
+    mock_session.close = AsyncMock()
+    mock_driver.close = AsyncMock()
 
     return mock_driver
 
@@ -58,6 +67,13 @@ def mock_postgres_connection() -> MagicMock:
     mock_cursor.fetchone.return_value = None
 
     return mock_conn
+
+
+@pytest.fixture
+async def mock_postgres_engine() -> AsyncMock:
+    """Mock PostgreSQL engine for testing."""
+    mock_engine = AsyncMock()
+    return mock_engine
 
 
 @pytest.fixture

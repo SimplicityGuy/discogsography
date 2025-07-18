@@ -6,7 +6,7 @@ Real-time monitoring dashboard for the Discogsography system with WebSocket supp
 
 The dashboard service provides a web-based interface to monitor all Discogsography services, including:
 
-- Service health status (extractor, graphinator, tableinator)
+- Service health status (extractor, graphinator, tableinator, discovery)
 - RabbitMQ queue metrics and consumer counts
 - PostgreSQL and Neo4j database statistics
 - Real-time activity logs
@@ -17,7 +17,7 @@ The dashboard service provides a web-based interface to monitor all Discogsograp
 - **Backend**: FastAPI with WebSocket support
 - **Frontend**: Vanilla JavaScript with dynamic updates
 - **Port**: 8003 (configurable via `DASHBOARD_PORT`)
-- **Health Endpoint**: `/health` (port 8000)
+- **Health Endpoint**: `/health` (port 8003)
 
 ## Configuration
 
@@ -32,13 +32,14 @@ DASHBOARD_PORT=8003       # Port for web interface
 EXTRACTOR_URL=http://extractor:8000
 GRAPHINATOR_URL=http://graphinator:8001
 TABLEINATOR_URL=http://tableinator:8002
+DISCOVERY_URL=http://discovery:8004
 
 # Database connections
 NEO4J_ADDRESS=neo4j:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=discogsography
 
-POSTGRES_ADDRESS=postgres:5432
+POSTGRES_ADDRESS=postgres:5433
 POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
@@ -51,7 +52,7 @@ RABBITMQ_MANAGEMENT_URL=http://rabbitmq:15672
 ## API Endpoints
 
 - `GET /` - Dashboard web interface
-- `GET /health` - Health check endpoint (port 8000)
+- `GET /health` - Health check endpoint (port 8003)
 - `GET /api/metrics` - Current system metrics
 - `WS /ws` - WebSocket connection for real-time updates
 
@@ -66,7 +67,8 @@ The dashboard broadcasts updates every 5 seconds with the following data:
     "services": {
       "extractor": { "status": "healthy", "health_url": "..." },
       "graphinator": { "status": "healthy", "health_url": "..." },
-      "tableinator": { "status": "healthy", "health_url": "..." }
+      "tableinator": { "status": "healthy", "health_url": "..." },
+      "discovery": { "status": "healthy", "health_url": "..." }
     },
     "queues": {
       "labels": { "messages": 0, "consumers": 1 },
