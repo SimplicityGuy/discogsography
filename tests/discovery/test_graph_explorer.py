@@ -1,5 +1,6 @@
 """Tests for the music knowledge graph explorer."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -33,12 +34,12 @@ class TestMusicGraphExplorer:
 
             return explorer
 
-    async def test_initialize(self, graph_explorer):
+    async def test_initialize(self, graph_explorer: Any) -> None:
         """Test graph explorer initialization."""
         await graph_explorer.initialize()
         # Should not raise any exceptions
 
-    async def test_search_nodes(self, graph_explorer, mock_neo4j_driver):
+    async def test_search_nodes(self, graph_explorer, mock_neo4j_driver: Any) -> None:
         """Test searching for nodes."""
         # Mock database results
         mock_result = AsyncMock()
@@ -61,7 +62,7 @@ class TestMusicGraphExplorer:
         assert len(result.nodes) == 1
         assert result.nodes[0].name == "Miles Davis"
 
-    async def test_expand_node(self, graph_explorer, mock_neo4j_driver):
+    async def test_expand_node(self, graph_explorer, mock_neo4j_driver: Any) -> None:
         """Test expanding around a node."""
         # Mock central node result
         mock_central_result = AsyncMock()
@@ -103,7 +104,7 @@ class TestMusicGraphExplorer:
         assert len(result.nodes) == 2
         assert len(result.edges) == 1
 
-    async def test_expand_node_not_found(self, graph_explorer, mock_neo4j_driver):
+    async def test_expand_node_not_found(self, graph_explorer, mock_neo4j_driver: Any) -> None:
         """Test expanding around a non-existent node."""
         mock_result = AsyncMock()
         mock_result.single.return_value = None
@@ -117,7 +118,7 @@ class TestMusicGraphExplorer:
         assert len(result.nodes) == 0
         assert "error" in result.metadata
 
-    async def test_find_path(self, graph_explorer, mock_neo4j_driver):
+    async def test_find_path(self, graph_explorer, mock_neo4j_driver: Any) -> None:
         """Test finding path between nodes."""
         # Mock path result
         mock_result = AsyncMock()
@@ -158,7 +159,7 @@ class TestMusicGraphExplorer:
         assert path_result.path_length == 1
         assert len(path_result.path) == 2
 
-    async def test_find_path_no_path(self, graph_explorer, mock_neo4j_driver):
+    async def test_find_path_no_path(self, graph_explorer, mock_neo4j_driver: Any) -> None:
         """Test finding path when no path exists."""
         mock_result = AsyncMock()
         mock_result.__aiter__ = AsyncMock(return_value=iter([]))
@@ -173,7 +174,7 @@ class TestMusicGraphExplorer:
         assert path_result.path_length == 0
         assert "No connection found" in path_result.explanation
 
-    async def test_get_neighborhood(self, graph_explorer, mock_neo4j_driver):
+    async def test_get_neighborhood(self, graph_explorer, mock_neo4j_driver: Any) -> None:
         """Test getting neighborhood around a node."""
         mock_result = AsyncMock()
         mock_neighbor = MagicMock()
@@ -200,7 +201,7 @@ class TestMusicGraphExplorer:
         assert isinstance(result, GraphData)
         assert len(result.nodes) >= 1
 
-    async def test_semantic_search(self, graph_explorer, mock_neo4j_driver):
+    async def test_semantic_search(self, graph_explorer, mock_neo4j_driver: Any) -> None:
         """Test semantic search across the graph."""
         mock_result = AsyncMock()
         mock_node = MagicMock()
@@ -218,7 +219,7 @@ class TestMusicGraphExplorer:
         assert isinstance(result, GraphData)
         assert len(result.nodes) == 1
 
-    async def test_close(self, graph_explorer):
+    async def test_close(self, graph_explorer: Any) -> None:
         """Test closing the graph explorer."""
         await graph_explorer.close()
         if graph_explorer.driver:
@@ -228,7 +229,7 @@ class TestMusicGraphExplorer:
 class TestGraphModels:
     """Test graph data models."""
 
-    def test_graph_node_model(self):
+    def test_graph_node_model(self) -> None:
         """Test GraphNode model."""
         node = GraphNode(
             id="123",
@@ -244,7 +245,7 @@ class TestGraphModels:
         assert node.name == "Miles Davis"
         assert node.size == 20
 
-    def test_graph_edge_model(self):
+    def test_graph_edge_model(self) -> None:
         """Test GraphEdge model."""
         edge = GraphEdge(
             id="789", source="123", target="456", label="BY", properties={}, weight=1.0
@@ -255,7 +256,7 @@ class TestGraphModels:
         assert edge.target == "456"
         assert edge.label == "BY"
 
-    def test_graph_data_model(self):
+    def test_graph_data_model(self) -> None:
         """Test GraphData model."""
         node = GraphNode(id="123", label="Artist", name="Miles Davis", properties={})
 
@@ -267,7 +268,7 @@ class TestGraphModels:
         assert len(graph_data.edges) == 1
         assert graph_data.metadata["total"] == 1
 
-    def test_graph_query_model(self):
+    def test_graph_query_model(self) -> None:
         """Test GraphQuery model."""
         query = GraphQuery(query_type="expand", node_id="123", max_depth=2, limit=50)
 
@@ -275,7 +276,7 @@ class TestGraphModels:
         assert query.node_id == "123"
         assert query.max_depth == 2
 
-    def test_path_result_model(self):
+    def test_path_result_model(self) -> None:
         """Test PathResult model."""
         path_result = PathResult(
             path=["123", "456"], path_length=1, total_paths=1, explanation="Direct connection"
@@ -290,7 +291,7 @@ class TestGraphExplorerAPI:
     """Test the graph explorer API functions."""
 
     @pytest.mark.asyncio
-    async def test_explore_graph_search(self, mock_graph_explorer, sample_graph_data):
+    async def test_explore_graph_search(self, mock_graph_explorer, sample_graph_data: Any) -> None:
         """Test graph exploration search."""
         with patch("discovery.graph_explorer.graph_explorer", mock_graph_explorer):
             mock_graph_explorer.search_nodes.return_value = sample_graph_data
@@ -303,7 +304,7 @@ class TestGraphExplorerAPI:
             assert path_result is None
 
     @pytest.mark.asyncio
-    async def test_explore_graph_expand(self, mock_graph_explorer, sample_graph_data):
+    async def test_explore_graph_expand(self, mock_graph_explorer, sample_graph_data: Any) -> None:
         """Test graph exploration expand."""
         with patch("discovery.graph_explorer.graph_explorer", mock_graph_explorer):
             mock_graph_explorer.expand_node.return_value = sample_graph_data
@@ -315,7 +316,7 @@ class TestGraphExplorerAPI:
             assert isinstance(graph_data, dict)
 
     @pytest.mark.asyncio
-    async def test_explore_graph_path(self, mock_graph_explorer, sample_graph_data):
+    async def test_explore_graph_path(self, mock_graph_explorer, sample_graph_data: Any) -> None:
         """Test graph exploration path finding."""
         with patch("discovery.graph_explorer.graph_explorer", mock_graph_explorer):
             path_result = PathResult(
@@ -331,7 +332,7 @@ class TestGraphExplorerAPI:
             assert returned_path is not None
 
     @pytest.mark.asyncio
-    async def test_explore_graph_invalid_query(self, mock_graph_explorer):
+    async def test_explore_graph_invalid_query(self, mock_graph_explorer: Any) -> None:
         """Test handling invalid graph query."""
         with patch("discovery.graph_explorer.graph_explorer", mock_graph_explorer):
             query = GraphQuery(query_type="invalid")

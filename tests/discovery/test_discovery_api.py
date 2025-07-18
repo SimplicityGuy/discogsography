@@ -1,5 +1,6 @@
 """Tests for the Discovery service API endpoints."""
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -10,19 +11,19 @@ class TestDiscoveryAPI:
     """Test Discovery service API endpoints."""
 
     @pytest.fixture
-    def client(self):
+    def client(self) -> TestClient:
         """Create a test client for the Discovery service."""
         from discovery.discovery import app
 
         return TestClient(app)
 
-    def test_root_endpoint(self, client):
+    def test_root_endpoint(self, client: TestClient) -> None:
         """Test the root endpoint serves HTML."""
         response = client.get("/")
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
 
-    def test_health_endpoint(self, client):
+    def test_health_endpoint(self, client: TestClient) -> None:
         """Test the health check endpoint."""
         response = client.get("/health")
         assert response.status_code == 200
@@ -33,7 +34,9 @@ class TestDiscoveryAPI:
         assert "timestamp" in data
         assert "features" in data
 
-    def test_recommendations_endpoint(self, client, sample_recommendation_data):
+    def test_recommendations_endpoint(
+        self, client: TestClient, sample_recommendation_data: Any
+    ) -> None:
         """Test the recommendations API endpoint."""
         with patch("discovery.discovery.get_recommendations") as mock_get_recs:
             mock_get_recs.return_value = sample_recommendation_data
@@ -52,7 +55,7 @@ class TestDiscoveryAPI:
             assert "total" in data
             assert data["total"] == len(sample_recommendation_data)
 
-    def test_recommendations_endpoint_error(self, client):
+    def test_recommendations_endpoint_error(self, client: TestClient) -> None:
         """Test the recommendations API endpoint with error."""
         with patch("discovery.discovery.get_recommendations") as mock_get_recs:
             mock_get_recs.side_effect = Exception("Test error")
@@ -62,7 +65,7 @@ class TestDiscoveryAPI:
             response = client.post("/api/recommendations", json=request_data)
             assert response.status_code == 500
 
-    def test_analytics_endpoint(self, client, sample_analytics_data):
+    def test_analytics_endpoint(self, client: TestClient, sample_analytics_data: Any) -> None:
         """Test the analytics API endpoint."""
         with patch("discovery.discovery.get_analytics") as mock_get_analytics:
             mock_get_analytics.return_value = sample_analytics_data
@@ -80,7 +83,7 @@ class TestDiscoveryAPI:
             assert data["chart_type"] == "line"
             assert "insights" in data
 
-    def test_analytics_endpoint_error(self, client):
+    def test_analytics_endpoint_error(self, client: TestClient) -> None:
         """Test the analytics API endpoint with error."""
         with patch("discovery.discovery.get_analytics") as mock_get_analytics:
             mock_get_analytics.side_effect = Exception("Test error")
@@ -90,7 +93,7 @@ class TestDiscoveryAPI:
             response = client.post("/api/analytics", json=request_data)
             assert response.status_code == 500
 
-    def test_graph_explore_endpoint(self, client, sample_graph_data):
+    def test_graph_explore_endpoint(self, client: TestClient, sample_graph_data: Any) -> None:
         """Test the graph exploration API endpoint."""
         with patch("discovery.discovery.explore_graph") as mock_explore:
             mock_explore.return_value = (sample_graph_data, None)
@@ -104,7 +107,9 @@ class TestDiscoveryAPI:
             assert "graph" in data
             assert "query" in data
 
-    def test_graph_explore_endpoint_with_path(self, client, sample_graph_data):
+    def test_graph_explore_endpoint_with_path(
+        self, client: TestClient, sample_graph_data: Any
+    ) -> None:
         """Test the graph exploration API endpoint with path result."""
         from discovery.graph_explorer import PathResult
 
@@ -125,7 +130,7 @@ class TestDiscoveryAPI:
             assert "path" in data
             assert data["path"]["path_length"] == 1
 
-    def test_graph_explore_endpoint_error(self, client):
+    def test_graph_explore_endpoint_error(self, client: TestClient) -> None:
         """Test the graph exploration API endpoint with error."""
         with patch("discovery.discovery.explore_graph") as mock_explore:
             mock_explore.side_effect = Exception("Test error")
@@ -139,7 +144,7 @@ class TestDiscoveryAPI:
 class TestDiscoveryAppClass:
     """Test the DiscoveryApp class."""
 
-    def test_discovery_app_init(self):
+    def test_discovery_app_init(self) -> None:
         """Test DiscoveryApp initialization."""
         from discovery.discovery import DiscoveryApp
 
@@ -147,7 +152,7 @@ class TestDiscoveryAppClass:
         assert app.active_connections == []
 
     @pytest.mark.asyncio
-    async def test_connect_websocket(self):
+    async def test_connect_websocket(self) -> None:
         """Test WebSocket connection."""
         from discovery.discovery import DiscoveryApp
 
@@ -159,7 +164,7 @@ class TestDiscoveryAppClass:
         mock_websocket.accept.assert_called_once()
         assert mock_websocket in app.active_connections
 
-    def test_disconnect_websocket(self):
+    def test_disconnect_websocket(self) -> None:
         """Test WebSocket disconnection."""
         from unittest.mock import MagicMock
 
@@ -174,7 +179,7 @@ class TestDiscoveryAppClass:
         assert mock_websocket not in app.active_connections
 
     @pytest.mark.asyncio
-    async def test_broadcast_update(self):
+    async def test_broadcast_update(self) -> None:
         """Test broadcasting updates to WebSocket clients."""
 
         from discovery.discovery import DiscoveryApp
@@ -191,7 +196,7 @@ class TestDiscoveryAppClass:
         mock_websocket2.send_json.assert_called_once_with(message)
 
     @pytest.mark.asyncio
-    async def test_broadcast_update_with_disconnected_client(self):
+    async def test_broadcast_update_with_disconnected_client(self) -> None:
         """Test broadcasting updates with disconnected clients."""
         from discovery.discovery import DiscoveryApp
 
@@ -212,7 +217,7 @@ class TestDiscoveryAppClass:
         assert mock_websocket2 in app.active_connections
 
     @pytest.mark.asyncio
-    async def test_broadcast_update_no_connections(self):
+    async def test_broadcast_update_no_connections(self) -> None:
         """Test broadcasting updates with no active connections."""
         from discovery.discovery import DiscoveryApp
 

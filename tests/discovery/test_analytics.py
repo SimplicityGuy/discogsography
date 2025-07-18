@@ -1,5 +1,6 @@
 """Tests for the music analytics engine."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -30,7 +31,7 @@ class TestMusicAnalytics:
 
             return analytics
 
-    async def test_initialize(self, analytics):
+    async def test_initialize(self, analytics: Any) -> None:
         """Test analytics initialization."""
         with (
             patch("discovery.analytics.AsyncGraphDatabase.driver"),
@@ -39,7 +40,7 @@ class TestMusicAnalytics:
             await analytics.initialize()
             # Should not raise any exceptions
 
-    async def test_analyze_genre_trends(self, analytics, mock_neo4j_driver):
+    async def test_analyze_genre_trends(self, analytics, mock_neo4j_driver: Any) -> None:
         """Test genre trends analysis."""
         # Mock database results
         mock_result = AsyncMock()
@@ -61,7 +62,7 @@ class TestMusicAnalytics:
         assert isinstance(result.insights, list)
         assert len(result.insights) > 0
 
-    async def test_analyze_genre_trends_no_data(self, analytics, mock_neo4j_driver):
+    async def test_analyze_genre_trends_no_data(self, analytics, mock_neo4j_driver: Any) -> None:
         """Test genre trends analysis with no data."""
         # Mock empty database results
         mock_result = AsyncMock()
@@ -76,7 +77,7 @@ class TestMusicAnalytics:
         assert result.chart_type == "line"
         assert "No genre data available" in result.insights[0]
 
-    async def test_analyze_artist_evolution(self, analytics, mock_neo4j_driver):
+    async def test_analyze_artist_evolution(self, analytics, mock_neo4j_driver: Any) -> None:
         """Test artist evolution analysis."""
         # Mock database results for releases
         mock_result = AsyncMock()
@@ -109,7 +110,9 @@ class TestMusicAnalytics:
         assert result.chart_type == "scatter"
         assert isinstance(result.insights, list)
 
-    async def test_analyze_artist_evolution_no_data(self, analytics, mock_neo4j_driver):
+    async def test_analyze_artist_evolution_no_data(
+        self, analytics, mock_neo4j_driver: Any
+    ) -> None:
         """Test artist evolution with no data."""
         mock_result = AsyncMock()
         mock_result.__aiter__ = AsyncMock(return_value=iter([]))
@@ -122,7 +125,7 @@ class TestMusicAnalytics:
         assert isinstance(result, AnalyticsResult)
         assert "No release data found" in result.insights[0]
 
-    async def test_analyze_label_insights_specific(self, analytics, mock_neo4j_driver):
+    async def test_analyze_label_insights_specific(self, analytics, mock_neo4j_driver: Any) -> None:
         """Test label insights for specific label."""
         mock_result = AsyncMock()
         mock_records = [
@@ -144,7 +147,9 @@ class TestMusicAnalytics:
         assert isinstance(result, AnalyticsResult)
         assert result.chart_type == "bar"
 
-    async def test_analyze_label_insights_market_overview(self, analytics, mock_neo4j_driver):
+    async def test_analyze_label_insights_market_overview(
+        self, analytics, mock_neo4j_driver: Any
+    ) -> None:
         """Test label insights market overview."""
         mock_result = AsyncMock()
         mock_records = [
@@ -166,7 +171,7 @@ class TestMusicAnalytics:
         assert isinstance(result, AnalyticsResult)
         assert result.chart_type == "bar"
 
-    async def test_analyze_market_trends_format(self, analytics, mock_neo4j_driver):
+    async def test_analyze_market_trends_format(self, analytics, mock_neo4j_driver: Any) -> None:
         """Test market trends analysis for formats."""
         mock_result = AsyncMock()
         mock_records = [
@@ -184,7 +189,7 @@ class TestMusicAnalytics:
         assert isinstance(result, AnalyticsResult)
         assert result.chart_type == "area"
 
-    async def test_analyze_market_trends_regional(self, analytics, mock_neo4j_driver):
+    async def test_analyze_market_trends_regional(self, analytics, mock_neo4j_driver: Any) -> None:
         """Test market trends analysis for regions."""
         mock_result = AsyncMock()
         mock_records = [
@@ -201,7 +206,7 @@ class TestMusicAnalytics:
         assert isinstance(result, AnalyticsResult)
         assert result.chart_type == "line"
 
-    async def test_close(self, analytics):
+    async def test_close(self, analytics: Any) -> None:
         """Test closing the analytics engine."""
         await analytics.close()
         if analytics.neo4j_driver:
@@ -211,7 +216,7 @@ class TestMusicAnalytics:
 class TestAnalyticsModels:
     """Test analytics request/result models."""
 
-    def test_analytics_request_model(self):
+    def test_analytics_request_model(self) -> None:
         """Test AnalyticsRequest model validation."""
         request = AnalyticsRequest(analysis_type="genre_trends", time_range=(1990, 2020), limit=25)
 
@@ -219,14 +224,14 @@ class TestAnalyticsModels:
         assert request.time_range == (1990, 2020)
         assert request.limit == 25
 
-    def test_analytics_request_defaults(self):
+    def test_analytics_request_defaults(self) -> None:
         """Test AnalyticsRequest default values."""
         request = AnalyticsRequest(analysis_type="genre_trends")
 
         assert request.limit == 20
         assert request.time_range is None
 
-    def test_analytics_result_model(self):
+    def test_analytics_result_model(self) -> None:
         """Test AnalyticsResult model."""
         result = AnalyticsResult(
             chart_type="line",
@@ -245,7 +250,9 @@ class TestAnalyticsAPI:
     """Test the analytics API functions."""
 
     @pytest.mark.asyncio
-    async def test_get_analytics_genre_trends(self, mock_analytics, sample_analytics_data):
+    async def test_get_analytics_genre_trends(
+        self, mock_analytics, sample_analytics_data: Any
+    ) -> None:
         """Test getting genre trends analytics."""
         with patch("discovery.analytics.analytics", mock_analytics):
             mock_analytics.analyze_genre_trends.return_value = sample_analytics_data
@@ -258,7 +265,9 @@ class TestAnalyticsAPI:
             assert len(result["insights"]) > 0
 
     @pytest.mark.asyncio
-    async def test_get_analytics_artist_evolution(self, mock_analytics, sample_analytics_data):
+    async def test_get_analytics_artist_evolution(
+        self, mock_analytics, sample_analytics_data: Any
+    ) -> None:
         """Test getting artist evolution analytics."""
         with patch("discovery.analytics.analytics", mock_analytics):
             mock_analytics.analyze_artist_evolution.return_value = sample_analytics_data
@@ -270,7 +279,9 @@ class TestAnalyticsAPI:
             assert result["chart_type"] == "line"
 
     @pytest.mark.asyncio
-    async def test_get_analytics_label_insights(self, mock_analytics, sample_analytics_data):
+    async def test_get_analytics_label_insights(
+        self, mock_analytics, sample_analytics_data: Any
+    ) -> None:
         """Test getting label insights analytics."""
         with patch("discovery.analytics.analytics", mock_analytics):
             mock_analytics.analyze_label_insights.return_value = sample_analytics_data
@@ -282,7 +293,9 @@ class TestAnalyticsAPI:
             assert result["chart_type"] == "line"
 
     @pytest.mark.asyncio
-    async def test_get_analytics_market_analysis(self, mock_analytics, sample_analytics_data):
+    async def test_get_analytics_market_analysis(
+        self, mock_analytics, sample_analytics_data: Any
+    ) -> None:
         """Test getting market analysis analytics."""
         with patch("discovery.analytics.analytics", mock_analytics):
             mock_analytics.analyze_market_trends.return_value = sample_analytics_data
@@ -294,7 +307,7 @@ class TestAnalyticsAPI:
             assert result["chart_type"] == "line"
 
     @pytest.mark.asyncio
-    async def test_get_analytics_invalid_type(self, mock_analytics):
+    async def test_get_analytics_invalid_type(self, mock_analytics: Any) -> None:
         """Test handling invalid analytics type."""
         with patch("discovery.analytics.analytics", mock_analytics):
             request = AnalyticsRequest(analysis_type="invalid")

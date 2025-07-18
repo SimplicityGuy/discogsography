@@ -3,6 +3,7 @@
 
 import asyncio
 import logging
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +15,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from discovery.analytics import AnalyticsRequest, get_analytics, get_analytics_instance
+from discovery.analytics import (
+    AnalyticsRequest,
+    AnalyticsResult,
+    get_analytics,
+    get_analytics_instance,
+)
 from discovery.graph_explorer import GraphQuery, explore_graph, get_graph_explorer_instance
 from discovery.recommender import (
     RecommendationRequest,
@@ -32,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifespan."""
     logger.info("🚀 Starting Discovery service...")
 
@@ -122,14 +128,14 @@ discovery_app = DiscoveryApp()
 
 # API Routes
 @app.get("/")
-async def root():
+async def root() -> Response:
     """Serve the main discovery interface."""
     with (static_path / "index.html").open() as f:
         return Response(content=f.read(), media_type="text/html")
 
 
 @app.get("/health")
-async def health_check():
+async def health_check() -> dict[str, Any]:
     """Health check endpoint."""
     return {
         "status": "healthy",
@@ -141,7 +147,7 @@ async def health_check():
 
 # Recommendation API
 @app.post("/api/recommendations")
-async def get_recommendations_api(request: RecommendationRequest):
+async def get_recommendations_api(request: RecommendationRequest) -> dict[str, Any]:
     """Get music recommendations."""
     try:
         recommendations = await get_recommendations(request)
@@ -157,7 +163,7 @@ async def get_recommendations_api(request: RecommendationRequest):
 
 # Analytics API
 @app.post("/api/analytics")
-async def get_analytics_api(request: AnalyticsRequest):
+async def get_analytics_api(request: AnalyticsRequest) -> AnalyticsResult:
     """Get music industry analytics."""
     try:
         result = await get_analytics(request)
@@ -169,7 +175,7 @@ async def get_analytics_api(request: AnalyticsRequest):
 
 # Graph Explorer API
 @app.post("/api/graph/explore")
-async def explore_graph_api(query: GraphQuery):
+async def explore_graph_api(query: GraphQuery) -> dict[str, Any]:
     """Explore the music knowledge graph."""
     try:
         graph_data, path_result = await explore_graph(query)
@@ -187,7 +193,7 @@ async def explore_graph_api(query: GraphQuery):
 
 # WebSocket endpoint for real-time updates
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await discovery_app.connect_websocket(websocket)
     try:
@@ -223,7 +229,7 @@ if __name__ == "__main__":
     # Start health server in background
     from common import HealthServer
 
-    async def start_servers():
+    async def start_servers() -> None:
         # Start health server
         health_server = HealthServer(8004, get_health_data)
         health_server.start_background()
