@@ -22,6 +22,16 @@ from discovery.analytics import (
     get_analytics_instance,
 )
 from discovery.graph_explorer import GraphQuery, explore_graph, get_graph_explorer_instance
+from discovery.playground_api import (
+    JourneyRequest,
+    artist_details_handler,
+    graph_data_handler,
+    heatmap_handler,
+    journey_handler,
+    playground_api,
+    search_handler,
+    trends_handler,
+)
 from discovery.recommender import (
     RecommendationRequest,
     get_recommendations,
@@ -50,6 +60,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     await recommender.initialize()
     await analytics.initialize()
     await graph_explorer.initialize()
+    await playground_api.initialize()
 
     logger.info("✅ Discovery service started successfully")
 
@@ -60,6 +71,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await recommender.close()
         await analytics.close()
         await graph_explorer.close()
+        await playground_api.close()
         logger.info("✅ Discovery service shutdown complete")
 
 
@@ -189,6 +201,59 @@ async def explore_graph_api(query: GraphQuery) -> dict[str, Any]:
     except Exception as e:
         logger.error(f"❌ Error exploring graph: {e}")
         raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+# Playground API Routes
+@app.get("/api/search")  # type: ignore[misc]
+async def search_api(
+    q: str,
+    type: str = "all",
+    limit: int = 10,
+) -> dict[str, Any]:
+    """Search endpoint for playground."""
+    return await search_handler(q=q, type=type, limit=limit)
+
+
+@app.get("/api/graph")  # type: ignore[misc]
+async def graph_api(
+    node_id: str,
+    depth: int = 2,
+    limit: int = 50,
+) -> dict[str, Any]:
+    """Graph data endpoint for playground."""
+    return await graph_data_handler(node_id=node_id, depth=depth, limit=limit)
+
+
+@app.post("/api/journey")  # type: ignore[misc]
+async def journey_api(request: JourneyRequest) -> dict[str, Any]:
+    """Music journey endpoint for playground."""
+    return await journey_handler(request)
+
+
+@app.get("/api/trends")  # type: ignore[misc]
+async def trends_api(
+    type: str,
+    start_year: int = 1950,
+    end_year: int = 2024,
+    top_n: int = 20,
+) -> dict[str, Any]:
+    """Trends endpoint for playground."""
+    return await trends_handler(type=type, start_year=start_year, end_year=end_year, top_n=top_n)
+
+
+@app.get("/api/heatmap")  # type: ignore[misc]
+async def heatmap_api(
+    type: str,
+    top_n: int = 20,
+) -> dict[str, Any]:
+    """Heatmap endpoint for playground."""
+    return await heatmap_handler(type=type, top_n=top_n)
+
+
+@app.get("/api/artists/{artist_id}")  # type: ignore[misc]
+async def artist_details_api(artist_id: str) -> dict[str, Any]:
+    """Artist details endpoint for playground."""
+    return await artist_details_handler(artist_id)
 
 
 # WebSocket endpoint for real-time updates

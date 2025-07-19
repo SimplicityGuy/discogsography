@@ -22,7 +22,7 @@ Discogsography consists of five microservices that work together to process, mon
 1. **Extractor** - Downloads Discogs XML dumps from S3, validates checksums, parses XML to JSON, and publishes to message queues
 1. **Graphinator** - Consumes messages and builds a graph database in Neo4j with relationships between artists, labels, releases, and masters
 1. **Tableinator** - Consumes messages and stores denormalized data in PostgreSQL for fast queries and full-text search
-1. **Discovery** - AI-powered music discovery service with semantic search, recommendations, and advanced analytics
+1. **Discovery** - AI-powered music discovery service with interactive playground for exploration and analytics
 
 ### Architecture
 
@@ -33,10 +33,11 @@ graph TD
     RMQ{{"RabbitMQ<br/>Message Queue"}}
     NEO4J[(Neo4j<br/>Graph DB)]
     PG[(PostgreSQL<br/>Relational DB)]
+    REDIS[(Redis<br/>Cache)]
     GRAPH[["Graphinator"]]
     TABLE[["Tableinator"]]
     DASH[["Dashboard<br/>(Monitoring)"]]
-    DISCO[["Discovery<br/>(AI Analytics)"]]
+    DISCO[["Discovery<br/>(AI Analytics &<br/>Playground)"]]
 
     S3 -->|Download & Parse| EXT
     EXT -->|Publish Messages| RMQ
@@ -47,7 +48,8 @@ graph TD
 
     DISCO -.->|Query & Analyze| NEO4J
     DISCO -.->|Query & Analyze| PG
-    DISCO -.->|AI Processing| DISCO
+    DISCO -.->|Cache Results| REDIS
+    REDIS -.->|Fast Retrieval| DISCO
 
     DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
@@ -67,10 +69,24 @@ graph TD
 
 ### Key Features
 
+#### Data Processing
+
 - 🔄 **Automatic Updates**: Periodic checking for new Discogs data releases (configurable interval, default 15 days)
 - ⚡ **Efficient Processing**: Hash-based deduplication to avoid reprocessing unchanged records
 - 🚀 **High Performance**: Multi-threaded XML parsing and concurrent message processing
 - 🛡️ **Fault Tolerance**: Message acknowledgment, automatic retries, and graceful shutdown
+
+#### Discovery Playground
+
+- 🎯 **Interactive Graph Explorer**: D3.js-powered network visualization with zoom, drag, and real-time exploration
+- 🛤️ **Music Journey Builder**: Find and visualize paths between any two artists through collaborations and releases
+- 📈 **Trend Analysis**: Time-series visualization of genre evolution, artist productivity, and label activity
+- 🔥 **Similarity Heatmaps**: Visual representation of artist similarities, genre overlaps, and collaboration networks
+- ⚡ **Redis Caching**: High-performance caching for frequently accessed data and complex queries
+- 🔄 **Real-time Updates**: WebSocket connections for live data streaming and collaborative exploration
+
+#### Infrastructure
+
 - 📊 **Progress Tracking**: Real-time progress monitoring with detailed statistics
 - 🐋 **Production-Ready Docker**: Full Docker Compose setup with security hardening
 - 🔒 **Type Safety**: Comprehensive type hints and strict mypy validation
@@ -79,6 +95,7 @@ graph TD
 ### Documentation
 
 - 📖 **[CLAUDE.md](CLAUDE.md)** - Detailed technical documentation for development
+- 🎵 **[Discovery Playground](discovery/playground.md)** - Interactive music exploration and visualization guide
 - 🤖 **[Task Automation](docs/task-automation.md)** - Taskipy commands and workflows
 - 🔒 **[Docker Security](docs/docker-security.md)** - Container security best practices
 - 🏗️ **[Dockerfile Standards](docs/dockerfile-standards.md)** - Dockerfile implementation standards
@@ -119,10 +136,11 @@ graph TD
    | Service | URL/Connection | Credentials |
    |---------|----------------|-------------|
    | 📊 **Dashboard** | http://localhost:8003 | No auth required |
-   | 🎵 **Discovery** | http://localhost:8005 | No auth required |
+   | 🎵 **Discovery Playground** | http://localhost:8005 | No auth required |
    | 🐰 **RabbitMQ** | http://localhost:15672 | discogsography / discogsography |
    | 🔗 **Neo4j Browser** | http://localhost:7474 | neo4j / discogsography |
    | 🐘 **PostgreSQL** | localhost:5433 | discogsography / discogsography |
+   | 🔄 **Redis** | localhost:6379 | No auth required |
 
 ### Local Development
 
