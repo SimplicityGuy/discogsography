@@ -786,6 +786,32 @@ We welcome contributions! Please follow these guidelines:
 - **Logging**: Use emoji conventions (see above)
 - **Security**: Pass bandit checks
 
+## 🔧 Maintenance
+
+### Package Upgrades
+
+Keep dependencies up-to-date with the provided upgrade script:
+
+```bash
+# Safely upgrade all dependencies (minor/patch versions)
+./scripts/upgrade-packages.sh
+
+# Preview what would be upgraded
+./scripts/upgrade-packages.sh --dry-run
+
+# Include major version upgrades
+./scripts/upgrade-packages.sh --major
+```
+
+The script includes:
+
+- 🔒 Automatic backups before upgrades
+- ✅ Git safety checks (requires clean working directory)
+- 🧪 Automatic testing after upgrades
+- 📦 Comprehensive dependency management across all services
+
+See [scripts/README.md](scripts/README.md) for more maintenance scripts.
+
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.

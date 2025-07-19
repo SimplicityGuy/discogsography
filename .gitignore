@@ -197,6 +197,10 @@ static/build/
 # uv lock file - DO NOT IGNORE (needed for reproducible builds)
 # uv.lock
 
+# Package upgrade backups
+backups/
+uv.lock.backup
+
 ###
 # macOS
 ###
