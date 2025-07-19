@@ -167,6 +167,16 @@ The project uses **taskipy** for streamlined workflows. All tasks run with `uv r
 - `uv sync --extra dev` - Install development dependencies
 - `uv sync --all-extras` - Install all optional dependencies
 
+#### Important: iOS Wheels Issue
+
+When updating dependencies on macOS, uv may include iOS-specific wheels (e.g., for Pillow) that break Docker builds. To prevent this:
+
+1. **Use the update script**: `./scripts/update-dependencies.sh` (uses Docker to generate Linux-only wheels)
+1. **Check for iOS wheels**: `./scripts/remove-ios-wheels.sh` (removes them if found)
+1. **CI/CD protection**: GitHub Actions will fail if iOS wheels are detected in uv.lock
+
+If you see errors like `Unknown platform tag format: ios_13_0_arm64_iphoneos`, run the removal script.
+
 ### 🔍 Code Quality
 
 #### Pre-commit Hooks
