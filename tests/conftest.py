@@ -150,6 +150,7 @@ def setup_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
         "POSTGRES_USERNAME": "test",
         "POSTGRES_PASSWORD": "test",
         "POSTGRES_DATABASE": "test",
+        "REDIS_URL": "redis://localhost:6379/0",
         "PERIODIC_CHECK_DAYS": "15",
     }
 

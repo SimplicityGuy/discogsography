@@ -1,10 +1,35 @@
 """Discovery service test configuration and fixtures."""
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
+
+
+@pytest.fixture(autouse=True)
+def mock_discovery_dependencies() -> None:
+    """Mock all discovery service dependencies for testing."""
+    with (
+        patch("discovery.cache.cache_manager") as mock_cache,
+        patch("discovery.playground_api.playground_api") as mock_playground,
+        patch("discovery.discovery.get_config") as mock_config,
+    ):
+        # Mock cache manager
+        mock_cache.initialize = AsyncMock()
+        mock_cache.close = AsyncMock()
+        mock_cache.get = AsyncMock(return_value=None)
+        mock_cache.set = AsyncMock(return_value=True)
+        mock_cache.connected = False
+
+        # Mock playground API
+        mock_playground.initialize = AsyncMock()
+        mock_playground.close = AsyncMock()
+
+        # Mock config
+        mock_config.return_value = MagicMock()
+
+        yield {"cache": mock_cache, "playground": mock_playground, "config": mock_config}
 
 
 @pytest.fixture
