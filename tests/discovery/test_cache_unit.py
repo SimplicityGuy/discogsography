@@ -1,6 +1,7 @@
 """Unit tests for Discovery service Redis caching functionality."""
 
 import json
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -191,7 +192,7 @@ class TestCacheManagerUnit:
         mock_redis = AsyncMock()
 
         # Mock scan_iter to return some keys
-        async def mock_scan_iter(match: str):  # noqa: ARG001
+        async def mock_scan_iter(match: str) -> Any:  # noqa: ARG001
             for key in [b"discovery:search:abc", b"discovery:search:def"]:
                 yield key
 

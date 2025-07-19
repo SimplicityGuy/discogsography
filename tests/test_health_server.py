@@ -1,6 +1,7 @@
 """Tests for the common health server module."""
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -64,15 +65,15 @@ class TestHealthServer:
             patch.object(health_server, "serve_forever"),
             patch.object(health_server, "shutdown") as mock_shutdown,
         ):
-                health_server.start_background()
+            health_server.start_background()
 
-                # Verify thread was created and started
-                assert health_server.thread is not None
-                assert health_server.thread.daemon is True
+            # Verify thread was created and started
+            assert health_server.thread is not None
+            assert health_server.thread.daemon is True
 
-                # Stop the server to clean up (mocked to avoid hanging)
-                health_server.stop()
-                mock_shutdown.assert_called_once()
+            # Stop the server to clean up (mocked to avoid hanging)
+            health_server.stop()
+            mock_shutdown.assert_called_once()
 
     def test_stop_server(self, health_server: HealthServer) -> None:
         """Test stopping the health server."""
