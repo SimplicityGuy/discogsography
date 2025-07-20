@@ -19,6 +19,10 @@ env:
   PYTHON_VERSION: "3.13"
   REGISTRY: ghcr.io
 
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   list-sub-projects:
     runs-on: ubuntu-latest
