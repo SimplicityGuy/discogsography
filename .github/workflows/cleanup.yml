@@ -46,7 +46,7 @@ jobs:
       - name: Set lowercase image name
         id: image
         run: |
-          echo "IMAGE_NAME=$(echo "${{ github.actor }}/discogsography" | tr "[:upper:]" "[:lower:]")" >> "$GITHUB_ENV"
+          echo "IMAGE_NAME=$(echo "${{ github.repository }}" | tr "[:upper:]" "[:lower:]")" >> "$GITHUB_ENV"
 
       - name: Delete Docker images older than a month
         id: cleanup-images
