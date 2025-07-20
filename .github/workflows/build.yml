@@ -35,7 +35,7 @@ jobs:
         id: set-matrix
         run: |
           # Only include actual service directories (sorted alphabetically)
-          services=("dashboard" "extractor" "graphinator" "tableinator")
+          services=("dashboard" "discovery" "extractor" "graphinator" "tableinator")
           matrix=$(printf "%s\n" "${services[@]}" | jq -R -s -c 'split("\n")[:-1]')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
