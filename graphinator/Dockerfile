@@ -102,8 +102,7 @@ ENV HOME=/home/discogsography \
     PATH="/app/.venv/bin:$PATH" \
     AMQP_CONNECTION="" \
     NEO4J_ADDRESS="" \
-    NEO4J_USERNAME="" \
-    NEO4J_PASSWORD=""
+    NEO4J_USERNAME=""
 
 # Declare volume for logs
 VOLUME ["/logs"]
