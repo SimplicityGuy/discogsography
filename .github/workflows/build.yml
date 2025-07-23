@@ -15,7 +15,6 @@ on:
 env:
   CI: true
   COMPOSE_VERSION: "v2.32.0"
-  PLAYWRIGHT_BROWSERS_PATH: "0"  # Use default location
   PYTHON_VERSION: "3.13"
   REGISTRY: ghcr.io
 
@@ -43,81 +42,22 @@ jobs:
           matrix=$(printf "%s\n" "${services[@]}" | jq -R -s -c 'split("\n")[:-1]')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
-  code-quality:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: Set lowercase image name
-        id: image
-        run: |
-          echo "IMAGE_NAME=$(echo "${{ github.repository }}" | tr "[:upper:]" "[:lower:]")" >> "$GITHUB_ENV"
-
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba # v6.3.1
-        with:
-          version: latest
-          enable-cache: true
-          cache-dependency-glob: "**/uv.lock"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Cache uv dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/uv
-            .venv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-uv-
-
-      - name: Cache pre-commit
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pre-commit
-          key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
-          restore-keys: |
-            ${{ runner.os }}-pre-commit-
-
-
-      - name: Cache arkade tools
-        uses: actions/cache@v4
-        with:
-          path: ~/.arkade
-          key: ${{ runner.os }}-arkade-${{ hashFiles('.github/workflows/build.yml') }}
-          restore-keys: |
-            ${{ runner.os }}-arkade-
-
-      - name: Install arkade
-        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
-        with:
-          hadolint: latest
-
-      - name: Install dependencies
-        run: |
-          uv sync --all-extras --frozen
-          # Install workspace packages
-          uv pip install -e dashboard
-          uv pip install -e common
-
-      - name: Run pre-commit hooks
-        run: |
-          uv run pre-commit run --all-files
+  run-code-quality:
+    uses: ./.github/workflows/code-quality.yml
+    secrets: inherit
 
   run-tests:
-    needs: [code-quality]
+    needs: [run-code-quality]
     uses: ./.github/workflows/test.yml
     secrets: inherit
 
+  run-e2e-tests:
+    needs: [run-code-quality]
+    uses: ./.github/workflows/e2e-test.yml
+    secrets: inherit
+
   build-discogsography:
-    needs: [list-sub-projects, code-quality, run-tests]
+    needs: [list-sub-projects, run-code-quality, run-tests, run-e2e-tests]
 
     runs-on: ubuntu-latest
     timeout-minutes: 30
