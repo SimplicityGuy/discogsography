@@ -158,17 +158,27 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                             else [members["name"]]
                         )
                         if members_list:
+                            # Filter and log members without IDs
+                            valid_members = []
+                            for member in members_list:
+                                member_id = member.get("@id") or member.get("id")
+                                if member_id:
+                                    valid_members.append({"id": member_id})
+                                else:
+                                    logger.warning(
+                                        f"⚠️ Skipping member without ID in artist {artist['id']}: {member}"
+                                    )
+
                             # Batch create member relationships
-                            tx.run(
-                                "UNWIND $members AS member "
-                                "MATCH (a:Artist {id: $artist_id}) "
-                                "MERGE (m_a:Artist {id: member.id}) "
-                                "MERGE (m_a)-[:MEMBER_OF]->(a)",
-                                members=[
-                                    {"id": member["@id"]} for member in members_list
-                                ],
-                                artist_id=artist["id"],
-                            )
+                            if valid_members:
+                                tx.run(
+                                    "UNWIND $members AS member "
+                                    "MATCH (a:Artist {id: $artist_id}) "
+                                    "MERGE (m_a:Artist {id: member.id}) "
+                                    "MERGE (m_a)-[:MEMBER_OF]->(a)",
+                                    members=valid_members,
+                                    artist_id=artist["id"],
+                                )
 
                     # Handle groups
                     groups: dict[str, Any] | None = artist.get("groups")
@@ -179,15 +189,27 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                             else [groups["name"]]
                         )
                         if groups_list:
+                            # Filter and log groups without IDs
+                            valid_groups = []
+                            for group in groups_list:
+                                group_id = group.get("@id") or group.get("id")
+                                if group_id:
+                                    valid_groups.append({"id": group_id})
+                                else:
+                                    logger.warning(
+                                        f"⚠️ Skipping group without ID in artist {artist['id']}: {group}"
+                                    )
+
                             # Batch create group relationships
-                            tx.run(
-                                "UNWIND $groups AS group "
-                                "MATCH (a:Artist {id: $artist_id}) "
-                                "MERGE (g_a:Artist {id: group.id}) "
-                                "MERGE (a)-[:MEMBER_OF]->(g_a)",
-                                groups=[{"id": group["@id"]} for group in groups_list],
-                                artist_id=artist["id"],
-                            )
+                            if valid_groups:
+                                tx.run(
+                                    "UNWIND $groups AS group "
+                                    "MATCH (a:Artist {id: $artist_id}) "
+                                    "MERGE (g_a:Artist {id: group.id}) "
+                                    "MERGE (a)-[:MEMBER_OF]->(g_a)",
+                                    groups=valid_groups,
+                                    artist_id=artist["id"],
+                                )
 
                     # Handle aliases
                     aliases: dict[str, Any] | None = artist.get("aliases")
@@ -198,17 +220,27 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                             else [aliases["name"]]
                         )
                         if aliases_list:
+                            # Filter and log aliases without IDs
+                            valid_aliases = []
+                            for alias in aliases_list:
+                                alias_id = alias.get("@id") or alias.get("id")
+                                if alias_id:
+                                    valid_aliases.append({"id": alias_id})
+                                else:
+                                    logger.warning(
+                                        f"⚠️ Skipping alias without ID in artist {artist['id']}: {alias}"
+                                    )
+
                             # Batch create alias relationships
-                            tx.run(
-                                "UNWIND $aliases AS alias "
-                                "MATCH (a:Artist {id: $artist_id}) "
-                                "MERGE (a_a:Artist {id: alias.id}) "
-                                "MERGE (a_a)-[:ALIAS_OF]->(a)",
-                                aliases=[
-                                    {"id": alias["@id"]} for alias in aliases_list
-                                ],
-                                artist_id=artist["id"],
-                            )
+                            if valid_aliases:
+                                tx.run(
+                                    "UNWIND $aliases AS alias "
+                                    "MATCH (a:Artist {id: $artist_id}) "
+                                    "MERGE (a_a:Artist {id: alias.id}) "
+                                    "MERGE (a_a)-[:ALIAS_OF]->(a)",
+                                    aliases=valid_aliases,
+                                    artist_id=artist["id"],
+                                )
 
                     return True  # Updated successfully
 
@@ -234,7 +266,7 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         await message.ack()
         logger.debug(f"✅ Completed artist message ID={artist_id}")
     except Exception as e:
-        logger.error(f"❌ Failed to process artist message ID={artist_id}: {e}")
+        logger.error(f"❌ Failed to process artist message: {e}")
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
@@ -289,13 +321,19 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
                 # Handle parent label relationship
                 parent: dict[str, Any] | None = label.get("parentLabel")
                 if parent is not None:
-                    tx.run(
-                        "MATCH (l:Label {id: $id}) "
-                        "MERGE (p_l:Label {id: $p_id}) "
-                        "MERGE (l)-[:SUBLABEL_OF]->(p_l)",
-                        id=label["id"],
-                        p_id=parent["@id"],
-                    )
+                    parent_id = parent.get("@id") or parent.get("id")
+                    if parent_id:
+                        tx.run(
+                            "MATCH (l:Label {id: $id}) "
+                            "MERGE (p_l:Label {id: $p_id}) "
+                            "MERGE (l)-[:SUBLABEL_OF]->(p_l)",
+                            id=label["id"],
+                            p_id=parent_id,
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ Skipping parent label without ID in label {label['id']}: {parent}"
+                        )
 
                 # Handle sublabels in batch
                 sublabels: dict[str, Any] | None = label.get("sublabels")
@@ -306,17 +344,27 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
                         else [sublabels["label"]]
                     )
                     if sublabels_list:
+                        # Filter and log sublabels without IDs
+                        valid_sublabels = []
+                        for sublabel in sublabels_list:
+                            sublabel_id = sublabel.get("@id") or sublabel.get("id")
+                            if sublabel_id:
+                                valid_sublabels.append({"id": sublabel_id})
+                            else:
+                                logger.warning(
+                                    f"⚠️ Skipping sublabel without ID in label {label['id']}: {sublabel}"
+                                )
+
                         # Batch create sublabel relationships
-                        tx.run(
-                            "UNWIND $sublabels AS sublabel "
-                            "MATCH (l:Label {id: $label_id}) "
-                            "MERGE (s_l:Label {id: sublabel.id}) "
-                            "MERGE (s_l)-[:SUBLABEL_OF]->(l)",
-                            sublabels=[
-                                {"id": sublabel["@id"]} for sublabel in sublabels_list
-                            ],
-                            label_id=label["id"],
-                        )
+                        if valid_sublabels:
+                            tx.run(
+                                "UNWIND $sublabels AS sublabel "
+                                "MATCH (l:Label {id: $label_id}) "
+                                "MERGE (s_l:Label {id: sublabel.id}) "
+                                "MERGE (s_l)-[:SUBLABEL_OF]->(l)",
+                                sublabels=valid_sublabels,
+                                label_id=label["id"],
+                            )
 
                 return True  # Updated successfully
 
@@ -394,14 +442,26 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
                         else [artists["artist"]]
                     )
                     if artists_list:
-                        tx.run(
-                            "UNWIND $artists AS artist "
-                            "MATCH (m:Master {id: $master_id}) "
-                            "MERGE (a_m:Artist {id: artist.id}) "
-                            "MERGE (m)-[:BY]->(a_m)",
-                            artists=[{"id": artist["id"]} for artist in artists_list],
-                            master_id=master["id"],
-                        )
+                        # Filter and log artists without IDs
+                        valid_artists = []
+                        for artist in artists_list:
+                            artist_id = artist.get("id") or artist.get("@id")
+                            if artist_id:
+                                valid_artists.append({"id": artist_id})
+                            else:
+                                logger.warning(
+                                    f"⚠️ Skipping artist without ID in master {master['id']}: {artist}"
+                                )
+
+                        if valid_artists:
+                            tx.run(
+                                "UNWIND $artists AS artist "
+                                "MATCH (m:Master {id: $master_id}) "
+                                "MERGE (a_m:Artist {id: artist.id}) "
+                                "MERGE (m)-[:BY]->(a_m)",
+                                artists=valid_artists,
+                                master_id=master["id"],
+                            )
 
                 # Handle genres and styles
                 genres: dict[str, Any] | None = master.get("genres")
@@ -467,7 +527,21 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
 
         await message.ack()
     except Exception as e:
-        logger.error(f"❌ Failed to process master message: {e}")
+        # Include more context in error message
+        error_context = (
+            f"master_id={master_id if 'master_id' in locals() else 'unknown'}"
+        )
+        error_type = type(e).__name__
+        if error_type == "KeyError" and str(e) == "'id'":
+            logger.error(
+                f"❌ Failed to process master message ({error_context}): "
+                f"Missing 'id' field in nested object. This typically occurs when artist objects "
+                f"within the master don't have an 'id' field. Error: {error_type}: {e}"
+            )
+        else:
+            logger.error(
+                f"❌ Failed to process master message ({error_context}): {error_type}: {e}"
+            )
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
@@ -529,15 +603,27 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                         else [artists["artist"]]
                     )
                     if artists_list:
+                        # Filter and log artists without IDs
+                        valid_artists = []
+                        for artist in artists_list:
+                            artist_id = artist.get("id") or artist.get("@id")
+                            if artist_id:
+                                valid_artists.append({"id": artist_id})
+                            else:
+                                logger.warning(
+                                    f"⚠️ Skipping artist without ID in release {release['id']}: {artist}"
+                                )
+
                         # Use batch processing for better performance
-                        tx.run(
-                            "UNWIND $artists AS artist "
-                            "MATCH (r:Release {id: $release_id}) "
-                            "MERGE (a_r:Artist {id: artist.id}) "
-                            "MERGE (r)-[:BY]-(a_r)",
-                            artists=[{"id": artist["id"]} for artist in artists_list],
-                            release_id=release["id"],
-                        )
+                        if valid_artists:
+                            tx.run(
+                                "UNWIND $artists AS artist "
+                                "MATCH (r:Release {id: $release_id}) "
+                                "MERGE (a_r:Artist {id: artist.id}) "
+                                "MERGE (r)-[:BY]-(a_r)",
+                                artists=valid_artists,
+                                release_id=release["id"],
+                            )
 
                 # Handle label relationships
                 labels: dict[str, Any] | None = release.get("labels")
@@ -548,24 +634,47 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                         else [labels["label"]]
                     )
                     if labels_list:
-                        tx.run(
-                            "UNWIND $labels AS label "
-                            "MATCH (r:Release {id: $release_id}) "
-                            "MERGE (l_r:Label {id: label.id}) "
-                            "MERGE (r)-[:ON]->(l_r)",
-                            labels=[{"id": label["@id"]} for label in labels_list],
-                            release_id=release["id"],
-                        )
+                        # Filter and log labels without IDs
+                        valid_labels = []
+                        for label in labels_list:
+                            label_id = label.get("@id") or label.get("id")
+                            if label_id:
+                                valid_labels.append({"id": label_id})
+                            else:
+                                logger.warning(
+                                    f"⚠️ Skipping label without ID in release {release['id']}: {label}"
+                                )
+
+                        if valid_labels:
+                            tx.run(
+                                "UNWIND $labels AS label "
+                                "MATCH (r:Release {id: $release_id}) "
+                                "MERGE (l_r:Label {id: label.id}) "
+                                "MERGE (r)-[:ON]->(l_r)",
+                                labels=valid_labels,
+                                release_id=release["id"],
+                            )
 
                 # Handle master relationship
                 master_id: dict[str, Any] | None = release.get("master_id")
                 if master_id is not None:
-                    tx.run(
-                        "MATCH (r:Release {id: $id}),(m_r:Master {id: $m_id}) "
-                        "MERGE (r)-[:DERIVED_FROM]->(m_r)",
-                        id=release["id"],
-                        m_id=master_id["#text"],
+                    # master_id is typically a dict with "#text" containing the actual ID
+                    m_id = (
+                        master_id.get("#text")
+                        if isinstance(master_id, dict)
+                        else master_id
                     )
+                    if m_id:
+                        tx.run(
+                            "MATCH (r:Release {id: $id}),(m_r:Master {id: $m_id}) "
+                            "MERGE (r)-[:DERIVED_FROM]->(m_r)",
+                            id=release["id"],
+                            m_id=m_id,
+                        )
+                    else:
+                        logger.warning(
+                            f"⚠️ Skipping master relationship without valid ID in release {release['id']}: {master_id}"
+                        )
 
                 # Handle genres and styles in batch
                 genres: dict[str, Any] | None = release.get("genres")
@@ -636,7 +745,21 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         await message.ack()
         logger.debug(f"💾 Stored release ID={release_id} in Neo4j")
     except Exception as e:
-        logger.error(f"❌ Failed to process release message: {e}")
+        # Include more context in error message
+        error_context = (
+            f"release_id={release_id if 'release_id' in locals() else 'unknown'}"
+        )
+        error_type = type(e).__name__
+        if error_type == "KeyError" and str(e) == "'id'":
+            logger.error(
+                f"❌ Failed to process release message ({error_context}): "
+                f"Missing 'id' field in nested object. This typically occurs when artist/label objects "
+                f"within the release don't have an 'id' field. Error: {error_type}: {e}"
+            )
+        else:
+            logger.error(
+                f"❌ Failed to process release message ({error_context}): {error_type}: {e}"
+            )
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:

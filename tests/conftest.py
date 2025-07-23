@@ -1,7 +1,5 @@
 """Shared pytest fixtures and configuration."""
 
-import asyncio
-import contextlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -12,14 +10,7 @@ import pytest_asyncio
 from aio_pika.abc import AbstractChannel, AbstractConnection, AbstractQueue
 
 
-@pytest.fixture(scope="function")
-def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
-    """Create event loop for async tests."""
-    policy = asyncio.get_event_loop_policy()
-    loop = policy.new_event_loop()
-    yield loop
-    with contextlib.suppress(RuntimeError):
-        loop.close()  # Loop might already be closed
+# Let pytest-asyncio handle the event loop automatically
 
 
 @pytest.fixture
