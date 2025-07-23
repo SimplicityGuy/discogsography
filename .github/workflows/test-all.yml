@@ -1,18 +1,28 @@
 ---
+# This is the primary test workflow that runs all unit and integration tests.
+# It is called by the build.yml workflow and can also be triggered independently.
+# For extended mobile device testing, see playwright-test.yml.
 name: Test All
 
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     branches:
       - main
-    paths-ignore:
-      - "dashboard/**"
-      - "tests/dashboard/**"
-      - "common/**"
+    paths:
+      - "**/*.py"
+      - "**/pyproject.toml"
+      - "**/uv.lock"
+      - ".github/workflows/test-all.yml"
   pull_request:
     branches:
       - main
+    paths:
+      - "**/*.py"
+      - "**/pyproject.toml"
+      - "**/uv.lock"
+      - ".github/workflows/test-all.yml"
 
 env:
   CI: true
@@ -117,9 +127,8 @@ jobs:
           echo "Running tableinator tests..."
           uv run pytest tests/tableinator/ -v
 
-          # Run discovery tests separately
           echo "Running discovery tests..."
-          uv run pytest tests/discovery/ -v || echo "Discovery tests have known issues"
+          uv run pytest tests/discovery/ -v
 
           # Generate combined coverage report
           echo "Generating coverage report..."

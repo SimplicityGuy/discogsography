@@ -1,5 +1,9 @@
 ---
-name: Playwright Tests
+# This workflow provides extended Playwright testing with mobile device emulation.
+# The test-all.yml workflow runs the core browser tests, while this workflow
+# adds additional mobile device testing for iPhone and iPad.
+# Run this workflow manually or when dashboard changes require mobile testing.
+name: Playwright Tests (Extended)
 
 on:
   workflow_dispatch:
