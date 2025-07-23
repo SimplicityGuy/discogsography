@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 
 from discovery.graph_explorer import (
     GraphData,
@@ -19,7 +20,7 @@ from discovery.graph_explorer import (
 class TestMusicGraphExplorer:
     """Test the MusicGraphExplorer class."""
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def graph_explorer(self, mock_neo4j_driver: Any) -> Any:
         """Create a MusicGraphExplorer instance with mocked dependencies."""
         with patch("discovery.graph_explorer.get_config") as mock_config:

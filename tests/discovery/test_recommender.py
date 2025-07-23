@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
 import pytest
+import pytest_asyncio
 
 from discovery.recommender import (
     MusicRecommender,
@@ -17,7 +18,7 @@ from discovery.recommender import (
 class TestMusicRecommender:
     """Test the MusicRecommender class."""
 
-    @pytest.fixture
+    @pytest_asyncio.fixture
     async def recommender(self, mock_neo4j_driver: Any) -> Any:
         """Create a MusicRecommender instance with mocked dependencies."""
         with patch("discovery.recommender.get_config") as mock_config:

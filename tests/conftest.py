@@ -1,21 +1,25 @@
 """Shared pytest fixtures and configuration."""
 
 import asyncio
+import contextlib
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+import pytest_asyncio
 from aio_pika.abc import AbstractChannel, AbstractConnection, AbstractQueue
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 def event_loop() -> Iterator[asyncio.AbstractEventLoop]:
     """Create event loop for async tests."""
-    loop = asyncio.get_event_loop_policy().new_event_loop()
+    policy = asyncio.get_event_loop_policy()
+    loop = policy.new_event_loop()
     yield loop
-    loop.close()
+    with contextlib.suppress(RuntimeError):
+        loop.close()  # Loop might already be closed
 
 
 @pytest.fixture
@@ -69,7 +73,7 @@ def mock_postgres_connection() -> MagicMock:
     return mock_conn
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def mock_postgres_engine() -> AsyncMock:
     """Mock PostgreSQL engine for testing."""
     mock_engine = AsyncMock()
@@ -155,3 +159,120 @@ def setup_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     for key, value in test_env.items():
         monkeypatch.setenv(key, value)
+
+
+@pytest.fixture(autouse=True)
+def reset_global_state() -> Iterator[None]:
+    """Reset global state in service modules between tests."""
+    # Reset state BEFORE test runs
+    try:
+        import graphinator.graphinator
+
+        graphinator.graphinator.shutdown_requested = False
+        graphinator.graphinator.graph = None
+        graphinator.graphinator.message_counts = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+        graphinator.graphinator.progress_interval = 100
+        graphinator.graphinator.last_message_time = {
+            "artists": 0.0,
+            "labels": 0.0,
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+        graphinator.graphinator.current_task = None
+        graphinator.graphinator.current_progress = 0.0
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        import tableinator.tableinator
+
+        tableinator.tableinator.shutdown_requested = False
+        tableinator.tableinator.connection_pool = None
+        tableinator.tableinator.config = None
+        tableinator.tableinator.current_task = None
+        tableinator.tableinator.current_progress = 0.0
+        tableinator.tableinator.connection_params = {}
+        # Reset message counts
+        tableinator.tableinator.message_counts = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+        tableinator.tableinator.last_message_time = {
+            "artists": 0.0,
+            "labels": 0.0,
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        import extractor.extractor
+
+        extractor.extractor.shutdown_requested = False
+    except (ImportError, AttributeError):
+        pass
+
+    yield
+
+    # Reset state AFTER test runs too
+    try:
+        import graphinator.graphinator
+
+        graphinator.graphinator.shutdown_requested = False
+        graphinator.graphinator.graph = None
+        graphinator.graphinator.message_counts = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+        graphinator.graphinator.progress_interval = 100
+        graphinator.graphinator.last_message_time = {
+            "artists": 0.0,
+            "labels": 0.0,
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+        graphinator.graphinator.current_task = None
+        graphinator.graphinator.current_progress = 0.0
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        import tableinator.tableinator
+
+        tableinator.tableinator.shutdown_requested = False
+        tableinator.tableinator.connection_pool = None
+        tableinator.tableinator.config = None
+        tableinator.tableinator.current_task = None
+        tableinator.tableinator.current_progress = 0.0
+        tableinator.tableinator.connection_params = {}
+        tableinator.tableinator.message_counts = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+        tableinator.tableinator.last_message_time = {
+            "artists": 0.0,
+            "labels": 0.0,
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+    except (ImportError, AttributeError):
+        pass
+
+    try:
+        import extractor.extractor
+
+        extractor.extractor.shutdown_requested = False
+    except (ImportError, AttributeError):
+        pass

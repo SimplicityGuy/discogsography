@@ -291,6 +291,36 @@ async def main() -> None:
         "password": str(config.postgres_password),
     }
 
+    # First, ensure the database exists
+    try:
+        # Connect to default 'postgres' database to create our database if needed
+        admin_params = connection_params.copy()
+        admin_params["dbname"] = "postgres"
+
+        with psycopg.connect(**admin_params) as admin_conn:
+            admin_conn.autocommit = True
+            with admin_conn.cursor() as cursor:
+                # Check if database exists
+                cursor.execute(
+                    "SELECT 1 FROM pg_database WHERE datname = %s",
+                    (config.postgres_database,),
+                )
+                if not cursor.fetchone():
+                    logger.info(f"🔧 Creating database '{config.postgres_database}'...")
+                    cursor.execute(
+                        sql.SQL("CREATE DATABASE {}").format(
+                            sql.Identifier(config.postgres_database)
+                        )
+                    )
+                    logger.info(f"✅ Database '{config.postgres_database}' created")
+                else:
+                    logger.info(
+                        f"✅ Database '{config.postgres_database}' already exists"
+                    )
+    except Exception as e:
+        logger.error(f"❌ Failed to ensure database exists: {e}")
+        return
+
     # Initialize connection pool for concurrent access
     try:
         connection_pool = SimpleConnectionPool(max_connections=20)
