@@ -57,15 +57,17 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Cache uv dependencies
+      # Combined Python dependencies cache (uv + venv)
+      - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/uv
             .venv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
+          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-uv-
+            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
+            ${{ runner.os }}-python-
 
       - name: Cache pre-commit
         uses: actions/cache@v4
@@ -75,13 +77,15 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pre-commit-
 
-      - name: Cache arkade tools
+      # Tools cache (arkade)
+      - name: Cache tools
         uses: actions/cache@v4
         with:
           path: ~/.arkade
-          key: ${{ runner.os }}-arkade-${{ hashFiles('.github/workflows/code-quality.yml') }}
+          key: ${{ runner.os }}-tools-arkade-v1
           restore-keys: |
-            ${{ runner.os }}-arkade-
+            ${{ runner.os }}-tools-arkade-
+            ${{ runner.os }}-tools-
 
       - name: Install arkade
         uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master

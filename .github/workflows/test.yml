@@ -49,23 +49,30 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Cache uv dependencies
+      # Combined Python dependencies cache (uv + venv)
+      - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/uv
             .venv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
+          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-uv-
+            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
+            ${{ runner.os }}-python-
 
-      - name: Cache pytest
+      # Test cache (pytest)
+      - name: Cache test results
         uses: actions/cache@v4
         with:
-          path: .pytest_cache
-          key: ${{ runner.os }}-pytest-${{ github.sha }}
+          path: |
+            .pytest_cache
+            .coverage
+            htmlcov
+          key: ${{ runner.os }}-test-unit-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-pytest-
+            ${{ runner.os }}-test-unit-
+            ${{ runner.os }}-test-
 
       - name: Install dependencies
         run: |

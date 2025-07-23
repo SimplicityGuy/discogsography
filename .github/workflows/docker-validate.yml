@@ -81,13 +81,15 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Cache docker-compose
+      # Tools cache (docker-compose)
+      - name: Cache tools
         uses: actions/cache@v4
         with:
           path: /usr/local/bin/docker-compose
-          key: ${{ runner.os }}-docker-compose-${{ hashFiles('.github/workflows/docker-validate.yml') }}
+          key: ${{ runner.os }}-tools-docker-compose-${{ env.COMPOSE_VERSION }}
           restore-keys: |
-            ${{ runner.os }}-docker-compose-
+            ${{ runner.os }}-tools-docker-compose-
+            ${{ runner.os }}-tools-
 
       - name: Install docker-compose
         run: |

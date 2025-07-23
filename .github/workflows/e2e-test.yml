@@ -84,36 +84,43 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Cache uv dependencies
+      # Combined Python dependencies cache (uv + venv)
+      - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/uv
             .venv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
+          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-uv-
+            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
+            ${{ runner.os }}-python-
 
-      - name: Cache pytest
+      # Test cache (pytest + playwright results)
+      - name: Cache test results
         uses: actions/cache@v4
         with:
-          path: .pytest_cache
-          key: ${{ runner.os }}-pytest-playwright-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-${{ github.sha }}
+          path: |
+            .pytest_cache
+            test-results
+          key: ${{ runner.os }}-test-e2e-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-pytest-playwright-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-
-            ${{ runner.os }}-pytest-playwright-
-            ${{ runner.os }}-pytest-
+            ${{ runner.os }}-test-e2e-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-
+            ${{ runner.os }}-test-e2e-${{ matrix.browser }}-
+            ${{ runner.os }}-test-e2e-
+            ${{ runner.os }}-test-
 
+      # Browser cache (Playwright)
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ matrix.browser }}-${{ hashFiles('**/pyproject.toml') }}
+          key: ${{ runner.os }}-playwright-browsers-${{ matrix.browser }}-v${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-playwright-${{ matrix.browser }}-
-            ${{ runner.os }}-playwright-
+            ${{ runner.os }}-playwright-browsers-${{ matrix.browser }}-
+            ${{ runner.os }}-playwright-browsers-
 
       - name: Install dependencies
         run: |

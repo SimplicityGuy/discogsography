@@ -106,24 +106,27 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Cache uv dependencies
+      # Combined Python dependencies cache (uv + venv)
+      - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/uv
             .venv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
+          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-uv-
+            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
+            ${{ runner.os }}-python-
 
+      # Docker build cache
       - name: Cache Docker layers
         uses: actions/cache@v4
         with:
           path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ matrix.sub-project }}-${{ github.sha }}
+          key: ${{ runner.os }}-docker-buildx-${{ matrix.sub-project }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-buildx-${{ matrix.sub-project }}-
-            ${{ runner.os }}-buildx-
+            ${{ runner.os }}-docker-buildx-${{ matrix.sub-project }}-
+            ${{ runner.os }}-docker-buildx-
 
       - name: Generate uv.lock for Docker build
         run: uv sync --frozen
