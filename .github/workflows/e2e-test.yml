@@ -1,19 +1,18 @@
 ---
-# This workflow provides extended Playwright testing with mobile device emulation.
-# The test-all.yml workflow runs the core browser tests, while this workflow
-# adds additional mobile device testing for iPhone and iPad.
-# Run this workflow manually or when dashboard changes require mobile testing.
-name: Playwright Tests (Extended)
+# This workflow runs all E2E tests including desktop browsers and mobile device emulation.
+# It can be called from other workflows or triggered directly on dashboard changes.
+name: E2E Test
 
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     branches:
       - main
     paths:
       - "dashboard/**"
       - "tests/dashboard/**"
-      - ".github/workflows/playwright-test.yml"
+      - ".github/workflows/e2e-test.yml"
       - "common/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -23,7 +22,7 @@ on:
     paths:
       - "dashboard/**"
       - "tests/dashboard/**"
-      - ".github/workflows/playwright-test.yml"
+      - ".github/workflows/e2e-test.yml"
       - "common/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -34,7 +33,7 @@ env:
   PYTHON_VERSION: "3.13"
 
 jobs:
-  playwright-test:
+  e2e-test:
     name: Test ${{ matrix.browser }} ${{ matrix.device && format('- {0}', matrix.device) || '' }}
 
     runs-on: ${{ matrix.os }}

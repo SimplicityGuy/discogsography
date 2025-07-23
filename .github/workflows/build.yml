@@ -113,7 +113,7 @@ jobs:
 
   run-tests:
     needs: [code-quality]
-    uses: ./.github/workflows/test-all.yml
+    uses: ./.github/workflows/test.yml
     secrets: inherit
 
   build-discogsography:

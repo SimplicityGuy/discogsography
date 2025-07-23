@@ -1,0 +1,97 @@
+---
+# This is the primary test workflow that runs all unit and integration tests.
+# It is called by the build.yml workflow and can also be triggered independently.
+# For E2E and browser testing, see e2e-test.yml.
+name: Test
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.py"
+      - "**/pyproject.toml"
+      - "**/uv.lock"
+      - ".github/workflows/test.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**/*.py"
+      - "**/pyproject.toml"
+      - "**/uv.lock"
+      - ".github/workflows/test.yml"
+
+env:
+  CI: true
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba # v6.3.1
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            .venv
+          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Cache pytest
+        uses: actions/cache@v4
+        with:
+          path: .pytest_cache
+          key: ${{ runner.os }}-pytest-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-pytest-
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --frozen
+          # Install workspace packages
+          uv pip install -e dashboard
+          uv pip install -e common
+
+      - name: Run unit tests with coverage (excluding E2E)
+        run: |
+          # Run tests in groups to avoid async conflicts
+          echo "Running core tests..."
+          uv run pytest tests/test_config.py tests/test_integration.py tests/extractor/ -v
+
+          echo "Running dashboard tests..."
+          uv run pytest tests/dashboard/ -v -m "not e2e"
+
+          echo "Running graphinator tests..."
+          uv run pytest tests/graphinator/ -v
+
+          echo "Running tableinator tests..."
+          uv run pytest tests/tableinator/ -v
+
+          echo "Running discovery tests..."
+          uv run pytest tests/discovery/ -v
+
+          # Generate combined coverage report
+          echo "Generating coverage report..."
+          uv run pytest --cov --cov-append --cov-report=term --cov-report=xml -m "not e2e" --no-header -q
