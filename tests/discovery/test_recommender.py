@@ -47,6 +47,7 @@ class TestMusicRecommender:
 
             return recommender
 
+    @pytest.mark.asyncio
     async def test_initialize(self, recommender: Any) -> None:
         """Test recommender initialization."""
         with (
@@ -57,6 +58,7 @@ class TestMusicRecommender:
             mock_build.assert_called_once()
             mock_embeddings.assert_called_once()
 
+    @pytest.mark.asyncio
     async def test_get_similar_artists(self, recommender: Any) -> None:
         """Test getting similar artists."""
         # Mock _get_artist_info
@@ -73,6 +75,7 @@ class TestMusicRecommender:
             assert isinstance(recommendations, list)
             assert len(recommendations) <= 5
 
+    @pytest.mark.asyncio
     async def test_get_trending_music(self, recommender: Any, mock_neo4j_driver: Any) -> None:
         """Test getting trending music."""
         # Mock database results
@@ -97,6 +100,7 @@ class TestMusicRecommender:
         assert isinstance(trending, list)
         assert len(trending) <= 10
 
+    @pytest.mark.asyncio
     async def test_discovery_search(self, recommender: Any) -> None:
         """Test semantic discovery search."""
         with patch.object(recommender, "_get_artist_info") as mock_get_info:
@@ -112,6 +116,7 @@ class TestMusicRecommender:
             assert isinstance(results, list)
             assert len(results) <= 5
 
+    @pytest.mark.asyncio
     async def test_get_artist_info(self, recommender: Any, mock_neo4j_driver: Any) -> None:
         """Test getting artist information."""
         # Mock database result
@@ -133,6 +138,7 @@ class TestMusicRecommender:
         assert info["id"] == "123"
         assert "Jazz" in info["genres"]
 
+    @pytest.mark.asyncio
     async def test_close(self, recommender: Any) -> None:
         """Test closing the recommender."""
         await recommender.close()

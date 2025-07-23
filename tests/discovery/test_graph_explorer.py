@@ -35,11 +35,13 @@ class TestMusicGraphExplorer:
 
             return explorer
 
+    @pytest.mark.asyncio
     async def test_initialize(self, graph_explorer: Any) -> None:
         """Test graph explorer initialization."""
         await graph_explorer.initialize()
         # Should not raise any exceptions
 
+    @pytest.mark.asyncio
     async def test_search_nodes(self, graph_explorer: Any, mock_neo4j_driver: Any) -> None:
         """Test searching for nodes."""
         # Mock database results
@@ -63,6 +65,7 @@ class TestMusicGraphExplorer:
         assert len(result.nodes) == 1
         assert result.nodes[0].name == "Miles Davis"
 
+    @pytest.mark.asyncio
     async def test_expand_node(self, graph_explorer: Any, mock_neo4j_driver: Any) -> None:
         """Test expanding around a node."""
         # Mock central node result
@@ -105,6 +108,7 @@ class TestMusicGraphExplorer:
         assert len(result.nodes) == 2
         assert len(result.edges) == 1
 
+    @pytest.mark.asyncio
     async def test_expand_node_not_found(self, graph_explorer: Any, mock_neo4j_driver: Any) -> None:
         """Test expanding around a non-existent node."""
         mock_result = AsyncMock()
@@ -119,6 +123,7 @@ class TestMusicGraphExplorer:
         assert len(result.nodes) == 0
         assert "error" in result.metadata
 
+    @pytest.mark.asyncio
     async def test_find_path(self, graph_explorer: Any, mock_neo4j_driver: Any) -> None:
         """Test finding path between nodes."""
         # Mock path result
@@ -160,6 +165,7 @@ class TestMusicGraphExplorer:
         assert path_result.path_length == 1
         assert len(path_result.path) == 2
 
+    @pytest.mark.asyncio
     async def test_find_path_no_path(self, graph_explorer: Any, mock_neo4j_driver: Any) -> None:
         """Test finding path when no path exists."""
         mock_result = (
@@ -174,6 +180,7 @@ class TestMusicGraphExplorer:
         assert path_result.path_length == 0
         assert "No connection found" in path_result.explanation
 
+    @pytest.mark.asyncio
     async def test_get_neighborhood(self, graph_explorer: Any, mock_neo4j_driver: Any) -> None:
         """Test getting neighborhood around a node."""
         mock_result = AsyncMock()
@@ -201,6 +208,7 @@ class TestMusicGraphExplorer:
         assert isinstance(result, GraphData)
         assert len(result.nodes) >= 1
 
+    @pytest.mark.asyncio
     async def test_semantic_search(self, graph_explorer: Any, mock_neo4j_driver: Any) -> None:
         """Test semantic search across the graph."""
         mock_result = AsyncMock()
@@ -219,6 +227,7 @@ class TestMusicGraphExplorer:
         assert isinstance(result, GraphData)
         assert len(result.nodes) == 1
 
+    @pytest.mark.asyncio
     async def test_close(self, graph_explorer: Any) -> None:
         """Test closing the graph explorer."""
         await graph_explorer.close()

@@ -32,6 +32,7 @@ class TestMusicAnalytics:
 
             return analytics
 
+    @pytest.mark.asyncio
     async def test_initialize(self, analytics: Any) -> None:
         """Test analytics initialization."""
         with (
@@ -41,6 +42,7 @@ class TestMusicAnalytics:
             await analytics.initialize()
             # Should not raise any exceptions
 
+    @pytest.mark.asyncio
     async def test_analyze_genre_trends(self, analytics: Any, mock_neo4j_driver: Any) -> None:
         """Test genre trends analysis."""
         # Mock database results
@@ -64,6 +66,7 @@ class TestMusicAnalytics:
         assert isinstance(result.insights, list)
         assert len(result.insights) > 0
 
+    @pytest.mark.asyncio
     async def test_analyze_genre_trends_no_data(
         self, analytics: Any, mock_neo4j_driver: Any
     ) -> None:
@@ -80,6 +83,7 @@ class TestMusicAnalytics:
         assert result.chart_type == "line"
         assert "No genre data available" in result.insights[0]
 
+    @pytest.mark.asyncio
     async def test_analyze_artist_evolution(self, analytics: Any, mock_neo4j_driver: Any) -> None:
         """Test artist evolution analysis."""
         # Mock database results for releases
@@ -113,6 +117,7 @@ class TestMusicAnalytics:
         assert result.chart_type == "scatter"
         assert isinstance(result.insights, list)
 
+    @pytest.mark.asyncio
     async def test_analyze_artist_evolution_no_data(
         self, analytics: Any, mock_neo4j_driver: Any
     ) -> None:
@@ -127,6 +132,7 @@ class TestMusicAnalytics:
         assert isinstance(result, AnalyticsResult)
         assert "No release data found" in result.insights[0]
 
+    @pytest.mark.asyncio
     async def test_analyze_label_insights_specific(
         self, analytics: Any, mock_neo4j_driver: Any
     ) -> None:
@@ -150,6 +156,7 @@ class TestMusicAnalytics:
         assert isinstance(result, AnalyticsResult)
         assert result.chart_type == "bar"
 
+    @pytest.mark.asyncio
     async def test_analyze_label_insights_market_overview(
         self, analytics: Any, mock_neo4j_driver: Any
     ) -> None:
@@ -173,6 +180,7 @@ class TestMusicAnalytics:
         assert isinstance(result, AnalyticsResult)
         assert result.chart_type == "bar"
 
+    @pytest.mark.asyncio
     async def test_analyze_market_trends_format(
         self, analytics: Any, mock_neo4j_driver: Any
     ) -> None:
@@ -192,6 +200,7 @@ class TestMusicAnalytics:
         assert isinstance(result, AnalyticsResult)
         assert result.chart_type == "area"
 
+    @pytest.mark.asyncio
     async def test_analyze_market_trends_regional(
         self, analytics: Any, mock_neo4j_driver: Any
     ) -> None:
@@ -210,6 +219,7 @@ class TestMusicAnalytics:
         assert isinstance(result, AnalyticsResult)
         assert result.chart_type == "line"
 
+    @pytest.mark.asyncio
     async def test_close(self, analytics: Any) -> None:
         """Test closing the analytics engine."""
         await analytics.close()
