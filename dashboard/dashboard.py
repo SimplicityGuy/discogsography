@@ -8,9 +8,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
-import aio_pika
 import httpx
 import orjson
 import psycopg
@@ -18,11 +16,16 @@ from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
-from neo4j import AsyncGraphDatabase
 from prometheus_client import Counter, Gauge, generate_latest
 from pydantic import BaseModel
 
-from common import get_config, setup_logging
+from common import (
+    AsyncResilientNeo4jDriver,
+    AsyncResilientPostgreSQL,
+    AsyncResilientRabbitMQ,
+    get_config,
+    setup_logging,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -95,23 +98,48 @@ class DashboardApp:
         self.config = get_config()
         self.websocket_connections: set[WebSocket] = set()
         self.latest_metrics: SystemMetrics | None = None
-        self.amqp_connection: aio_pika.abc.AbstractConnection | None = None
-        self.neo4j_driver: Any | None = None
+        self.rabbitmq: AsyncResilientRabbitMQ | None = None
+        self.neo4j_driver: AsyncResilientNeo4jDriver | None = None
+        self.postgres_conn: AsyncResilientPostgreSQL | None = None
         self.update_task: asyncio.Task | None = None
 
     async def startup(self) -> None:
         """Initialize connections on startup."""
         try:
-            # Connect to RabbitMQ
-            self.amqp_connection = await aio_pika.connect_robust(self.config.amqp_connection)
-            logger.info("🐰 Connected to RabbitMQ")
+            # Initialize resilient RabbitMQ connection
+            self.rabbitmq = AsyncResilientRabbitMQ(connection_url=self.config.amqp_connection, heartbeat=600, connection_attempts=10, retry_delay=5.0)
+            await self.rabbitmq.connect()
+            logger.info("🐰 Connected to RabbitMQ with resilient connection")
 
-            # Connect to Neo4j
-            self.neo4j_driver = AsyncGraphDatabase.driver(
-                self.config.neo4j_address,
+            # Initialize resilient Neo4j driver
+            self.neo4j_driver = AsyncResilientNeo4jDriver(
+                uri=self.config.neo4j_address,
                 auth=(self.config.neo4j_username, self.config.neo4j_password),
+                max_retries=5,
+                encrypted=False,
             )
-            logger.info("🔗 Connected to Neo4j")
+            logger.info("🔗 Connected to Neo4j with resilient driver")
+
+            # Initialize resilient PostgreSQL connection
+            # Parse host and port from address
+            if ":" in self.config.postgres_address:
+                host, port_str = self.config.postgres_address.split(":", 1)
+                port = int(port_str)
+            else:
+                host = self.config.postgres_address
+                port = 5432
+
+            self.postgres_conn = AsyncResilientPostgreSQL(
+                connection_params={
+                    "host": host,
+                    "port": port,
+                    "dbname": self.config.postgres_database,
+                    "user": self.config.postgres_username,
+                    "password": self.config.postgres_password,
+                },
+                max_retries=5,
+            )
+            logger.info("🐘 Connected to PostgreSQL with resilient connection")
 
             # Start background metrics collection
             self.update_task = asyncio.create_task(self.collect_metrics_loop())
@@ -131,10 +159,12 @@ class DashboardApp:
                     await self.update_task
 
             # Close connections
-            if self.amqp_connection:
-                await self.amqp_connection.close()
+            if self.rabbitmq:
+                await self.rabbitmq.close()
             if self.neo4j_driver:
                 await self.neo4j_driver.close()
+            if self.postgres_conn:
+                await self.postgres_conn.close()
 
             # Close all websocket connections
             for ws in self.websocket_connections:
@@ -234,7 +264,7 @@ class DashboardApp:
         queues: list[QueueInfo] = []
 
         try:
-            if not self.amqp_connection:
+            if not self.rabbitmq:
                 return queues
 
             async with httpx.AsyncClient(timeout=5.0) as client:
@@ -316,7 +346,7 @@ class DashboardApp:
         # Check Neo4j
         try:
             if self.neo4j_driver:
-                async with self.neo4j_driver.session() as session:
+                async with await self.neo4j_driver.session() as session:
                     result = await session.run("CALL dbms.components() YIELD name, versions")
                     await result.single()  # Consume result
 

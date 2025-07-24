@@ -48,7 +48,7 @@ class TestDownloadDiscogsData:
         checksum_content = f"{empty_file_sha256} discogs_20240201_artists.xml.gz\n{empty_file_sha256} discogs_20240201_labels.xml.gz\n{empty_file_sha256} discogs_20240201_masters.xml.gz\n{empty_file_sha256} discogs_20240201_releases.xml.gz\n".encode()
 
         # Mock download_fileobj (not download_file)
-        def mock_download_fileobj(bucket: str, key: str, fileobj: Any, **kwargs: Any) -> None:  # noqa: ARG001
+        def mock_download_fileobj(_bucket: str, key: str, fileobj: Any, **_kwargs: Any) -> None:
             if "CHECKSUM.txt" in key:
                 fileobj.write(checksum_content)
             else:
@@ -126,7 +126,7 @@ class TestDownloadDiscogsData:
         checksum_content = f"{empty_file_sha256} discogs_20240201_artists.xml.gz\n{empty_file_sha256} discogs_20240201_labels.xml.gz\n{empty_file_sha256} discogs_20240201_masters.xml.gz\n{empty_file_sha256} discogs_20240201_releases.xml.gz\n".encode()
 
         # Mock download_fileobj
-        def mock_download_fileobj(bucket: str, key: str, fileobj: Any, **kwargs: Any) -> None:  # noqa: ARG001
+        def mock_download_fileobj(_bucket: str, key: str, fileobj: Any, **_kwargs: Any) -> None:
             if "CHECKSUM.txt" in key:
                 fileobj.write(checksum_content)
             else:

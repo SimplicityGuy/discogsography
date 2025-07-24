@@ -7,9 +7,7 @@ from asyncio import run
 from pathlib import Path
 from typing import Any
 
-from aio_pika import connect
 from aio_pika.abc import AbstractIncomingMessage
-from aio_pika.exceptions import AMQPConnectionError
 from common import (
     AMQP_EXCHANGE,
     AMQP_EXCHANGE_TYPE,
@@ -18,9 +16,10 @@ from common import (
     GraphinatorConfig,
     HealthServer,
     setup_logging,
+    ResilientNeo4jDriver,
+    AsyncResilientRabbitMQ,
 )
-from neo4j import GraphDatabase
-from neo4j.exceptions import Neo4jError
+from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
 from orjson import loads
 
 
@@ -40,7 +39,7 @@ current_task = None
 current_progress = 0.0
 
 # Driver will be initialized in main
-graph: Any = None
+graph: ResilientNeo4jDriver | None = None
 
 # Global shutdown flag
 shutdown_requested = False
@@ -119,7 +118,9 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         # Process entire artist in a single session with proper transaction handling
         try:
             logger.debug(f"🔄 Starting transaction for artist ID={artist_id}")
-            # Add timeout to prevent hanging transactions
+            # Get session from resilient driver
+            if graph is None:
+                raise RuntimeError("Neo4j driver not initialized")
             with graph.session(database="neo4j") as session:
 
                 def process_artist_tx(tx: Any) -> bool:
@@ -256,6 +257,11 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                     logger.debug(
                         f"⏩ Skipped artist ID={artist_id} (no changes needed)"
                     )
+        except (ServiceUnavailable, SessionExpired) as neo4j_error:
+            logger.error(
+                f"❌ Neo4j connection error processing artist ID={artist_id}: {neo4j_error}"
+            )
+            raise
         except Exception as neo4j_error:
             logger.error(
                 f"❌ Neo4j error processing artist ID={artist_id}: {neo4j_error}"
@@ -265,6 +271,12 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         logger.debug(f"✅ Acknowledging artist message ID={artist_id}")
         await message.ack()
         logger.debug(f"✅ Completed artist message ID={artist_id}")
+    except (ServiceUnavailable, SessionExpired) as e:
+        logger.warning(f"⚠️ Neo4j unavailable, will retry artist message: {e}")
+        try:
+            await message.nack(requeue=True)
+        except Exception as nack_error:
+            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
     except Exception as e:
         logger.error(f"❌ Failed to process artist message: {e}")
         try:
@@ -296,6 +308,8 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         logger.debug(f"🔄 Processing label ID={label_id}: {label_name}")
 
         # Process entire label in a single session with proper transaction handling
+        if graph is None:
+            raise RuntimeError("Neo4j driver not initialized")
         with graph.session(database="neo4j") as session:
 
             def process_label_tx(tx: Any) -> bool:
@@ -378,6 +392,12 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
                 logger.debug(f"⏩ Skipped label ID={label_id} (no changes needed)")
 
         await message.ack()
+    except (ServiceUnavailable, SessionExpired) as e:
+        logger.warning(f"⚠️ Neo4j unavailable, will retry label message: {e}")
+        try:
+            await message.nack(requeue=True)
+        except Exception as nack_error:
+            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
     except Exception as e:
         logger.error(f"❌ Failed to process label message: {e}")
         try:
@@ -409,6 +429,8 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         logger.debug(f"🔄 Processing master ID={master_id}: {master_title}")
 
         # Process entire master in a single session with proper transaction handling
+        if graph is None:
+            raise RuntimeError("Neo4j driver not initialized")
         with graph.session(database="neo4j") as session:
 
             def process_master_tx(tx: Any) -> bool:
@@ -526,6 +548,12 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
                 logger.debug(f"⏩ Skipped master ID={master_id} (no changes needed)")
 
         await message.ack()
+    except (ServiceUnavailable, SessionExpired) as e:
+        logger.warning(f"⚠️ Neo4j unavailable, will retry master message: {e}")
+        try:
+            await message.nack(requeue=True)
+        except Exception as nack_error:
+            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
     except Exception as e:
         # Include more context in error message
         error_context = (
@@ -571,6 +599,8 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         logger.debug(f"🔄 Processing release ID={release_id}: {release_title}")
 
         # Process entire release in a single session with proper transaction handling
+        if graph is None:
+            raise RuntimeError("Neo4j driver not initialized")
         with graph.session(database="neo4j") as session:
 
             def process_release_tx(tx: Any) -> bool:
@@ -744,6 +774,12 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
 
         await message.ack()
         logger.debug(f"💾 Stored release ID={release_id} in Neo4j")
+    except (ServiceUnavailable, SessionExpired) as e:
+        logger.warning(f"⚠️ Neo4j unavailable, will retry release message: {e}")
+        try:
+            await message.nack(requeue=True)
+        except Exception as nack_error:
+            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
     except Exception as e:
         # Include more context in error message
         error_context = (
@@ -788,14 +824,12 @@ async def main() -> None:
         logger.error(f"❌ Configuration error: {e}")
         return
 
-    # Initialize Neo4j driver
-    graph = GraphDatabase.driver(
-        config.neo4j_address,
+    # Initialize resilient Neo4j driver
+    graph = ResilientNeo4jDriver(
+        uri=config.neo4j_address,
         auth=(config.neo4j_username, config.neo4j_password),
+        max_retries=5,
         encrypted=False,
-        max_connection_lifetime=30 * 60,  # 30 minutes
-        max_connection_pool_size=50,
-        connection_acquisition_timeout=60.0,
     )
 
     # Test Neo4j connectivity
@@ -845,9 +879,17 @@ async def main() -> None:
     print()
     # fmt: on
 
+    # Initialize resilient RabbitMQ connection
+    rabbitmq = AsyncResilientRabbitMQ(
+        connection_url=config.amqp_connection,
+        heartbeat=600,
+        connection_attempts=10,
+        retry_delay=5.0,
+    )
+
     try:
-        amqp_connection = await connect(config.amqp_connection)
-    except AMQPConnectionError as e:
+        amqp_connection = await rabbitmq.connect()
+    except Exception as e:
         logger.error(f"❌ Failed to connect to AMQP broker: {e}")
         return
 
@@ -921,27 +963,9 @@ async def main() -> None:
                 if stalled_consumers:
                     logger.error(
                         f"⚠️ Stalled consumers detected: {stalled_consumers}. "
-                        f"No messages processed for >2 minutes. Forcing graph database reconnection."
+                        f"No messages processed for >2 minutes."
                     )
-                    # Close and recreate driver to force reconnection
-                    try:
-                        global graph
-                        graph.close()
-                        from neo4j import GraphDatabase
-
-                        graph = GraphDatabase.driver(
-                            config.neo4j_address,
-                            auth=(config.neo4j_username, config.neo4j_password),
-                            encrypted=False,
-                            max_connection_lifetime=30 * 60,
-                            max_connection_pool_size=50,
-                            connection_acquisition_timeout=60.0,
-                        )
-                        logger.info("✅ Graph database driver reconnected")
-                    except Exception as reconnect_error:
-                        logger.error(
-                            f"❌ Failed to reconnect graph database: {reconnect_error}"
-                        )
+                    # The resilient driver will handle reconnection automatically
 
                 # Always show progress, even if no messages processed yet
                 logger.info(
