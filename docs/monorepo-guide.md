@@ -8,6 +8,56 @@ Discogsography uses a **monorepo** structure with **uv workspaces**, allowing mu
 
 ## 🏗️ Repository Structure
 
+```mermaid
+graph TD
+    Root[discogsography/<br/>Root Workspace]
+
+    RootFiles[pyproject.toml<br/>uv.lock<br/>.python-version]
+
+    Common[common/<br/>Shared Library]
+    CommonFiles[config.py<br/>health_server.py]
+
+    Dashboard[dashboard/<br/>Monitoring Service]
+    DashFiles[dashboard.py<br/>static/]
+
+    Discovery[discovery/<br/>AI Service]
+    DiscFiles[discovery.py]
+
+    Extractor[extractor/<br/>Data Service]
+    ExtFiles[extractor.py<br/>discogs.py]
+
+    Graphinator[graphinator/<br/>Neo4j Service]
+    GraphFiles[graphinator.py]
+
+    Tableinator[tableinator/<br/>PostgreSQL Service]
+    TableFiles[tableinator.py]
+
+    Root --> RootFiles
+    Root --> Common
+    Root --> Dashboard
+    Root --> Discovery
+    Root --> Extractor
+    Root --> Graphinator
+    Root --> Tableinator
+
+    Common --> CommonFiles
+    Dashboard --> DashFiles
+    Discovery --> DiscFiles
+    Extractor --> ExtFiles
+    Graphinator --> GraphFiles
+    Tableinator --> TableFiles
+
+    style Root fill:#f3e5f5,stroke:#9c27b0,stroke-width:3px
+    style Common fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
+    style Dashboard fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+    style Discovery fill:#fce4ec,stroke:#e91e63,stroke-width:2px
+    style Extractor fill:#fff3e0,stroke:#ff9800,stroke-width:2px
+    style Graphinator fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+    style Tableinator fill:#e0f2f1,stroke:#009688,stroke-width:2px
+```
+
+### Directory Structure Details
+
 ```
 discogsography/                    # Root workspace
 ├── pyproject.toml                 # Root configuration & shared dev dependencies

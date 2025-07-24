@@ -10,18 +10,26 @@ Discogsography employs a multi-layered testing approach including unit tests, in
 
 ### Testing Pyramid
 
-```
-         /\        E2E Tests (Playwright)
-        /  \       - User workflows
-       /    \      - Browser testing
-      /      \
-     /--------\    Integration Tests
-    /          \   - Service interactions
-   /            \  - Database operations
-  /              \
- /________________\ Unit Tests
-                    - Business logic
-                    - Individual functions
+```mermaid
+graph BT
+    subgraph "Unit Tests"
+        U[Business Logic<br/>Individual Functions<br/>Fast & Isolated]
+    end
+
+    subgraph "Integration Tests"
+        I[Service Interactions<br/>Database Operations<br/>Component Integration]
+    end
+
+    subgraph "E2E Tests"
+        E[User Workflows<br/>Browser Testing<br/>Full System Validation]
+    end
+
+    U --> I
+    I --> E
+
+    style U fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
+    style I fill:#fff3e0,stroke:#ff9800,stroke-width:2px
+    style E fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
 ```
 
 ### Coverage Goals
@@ -203,6 +211,45 @@ def test_client(test_server):
 ```
 
 ## 🚀 Running Tests
+
+### Test Execution Flow
+
+```mermaid
+flowchart TD
+    Start[Run Tests]
+
+    Start --> Type{Test Type?}
+
+    Type -->|Unit| Unit[pytest -m 'not integration and not e2e']
+    Type -->|Integration| Integration[pytest -m integration]
+    Type -->|E2E| E2E[pytest -m e2e]
+    Type -->|All| All[pytest]
+
+    Unit --> Coverage{Coverage<br/>Report?}
+    Integration --> Coverage
+    E2E --> Browser[Install Browsers<br/>playwright install]
+    All --> Coverage
+
+    Browser --> E2ERun[Run E2E Tests]
+    E2ERun --> Results
+
+    Coverage -->|Yes| CovReport[Generate Coverage<br/>HTML Report]
+    Coverage -->|No| Results[Test Results]
+
+    CovReport --> Results
+
+    Results --> Status{All Tests<br/>Pass?}
+
+    Status -->|Yes| Success[✅ Success]
+    Status -->|No| Debug[Debug Failures]
+
+    Debug --> Fix[Fix Issues]
+    Fix --> Start
+
+    style Start fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+    style Success fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
+    style Debug fill:#fce4ec,stroke:#e91e63,stroke-width:2px
+```
 
 ### Quick Commands
 

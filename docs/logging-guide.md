@@ -6,6 +6,39 @@
 
 Discogsography uses a standardized logging approach with emoji prefixes for visual clarity and quick issue identification. This guide ensures consistent logging across all services.
 
+### Logging Flow
+
+```mermaid
+flowchart LR
+    subgraph "Service"
+        Code[Application Code]
+        Logger[Logger Instance]
+    end
+
+    subgraph "Outputs"
+        Console[Console Output<br/>with Emojis]
+        File[Log Files<br/>/logs/*.log]
+    end
+
+    subgraph "Analysis"
+        Monitor[Real-time Monitoring]
+        Debug[Debug Analysis]
+        Errors[Error Tracking]
+    end
+
+    Code -->|logger.info/error/warn| Logger
+    Logger --> Console
+    Logger --> File
+
+    Console --> Monitor
+    File --> Debug
+    File --> Errors
+
+    style Code fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+    style Console fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
+    style File fill:#fff3e0,stroke:#ff9800,stroke-width:2px
+```
+
 ## 🎨 Emoji Pattern
 
 **Format**: `logger.{level}("{emoji} {message}")`

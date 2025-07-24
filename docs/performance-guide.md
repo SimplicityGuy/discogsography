@@ -6,6 +6,38 @@
 
 Processing 20+ million music records requires careful attention to performance. This guide covers optimization strategies, bottleneck identification, and performance tuning across all services.
 
+### Performance Optimization Flow
+
+```mermaid
+flowchart TD
+    Start[Performance Issue Detected]
+
+    Start --> Measure[Measure & Profile]
+
+    Measure --> Identify{Identify<br/>Bottleneck}
+
+    Identify -->|CPU Bound| CPU[Optimize Algorithms<br/>Add Parallelism]
+    Identify -->|I/O Bound| IO[Async Operations<br/>Batching<br/>Caching]
+    Identify -->|Memory| Memory[Streaming<br/>Reduce Footprint<br/>Memory Pools]
+    Identify -->|Network| Network[Connection Pooling<br/>Compression<br/>Batch Requests]
+
+    CPU --> Test[Test & Benchmark]
+    IO --> Test
+    Memory --> Test
+    Network --> Test
+
+    Test --> Compare{Performance<br/>Improved?}
+
+    Compare -->|Yes| Monitor[Deploy & Monitor]
+    Compare -->|No| Measure
+
+    Monitor --> End[Continue Monitoring]
+
+    style Start fill:#fce4ec,stroke:#e91e63,stroke-width:2px
+    style End fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
+    style Test fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
+```
+
 ## 🎯 Performance Goals
 
 | Metric | Target | Current | Bottleneck |

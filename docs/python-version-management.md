@@ -8,6 +8,32 @@ This project uses a centralized approach to Python version management, ensuring 
 
 ## 🔧 Configuration Points
 
+```mermaid
+graph LR
+    ENV[.env<br/>PYTHON_VERSION=3.13]
+
+    subgraph "Auto-Updated by Script"
+        PY[pyproject.toml files<br/>requires-python]
+        DOCKER[Dockerfiles<br/>ARG PYTHON_VERSION]
+        PYRIGHT[pyrightconfig.json<br/>pythonVersion]
+    end
+
+    subgraph "Uses Environment Variable"
+        GH[GitHub Actions<br/>workflows/*.yml]
+        BUILD[Docker Builds<br/>--build-arg]
+    end
+
+    ENV --> GH
+    ENV --> BUILD
+
+    Script[update-python-version.sh] --> PY
+    Script --> DOCKER
+    Script --> PYRIGHT
+
+    style ENV fill:#fce4ec,stroke:#e91e63,stroke-width:3px
+    style Script fill:#e3f2fd,stroke:#2196f3,stroke-width:3px
+```
+
 The Python version is configured in these locations:
 
 | Location | Purpose | Auto-Updated |
