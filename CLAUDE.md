@@ -1,10 +1,63 @@
-# CLAUDE.md - Development Guide
+# 🤖 CLAUDE.md - Claude Code Development Guide
 
-> 📖 This document provides comprehensive guidance for Claude Code (claude.ai/code) and developers working with the Discogsography codebase.
+<div align="center">
 
-## 🏗️ Repository Overview
+**The comprehensive guide for AI-assisted development with Claude Code (claude.ai/code)**
 
-A modern Python 3.13+ microservices system for processing Discogs database exports into queryable storage backends. Built with performance, type safety, and security as core principles.
+[📚 Quick Reference](#-quick-reference) | [🎯 Architecture](#-architecture-components) | [🛠️ Development](#-development-commands) | [📋 Guidelines](#-development-guidelines)
+
+</div>
+
+> 💡 **Pro Tip**: This guide is optimized for Claude Code's understanding of the codebase. It includes specific conventions, patterns, and instructions that help Claude Code provide better assistance.
+
+## 🎯 Project Overview
+
+**Discogsography** is a production-grade Python 3.13+ microservices platform that transforms Discogs music database exports into powerful, queryable knowledge graphs and analytics engines.
+
+### Core Design Principles
+
+- **🚀 Performance First**: Async operations, efficient parsing, optimized queries
+- **🔒 Type Safety**: Full type hints, strict mypy validation, runtime checks
+- **🛡️ Security by Design**: Container hardening, secure defaults, continuous scanning
+- **📊 Observable**: Comprehensive logging, real-time monitoring, health checks
+- **🧪 Testable**: Unit, integration, and E2E tests with high coverage
+
+## 📚 Quick Reference
+
+### 🚀 Most Common Commands
+
+```bash
+# Development setup
+uv sync --all-extras         # Install all dependencies
+uv run task init            # Setup pre-commit hooks
+
+# Run services
+uv run task up              # Start all with Docker
+uv run task dashboard       # Run dashboard locally
+uv run task discovery       # Run AI discovery locally
+
+# Code quality
+uv run task lint            # Run linting
+uv run task format          # Auto-format code
+uv run task test            # Run tests
+uv run task security        # Security scan
+
+# Monitoring
+uv run task logs            # View all logs
+uv run task monitor         # Queue monitoring
+uv run task check-errors    # Find errors
+```
+
+### 🔑 Key Files to Know
+
+| File/Directory | Purpose | When to Edit |
+|----------------|---------|--------------|
+| `pyproject.toml` | Root configuration | Adding dependencies, tasks |
+| `docker-compose.yml` | Service orchestration | Changing service config |
+| `.env.example` | Environment template | Adding new env vars |
+| `common/config.py` | Shared configuration | Adding config options |
+| `*/pyproject.toml` | Service dependencies | Service-specific deps |
+| `tests/` | Test suites | Adding/updating tests |
 
 ### 🎯 Architecture Components
 
@@ -19,31 +72,74 @@ A modern Python 3.13+ microservices system for processing Discogs database expor
 
 ## 🚀 Development Setup
 
-### Prerequisites
+### ✅ Prerequisites Checklist
 
-- **Python 3.13+** (managed via uv)
-- **Docker & Docker Compose** (for services)
-- **100GB+ free disk space** (for Discogs data)
-- **8GB+ RAM** (16GB recommended)
+- [ ] **Python 3.13+** - Install via [uv](https://github.com/astral-sh/uv)
+- [ ] **Docker Desktop** or Docker Engine with Compose v2+
+- [ ] **100GB+ disk space** - SSD recommended for performance
+- [ ] **8-16GB RAM** - More RAM = faster processing
+- [ ] **Git** - For version control
+- [ ] **VS Code** or preferred editor with Python support
 
-### Initial Setup
+### 🏃 Quick Start (5 minutes)
 
 ```bash
-# 1. Install uv package manager (10-100x faster than pip)
+# 1. One-line uv installer (macOS/Linux)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Clone and enter repository
+# 2. Clone the repository
 git clone https://github.com/SimplicityGuy/discogsography.git
 cd discogsography
 
-# 3. Install all dependencies with extras
+# 3. Install everything (dependencies + pre-commit hooks)
+uv sync --all-extras && uv run task init
+
+# 4. Start with Docker
+docker-compose up -d
+
+# 5. Open the dashboard
+open http://localhost:8003
+```
+
+### 🔧 Detailed Setup
+
+#### Step 1: Install uv Package Manager
+
+```bash
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows (PowerShell)
+irm https://astral.sh/uv/install.ps1 | iex
+
+# Verify installation
+uv --version
+```
+
+#### Step 2: Repository Setup
+
+```bash
+# Clone repository
+git clone https://github.com/SimplicityGuy/discogsography.git
+cd discogsography
+
+# Create virtual environment and install dependencies
 uv sync --all-extras
 
-# 4. Setup pre-commit hooks for code quality
+# Install pre-commit hooks
 uv run pre-commit install
 
-# 5. Verify installation
-uv run task lint  # Should pass all checks
+# Copy environment template
+cp .env.example .env
+```
+
+#### Step 3: Verify Installation
+
+```bash
+# Run all quality checks
+uv run task lint      # Should pass
+uv run task test      # Should pass
+uv run task security  # Should pass
 ```
 
 ### Python Version Management
@@ -723,6 +819,130 @@ if: |
 - **Matrix Builds**: Cross-platform testing
 - **Resource Limits**: Prevent runaway jobs
 
+## 🔧 Troubleshooting Guide
+
+### 🚨 Common Issues & Solutions
+
+#### Installation Problems
+
+**Issue: `uv: command not found`**
+
+```bash
+# Reload shell configuration
+source ~/.bashrc  # or ~/.zshrc for zsh
+# Or restart your terminal
+```
+
+**Issue: `No module named 'dashboard'` or similar**
+
+```bash
+# Reinstall with workspace packages
+uv sync --all-extras
+uv pip install -e dashboard
+uv pip install -e common
+```
+
+#### Docker Issues
+
+**Issue: Services won't start**
+
+```bash
+# Check Docker is running
+docker info
+
+# Clean up and restart
+docker-compose down -v
+docker-compose up -d
+
+# Check logs for specific errors
+docker-compose logs extractor
+```
+
+**Issue: Port already in use**
+
+```bash
+# Find process using port (e.g., 8003)
+lsof -i :8003  # macOS/Linux
+netstat -ano | findstr :8003  # Windows
+
+# Kill the process or change port in .env
+```
+
+#### Database Connection Errors
+
+**Issue: Neo4j connection refused**
+
+```bash
+# Wait for Neo4j to fully start (60-90s)
+docker-compose logs neo4j | grep "Started"
+
+# Test connection
+curl -u neo4j:discogsography http://localhost:7474
+```
+
+**Issue: PostgreSQL connection failed**
+
+```bash
+# Check if PostgreSQL is ready
+docker-compose exec postgres pg_isready
+
+# Test connection
+PGPASSWORD=discogsography psql -h localhost -p 5433 -U discogsography -d discogsography -c "SELECT 1;"
+```
+
+#### Test Failures
+
+**Issue: Async test failures**
+
+```python
+# Ensure all async tests have decorator
+@pytest.mark.asyncio
+async def test_something():
+    pass
+```
+
+**Issue: E2E tests failing**
+
+```bash
+# Install browser dependencies
+uv run playwright install chromium
+uv run playwright install-deps chromium
+
+# Run with visible browser for debugging
+uv run pytest tests/dashboard/test_dashboard_ui.py -m e2e --headed
+```
+
+### 🐛 Debugging Tips
+
+#### Enable Debug Logging
+
+```python
+# Add to any service
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+```
+
+#### Check Service Health
+
+```bash
+# Quick health check
+for port in 8000 8001 8002 8003 8004; do
+    echo "Checking port $port:"
+    curl -s http://localhost:$port/health | jq .
+done
+```
+
+#### Monitor Resource Usage
+
+```bash
+# Docker stats
+docker stats --no-stream
+
+# System resources
+uv run task system-monitor
+```
+
 ## 📋 Development Guidelines
 
 ### Essential Rules
@@ -788,32 +1008,85 @@ if: |
 - Comprehensive caching in GitHub workflows
 - For non-GitHub/Docker actions, use SHA with version comment
 
-## 🎯 Important Instructions
+## 🎯 Important Instructions for Claude Code
 
-### Core Principles
+### 🤖 AI Development Principles
 
-- **Do exactly what is asked** - Nothing more, nothing less
-- **Minimize file creation** - Edit existing files whenever possible
-- **No unsolicited documentation** - Only create docs when explicitly requested
-- **Follow existing patterns** - Match the codebase style and conventions
-- **Test before completion** - Ensure all changes work correctly
+When Claude Code works on this codebase, it should follow these principles:
 
-### Remember
+#### 1. **Precision Focus**
 
-This is a production-ready codebase with established patterns. When making changes:
+- ✅ Do exactly what is asked - nothing more, nothing less
+- ✅ Read requirements carefully before starting
+- ❌ Don't add unrequested features or improvements
+- ❌ Don't create documentation unless explicitly asked
 
-1. Study existing code first
-1. Follow established conventions
-1. Maintain consistency
-1. Preserve functionality
-1. Document only when asked
+#### 2. **Code Over Creation**
+
+- ✅ Edit existing files whenever possible
+- ✅ Study existing patterns before making changes
+- ❌ Avoid creating new files unless absolutely necessary
+- ❌ Never create README files proactively
+
+#### 3. **Quality Standards**
+
+- ✅ Run `uv run task lint` before marking complete
+- ✅ Ensure all tests pass with `uv run task test`
+- ✅ Follow the existing code style exactly
+- ✅ Preserve all existing functionality
+
+#### 4. **Context Awareness**
+
+- ✅ Work from the project root directory
+- ✅ Use task commands instead of direct execution
+- ✅ Respect the monorepo workspace structure
+- ✅ Maintain consistency across services
+
+### 🏁 Completion Checklist
+
+Before marking any task complete:
+
+- [ ] All requested changes implemented
+- [ ] No additional unrequested changes
+- [ ] `uv run task lint` passes
+- [ ] `uv run task test` passes (if code was modified)
+- [ ] Existing functionality preserved
+- [ ] Code follows established patterns
+
+### 💡 Claude Code Tips
+
+1. **Use Task Commands**: Prefer `uv run task <command>` over direct execution
+1. **Check Existing Code**: Always examine similar code before implementing
+1. **Ask When Uncertain**: Request clarification rather than making assumptions
+1. **Test Incrementally**: Run tests after each significant change
+1. **Respect Conventions**: Follow logging patterns, error handling, and code structure
+
+### 📝 Example Patterns to Follow
+
+```python
+# Logging pattern - ALWAYS use emoji + space
+logger.info("🚀 Starting service...")
+logger.error("❌ Connection failed")
+
+# Error handling pattern
+try:
+    result = await operation()
+except Exception as e:
+    logger.error(f"❌ Operation failed: {e}")
+    raise
+
+
+# Type hints - ALWAYS include
+def process_data(items: list[dict[str, Any]]) -> dict[str, int]:
+    pass
+```
 
 ______________________________________________________________________
 
 <div align="center">
 
-**Happy Coding! 🚀**
+**🤖 This guide helps Claude Code provide better assistance**
 
-For questions or issues, refer to the [README.md](README.md) or individual service documentation.
+Remember: This is a production codebase. Quality > Speed. Precision > Creativity.
 
 </div>

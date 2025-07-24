@@ -1,6 +1,8 @@
-# discogsography
+# 🎵 Discogsography
 
-![discogsography](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml/badge.svg)
+<div align="center">
+
+![Build Status](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml/badge.svg)
 ![License: MIT](https://img.shields.io/github/license/SimplicityGuy/discogsography)
 ![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)
 [![uv](https://img.shields.io/badge/uv-package%20manager-orange?logo=python)](https://github.com/astral-sh/uv)
@@ -10,210 +12,253 @@
 [![Bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
 [![Docker](https://img.shields.io/badge/docker-ready-blue?logo=docker)](https://www.docker.com/)
 
-> A modern Python 3.13+ microservices system for processing [Discogs](https://www.discogs.com/) database exports into multiple storage backends.
+**A modern Python 3.13+ microservices platform for transforming the complete [Discogs](https://www.discogs.com/) music database into powerful, queryable knowledge graphs and analytics engines.**
 
-Transform the entire Discogs music database into queryable graph and relational databases. This system downloads monthly data dumps from Discogs, efficiently parses XML files, and stores the data in both Neo4j (graph database) and PostgreSQL (relational database) for different query patterns and use cases.
+[🚀 Quick Start](#-quick-start) | [📖 Documentation](#-documentation) | [🎯 Features](#-key-features) | [💬 Community](#-support--community)
 
-## Overview
+</div>
 
-Discogsography consists of five microservices that work together to process, monitor, and explore the complete Discogs database:
+## 🎯 What is Discogsography?
 
-1. **Dashboard** - Real-time monitoring dashboard with WebSocket updates for all services
-1. **Extractor** - Downloads Discogs XML dumps from S3, validates checksums, parses XML to JSON, and publishes to message queues
-1. **Graphinator** - Consumes messages and builds a graph database in Neo4j with relationships between artists, labels, releases, and masters
-1. **Tableinator** - Consumes messages and stores denormalized data in PostgreSQL for fast queries and full-text search
-1. **Discovery** - AI-powered music discovery service with semantic search, recommendations, and advanced analytics
+Discogsography transforms monthly Discogs data dumps (50GB+ compressed XML) into:
 
-### Architecture
+- **🔗 Neo4j Graph Database**: Navigate complex music industry relationships
+- **🐘 PostgreSQL Database**: High-performance queries and full-text search
+- **🤖 AI Discovery Engine**: Intelligent recommendations and analytics
+- **📊 Real-time Dashboard**: Monitor system health and processing metrics
+
+Perfect for music researchers, data scientists, developers, and music enthusiasts who want to explore the world's largest music database.
+
+## 🏛️ Architecture Overview
+
+### ⚙️ Core Services
+
+| Service | Purpose | Key Technologies |
+|---------|---------|------------------|
+| **📥 Extractor** | Downloads & processes Discogs XML dumps | `asyncio`, `orjson`, `aio-pika` |
+| **🔗 Graphinator** | Builds Neo4j knowledge graphs | `neo4j-driver`, graph algorithms |
+| **🐘 Tableinator** | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search |
+| **🎵 Discovery** | AI-powered music intelligence | `sentence-transformers`, `plotly`, `networkx` |
+| **📊 Dashboard** | Real-time system monitoring | `FastAPI`, WebSocket, reactive UI |
+
+### 📐 System Architecture
 
 ```mermaid
 graph TD
-    S3[("Discogs S3<br/>Data Dumps")]
-    EXT[["Extractor<br/>(XML → JSON)"]]
-    RMQ{{"RabbitMQ<br/>Message Queue"}}
-    NEO4J[(Neo4j<br/>Graph DB)]
-    PG[(PostgreSQL<br/>Relational DB)]
-    GRAPH[["Graphinator"]]
-    TABLE[["Tableinator"]]
-    DASH[["Dashboard<br/>(Monitoring)"]]
-    DISCO[["Discovery<br/>(AI Analytics)"]]
+    S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
+    EXT[["📥 Extractor<br/>XML → JSON<br/>Deduplication"]]
+    RMQ{{"🐰 RabbitMQ<br/>Message Broker<br/>4 Queues"}}
+    NEO4J[(🔗 Neo4j<br/>Graph Database<br/>Relationships")]
+    PG[(🐘 PostgreSQL<br/>Analytics DB<br/>Full-text Search")]
+    GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
+    TABLE[["🐘 Tableinator<br/>Table Builder"]]
+    DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
+    DISCO[["🎵 Discovery<br/>AI Engine<br/>ML Models"]]
 
-    S3 -->|Download & Parse| EXT
-    EXT -->|Publish Messages| RMQ
-    RMQ -->|Consume| GRAPH
-    RMQ -->|Consume| TABLE
-    GRAPH -->|Store| NEO4J
-    TABLE -->|Store| PG
+    S3 -->|1. Download & Parse| EXT
+    EXT -->|2. Publish Messages| RMQ
+    RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
+    RMQ -->|3b. Artists/Labels/Releases/Masters| TABLE
+    GRAPH -->|4a. Build Graph| NEO4J
+    TABLE -->|4b. Store Data| PG
 
-    DISCO -.->|Query & Analyze| NEO4J
-    DISCO -.->|Query & Analyze| PG
-    DISCO -.->|AI Processing| DISCO
+    DISCO -.->|Query| NEO4J
+    DISCO -.->|Query| PG
+    DISCO -.->|Analyze| DISCO
 
     DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
     DASH -.->|Monitor| DISCO
-    DASH -.->|Query Stats| RMQ
-    DASH -.->|Query Stats| NEO4J
-    DASH -.->|Query Stats| PG
+    DASH -.->|Stats| RMQ
+    DASH -.->|Stats| NEO4J
+    DASH -.->|Stats| PG
 
-    style S3 fill:#e1f5fe
-    style RMQ fill:#fff3e0
-    style NEO4J fill:#f3e5f5
-    style PG fill:#e8f5e9
-    style DASH fill:#fce4ec
-    style DISCO fill:#e3f2fd
+    style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style DISCO fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
 ```
 
-### Key Features
+## 🌟 Key Features
 
-- 🔄 **Automatic Updates**: Periodic checking for new Discogs data releases (configurable interval, default 15 days)
-- ⚡ **Efficient Processing**: Hash-based deduplication to avoid reprocessing unchanged records
-- 🚀 **High Performance**: Multi-threaded XML parsing and concurrent message processing
-- 🛡️ **Fault Tolerance**: Message acknowledgment, automatic retries, and graceful shutdown
-- 📊 **Progress Tracking**: Real-time progress monitoring with detailed statistics
-- 🐋 **Production-Ready Docker**: Full Docker Compose setup with security hardening
-- 🔒 **Type Safety**: Comprehensive type hints and strict mypy validation
-- 🔐 **Security First**: Bandit scanning, secure coding practices, and container hardening
+### 🚀 Performance & Scale
 
-### Documentation
+- **⚡ High-Speed Processing**: 5,000-10,000 records/second XML parsing
+- **🔄 Smart Deduplication**: SHA256 hash-based change detection prevents reprocessing
+- **📈 Handles Big Data**: Processes 15M+ releases, 2M+ artists efficiently
+- **🎯 Concurrent Processing**: Multi-threaded parsing with async message handling
 
-- 📖 **[CLAUDE.md](CLAUDE.md)** - Detailed technical documentation for development
-- 🤖 **[Task Automation](docs/task-automation.md)** - Taskipy commands and workflows
-- 🔒 **[Docker Security](docs/docker-security.md)** - Container security best practices
-- 🏗️ **[Dockerfile Standards](docs/dockerfile-standards.md)** - Dockerfile implementation standards
+### 🛡️ Reliability & Operations
+
+- **🔁 Auto-Recovery**: Automatic retries with exponential backoff
+- **💾 Message Durability**: RabbitMQ persistence with dead letter queues
+- **🏥 Health Monitoring**: HTTP health checks for all services
+- **📊 Real-time Metrics**: WebSocket dashboard with live updates
+
+### 🔒 Security & Quality
+
+- **🐋 Container Security**: Non-root users, read-only filesystems, dropped capabilities
+- **🔐 Code Security**: Bandit scanning, secure defaults, parameterized queries
+- **📝 Type Safety**: Full type hints with strict mypy validation
+- **✅ Comprehensive Testing**: Unit, integration, and E2E tests with Playwright
+
+### 🤖 AI & Analytics
+
+- **🧠 ML-Powered Discovery**: Semantic search using sentence transformers
+- **📊 Industry Analytics**: Genre trends, label insights, market analysis
+- **🔍 Graph Algorithms**: PageRank, community detection, path finding
+- **🎨 Interactive Visualizations**: Plotly charts, vis.js network graphs
+
+## 📖 Documentation
+
+| Document | Purpose |
+|----------|---------|
+| **[CLAUDE.md](CLAUDE.md)** | 🤖 Claude Code integration guide & development standards |
+| **[Task Automation](docs/task-automation.md)** | 🚀 Complete taskipy command reference |
+| **[Docker Security](docs/docker-security.md)** | 🔒 Container hardening & security practices |
+| **[Dockerfile Standards](docs/dockerfile-standards.md)** | 🏗️ Best practices for writing Dockerfiles |
+| **Service Guides** | 📚 Individual README for each service |
 
 ## 🚀 Quick Start
 
-### Prerequisites
+### ✅ Prerequisites
 
-- **Python**: 3.13+ ([Install with uv](https://github.com/astral-sh/uv))
-- **Docker**: Docker Desktop or Docker Engine with Compose
-- **Storage**: ~100GB free disk space for Discogs data
-- **Memory**: 8GB+ RAM recommended
-- **Network**: Stable internet for initial download (~50GB)
+| Requirement | Minimum | Recommended | Notes |
+|-------------|---------|-------------|--------|
+| **Python** | 3.13+ | Latest | Install via [uv](https://github.com/astral-sh/uv) |
+| **Docker** | 20.10+ | Latest | With Docker Compose v2 |
+| **Storage** | 100GB | 200GB SSD | For data + processing |
+| **Memory** | 8GB | 16GB+ | More RAM = faster processing |
+| **Network** | 10 Mbps | 100 Mbps+ | Initial download ~50GB |
 
-### Using Docker Compose (Recommended)
+### 🐳 Using Docker Compose (Recommended)
 
-1. Clone the repository:
+```bash
+# 1. Clone and navigate to the repository
+git clone https://github.com/SimplicityGuy/discogsography.git
+cd discogsography
 
-   ```bash
-   git clone https://github.com/SimplicityGuy/discogsography.git
-   cd discogsography
-   ```
+# 2. Copy environment template (optional - has sensible defaults)
+cp .env.example .env
 
-1. Start all services:
+# 3. Start all services
+docker-compose up -d
 
-   ```bash
-   docker-compose up -d
-   ```
+# 4. Watch the magic happen!
+docker-compose logs -f
 
-1. Monitor the logs:
+# 5. Access the dashboard
+open http://localhost:8003
+```
 
-   ```bash
-   docker-compose logs -f extractor
-   ```
+### 🌐 Service Access
 
-1. Access the services:
+| Service | URL | Default Credentials | Purpose |
+|---------|-----|---------------------|---------|
+| 📊 **Dashboard** | http://localhost:8003 | None | System monitoring |
+| 🎵 **Discovery** | http://localhost:8005 | None | AI music discovery |
+| 🐰 **RabbitMQ** | http://localhost:15672 | `discogsography` / `discogsography` | Queue management |
+| 🔗 **Neo4j** | http://localhost:7474 | `neo4j` / `discogsography` | Graph exploration |
+| 🐘 **PostgreSQL** | `localhost:5433` | `discogsography` / `discogsography` | Database access |
 
-   | Service | URL/Connection | Credentials |
-   |---------|----------------|-------------|
-   | 📊 **Dashboard** | http://localhost:8003 | No auth required |
-   | 🎵 **Discovery** | http://localhost:8005 | No auth required |
-   | 🐰 **RabbitMQ** | http://localhost:15672 | discogsography / discogsography |
-   | 🔗 **Neo4j Browser** | http://localhost:7474 | neo4j / discogsography |
-   | 🐘 **PostgreSQL** | localhost:5433 | discogsography / discogsography |
+### 💻 Local Development
 
-### Local Development
+#### Quick Setup
 
-1. Install [uv](https://github.com/astral-sh/uv) package manager:
+```bash
+# 1. Install uv (10-100x faster than pip)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-   ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
+# 2. Install all dependencies
+uv sync --all-extras
 
-1. Install dependencies:
+# 3. Set up pre-commit hooks
+uv run task init
 
-   ```bash
-   uv sync --all-extras
-   ```
+# 4. Run any service
+uv run task dashboard    # Monitoring UI
+uv run task discovery    # AI discovery
+uv run task extractor    # Data ingestion
+uv run task graphinator  # Neo4j builder
+uv run task tableinator  # PostgreSQL builder
+```
 
-1. Set up pre-commit hooks:
+#### Environment Setup
 
-   ```bash
-   uv run pre-commit install
-   ```
+Create a `.env` file or export variables:
 
-1. Set environment variables:
+```bash
+# Core connections
+export AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
 
-   ```bash
-   export AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
-   export NEO4J_ADDRESS="bolt://localhost:7687"
-   export NEO4J_USERNAME="neo4j"
-   export NEO4J_PASSWORD="password"
-   export POSTGRES_ADDRESS="localhost:5433"
-   export POSTGRES_USERNAME="postgres"
-   export POSTGRES_PASSWORD="password"
-   export POSTGRES_DATABASE="discogsography"
-   ```
+# Neo4j settings
+export NEO4J_ADDRESS="bolt://localhost:7687"
+export NEO4J_USERNAME="neo4j"
+export NEO4J_PASSWORD="password"
 
-1. Run services:
-
-   ```bash
-   # Terminal 1 - Dashboard
-   uv run python dashboard/dashboard.py
-
-   # Terminal 2 - Extractor
-   uv run python extractor/extractor.py
-
-   # Terminal 3 - Graphinator
-   uv run python graphinator/graphinator.py
-
-   # Terminal 4 - Tableinator
-   uv run python tableinator/tableinator.py
-   ```
+# PostgreSQL settings
+export POSTGRES_ADDRESS="localhost:5433"
+export POSTGRES_USERNAME="postgres"
+export POSTGRES_PASSWORD="password"
+export POSTGRES_DATABASE="discogsography"
+```
 
 ## ⚙️ Configuration
 
-### Environment Variables
+### 🔧 Environment Variables
 
-All services are configured via environment variables. Copy `.env.example` to `.env` and customize as needed:
+All configuration is managed through environment variables. Copy `.env.example` to `.env`:
 
-| Variable | Description | Default | Service |
+```bash
+cp .env.example .env
+```
+
+#### Core Settings
+
+| Variable | Description | Default | Used By |
 |----------|-------------|---------|---------|
-| `AMQP_CONNECTION` | RabbitMQ connection string | Required | All |
-| `DISCOGS_ROOT` | Path for downloaded files | `/discogs-data` | Extractor |
-| `PERIODIC_CHECK_DAYS` | Days between update checks | `15` | Extractor |
-| `NEO4J_ADDRESS` | Neo4j bolt address | Required | Dashboard, Graphinator |
-| `NEO4J_USERNAME` | Neo4j username | Required | Dashboard, Graphinator |
-| `NEO4J_PASSWORD` | Neo4j password | Required | Dashboard, Graphinator |
-| `POSTGRES_ADDRESS` | PostgreSQL host:port | Required | Dashboard, Tableinator |
-| `POSTGRES_USERNAME` | PostgreSQL username | Required | Dashboard, Tableinator |
-| `POSTGRES_PASSWORD` | PostgreSQL password | Required | Dashboard, Tableinator |
-| `POSTGRES_DATABASE` | PostgreSQL database | Required | Dashboard, Tableinator |
+| `AMQP_CONNECTION` | RabbitMQ URL | `amqp://guest:guest@localhost:5672/` | All services |
+| `DISCOGS_ROOT` | Data storage path | `/discogs-data` | Extractor |
+| `PERIODIC_CHECK_DAYS` | Update check interval | `15` | Extractor |
+| `PYTHON_VERSION` | Python version for builds | `3.13` | Docker, CI/CD |
 
-### 💿 Data Volume
+#### Database Connections
 
-The complete Discogs dataset includes:
+| Variable | Description | Default | Used By |
+|----------|-------------|---------|---------|
+| `NEO4J_ADDRESS` | Neo4j bolt URL | `bolt://localhost:7687` | Graphinator, Dashboard, Discovery |
+| `NEO4J_USERNAME` | Neo4j username | `neo4j` | Graphinator, Dashboard, Discovery |
+| `NEO4J_PASSWORD` | Neo4j password | Required | Graphinator, Dashboard, Discovery |
+| `POSTGRES_ADDRESS` | PostgreSQL host:port | `localhost:5432` | Tableinator, Dashboard, Discovery |
+| `POSTGRES_USERNAME` | PostgreSQL username | `postgres` | Tableinator, Dashboard, Discovery |
+| `POSTGRES_PASSWORD` | PostgreSQL password | Required | Tableinator, Dashboard, Discovery |
+| `POSTGRES_DATABASE` | Database name | `discogsography` | Tableinator, Dashboard, Discovery |
 
-| Data Type | Count | Storage |
-|-----------|-------|---------|
-| 📀 Releases | ~15 million | ~40GB |
-| 🎤 Artists | ~2 million | ~5GB |
-| 🎵 Masters | ~2 million | ~3GB |
-| 🏢 Labels | ~1.5 million | ~2GB |
+### 💿 Dataset Scale
 
-**Total Requirements:**
+<div align="center">
 
-- 📥 **Download**: ~50GB compressed XML files
-- 💾 **Storage**: ~100GB for extracted data
-- ⏱️ **Processing**: 2-6 hours (varies by hardware)
+| Data Type | Record Count | XML Size | Processing Time |
+|:---------:|:------------:|:--------:|:---------------:|
+| 📀 **Releases** | ~15 million | ~40GB | 1-3 hours |
+| 🎤 **Artists** | ~2 million | ~5GB | 15-30 mins |
+| 🎵 **Masters** | ~2 million | ~3GB | 10-20 mins |
+| 🏢 **Labels** | ~1.5 million | ~2GB | 10-15 mins |
 
-## 📊 Usage Examples
+**📊 Total: ~20 million records • 50GB compressed • 100GB processed**
+
+</div>
+
+## 💡 Usage Examples
+
+Once your data is loaded, explore the music universe through powerful queries and AI-driven insights.
 
 ### 🔗 Neo4j Graph Queries
 
-Explore complex relationships in the music industry:
+Navigate the interconnected world of music with Cypher queries:
 
 #### Find all albums by an artist
 
