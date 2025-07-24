@@ -281,7 +281,7 @@ class TestMain:
 
             with patch("asyncio.create_task", return_value=mock_task):
                 # Make the main loop exit after setup
-                async def mock_wait_for(_coro: Any, _timeout: float) -> None:
+                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
                     # First call times out, second call sets shutdown_requested
                     import graphinator.graphinator
 

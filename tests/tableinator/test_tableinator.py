@@ -218,7 +218,7 @@ class TestMain:
         # Simulate shutdown by setting shutdown_requested
         with patch("tableinator.tableinator.shutdown_requested", False):
             # Make the main loop exit after setup
-            async def mock_wait_for(_coro: Any, _timeout: float) -> None:
+            async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
                 # Set shutdown_requested to exit the loop
                 import tableinator.tableinator
 
@@ -414,7 +414,7 @@ class TestMain:
         # Simulate shutdown by setting shutdown_requested
         with patch("tableinator.tableinator.shutdown_requested", False):
             # Make the main loop exit after setup
-            async def mock_wait_for(_coro: Any, _timeout: float) -> None:
+            async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
                 # Set shutdown_requested to exit the loop
                 import tableinator.tableinator
 
