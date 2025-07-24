@@ -22,14 +22,9 @@ from neo4j import AsyncGraphDatabase
 from prometheus_client import Counter, Gauge, generate_latest
 from pydantic import BaseModel
 
-from common import get_config
+from common import get_config, setup_logging
 
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 # Metrics
@@ -391,6 +386,21 @@ dashboard: DashboardApp | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifecycle."""
+    # Print ASCII art banner
+    print("        ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·           ")
+    print("        ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.           ")
+    print("        ▐█· ▐█▌▐█·▄▀▀▀█▄██ ▄▄ ▄█▀▄ ▄█ ▀█▄▄▀▀▀█▄          ")
+    print("        ██. ██ ▐█▌▐█▄▪▐█▐███▌▐█▌.▐▌▐█▄▪▐█▐█▄▪▐█          ")
+    print("        ▀▀▀▀▀• ▀▀▀ ▀▀▀▀ ·▀▀▀  ▀█▄▀▪·▀▀▀▀  ▀▀▀▀           ")
+    print("·▄▄▄▄   ▄▄▄· .▄▄ ·  ▄ .▄▄▄▄▄▄       ▄▄▄·  ▄▄▄  ·▄▄▄▄      ")
+    print("██▪ ██ ▐█ ▀█ ▐█ ▀. ██▪▐█▐█ ▀█▪▪     ▐█ ▀█ ▀▄ █·██▪ ██     ")
+    print("▐█· ▐█▌▄█▀▀█ ▄▀▀▀█▄██▀▐█▐█▀▀█▄ ▄█▀▄ ▄█▀▀█ ▐▀▀▄ ▐█· ▐█▌    ")
+    print("██. ██ ▐█ ▪▐▌▐█▄▪▐███▌▐▀██▄▪▐█▐█▌.▐▌▐█ ▪▐▌▐█•█▌██. ██     ")
+    print("▀▀▀▀▀•  ▀  ▀  ▀▀▀▀ ▀▀▀ ·▀▀▀▀▀  ▀█▄▀▪ ▀  ▀ .▀  ▀▀▀▀▀▀•     ")
+    print()
+
+    logger.info("🚀 Starting Dashboard service...")
+
     global dashboard
     dashboard = DashboardApp()
     await dashboard.startup()
@@ -521,6 +531,9 @@ app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Set up logging
+    setup_logging("dashboard", log_file=Path("/logs/dashboard.log"))
 
     uvicorn.run(
         "dashboard.dashboard:app",

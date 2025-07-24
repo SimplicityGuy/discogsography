@@ -46,7 +46,7 @@ class MusicAnalytics:
 
     async def initialize(self) -> None:
         """Initialize analytics engine with database connections."""
-        logger.info("📊 Initializing Music Industry Analytics Engine...")
+        logger.info("📊 Initializing analytics engine...")
 
         # Initialize Neo4j connection
         self.neo4j_driver = AsyncGraphDatabase.driver(

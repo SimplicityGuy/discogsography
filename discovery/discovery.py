@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from common import get_config
+from common import get_config, setup_logging
 from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
@@ -29,17 +29,26 @@ from discovery.recommender import (
 )
 
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifespan."""
+    # Print ASCII art banner
+    print("        ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·           ")
+    print("        ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.           ")
+    print("        ▐█· ▐█▌▐█·▄▀▀▀█▄██ ▄▄ ▄█▀▄ ▄█ ▀█▄▄▀▀▀█▄          ")
+    print("        ██. ██ ▐█▌▐█▄▪▐█▐███▌▐█▌.▐▌▐█▄▪▐█▐█▄▪▐█          ")
+    print("        ▀▀▀▀▀• ▀▀▀ ▀▀▀▀ ·▀▀▀  ▀█▄▀▪·▀▀▀▀  ▀▀▀▀           ")
+    print("·▄▄▄▄  ▪ .▄▄ ·  ▄▄·       ▐█▀ █▒▄▄▄▄  ▄• ▄▄ ")
+    print("██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█· █▒▀▄ █·▐█▐▀▀▄")
+    print("▐█· ▐█▌▐█·▄▀▀▀█▄██ ▄▄ ▄█▀▄ ██. █░▐▀▀▄ ██▐█ ▄▄")
+    print("██. ██ ▐█▌▐█▄▪▐█▐███▌▐█▌.▐▌██▌█▲▐█•█▌██▐█▄▀▼")
+    print("▀▀▀▀▀• ▀▀▀ ▀▀▀▀ ·▀▀▀  ▀█▄▀▪██▌▀▓.▀  ▀██▌▀██·")
+    print("                                                   ")
+    print()
+
     logger.info("🚀 Starting Discovery service...")
 
     # Initialize all engines
@@ -225,6 +234,9 @@ def get_health_data() -> dict[str, Any]:
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Set up logging
+    setup_logging("discovery", log_file=Path("/logs/discovery.log"))
 
     # Start health server in background
     from common import HealthServer

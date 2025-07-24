@@ -57,7 +57,7 @@ class MusicRecommender:
 
     async def initialize(self) -> None:
         """Initialize the recommender with ML models and graph data."""
-        logger.info("🤖 Initializing AI-Powered Music Discovery Engine...")
+        logger.info("🤖 Initializing recommender engine...")
 
         # Initialize Neo4j connection
         self.driver = AsyncGraphDatabase.driver(

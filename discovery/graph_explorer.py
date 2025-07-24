@@ -82,7 +82,7 @@ class MusicGraphExplorer:
 
     async def initialize(self) -> None:
         """Initialize the graph explorer."""
-        logger.info("🔍 Initializing Music Knowledge Graph Explorer...")
+        logger.info("🔍 Initializing graph explorer engine...")
 
         self.driver = AsyncGraphDatabase.driver(
             self.config.neo4j_address, auth=(self.config.neo4j_username, self.config.neo4j_password)
