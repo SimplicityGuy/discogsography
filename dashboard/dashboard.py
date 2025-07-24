@@ -22,21 +22,14 @@ from neo4j import AsyncGraphDatabase
 from prometheus_client import Counter, Gauge, generate_latest
 from pydantic import BaseModel
 
-from common import get_config
+from common import get_config, setup_logging
 
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 # Metrics
 try:
-    WEBSOCKET_CONNECTIONS = Gauge(
-        "dashboard_websocket_connections", "Number of active WebSocket connections"
-    )
+    WEBSOCKET_CONNECTIONS = Gauge("dashboard_websocket_connections", "Number of active WebSocket connections")
 except ValueError:
     # Metric already registered (happens during reload)
     from prometheus_client import REGISTRY
@@ -262,12 +255,8 @@ class DashboardApp:
                                     messages_ready=queue.get("messages_ready", 0),
                                     messages_unacknowledged=queue.get("messages_unacknowledged", 0),
                                     consumers=queue.get("consumers", 0),
-                                    message_rate=queue.get("message_stats", {})
-                                    .get("publish_details", {})
-                                    .get("rate", 0.0),
-                                    ack_rate=queue.get("message_stats", {})
-                                    .get("ack_details", {})
-                                    .get("rate", 0.0),
+                                    message_rate=queue.get("message_stats", {}).get("publish_details", {}).get("rate", 0.0),
+                                    ack_rate=queue.get("message_stats", {}).get("ack_details", {}).get("rate", 0.0),
                                 )
                             )
 
@@ -391,6 +380,25 @@ dashboard: DashboardApp | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifecycle."""
+    # fmt: off
+    print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗                      ")
+    print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝                      ")
+    print("██║  ██║██║███████╗██║     ██║   ██║██║  ███╗███████╗                      ")
+    print("██║  ██║██║╚════██║██║     ██║   ██║██║   ██║╚════██║                      ")
+    print("██████╔╝██║███████║╚██████╗╚██████╔╝╚██████╔╝███████║                      ")
+    print("╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝                      ")
+    print("                                                                           ")
+    print("██████╗  █████╗ ███████╗██╗  ██╗██████╗  ██████╗  █████╗ ██████╗ ██████╗   ")
+    print("██╔══██╗██╔══██╗██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔══██╗██╔══██╗██╔══██╗  ")
+    print("██║  ██║███████║███████╗███████║██████╔╝██║   ██║███████║██████╔╝██║  ██║  ")
+    print("██║  ██║██╔══██║╚════██║██╔══██║██╔══██╗██║   ██║██╔══██║██╔══██╗██║  ██║  ")
+    print("██████╔╝██║  ██║███████║██║  ██║██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝  ")
+    print("╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝   ")
+    print()
+    # fmt: on
+
+    logger.info("🚀 Starting Dashboard service...")
+
     global dashboard
     dashboard = DashboardApp()
     await dashboard.startup()
@@ -521,6 +529,9 @@ app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Set up logging
+    setup_logging("dashboard", log_file=Path("/logs/dashboard.log"))
 
     uvicorn.run(
         "dashboard.dashboard:app",

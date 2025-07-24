@@ -87,9 +87,7 @@ class TestOnArtistMessage:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
     @patch("graphinator.graphinator.graph", None)
-    async def test_process_new_artist(
-        self, sample_artist_data: dict[str, Any], mock_neo4j_driver: MagicMock
-    ) -> None:
+    async def test_process_new_artist(self, sample_artist_data: dict[str, Any], mock_neo4j_driver: MagicMock) -> None:
         """Test processing a new artist message."""
         # Create mock message
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -119,9 +117,7 @@ class TestOnArtistMessage:
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
-    async def test_skip_unchanged_artist(
-        self, sample_artist_data: dict[str, Any], mock_neo4j_driver: MagicMock
-    ) -> None:
+    async def test_skip_unchanged_artist(self, sample_artist_data: dict[str, Any], mock_neo4j_driver: MagicMock) -> None:
         """Test skipping artist with unchanged hash."""
         # Create mock message
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -181,9 +177,7 @@ class TestOnLabelMessage:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
     @patch("graphinator.graphinator.graph", None)
-    async def test_process_label_with_parent(
-        self, sample_label_data: dict[str, Any], mock_neo4j_driver: MagicMock
-    ) -> None:
+    async def test_process_label_with_parent(self, sample_label_data: dict[str, Any], mock_neo4j_driver: MagicMock) -> None:
         """Test processing label with parent relationship."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_label_data).encode()
@@ -205,9 +199,7 @@ class TestOnMasterMessage:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
     @patch("graphinator.graphinator.graph", None)
-    async def test_process_master_with_genres_styles(
-        self, sample_master_data: dict[str, Any], mock_neo4j_driver: MagicMock
-    ) -> None:
+    async def test_process_master_with_genres_styles(self, sample_master_data: dict[str, Any], mock_neo4j_driver: MagicMock) -> None:
         """Test processing master with genres and styles."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_master_data).encode()
@@ -229,9 +221,7 @@ class TestOnReleaseMessage:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
     @patch("graphinator.graphinator.graph", None)
-    async def test_process_release_with_all_relationships(
-        self, sample_release_data: dict[str, Any], mock_neo4j_driver: MagicMock
-    ) -> None:
+    async def test_process_release_with_all_relationships(self, sample_release_data: dict[str, Any], mock_neo4j_driver: MagicMock) -> None:
         """Test processing release with all relationships."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_release_data).encode()

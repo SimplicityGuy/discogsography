@@ -9,7 +9,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from common import get_config
+from common import get_config, setup_logging
 from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
@@ -29,17 +29,29 @@ from discovery.recommender import (
 )
 
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifespan."""
+    # fmt: off
+    print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗                      ")
+    print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝                      ")
+    print("██║  ██║██║███████╗██║     ██║   ██║██║  ███╗███████╗                      ")
+    print("██║  ██║██║╚════██║██║     ██║   ██║██║   ██║╚════██║                      ")
+    print("██████╔╝██║███████║╚██████╗╚██████╔╝╚██████╔╝███████║                      ")
+    print("╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝                      ")
+    print("                                                                           ")
+    print("██████╗ ██╗███████╗ ██████╗ ██████╗ ██╗   ██╗███████╗██████╗ ██╗   ██╗     ")
+    print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██║   ██║██╔════╝██╔══██╗╚██╗ ██╔╝     ")
+    print("██║  ██║██║███████╗██║     ██║   ██║██║   ██║█████╗  ██████╔╝ ╚████╔╝      ")
+    print("██║  ██║██║╚════██║██║     ██║   ██║╚██╗ ██╔╝██╔══╝  ██╔══██╗  ╚██╔╝       ")
+    print("██████╔╝██║███████║╚██████╗╚██████╔╝ ╚████╔╝ ███████╗██║  ██║   ██║        ")
+    print("╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝   ╚═══╝  ╚══════╝╚═╝  ╚═╝   ╚═╝        ")
+    print()
+    # fmt: on
+
     logger.info("🚀 Starting Discovery service...")
 
     # Initialize all engines
@@ -202,9 +214,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             data = await websocket.receive_text()
 
             # Echo back for now - could handle specific commands
-            await websocket.send_json(
-                {"type": "echo", "message": data, "timestamp": datetime.now().isoformat()}
-            )
+            await websocket.send_json({"type": "echo", "message": data, "timestamp": datetime.now().isoformat()})
     except WebSocketDisconnect:
         discovery_app.disconnect_websocket(websocket)
 
@@ -225,6 +235,9 @@ def get_health_data() -> dict[str, Any]:
 
 if __name__ == "__main__":
     import uvicorn
+
+    # Set up logging
+    setup_logging("discovery", log_file=Path("/logs/discovery.log"))
 
     # Start health server in background
     from common import HealthServer

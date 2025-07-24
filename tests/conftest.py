@@ -84,9 +84,7 @@ def sample_artist_data() -> dict[str, Any]:
         "id": "123456",
         "name": "Test Artist",
         "sha256": "abc123def456",
-        "members": {
-            "name": [{"@id": "234567", "#text": "Member 1"}, {"@id": "345678", "#text": "Member 2"}]
-        },
+        "members": {"name": [{"@id": "234567", "#text": "Member 1"}, {"@id": "345678", "#text": "Member 2"}]},
         "aliases": {"name": [{"@id": "456789", "#text": "Alias 1"}]},
     }
 

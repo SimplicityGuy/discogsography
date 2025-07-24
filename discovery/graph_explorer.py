@@ -82,17 +82,13 @@ class MusicGraphExplorer:
 
     async def initialize(self) -> None:
         """Initialize the graph explorer."""
-        logger.info("🔍 Initializing Music Knowledge Graph Explorer...")
+        logger.info("🔍 Initializing graph explorer engine...")
 
-        self.driver = AsyncGraphDatabase.driver(
-            self.config.neo4j_address, auth=(self.config.neo4j_username, self.config.neo4j_password)
-        )
+        self.driver = AsyncGraphDatabase.driver(self.config.neo4j_address, auth=(self.config.neo4j_username, self.config.neo4j_password))
 
         logger.info("✅ Music Knowledge Graph Explorer initialized")
 
-    async def search_nodes(
-        self, search_term: str, node_types: list[str] | None = None, limit: int = 20
-    ) -> GraphData:
+    async def search_nodes(self, search_term: str, node_types: list[str] | None = None, limit: int = 20) -> GraphData:
         """Search for nodes by name/title."""
         logger.info(f"🔍 Searching for nodes: {search_term}")
 
@@ -208,9 +204,7 @@ class MusicGraphExplorer:
 
                 connected_label = connected_labels[0] if connected_labels else "Unknown"
                 connected_props = dict(connected.items())
-                connected_name = connected_props.get("name") or connected_props.get(
-                    "title", "Unknown"
-                )
+                connected_name = connected_props.get("name") or connected_props.get("title", "Unknown")
                 connected_id = str(connected.element_id)
 
                 # Add connected node if not already added
@@ -251,9 +245,7 @@ class MusicGraphExplorer:
             },
         )
 
-    async def find_path(
-        self, source_node: str, target_node: str, _max_depth: int = 4
-    ) -> tuple[GraphData, PathResult]:
+    async def find_path(self, source_node: str, target_node: str, _max_depth: int = 4) -> tuple[GraphData, PathResult]:
         """Find shortest paths between two nodes."""
         logger.info(f"🛤️ Finding path from {source_node} to {target_node}")
 
@@ -319,9 +311,7 @@ class MusicGraphExplorer:
             if not paths:
                 return (
                     GraphData(nodes=[], edges=[], metadata={"error": "No path found"}),
-                    PathResult(
-                        path=[], path_length=0, total_paths=0, explanation="No connection found"
-                    ),
+                    PathResult(path=[], path_length=0, total_paths=0, explanation="No connection found"),
                 )
 
             # Use the shortest path for visualization
@@ -385,9 +375,7 @@ class MusicGraphExplorer:
                 if neighbor_id not in nodes:
                     neighbor_label = neighbor_labels[0] if neighbor_labels else "Unknown"
                     neighbor_props = dict(neighbor.items())
-                    neighbor_name = neighbor_props.get("name") or neighbor_props.get(
-                        "title", "Unknown"
-                    )
+                    neighbor_name = neighbor_props.get("name") or neighbor_props.get("title", "Unknown")
 
                     nodes[neighbor_id] = GraphNode(
                         id=neighbor_id,
@@ -412,9 +400,7 @@ class MusicGraphExplorer:
                     if connected_id not in nodes:
                         connected_label = connected_labels[0] if connected_labels else "Unknown"
                         connected_props = dict(connected.items())
-                        connected_name = connected_props.get("name") or connected_props.get(
-                            "title", "Unknown"
-                        )
+                        connected_name = connected_props.get("name") or connected_props.get("title", "Unknown")
 
                         nodes[connected_id] = GraphNode(
                             id=connected_id,
@@ -543,21 +529,13 @@ async def explore_graph(query: GraphQuery) -> tuple[GraphData, PathResult | None
     path_result = None
 
     if query.query_type == "search" and query.search_term:
-        graph_data = await graph_explorer_instance.search_nodes(
-            query.search_term, query.node_types, query.limit
-        )
+        graph_data = await graph_explorer_instance.search_nodes(query.search_term, query.node_types, query.limit)
     elif query.query_type == "expand" and query.node_id:
-        graph_data = await graph_explorer_instance.expand_node(
-            query.node_id, query.max_depth, query.limit
-        )
+        graph_data = await graph_explorer_instance.expand_node(query.node_id, query.max_depth, query.limit)
     elif query.query_type == "path" and query.source_node and query.target_node:
-        graph_data, path_result = await graph_explorer_instance.find_path(
-            query.source_node, query.target_node, query.max_depth
-        )
+        graph_data, path_result = await graph_explorer_instance.find_path(query.source_node, query.target_node, query.max_depth)
     elif query.query_type == "neighborhood" and query.node_id:
-        graph_data = await graph_explorer_instance.get_neighborhood(
-            query.node_id, query.max_depth, query.limit
-        )
+        graph_data = await graph_explorer_instance.get_neighborhood(query.node_id, query.max_depth, query.limit)
     elif query.query_type == "semantic" and query.search_term:
         graph_data = await graph_explorer_instance.semantic_search(query.search_term, query.limit)
     else:

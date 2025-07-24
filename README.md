@@ -14,7 +14,7 @@
 
 **A modern Python 3.13+ microservices platform for transforming the complete [Discogs](https://www.discogs.com/) music database into powerful, queryable knowledge graphs and analytics engines.**
 
-[🚀 Quick Start](#-quick-start) | [📖 Documentation](#-documentation) | [🎯 Features](#-key-features) | [💬 Community](#-support--community)
+[🚀 Quick Start](#-quick-start) | [📖 Documentation](#-documentation) | [🎯 Features](#-key-features) | [💬 Community](#-support--community) | [📋 Emoji Guide](docs/emoji-guide.md)
 
 </div>
 
@@ -35,11 +35,11 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 | Service | Purpose | Key Technologies |
 |---------|---------|------------------|
-| **📥 Extractor** | Downloads & processes Discogs XML dumps | `asyncio`, `orjson`, `aio-pika` |
-| **🔗 Graphinator** | Builds Neo4j knowledge graphs | `neo4j-driver`, graph algorithms |
-| **🐘 Tableinator** | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search |
-| **🎵 Discovery** | AI-powered music intelligence | `sentence-transformers`, `plotly`, `networkx` |
-| **📊 Dashboard** | Real-time system monitoring | `FastAPI`, WebSocket, reactive UI |
+| **[📥](docs/emoji-guide.md#service-identifiers) Extractor** | Downloads & processes Discogs XML dumps | `asyncio`, `orjson`, `aio-pika` |
+| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs | `neo4j-driver`, graph algorithms |
+| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search |
+| **[🎵](docs/emoji-guide.md#service-identifiers) Discovery** | AI-powered music intelligence | `sentence-transformers`, `plotly`, `networkx` |
+| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard** | Real-time system monitoring | `FastAPI`, WebSocket, reactive UI |
 
 ### 📐 System Architecture
 
@@ -243,9 +243,9 @@ cp .env.example .env
 
 | Data Type | Record Count | XML Size | Processing Time |
 |:---------:|:------------:|:--------:|:---------------:|
-| 📀 **Releases** | ~15 million | ~40GB | 1-3 hours |
-| 🎤 **Artists** | ~2 million | ~5GB | 15-30 mins |
-| 🎵 **Masters** | ~2 million | ~3GB | 10-20 mins |
+| [📀](docs/emoji-guide.md#music-domain) **Releases** | ~15 million | ~40GB | 1-3 hours |
+| [🎤](docs/emoji-guide.md#music-domain) **Artists** | ~2 million | ~5GB | 15-30 mins |
+| [🎵](docs/emoji-guide.md#music-domain) **Masters** | ~2 million | ~3GB | 10-20 mins |
 | 🏢 **Labels** | ~1.5 million | ~2GB | 10-15 mins |
 
 **📊 Total: ~20 million records • 50GB compressed • 100GB processed**
