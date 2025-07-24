@@ -54,9 +54,7 @@ class TestMusicAnalytics:
         ]
 
         # Use the existing mock_result from conftest and configure it properly
-        mock_result = (
-            mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
-        )
+        mock_result = mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
         mock_result.__aiter__.return_value = iter(mock_records)
 
         result = await analytics.analyze_genre_trends((1990, 2000))
@@ -67,14 +65,10 @@ class TestMusicAnalytics:
         assert len(result.insights) > 0
 
     @pytest.mark.asyncio
-    async def test_analyze_genre_trends_no_data(
-        self, analytics: Any, mock_neo4j_driver: Any
-    ) -> None:
+    async def test_analyze_genre_trends_no_data(self, analytics: Any, mock_neo4j_driver: Any) -> None:
         """Test genre trends analysis with no data."""
         # Use the existing mock_result from conftest and configure it for empty data
-        mock_result = (
-            mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
-        )
+        mock_result = mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
         mock_result.__aiter__.return_value = iter([])
 
         result = await analytics.analyze_genre_trends()
@@ -118,13 +112,9 @@ class TestMusicAnalytics:
         assert isinstance(result.insights, list)
 
     @pytest.mark.asyncio
-    async def test_analyze_artist_evolution_no_data(
-        self, analytics: Any, mock_neo4j_driver: Any
-    ) -> None:
+    async def test_analyze_artist_evolution_no_data(self, analytics: Any, mock_neo4j_driver: Any) -> None:
         """Test artist evolution with no data."""
-        mock_result = (
-            mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
-        )
+        mock_result = mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
         mock_result.__aiter__.return_value = iter([])
 
         result = await analytics.analyze_artist_evolution("Unknown Artist")
@@ -133,9 +123,7 @@ class TestMusicAnalytics:
         assert "No release data found" in result.insights[0]
 
     @pytest.mark.asyncio
-    async def test_analyze_label_insights_specific(
-        self, analytics: Any, mock_neo4j_driver: Any
-    ) -> None:
+    async def test_analyze_label_insights_specific(self, analytics: Any, mock_neo4j_driver: Any) -> None:
         """Test label insights for specific label."""
         mock_records = [
             {
@@ -146,9 +134,7 @@ class TestMusicAnalytics:
                 "releases": 10,
             }
         ]
-        mock_result = (
-            mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
-        )
+        mock_result = mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
         mock_result.__aiter__.return_value = iter(mock_records)
 
         result = await analytics.analyze_label_insights("Blue Note")
@@ -157,9 +143,7 @@ class TestMusicAnalytics:
         assert result.chart_type == "bar"
 
     @pytest.mark.asyncio
-    async def test_analyze_label_insights_market_overview(
-        self, analytics: Any, mock_neo4j_driver: Any
-    ) -> None:
+    async def test_analyze_label_insights_market_overview(self, analytics: Any, mock_neo4j_driver: Any) -> None:
         """Test label insights market overview."""
         mock_records = [
             {
@@ -170,9 +154,7 @@ class TestMusicAnalytics:
                 "last_release": 2023,
             }
         ]
-        mock_result = (
-            mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
-        )
+        mock_result = mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
         mock_result.__aiter__.return_value = iter(mock_records)
 
         result = await analytics.analyze_label_insights()
@@ -181,18 +163,14 @@ class TestMusicAnalytics:
         assert result.chart_type == "bar"
 
     @pytest.mark.asyncio
-    async def test_analyze_market_trends_format(
-        self, analytics: Any, mock_neo4j_driver: Any
-    ) -> None:
+    async def test_analyze_market_trends_format(self, analytics: Any, mock_neo4j_driver: Any) -> None:
         """Test market trends analysis for formats."""
         mock_records = [
             {"year": 1990, "format_type": "Vinyl", "releases": 100},
             {"year": 1995, "format_type": "CD", "releases": 200},
             {"year": 2000, "format_type": "Digital", "releases": 150},
         ]
-        mock_result = (
-            mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
-        )
+        mock_result = mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
         mock_result.__aiter__.return_value = iter(mock_records)
 
         result = await analytics.analyze_market_trends("format")
@@ -201,17 +179,13 @@ class TestMusicAnalytics:
         assert result.chart_type == "area"
 
     @pytest.mark.asyncio
-    async def test_analyze_market_trends_regional(
-        self, analytics: Any, mock_neo4j_driver: Any
-    ) -> None:
+    async def test_analyze_market_trends_regional(self, analytics: Any, mock_neo4j_driver: Any) -> None:
         """Test market trends analysis for regions."""
         mock_records = [
             {"year": 1990, "country": "US", "releases": 500},
             {"year": 1995, "country": "UK", "releases": 300},
         ]
-        mock_result = (
-            mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
-        )
+        mock_result = mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
         mock_result.__aiter__.return_value = iter(mock_records)
 
         result = await analytics.analyze_market_trends("regional")
@@ -264,9 +238,7 @@ class TestAnalyticsAPI:
     """Test the analytics API functions."""
 
     @pytest.mark.asyncio
-    async def test_get_analytics_genre_trends(
-        self, mock_analytics: Any, sample_analytics_data: Any
-    ) -> None:
+    async def test_get_analytics_genre_trends(self, mock_analytics: Any, sample_analytics_data: Any) -> None:
         """Test getting genre trends analytics."""
         with patch("discovery.analytics.analytics", mock_analytics):
             mock_analytics.analyze_genre_trends.return_value = sample_analytics_data
@@ -279,9 +251,7 @@ class TestAnalyticsAPI:
             assert len(result["insights"]) > 0
 
     @pytest.mark.asyncio
-    async def test_get_analytics_artist_evolution(
-        self, mock_analytics: Any, sample_analytics_data: Any
-    ) -> None:
+    async def test_get_analytics_artist_evolution(self, mock_analytics: Any, sample_analytics_data: Any) -> None:
         """Test getting artist evolution analytics."""
         with patch("discovery.analytics.analytics", mock_analytics):
             mock_analytics.analyze_artist_evolution.return_value = sample_analytics_data
@@ -293,9 +263,7 @@ class TestAnalyticsAPI:
             assert result["chart_type"] == "line"
 
     @pytest.mark.asyncio
-    async def test_get_analytics_label_insights(
-        self, mock_analytics: Any, sample_analytics_data: Any
-    ) -> None:
+    async def test_get_analytics_label_insights(self, mock_analytics: Any, sample_analytics_data: Any) -> None:
         """Test getting label insights analytics."""
         with patch("discovery.analytics.analytics", mock_analytics):
             mock_analytics.analyze_label_insights.return_value = sample_analytics_data
@@ -307,9 +275,7 @@ class TestAnalyticsAPI:
             assert result["chart_type"] == "line"
 
     @pytest.mark.asyncio
-    async def test_get_analytics_market_analysis(
-        self, mock_analytics: Any, sample_analytics_data: Any
-    ) -> None:
+    async def test_get_analytics_market_analysis(self, mock_analytics: Any, sample_analytics_data: Any) -> None:
         """Test getting market analysis analytics."""
         with patch("discovery.analytics.analytics", mock_analytics):
             mock_analytics.analyze_market_trends.return_value = sample_analytics_data

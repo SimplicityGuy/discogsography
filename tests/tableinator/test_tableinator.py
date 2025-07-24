@@ -157,9 +157,7 @@ class TestOnDataMessage:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
-    async def test_process_new_record(
-        self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock
-    ) -> None:
+    async def test_process_new_record(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
         """Test processing a new record."""
         # Create mock message
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -184,9 +182,7 @@ class TestOnDataMessage:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
-    async def test_skip_unchanged_record(
-        self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock
-    ) -> None:
+    async def test_skip_unchanged_record(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
         """Test skipping record with unchanged hash."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_artist_data).encode()

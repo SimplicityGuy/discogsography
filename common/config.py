@@ -34,14 +34,10 @@ class ExtractorConfig:
             try:
                 periodic_check_days = int(periodic_check_env)
                 if periodic_check_days < 1:
-                    logger.warning(
-                        f"⚠️ Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days."
-                    )
+                    logger.warning(f"⚠️ Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days.")
                     periodic_check_days = 15
             except ValueError:
-                logger.warning(
-                    f"⚠️ Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days."
-                )
+                logger.warning(f"⚠️ Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days.")
                 periodic_check_days = 15
 
         return cls(

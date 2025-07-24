@@ -111,7 +111,7 @@ split-on-trailing-comma = true
 known-first-party = ["config"]
 
 [tool.ruff]
-line-length = 100
+line-length = 150
 target-version = "py313"
 
 [tool.ruff.lint]
@@ -246,13 +246,13 @@ exclude_dirs = [".venv", "tests", "venv", "*/.venv/*", "*/venv/*"]
 skips = ["B101", "B108"]  # Skip assert_used test and hardcoded temp directory
 
 [tool.black]
-line-length = 100
+line-length = 150
 target-version = ["py313"]
 include = '\.pyi?$'
 
 [tool.isort]
 profile = "black"
-line_length = 100
+line_length = 150
 known_first_party = ["config"]
 lines_after_imports = 2
 combine_as_imports = true

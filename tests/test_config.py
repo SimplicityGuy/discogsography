@@ -73,9 +73,7 @@ class TestGraphinatorConfig:
         """Test configuration loading with missing required variables."""
         monkeypatch.delenv("NEO4J_ADDRESS", raising=False)
 
-        with pytest.raises(
-            ValueError, match="Missing required environment variables.*NEO4J_ADDRESS"
-        ):
+        with pytest.raises(ValueError, match="Missing required environment variables.*NEO4J_ADDRESS"):
             GraphinatorConfig.from_env()
 
 
@@ -102,9 +100,7 @@ class TestTableinatorConfig:
         """Test configuration loading with missing required variables."""
         monkeypatch.delenv("POSTGRES_ADDRESS", raising=False)
 
-        with pytest.raises(
-            ValueError, match="Missing required environment variables.*POSTGRES_ADDRESS"
-        ):
+        with pytest.raises(ValueError, match="Missing required environment variables.*POSTGRES_ADDRESS"):
             TableinatorConfig.from_env()
 
 

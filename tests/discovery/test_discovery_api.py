@@ -34,9 +34,7 @@ class TestDiscoveryAPI:
         assert "timestamp" in data
         assert "features" in data
 
-    def test_recommendations_endpoint(
-        self, client: TestClient, sample_recommendation_data: Any
-    ) -> None:
+    def test_recommendations_endpoint(self, client: TestClient, sample_recommendation_data: Any) -> None:
         """Test the recommendations API endpoint."""
         with patch("discovery.discovery.get_recommendations") as mock_get_recs:
             mock_get_recs.return_value = sample_recommendation_data
@@ -107,15 +105,11 @@ class TestDiscoveryAPI:
             assert "graph" in data
             assert "query" in data
 
-    def test_graph_explore_endpoint_with_path(
-        self, client: TestClient, sample_graph_data: Any
-    ) -> None:
+    def test_graph_explore_endpoint_with_path(self, client: TestClient, sample_graph_data: Any) -> None:
         """Test the graph exploration API endpoint with path result."""
         from discovery.graph_explorer import PathResult
 
-        path_result = PathResult(
-            path=["123", "456"], path_length=1, total_paths=1, explanation="Test path"
-        )
+        path_result = PathResult(path=["123", "456"], path_length=1, total_paths=1, explanation="Test path")
 
         with patch("discovery.discovery.explore_graph") as mock_explore:
             mock_explore.return_value = (sample_graph_data, path_result)

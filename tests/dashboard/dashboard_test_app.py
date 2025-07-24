@@ -231,9 +231,7 @@ def create_test_app() -> FastAPI:
         try:
             # Send initial metrics update
             if mock_dashboard_app and mock_dashboard_app.latest_metrics:
-                await websocket.send_json(
-                    {"type": "metrics_update", "data": mock_dashboard_app.latest_metrics}
-                )
+                await websocket.send_json({"type": "metrics_update", "data": mock_dashboard_app.latest_metrics})
             # Keep connection alive
             while True:
                 try:

@@ -90,9 +90,7 @@ class TestMusicRecommender:
                 "recent_year": 1959,
             }
         ]
-        mock_result = (
-            mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
-        )
+        mock_result = mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value
         mock_result.__aiter__.return_value = iter(mock_records)
 
         trending = await recommender.get_trending_music(["Jazz"], 10)
@@ -128,9 +126,7 @@ class TestMusicRecommender:
             "recent_year": 1959,
         }
         mock_result.single.return_value = mock_record
-        mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value = (
-            mock_result
-        )
+        mock_neo4j_driver.session.return_value.__aenter__.return_value.run.return_value = mock_result
 
         info = await recommender._get_artist_info("Miles Davis")
 
@@ -151,9 +147,7 @@ class TestRecommendationModels:
 
     def test_recommendation_request_model(self) -> None:
         """Test RecommendationRequest model validation."""
-        request = RecommendationRequest(
-            artist_name="Miles Davis", recommendation_type="similar", limit=10
-        )
+        request = RecommendationRequest(artist_name="Miles Davis", recommendation_type="similar", limit=10)
 
         assert request.artist_name == "Miles Davis"
         assert request.recommendation_type == "similar"
@@ -187,16 +181,12 @@ class TestRecommendationAPI:
     """Test the recommendation API functions."""
 
     @pytest.mark.asyncio
-    async def test_get_recommendations_similar(
-        self, mock_recommender: Any, sample_recommendation_data: Any
-    ) -> None:
+    async def test_get_recommendations_similar(self, mock_recommender: Any, sample_recommendation_data: Any) -> None:
         """Test getting similar artist recommendations."""
         with patch("discovery.recommender.recommender", mock_recommender):
             mock_recommender.get_similar_artists.return_value = sample_recommendation_data
 
-            request = RecommendationRequest(
-                artist_name="Miles Davis", recommendation_type="similar"
-            )
+            request = RecommendationRequest(artist_name="Miles Davis", recommendation_type="similar")
 
             results = await get_recommendations(request)
 
@@ -204,9 +194,7 @@ class TestRecommendationAPI:
             assert results[0]["artist_name"] == "John Coltrane"
 
     @pytest.mark.asyncio
-    async def test_get_recommendations_trending(
-        self, mock_recommender: Any, sample_recommendation_data: Any
-    ) -> None:
+    async def test_get_recommendations_trending(self, mock_recommender: Any, sample_recommendation_data: Any) -> None:
         """Test getting trending music recommendations."""
         with patch("discovery.recommender.recommender", mock_recommender):
             mock_recommender.get_trending_music.return_value = sample_recommendation_data
@@ -218,16 +206,12 @@ class TestRecommendationAPI:
             assert len(results) == 2
 
     @pytest.mark.asyncio
-    async def test_get_recommendations_discovery(
-        self, mock_recommender: Any, sample_recommendation_data: Any
-    ) -> None:
+    async def test_get_recommendations_discovery(self, mock_recommender: Any, sample_recommendation_data: Any) -> None:
         """Test discovery search recommendations."""
         with patch("discovery.recommender.recommender", mock_recommender):
             mock_recommender.discovery_search.return_value = sample_recommendation_data
 
-            request = RecommendationRequest(
-                artist_name="cool jazz", recommendation_type="discovery"
-            )
+            request = RecommendationRequest(artist_name="cool jazz", recommendation_type="discovery")
 
             results = await get_recommendations(request)
 

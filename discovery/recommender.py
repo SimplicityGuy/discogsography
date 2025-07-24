@@ -60,9 +60,7 @@ class MusicRecommender:
         logger.info("🤖 Initializing recommender engine...")
 
         # Initialize Neo4j connection
-        self.driver = AsyncGraphDatabase.driver(
-            self.config.neo4j_address, auth=(self.config.neo4j_username, self.config.neo4j_password)
-        )
+        self.driver = AsyncGraphDatabase.driver(self.config.neo4j_address, auth=(self.config.neo4j_username, self.config.neo4j_password))
 
         # Initialize ML models
         logger.info("🧠 Loading sentence transformer model...")
@@ -100,9 +98,7 @@ class MusicRecommender:
 
                 self.graph.add_edge(artist1, artist2, weight=weight)
 
-        logger.info(
-            f"📊 Built collaboration graph with {self.graph.number_of_nodes()} artists and {self.graph.number_of_edges()} collaborations"
-        )
+        logger.info(f"📊 Built collaboration graph with {self.graph.number_of_nodes()} artists and {self.graph.number_of_edges()} collaborations")
 
     async def _generate_artist_embeddings(self) -> None:
         """Generate semantic embeddings for artists based on their profiles."""
@@ -151,9 +147,7 @@ class MusicRecommender:
 
         logger.info(f"✅ Generated embeddings for {len(artists_data)} artists")
 
-    async def get_similar_artists(
-        self, artist_name: str, limit: int = 10
-    ) -> list[RecommendationResult]:
+    async def get_similar_artists(self, artist_name: str, limit: int = 10) -> list[RecommendationResult]:
         """Get similar artists using graph algorithms and embeddings."""
         if not self.graph or self.artist_embeddings is None or self.artist_embeddings.size == 0:
             return []
@@ -175,15 +169,11 @@ class MusicRecommender:
                 common_neighbors = neighbors.intersection(other_neighbors)
 
                 if common_neighbors:
-                    jaccard_similarity = len(common_neighbors) / len(
-                        neighbors.union(other_neighbors)
-                    )
+                    jaccard_similarity = len(common_neighbors) / len(neighbors.union(other_neighbors))
                     similarity_scores[other_artist] = jaccard_similarity
 
             # Get top similar artists from graph
-            graph_similar = sorted(similarity_scores.items(), key=lambda x: x[1], reverse=True)[
-                : limit // 2
-            ]
+            graph_similar = sorted(similarity_scores.items(), key=lambda x: x[1], reverse=True)[: limit // 2]
 
             for similar_artist, score in graph_similar:
                 # Get artist details
@@ -233,9 +223,7 @@ class MusicRecommender:
 
         return recommendations[:limit]
 
-    async def get_trending_music(
-        self, genres: list[str] | None = None, limit: int = 10
-    ) -> list[RecommendationResult]:
+    async def get_trending_music(self, genres: list[str] | None = None, limit: int = 10) -> list[RecommendationResult]:
         """Get trending music based on collaboration frequency and recent activity."""
         assert self.driver is not None, "Driver must be initialized before getting trending music"  # nosec B101
         trending = []
@@ -378,9 +366,7 @@ async def get_recommendations(request: RecommendationRequest) -> list[Recommenda
         return await recommender_instance.get_similar_artists(request.artist_name, request.limit)
     elif request.recommendation_type == "trending":
         return await recommender_instance.get_trending_music(request.genres, request.limit)
-    elif request.recommendation_type == "discovery" and (
-        request.artist_name or request.release_title
-    ):
+    elif request.recommendation_type == "discovery" and (request.artist_name or request.release_title):
         query = request.artist_name or request.release_title or ""
         return await recommender_instance.discovery_search(query, request.limit)
 

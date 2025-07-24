@@ -49,9 +49,7 @@ class MusicAnalytics:
         logger.info("📊 Initializing analytics engine...")
 
         # Initialize Neo4j connection
-        self.neo4j_driver = AsyncGraphDatabase.driver(
-            self.config.neo4j_address, auth=(self.config.neo4j_username, self.config.neo4j_password)
-        )
+        self.neo4j_driver = AsyncGraphDatabase.driver(self.config.neo4j_address, auth=(self.config.neo4j_username, self.config.neo4j_password))
 
         # Initialize PostgreSQL connection
         postgres_url = f"postgresql+asyncpg://{self.config.postgres_username}:{self.config.postgres_password}@{self.config.postgres_address}/{self.config.postgres_database}"
@@ -59,9 +57,7 @@ class MusicAnalytics:
 
         logger.info("✅ Music Industry Analytics Engine initialized")
 
-    async def analyze_genre_trends(
-        self, time_range: tuple[int, int] | None = None
-    ) -> AnalyticsResult:
+    async def analyze_genre_trends(self, time_range: tuple[int, int] | None = None) -> AnalyticsResult:
         """Analyze genre popularity trends over time."""
         logger.info("🎵 Analyzing genre trends over time...")
 
@@ -130,40 +126,28 @@ class MusicAnalytics:
         # Most popular genre overall
         most_popular = df.groupby("genre")["releases"].sum().idxmax()
         total_releases = df.groupby("genre")["releases"].sum().max()
-        insights.append(
-            f"Most popular genre overall: {most_popular} with {total_releases:,} releases"
-        )
+        insights.append(f"Most popular genre overall: {most_popular} with {total_releases:,} releases")
 
         # Fastest growing genre (last 5 years vs previous 5 years)
         recent_years = df[df["year"] >= end_year - 5].groupby("genre")["releases"].sum()
-        earlier_years = (
-            df[(df["year"] >= end_year - 10) & (df["year"] < end_year - 5)]
-            .groupby("genre")["releases"]
-            .sum()
-        )
+        earlier_years = df[(df["year"] >= end_year - 10) & (df["year"] < end_year - 5)].groupby("genre")["releases"].sum()
 
         growth_rates = {}
         for genre in recent_years.index:
             if genre in earlier_years.index and earlier_years[genre] > 0:
-                growth_rate = (
-                    (recent_years[genre] - earlier_years[genre]) / earlier_years[genre]
-                ) * 100
+                growth_rate = ((recent_years[genre] - earlier_years[genre]) / earlier_years[genre]) * 100
                 growth_rates[genre] = growth_rate
 
         if growth_rates:
             fastest_growing = max(growth_rates, key=lambda x: growth_rates[x])
             growth_rate = growth_rates[fastest_growing]
-            insights.append(
-                f"Fastest growing genre (last 5 years): {fastest_growing} (+{growth_rate:.1f}%)"
-            )
+            insights.append(f"Fastest growing genre (last 5 years): {fastest_growing} (+{growth_rate:.1f}%)")
 
         # Peak year for music releases
         yearly_totals = df.groupby("year")["releases"].sum()
         peak_year = yearly_totals.idxmax()
         peak_releases = yearly_totals.max()
-        insights.append(
-            f"Peak music release year: {peak_year} with {peak_releases:,} total releases"
-        )
+        insights.append(f"Peak music release year: {peak_year} with {peak_releases:,} total releases")
 
         return AnalyticsResult(
             chart_type="line",
@@ -224,9 +208,7 @@ class MusicAnalytics:
 
             collaborators = []
             async for record in collab_result:
-                collaborators.append(
-                    {"name": record["collaborator"], "collaborations": record["collaborations"]}
-                )
+                collaborators.append({"name": record["collaborator"], "collaborations": record["collaborations"]})
 
         if not releases_data:
             return AnalyticsResult(
@@ -280,9 +262,7 @@ class MusicAnalytics:
         insights = []
 
         if releases_data:
-            career_span = max(r["year"] for r in releases_data if r["year"]) - min(
-                r["year"] for r in releases_data if r["year"]
-            )
+            career_span = max(r["year"] for r in releases_data if r["year"]) - min(r["year"] for r in releases_data if r["year"])
             insights.append(
                 f"Career span: {career_span} years ({min(r['year'] for r in releases_data if r['year'])}-{max(r['year'] for r in releases_data if r['year'])})"
             )
@@ -294,9 +274,7 @@ class MusicAnalytics:
 
         if collaborators:
             top_collaborator = collaborators[0]
-            insights.append(
-                f"Most frequent collaborator: {top_collaborator['name']} ({top_collaborator['collaborations']} releases)"
-            )
+            insights.append(f"Most frequent collaborator: {top_collaborator['name']} ({top_collaborator['collaborations']} releases)")
             insights.append(f"Total unique collaborators: {len(collaborators)}")
 
         return AnalyticsResult(
@@ -507,9 +485,7 @@ class MusicAnalytics:
         if analysis_focus == "format":
             # Most popular format overall
             format_totals = df.groupby("category")["releases"].sum().sort_values(ascending=False)
-            insights.append(
-                f"Most popular format overall: {format_totals.index[0]} ({format_totals.iloc[0]:,} releases)"
-            )
+            insights.append(f"Most popular format overall: {format_totals.index[0]} ({format_totals.iloc[0]:,} releases)")
 
             # Format transitions
             recent_data = df[df["year"] >= 2010].groupby("category")["releases"].sum()
@@ -519,9 +495,7 @@ class MusicAnalytics:
         else:
             # Regional insights
             country_totals = df.groupby("category")["releases"].sum().sort_values(ascending=False)
-            insights.append(
-                f"Most productive region: {country_totals.index[0]} ({country_totals.iloc[0]:,} releases)"
-            )
+            insights.append(f"Most productive region: {country_totals.index[0]} ({country_totals.iloc[0]:,} releases)")
 
         return AnalyticsResult(
             chart_type="area" if analysis_focus == "format" else "line",
