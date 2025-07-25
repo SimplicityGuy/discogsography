@@ -105,7 +105,6 @@ ENV HOME=/home/discogsography \
     AMQP_CONNECTION="" \
     POSTGRES_ADDRESS="" \
     POSTGRES_USERNAME="" \
-    POSTGRES_PASSWORD="" \
     POSTGRES_DATABASE=""
 
 # Declare volume for logs

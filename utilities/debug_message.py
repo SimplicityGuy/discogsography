@@ -17,9 +17,7 @@ def get_message_from_queue(
     try:
         # Connect to RabbitMQ
         credentials = pika.PlainCredentials(username, password)
-        connection = pika.BlockingConnection(
-            pika.ConnectionParameters(host=host, credentials=credentials)
-        )
+        connection = pika.BlockingConnection(pika.ConnectionParameters(host=host, credentials=credentials))
         channel = connection.channel()
 
         # Get a single message
@@ -122,11 +120,7 @@ def analyze_message(message: dict[str, Any] | None, message_type: str) -> None:
 
     # Show full message structure
     print("\n📄 Full Message Structure:")
-    print(
-        json.dumps(message, indent=2)[:1000] + "..."
-        if len(json.dumps(message)) > 1000
-        else json.dumps(message, indent=2)
-    )
+    print(json.dumps(message, indent=2)[:1000] + "..." if len(json.dumps(message)) > 1000 else json.dumps(message, indent=2))
 
 
 def main() -> None:

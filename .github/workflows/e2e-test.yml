@@ -1,15 +1,18 @@
 ---
-name: Playwright Tests
+# This workflow runs all E2E tests including desktop browsers and mobile device emulation.
+# It can be called from other workflows or triggered directly on dashboard changes.
+name: E2E Test
 
 on:
   workflow_dispatch:
+  workflow_call:
   push:
     branches:
       - main
     paths:
       - "dashboard/**"
       - "tests/dashboard/**"
-      - ".github/workflows/playwright-test.yml"
+      - ".github/workflows/e2e-test.yml"
       - "common/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -19,7 +22,7 @@ on:
     paths:
       - "dashboard/**"
       - "tests/dashboard/**"
-      - ".github/workflows/playwright-test.yml"
+      - ".github/workflows/e2e-test.yml"
       - "common/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -30,7 +33,7 @@ env:
   PYTHON_VERSION: "3.13"
 
 jobs:
-  playwright-test:
+  e2e-test:
     name: Test ${{ matrix.browser }} ${{ matrix.device && format('- {0}', matrix.device) || '' }}
 
     runs-on: ${{ matrix.os }}
@@ -70,7 +73,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install uv
-        uses: astral-sh/setup-uv@bd01e18f51369d5a26f1651c3cb451d3417e3bba # v6.3.1
+        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
         with:
           version: latest
           enable-cache: true
@@ -81,36 +84,43 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Cache uv dependencies
+      # Combined Python dependencies cache (uv + venv)
+      - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/uv
             .venv
-          key: ${{ runner.os }}-uv-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
+          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-uv-
+            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
+            ${{ runner.os }}-python-
 
-      - name: Cache pytest
+      # Test cache (pytest + playwright results)
+      - name: Cache test results
         uses: actions/cache@v4
         with:
-          path: .pytest_cache
-          key: ${{ runner.os }}-pytest-playwright-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-${{ github.sha }}
+          path: |
+            .pytest_cache
+            test-results
+          key: ${{ runner.os }}-test-e2e-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-pytest-playwright-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-
-            ${{ runner.os }}-pytest-playwright-
-            ${{ runner.os }}-pytest-
+            ${{ runner.os }}-test-e2e-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-
+            ${{ runner.os }}-test-e2e-${{ matrix.browser }}-
+            ${{ runner.os }}-test-e2e-
+            ${{ runner.os }}-test-
 
+      # Browser cache (Playwright)
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache/ms-playwright
             ~/Library/Caches/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ matrix.browser }}-${{ hashFiles('**/pyproject.toml') }}
+          key: ${{ runner.os }}-playwright-browsers-${{ matrix.browser }}-v${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-playwright-${{ matrix.browser }}-
-            ${{ runner.os }}-playwright-
+            ${{ runner.os }}-playwright-browsers-${{ matrix.browser }}-
+            ${{ runner.os }}-playwright-browsers-
 
       - name: Install dependencies
         run: |

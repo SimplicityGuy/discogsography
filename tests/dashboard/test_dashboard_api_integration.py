@@ -1,6 +1,5 @@
 """Integration tests for dashboard API using FastAPI TestClient."""
 
-import asyncio
 import typing
 
 import pytest
@@ -17,8 +16,7 @@ class TestDashboardAPIIntegration:
         """Create test client with mocked app."""
         app = create_test_app()
         with TestClient(app) as test_client:
-            # Wait a bit for mock data to be initialized
-            asyncio.run(asyncio.sleep(0.5))
+            # TestClient handles async internally, no need for explicit asyncio.run
             yield test_client
 
     def test_metrics_endpoint(self, client: TestClient) -> None:

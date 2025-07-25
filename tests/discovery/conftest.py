@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+import pytest_asyncio
 from fastapi.testclient import TestClient
 
 
@@ -41,7 +42,7 @@ def discovery_client() -> TestClient:
     return TestClient(app)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def mock_neo4j_driver() -> MagicMock:
     """Mock Neo4j driver for testing."""
     mock_driver = MagicMock()
@@ -65,7 +66,7 @@ async def mock_neo4j_driver() -> MagicMock:
     return mock_driver
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def mock_postgres_engine() -> AsyncMock:
     """Mock PostgreSQL engine for testing."""
     mock_engine = AsyncMock()

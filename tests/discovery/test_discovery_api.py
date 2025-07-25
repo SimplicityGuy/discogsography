@@ -34,9 +34,7 @@ class TestDiscoveryAPI:
         assert "timestamp" in data
         assert "features" in data
 
-    def test_recommendations_endpoint(
-        self, client: TestClient, sample_recommendation_data: Any
-    ) -> None:
+    def test_recommendations_endpoint(self, client: TestClient, sample_recommendation_data: Any) -> None:
         """Test the recommendations API endpoint."""
         with patch("discovery.discovery.get_recommendations") as mock_get_recs:
             mock_get_recs.return_value = sample_recommendation_data
@@ -107,15 +105,11 @@ class TestDiscoveryAPI:
             assert "graph" in data
             assert "query" in data
 
-    def test_graph_explore_endpoint_with_path(
-        self, client: TestClient, sample_graph_data: Any
-    ) -> None:
+    def test_graph_explore_endpoint_with_path(self, client: TestClient, sample_graph_data: Any) -> None:
         """Test the graph exploration API endpoint with path result."""
         from discovery.graph_explorer import PathResult
 
-        path_result = PathResult(
-            path=["123", "456"], path_length=1, total_paths=1, explanation="Test path"
-        )
+        path_result = PathResult(path=["123", "456"], path_length=1, total_paths=1, explanation="Test path")
 
         with patch("discovery.discovery.explore_graph") as mock_explore:
             mock_explore.return_value = (sample_graph_data, path_result)
@@ -144,19 +138,25 @@ class TestDiscoveryAPI:
 class TestDiscoveryAppClass:
     """Test the DiscoveryApp class."""
 
-    def test_discovery_app_init(self) -> None:
-        """Test DiscoveryApp initialization."""
+    def _create_discovery_app(self) -> Any:
+        """Create a DiscoveryApp with mocked config."""
+        from unittest.mock import MagicMock
+
         from discovery.discovery import DiscoveryApp
 
-        app = DiscoveryApp()
+        with patch("discovery.discovery.get_config") as mock_config:
+            mock_config.return_value = MagicMock()
+            return DiscoveryApp()
+
+    def test_discovery_app_init(self) -> None:
+        """Test DiscoveryApp initialization."""
+        app = self._create_discovery_app()
         assert app.active_connections == []
 
     @pytest.mark.asyncio
     async def test_connect_websocket(self) -> None:
         """Test WebSocket connection."""
-        from discovery.discovery import DiscoveryApp
-
-        app = DiscoveryApp()
+        app = self._create_discovery_app()
         mock_websocket = AsyncMock()
 
         await app.connect_websocket(mock_websocket)
@@ -168,9 +168,7 @@ class TestDiscoveryAppClass:
         """Test WebSocket disconnection."""
         from unittest.mock import MagicMock
 
-        from discovery.discovery import DiscoveryApp
-
-        app = DiscoveryApp()
+        app = self._create_discovery_app()
         mock_websocket = MagicMock()
         app.active_connections = [mock_websocket]
 
@@ -181,10 +179,7 @@ class TestDiscoveryAppClass:
     @pytest.mark.asyncio
     async def test_broadcast_update(self) -> None:
         """Test broadcasting updates to WebSocket clients."""
-
-        from discovery.discovery import DiscoveryApp
-
-        app = DiscoveryApp()
+        app = self._create_discovery_app()
         mock_websocket1 = AsyncMock()
         mock_websocket2 = AsyncMock()
         app.active_connections = [mock_websocket1, mock_websocket2]
@@ -198,9 +193,7 @@ class TestDiscoveryAppClass:
     @pytest.mark.asyncio
     async def test_broadcast_update_with_disconnected_client(self) -> None:
         """Test broadcasting updates with disconnected clients."""
-        from discovery.discovery import DiscoveryApp
-
-        app = DiscoveryApp()
+        app = self._create_discovery_app()
         mock_websocket1 = AsyncMock()
         mock_websocket2 = AsyncMock()
 
@@ -219,9 +212,7 @@ class TestDiscoveryAppClass:
     @pytest.mark.asyncio
     async def test_broadcast_update_no_connections(self) -> None:
         """Test broadcasting updates with no active connections."""
-        from discovery.discovery import DiscoveryApp
-
-        app = DiscoveryApp()
+        app = self._create_discovery_app()
         app.active_connections = []
 
         message = {"type": "test", "data": "hello"}

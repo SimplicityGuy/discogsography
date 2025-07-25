@@ -2,19 +2,13 @@ import asyncio
 import contextlib
 import logging
 import signal
-import threading
 import time
 from asyncio import run
-from collections.abc import Generator
-from contextlib import contextmanager
 from pathlib import Path
-from queue import Queue
 from typing import Any
 
 import psycopg
-from aio_pika import connect
 from aio_pika.abc import AbstractIncomingMessage
-from aio_pika.exceptions import AMQPConnectionError
 from common import (
     AMQP_EXCHANGE,
     AMQP_EXCHANGE_TYPE,
@@ -23,10 +17,12 @@ from common import (
     HealthServer,
     TableinatorConfig,
     setup_logging,
+    ResilientPostgreSQLPool,
+    AsyncResilientRabbitMQ,
 )
 from orjson import loads
 from psycopg import sql
-from psycopg.errors import DatabaseError, InterfaceError
+from psycopg.errors import DatabaseError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
 
@@ -61,69 +57,8 @@ def get_health_data() -> dict[str, Any]:
     }
 
 
-# Simple connection pool implementation
-class SimpleConnectionPool:
-    def __init__(self, max_connections: int = 10):
-        self.max_connections = max_connections
-        self.connections: Queue[psycopg.Connection[Any]] = Queue(
-            maxsize=max_connections
-        )
-        self.lock = threading.Lock()
-        self._closed = False
-
-    def _create_connection(self) -> psycopg.Connection[Any]:
-        conn = psycopg.connect(**connection_params)
-        conn.autocommit = True  # Enable autocommit for all operations
-        return conn
-
-    @contextmanager
-    def connection(self) -> Generator[psycopg.Connection[Any]]:
-        if self._closed:
-            raise RuntimeError("Connection pool is closed")
-
-        conn = None
-        try:
-            # Try to get existing connection
-            try:
-                conn = self.connections.get_nowait()
-            except Exception:
-                # Create new connection if none available
-                conn = self._create_connection()
-
-            # Test connection
-            if conn.closed:
-                conn = self._create_connection()
-
-            yield conn
-
-        except Exception:
-            # Don't return broken connections to pool
-            if conn and not conn.closed:
-                with contextlib.suppress(Exception):
-                    conn.rollback()
-            raise
-        finally:
-            # Return connection to pool if it's still good
-            if conn and not conn.closed and not self._closed:
-                try:
-                    self.connections.put_nowait(conn)
-                except Exception:
-                    # Pool is full, close connection
-                    with contextlib.suppress(Exception):
-                        conn.close()
-
-    def close(self) -> None:
-        self._closed = True
-        while not self.connections.empty():
-            try:
-                conn = self.connections.get_nowait()
-                conn.close()
-            except Exception:
-                break
-
-
 # Create connection pool for concurrent access
-connection_pool: SimpleConnectionPool | None = None
+connection_pool: ResilientPostgreSQLPool | None = None
 
 # Global shutdown flag
 shutdown_requested = False
@@ -136,7 +71,7 @@ def signal_handler(signum: int, _frame: Any) -> None:
     shutdown_requested = True
 
 
-def get_db_connection() -> Any:
+def get_connection() -> Any:
     """Get a database connection from the pool."""
     if connection_pool is None:
         raise RuntimeError("Connection pool not initialized")
@@ -204,7 +139,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
     # Process record using connection pool for concurrent access
     try:
         with (
-            get_db_connection() as conn,
+            get_connection() as conn,
             conn.cursor() as cursor,
         ):
             # Check existing hash and update in a single transaction
@@ -241,7 +176,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
         await message.ack()
 
-    except InterfaceError as e:
+    except (InterfaceError, OperationalError) as e:
         logger.warning(f"⚠️ Database connection issue, will retry: {e}")
         await message.nack(requeue=True)
     except Exception as e:
@@ -291,11 +226,47 @@ async def main() -> None:
         "password": str(config.postgres_password),
     }
 
-    # Initialize connection pool for concurrent access
+    # First, ensure the database exists
     try:
-        connection_pool = SimpleConnectionPool(max_connections=20)
-        logger.info("🐘 Connected to PostgreSQL")
-        logger.info("✅ Connection pool initialized (max 20 connections)")
+        # Connect to default 'postgres' database to create our database if needed
+        admin_params = connection_params.copy()
+        admin_params["dbname"] = "postgres"
+
+        with psycopg.connect(**admin_params) as admin_conn:
+            admin_conn.autocommit = True
+            with admin_conn.cursor() as cursor:
+                # Check if database exists
+                cursor.execute(
+                    "SELECT 1 FROM pg_database WHERE datname = %s",
+                    (config.postgres_database,),
+                )
+                if not cursor.fetchone():
+                    logger.info(f"🔧 Creating database '{config.postgres_database}'...")
+                    cursor.execute(
+                        sql.SQL("CREATE DATABASE {}").format(
+                            sql.Identifier(config.postgres_database)
+                        )
+                    )
+                    logger.info(f"✅ Database '{config.postgres_database}' created")
+                else:
+                    logger.info(
+                        f"✅ Database '{config.postgres_database}' already exists"
+                    )
+    except Exception as e:
+        logger.error(f"❌ Failed to ensure database exists: {e}")
+        return
+
+    # Initialize resilient connection pool for concurrent access
+    try:
+        connection_pool = ResilientPostgreSQLPool(
+            connection_params=connection_params,
+            max_connections=20,
+            min_connections=2,
+            max_retries=5,
+            health_check_interval=30,
+        )
+        logger.info("🐘 Connected to PostgreSQL with resilient connection pool")
+        logger.info("✅ Connection pool initialized (min: 2, max: 20 connections)")
     except Exception as e:
         logger.error(f"❌ Failed to initialize connection pool: {e}")
         return
@@ -303,7 +274,7 @@ async def main() -> None:
     # Initialize database tables
     try:
         with (
-            get_db_connection() as conn,
+            get_connection() as conn,
             conn.cursor() as cursor,
         ):
             for table_name in ["artists", "labels", "masters", "releases"]:
@@ -325,21 +296,34 @@ async def main() -> None:
         if connection_pool:
             connection_pool.close()
         return
-    print("        ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·           ")
-    print("        ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.           ")
-    print("        ▐█· ▐█▌▐█·▄▀▀▀█▄██ ▄▄ ▄█▀▄ ▄█ ▀█▄▄▀▀▀█▄          ")
-    print("        ██. ██ ▐█▌▐█▄▪▐█▐███▌▐█▌.▐▌▐█▄▪▐█▐█▄▪▐█          ")
-    print("        ▀▀▀▀▀• ▀▀▀ ▀▀▀▀ ·▀▀▀  ▀█▄▀▪·▀▀▀▀  ▀▀▀▀           ")
-    print("▄▄▄▄▄ ▄▄▄· ▄▄▄▄· ▄▄▌  ▄▄▄ .▪   ▐ ▄  ▄▄▄· ▄▄▄▄▄      ▄▄▄  ")
-    print("•██  ▐█ ▀█ ▐█ ▀█▪██•  ▀▄.▀·██ •█▌▐█▐█ ▀█ •██  ▪     ▀▄ █·")
-    print(" ▐█.▪▄█▀▀█ ▐█▀▀█▄██▪  ▐▀▀▪▄▐█·▐█▐▐▌▄█▀▀█  ▐█.▪ ▄█▀▄ ▐▀▀▄ ")
-    print(" ▐█▌·▐█ ▪▐▌██▄▪▐█▐█▌▐▌▐█▄▄▌▐█▌██▐█▌▐█ ▪▐▌ ▐█▌·▐█▌.▐▌▐█•█▌")
-    print(" ▀▀▀  ▀  ▀ ·▀▀▀▀ .▀▀▀  ▀▀▀ ▀▀▀▀▀ █▪ ▀  ▀  ▀▀▀  ▀█▄▀▪.▀  ▀")
+    # fmt: off
+    print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗                                   ")
+    print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝                                   ")
+    print("██║  ██║██║███████╗██║     ██║   ██║██║  ███╗███████╗                                   ")
+    print("██║  ██║██║╚════██║██║     ██║   ██║██║   ██║╚════██║                                   ")
+    print("██████╔╝██║███████║╚██████╗╚██████╔╝╚██████╔╝███████║                                   ")
+    print("╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝                                   ")
+    print("                                                                                        ")
+    print("████████╗ █████╗ ██████╗ ██╗     ███████╗██╗███╗   ██╗ █████╗ ████████╗ ██████╗ ██████╗ ")
+    print("╚══██╔══╝██╔══██╗██╔══██╗██║     ██╔════╝██║████╗  ██║██╔══██╗╚══██╔══╝██╔═══██╗██╔══██╗")
+    print("   ██║   ███████║██████╔╝██║     █████╗  ██║██╔██╗ ██║███████║   ██║   ██║   ██║██████╔╝")
+    print("   ██║   ██╔══██║██╔══██╗██║     ██╔══╝  ██║██║╚██╗██║██╔══██║   ██║   ██║   ██║██╔══██╗")
+    print("   ██║   ██║  ██║██████╔╝███████╗███████╗██║██║ ╚████║██║  ██║   ██║   ╚██████╔╝██║  ██║")
+    print("   ╚═╝   ╚═╝  ╚═╝╚═════╝ ╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝╚═╝  ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝")
     print()
+    # fmt: on
+
+    # Initialize resilient RabbitMQ connection
+    rabbitmq = AsyncResilientRabbitMQ(
+        connection_url=config.amqp_connection,
+        heartbeat=600,
+        connection_attempts=10,
+        retry_delay=5.0,
+    )
 
     try:
-        amqp_connection = await connect(config.amqp_connection)
-    except AMQPConnectionError as e:
+        amqp_connection = await rabbitmq.connect()
+    except Exception as e:
         logger.error(f"❌ Failed to connect to AMQP broker: {e}")
         return
 

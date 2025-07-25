@@ -19,11 +19,11 @@ from common import (
     ExtractorConfig,
     HealthServer,
     setup_logging,
+    ResilientRabbitMQConnection,
 )
 from dict_hash import sha256
 from orjson import OPT_INDENT_2, OPT_SORT_KEYS, dumps, loads
-from pika import BlockingConnection, DeliveryMode, URLParameters
-from pika.exceptions import AMQPChannelError, AMQPConnectionError
+from pika import DeliveryMode
 from pika.spec import BasicProperties
 from xmltodict import parse
 
@@ -103,7 +103,7 @@ class ConcurrentExtractor:
             None  # Queue to trigger AMQP flushes
         )
         self.event_loop: asyncio.AbstractEventLoop | None = None
-        self.amqp_connection: BlockingConnection | None = None
+        self.amqp_connection: ResilientRabbitMQConnection | None = None
         self.amqp_channel: BlockingChannel | None = None
         self.amqp_properties = BasicProperties(
             content_encoding="application/json",
@@ -126,77 +126,66 @@ class ConcurrentExtractor:
     tps = property(fget=_get_tps)
 
     def __enter__(self) -> "ConcurrentExtractor":
-        retry_count = 0
-        while retry_count < MAX_RETRIES:
-            try:
-                self.amqp_connection = BlockingConnection(
-                    URLParameters(self.config.amqp_connection)
-                )
-                self.amqp_channel = self.amqp_connection.channel()
+        # Initialize resilient RabbitMQ connection
+        self.amqp_connection = ResilientRabbitMQConnection(
+            connection_url=self.config.amqp_connection,
+            max_retries=MAX_RETRIES,
+            heartbeat=600,
+            blocked_connection_timeout=300,
+        )
 
-                # Enable publisher confirmations for reliability
-                self.amqp_channel.confirm_delivery()
+        try:
+            self.amqp_channel = self.amqp_connection.channel()
 
-                # Set QoS to prevent overwhelming consumers
-                self.amqp_channel.basic_qos(prefetch_count=self.batch_size)
+            # Enable publisher confirmations for reliability
+            self.amqp_channel.confirm_delivery()
 
-                # Create the shared exchange for all data types
-                self.amqp_channel.exchange_declare(
-                    auto_delete=False,
-                    durable=True,
-                    exchange=AMQP_EXCHANGE,
-                    exchange_type=AMQP_EXCHANGE_TYPE,
-                )
+            # Set QoS to prevent overwhelming consumers
+            self.amqp_channel.basic_qos(prefetch_count=self.batch_size)
 
-                # The topic exchange routes messages by data type to both graphinator and tableinator
-                # This ensures the same data reaches both services for concurrent processing
-                graphinator_queue_name = (
-                    f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{self.data_type}"
-                )
-                tableinator_queue_name = (
-                    f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{self.data_type}"
-                )
+            # Create the shared exchange for all data types
+            self.amqp_channel.exchange_declare(
+                auto_delete=False,
+                durable=True,
+                exchange=AMQP_EXCHANGE,
+                exchange_type=AMQP_EXCHANGE_TYPE,
+            )
 
-                # Declare queues for this data type (other extractors may have already created them)
-                self.amqp_channel.queue_declare(
-                    auto_delete=False, durable=True, queue=graphinator_queue_name
-                )
-                self.amqp_channel.queue_bind(
-                    exchange=AMQP_EXCHANGE,
-                    queue=graphinator_queue_name,
-                    routing_key=self.data_type,
-                )
+            # The topic exchange routes messages by data type to both graphinator and tableinator
+            # This ensures the same data reaches both services for concurrent processing
+            graphinator_queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{self.data_type}"
+            tableinator_queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{self.data_type}"
 
-                self.amqp_channel.queue_declare(
-                    auto_delete=False, durable=True, queue=tableinator_queue_name
-                )
-                self.amqp_channel.queue_bind(
-                    exchange=AMQP_EXCHANGE,
-                    queue=tableinator_queue_name,
-                    routing_key=self.data_type,
-                )
+            # Declare queues for this data type (other extractors may have already created them)
+            self.amqp_channel.queue_declare(
+                auto_delete=False, durable=True, queue=graphinator_queue_name
+            )
+            self.amqp_channel.queue_bind(
+                exchange=AMQP_EXCHANGE,
+                queue=graphinator_queue_name,
+                routing_key=self.data_type,
+            )
 
-                logger.info(
-                    f"✅ Successfully connected to AMQP broker for {self.data_type} "
-                    f"(exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE})"
-                )
-                return self
+            self.amqp_channel.queue_declare(
+                auto_delete=False, durable=True, queue=tableinator_queue_name
+            )
+            self.amqp_channel.queue_bind(
+                exchange=AMQP_EXCHANGE,
+                queue=tableinator_queue_name,
+                routing_key=self.data_type,
+            )
 
-            except (AMQPConnectionError, AMQPChannelError) as e:
-                retry_count += 1
-                logger.warning(
-                    f"⚠️ AMQP connection failed (attempt {retry_count}/{MAX_RETRIES}): {e}"
-                )
-                if retry_count < MAX_RETRIES:
-                    logger.info(f"⏳ Retrying in {RETRY_DELAY} seconds...")
-                    import time
+            logger.info(
+                f"✅ Successfully connected to AMQP broker for {self.data_type} "
+                f"(exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE})"
+            )
+            return self
 
-                    time.sleep(RETRY_DELAY)
-                else:
-                    logger.error("❌ Max retries exceeded for AMQP connection")
-                    raise
-
-        return self
+        except Exception as e:
+            logger.error(f"❌ Failed to set up AMQP channel: {e}")
+            if self.amqp_connection:
+                self.amqp_connection.close()
+            raise
 
     def __exit__(self, exc_type: Any, exc_value: Any, exc_tb: Any) -> None:
         # Flush any pending messages
@@ -207,8 +196,7 @@ class ConcurrentExtractor:
 
         if self.amqp_connection is not None:
             try:
-                if not self.amqp_connection.is_closed:
-                    self.amqp_connection.close()
+                self.amqp_connection.close()
                 logger.info("✅ AMQP connection closed gracefully")
             except Exception as e:
                 logger.warning(f"⚠️ Error closing AMQP connection: {e}")
@@ -528,26 +516,13 @@ class ConcurrentExtractor:
     def _ensure_amqp_connection(self) -> bool:
         """Ensure AMQP connection and channel are open, reconnect if needed."""
         try:
-            # Check if connection and channel are still open
-            if (
-                self.amqp_connection is None
-                or self.amqp_connection.is_closed
-                or self.amqp_channel is None
-                or self.amqp_channel.is_closed
-            ):
-                logger.warning(
-                    "⚠️ AMQP connection/channel closed, attempting to reconnect..."
-                )
+            # Check if channel is still open
+            if self.amqp_channel is None or self.amqp_channel.is_closed:
+                logger.warning("⚠️ AMQP channel lost, attempting to get new channel...")
 
-                # Close existing connection if partially open
-                if self.amqp_connection and not self.amqp_connection.is_closed:
-                    with contextlib.suppress(Exception):
-                        self.amqp_connection.close()
-
-                # Reconnect
-                self.amqp_connection = BlockingConnection(
-                    URLParameters(self.config.amqp_connection)
-                )
+                # Get new channel from resilient connection
+                if self.amqp_connection is None:
+                    raise RuntimeError("AMQP connection is not initialized")
                 self.amqp_channel = self.amqp_connection.channel()
 
                 # Re-enable publisher confirmations
@@ -564,12 +539,12 @@ class ConcurrentExtractor:
                     exchange_type=AMQP_EXCHANGE_TYPE,
                 )
 
-                logger.info("✅ AMQP connection re-established successfully")
+                logger.info("✅ AMQP channel re-established successfully")
 
             return True
 
         except Exception as e:
-            logger.error(f"❌ Failed to establish AMQP connection: {e}")
+            logger.error(f"❌ Failed to establish AMQP channel: {e}")
             return False
 
     def _flush_pending_messages(self) -> None:
@@ -625,12 +600,8 @@ class ConcurrentExtractor:
             # Put messages back for retry
             with self.pending_messages_lock:
                 self.pending_messages.extend(messages_to_send)
-            # Mark connection as needing reset for next attempt
-            if self.amqp_connection:
-                with contextlib.suppress(Exception):
-                    self.amqp_connection.close()
-                self.amqp_connection = None
-                self.amqp_channel = None
+            # Mark channel as needing reset for next attempt
+            self.amqp_channel = None
             # Don't raise - let the process continue with other records
             logger.warning("⚠️ Messages will be retried on next flush")
 
@@ -843,17 +814,22 @@ async def main_async() -> None:
         logger.error(f"❌ Configuration error: {e}")
         sys.exit(1)
 
-    print("    ·▄▄▄▄  ▪  .▄▄ ·  ▄▄·        ▄▄ • .▄▄ ·      ")
-    print("    ██▪ ██ ██ ▐█ ▀. ▐█ ▌▪▪     ▐█ ▀ ▪▐█ ▀.      ")
-    print("    ▐█· ▐█▌▐█·▄▀▀▀█▄██ ▄▄ ▄█▀▄ ▄█ ▀█▄▄▀▀▀█▄     ")
-    print("    ██. ██ ▐█▌▐█▄▪▐█▐███▌▐█▌.▐▌▐█▄▪▐█▐█▄▪▐█     ")
-    print("    ▀▀▀▀▀• ▀▀▀ ▀▀▀▀ ·▀▀▀  ▀█▄▀▪·▀▀▀▀  ▀▀▀▀      ")
-    print("▄▄▄ .▐▄• ▄ ▄▄▄▄▄▄▄▄   ▄▄▄·  ▄▄· ▄▄▄▄▄      ▄▄▄  ")
-    print("▀▄.▀· █▌█▌▪•██  ▀▄ █·▐█ ▀█ ▐█ ▌▪•██  ▪     ▀▄ █·")
-    print("▐▀▀▪▄ ·██·  ▐█.▪▐▀▀▄ ▄█▀▀█ ██ ▄▄ ▐█.▪ ▄█▀▄ ▐▀▀▄ ")
-    print("▐█▄▄▌▪▐█·█▌ ▐█▌·▐█•█▌▐█ ▪▐▌▐███▌ ▐█▌·▐█▌.▐▌▐█•█▌")
-    print(" ▀▀▀ •▀▀ ▀▀ ▀▀▀ .▀  ▀ ▀  ▀ ·▀▀▀  ▀▀▀  ▀█▄▀▪.▀  ▀")
+    # fmt: off
+    print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗                      ")
+    print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝                      ")
+    print("██║  ██║██║███████╗██║     ██║   ██║██║  ███╗███████╗                      ")
+    print("██║  ██║██║╚════██║██║     ██║   ██║██║   ██║╚════██║                      ")
+    print("██████╔╝██║███████║╚██████╗╚██████╔╝╚██████╔╝███████║                      ")
+    print("╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝                      ")
+    print("                                                                           ")
+    print("███████╗██╗  ██╗████████╗██████╗  █████╗  ██████╗████████╗ ██████╗ ██████╗ ")
+    print("██╔════╝╚██╗██╔╝╚══██╔══╝██╔══██╗██╔══██╗██╔════╝╚══██╔══╝██╔═══██╗██╔══██╗")
+    print("█████╗   ╚███╔╝    ██║   ██████╔╝███████║██║        ██║   ██║   ██║██████╔╝")
+    print("██╔══╝   ██╔██╗    ██║   ██╔══██╗██╔══██║██║        ██║   ██║   ██║██╔══██╗")
+    print("███████╗██╔╝ ██╗   ██║   ██║  ██║██║  ██║╚██████╗   ██║   ╚██████╔╝██║  ██║")
+    print("╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝")
     print()
+    # fmt: on
 
     logger.info(
         "🚀 Starting Discogs data extractor with concurrent processing and periodic checks"

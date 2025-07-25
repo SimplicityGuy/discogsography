@@ -66,11 +66,7 @@ def main() -> None:
                     # Extract the error type
                     match = re.search(r"ERROR.*?-\s*(.*?)$", error)
                     if match:
-                        key = (
-                            match.group(1)[:50] + "..."
-                            if len(match.group(1)) > 50
-                            else match.group(1)
-                        )
+                        key = match.group(1)[:50] + "..." if len(match.group(1)) > 50 else match.group(1)
                     else:
                         key = error[:80] + "..." if len(error) > 80 else error
                 else:
@@ -89,9 +85,7 @@ def main() -> None:
     print(f"Total errors found: {total_errors}")
 
     if total_errors > 0:
-        print(
-            "\n💡 Tip: Use 'docker-compose logs <service> --tail=100 | grep -A5 -B5 ERROR' for context"
-        )
+        print("\n💡 Tip: Use 'docker-compose logs <service> --tail=100 | grep -A5 -B5 ERROR' for context")
 
 
 if __name__ == "__main__":

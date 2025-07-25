@@ -6,6 +6,9 @@
 # across the entire discogsography project, including the root workspace and all
 # service-specific dependencies.
 #
+# Note: Platform targeting is configured in pyproject.toml [tool.uv] section to
+# ensure only Linux (amd64/arm64) and macOS wheels are included in uv.lock.
+#
 # Usage: ./scripts/upgrade-packages.sh [options]
 #
 # Options:

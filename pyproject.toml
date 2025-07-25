@@ -57,7 +57,7 @@ dev = [
     "mypy>=1.8.0",
     "playwright>=1.40.0",
     "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
+    "pytest-asyncio>=0.24.0",
     "pytest-cov>=4.1.0",
     "pytest-playwright>=0.4.3",
     "pytest-timeout>=2.4.0",
@@ -112,7 +112,7 @@ split-on-trailing-comma = true
 known-first-party = ["config"]
 
 [tool.ruff]
-line-length = 100
+line-length = 150
 target-version = "py313"
 
 [tool.ruff.lint]
@@ -207,12 +207,13 @@ exclude_lines = [
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q --strict-markers"
+addopts = "-ra -q --strict-markers --tb=short"
 testpaths = ["tests"]
 python_files = ["*_test.py", "test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
-asyncio_mode = "auto"
+asyncio_mode = "strict"
+asyncio_default_fixture_loop_scope = "function"
 pythonpath = ["."]
 timeout = 60
 timeout_method = "thread"
@@ -232,7 +233,7 @@ dev = [
     "mypy>=1.8.0",
     "pre-commit>=3.5.0",
     "pytest>=7.4.0",
-    "pytest-asyncio>=0.21.0",
+    "pytest-asyncio>=0.24.0",
     "pytest-cov>=4.1.0",
     "ruff>=0.1.0",
     "types-tqdm>=4.67.0.20250516",
@@ -246,13 +247,13 @@ exclude_dirs = [".venv", "tests", "venv", "*/.venv/*", "*/venv/*"]
 skips = ["B101", "B108"]  # Skip assert_used test and hardcoded temp directory
 
 [tool.black]
-line-length = 100
+line-length = 150
 target-version = ["py313"]
 include = '\.pyi?$'
 
 [tool.isort]
 profile = "black"
-line_length = 100
+line_length = 150
 known_first_party = ["config"]
 lines_after_imports = 2
 combine_as_imports = true
@@ -261,6 +262,17 @@ split_on_trailing_comma = true
 # uv workspace configuration
 [tool.uv.workspace]
 members = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
+
+# Environment restrictions for uv to avoid iOS and other incompatible platforms
+[tool.uv]
+environments = [
+    # Only support Linux platforms that we build for in CI/CD
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",  # linux/amd64
+    "sys_platform == 'linux' and platform_machine == 'aarch64'",  # linux/arm64
+    # Also support local development on macOS
+    "sys_platform == 'darwin' and platform_machine == 'x86_64'",  # macOS Intel
+    "sys_platform == 'darwin' and platform_machine == 'arm64'",   # macOS Apple Silicon
+]
 
 # taskipy configuration for task automation
 [tool.taskipy.tasks]

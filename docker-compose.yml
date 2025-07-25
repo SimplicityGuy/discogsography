@@ -347,7 +347,6 @@ services:
       PYTHONUNBUFFERED: "1"
       UV_CACHE_DIR: "/tmp/.cache/uv"
       HF_HOME: "/tmp/.cache/huggingface"
-      TRANSFORMERS_CACHE: "/tmp/.cache/transformers"
       XDG_CACHE_HOME: "/tmp/.cache"
     ports:
       - "8004:8004"      # Health check port

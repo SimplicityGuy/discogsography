@@ -1,0 +1,104 @@
+---
+# This workflow runs all code quality checks including linting, formatting, and type checking.
+# It must pass before any other workflows (test, e2e-test, build) can run.
+name: Code Quality
+
+on:
+  workflow_dispatch:
+  workflow_call:
+  push:
+    branches:
+      - main
+    paths:
+      - "**/*.py"
+      - "**/pyproject.toml"
+      - "**/uv.lock"
+      - "**/Dockerfile"
+      - ".github/workflows/code-quality.yml"
+      - ".pre-commit-config.yaml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "**/*.py"
+      - "**/pyproject.toml"
+      - "**/uv.lock"
+      - "**/Dockerfile"
+      - ".github/workflows/code-quality.yml"
+      - ".pre-commit-config.yaml"
+
+env:
+  CI: true
+  PYTHON_VERSION: "3.13"
+
+jobs:
+  code-quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Set lowercase image name
+        id: image
+        run: |
+          echo "IMAGE_NAME=$(echo "${{ github.repository }}" | tr "[:upper:]" "[:lower:]")" >> "$GITHUB_ENV"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
+        with:
+          version: latest
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      # Combined Python dependencies cache (uv + venv)
+      - name: Cache Python dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/uv
+            .venv
+          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
+            ${{ runner.os }}-python-
+
+      - name: Cache pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pre-commit-
+
+      # Tools cache (arkade)
+      - name: Cache tools
+        uses: actions/cache@v4
+        with:
+          path: ~/.arkade
+          key: ${{ runner.os }}-tools-arkade-v1
+          restore-keys: |
+            ${{ runner.os }}-tools-arkade-
+            ${{ runner.os }}-tools-
+
+      - name: Install arkade
+        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
+        with:
+          hadolint: latest
+
+      - name: Install dependencies
+        run: |
+          uv sync --all-extras --frozen
+          # Install workspace packages
+          uv pip install -e dashboard
+          uv pip install -e common
+
+      - name: Run pre-commit hooks
+        run: |
+          uv run pre-commit run --all-files

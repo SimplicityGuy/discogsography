@@ -22,8 +22,9 @@ class TestDashboardAPI:
         """Create a test client with mocked dependencies."""
         with (
             patch("dashboard.dashboard.get_config", return_value=mock_dashboard_config),
-            patch("dashboard.dashboard.aio_pika.connect_robust", return_value=mock_amqp_connection),
-            patch("dashboard.dashboard.AsyncGraphDatabase.driver", return_value=mock_neo4j_driver),
+            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_amqp_connection),
+            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j_driver),
+            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_psycopg_connect),
             patch("httpx.AsyncClient") as mock_httpx_class,
             patch("psycopg.AsyncConnection.connect", return_value=mock_psycopg_connect),
         ):
