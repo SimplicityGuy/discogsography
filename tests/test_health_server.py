@@ -30,9 +30,7 @@ class TestHealthServer:
         """Create a HealthServer instance for testing."""
         return HealthServer(port=8999, health_func=test_health_func)
 
-    def test_health_server_init(
-        self, health_server: HealthServer, test_health_func: Callable[[], dict[str, Any]]
-    ) -> None:
+    def test_health_server_init(self, health_server: HealthServer, test_health_func: Callable[[], dict[str, Any]]) -> None:
         """Test HealthServer initialization."""
         assert health_server.server_port == 8999
         assert health_server.health_func == test_health_func

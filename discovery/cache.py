@@ -214,11 +214,7 @@ def cached(
                 return await func(self, *args, **kwargs)
 
             # Generate cache key
-            if key_func:
-                cache_key = key_func(*args, **kwargs)
-            else:
-                # Default key generation from all args/kwargs
-                cache_key = cache_manager.cache_key_for_params(prefix, args=args, kwargs=kwargs)
+            cache_key = key_func(*args, **kwargs) if key_func else cache_manager.cache_key_for_params(prefix, args=args, kwargs=kwargs)
 
             # Try to get from cache
             cached_value = await cache_manager.get(cache_key)

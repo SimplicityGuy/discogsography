@@ -205,9 +205,7 @@ class PlaygroundAPI:
         return {"nodes": nodes, "links": links}
 
     @cached("journey", ttl=CACHE_TTL["journey"])
-    async def find_music_journey(
-        self, start_artist_id: str, end_artist_id: str, max_depth: int = 5
-    ) -> dict[str, Any]:
+    async def find_music_journey(self, start_artist_id: str, end_artist_id: str, max_depth: int = 5) -> dict[str, Any]:
         """Find a musical journey between two artists."""
         if not self.neo4j_driver:
             raise HTTPException(status_code=500, detail="Database not initialized")
@@ -250,9 +248,7 @@ class PlaygroundAPI:
             }
 
     @cached("trends", ttl=CACHE_TTL["trends"])
-    async def get_trends(
-        self, trend_type: str, start_year: int, end_year: int, top_n: int = 20
-    ) -> dict[str, Any]:
+    async def get_trends(self, trend_type: str, start_year: int, end_year: int, top_n: int = 20) -> dict[str, Any]:
         """Get trend analysis data."""
         trends = []
 
@@ -271,9 +267,7 @@ class PlaygroundAPI:
                 ORDER BY year
                 """
 
-                result = await session.run(
-                    query, start_year=start_year, end_year=end_year, top_n=top_n
-                )
+                result = await session.run(query, start_year=start_year, end_year=end_year, top_n=top_n)
 
                 async for record in result:
                     trends.append({"year": record["year"], "data": record["top_genres"]})
@@ -293,9 +287,7 @@ class PlaygroundAPI:
                 ORDER BY year
                 """
 
-                result = await session.run(
-                    query, start_year=start_year, end_year=end_year, top_n=top_n
-                )
+                result = await session.run(query, start_year=start_year, end_year=end_year, top_n=top_n)
 
                 async for record in result:
                     trends.append({"year": record["year"], "data": record["top_artists"]})
@@ -458,9 +450,7 @@ async def graph_data_handler(
 
 async def journey_handler(request: JourneyRequest) -> dict[str, Any]:
     """Music journey endpoint handler."""
-    result: dict[str, Any] = await playground_api.find_music_journey(
-        request.start_artist_id, request.end_artist_id, request.max_depth
-    )
+    result: dict[str, Any] = await playground_api.find_music_journey(request.start_artist_id, request.end_artist_id, request.max_depth)
     return result
 
 
