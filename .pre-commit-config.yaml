@@ -35,14 +35,14 @@ repos:
           - mdformat-black
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: 0b19ef1fd6ad680ed7752d6daba883ce1265a6de  # frozen: v0.12.2
+    rev: 73b0f6d59bbfcb75e17a4653d581c9dfaca13969  # frozen: v0.12.5
     hooks:
       - id: ruff
         args: [--fix]
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: 0f86793af5ef5f6dc63c8d04a3cabfa3ea8f9c6a  # frozen: v1.16.1
+    rev: 850d8bf806620ef89a99381c5cf5ea2c1ea826dd  # frozen: v1.17.0
     hooks:
       - id: mypy
         additional_dependencies:
@@ -90,7 +90,7 @@ repos:
         args: ["--severity=warning"]  # Show warnings and errors
 
   - repo: https://github.com/scop/pre-commit-shfmt
-    rev: 119ed76a0da67a4a09fff7ab55c42f5519680289  # frozen: v3.11.0-1
+    rev: 2a30809d16bc7a60d9b97353c797f42b510d3368  # frozen: v3.12.0-2
     hooks:
       - id: shfmt
         args: ["-i", "2", "-ci", "-bn", "-sr"]  # 2 space indent, indent case, binary next line, redirect operators
