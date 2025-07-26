@@ -13,6 +13,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
 # Set environment for build
 ENV UV_SYSTEM_PYTHON=1 \
     UV_CACHE_DIR=/tmp/.cache/uv \
+    UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
