@@ -1,0 +1,8 @@
+# Constraints file to exclude PyTorch and use ONNX Runtime instead
+# This significantly reduces the Docker image size
+
+
+# Use CPU-only ONNX Runtime
+onnxruntime!=*gpu*
+# Exclude PyTorch completely
+torch==0.0.0

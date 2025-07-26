@@ -23,6 +23,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY common/pyproject.toml ./common/
 COPY discovery/pyproject.toml ./discovery/
+COPY discovery/constraints.txt ./discovery/
 
 # Install dependencies
 RUN --mount=type=cache,target=/tmp/.cache/uv \

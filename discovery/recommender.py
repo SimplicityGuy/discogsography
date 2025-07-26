@@ -8,7 +8,17 @@ import numpy as np
 from common import get_config
 from neo4j import AsyncDriver, AsyncGraphDatabase
 from pydantic import BaseModel
-from sentence_transformers import SentenceTransformer
+
+
+# Import ONNX sentence transformer if available, fallback to regular
+try:
+    from discovery.onnx_sentence_transformer import ONNXSentenceTransformer
+
+    ONNX_AVAILABLE = True
+except ImportError:
+    from sentence_transformers import SentenceTransformer
+
+    ONNX_AVAILABLE = False
 from sklearn.metrics.pairwise import cosine_similarity
 
 
@@ -49,7 +59,7 @@ class MusicRecommender:
         self.config = get_config()
         self.driver: AsyncDriver | None = None
         self.graph: nx.Graph | None = None
-        self.embedding_model: SentenceTransformer | None = None
+        self.embedding_model: ONNXSentenceTransformer | SentenceTransformer | None = None
         self.tfidf_vectorizer: TfidfVectorizer | None = None
         self.artist_embeddings: np.ndarray | None = None
         self.artist_to_index: dict[str, int] = {}
@@ -64,7 +74,18 @@ class MusicRecommender:
 
         # Initialize ML models
         logger.info("🧠 Loading sentence transformer model...")
-        self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+        # Check for ONNX model first
+        from pathlib import Path
+
+        onnx_model_path = Path("/models/onnx/all-MiniLM-L6-v2")
+
+        if ONNX_AVAILABLE and onnx_model_path.exists():
+            logger.info("⚡ Using optimized ONNX model for inference")
+            self.embedding_model = ONNXSentenceTransformer(str(onnx_model_path))
+        else:
+            logger.info("🔄 Using standard PyTorch model")
+            self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
         # Build collaboration graph
         await self._build_collaboration_graph()

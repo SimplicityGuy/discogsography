@@ -54,6 +54,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     logger.info("🚀 Starting Discovery service...")
 
+    # Setup ONNX model if needed
+    from discovery.setup_onnx_model import setup_onnx_model
+
+    setup_onnx_model()
+
     # Initialize all engines
     recommender = get_recommender_instance()
     analytics = get_analytics_instance()
