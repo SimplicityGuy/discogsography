@@ -19,4 +19,6 @@ jobs:
           delete-untagged: true
           keep-n-tagged: 2
           older-than: 30 days
-          packages: discogsography%2Fdashboard,discogsography%2Fdiscovery,discogsography%2Fextractor,discogsography%2Fgraphinator,discogsography%2Ftableinator
+          owner: SimplicityGuy
+          packages: dashboard,discovery,extractor,graphinator,tableinator
+          repository: discogsography
