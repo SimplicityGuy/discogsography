@@ -147,8 +147,9 @@ backup_file() {
 }
 
 # Track changes for summary
-declare -A PACKAGE_CHANGES
-declare -A FILE_CHANGES
+# Using regular arrays instead of associative arrays for compatibility
+PACKAGE_CHANGES=()
+FILE_CHANGES=()
 UV_VERSION_CHANGE=""
 PYTHON_VERSION_CHANGE=""
 WORKFLOW_CHANGES=()
@@ -177,7 +178,7 @@ capture_package_changes() {
             local new_version=$(echo "$new_packages" | grep "^$pkg_name==" | cut -d'=' -f3 || echo "")
 
             if [[ -n "$new_version" ]] && [[ "$old_version" != "$new_version" ]]; then
-                PACKAGE_CHANGES["$pkg_name"]="$old_version → $new_version"
+                PACKAGE_CHANGES+=("$pkg_name: $old_version → $new_version")
                 CHANGES_MADE=true
             fi
         done <<< "$old_packages"
@@ -216,7 +217,7 @@ update_python_version() {
                     sed -i "s/PYTHON_VERSION:-[0-9.]\+/PYTHON_VERSION:-$PYTHON_VERSION/g" "$compose_file"
                 fi
                 print_success "Updated $compose_file"
-                FILE_CHANGES["$compose_file"]="Python $current_version → $PYTHON_VERSION"
+                FILE_CHANGES+=("$compose_file: Python $current_version → $PYTHON_VERSION")
             fi
         done
 
@@ -276,7 +277,7 @@ update_uv_version() {
                         sed -i "s/ghcr.io\/astral-sh\/uv:[0-9.]\+/ghcr.io\/astral-sh\/uv:$latest_uv/g" "$dockerfile"
                     fi
                     print_success "Updated $dockerfile"
-                    FILE_CHANGES["$dockerfile"]="UV $current_uv → $latest_uv"
+                    FILE_CHANGES+=("$dockerfile: UV $current_uv → $latest_uv")
                     CHANGES_MADE=true
                 fi
             done
@@ -450,18 +451,18 @@ generate_summary() {
     if [[ ${#PACKAGE_CHANGES[@]} -gt 0 ]]; then
         echo ""
         echo "📦 Package Updates:"
-        for pkg in "${!PACKAGE_CHANGES[@]}"; do
-            echo "  • $pkg: ${PACKAGE_CHANGES[$pkg]}"
-        done | sort
+        printf '%s\n' "${PACKAGE_CHANGES[@]}" | sort | while IFS= read -r change; do
+            echo "  • $change"
+        done
     fi
 
     # File changes
     if [[ ${#FILE_CHANGES[@]} -gt 0 ]]; then
         echo ""
         echo "📄 File Updates:"
-        for file in "${!FILE_CHANGES[@]}"; do
-            echo "  • $file: ${FILE_CHANGES[$file]}"
-        done | sort
+        printf '%s\n' "${FILE_CHANGES[@]}" | sort | while IFS= read -r change; do
+            echo "  • $change"
+        done
     fi
 
     # Workflow changes
@@ -599,7 +600,7 @@ show_file_report() {
     echo "📊 Summary:"
     echo "  • Total files updated: $total_files"
     echo "  • Python packages updated: ${#PACKAGE_CHANGES[@]}"
-    echo "  • Dockerfiles updated: $(echo "${!FILE_CHANGES[@]}" | grep -c Dockerfile || echo 0)"
+    echo "  • Dockerfiles updated: $(printf '%s\n' "${FILE_CHANGES[@]}" | grep -c Dockerfile || echo 0)"
     echo "  • Workflows updated: ${#WORKFLOW_CHANGES[@]}"
 }
 
