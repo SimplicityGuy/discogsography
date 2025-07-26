@@ -140,7 +140,8 @@ fi
 backup_file() {
     local file=$1
     if [[ "$BACKUP" == true ]] && [[ -f "$file" ]] && [[ "$DRY_RUN" == false ]]; then
-        local backup_path="$BACKUP_DIR/$(dirname "$file")"
+        local backup_path
+        backup_path="$BACKUP_DIR/$(dirname "$file")"
         mkdir -p "$backup_path"
         cp "$file" "$backup_path/$(basename "$file").backup"
     fi
@@ -154,6 +155,14 @@ UV_VERSION_CHANGE=""
 PYTHON_VERSION_CHANGE=""
 WORKFLOW_CHANGES=()
 
+# Helper function to safely get array length
+# Works with set -u by handling unbound variables
+array_length() {
+    local array_name=$1
+    # Use eval with proper error handling
+    eval "echo \${#${array_name}[@]}" 2>/dev/null || echo 0
+}
+
 # Function to capture package changes
 capture_package_changes() {
     if [[ "$DRY_RUN" == true ]]; then
@@ -165,17 +174,22 @@ capture_package_changes() {
         print_info "$EMOJI_CHANGES Analyzing package changes..."
 
         # Extract package versions from backup
-        local old_packages=$(grep -E "^name = |^version = " "$BACKUP_DIR/uv.lock.backup" | paste -d' ' - - | sed 's/name = "\(.*\)" version = "\(.*\)"/\1==\2/')
+        local old_packages
+        old_packages=$(grep -E "^name = |^version = " "$BACKUP_DIR/uv.lock.backup" | paste -d' ' - - | sed 's/name = "\(.*\)" version = "\(.*\)"/\1==\2/')
 
         # Extract package versions from current
-        local new_packages=$(grep -E "^name = |^version = " "uv.lock" | paste -d' ' - - | sed 's/name = "\(.*\)" version = "\(.*\)"/\1==\2/')
+        local new_packages
+        new_packages=$(grep -E "^name = |^version = " "uv.lock" | paste -d' ' - - | sed 's/name = "\(.*\)" version = "\(.*\)"/\1==\2/')
 
         # Find changes
         while IFS= read -r old_pkg; do
-            local pkg_name=$(echo "$old_pkg" | cut -d'=' -f1)
-            local old_version=$(echo "$old_pkg" | cut -d'=' -f3)
+            local pkg_name
+            pkg_name=$(echo "$old_pkg" | cut -d'=' -f1)
+            local old_version
+            old_version=$(echo "$old_pkg" | cut -d'=' -f3)
 
-            local new_version=$(echo "$new_packages" | grep "^$pkg_name==" | cut -d'=' -f3 || echo "")
+            local new_version
+            new_version=$(echo "$new_packages" | grep "^$pkg_name==" | cut -d'=' -f3 || echo "")
 
             if [[ -n "$new_version" ]] && [[ "$old_version" != "$new_version" ]]; then
                 PACKAGE_CHANGES+=("$pkg_name: $old_version → $new_version")
@@ -193,7 +207,8 @@ update_python_version() {
 
     print_section "$EMOJI_PYTHON" "Updating Python Version"
 
-    local current_version=$(grep 'requires-python = ">=' pyproject.toml | sed 's/.*>=\([0-9.]*\)".*/\1/')
+    local current_version
+    current_version=$(grep 'requires-python = ">=' pyproject.toml | sed 's/.*>=\([0-9.]*\)".*/\1/')
     PYTHON_VERSION_CHANGE="$current_version → $PYTHON_VERSION"
 
     if [[ "$current_version" == "$PYTHON_VERSION" ]]; then
@@ -232,7 +247,8 @@ update_uv_version() {
     print_section "$EMOJI_DOCKER" "Updating UV Version"
 
     # Get the latest UV version from GitHub
-    local latest_uv=$(curl -s https://api.github.com/repos/astral-sh/uv/releases/latest | jq -r '.tag_name' | sed 's/^v//')
+    local latest_uv
+    latest_uv=$(curl -s https://api.github.com/repos/astral-sh/uv/releases/latest | jq -r '.tag_name' | sed 's/^v//')
 
     if [[ -z "$latest_uv" ]]; then
         print_warning "Could not determine latest UV version from GitHub"
@@ -242,8 +258,10 @@ update_uv_version() {
     print_info "Latest UV version: $latest_uv"
 
     # Get latest setup-uv action version
-    local latest_setup_uv=$(curl -s https://api.github.com/repos/astral-sh/setup-uv/releases/latest | jq -r '.tag_name')
-    local latest_setup_uv_commit=$(curl -s https://api.github.com/repos/astral-sh/setup-uv/commits/$latest_setup_uv | jq -r '.sha')
+    local latest_setup_uv
+    latest_setup_uv=$(curl -s https://api.github.com/repos/astral-sh/setup-uv/releases/latest | jq -r '.tag_name')
+    local latest_setup_uv_commit
+    latest_setup_uv_commit=$(curl -s https://api.github.com/repos/astral-sh/setup-uv/commits/$latest_setup_uv | jq -r '.sha')
 
     print_info "Latest setup-uv action: $latest_setup_uv (commit: ${latest_setup_uv_commit:0:7})"
 
@@ -251,7 +269,8 @@ update_uv_version() {
     local current_uv=""
     for dockerfile in */Dockerfile docs/dockerfile-standards.md; do
         if [[ -f "$dockerfile" ]]; then
-            local version=$(grep "ghcr.io/astral-sh/uv:" "$dockerfile" 2>/dev/null | head -1 | sed -E 's/.*uv:([0-9.]+).*/\1/')
+            local version
+            version=$(grep "ghcr.io/astral-sh/uv:" "$dockerfile" 2>/dev/null | head -1 | sed -E 's/.*uv:([0-9.]+).*/\1/')
             if [[ -n "$version" ]]; then
                 current_uv="$version"
                 break
@@ -293,7 +312,8 @@ update_uv_version() {
 
     for workflow in .github/workflows/*.yml; do
         if [[ -f "$workflow" ]] && grep -q "astral-sh/setup-uv@" "$workflow"; then
-            local current_commit=$(grep -oE "astral-sh/setup-uv@[a-f0-9]+" "$workflow" | head -1 | cut -d'@' -f2)
+            local current_commit
+            current_commit=$(grep -oE "astral-sh/setup-uv@[a-f0-9]+" "$workflow" | head -1 | cut -d'@' -f2)
 
             if [[ -n "$current_commit" ]] && [[ "$current_commit" != "$latest_setup_uv_commit" ]]; then
                 print_info "Updating setup-uv in $(basename "$workflow")"
@@ -321,7 +341,7 @@ update_uv_version() {
         fi
     done
 
-    if [[ ${#WORKFLOW_CHANGES[@]} -eq 0 ]]; then
+    if [[ $(array_length WORKFLOW_CHANGES) -eq 0 ]]; then
         print_success "GitHub workflows are already up to date"
     fi
 }
@@ -448,28 +468,28 @@ generate_summary() {
     fi
 
     # Package changes
-    if [[ ${#PACKAGE_CHANGES[@]} -gt 0 ]]; then
+    if [[ $(array_length PACKAGE_CHANGES) -gt 0 ]]; then
         echo ""
         echo "📦 Package Updates:"
-        printf '%s\n' "${PACKAGE_CHANGES[@]}" | sort | while IFS= read -r change; do
+        printf '%s\n' "${PACKAGE_CHANGES[@]:-}" | sort | while IFS= read -r change; do
             echo "  • $change"
         done
     fi
 
     # File changes
-    if [[ ${#FILE_CHANGES[@]} -gt 0 ]]; then
+    if [[ $(array_length FILE_CHANGES) -gt 0 ]]; then
         echo ""
         echo "📄 File Updates:"
-        printf '%s\n' "${FILE_CHANGES[@]}" | sort | while IFS= read -r change; do
+        printf '%s\n' "${FILE_CHANGES[@]:-}" | sort | while IFS= read -r change; do
             echo "  • $change"
         done
     fi
 
     # Workflow changes
-    if [[ ${#WORKFLOW_CHANGES[@]} -gt 0 ]]; then
+    if [[ $(array_length WORKFLOW_CHANGES) -gt 0 ]]; then
         echo ""
         echo "🔄 GitHub Workflow Updates:"
-        for change in "${WORKFLOW_CHANGES[@]}"; do
+        for change in "${WORKFLOW_CHANGES[@]:-}"; do
             echo "  • $change"
         done
     fi
@@ -490,7 +510,7 @@ generate_summary() {
     echo "2. Stage the changes:"
 
     # Always stage lock file if packages changed
-    if [[ ${#PACKAGE_CHANGES[@]} -gt 0 ]]; then
+    if [[ $(array_length PACKAGE_CHANGES) -gt 0 ]]; then
         echo "   git add uv.lock"
     fi
 
@@ -500,11 +520,11 @@ generate_summary() {
         echo "   git add pyrightconfig.json"
     fi
 
-    if [[ -n "$UV_VERSION_CHANGE" ]] || [[ ${#FILE_CHANGES[@]} -gt 0 ]]; then
+    if [[ -n "$UV_VERSION_CHANGE" ]] || [[ $(array_length FILE_CHANGES) -gt 0 ]]; then
         echo "   git add */Dockerfile docs/dockerfile-standards.md"
     fi
 
-    if [[ ${#WORKFLOW_CHANGES[@]} -gt 0 ]]; then
+    if [[ $(array_length WORKFLOW_CHANGES) -gt 0 ]]; then
         echo "   git add .github/workflows/*.yml"
     fi
 
@@ -521,8 +541,8 @@ generate_summary() {
         echo "   - Update UV to ${UV_VERSION_CHANGE##* → }"
     fi
 
-    if [[ ${#PACKAGE_CHANGES[@]} -gt 0 ]]; then
-        echo "   - Update ${#PACKAGE_CHANGES[@]} Python packages"
+    if [[ $(array_length PACKAGE_CHANGES) -gt 0 ]]; then
+        echo "   - Update $(array_length PACKAGE_CHANGES) Python packages"
     fi
 
     echo "   \""
@@ -592,16 +612,16 @@ show_file_report() {
     echo ""
 
     # Summary
-    local total_files=$((${#FILE_CHANGES[@]} + ${#WORKFLOW_CHANGES[@]}))
-    if [[ ${#PACKAGE_CHANGES[@]} -gt 0 ]]; then
+    local total_files=$(($(array_length FILE_CHANGES) + $(array_length WORKFLOW_CHANGES)))
+    if [[ $(array_length PACKAGE_CHANGES) -gt 0 ]]; then
         total_files=$((total_files + 1)) # uv.lock
     fi
 
     echo "📊 Summary:"
     echo "  • Total files updated: $total_files"
-    echo "  • Python packages updated: ${#PACKAGE_CHANGES[@]}"
-    echo "  • Dockerfiles updated: $(printf '%s\n' "${FILE_CHANGES[@]}" | grep -c Dockerfile || echo 0)"
-    echo "  • Workflows updated: ${#WORKFLOW_CHANGES[@]}"
+    echo "  • Python packages updated: $(array_length PACKAGE_CHANGES)"
+    echo "  • Dockerfiles updated: $(printf '%s\n' "${FILE_CHANGES[@]:-}" | grep -c Dockerfile || echo 0)"
+    echo "  • Workflows updated: $(array_length WORKFLOW_CHANGES)"
 }
 
 # Handle errors
