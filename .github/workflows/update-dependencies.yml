@@ -44,9 +44,9 @@ jobs:
           python-version: '3.13'
 
       - name: 📦 Install uv
-        run: |
-          curl -LsSf https://astral.sh/uv/install.sh | sh
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
+        with:
+          version: latest
 
       - name: 🔧 Configure git
         run: |
@@ -121,7 +121,7 @@ jobs:
       - name: 📝 Create Pull Request
         if: steps.update.outputs.no_changes != 'true'
         id: create-pr
-        uses: peter-evans/create-pull-request@v6
+        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v.7.0.8
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: automation/updates

@@ -39,7 +39,7 @@ jobs:
         sub-project: ${{ fromJson(needs.list-sub-projects.outputs.simple-matrix) }}
 
     steps:
-      - name: Checkout repository
+      - name: 🔀 Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
@@ -62,7 +62,7 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout repository
+      - name: 🔀 Checkout repository
         uses: actions/checkout@v4
 
       # Tools cache (docker-compose)
