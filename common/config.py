@@ -181,6 +181,7 @@ class DashboardConfig:
     postgres_username: str
     postgres_password: str
     postgres_database: str
+    redis_url: str = "redis://localhost:6379/0"
 
     @classmethod
     def from_env(cls) -> "DashboardConfig":
@@ -188,6 +189,9 @@ class DashboardConfig:
         # Reuse other configs for consistency
         graphinator_config = GraphinatorConfig.from_env()
         tableinator_config = TableinatorConfig.from_env()
+
+        # Redis configuration
+        redis_url = getenv("REDIS_URL", "redis://localhost:6379/0")
 
         return cls(
             amqp_connection=graphinator_config.amqp_connection,
@@ -198,6 +202,7 @@ class DashboardConfig:
             postgres_username=tableinator_config.postgres_username,
             postgres_password=tableinator_config.postgres_password,
             postgres_database=tableinator_config.postgres_database,
+            redis_url=redis_url,
         )
 
 

@@ -23,6 +23,7 @@ dependencies = [
     "dict-hash>=1.1.0",
     "multidict>=6.5.1",
     "orjson>=3.9.0",
+    "redis[hiredis]>=6.2.0",
     "tqdm>=4.65.0",
 ]
 

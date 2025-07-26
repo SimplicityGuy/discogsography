@@ -1,0 +1,45 @@
+---
+name: Check iOS Wheels
+
+on:
+  pull_request:
+    paths:
+      - "uv.lock"
+  push:
+    branches:
+      - main
+    paths:
+      - "uv.lock"
+
+jobs:
+  check-ios-wheels:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for iOS wheels in uv.lock
+        run: |
+          echo "🔍 Checking for iOS-specific wheels in uv.lock..."
+
+          if grep -q "ios_[0-9]\+_[0-9]\+_.*\.whl" uv.lock; then
+            echo "❌ iOS-specific wheels found in uv.lock!"
+            echo ""
+            echo "These wheels are not compatible with Docker builds and must be removed."
+            echo ""
+            echo "Found the following iOS wheels:"
+            grep "ios_[0-9]\+_[0-9]\+_.*\.whl" uv.lock
+            echo ""
+            echo "To fix this issue:"
+            echo "1. Run: ./scripts/remove-ios-wheels.sh"
+            echo "2. Commit the updated uv.lock file"
+            echo ""
+            echo "To prevent this in the future when updating dependencies:"
+            echo "- Use Linux or Docker to regenerate uv.lock"
+            echo "- Or use UV_EXCLUDE_NEWER with a platform constraint"
+            exit 1
+          fi
+
+          echo "✅ No iOS-specific wheels found in uv.lock"

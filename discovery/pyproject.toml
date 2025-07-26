@@ -28,11 +28,15 @@ dependencies = [
     "sentence-transformers>=2.2.0",  # Semantic search
     "plotly>=5.17.0",            # Advanced visualizations
     "sqlalchemy[asyncio]>=2.0.0",  # Async SQL toolkit
+    "redis[hiredis]>=5.0.0",     # Redis caching with performance optimizations
 ]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["discovery"]
 
 [tool.ruff]
 extend = "../pyproject.toml"

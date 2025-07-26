@@ -94,3 +94,12 @@ repos:
     hooks:
       - id: shfmt
         args: ["-i", "2", "-ci", "-bn", "-sr"]  # 2 space indent, indent case, binary next line, redirect operators
+
+  - repo: local
+    hooks:
+      - id: check-ios-wheels
+        name: Check for iOS wheels in uv.lock
+        entry: ./scripts/check-ios-wheels-hook.sh
+        language: system
+        files: ^uv\.lock$
+        pass_filenames: false
