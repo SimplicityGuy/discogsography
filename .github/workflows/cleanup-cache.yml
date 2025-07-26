@@ -6,13 +6,18 @@ on:
     types:
       - closed
 
+concurrency:
+  group: cleanup-cache-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
 jobs:
   cleanup:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       actions: write
     steps:
-      - name: Cleanup Cache
+      - name: 🧹 Cleanup Cache
         run: |
           echo "Fetching list of cache keys"
           cacheKeysForPR=$(gh cache list --ref "$BRANCH" --limit 100 --json id --jq '.[].id')

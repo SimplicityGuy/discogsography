@@ -31,13 +31,16 @@ env:
   CI: true
   PYTHON_VERSION: "3.13"
 
+permissions:
+  contents: read
+
 jobs:
   code-quality:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
-      - name: Set lowercase image name
+      - name: 🏷️ Set lowercase image name
         id: image
         run: |
           echo "IMAGE_NAME=$(echo "${{ github.repository }}" | tr "[:upper:]" "[:lower:]")" >> "$GITHUB_ENV"
@@ -58,7 +61,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       # Combined Python dependencies cache (uv + venv)
-      - name: Cache Python dependencies
+      - name: 💾 Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
@@ -69,7 +72,7 @@ jobs:
             ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
             ${{ runner.os }}-python-
 
-      - name: Cache pre-commit
+      - name: 💾 Cache pre-commit
         uses: actions/cache@v4
         with:
           path: ~/.cache/pre-commit
@@ -78,7 +81,7 @@ jobs:
             ${{ runner.os }}-pre-commit-
 
       # Tools cache (arkade)
-      - name: Cache tools
+      - name: 💾 Cache tools
         uses: actions/cache@v4
         with:
           path: ~/.arkade
@@ -87,18 +90,18 @@ jobs:
             ${{ runner.os }}-tools-arkade-
             ${{ runner.os }}-tools-
 
-      - name: Install arkade
+      - name: 🔧 Install arkade
         uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
         with:
           hadolint: latest
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: |
           uv sync --all-extras --frozen
           # Install workspace packages
           uv pip install -e dashboard
           uv pip install -e common
 
-      - name: Run pre-commit hooks
+      - name: 🧪 Run pre-commit hooks
         run: |
           uv run pre-commit run --all-files

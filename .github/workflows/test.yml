@@ -28,6 +28,9 @@ env:
   CI: true
   PYTHON_VERSION: "3.13"
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -50,7 +53,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       # Combined Python dependencies cache (uv + venv)
-      - name: Cache Python dependencies
+      - name: 💾 Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
@@ -62,7 +65,7 @@ jobs:
             ${{ runner.os }}-python-
 
       # Test cache (pytest)
-      - name: Cache test results
+      - name: 💾 Cache test results
         uses: actions/cache@v4
         with:
           path: |
@@ -74,14 +77,14 @@ jobs:
             ${{ runner.os }}-test-unit-
             ${{ runner.os }}-test-
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: |
           uv sync --all-extras --frozen
           # Install workspace packages
           uv pip install -e dashboard
           uv pip install -e common
 
-      - name: Run unit tests with coverage (excluding E2E)
+      - name: 🧪 Run unit tests with coverage (excluding E2E)
         run: |
           # Run tests in groups to avoid async conflicts
           echo "Running core tests..."

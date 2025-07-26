@@ -27,10 +27,17 @@ on:
       - "pyproject.toml"
       - "uv.lock"
 
+concurrency:
+  group: e2e-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CI: true
   PLAYWRIGHT_BROWSERS_PATH: "0"  # Use default location
   PYTHON_VERSION: "3.13"
+
+permissions:
+  contents: read
 
 jobs:
   e2e-test:
@@ -85,7 +92,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       # Combined Python dependencies cache (uv + venv)
-      - name: Cache Python dependencies
+      - name: 💾 Cache Python dependencies
         uses: actions/cache@v4
         with:
           path: |
@@ -97,7 +104,7 @@ jobs:
             ${{ runner.os }}-python-
 
       # Test cache (pytest + playwright results)
-      - name: Cache test results
+      - name: 🧪 Cache test results
         uses: actions/cache@v4
         with:
           path: |
@@ -111,7 +118,7 @@ jobs:
             ${{ runner.os }}-test-
 
       # Browser cache (Playwright)
-      - name: Cache Playwright browsers
+      - name: 🌐 Cache Playwright browsers
         uses: actions/cache@v4
         with:
           path: |
@@ -122,14 +129,14 @@ jobs:
             ${{ runner.os }}-playwright-browsers-${{ matrix.browser }}-
             ${{ runner.os }}-playwright-browsers-
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: |
           uv sync --all-extras --frozen
           # Install workspace packages
           uv pip install -e dashboard
           uv pip install -e common
 
-      - name: Install Playwright browsers
+      - name: 🎭 Install Playwright browsers
         run: |
           # Set Playwright to run in CI mode
           export PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=0
@@ -137,14 +144,14 @@ jobs:
           # Install system dependencies
           uv run playwright install-deps ${{ matrix.browser-install }}
 
-      - name: Run dashboard E2E tests (Desktop)
+      - name: 🧪 Run dashboard E2E tests (Desktop)
         if: matrix.device == null
         run: |
           # Run E2E tests - server is started automatically by pytest fixture
           uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e \
             --browser ${{ matrix.browser }}
 
-      - name: Run dashboard E2E tests (Mobile)
+      - name: 📱 Run dashboard E2E tests (Mobile)
         if: matrix.device != null
         run: |
           # Run E2E tests with device emulation
@@ -152,7 +159,7 @@ jobs:
             --browser ${{ matrix.browser }} \
             --device "${{ matrix.device }}"
 
-      - name: Upload test results
+      - name: 📤 Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -160,7 +167,7 @@ jobs:
           path: test-results/
           retention-days: 7
 
-      - name: Upload test videos
+      - name: 🎥 Upload test videos
         if: failure()
         uses: actions/upload-artifact@v4
         with:

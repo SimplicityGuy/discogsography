@@ -11,6 +11,9 @@ on:
         description: "Simple JSON array of sub-project names"
         value: ${{ jobs.list-sub-projects.outputs.simple-matrix }}
 
+permissions:
+  contents: read
+
 jobs:
   list-sub-projects:
     runs-on: ubuntu-latest
@@ -21,7 +24,7 @@ jobs:
       simple-matrix: ${{ steps.set-matrix.outputs.simple-matrix }}
 
     steps:
-      - name: Get all sub-projects with properties
+      - name: 📋 Get all sub-projects with properties
         id: set-matrix
         run: |
           # Define sub-projects with their properties

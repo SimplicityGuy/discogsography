@@ -203,7 +203,7 @@ jobs:
             cat update-output.txt
           fi
 
-      - name: Send notification to Discord
+      - name: 📢 Send notification to Discord
         uses: sarisia/actions-status-discord@5ddd3b114a98457dd80a39b2f00b6a998cd69008 # v1.15.3
         if: always()
         with:
