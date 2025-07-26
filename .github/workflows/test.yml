@@ -47,7 +47,7 @@ jobs:
         if: github.event_name == 'pull_request'
         run: |
           # Check if any Python files or test files changed
-          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE '\.(py|yaml|yml|toml)$|^tests/'; then
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE "\.(py|yaml|yml|toml)$|^tests/"; then
             echo "needed=true" >> "$GITHUB_OUTPUT"
             echo "✅ Tests needed - Python or config files changed"
           else

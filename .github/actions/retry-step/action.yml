@@ -1,27 +1,27 @@
 ---
-name: 'Retry Step'
-description: 'Retry a command with exponential backoff'
-author: 'SimplicityGuy'
+name: "Retry Step"
+description: "Retry a command with exponential backoff"
+author: "SimplicityGuy"
 
 inputs:
   command:
-    description: 'Command to run'
+    description: "Command to run"
     required: true
   max-attempts:
-    description: 'Maximum number of attempts'
+    description: "Maximum number of attempts"
     required: false
-    default: '3'
+    default: "3"
   retry-delay:
-    description: 'Initial delay between retries in seconds'
+    description: "Initial delay between retries in seconds"
     required: false
-    default: '10'
+    default: "10"
   timeout-minutes:
-    description: 'Timeout for each attempt in minutes'
+    description: "Timeout for each attempt in minutes"
     required: false
-    default: '5'
+    default: "5"
 
 runs:
-  using: 'composite'
+  using: composite
   steps:
     - name: 🔄 Run with retry
       shell: bash

@@ -1,33 +1,33 @@
 ---
-name: 'Docker Build Cache'
-description: 'Setup Docker layer caching with enhanced performance'
-author: 'SimplicityGuy'
+name: "Docker Build Cache"
+description: "Setup Docker layer caching with enhanced performance"
+author: "SimplicityGuy"
 
 inputs:
   service-name:
-    description: 'Name of the service being built'
+    description: "Name of the service being built"
     required: true
   dockerfile-path:
-    description: 'Path to the Dockerfile'
+    description: "Path to the Dockerfile"
     required: true
   use-cache:
-    description: 'Whether to use cache for this service'
+    description: "Whether to use cache for this service"
     required: false
-    default: 'true'
+    default: "true"
 
 outputs:
   cache-from:
-    description: 'Cache source for docker build'
+    description: "Cache source for docker build"
     value: ${{ steps.cache-setup.outputs.cache-from }}
   cache-to:
-    description: 'Cache destination for docker build'
+    description: "Cache destination for docker build"
     value: ${{ steps.cache-setup.outputs.cache-to }}
   cache-hit:
-    description: 'Whether cache was hit'
+    description: "Whether cache was hit"
     value: ${{ steps.docker-cache.outputs.cache-hit }}
 
 runs:
-  using: 'composite'
+  using: composite
   steps:
     - name: 💾 Setup Docker cache paths
       id: cache-setup

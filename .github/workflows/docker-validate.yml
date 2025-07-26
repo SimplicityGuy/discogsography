@@ -118,31 +118,31 @@ jobs:
       - name: 🔒 Validate service dependencies
         run: |
           # Check that services have correct dependencies
-          deps=$(docker-compose config | yq eval '.services.dashboard.depends_on | keys | sort | join(" ")' -)
+          deps=$(docker-compose config | yq eval ".services.dashboard.depends_on | keys | sort | join(' ')" -)
           if [ "$deps" != "neo4j postgres rabbitmq" ]; then
             echo "❌ Dashboard should depend on neo4j, postgres, and rabbitmq"
             exit 1
           fi
 
-          deps=$(docker-compose config | yq eval '.services.discovery.depends_on | keys | sort | join(" ")' -)
+          deps=$(docker-compose config | yq eval ".services.discovery.depends_on | keys | sort | join(' ')" -)
           if [ "$deps" != "neo4j postgres rabbitmq" ]; then
             echo "❌ Discovery should depend on neo4j, postgres, and rabbitmq"
             exit 1
           fi
 
-          deps=$(docker-compose config | yq eval '.services.extractor.depends_on | keys | .[]' -)
+          deps=$(docker-compose config | yq eval ".services.extractor.depends_on | keys | .[]" -)
           if [ "$deps" != "rabbitmq" ]; then
             echo "❌ Extractor should only depend on rabbitmq"
             exit 1
           fi
 
-          deps=$(docker-compose config | yq eval '.services.graphinator.depends_on | keys | sort | join(" ")' -)
+          deps=$(docker-compose config | yq eval ".services.graphinator.depends_on | keys | sort | join(' ')" -)
           if [ "$deps" != "neo4j rabbitmq" ]; then
             echo "❌ Graphinator should depend on neo4j and rabbitmq"
             exit 1
           fi
 
-          deps=$(docker-compose config | yq eval '.services.tableinator.depends_on | keys | sort | join(" ")' -)
+          deps=$(docker-compose config | yq eval ".services.tableinator.depends_on | keys | sort | join(' ')" -)
           if [ "$deps" != "postgres rabbitmq" ]; then
             echo "❌ Tableinator should depend on postgres and rabbitmq"
             exit 1

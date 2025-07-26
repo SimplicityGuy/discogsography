@@ -4,21 +4,21 @@ name: Update Dependencies
 on:
   schedule:
     # Run every Monday at 9:00 AM UTC (1:00 AM PST / 2:00 AM PDT)
-    - cron: '0 9 * * 1'
+    - cron: "0 9 * * 1"
   workflow_dispatch:
     inputs:
       update_python:
-        description: 'Update Python version'
+        description: "Update Python version"
         required: false
         type: boolean
         default: false
       python_version:
-        description: 'Python version (if updating)'
+        description: "Python version (if updating)"
         required: false
         type: string
-        default: '3.13'
+        default: "3.13"
       major_upgrades:
-        description: 'Include major version upgrades'
+        description: "Include major version upgrades"
         required: false
         type: boolean
         default: false
@@ -41,7 +41,7 @@ jobs:
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
         with:
-          python-version: '3.13'
+          python-version: "3.13"
 
       - name: 🔧 Configure git
         run: |
@@ -150,7 +150,7 @@ jobs:
                git checkout automation/updates
                docker-compose build --no-cache
                docker-compose up -d
-               docker-compose ps  # All services should be 'healthy'
+               docker-compose ps  # All services should be "healthy"
                ```
             4. **Review security advisories**:
                ```bash
