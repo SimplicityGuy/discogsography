@@ -25,7 +25,7 @@ jobs:
         id: set-matrix
         run: |
           # Only include actual service directories
-          services=("dashboard" "extractor" "graphinator" "tableinator")
+          services=("dashboard" "discovery" "extractor" "graphinator" "tableinator")
           matrix=$(printf "%s\n" "${services[@]}" | jq -R -s -c 'split("\n")[:-1]')
           echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
@@ -54,7 +54,7 @@ jobs:
         uses: snok/container-retention-policy@4f22ef80902ad409ed55a99dc5133cc1250a0d03 # v3.0.0
         with:
           account: user
-          cut-off: "One month ago UTC"
+          cut-off: "30d"
           keep-n-most-recent: 4
           image-tags: "*"
           tag-selection: tagged
