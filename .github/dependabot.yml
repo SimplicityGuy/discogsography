@@ -1,37 +1,92 @@
 ---
 version: 2
 updates:
+  # GitHub Actions dependencies
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "ci"
+    assignees:
+      - "SimplicityGuy"
+    groups:
+      actions:
+        patterns:
+          - "*"
 
+  # Docker base images for all services
   - package-ecosystem: "docker"
-    directory: "/extractor"
+    directories:
+      - "/dashboard"
+      - "/discovery"
+      - "/extractor"
+      - "/graphinator"
+      - "/tableinator"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    commit-message:
+      prefix: "docker"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "docker"
+    assignees:
+      - "SimplicityGuy"
+    groups:
+      docker-images:
+        patterns:
+          - "*"
 
-  - package-ecosystem: "docker"
-    directory: "/graphinator"
-    schedule:
-      interval: "weekly"
-
-  - package-ecosystem: "docker"
-    directory: "/tableinator"
-    schedule:
-      interval: "weekly"
-
+  # Python dependencies for all services
+  # Using pip ecosystem as uv is not directly supported yet
   - package-ecosystem: "pip"
-    directory: "/extractor"
+    directories:
+      - "/"  # Root project
+      - "/common"
+      - "/dashboard"
+      - "/discovery"
+      - "/extractor"
+      - "/graphinator"
+      - "/tableinator"
     schedule:
       interval: "weekly"
-
-  - package-ecosystem: "pip"
-    directory: "/graphinator"
-    schedule:
-      interval: "weekly"
-
-  - package-ecosystem: "pip"
-    directory: "/tableinator"
-    schedule:
-      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    commit-message:
+      prefix: "deps"
+      prefix-development: "deps-dev"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+    assignees:
+      - "SimplicityGuy"
+    open-pull-requests-limit: 10
+    groups:
+      # Production Python dependencies
+      python-production:
+        dependency-type: "production"
+        patterns:
+          - "*"
+      # Development Python dependencies
+      python-development:
+        dependency-type: "development"
+        patterns:
+          - "*"
+      # Security updates get their own group for immediate attention
+      python-security:
+        applies-to: security-updates
+        patterns:
+          - "*"
