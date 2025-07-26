@@ -26,6 +26,7 @@
 
 - ✅ Create Mermaid style diagrams when diagrams are added to Markdown files.
 - ✅ New markdown files should have a lowercase filename preferring - instead \_, unless the document is a README. Do not rename any existing markdown files.
+- ✅ All pyproject.toml files should follow the standard structure and ordering (see pyproject.toml Standards section).
 
 ## 📋 Development Guidelines
 
@@ -73,6 +74,47 @@ Each service displays ASCII art on startup:
 - Use environment variables for configuration
 - Run containers as non-root users
 - Keep dependencies updated
+
+### pyproject.toml Standards
+
+All `pyproject.toml` files in the project follow a consistent structure and ordering:
+
+1. **Section Order**:
+
+   - `[build-system]` - Build system configuration
+   - `[project]` - Project metadata and dependencies
+   - `[project.scripts]` - Entry points (if applicable)
+   - `[project.optional-dependencies]` - Optional dependencies (root only)
+   - `[tool.hatch.build.targets.wheel]` - Package configuration
+   - Tool configurations (inherit from root):
+     - `[tool.ruff]` and related sections
+     - `[tool.mypy]` and overrides
+     - `[tool.coverage]`
+     - `[tool.pytest.ini_options]`
+     - Other tools as needed
+   - `[dependency-groups]` - Development dependencies (root only)
+
+1. **Standard Fields**:
+
+   - All service pyproject.toml files must include:
+     - `name`, `version`, `description`
+     - `authors` with name and email
+     - `readme = "README.md"`
+     - `requires-python = ">=3.13"`
+     - `classifiers` list
+     - `license = {text = "MIT"}`
+
+1. **Dependencies**:
+
+   - Sort dependencies alphabetically within logical groups
+   - Use comments to describe dependency groups or specific purposes
+   - Align end-of-line comments vertically for readability
+
+1. **Tool Configuration**:
+
+   - Service-specific files should extend from root configuration
+   - Only include overrides specific to that service
+   - Include comment: `# Tool configurations inherit from root pyproject.toml`
 
 ## 🛠️ Development Commands
 

@@ -36,7 +36,7 @@ packages = ["."]
 # Only service-specific overrides are defined here
 
 [tool.ruff.lint.per-file-ignores]
-"tableinator.py" = ["T201"]  # Allow print statements for ASCII art
+"tableinator.py" = ["T201"]    # Allow print statements for ASCII art
 
 [[tool.mypy.overrides]]
 module = [
