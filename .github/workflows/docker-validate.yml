@@ -26,23 +26,7 @@ env:
 
 jobs:
   list-sub-projects:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Get all sub-projects
-        id: set-matrix
-        run: |
-          # Only include actual service directories (sorted alphabetically)
-          services=("dashboard" "discovery" "extractor" "graphinator" "tableinator")
-          matrix=$(printf "%s\n" "${services[@]}" | jq -R -s -c 'split("\n")[:-1]')
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+    uses: ./.github/workflows/list-sub-projects.yml
 
   validate-dockerfiles:
     needs: list-sub-projects
@@ -52,7 +36,7 @@ jobs:
 
     strategy:
       matrix:
-        sub-project: ${{ fromJson(needs.list-sub-projects.outputs.matrix) }}
+        sub-project: ${{ fromJson(needs.list-sub-projects.outputs.simple-matrix) }}
 
     steps:
       - name: Checkout repository
