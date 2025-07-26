@@ -202,3 +202,16 @@ jobs:
             echo "❌ Failed to update dependencies"
             cat update-output.txt
           fi
+
+      - name: Send notification to Discord
+        uses: sarisia/actions-status-discord@5ddd3b114a98457dd80a39b2f00b6a998cd69008 # v1.15.3
+        if: always()
+        with:
+          title: Weekly Dependency Update
+          description: |
+            ${{ steps.update.outputs.no_changes == 'true' && '✅ All dependencies are already up to date!' ||
+                (steps.create-pr.conclusion == 'success' &&
+                 format('✅ Successfully created PR with dependency updates\n🔗 [Review PR]({0})',
+                        steps.create-pr.outputs.pull-request-url) ||
+                 '❌ Failed to update dependencies') }}
+          webhook: ${{ secrets.DISCORD_WEBHOOK }}
