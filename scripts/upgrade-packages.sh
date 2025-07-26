@@ -222,9 +222,6 @@ main() {
 
     # Step 6: Show summary of changes
     if [[ "$DRY_RUN" == false ]]; then
-        print_info "Showing changes in uv.lock..."
-        git diff --stat uv.lock || true
-
         print_success "Package upgrade completed!"
         print_info "Review the changes with: git diff uv.lock"
         print_info "If everything looks good, commit the changes:"
