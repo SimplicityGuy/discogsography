@@ -39,33 +39,37 @@ jobs:
     steps:
       - name: 🔀 Checkout repository
         uses: actions/checkout@v4
-
-      - name: 📦 Install uv
-        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
         with:
-          version: latest
-          enable-cache: true
-          cache-dependency-glob: "**/uv.lock"
+          fetch-depth: 0  # Need full history for diff
 
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+      - name: 🔍 Check if tests needed
+        id: check-tests
+        if: github.event_name == 'pull_request'
+        run: |
+          # Check if any Python files or test files changed
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE '\.(py|yaml|yml|toml)$|^tests/'; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Tests needed - Python or config files changed"
+          else
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ No Python or config files changed - tests can be skipped"
+          fi
+
+      - name: ⏭️ Skip remaining steps if not needed
+        if: github.event_name == 'pull_request' && steps.check-tests.outputs.needed == 'false'
+        run: |
+          echo "::notice title=Tests Skipped::No relevant files changed, skipping tests"
+          exit 0
+
+      - name: 🔧 Setup Python and UV
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
+        uses: ./.github/actions/setup-python-uv
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # Combined Python dependencies cache (uv + venv)
-      - name: 💾 Cache Python dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/uv
-            .venv
-          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
-            ${{ runner.os }}-python-
-
       # Test cache (pytest)
       - name: 💾 Cache test results
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -78,6 +82,7 @@ jobs:
             ${{ runner.os }}-test-
 
       - name: 📦 Install dependencies
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
         run: |
           uv sync --all-extras --frozen
           # Install workspace packages
@@ -85,6 +90,7 @@ jobs:
           uv pip install -e common
 
       - name: 🧪 Run unit tests with coverage (excluding E2E)
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
         run: |
           # Run tests in groups to avoid async conflicts
           echo "Running core tests..."

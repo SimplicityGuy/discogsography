@@ -48,29 +48,10 @@ jobs:
       - name: 🔀 Checkout repository
         uses: actions/checkout@v4
 
-      - name: 📦 Install uv
-        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
-        with:
-          version: latest
-          enable-cache: true
-          cache-dependency-glob: "**/uv.lock"
-
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+      - name: 🔧 Setup Python and UV
+        uses: ./.github/actions/setup-python-uv
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
-      # Combined Python dependencies cache (uv + venv)
-      - name: 💾 Cache Python dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/uv
-            .venv
-          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
-            ${{ runner.os }}-python-
 
       - name: 💾 Cache pre-commit
         uses: actions/cache@v4

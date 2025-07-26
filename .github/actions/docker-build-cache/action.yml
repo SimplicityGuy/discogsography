@@ -1,0 +1,54 @@
+---
+name: 'Docker Build Cache'
+description: 'Setup Docker layer caching with enhanced performance'
+author: 'SimplicityGuy'
+
+inputs:
+  service-name:
+    description: 'Name of the service being built'
+    required: true
+  dockerfile-path:
+    description: 'Path to the Dockerfile'
+    required: true
+  use-cache:
+    description: 'Whether to use cache for this service'
+    required: false
+    default: 'true'
+
+outputs:
+  cache-from:
+    description: 'Cache source for docker build'
+    value: ${{ steps.cache-setup.outputs.cache-from }}
+  cache-to:
+    description: 'Cache destination for docker build'
+    value: ${{ steps.cache-setup.outputs.cache-to }}
+  cache-hit:
+    description: 'Whether cache was hit'
+    value: ${{ steps.docker-cache.outputs.cache-hit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: 💾 Setup Docker cache paths
+      id: cache-setup
+      shell: bash
+      run: |
+        if [[ "${{ inputs.use-cache }}" == "true" ]]; then
+          echo "cache-from=type=local,src=${{ runner.temp }}/.buildx-cache" >> $GITHUB_OUTPUT
+          echo "cache-to=type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max" >> $GITHUB_OUTPUT
+        else
+          echo "cache-from=" >> $GITHUB_OUTPUT
+          echo "cache-to=" >> $GITHUB_OUTPUT
+        fi
+
+    - name: 💾 Cache Docker layers
+      id: docker-cache
+      if: inputs.use-cache == 'true'
+      uses: actions/cache@v4
+      with:
+        path: ${{ runner.temp }}/.buildx-cache
+        key: ${{ runner.os }}-buildx-${{ inputs.service-name }}-${{ hashFiles(inputs.dockerfile-path) }}-${{ hashFiles('**/uv.lock') }}-${{ github.sha }}
+        restore-keys: |
+          ${{ runner.os }}-buildx-${{ inputs.service-name }}-${{ hashFiles(inputs.dockerfile-path) }}-${{ hashFiles('**/uv.lock') }}-
+          ${{ runner.os }}-buildx-${{ inputs.service-name }}-${{ hashFiles(inputs.dockerfile-path) }}-
+          ${{ runner.os }}-buildx-${{ inputs.service-name }}-

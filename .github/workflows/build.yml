@@ -41,7 +41,7 @@ jobs:
     secrets: inherit
 
   build-discogsography:
-    needs: [list-sub-projects, run-code-quality, run-tests, run-e2e-tests]
+    needs: [list-sub-projects, run-tests, run-e2e-tests]
 
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -55,6 +55,10 @@ jobs:
       packages: write
 
     steps:
+      - name: ⏱️ Start timer
+        id: timer
+        run: echo "start_time=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: 🏷️ Set lowercase image name
         id: image
         run: |
@@ -78,38 +82,18 @@ jobs:
         with:
           path: ${{ matrix.name }}
 
-      - name: 📦 Install uv
-        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
-        with:
-          version: latest
-          enable-cache: true
-          cache-dependency-glob: "**/uv.lock"
-
-      - name: 🐍 Set up Python
-        uses: actions/setup-python@v5
+      - name: 🔧 Setup Python and UV
+        uses: ./.github/actions/setup-python-uv
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: 💾 Cache Python dependencies
-        uses: actions/cache@v4
+      - name: 💾 Setup Docker build cache
+        id: docker-cache
+        uses: ./.github/actions/docker-build-cache
         with:
-          path: |
-            ~/.cache/uv
-            .venv
-          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
-            ${{ runner.os }}-python-
-
-      - name: 💾 Cache Docker layers
-        if: ${{ matrix.use_cache }}
-        uses: actions/cache@v4
-        with:
-          path: ${{ runner.temp }}/.buildx-cache
-          key: ${{ runner.os }}-buildx-${{ matrix.name }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-${{ matrix.name }}-
-            ${{ runner.os }}-buildx-
+          service-name: ${{ matrix.name }}
+          dockerfile-path: ${{ matrix.name }}/Dockerfile
+          use-cache: ${{ matrix.use_cache }}
 
       - name: 🔧 Generate uv.lock for Docker build
         run: uv sync --frozen
@@ -144,10 +128,12 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true
           sbom: true
-          cache-from: ${{ matrix.use_cache && format('type=local,src={0}/.buildx-cache', runner.temp) || '' }}
-          cache-to: ${{ matrix.use_cache && format('type=local,dest={0}/.buildx-cache-new,mode=max', runner.temp) || '' }}
+          cache-from: ${{ steps.docker-cache.outputs.cache-from }}
+          cache-to: ${{ steps.docker-cache.outputs.cache-to }}
           build-args: |
             BUILDKIT_INLINE_CACHE=1
+            BUILDKIT_CACHE_MOUNT_NS=discogsography
+            DOCKER_BUILDKIT=1
             PYTHON_VERSION=${{ env.PYTHON_VERSION }}
             BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
             BUILD_VERSION=${{ steps.meta.outputs.version }}
@@ -162,9 +148,24 @@ jobs:
           rm -rf ${{ runner.temp }}/.buildx-cache
           mv ${{ runner.temp }}/.buildx-cache-new ${{ runner.temp }}/.buildx-cache
 
+      - name: 📊 Collect metrics
+        if: always()
+        run: |
+          end_time=$(date +%s)
+          duration=$((end_time - ${{ steps.timer.outputs.start_time }}))
+          echo "::notice title=Build Metrics::Service: ${{ matrix.name }}, Duration: ${duration}s, Cache Used: ${{ matrix.use_cache }}"
+
+          # Check cache hit rate
+          if [[ -n "${{ steps.docker-cache.outputs.cache-hit }}" ]]; then
+            echo "::notice title=Cache Performance::Docker cache hit for ${{ matrix.name }}"
+          fi
+
       - name: 📢 Send notification to Discord
         uses: sarisia/actions-status-discord@5ddd3b114a98457dd80a39b2f00b6a998cd69008 # v1.15.3
         if: always()
         with:
           title: discogsography/${{ matrix.name }}
+          description: |
+            Build duration: ${{ steps.timer.outputs.duration || 'N/A' }}s
+            Cache used: ${{ matrix.use_cache }}
           webhook: ${{ secrets.DISCORD_WEBHOOK }}
