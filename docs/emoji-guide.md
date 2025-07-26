@@ -95,6 +95,38 @@ Emojis in Discogsography serve to:
 | 🔍 | Debugging | Search, investigation |
 | 📦 | Container | Docker status |
 
+### CI/CD & GitHub Actions
+
+| Emoji | Purpose | Usage |
+|-------|---------|--------|
+| 🔀 | Checkout | Repository checkout |
+| 🐍 | Python | Python setup |
+| 📦 | Package Manager | UV/pip installation |
+| 💾 | Cache | Caching operations |
+| 🧪 | Testing | Test execution |
+| 🔧 | Setup/Config | Configuration steps |
+| 📊 | Metrics | Performance tracking |
+| 🔒 | Security | Login, permissions |
+| 🛡️ | Scanning | Security scanning |
+| 🚀 | Build/Deploy | Build and deployment |
+| 📢 | Notifications | Discord, alerts |
+| 🏷️ | Tagging | Version tags, labels |
+| ⏱️ | Timing | Performance timing |
+| 🎯 | Target | Goals, objectives |
+| ✅ | Success | Successful completion |
+| ❌ | Failure | Failed operations |
+| ⏭️ | Skip | Skipped steps |
+| 🔄 | Retry | Retry operations |
+| 🧹 | Cleanup | Cache/image cleanup |
+| 📝 | Documentation | PR creation |
+| 🐳 | Docker | Docker operations |
+| 🎭 | Playwright | E2E testing |
+| 📤 | Upload | Artifact upload |
+| 🎥 | Recording | Video capture |
+| 🌐 | Browser | Browser testing |
+| 📱 | Mobile | Mobile testing |
+| 🐛 | Debug | Debugging steps |
+
 ### Performance & Features
 
 | Emoji | Feature | Usage |

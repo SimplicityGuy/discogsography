@@ -120,6 +120,7 @@ graph TD
 | Document | Purpose |
 |----------|---------|
 | **[CLAUDE.md](CLAUDE.md)** | 🤖 Claude Code integration guide & development standards |
+| **[GitHub Actions Guide](docs/github-actions-guide.md)** | 🚀 CI/CD workflows, automation & best practices |
 | **[Task Automation](docs/task-automation.md)** | 🚀 Complete taskipy command reference |
 | **[Docker Security](docs/docker-security.md)** | 🔒 Container hardening & security practices |
 | **[Dockerfile Standards](docs/dockerfile-standards.md)** | 🏗️ Best practices for writing Dockerfiles |
@@ -883,6 +884,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Documentation
 
 - 📖 **[CLAUDE.md](CLAUDE.md)** - Detailed technical documentation
+- 🚀 **[GitHub Actions Guide](docs/github-actions-guide.md)** - CI/CD workflows and automation
 - 🤖 **[Task Automation](docs/task-automation.md)** - Available tasks and workflows
 - 🔒 **[Docker Security](docs/docker-security.md)** - Security best practices
 - 🏗️ **[Dockerfile Standards](docs/dockerfile-standards.md)** - Container standards

@@ -27,6 +27,10 @@
 - ✅ Create Mermaid style diagrams when diagrams are added to Markdown files.
 - ✅ New markdown files should have a lowercase filename preferring - instead \_, unless the document is a README. Do not rename any existing markdown files.
 - ✅ All pyproject.toml files should follow the standard structure and ordering (see pyproject.toml Standards section).
+- ✅ GitHub Actions workflows use emojis at the start of each step name for visual clarity.
+- ✅ Use single quotes in GitHub Actions expressions (`${{ }}`) and double quotes for YAML strings.
+- ✅ Composite actions are preferred for reusable workflow steps (see `.github/actions/`).
+- ✅ Run tests and E2E tests in parallel for optimal performance.
 
 ## 📋 Development Guidelines
 
