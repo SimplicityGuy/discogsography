@@ -33,9 +33,9 @@ RUN --mount=type=cache,target=/tmp/.cache/uv \
     find /app/.venv -type f -name "*.pyo" -delete && \
     find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
     find /app/.venv -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true && \
-    find /app/.venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
-    # Remove unnecessary boto3 data files
-    find /app/.venv -path "*/botocore/data" -type d ! -name "s3" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -path "*/site-packages/*/tests" -type d -exec rm -rf {} + 2>/dev/null || true && \
+    # Note: We keep all boto3 data files to ensure S3 functionality works correctly
+    # The botocore data adds ~48MB but is necessary for AWS service discovery
     # Strip compiled extensions
     find /app/.venv -name "*.so" -exec strip --strip-unneeded {} \; 2>/dev/null || true
 

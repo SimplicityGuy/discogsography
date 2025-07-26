@@ -5,12 +5,12 @@
 | Service | Before | After | Reduction | Percentage |
 |-------------|--------|--------|-----------|------------|
 | dashboard | 284MB | 253MB | 31MB | 10.9% |
-| extractor | 241MB | 193MB | 48MB | 19.9% |
+| extractor | 241MB | 210MB | 31MB | 12.9% |
 | graphinator | 251MB | 220MB | 31MB | 12.4% |
 | tableinator | 230MB | 199MB | 31MB | 13.5% |
 | discovery | 1.32GB | 982MB | 350MB | 26.5% |
 
-**Total reduction across all services: 491MB**
+**Total reduction across all services: 474MB**
 
 ## Optimizations Applied
 
@@ -34,8 +34,9 @@
 
 **Extractor Service**:
 
-- Remove unnecessary boto3 data files (keep only S3)
-- Significant size reduction due to boto3 optimization
+- Kept all boto3 data files to ensure S3 functionality
+- Note: Aggressive optimization of boto3 data (removing non-S3 services) saves ~15MB but causes runtime errors
+- The full botocore data is required for proper AWS service discovery
 
 **All Services**:
 
