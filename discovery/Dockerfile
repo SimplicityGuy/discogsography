@@ -74,8 +74,8 @@ RUN apt-get update && \
 # Create user and directories with configurable UID/GID
 RUN groupadd -r -g ${GID} discogsography && \
     useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
-    mkdir -p /tmp /app /logs && \
-    chown -R discogsography:discogsography /tmp /app /logs
+    mkdir -p /tmp /app /logs /models && \
+    chown -R discogsography:discogsography /tmp /app /logs /models
 
 WORKDIR /app
 
@@ -110,8 +110,8 @@ ENV HOME=/home/discogsography \
     POSTGRES_USERNAME="" \
     POSTGRES_DATABASE=""
 
-# Declare volume for logs
-VOLUME ["/logs"]
+# Declare volumes
+VOLUME ["/logs", "/models"]
 
 # Expose ports
 EXPOSE 8004 8005

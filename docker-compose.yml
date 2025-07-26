@@ -316,7 +316,9 @@ services:
       POSTGRES_DATABASE: discogsography
       PYTHONUNBUFFERED: "1"
       UV_CACHE_DIR: "/tmp/.cache/uv"
-      HF_HOME: "/tmp/.cache/huggingface"
+      HF_HOME: "/models/huggingface"
+      SENTENCE_TRANSFORMERS_HOME: "/models/sentence-transformers"
+      TRANSFORMERS_CACHE: "/models/transformers"
       XDG_CACHE_HOME: "/tmp/.cache"
     ports:
       - "8004:8004"      # Health check port
@@ -328,6 +330,8 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+    volumes:
+      - discovery_models:/models
     networks:
       - discogsography
     healthcheck:
@@ -355,3 +359,4 @@ volumes:
   neo4j_import:
   neo4j_plugins:
   discogs_data:
+  discovery_models:
