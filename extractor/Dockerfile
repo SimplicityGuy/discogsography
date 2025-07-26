@@ -24,9 +24,20 @@ COPY pyproject.toml uv.lock README.md ./
 COPY common/pyproject.toml ./common/
 COPY extractor/pyproject.toml ./extractor/
 
-# Install dependencies
+# Install dependencies and clean up
+# hadolint ignore=SC2015
 RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --extra extractor
+    uv sync --frozen --no-dev --extra extractor && \
+    # Clean up cache and test files
+    find /app/.venv -type f -name "*.pyc" -delete && \
+    find /app/.venv -type f -name "*.pyo" -delete && \
+    find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
+    # Remove unnecessary boto3 data files
+    find /app/.venv -path "*/botocore/data" -type d ! -name "s3" -exec rm -rf {} + 2>/dev/null || true && \
+    # Strip compiled extensions
+    find /app/.venv -name "*.so" -exec strip --strip-unneeded {} \; 2>/dev/null || true
 
 # Copy source files
 COPY common/ ./common/
@@ -60,13 +71,15 @@ LABEL org.opencontainers.image.title="Discogsography Extractor" \
       com.discogsography.dependencies="boto3,xmltodict,pika" \
       com.discogsography.python.version="${PYTHON_VERSION}"
 
-# Install security updates and curl for healthcheck
+# Install minimal runtime dependencies
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get upgrade -y && \
-    apt-get install -y --no-install-recommends curl && \
+    apt-get install -y --no-install-recommends \
+        curl \
+        && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create user and directories with configurable UID/GID
 RUN groupadd -r -g ${GID} discogsography && \
@@ -76,11 +89,12 @@ RUN groupadd -r -g ${GID} discogsography && \
 
 WORKDIR /app
 
-# Copy from builder
-COPY --from=builder --chown=discogsography:discogsography /app /app
+# Copy only necessary files from builder
+COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
+COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
+COPY --from=builder --chown=discogsography:discogsography /app/extractor /app/extractor
 
-# Install uv for runtime
-COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
+# UV not needed at runtime
 
 # Create startup script
 # hadolint ignore=SC2016
