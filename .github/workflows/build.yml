@@ -106,7 +106,6 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # Combined Python dependencies cache (uv + venv)
       - name: Cache Python dependencies
         uses: actions/cache@v4
         with:
@@ -118,15 +117,14 @@ jobs:
             ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
             ${{ runner.os }}-python-
 
-      # Docker build cache
       - name: Cache Docker layers
         uses: actions/cache@v4
         with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-docker-buildx-${{ matrix.sub-project }}-${{ github.sha }}
+          path: ${{ runner.temp }}/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ matrix.sub-project }}-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-docker-buildx-${{ matrix.sub-project }}-
-            ${{ runner.os }}-docker-buildx-
+            ${{ runner.os }}-buildx-${{ matrix.sub-project }}-
+            ${{ runner.os }}-buildx-
 
       - name: Generate uv.lock for Docker build
         run: uv sync --frozen
@@ -141,9 +139,6 @@ jobs:
             type=ref,event=branch
             type=ref,event=pr
             type=schedule,pattern={{date 'YYYYMMDD'}}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -164,18 +159,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true
           sbom: true
-          cache-from: |
-            type=gha
-            ${{ github.event_name != 'pull_request' &&
-                format('type=registry,ref={0}/{1}/{2}:buildcache',
-                       env.REGISTRY, env.IMAGE_NAME, matrix.sub-project) || '' }}
-            type=local,src=/tmp/.buildx-cache
-          cache-to: |
-            type=gha,mode=max
-            ${{ github.event_name != 'pull_request' &&
-                format('type=registry,ref={0}/{1}/{2}:buildcache,mode=max',
-                       env.REGISTRY, env.IMAGE_NAME, matrix.sub-project) || '' }}
-            type=local,dest=/tmp/.buildx-cache-new,mode=max
+          cache-from: type=local,src=${{ runner.temp }}/.buildx-cache
+          cache-to: type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max
           build-args: |
             BUILDKIT_INLINE_CACHE=1
             PYTHON_VERSION=${{ env.PYTHON_VERSION }}
@@ -183,10 +168,13 @@ jobs:
             BUILD_VERSION=${{ steps.meta.outputs.version }}
             VCS_REF=${{ github.sha }}
 
-      - name: Move cache
+      - # Temp fix
+        # https://github.com/docker/build-push-action/issues/252
+        # https://github.com/moby/buildkit/issues/1896
+        name: Move cache
         run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          rm -rf ${{ runner.temp }}/.buildx-cache
+          mv ${{ runner.temp }}/.buildx-cache-new ${{ runner.temp }}/.buildx-cache
 
       - name: Send notification to Discord
         uses: sarisia/actions-status-discord@5ddd3b114a98457dd80a39b2f00b6a998cd69008 # v1.15.3

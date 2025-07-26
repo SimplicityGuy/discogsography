@@ -67,8 +67,8 @@ This document describes the caching strategy used across all GitHub workflows to
 
 ### 6. Docker Build Cache
 
-**Key Pattern**: `${{ runner.os }}-docker-buildx-${{ matrix.sub-project }}-${{ github.sha }}`
-**Paths**: `/tmp/.buildx-cache`
+**Key Pattern**: `${{ runner.os }}-buildx-${{ matrix.sub-project }}-${{ github.sha }}`
+**Paths**: `${{ runner.temp }}/.buildx-cache`
 **Used in**: build.yml
 **Rationale**: Service-specific Docker layer caching
 
