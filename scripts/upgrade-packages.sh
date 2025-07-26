@@ -4,7 +4,8 @@
 #
 # This script provides a safe and comprehensive way to upgrade Python dependencies
 # across the entire discogsography project, including the root workspace and all
-# service-specific dependencies.
+# service-specific dependencies. It also updates the UV package manager version
+# in all Dockerfiles to the latest release.
 #
 # Note: Platform targeting is configured in pyproject.toml [tool.uv] section to
 # ensure only Linux (amd64/arm64) and macOS wheels are included in uv.lock.
@@ -152,6 +153,79 @@ main() {
         print_info "[DRY RUN] Would check for uv updates"
     fi
 
+    # Step 2a: Update UV version in Dockerfiles
+    print_info "Checking UV version in Dockerfiles..."
+
+    # Get the latest UV version from GitHub
+    LATEST_UV_VERSION=$(curl -s https://api.github.com/repos/astral-sh/uv/releases/latest | grep '"tag_name"' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/^v//')
+
+    if [[ -z "$LATEST_UV_VERSION" ]]; then
+        print_warning "Could not determine latest UV version from GitHub"
+    else
+        print_info "Latest UV version: $LATEST_UV_VERSION"
+
+        # Find all Dockerfiles that use UV
+        DOCKERFILES=""
+        for service in extractor tableinator graphinator dashboard discovery; do
+            if [[ -f "./$service/Dockerfile" ]]; then
+                DOCKERFILES="$DOCKERFILES ./$service/Dockerfile"
+            fi
+        done
+
+        # Also include the dockerfile-standards.md
+        if [[ -f "./docs/dockerfile-standards.md" ]]; then
+            DOCKERFILES="$DOCKERFILES ./docs/dockerfile-standards.md"
+        fi
+
+        # Check current UV version in Dockerfiles
+        CURRENT_UV_VERSION=""
+        for dockerfile in $DOCKERFILES; do
+            VERSION=$(grep "ghcr.io/astral-sh/uv:" "$dockerfile" 2>/dev/null | head -1 | sed -E 's/.*uv:([0-9.]+).*/\1/')
+            if [[ -n "$VERSION" ]]; then
+                CURRENT_UV_VERSION="$VERSION"
+                break
+            fi
+        done
+
+        if [[ -n "$CURRENT_UV_VERSION" ]] && [[ "$CURRENT_UV_VERSION" != "$LATEST_UV_VERSION" ]]; then
+            print_info "Current UV version in Dockerfiles: $CURRENT_UV_VERSION"
+            print_info "Updating UV version in Dockerfiles to $LATEST_UV_VERSION..."
+
+            if [[ "$DRY_RUN" == false ]]; then
+                # Backup Dockerfiles
+                if [[ "$BACKUP" == true ]]; then
+                    for dockerfile in $DOCKERFILES; do
+                        if [[ -f "$dockerfile" ]]; then
+                            backup_file "$dockerfile"
+                        fi
+                    done
+                fi
+
+                # Update UV version in all Dockerfiles
+                for dockerfile in $DOCKERFILES; do
+                    if [[ -f "$dockerfile" ]]; then
+                        # Use portable sed syntax that works on both macOS and Linux
+                        if [[ "$OSTYPE" == "darwin"* ]]; then
+                            sed -i '' "s/ghcr.io\/astral-sh\/uv:[0-9.]*[0-9]/ghcr.io\/astral-sh\/uv:$LATEST_UV_VERSION/g" "$dockerfile"
+                        else
+                            sed -i "s/ghcr.io\/astral-sh\/uv:[0-9.]\+/ghcr.io\/astral-sh\/uv:$LATEST_UV_VERSION/g" "$dockerfile"
+                        fi
+                        print_success "Updated $dockerfile"
+                    fi
+                done
+            else
+                print_info "[DRY RUN] Would update UV version from $CURRENT_UV_VERSION to $LATEST_UV_VERSION in:"
+                for dockerfile in $DOCKERFILES; do
+                    if [[ -f "$dockerfile" ]]; then
+                        echo "  - $dockerfile"
+                    fi
+                done
+            fi
+        elif [[ "$CURRENT_UV_VERSION" == "$LATEST_UV_VERSION" ]]; then
+            print_success "UV version in Dockerfiles is already up to date ($LATEST_UV_VERSION)"
+        fi
+    fi
+
     # Step 3: Compile dependencies with upgrades
     print_info "Compiling upgraded dependencies..."
 
@@ -224,8 +298,20 @@ main() {
     if [[ "$DRY_RUN" == false ]]; then
         print_success "Package upgrade completed!"
         print_info "Review the changes with: git diff uv.lock"
+
+        # Check if any Dockerfiles were updated
+        if git diff --name-only | grep -q "Dockerfile\|dockerfile-standards.md"; then
+            print_info "Dockerfiles were updated. Review with: git diff --name-only | grep Dockerfile"
+        fi
+
         print_info "If everything looks good, commit the changes:"
         echo "  git add uv.lock"
+
+        # Add Dockerfiles if they were changed
+        if git diff --name-only | grep -q "Dockerfile\|dockerfile-standards.md"; then
+            echo "  git add */Dockerfile docs/dockerfile-standards.md"
+        fi
+
         echo "  git commit -m \"chore: upgrade dependencies\""
 
         if [[ "$BACKUP" == true ]]; then
