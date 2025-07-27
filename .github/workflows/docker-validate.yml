@@ -72,25 +72,10 @@ jobs:
       - name: 🔀 Checkout repository
         uses: actions/checkout@v4
 
-      # Tools cache (docker-compose)
-      - name: 🛠️ Cache tools
-        uses: actions/cache@v4
-        with:
-          path: /usr/local/bin/docker-compose
-          key: ${{ runner.os }}-tools-docker-compose-${{ env.COMPOSE_VERSION }}
-          restore-keys: |
-            ${{ runner.os }}-tools-docker-compose-
-            ${{ runner.os }}-tools-
-
       - name: 🔧 Install docker-compose
-        run: |
-          if ! command -v docker-compose &> /dev/null; then
-            echo "Installing docker-compose..."
-            sudo curl -L "https://github.com/docker/compose/releases/download/${{ env.COMPOSE_VERSION }}/docker-compose-$(uname -s)-$(uname -m)" \
-              -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
-          fi
-          docker-compose --version
+        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
+        with:
+          docker-compose: latest
 
       - name: 📋 Validate docker-compose syntax
         run: |
