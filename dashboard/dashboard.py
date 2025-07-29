@@ -268,10 +268,10 @@ class DashboardApp:
                 return queues
 
             async with httpx.AsyncClient(timeout=5.0) as client:
-                # Use RabbitMQ management API
+                # Use RabbitMQ management API with credentials from config
                 response = await client.get(
                     "http://rabbitmq:15672/api/queues",
-                    auth=("discogsography", "discogsography"),
+                    auth=(self.config.rabbitmq_management_user, self.config.rabbitmq_management_password),
                 )
 
                 if response.status_code == 200:
@@ -289,7 +289,13 @@ class DashboardApp:
                                     ack_rate=queue.get("message_stats", {}).get("ack_details", {}).get("rate", 0.0),
                                 )
                             )
+                elif response.status_code == 401:
+                    logger.warning("⚠️ RabbitMQ management API authentication failed. Queue metrics unavailable.")
+                else:
+                    logger.warning(f"⚠️ RabbitMQ management API returned status {response.status_code}")
 
+        except httpx.ConnectError:
+            logger.debug("🔌 RabbitMQ management API unreachable. This is normal if RabbitMQ is not running.")
         except Exception as e:
             logger.error(f"❌ Error getting queue info: {e}")
 

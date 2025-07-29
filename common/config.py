@@ -181,6 +181,8 @@ class DashboardConfig:
     postgres_username: str
     postgres_password: str
     postgres_database: str
+    rabbitmq_management_user: str
+    rabbitmq_management_password: str
 
     @classmethod
     def from_env(cls) -> "DashboardConfig":
@@ -188,6 +190,10 @@ class DashboardConfig:
         # Reuse other configs for consistency
         graphinator_config = GraphinatorConfig.from_env()
         tableinator_config = TableinatorConfig.from_env()
+
+        # Get RabbitMQ management credentials
+        rabbitmq_management_user = getenv("RABBITMQ_MANAGEMENT_USER", "discogsography")
+        rabbitmq_management_password = getenv("RABBITMQ_MANAGEMENT_PASSWORD", "discogsography")
 
         return cls(
             amqp_connection=graphinator_config.amqp_connection,
@@ -198,6 +204,8 @@ class DashboardConfig:
             postgres_username=tableinator_config.postgres_username,
             postgres_password=tableinator_config.postgres_password,
             postgres_database=tableinator_config.postgres_database,
+            rabbitmq_management_user=rabbitmq_management_user,
+            rabbitmq_management_password=rabbitmq_management_password,
         )
 
 

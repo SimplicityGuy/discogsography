@@ -262,6 +262,8 @@ services:
       POSTGRES_USERNAME: discogsography
       POSTGRES_PASSWORD: discogsography
       POSTGRES_DATABASE: discogsography
+      RABBITMQ_MANAGEMENT_USER: discogsography
+      RABBITMQ_MANAGEMENT_PASSWORD: discogsography
       PYTHONUNBUFFERED: "1"
       UV_CACHE_DIR: "/tmp/.cache/uv"
     ports:
