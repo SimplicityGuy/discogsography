@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import logging
+import os
 import signal
 import sys
 import threading
@@ -654,6 +655,33 @@ class ConcurrentExtractor:
             logger.warning("⚠️ Messages will be retried on next flush")
 
 
+def _load_processing_state(discogs_root: Path) -> dict[str, bool]:
+    """Load processing state from file."""
+    state_file = Path(discogs_root) / ".processing_state.json"
+    if not state_file.exists():
+        return {}
+
+    try:
+        with state_file.open("rb") as f:
+            data = loads(f.read())
+            # Ensure we return the correct type
+            return {k: bool(v) for k, v in data.items()}
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to load processing state: {e}")
+        return {}
+
+
+def _save_processing_state(discogs_root: Path, state: dict[str, bool]) -> None:
+    """Save processing state to file."""
+    state_file = Path(discogs_root) / ".processing_state.json"
+
+    try:
+        with state_file.open("wb") as f:
+            f.write(dumps(state, option=OPT_INDENT_2))
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to save processing state: {e}")
+
+
 async def process_file_async(discogs_data_file: str, config: ExtractorConfig) -> None:
     """Process a single file asynchronously."""
     try:
@@ -691,6 +719,27 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
         logger.warning("⚠️ No data files to process")
         return True
 
+    # Check processing state to handle restarts
+    processing_state = _load_processing_state(config.discogs_root)
+    files_to_process = []
+
+    for data_file in data_files:
+        if data_file not in processing_state or not processing_state[data_file]:
+            files_to_process.append(data_file)
+            logger.info(f"📋 Will process: {data_file}")
+        else:
+            logger.info(f"✅ Already processed: {data_file}")
+
+    if not files_to_process:
+        logger.info("✅ All files have been processed previously")
+        # Force reprocessing if explicitly requested via environment variable
+        if os.environ.get("FORCE_REPROCESS", "").lower() == "true":
+            logger.info("🔄 FORCE_REPROCESS=true, will reprocess all files")
+            files_to_process = data_files
+            processing_state = {}  # Clear processing state
+        else:
+            return True
+
     # Process files concurrently with a semaphore to limit concurrent files
     semaphore = asyncio.Semaphore(3)  # Limit to 3 concurrent files
     tasks = []
@@ -700,8 +749,12 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
             if shutdown_requested:
                 return
             await process_file_async(file, config)
+            # Mark file as processed
+            processing_state[file] = True
+            _save_processing_state(config.discogs_root, processing_state)
+            logger.info(f"✅ Marked {file} as processed")
 
-    for data_file in data_files:
+    for data_file in files_to_process:
         if shutdown_requested:
             break
         tasks.append(asyncio.create_task(process_with_semaphore(data_file)))
@@ -882,6 +935,8 @@ async def main_async() -> None:
     logger.info(
         "🚀 Starting Discogs data extractor with concurrent processing and periodic checks"
     )
+    logger.info("📋 Will check for incomplete processing from previous runs")
+    logger.info("💡 Tip: Set FORCE_REPROCESS=true to reprocess all files")
 
     # Start health server
     health_server = HealthServer(8000, get_health_data)

@@ -122,11 +122,12 @@ class AsyncResilientRabbitMQ:
         self._lock = asyncio.Lock()
 
         # Circuit breaker for RabbitMQ failures
+        # Use higher threshold and longer recovery for startup scenarios
         self.circuit_breaker = CircuitBreaker(
             CircuitBreakerConfig(
                 name="AsyncRabbitMQ",
-                failure_threshold=3,
-                recovery_timeout=30,
+                failure_threshold=5,  # Allow more attempts before opening
+                recovery_timeout=60,  # Give more time for RabbitMQ to start
                 expected_exception=(AMQPConnectionError, AMQPChannelError, ConnectionClosed),
             )
         )

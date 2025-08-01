@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 import logging
+import os
 import signal
 import time
 from asyncio import run
@@ -812,6 +813,14 @@ async def main() -> None:
     setup_logging("graphinator", log_file=Path("/logs/graphinator.log"))
     logger.info("🚀 Starting Neo4j graphinator service")
 
+    # Add startup delay for dependent services
+    startup_delay = int(os.environ.get("STARTUP_DELAY", "5"))
+    if startup_delay > 0:
+        logger.info(
+            f"⏳ Waiting {startup_delay} seconds for dependent services to start..."
+        )
+        await asyncio.sleep(startup_delay)
+
     # Start health server
     health_server = HealthServer(8001, get_health_data)
     health_server.start_background()
@@ -882,15 +891,40 @@ async def main() -> None:
     # Initialize resilient RabbitMQ connection
     rabbitmq = AsyncResilientRabbitMQ(
         connection_url=config.amqp_connection,
+        max_retries=10,  # More retries for startup
         heartbeat=600,
         connection_attempts=10,
         retry_delay=5.0,
     )
 
-    try:
-        amqp_connection = await rabbitmq.connect()
-    except Exception as e:
-        logger.error(f"❌ Failed to connect to AMQP broker: {e}")
+    # Try to connect with additional retry logic for startup
+    max_startup_retries = 5
+    startup_retry = 0
+    amqp_connection = None
+
+    while startup_retry < max_startup_retries and not shutdown_requested:
+        try:
+            logger.info(
+                f"🐰 Attempting to connect to RabbitMQ (attempt {startup_retry + 1}/{max_startup_retries})"
+            )
+            amqp_connection = await rabbitmq.connect()
+            break
+        except Exception as e:
+            startup_retry += 1
+            if startup_retry < max_startup_retries:
+                wait_time = min(30, 5 * startup_retry)  # Exponential backoff up to 30s
+                logger.warning(
+                    f"⚠️ RabbitMQ connection failed: {e}. Retrying in {wait_time} seconds..."
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(
+                    f"❌ Failed to connect to AMQP broker after {max_startup_retries} attempts: {e}"
+                )
+                return
+
+    if amqp_connection is None:
+        logger.error("❌ No AMQP connection available")
         return
 
     async with amqp_connection:
