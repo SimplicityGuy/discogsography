@@ -203,6 +203,31 @@ class ConcurrentExtractor:
         except Exception as e:
             logger.warning(f"⚠️ Failed to flush pending messages during cleanup: {e}")
 
+        # Send file completion message before closing connection
+        if self.amqp_channel is not None and not self.amqp_channel.is_closed:
+            try:
+                completion_message = {
+                    "type": "file_complete",
+                    "data_type": self.data_type,
+                    "timestamp": datetime.now().isoformat(),
+                    "total_processed": self.total_count,
+                    "file": self.input_file,
+                }
+
+                self.amqp_channel.basic_publish(
+                    body=dumps(completion_message, option=OPT_SORT_KEYS | OPT_INDENT_2),
+                    exchange=AMQP_EXCHANGE,
+                    properties=self.amqp_properties,
+                    routing_key=self.data_type,
+                    mandatory=True,
+                )
+                logger.info(
+                    f"✅ Sent file completion message for {self.data_type} "
+                    f"(processed {self.total_count} records)"
+                )
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to send file completion message: {e}")
+
         if self.amqp_connection is not None:
             try:
                 self.amqp_connection.close()

@@ -36,6 +36,7 @@ config: TableinatorConfig | None = None
 message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+completed_files = set()  # Track which files have completed processing
 current_task = None
 current_progress = 0.0
 
@@ -102,6 +103,18 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
     try:
         data: dict[str, Any] = loads(message.body)
         data_type: str = message.routing_key or "unknown"
+
+        # Check if this is a file completion message
+        if data.get("type") == "file_complete":
+            completed_files.add(data_type)
+            total_processed = data.get("total_processed", 0)
+            logger.info(
+                f"🎉 File processing complete for {data_type}! "
+                f"Total records processed: {total_processed}"
+            )
+            await message.ack()
+            return
+
         data_id: str = data["id"]
 
         # Increment counter and log progress
@@ -412,11 +425,13 @@ async def main() -> None:
                 total = sum(message_counts.values())
                 current_time = time.time()
 
-                # Check for stalled consumers
+                # Check for stalled consumers (skip completed files)
                 stalled_consumers = []
                 for data_type, last_time in last_message_time.items():
                     if (
-                        last_time > 0 and (current_time - last_time) > 120
+                        data_type not in completed_files
+                        and last_time > 0
+                        and (current_time - last_time) > 120
                     ):  # No messages for 2 minutes
                         stalled_consumers.append(data_type)
 
@@ -427,10 +442,17 @@ async def main() -> None:
                     )
 
                 # Always show progress, even if no messages processed yet
+                # Build progress string with completion emojis
+                progress_parts = []
+                for data_type in ["artists", "labels", "masters", "releases"]:
+                    emoji = "🎉 " if data_type in completed_files else ""
+                    progress_parts.append(
+                        f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}"
+                    )
+
                 logger.info(
                     f"📊 PostgreSQL Progress: {total} total messages processed "
-                    f"(Artists: {message_counts['artists']}, Labels: {message_counts['labels']}, "
-                    f"Masters: {message_counts['masters']}, Releases: {message_counts['releases']})"
+                    f"({', '.join(progress_parts)})"
                 )
 
                 # Log current processing state

@@ -36,6 +36,7 @@ config: GraphinatorConfig | None = None
 message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+completed_files = set()  # Track which files have completed processing
 current_task = None
 current_progress = 0.0
 
@@ -94,6 +95,22 @@ def safe_execute_query(session: Any, query: str, parameters: dict[str, Any]) -> 
         return False
 
 
+async def check_file_completion(
+    data: dict[str, Any], data_type: str, message: AbstractIncomingMessage
+) -> bool:
+    """Check if message is a file completion message and handle it."""
+    if data.get("type") == "file_complete":
+        completed_files.add(data_type)
+        total_processed = data.get("total_processed", 0)
+        logger.info(
+            f"🎉 File processing complete for {data_type}! "
+            f"Total records processed: {total_processed}"
+        )
+        await message.ack()
+        return True
+    return False
+
+
 async def on_artist_message(message: AbstractIncomingMessage) -> None:
     if shutdown_requested:
         logger.info("🛑 Shutdown requested, rejecting new messages")
@@ -103,6 +120,11 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
     try:
         logger.debug("📥 Received artist message")
         artist: dict[str, Any] = loads(message.body)
+
+        # Check if this is a file completion message
+        if await check_file_completion(artist, "artists", message):
+            return
+
         artist_id = artist.get("id", "unknown")
         artist_name = artist.get("name", "Unknown Artist")
 
@@ -295,6 +317,11 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
     try:
         logger.debug("📥 Received label message")
         label: dict[str, Any] = loads(message.body)
+
+        # Check if this is a file completion message
+        if await check_file_completion(label, "labels", message):
+            return
+
         label_id = label.get("id", "unknown")
         label_name = label.get("name", "Unknown Label")
 
@@ -416,6 +443,11 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
     try:
         logger.debug("📥 Received master message")
         master: dict[str, Any] = loads(message.body)
+
+        # Check if this is a file completion message
+        if await check_file_completion(master, "masters", message):
+            return
+
         master_id = master.get("id", "unknown")
         master_title = master.get("title", "Unknown Master")
 
@@ -586,6 +618,11 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
     try:
         logger.debug("📥 Received release message")
         release: dict[str, Any] = loads(message.body)
+
+        # Check if this is a file completion message
+        if await check_file_completion(release, "releases", message):
+            return
+
         release_id = release.get("id", "unknown")
         release_title = release.get("title", "Unknown Release")
 
@@ -986,11 +1023,13 @@ async def main() -> None:
                 total = sum(message_counts.values())
                 current_time = time.time()
 
-                # Check for stalled consumers and force reconnection if needed
+                # Check for stalled consumers (skip completed files)
                 stalled_consumers = []
                 for data_type, last_time in last_message_time.items():
                     if (
-                        last_time > 0 and (current_time - last_time) > 120
+                        data_type not in completed_files
+                        and last_time > 0
+                        and (current_time - last_time) > 120
                     ):  # No messages for 2 minutes
                         stalled_consumers.append(data_type)
 
@@ -1002,10 +1041,17 @@ async def main() -> None:
                     # The resilient driver will handle reconnection automatically
 
                 # Always show progress, even if no messages processed yet
+                # Build progress string with completion emojis
+                progress_parts = []
+                for data_type in ["artists", "labels", "masters", "releases"]:
+                    emoji = "🎉 " if data_type in completed_files else ""
+                    progress_parts.append(
+                        f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}"
+                    )
+
                 logger.info(
                     f"📊 Neo4j Progress: {total} total messages processed "
-                    f"(Artists: {message_counts['artists']}, Labels: {message_counts['labels']}, "
-                    f"Masters: {message_counts['masters']}, Releases: {message_counts['releases']})"
+                    f"({', '.join(progress_parts)})"
                 )
 
                 # Log current processing state
