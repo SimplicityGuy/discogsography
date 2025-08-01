@@ -4,6 +4,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -14,6 +15,19 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 
 logger = logging.getLogger(__name__)
+
+
+def convert_numpy_to_json_serializable(obj: Any) -> Any:
+    """Convert numpy arrays and other non-serializable objects to JSON-serializable format."""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.integer | np.floating):
+        return obj.item()
+    elif isinstance(obj, dict):
+        return {key: convert_numpy_to_json_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_to_json_serializable(item) for item in obj]
+    return obj
 
 
 class AnalyticsRequest(BaseModel):
@@ -151,7 +165,7 @@ class MusicAnalytics:
 
         return AnalyticsResult(
             chart_type="line",
-            chart_data=fig.to_dict(),
+            chart_data=convert_numpy_to_json_serializable(fig.to_dict()),
             insights=insights,
             metadata={
                 "time_range": (start_year, end_year),
@@ -279,7 +293,7 @@ class MusicAnalytics:
 
         return AnalyticsResult(
             chart_type="scatter",
-            chart_data=fig.to_dict(),
+            chart_data=convert_numpy_to_json_serializable(fig.to_dict()),
             insights=insights,
             metadata={
                 "artist": artist_name,
@@ -388,7 +402,7 @@ class MusicAnalytics:
 
         return AnalyticsResult(
             chart_type="bar",
-            chart_data=fig.to_dict(),
+            chart_data=convert_numpy_to_json_serializable(fig.to_dict()),
             insights=insights,
             metadata={"label": label_name, "total_records": len(label_data)},
         )
@@ -499,7 +513,7 @@ class MusicAnalytics:
 
         return AnalyticsResult(
             chart_type="area" if analysis_focus == "format" else "line",
-            chart_data=fig.to_dict(),
+            chart_data=convert_numpy_to_json_serializable(fig.to_dict()),
             insights=insights,
             metadata={"focus": analysis_focus, "total_records": len(market_data)},
         )

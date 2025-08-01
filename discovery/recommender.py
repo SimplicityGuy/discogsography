@@ -44,9 +44,9 @@ class RecommendationResult(BaseModel):
     """Result model for music recommendations."""
 
     artist_name: str
-    release_title: str
-    year: int | None
-    genres: list[str]
+    release_title: str | None = None
+    year: int | None = None
+    genres: list[str] = []
     similarity_score: float
     explanation: str
     neo4j_id: str
@@ -203,7 +203,7 @@ class MusicRecommender:
                     recommendations.append(
                         RecommendationResult(
                             artist_name=similar_artist,
-                            release_title=artist_info.get("recent_release", ""),
+                            release_title=artist_info.get("recent_release"),
                             year=artist_info.get("recent_year"),
                             genres=artist_info.get("genres", []),
                             similarity_score=score,
@@ -233,7 +233,7 @@ class MusicRecommender:
                     recommendations.append(
                         RecommendationResult(
                             artist_name=similar_artist,
-                            release_title=artist_info.get("recent_release", ""),
+                            release_title=artist_info.get("recent_release"),
                             year=artist_info.get("recent_year"),
                             genres=artist_info.get("genres", []),
                             similarity_score=float(score),
@@ -282,7 +282,7 @@ class MusicRecommender:
                 trending.append(
                     RecommendationResult(
                         artist_name=record["name"],
-                        release_title=record["recent_release"] or "",
+                        release_title=record["recent_release"],
                         year=record["recent_year"],
                         genres=record["genres"] or [],
                         similarity_score=float(record["release_count"]) / 100.0,  # Normalize to 0-1
@@ -316,7 +316,7 @@ class MusicRecommender:
                     results.append(
                         RecommendationResult(
                             artist_name=artist_name,
-                            release_title=artist_info.get("recent_release", ""),
+                            release_title=artist_info.get("recent_release"),
                             year=artist_info.get("recent_year"),
                             genres=artist_info.get("genres", []),
                             similarity_score=float(score),
