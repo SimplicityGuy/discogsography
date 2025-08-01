@@ -37,6 +37,11 @@ logger = logging.getLogger(__name__)
 MAX_RETRIES = 3
 RETRY_DELAY = 5
 
+# Flush queue rate limiting
+FLUSH_QUEUE_WARNING_INTERVAL = 60.0  # Only log warning once per minute
+FLUSH_QUEUE_MAX_BACKOFF = 300.0  # Maximum backoff time in seconds (5 minutes)
+FLUSH_QUEUE_INITIAL_BACKOFF = 30.0  # Initial backoff time in seconds
+
 # Global shutdown flag
 shutdown_requested = False
 
@@ -98,6 +103,9 @@ class ConcurrentExtractor:
         self.pending_messages_lock = (
             threading.Lock()
         )  # Thread safety for concurrent access
+        self.last_flush_queue_warning = 0.0  # Track last warning time
+        self.flush_retry_backoff = FLUSH_QUEUE_INITIAL_BACKOFF  # Current backoff time
+        self.flush_retry_task: asyncio.Task[None] | None = None  # Retry task
         self.record_queue: asyncio.Queue[dict[str, Any] | None] | None = None
         self.flush_queue: asyncio.Queue[bool] | None = (
             None  # Queue to trigger AMQP flushes
@@ -379,14 +387,7 @@ class ConcurrentExtractor:
 
             # Process batch if it's full
             if should_flush:
-                try:
-                    # Signal flush worker to process batch (non-blocking)
-                    if self.flush_queue is not None:
-                        self.flush_queue.put_nowait(True)  # True means flush request
-                except asyncio.QueueFull:
-                    logger.warning("⚠️ Flush queue is full, will retry later")
-                except Exception as flush_error:
-                    logger.warning(f"⚠️ Failed to queue flush request: {flush_error}")
+                await self._try_queue_flush()
 
         except Exception as e:
             self.error_count += 1
@@ -394,6 +395,53 @@ class ConcurrentExtractor:
             logger.error(
                 f"❌ Error processing {self.data_type[:-1]} ID={record_id}: {e}"
             )
+
+    async def _try_queue_flush(self) -> None:
+        """Try to queue a flush request with exponential backoff on failure."""
+        if self.flush_queue is None:
+            return
+
+        try:
+            # Try to queue the flush request
+            self.flush_queue.put_nowait(True)
+            # Reset backoff on success
+            self.flush_retry_backoff = FLUSH_QUEUE_INITIAL_BACKOFF
+        except asyncio.QueueFull:
+            # Rate limit the warning messages
+            current_time = time.time()
+            if (
+                current_time - self.last_flush_queue_warning
+                >= FLUSH_QUEUE_WARNING_INTERVAL
+            ):
+                logger.warning(
+                    f"⚠️ Flush queue is full, will retry with {self.flush_retry_backoff:.1f}s backoff"
+                )
+                self.last_flush_queue_warning = current_time
+
+            # Schedule a retry with backoff if not already scheduled
+            if self.flush_retry_task is None or self.flush_retry_task.done():
+                self.flush_retry_task = asyncio.create_task(
+                    self._retry_flush_with_backoff()
+                )
+        except Exception as flush_error:
+            logger.warning(f"⚠️ Failed to queue flush request: {flush_error}")
+
+    async def _retry_flush_with_backoff(self) -> None:
+        """Retry flushing with exponential backoff."""
+        await asyncio.sleep(self.flush_retry_backoff)
+
+        # Increase backoff for next retry (exponential with cap)
+        self.flush_retry_backoff = min(
+            self.flush_retry_backoff * 2, FLUSH_QUEUE_MAX_BACKOFF
+        )
+
+        # Check if we still need to flush
+        with self.pending_messages_lock:
+            needs_flush = len(self.pending_messages) >= self.batch_size
+
+        if needs_flush:
+            # Try to flush again
+            await self._try_queue_flush()
 
     def __queue_record(
         self, path: list[tuple[str, dict[str, Any] | None]], data: dict[str, Any]
