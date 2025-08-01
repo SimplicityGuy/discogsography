@@ -40,6 +40,16 @@ completed_files = set()  # Track which files have completed processing
 current_task = None
 current_progress = 0.0
 
+# Consumer management
+consumer_tags: dict[str, str] = {}  # {"artists": "consumer-tag-123", ...}
+consumer_cancel_tasks: dict[
+    str, asyncio.Task[None]
+] = {}  # {"artists": asyncio.Task, ...}
+queues: dict[str, Any] = {}  # {"artists": queue_object, ...}
+CONSUMER_CANCEL_DELAY = int(
+    os.environ.get("CONSUMER_CANCEL_DELAY", "300")
+)  # Default 5 minutes
+
 # Driver will be initialized in main
 graph: ResilientNeo4jDriver | None = None
 
@@ -95,6 +105,41 @@ def safe_execute_query(session: Any, query: str, parameters: dict[str, Any]) -> 
         return False
 
 
+async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
+    """Schedule cancellation of a consumer after a delay."""
+
+    async def cancel_after_delay() -> None:
+        try:
+            await asyncio.sleep(CONSUMER_CANCEL_DELAY)
+
+            if data_type in consumer_tags:
+                consumer_tag = consumer_tags[data_type]
+                logger.info(
+                    f"🔌 Canceling consumer for {data_type} after {CONSUMER_CANCEL_DELAY}s grace period"
+                )
+
+                # Cancel the consumer with nowait to avoid hanging
+                await queue.cancel(consumer_tag, nowait=True)
+
+                # Remove from tracking
+                del consumer_tags[data_type]
+
+                logger.info(f"✅ Consumer for {data_type} successfully canceled")
+        except Exception as e:
+            logger.error(f"❌ Failed to cancel consumer for {data_type}: {e}")
+        finally:
+            # Clean up the task reference
+            if data_type in consumer_cancel_tasks:
+                del consumer_cancel_tasks[data_type]
+
+    # Cancel any existing scheduled cancellation
+    if data_type in consumer_cancel_tasks:
+        consumer_cancel_tasks[data_type].cancel()
+
+    # Schedule new cancellation
+    consumer_cancel_tasks[data_type] = asyncio.create_task(cancel_after_delay())
+
+
 async def check_file_completion(
     data: dict[str, Any], data_type: str, message: AbstractIncomingMessage
 ) -> bool:
@@ -106,6 +151,11 @@ async def check_file_completion(
             f"🎉 File processing complete for {data_type}! "
             f"Total records processed: {total_processed}"
         )
+
+        # Schedule consumer cancellation if enabled
+        if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
+            await schedule_consumer_cancellation(data_type, queues[data_type])
+
         await message.ack()
         return True
     return False
@@ -841,7 +891,7 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
 
 
 async def main() -> None:
-    global config, graph
+    global config, graph, queues
 
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
@@ -992,15 +1042,17 @@ async def main() -> None:
         masters_queue = queues["masters"]
         releases_queue = queues["releases"]
 
-        # Start consumers with consumer tags for better debugging
-        await artists_queue.consume(
+        # Start consumers and store their tags
+        consumer_tags["artists"] = await artists_queue.consume(
             on_artist_message, consumer_tag="graphinator-artists"
         )
-        await labels_queue.consume(on_label_message, consumer_tag="graphinator-labels")
-        await masters_queue.consume(
+        consumer_tags["labels"] = await labels_queue.consume(
+            on_label_message, consumer_tag="graphinator-labels"
+        )
+        consumer_tags["masters"] = await masters_queue.consume(
             on_master_message, consumer_tag="graphinator-masters"
         )
-        await releases_queue.consume(
+        consumer_tags["releases"] = await releases_queue.consume(
             on_release_message, consumer_tag="graphinator-releases"
         )
 
@@ -1074,6 +1126,19 @@ async def main() -> None:
                     ]
                     logger.warning(f"⚠️ Slow consumers detected: {slow_consumers}")
 
+                # Log consumer status
+                active_consumers = list(consumer_tags.keys())
+                canceled_consumers = [
+                    dt
+                    for dt in DATA_TYPES
+                    if dt not in consumer_tags and dt in completed_files
+                ]
+
+                if canceled_consumers:
+                    logger.info(f"🔌 Canceled consumers: {canceled_consumers}")
+                if active_consumers:
+                    logger.info(f"✅ Active consumers: {active_consumers}")
+
         progress_task = asyncio.create_task(progress_reporter())
 
         try:
@@ -1095,6 +1160,10 @@ async def main() -> None:
             progress_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await progress_task
+
+            # Cancel any pending consumer cancellation tasks
+            for task in consumer_cancel_tasks.values():
+                task.cancel()
 
             # Close Neo4j driver
             try:

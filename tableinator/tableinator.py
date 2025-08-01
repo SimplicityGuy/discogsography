@@ -40,6 +40,16 @@ completed_files = set()  # Track which files have completed processing
 current_task = None
 current_progress = 0.0
 
+# Consumer management
+consumer_tags: dict[str, str] = {}  # {"artists": "consumer-tag-123", ...}
+consumer_cancel_tasks: dict[
+    str, asyncio.Task[None]
+] = {}  # {"artists": asyncio.Task, ...}
+queues: dict[str, Any] = {}  # {"artists": queue_object, ...}
+CONSUMER_CANCEL_DELAY = int(
+    os.environ.get("CONSUMER_CANCEL_DELAY", "300")
+)  # Default 5 minutes
+
 # Connection parameters will be initialized in main
 connection_params: dict[str, Any] = {}
 
@@ -94,6 +104,41 @@ def safe_execute_query(cursor: Any, query: Any, parameters: tuple[Any, ...]) -> 
         return False
 
 
+async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
+    """Schedule cancellation of a consumer after a delay."""
+
+    async def cancel_after_delay() -> None:
+        try:
+            await asyncio.sleep(CONSUMER_CANCEL_DELAY)
+
+            if data_type in consumer_tags:
+                consumer_tag = consumer_tags[data_type]
+                logger.info(
+                    f"🔌 Canceling consumer for {data_type} after {CONSUMER_CANCEL_DELAY}s grace period"
+                )
+
+                # Cancel the consumer with nowait to avoid hanging
+                await queue.cancel(consumer_tag, nowait=True)
+
+                # Remove from tracking
+                del consumer_tags[data_type]
+
+                logger.info(f"✅ Consumer for {data_type} successfully canceled")
+        except Exception as e:
+            logger.error(f"❌ Failed to cancel consumer for {data_type}: {e}")
+        finally:
+            # Clean up the task reference
+            if data_type in consumer_cancel_tasks:
+                del consumer_cancel_tasks[data_type]
+
+    # Cancel any existing scheduled cancellation
+    if data_type in consumer_cancel_tasks:
+        consumer_cancel_tasks[data_type].cancel()
+
+    # Schedule new cancellation
+    consumer_cancel_tasks[data_type] = asyncio.create_task(cancel_after_delay())
+
+
 async def on_data_message(message: AbstractIncomingMessage) -> None:
     if shutdown_requested:
         logger.info("🛑 Shutdown requested, rejecting new messages")
@@ -112,7 +157,18 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
                 f"🎉 File processing complete for {data_type}! "
                 f"Total records processed: {total_processed}"
             )
+
+            # Schedule consumer cancellation if enabled
+            if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
+                await schedule_consumer_cancellation(data_type, queues[data_type])
+
             await message.ack()
+            return
+
+        # Normal message processing - require 'id' field
+        if "id" not in data:
+            logger.error(f"❌ Message missing 'id' field: {data}")
+            await message.nack(requeue=False)
             return
 
         data_id: str = data["id"]
@@ -202,7 +258,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
 
 async def main() -> None:
-    global connection_pool, config, connection_params
+    global connection_pool, config, connection_params, queues
 
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
@@ -401,10 +457,11 @@ async def main() -> None:
         masters_queue = queues["masters"]
         releases_queue = queues["releases"]
 
-        await artists_queue.consume(on_data_message)
-        await labels_queue.consume(on_data_message)
-        await masters_queue.consume(on_data_message)
-        await releases_queue.consume(on_data_message)
+        # Start consumers and store their tags
+        consumer_tags["artists"] = await artists_queue.consume(on_data_message)
+        consumer_tags["labels"] = await labels_queue.consume(on_data_message)
+        consumer_tags["masters"] = await masters_queue.consume(on_data_message)
+        consumer_tags["releases"] = await releases_queue.consume(on_data_message)
 
         logger.info(
             f"🚀 Tableinator started! Connected to AMQP broker (exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE}). "
@@ -475,6 +532,19 @@ async def main() -> None:
                     ]
                     logger.warning(f"⚠️ Slow consumers detected: {slow_consumers}")
 
+                # Log consumer status
+                active_consumers = list(consumer_tags.keys())
+                canceled_consumers = [
+                    dt
+                    for dt in DATA_TYPES
+                    if dt not in consumer_tags and dt in completed_files
+                ]
+
+                if canceled_consumers:
+                    logger.info(f"🔌 Canceled consumers: {canceled_consumers}")
+                if active_consumers:
+                    logger.info(f"✅ Active consumers: {active_consumers}")
+
         progress_task = asyncio.create_task(progress_reporter())
 
         try:
@@ -496,6 +566,10 @@ async def main() -> None:
             progress_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await progress_task
+
+            # Cancel any pending consumer cancellation tasks
+            for task in consumer_cancel_tasks.values():
+                task.cancel()
 
             # Close connection pool
             try:
