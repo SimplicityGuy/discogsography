@@ -49,6 +49,7 @@ shutdown_requested = False
 # Progress tracking for monitoring
 extraction_progress = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 last_extraction_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+completed_files = set()  # Track which files have been completed
 current_task = None
 current_progress = 0.0
 
@@ -225,6 +226,8 @@ class ConcurrentExtractor:
                     f"✅ Sent file completion message for {self.data_type} "
                     f"(processed {self.total_count} records)"
                 )
+                # Mark this data type as completed to avoid stalled warnings
+                completed_files.add(self.data_type)
             except Exception as e:
                 logger.warning(f"⚠️ Failed to send file completion message: {e}")
 
@@ -720,7 +723,7 @@ async def process_file_async(discogs_data_file: str, config: ExtractorConfig) ->
 
 async def process_discogs_data(config: ExtractorConfig) -> bool:
     """Process Discogs data files. Returns True if successful."""
-    global extraction_progress, last_extraction_time
+    global extraction_progress, last_extraction_time, completed_files
 
     # Reset progress counters for new processing run
     extraction_progress = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
@@ -730,6 +733,7 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
         "masters": 0.0,
         "releases": 0.0,
     }
+    completed_files.clear()  # Clear completed files for new run
 
     try:
         discogs_data = download_discogs_data(str(config.discogs_root))
@@ -800,6 +804,10 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
             # Check for stalled extractors
             stalled_extractors = []
             for data_type, last_time in last_extraction_time.items():
+                # Skip if this file type has been completed
+                if data_type in completed_files:
+                    continue
+
                 if (
                     last_time > 0
                     and extraction_progress[data_type] > 0
@@ -820,6 +828,10 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
                 f"Masters: {extraction_progress['masters']}, Releases: {extraction_progress['releases']})"
             )
 
+            # Show completed files
+            if completed_files:
+                logger.info(f"✅ Completed file types: {sorted(completed_files)}")
+
             # Log current extraction state
             if total == 0:
                 logger.info("⏳ Starting extraction process...")
@@ -828,6 +840,10 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
                 active_extractors = []
                 slow_extractors = []
                 for data_type, last_time in last_extraction_time.items():
+                    # Skip if this file type has been completed
+                    if data_type in completed_files:
+                        continue
+
                     if last_time > 0:
                         time_since_last = current_time - last_time
                         if time_since_last < 5:
