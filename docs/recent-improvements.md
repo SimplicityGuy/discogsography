@@ -4,7 +4,7 @@
 
 **Summary of recent enhancements to the Discogsography platform**
 
-Last Updated: November 2024
+Last Updated: January 2025
 
 </div>
 
@@ -102,6 +102,29 @@ All workflows now have status badges for quick health monitoring:
 - [![Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml)
 - [![E2E Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml)
 
+## 🔄 Message Processing Improvements (January 2025)
+
+### Consumer Lifecycle Management
+
+- ✅ Implemented automatic consumer cancellation after file completion
+- ✅ Added grace period configuration (`CONSUMER_CANCEL_DELAY`)
+- ✅ Enhanced progress reporting with consumer status
+- ✅ Freed up RabbitMQ resources for completed files
+
+### File Completion Tracking
+
+- ✅ Added intelligent file completion tracking in extractor
+- ✅ Prevented false stalled extractor warnings for completed files
+- ✅ Enhanced progress monitoring with completion status
+- ✅ Improved debugging with clear active vs. completed indicators
+
+### Documentation
+
+- ✅ Created comprehensive [File Completion Tracking](file-completion-tracking.md) guide
+- ✅ Updated [Consumer Cancellation](consumer-cancellation.md) documentation
+- ✅ Added complete documentation index at [docs/README.md](README.md)
+- ✅ Linked all documentation from main README
+
 ## 🎯 Next Steps
 
 ### Planned Improvements
@@ -110,12 +133,14 @@ All workflows now have status badges for quick health monitoring:
 - [ ] Add performance benchmarking workflows
 - [ ] Create development environment setup workflow
 - [ ] Implement automated changelog generation
+- [ ] Persist file completion state across restarts
 
 ### Monitoring Enhancements
 
 - [ ] Add workflow analytics dashboard
 - [ ] Implement cost tracking for GitHub Actions
 - [ ] Create automated performance reports
+- [ ] Add completion metrics to monitoring dashboard
 
 ## 🤝 Contributing
 

@@ -1,5 +1,13 @@
 # Consumer Cancellation Feature
 
+<div align="center">
+
+**Automatic consumer lifecycle management for completed file processing**
+
+Last Updated: January 2025
+
+</div>
+
 ## Overview
 
 The consumer cancellation feature automatically closes RabbitMQ queue consumers after files have completed processing. This helps free up resources and provides clearer monitoring of active vs. completed file processing.
@@ -102,3 +110,19 @@ docker-compose logs -f tableinator graphinator
 - Consumer tags are stored when consumers are created
 - Cancellation tasks are tracked to allow proper cleanup on shutdown
 - The `nowait=True` parameter prevents hanging if RabbitMQ is slow to respond
+
+## Extractor Integration
+
+The extractor service integrates with consumer cancellation by:
+
+1. **Sending File Completion Messages**: When a file finishes processing, the extractor sends a "file_complete" message
+1. **Tracking Completed Files**: The extractor maintains a `completed_files` set to avoid false stalled warnings
+1. **Progress Monitoring**: Completed files are excluded from stalled detection logic
+
+This prevents the extractor from incorrectly reporting files as "stalled" when they have actually completed processing and their consumers have been canceled.
+
+### Recent Improvements (January 2025)
+
+- Added `completed_files` tracking in extractor to prevent false stalled warnings
+- Enhanced progress reporting to show which file types are completed
+- Fixed issue where completed files would show as stalled after 2 minutes of inactivity

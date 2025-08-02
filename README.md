@@ -117,13 +117,41 @@ graph TD
 
 ## 📖 Documentation
 
+### 🎯 Essential Guides
+
 | Document | Purpose |
 |----------|---------|
 | **[CLAUDE.md](CLAUDE.md)** | 🤖 Claude Code integration guide & development standards |
+| **[Documentation Index](docs/README.md)** | 📚 Complete documentation directory with all guides |
 | **[GitHub Actions Guide](docs/github-actions-guide.md)** | 🚀 CI/CD workflows, automation & best practices |
-| **[Task Automation](docs/task-automation.md)** | 🚀 Complete taskipy command reference |
+| **[Task Automation](docs/task-automation.md)** | ⚡ Complete taskipy command reference |
+
+### 🏗️ Development Standards
+
+| Document | Purpose |
+|----------|---------|
+| **[Monorepo Guide](docs/monorepo-guide.md)** | 📦 Managing Python monorepo with shared dependencies |
+| **[Testing Guide](docs/testing-guide.md)** | 🧪 Comprehensive testing strategies and patterns |
+| **[Logging Guide](docs/logging-guide.md)** | 📊 Structured logging standards and practices |
+| **[Python Version Management](docs/python-version-management.md)** | 🐍 Managing Python 3.13+ across the project |
+
+### 🛡️ Operations & Security
+
+| Document | Purpose |
+|----------|---------|
 | **[Docker Security](docs/docker-security.md)** | 🔒 Container hardening & security practices |
-| **[Dockerfile Standards](docs/dockerfile-standards.md)** | 🏗️ Best practices for writing Dockerfiles |
+| **[Dockerfile Standards](docs/dockerfile-standards.md)** | 🐋 Best practices for writing Dockerfiles |
+| **[Database Resilience](docs/database-resilience.md)** | 💾 Database connection patterns & error handling |
+| **[Performance Guide](docs/performance-guide.md)** | ⚡ Performance optimization strategies |
+
+### 📋 Features & References
+
+| Document | Purpose |
+|----------|---------|
+| **[Consumer Cancellation](docs/consumer-cancellation.md)** | 🔄 File completion and consumer lifecycle |
+| **[Platform Targeting](docs/platform-targeting.md)** | 🎯 Cross-platform compatibility |
+| **[Emoji Guide](docs/emoji-guide.md)** | 📋 Standardized emoji usage |
+| **[Recent Improvements](docs/recent-improvements.md)** | 🚀 Latest platform enhancements |
 | **Service Guides** | 📚 Individual README for each service |
 
 ## 🚀 Quick Start
@@ -883,12 +911,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Documentation
 
-- 📖 **[CLAUDE.md](CLAUDE.md)** - Detailed technical documentation
-- 🚀 **[GitHub Actions Guide](docs/github-actions-guide.md)** - CI/CD workflows and automation
-- 🤖 **[Task Automation](docs/task-automation.md)** - Available tasks and workflows
-- 🔒 **[Docker Security](docs/docker-security.md)** - Security best practices
-- 🏗️ **[Dockerfile Standards](docs/dockerfile-standards.md)** - Container standards
-- 📦 **[Service READMEs](/)** - Individual service documentation
+- 📚 **[Complete Documentation Index](docs/README.md)** - All guides and references
+- 🤖 **[CLAUDE.md](CLAUDE.md)** - AI development guide
+- 📦 **Service Documentation** - README in each service directory
 
 ### Project Status
 

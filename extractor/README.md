@@ -125,6 +125,21 @@ The Docker image includes a volume mount at `/discogs-data` for persistent stora
 - Progress bars for long-running operations
 - Detailed error messages with stack traces
 
+### File Completion Tracking
+
+The extractor includes intelligent file completion tracking:
+
+- Sends "file_complete" messages when processing finishes
+- Tracks completed files to prevent false stalled warnings
+- Shows completion status in progress reports
+- Integrates with consumer cancellation for resource cleanup
+
+Progress reports show:
+
+- Active extractors currently processing files
+- Completed file types that have finished
+- Actual stalled extractors (excludes completed files)
+
 ## Performance
 
 - Streaming XML parser for memory efficiency
