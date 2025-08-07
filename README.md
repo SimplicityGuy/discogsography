@@ -269,6 +269,16 @@ cp .env.example .env
 | `POSTGRES_PASSWORD` | PostgreSQL password | Required | Tableinator, Dashboard, Discovery |
 | `POSTGRES_DATABASE` | Database name | `discogsography` | Tableinator, Dashboard, Discovery |
 
+#### Consumer Management Settings
+
+| Variable | Description | Default | Used By |
+|----------|-------------|---------|---------|
+| `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers after file completion | `300` (5 min) | Graphinator, Tableinator |
+| `RECONNECT_INTERVAL` | Seconds between periodic reconnection attempts for completed files | `86400` (24 hrs) | Graphinator, Tableinator |
+| `EMPTY_QUEUE_TIMEOUT` | Seconds to wait for messages before disconnecting on reconnect | `1800` (30 min) | Graphinator, Tableinator |
+
+> **📝 Note**: The consumer management settings enable automatic reconnection after file processing completes. This ensures that if the extractor processes new Discogs files later, the downstream services will automatically resume consuming messages without manual intervention.
+
 ### 💿 Dataset Scale
 
 <div align="center">
