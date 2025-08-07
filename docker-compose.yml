@@ -173,6 +173,10 @@ services:
       NEO4J_PASSWORD: discogsography
       PYTHONUNBUFFERED: "1"
       STARTUP_DELAY: "15"
+      # Consumer management settings
+      CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
+      RECONNECT_INTERVAL: "86400"       # 24 hours between reconnection attempts
+      EMPTY_QUEUE_TIMEOUT: "1800"       # 30 minutes timeout for empty queues
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -217,6 +221,10 @@ services:
       POSTGRES_DATABASE: discogsography
       PYTHONUNBUFFERED: "1"
       STARTUP_DELAY: "20"
+      # Consumer management settings
+      CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
+      RECONNECT_INTERVAL: "86400"       # 24 hours between reconnection attempts
+      EMPTY_QUEUE_TIMEOUT: "1800"       # 30 minutes timeout for empty queues
     depends_on:
       rabbitmq:
         condition: service_healthy
