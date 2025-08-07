@@ -50,6 +50,17 @@ CONSUMER_CANCEL_DELAY = int(
     os.environ.get("CONSUMER_CANCEL_DELAY", "300")
 )  # Default 5 minutes
 
+# Periodic reconnection settings
+RECONNECT_INTERVAL = int(
+    os.environ.get("RECONNECT_INTERVAL", "86400")
+)  # Default 24 hours (1 day)
+EMPTY_QUEUE_TIMEOUT = int(
+    os.environ.get("EMPTY_QUEUE_TIMEOUT", "1800")
+)  # Default 30 minutes
+reconnect_tasks: dict[
+    str, asyncio.Task[None]
+] = {}  # Tracks periodic reconnection tasks
+
 # Connection parameters will be initialized in main
 connection_params: dict[str, Any] = {}
 
@@ -124,6 +135,10 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
                 del consumer_tags[data_type]
 
                 logger.info(f"✅ Consumer for {data_type} successfully canceled")
+
+                # Schedule periodic reconnection if enabled
+                if RECONNECT_INTERVAL > 0:
+                    await schedule_periodic_reconnection(data_type)
         except Exception as e:
             logger.error(f"❌ Failed to cancel consumer for {data_type}: {e}")
         finally:
@@ -137,6 +152,97 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
 
     # Schedule new cancellation
     consumer_cancel_tasks[data_type] = asyncio.create_task(cancel_after_delay())
+
+
+async def schedule_periodic_reconnection(data_type: str) -> None:
+    """Schedule periodic reconnection to check for new messages after file completion."""
+
+    async def periodic_reconnect() -> None:
+        """Periodically reconnect to check for new messages."""
+        while data_type in completed_files:
+            try:
+                # Wait for the reconnect interval
+                logger.info(
+                    f"⏰ Scheduled reconnection for {data_type} in {RECONNECT_INTERVAL}s ({RECONNECT_INTERVAL / 3600:.1f} hours)"
+                )
+                await asyncio.sleep(RECONNECT_INTERVAL)
+
+                # Check if we're still marked as complete and not already consuming
+                if data_type not in completed_files or data_type in consumer_tags:
+                    logger.info(
+                        f"🔄 Skipping reconnection for {data_type} - state changed"
+                    )
+                    break
+
+                # Get the queue for this data type
+                if data_type not in queues:
+                    logger.warning(
+                        f"⚠️ Queue not found for {data_type}, skipping reconnection"
+                    )
+                    break
+
+                queue = queues[data_type]
+
+                logger.info(f"🔄 Attempting periodic reconnection for {data_type}...")
+
+                # Start consuming messages again (all data types use the same handler)
+                consumer_tag = await queue.consume(
+                    on_data_message, consumer_tag=f"tableinator-{data_type}-reconnect"
+                )
+                consumer_tags[data_type] = consumer_tag
+
+                logger.info(f"✅ Reconnected consumer for {data_type}")
+
+                # Track that we've reconnected
+                last_message_time[data_type] = time.time()
+                empty_queue_start = time.time()
+
+                # Monitor for empty queue timeout
+                while data_type in consumer_tags:
+                    await asyncio.sleep(60)  # Check every minute
+
+                    # Check if we've received any messages recently
+                    if time.time() - last_message_time[data_type] < 60:
+                        # Reset empty queue timer if we received messages
+                        empty_queue_start = time.time()
+                    elif time.time() - empty_queue_start > EMPTY_QUEUE_TIMEOUT:
+                        # No messages for timeout period, disconnect
+                        logger.info(
+                            f"⏱️ No messages for {data_type} in {EMPTY_QUEUE_TIMEOUT}s, disconnecting..."
+                        )
+
+                        if data_type in consumer_tags:
+                            await queue.cancel(consumer_tags[data_type], nowait=True)
+                            del consumer_tags[data_type]
+                            logger.info(
+                                f"🔌 Disconnected idle consumer for {data_type}"
+                            )
+
+                        # File is still considered complete, will reconnect again later
+                        break
+
+            except Exception as e:
+                logger.error(f"❌ Error in periodic reconnection for {data_type}: {e}")
+                # Clean up consumer if it exists
+                if data_type in consumer_tags:
+                    try:
+                        queue = queues.get(data_type)
+                        if queue:
+                            await queue.cancel(consumer_tags[data_type], nowait=True)
+                    except Exception:  # nosec: B110 - Ignore cancellation errors during cleanup
+                        pass
+                    del consumer_tags[data_type]
+            finally:
+                # Clean up task reference
+                if data_type in reconnect_tasks:
+                    del reconnect_tasks[data_type]
+
+    # Cancel any existing reconnection task
+    if data_type in reconnect_tasks:
+        reconnect_tasks[data_type].cancel()
+
+    # Schedule new reconnection task
+    reconnect_tasks[data_type] = asyncio.create_task(periodic_reconnect())
 
 
 async def on_data_message(message: AbstractIncomingMessage) -> None:
@@ -569,6 +675,10 @@ async def main() -> None:
 
             # Cancel any pending consumer cancellation tasks
             for task in consumer_cancel_tasks.values():
+                task.cancel()
+
+            # Cancel any pending reconnection tasks
+            for task in reconnect_tasks.values():
                 task.cancel()
 
             # Close connection pool
