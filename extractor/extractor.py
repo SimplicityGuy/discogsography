@@ -52,6 +52,7 @@ last_extraction_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases
 completed_files = set()  # Track which files have been completed
 current_task = None
 current_progress = 0.0
+active_connections = {}  # Track active AMQP connections by data type
 
 # Periodic check configuration will be loaded from config
 
@@ -189,6 +190,11 @@ class ConcurrentExtractor:
                 f"✅ Successfully connected to AMQP broker for {self.data_type} "
                 f"(exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE})"
             )
+
+            # Track active connection
+            global active_connections
+            active_connections[self.data_type] = self.amqp_connection
+
             return self
 
         except Exception as e:
@@ -198,6 +204,8 @@ class ConcurrentExtractor:
             raise
 
     def __exit__(self, exc_type: Any, exc_value: Any, exc_tb: Any) -> None:
+        global active_connections
+
         # Flush any pending messages
         try:
             self._flush_pending_messages()
@@ -223,8 +231,8 @@ class ConcurrentExtractor:
                     mandatory=True,
                 )
                 logger.info(
-                    f"✅ Sent file completion message for {self.data_type} "
-                    f"(processed {self.total_count} records)"
+                    f"🎉 File processing complete for {self.data_type}! "
+                    f"Total records processed: {self.total_count}"
                 )
                 # Mark this data type as completed to avoid stalled warnings
                 completed_files.add(self.data_type)
@@ -234,7 +242,14 @@ class ConcurrentExtractor:
         if self.amqp_connection is not None:
             try:
                 self.amqp_connection.close()
-                logger.info("✅ AMQP connection closed gracefully")
+                logger.info(
+                    f"🔌 Closing AMQP connection for {self.data_type} after file completion"
+                )
+
+                # Remove from active connections tracking
+                if self.data_type in active_connections:
+                    del active_connections[self.data_type]
+
             except Exception as e:
                 logger.warning(f"⚠️ Error closing AMQP connection: {e}")
 
@@ -716,6 +731,10 @@ async def process_file_async(discogs_data_file: str, config: ExtractorConfig) ->
         extractor = ConcurrentExtractor(discogs_data_file, config)
         with extractor:
             await extractor.extract_async()
+            # Note: File completion is handled in __exit__ method where:
+            # - File completion message is sent to consumers
+            # - AMQP connection is closed
+            # - completed_files set is updated
     except Exception as e:
         logger.error(f"❌ Failed to process {discogs_data_file}: {e}")
         raise
@@ -723,7 +742,11 @@ async def process_file_async(discogs_data_file: str, config: ExtractorConfig) ->
 
 async def process_discogs_data(config: ExtractorConfig) -> bool:
     """Process Discogs data files. Returns True if successful."""
-    global extraction_progress, last_extraction_time, completed_files
+    global \
+        extraction_progress, \
+        last_extraction_time, \
+        completed_files, \
+        active_connections
 
     # Reset progress counters for new processing run
     extraction_progress = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
@@ -734,6 +757,7 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
         "releases": 0.0,
     }
     completed_files.clear()  # Clear completed files for new run
+    active_connections.clear()  # Clear active connections tracking
 
     try:
         discogs_data = download_discogs_data(str(config.discogs_root))
@@ -821,16 +845,32 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
                     f"No data extracted for >2 minutes."
                 )
 
-            # Always show progress
+            # Always show progress with completion emojis similar to other services
+            progress_parts = []
+            for data_type in ["artists", "labels", "masters", "releases"]:
+                emoji = "🎉 " if data_type in completed_files else ""
+                progress_parts.append(
+                    f"{emoji}{data_type.capitalize()}: {extraction_progress[data_type]}"
+                )
+
             logger.info(
                 f"📊 Extraction Progress: {total} total records extracted "
-                f"(Artists: {extraction_progress['artists']}, Labels: {extraction_progress['labels']}, "
-                f"Masters: {extraction_progress['masters']}, Releases: {extraction_progress['releases']})"
+                f"({', '.join(progress_parts)})"
             )
 
-            # Show completed files
+            # Show completed files clearly
             if completed_files:
-                logger.info(f"✅ Completed file types: {sorted(completed_files)}")
+                logger.info(f"🎉 Completed files: {sorted(completed_files)}")
+
+            # Show connection status
+            if active_connections:
+                logger.info(
+                    f"🔗 Active AMQP connections: {list(active_connections.keys())}"
+                )
+            elif completed_files:
+                logger.info(
+                    f"🔌 Connections closed for completed files: {sorted(completed_files)}"
+                )
 
             # Log current extraction state
             if total == 0:
@@ -876,11 +916,32 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
             with contextlib.suppress(asyncio.CancelledError):
                 await progress_task
 
+    # Log final completion status
+    if completed_files:
+        logger.info(
+            f"🎉 All processing complete! Finished files: {sorted(completed_files)}"
+        )
+
+        # Log final statistics
+        total_extracted = sum(extraction_progress.values())
+        logger.info(
+            f"📊 Final statistics: {total_extracted} total records extracted across all files"
+        )
+
+        # Confirm all connections are closed
+        if not active_connections:
+            logger.info("🔌 All AMQP connections closed after file completion")
+        else:
+            logger.warning(
+                f"⚠️ Unexpected active connections remaining: {list(active_connections.keys())}"
+            )
+
     return True
 
 
 async def periodic_check_loop(config: ExtractorConfig) -> None:
     """Run periodic checks for new or updated files at configured interval."""
+    global active_connections
     periodic_check_days = config.periodic_check_days
     periodic_check_seconds = periodic_check_days * 24 * 60 * 60
 
@@ -891,6 +952,14 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
     while True:
         # Wait for the specified interval
         logger.info(f"⏰ Waiting {periodic_check_days} days before next check...")
+
+        # Verify all connections are closed during wait
+        if not active_connections:
+            logger.info("✅ No active connections during wait period")
+        else:
+            logger.warning(
+                f"⚠️ Unexpected active connections: {list(active_connections.keys())}"
+            )
 
         # Use shorter sleep intervals to check for shutdown more frequently
         elapsed_seconds = 0
@@ -921,6 +990,7 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
 
         # Perform the periodic check
         logger.info("🔄 Starting periodic check for new or updated Discogs files...")
+        logger.info("🔄 Re-establishing connections for data check...")
         check_start_time = datetime.now()
 
         try:
@@ -932,6 +1002,22 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
                     f"✅ Periodic check completed successfully in {check_duration}. "
                     f"Next check in {periodic_check_days} days."
                 )
+
+                # Log what was processed in this check
+                if completed_files:
+                    logger.info(
+                        f"🎉 Files processed in this check: {sorted(completed_files)}"
+                    )
+                else:
+                    logger.info("ℹ️ No new files found in this check")
+
+                # Verify connections are closed
+                if not active_connections:
+                    logger.info("🔌 All connections closed after periodic check")
+                else:
+                    logger.warning(
+                        f"⚠️ Active connections remaining: {list(active_connections.keys())}"
+                    )
             else:
                 logger.error(
                     f"❌ Periodic check failed after {check_duration}. "
@@ -993,6 +1079,12 @@ async def main_async() -> None:
         sys.exit(1)
 
     logger.info("✅ Initial data processing completed successfully")
+
+    # Log summary of what was processed
+    if completed_files:
+        logger.info(f"🎉 Initial processing complete for: {sorted(completed_files)}")
+    if not active_connections:
+        logger.info("🔌 All connections properly closed after initial processing")
 
     # Start periodic check loop
     if not shutdown_requested:
