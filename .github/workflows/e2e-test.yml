@@ -78,7 +78,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
