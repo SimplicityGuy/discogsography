@@ -24,8 +24,7 @@ impl XmlParser {
     }
 
     pub async fn parse_file(&self, file_path: &Path) -> Result<u64> {
-        let file =
-            File::open(file_path).context(format!("Failed to open file: {:?}", file_path))?;
+        let file = File::open(file_path).context(format!("Failed to open file: {:?}", file_path))?;
 
         let decoder = GzDecoder::new(file);
         let buf_reader = BufReader::new(decoder);
@@ -105,11 +104,7 @@ impl XmlParser {
                             let id = record["id"].as_str().unwrap_or("unknown").to_string();
 
                             // Create message
-                            let message = DataMessage {
-                                id: id.clone(),
-                                sha256,
-                                data: record,
-                            };
+                            let message = DataMessage { id: id.clone(), sha256, data: record };
 
                             // Send message
                             if self.sender.send(message).await.is_err() {
@@ -144,11 +139,7 @@ impl XmlParser {
                 Ok(Event::Eof) => break,
 
                 Err(e) => {
-                    error!(
-                        "❌ Error parsing XML at position {}: {}",
-                        reader.buffer_position(),
-                        e
-                    );
+                    error!("❌ Error parsing XML at position {}: {}", reader.buffer_position(), e);
                     return Err(e.into());
                 }
 
@@ -158,10 +149,7 @@ impl XmlParser {
             buf.clear();
         }
 
-        debug!(
-            "✅ Finished parsing {} records from {:?}",
-            record_count, file_path
-        );
+        debug!("✅ Finished parsing {} records from {:?}", record_count, file_path);
         Ok(record_count)
     }
 
@@ -231,8 +219,7 @@ impl XmlParser {
                 "title" | "released" | "country" | "notes" | "data_quality" | "master_id" => {
                     record[field_name] = json!(value);
                 }
-                "artists" | "labels" | "formats" | "genres" | "styles" | "tracklist"
-                | "identifiers" | "videos" | "companies" => {
+                "artists" | "labels" | "formats" | "genres" | "styles" | "tracklist" | "identifiers" | "videos" | "companies" => {
                     if !record[field_name].is_array() {
                         record[field_name] = json!([]);
                     }

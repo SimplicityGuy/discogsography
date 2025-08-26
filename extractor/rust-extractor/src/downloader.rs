@@ -52,20 +52,14 @@ impl Downloader {
 
         let metadata = load_metadata(&output_directory)?;
 
-        Ok(Self {
-            client,
-            output_directory,
-            metadata,
-        })
+        Ok(Self { client, output_directory, metadata })
     }
 
     pub async fn download_discogs_data(&mut self) -> Result<Vec<String>> {
         info!("📥 Starting download of Discogs data dumps...");
 
         // Create output directory if it doesn't exist
-        fs::create_dir_all(&self.output_directory)
-            .await
-            .context("Failed to create output directory")?;
+        fs::create_dir_all(&self.output_directory).await.context("Failed to create output directory")?;
 
         // List available files from S3
         let available_files = self.list_s3_files().await?;
@@ -109,30 +103,18 @@ impl Downloader {
     async fn list_s3_files(&self) -> Result<Vec<S3FileInfo>> {
         info!("🔍 Listing available files from S3...");
 
-        let response = self
-            .client
-            .get(S3_ENDPOINT)
-            .send()
-            .await
-            .context("Failed to list S3 files")?;
+        let response = self.client.get(S3_ENDPOINT).send().await.context("Failed to list S3 files")?;
 
-        let text = response
-            .text()
-            .await
-            .context("Failed to read S3 response")?;
+        let text = response.text().await.context("Failed to read S3 response")?;
 
         // Parse XML response
-        let doc: S3ListResponse =
-            quick_xml::de::from_str(&text).context("Failed to parse S3 XML response")?;
+        let doc: S3ListResponse = quick_xml::de::from_str(&text).context("Failed to parse S3 XML response")?;
 
         let files: Vec<S3FileInfo> = doc
             .contents
             .into_iter()
             .filter(|obj| obj.key.ends_with(".xml.gz"))
-            .map(|obj| S3FileInfo {
-                name: obj.key,
-                size: obj.size,
-            })
+            .map(|obj| S3FileInfo { name: obj.key, size: obj.size })
             .collect();
 
         debug!("Found {} files in S3 bucket", files.len());
@@ -143,11 +125,7 @@ impl Downloader {
         // Filter for monthly dumps (format: discogs_YYYYMMDD_datatype.xml.gz)
         let mut monthly_files: Vec<_> = files
             .iter()
-            .filter(|f| {
-                f.name.starts_with("discogs_")
-                    && f.name.contains('_')
-                    && !f.name.contains("CHECKSUM")
-            })
+            .filter(|f| f.name.starts_with("discogs_") && f.name.contains('_') && !f.name.contains("CHECKSUM"))
             .cloned()
             .collect();
 
@@ -162,10 +140,7 @@ impl Downloader {
         let latest_month = extract_month_from_filename(&monthly_files[0].name);
 
         // Filter for all files from the latest month
-        let latest_files: Vec<_> = monthly_files
-            .into_iter()
-            .filter(|f| extract_month_from_filename(&f.name) == latest_month)
-            .collect();
+        let latest_files: Vec<_> = monthly_files.into_iter().filter(|f| extract_month_from_filename(&f.name) == latest_month).collect();
 
         Ok(latest_files)
     }
@@ -182,10 +157,7 @@ impl Downloader {
         if let Some(local_info) = self.metadata.get(&file_info.name) {
             // Compare sizes
             if local_info.size != file_info.size {
-                info!(
-                    "📊 File size changed for {}: {} -> {}",
-                    file_info.name, local_info.size, file_info.size
-                );
+                info!("📊 File size changed for {}: {} -> {}", file_info.name, local_info.size, file_info.size);
                 return Ok(true);
             }
 
@@ -210,11 +182,7 @@ impl Downloader {
         let url = format!("{}/{}", S3_ENDPOINT, file_info.name);
         let local_path = self.output_directory.join(&file_info.name);
 
-        info!(
-            "⬇️ Downloading {} ({:.2} MB)...",
-            file_info.name,
-            file_info.size as f64 / 1_048_576.0
-        );
+        info!("⬇️ Downloading {} ({:.2} MB)...", file_info.name, file_info.size as f64 / 1_048_576.0);
 
         // Create progress bar
         let pb = ProgressBar::new(file_info.size);
@@ -226,17 +194,10 @@ impl Downloader {
         );
 
         // Download with streaming
-        let response = self
-            .client
-            .get(&url)
-            .send()
-            .await
-            .context("Failed to start download")?;
+        let response = self.client.get(&url).send().await.context("Failed to start download")?;
 
         let mut stream = response.bytes_stream();
-        let mut file = File::create(&local_path)
-            .await
-            .context("Failed to create local file")?;
+        let mut file = File::create(&local_path).await.context("Failed to create local file")?;
 
         let mut hasher = Sha256::new();
         let mut downloaded = 0u64;
@@ -244,9 +205,7 @@ impl Downloader {
         while let Some(chunk) = stream.next().await {
             let chunk = chunk.context("Failed to download chunk")?;
             hasher.update(&chunk);
-            file.write_all(&chunk)
-                .await
-                .context("Failed to write chunk")?;
+            file.write_all(&chunk).await.context("Failed to write chunk")?;
 
             downloaded += chunk.len() as u64;
             pb.set_position(downloaded);
@@ -273,8 +232,7 @@ impl Downloader {
 
     fn save_metadata(&self) -> Result<()> {
         let metadata_file = self.output_directory.join(".discogs_metadata.json");
-        let json =
-            serde_json::to_string_pretty(&self.metadata).context("Failed to serialize metadata")?;
+        let json = serde_json::to_string_pretty(&self.metadata).context("Failed to serialize metadata")?;
 
         std::fs::write(metadata_file, json).context("Failed to save metadata")?;
 
@@ -295,17 +253,13 @@ fn load_metadata(output_directory: &Path) -> Result<HashMap<String, LocalFileInf
 }
 
 async fn calculate_file_checksum(path: &Path) -> Result<String> {
-    let mut file = File::open(path)
-        .await
-        .context("Failed to open file for checksum")?;
+    let mut file = File::open(path).await.context("Failed to open file for checksum")?;
 
     let mut hasher = Sha256::new();
     let mut buffer = vec![0; 8192];
 
     loop {
-        let n = tokio::io::AsyncReadExt::read(&mut file, &mut buffer)
-            .await
-            .context("Failed to read file for checksum")?;
+        let n = tokio::io::AsyncReadExt::read(&mut file, &mut buffer).await.context("Failed to read file for checksum")?;
 
         if n == 0 {
             break;
@@ -333,13 +287,7 @@ mod tests {
 
     #[test]
     fn test_extract_month() {
-        assert_eq!(
-            extract_month_from_filename("discogs_20241201_artists.xml.gz"),
-            "202412"
-        );
-        assert_eq!(
-            extract_month_from_filename("discogs_20240115_labels.xml.gz"),
-            "202401"
-        );
+        assert_eq!(extract_month_from_filename("discogs_20241201_artists.xml.gz"), "202412");
+        assert_eq!(extract_month_from_filename("discogs_20240115_labels.xml.gz"), "202401");
     }
 }

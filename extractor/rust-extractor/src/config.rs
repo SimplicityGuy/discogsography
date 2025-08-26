@@ -38,6 +38,7 @@ impl Default for DistillerConfig {
 
 impl DistillerConfig {
     /// Load configuration from file
+    #[allow(dead_code)]
     pub fn from_file(path: &Path) -> Result<Self> {
         let config = Config::builder()
             .add_source(File::from(path).required(false))
@@ -45,25 +46,17 @@ impl DistillerConfig {
             .build()
             .context("Failed to build configuration")?;
 
-        config
-            .try_deserialize()
-            .context("Failed to deserialize configuration")
+        config.try_deserialize().context("Failed to deserialize configuration")
     }
 
     /// Load configuration from environment variables (drop-in replacement for extractor)
     pub fn from_env() -> Result<Self> {
         // Use same environment variables as Python extractor for drop-in compatibility
-        let amqp_connection = std::env::var("AMQP_CONNECTION")
-            .context("AMQP_CONNECTION environment variable is required")?;
+        let amqp_connection = std::env::var("AMQP_CONNECTION").context("AMQP_CONNECTION environment variable is required")?;
 
-        let discogs_root = PathBuf::from(
-            std::env::var("DISCOGS_ROOT").unwrap_or_else(|_| "/discogs-data".to_string()),
-        );
+        let discogs_root = PathBuf::from(std::env::var("DISCOGS_ROOT").unwrap_or_else(|_| "/discogs-data".to_string()));
 
-        let periodic_check_days = std::env::var("PERIODIC_CHECK_DAYS")
-            .unwrap_or_else(|_| "15".to_string())
-            .parse::<u64>()
-            .unwrap_or(15);
+        let periodic_check_days = std::env::var("PERIODIC_CHECK_DAYS").unwrap_or_else(|_| "15".to_string()).parse::<u64>().unwrap_or(15);
 
         // Internal settings - use defaults for drop-in compatibility
         let max_workers = std::env::var("MAX_WORKERS")

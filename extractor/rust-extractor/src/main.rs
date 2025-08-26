@@ -22,12 +22,7 @@ use health::HealthServer;
 #[clap(author, version, about, long_about = None)]
 struct Args {
     /// Path to the configuration file
-    #[clap(
-        short,
-        long,
-        env = "RUST_EXTRACTOR_CONFIG",
-        default_value = "config.toml"
-    )]
+    #[clap(short, long, env = "RUST_EXTRACTOR_CONFIG", default_value = "config.toml")]
     config: PathBuf,
 
     /// Force reprocess all files
@@ -87,13 +82,7 @@ async fn main() -> Result<()> {
     let shutdown = setup_shutdown_handler();
 
     // Run the main extraction loop
-    let extraction_result = extractor::run_extraction_loop(
-        config.clone(),
-        state.clone(),
-        shutdown.clone(),
-        args.force_reprocess,
-    )
-    .await;
+    let extraction_result = extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess).await;
 
     // Cleanup
     info!("🛑 Shutting down rust-extractor...");

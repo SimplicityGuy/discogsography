@@ -40,9 +40,7 @@ impl HealthServer {
     }
 }
 
-async fn health_handler(
-    State(state): State<Arc<RwLock<ExtractorState>>>,
-) -> (StatusCode, Json<serde_json::Value>) {
+async fn health_handler(State(state): State<Arc<RwLock<ExtractorState>>>) -> (StatusCode, Json<serde_json::Value>) {
     let state = state.read().await;
 
     let health = json!({
@@ -69,9 +67,7 @@ async fn health_handler(
     (StatusCode::OK, Json(health))
 }
 
-async fn metrics_handler(
-    State(state): State<Arc<RwLock<ExtractorState>>>,
-) -> (StatusCode, Json<serde_json::Value>) {
+async fn metrics_handler(State(state): State<Arc<RwLock<ExtractorState>>>) -> (StatusCode, Json<serde_json::Value>) {
     let state = state.read().await;
 
     let metrics = json!({

@@ -47,16 +47,10 @@ pub async fn process_discogs_data(
 
     // Download latest data
     let mut downloader = Downloader::new(config.discogs_root.clone())?;
-    let data_files = downloader
-        .download_discogs_data()
-        .await
-        .context("Failed to download Discogs data")?;
+    let data_files = downloader.download_discogs_data().await.context("Failed to download Discogs data")?;
 
     // Filter out checksum files
-    let data_files: Vec<_> = data_files
-        .into_iter()
-        .filter(|f| !f.contains("CHECKSUM"))
-        .collect();
+    let data_files: Vec<_> = data_files.into_iter().filter(|f| !f.contains("CHECKSUM")).collect();
 
     if data_files.is_empty() {
         warn!("⚠️ No data files to process");
@@ -142,14 +136,8 @@ pub async fn process_discogs_data(
     // Log completion
     let s = state.read().await;
     if !s.completed_files.is_empty() {
-        info!(
-            "🎉 All processing complete! Finished files: {:?}",
-            s.completed_files
-        );
-        info!(
-            "📊 Final statistics: {} total records extracted",
-            s.extraction_progress.total()
-        );
+        info!("🎉 All processing complete! Finished files: {:?}", s.completed_files);
+        info!("📊 Final statistics: {} total records extracted", s.extraction_progress.total());
     }
 
     Ok(success)
@@ -163,17 +151,12 @@ async fn process_single_file(
     _shutdown: Arc<tokio::sync::Notify>,
 ) -> Result<()> {
     // Extract data type from filename
-    let data_type = extract_data_type(file_name)
-        .ok_or_else(|| anyhow::anyhow!("Invalid file format: {}", file_name))?;
+    let data_type = extract_data_type(file_name).ok_or_else(|| anyhow::anyhow!("Invalid file format: {}", file_name))?;
 
     info!("🚀 Starting extraction of {} from {}", data_type, file_name);
 
     // Connect to message queue
-    let mq = Arc::new(
-        MessageQueue::new(&config.amqp_connection, 3)
-            .await
-            .context("Failed to connect to message queue")?,
-    );
+    let mq = Arc::new(MessageQueue::new(&config.amqp_connection, 3).await.context("Failed to connect to message queue")?);
 
     // Setup queues for this data type
     mq.setup_queues(data_type).await?;
@@ -181,8 +164,7 @@ async fn process_single_file(
     // Track active connection
     {
         let mut s = state.write().await;
-        s.active_connections
-            .insert(data_type, file_name.to_string());
+        s.active_connections.insert(data_type, file_name.to_string());
     }
 
     // Create channels for processing pipeline
@@ -216,8 +198,7 @@ async fn process_single_file(
     publisher_handle.await??;
 
     // Send file completion message
-    mq.send_file_complete(data_type, file_name, total_count)
-        .await?;
+    mq.send_file_complete(data_type, file_name, total_count).await?;
 
     // Clean up
     mq.close().await?;
@@ -229,10 +210,7 @@ async fn process_single_file(
         s.active_connections.remove(&data_type);
     }
 
-    info!(
-        "✅ Completed processing {} with {} records",
-        file_name, total_count
-    );
+    info!("✅ Completed processing {} with {} records", file_name, total_count);
     Ok(())
 }
 
@@ -257,8 +235,7 @@ async fn message_batcher(
                 {
                     let mut s = state.write().await;
                     s.extraction_progress.increment(data_type);
-                    s.last_extraction_time
-                        .insert(data_type, Instant::now().elapsed().as_secs_f64());
+                    s.last_extraction_time.insert(data_type, Instant::now().elapsed().as_secs_f64());
                 }
 
                 // Send batch if full
@@ -320,11 +297,7 @@ async fn progress_reporter(state: Arc<RwLock<ExtractorState>>, shutdown: Arc<tok
         // Check for shutdown will be handled by select! below
 
         // Sleep interval
-        let interval = if report_count < 3 {
-            Duration::from_secs(10)
-        } else {
-            Duration::from_secs(30)
-        };
+        let interval = if report_count < 3 { Duration::from_secs(10) } else { Duration::from_secs(30) };
 
         tokio::select! {
             _ = sleep(interval) => {},
@@ -341,12 +314,7 @@ async fn progress_reporter(state: Arc<RwLock<ExtractorState>>, shutdown: Arc<tok
         let mut stalled = Vec::new();
 
         for (data_type, last_time) in &s.last_extraction_time {
-            if !s
-                .completed_files
-                .contains(&format!("discogs_*_{}.xml.gz", data_type))
-                && *last_time > 0.0
-                && (current_time - last_time) > 120.0
-            {
+            if !s.completed_files.contains(&format!("discogs_*_{}.xml.gz", data_type)) && *last_time > 0.0 && (current_time - last_time) > 120.0 {
                 stalled.push(data_type.to_string());
             }
         }
@@ -358,11 +326,7 @@ async fn progress_reporter(state: Arc<RwLock<ExtractorState>>, shutdown: Arc<tok
         // Log progress
         info!(
             "📊 Extraction Progress: {} total records (Artists: {}, Labels: {}, Masters: {}, Releases: {})",
-            total,
-            s.extraction_progress.artists,
-            s.extraction_progress.labels,
-            s.extraction_progress.masters,
-            s.extraction_progress.releases
+            total, s.extraction_progress.artists, s.extraction_progress.labels, s.extraction_progress.masters, s.extraction_progress.releases
         );
 
         if !s.completed_files.is_empty() {
@@ -370,10 +334,7 @@ async fn progress_reporter(state: Arc<RwLock<ExtractorState>>, shutdown: Arc<tok
         }
 
         if !s.active_connections.is_empty() {
-            info!(
-                "🔗 Active connections: {:?}",
-                s.active_connections.keys().collect::<Vec<_>>()
-            );
+            info!("🔗 Active connections: {:?}", s.active_connections.keys().collect::<Vec<_>>());
         }
     }
 }
@@ -417,13 +378,7 @@ pub async fn run_extraction_loop(
     info!("📥 Starting initial data processing...");
 
     // Process initial data
-    let success = process_discogs_data(
-        config.clone(),
-        state.clone(),
-        shutdown.clone(),
-        force_reprocess,
-    )
-    .await?;
+    let success = process_discogs_data(config.clone(), state.clone(), shutdown.clone(), force_reprocess).await?;
 
     if !success {
         error!("❌ Initial data processing failed");
@@ -435,10 +390,7 @@ pub async fn run_extraction_loop(
     // Start periodic check loop
     loop {
         let check_interval = Duration::from_secs(config.periodic_check_days * 24 * 60 * 60);
-        info!(
-            "⏰ Waiting {} days before next check...",
-            config.periodic_check_days
-        );
+        info!("⏰ Waiting {} days before next check...", config.periodic_check_days);
 
         tokio::select! {
             _ = sleep(check_interval) => {
@@ -473,14 +425,8 @@ mod tests {
 
     #[test]
     fn test_extract_data_type() {
-        assert_eq!(
-            extract_data_type("discogs_20241201_artists.xml.gz"),
-            Some(DataType::Artists)
-        );
-        assert_eq!(
-            extract_data_type("discogs_20241201_labels.xml.gz"),
-            Some(DataType::Labels)
-        );
+        assert_eq!(extract_data_type("discogs_20241201_artists.xml.gz"), Some(DataType::Artists));
+        assert_eq!(extract_data_type("discogs_20241201_labels.xml.gz"), Some(DataType::Labels));
         assert_eq!(extract_data_type("invalid_format.xml"), None);
     }
 }

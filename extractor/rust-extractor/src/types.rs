@@ -15,13 +15,9 @@ pub enum DataType {
 
 impl DataType {
     /// Get all data types
+    #[allow(dead_code)]
     pub fn all() -> Vec<DataType> {
-        vec![
-            DataType::Artists,
-            DataType::Labels,
-            DataType::Masters,
-            DataType::Releases,
-        ]
+        vec![DataType::Artists, DataType::Labels, DataType::Masters, DataType::Releases]
     }
 
     /// Get the string representation for file names
@@ -79,6 +75,7 @@ impl ExtractionProgress {
         }
     }
 
+    #[allow(dead_code)]
     pub fn get(&self, data_type: DataType) -> u64 {
         match data_type {
             DataType::Artists => self.artists,
@@ -136,6 +133,7 @@ impl ProcessingState {
         self.files.insert(file.to_string(), true);
     }
 
+    #[allow(dead_code)]
     pub fn clear(&mut self) {
         self.files.clear();
     }

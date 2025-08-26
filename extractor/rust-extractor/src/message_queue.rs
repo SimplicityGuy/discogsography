@@ -1,9 +1,6 @@
 use anyhow::{Context, Result};
 // use futures::StreamExt; // Not needed for current implementation
-use lapin::{
-    options::*, types::FieldTable, BasicProperties, Channel, Connection, ConnectionProperties,
-    ExchangeKind,
-};
+use lapin::{options::*, types::FieldTable, BasicProperties, Channel, Connection, ConnectionProperties, ExchangeKind};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -26,12 +23,7 @@ pub struct MessageQueue {
 
 impl MessageQueue {
     pub async fn new(url: &str, max_retries: u32) -> Result<Self> {
-        let mq = Self {
-            connection: Arc::new(RwLock::new(None)),
-            channel: Arc::new(RwLock::new(None)),
-            url: url.to_string(),
-            max_retries,
-        };
+        let mq = Self { connection: Arc::new(RwLock::new(None)), channel: Arc::new(RwLock::new(None)), url: url.to_string(), max_retries };
 
         mq.connect().await?;
         Ok(mq)
@@ -52,10 +44,7 @@ impl MessageQueue {
                     if retry_count >= self.max_retries {
                         return Err(e).context("Failed to connect to AMQP broker after retries");
                     }
-                    warn!(
-                        "⚠️ Failed to connect to AMQP (attempt {}/{}): {}",
-                        retry_count, self.max_retries, e
-                    );
+                    warn!("⚠️ Failed to connect to AMQP (attempt {}/{}): {}", retry_count, self.max_retries, e);
                     sleep(backoff).await;
                     backoff = (backoff * 2).min(Duration::from_secs(30));
                 }
@@ -72,33 +61,20 @@ impl MessageQueue {
         .await
         .context("Failed to establish AMQP connection")?;
 
-        let channel = conn
-            .create_channel()
-            .await
-            .context("Failed to create AMQP channel")?;
+        let channel = conn.create_channel().await.context("Failed to create AMQP channel")?;
 
         // Enable publisher confirms
-        channel
-            .confirm_select(ConfirmSelectOptions::default())
-            .await
-            .context("Failed to enable publisher confirms")?;
+        channel.confirm_select(ConfirmSelectOptions::default()).await.context("Failed to enable publisher confirms")?;
 
         // Set QoS
-        channel
-            .basic_qos(100, BasicQosOptions::default())
-            .await
-            .context("Failed to set QoS")?;
+        channel.basic_qos(100, BasicQosOptions::default()).await.context("Failed to set QoS")?;
 
         // Declare exchange
         channel
             .exchange_declare(
                 AMQP_EXCHANGE,
                 AMQP_EXCHANGE_TYPE,
-                ExchangeDeclareOptions {
-                    durable: true,
-                    auto_delete: false,
-                    ..Default::default()
-                },
+                ExchangeDeclareOptions { durable: true, auto_delete: false, ..Default::default() },
                 FieldTable::default(),
             )
             .await
@@ -118,58 +94,27 @@ impl MessageQueue {
 
         // Declare and bind graphinator queue
         channel
-            .queue_declare(
-                &graphinator_queue,
-                QueueDeclareOptions {
-                    durable: true,
-                    auto_delete: false,
-                    ..Default::default()
-                },
-                FieldTable::default(),
-            )
+            .queue_declare(&graphinator_queue, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, FieldTable::default())
             .await
             .context("Failed to declare graphinator queue")?;
 
         channel
-            .queue_bind(
-                &graphinator_queue,
-                AMQP_EXCHANGE,
-                data_type.routing_key(),
-                QueueBindOptions::default(),
-                FieldTable::default(),
-            )
+            .queue_bind(&graphinator_queue, AMQP_EXCHANGE, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
             .await
             .context("Failed to bind graphinator queue")?;
 
         // Declare and bind tableinator queue
         channel
-            .queue_declare(
-                &tableinator_queue,
-                QueueDeclareOptions {
-                    durable: true,
-                    auto_delete: false,
-                    ..Default::default()
-                },
-                FieldTable::default(),
-            )
+            .queue_declare(&tableinator_queue, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, FieldTable::default())
             .await
             .context("Failed to declare tableinator queue")?;
 
         channel
-            .queue_bind(
-                &tableinator_queue,
-                AMQP_EXCHANGE,
-                data_type.routing_key(),
-                QueueBindOptions::default(),
-                FieldTable::default(),
-            )
+            .queue_bind(&tableinator_queue, AMQP_EXCHANGE, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
             .await
             .context("Failed to bind tableinator queue")?;
 
-        debug!(
-            "✅ Set up AMQP queues for {} (exchange: {}, type: {:?})",
-            data_type, AMQP_EXCHANGE, AMQP_EXCHANGE_TYPE
-        );
+        debug!("✅ Set up AMQP queues for {} (exchange: {}, type: {:?})", data_type, AMQP_EXCHANGE, AMQP_EXCHANGE_TYPE);
 
         Ok(())
     }
@@ -187,10 +132,7 @@ impl MessageQueue {
             .basic_publish(
                 AMQP_EXCHANGE,
                 data_type.routing_key(),
-                BasicPublishOptions {
-                    mandatory: true,
-                    ..Default::default()
-                },
+                BasicPublishOptions { mandatory: true, ..Default::default() },
                 &payload,
                 properties,
             )
@@ -206,11 +148,7 @@ impl MessageQueue {
         Ok(())
     }
 
-    pub async fn publish_batch(
-        &self,
-        messages: Vec<DataMessage>,
-        data_type: DataType,
-    ) -> Result<()> {
+    pub async fn publish_batch(&self, messages: Vec<DataMessage>, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
 
         let properties = BasicProperties::default()
@@ -219,17 +157,13 @@ impl MessageQueue {
             .with_delivery_mode(2); // Persistent
 
         for message in messages {
-            let payload = serde_json::to_vec(&Message::Data(message))
-                .context("Failed to serialize message")?;
+            let payload = serde_json::to_vec(&Message::Data(message)).context("Failed to serialize message")?;
 
             let confirm = channel
                 .basic_publish(
                     AMQP_EXCHANGE,
                     data_type.routing_key(),
-                    BasicPublishOptions {
-                        mandatory: true,
-                        ..Default::default()
-                    },
+                    BasicPublishOptions { mandatory: true, ..Default::default() },
                     &payload,
                     properties.clone(),
                 )
@@ -246,26 +180,13 @@ impl MessageQueue {
         Ok(())
     }
 
-    pub async fn send_file_complete(
-        &self,
-        data_type: DataType,
-        file_name: &str,
-        total_processed: u64,
-    ) -> Result<()> {
-        let message = FileCompleteMessage {
-            data_type: data_type.to_string(),
-            timestamp: chrono::Utc::now(),
-            total_processed,
-            file: file_name.to_string(),
-        };
+    pub async fn send_file_complete(&self, data_type: DataType, file_name: &str, total_processed: u64) -> Result<()> {
+        let message =
+            FileCompleteMessage { data_type: data_type.to_string(), timestamp: chrono::Utc::now(), total_processed, file: file_name.to_string() };
 
-        self.publish(Message::FileComplete(message), data_type)
-            .await?;
+        self.publish(Message::FileComplete(message), data_type).await?;
 
-        info!(
-            "🎉 File processing complete for {}! Total records processed: {}",
-            data_type, total_processed
-        );
+        info!("🎉 File processing complete for {}! Total records processed: {}", data_type, total_processed);
 
         Ok(())
     }
@@ -285,12 +206,7 @@ impl MessageQueue {
         warn!("⚠️ AMQP channel lost, attempting to reconnect...");
         self.connect().await?;
 
-        self.channel
-            .read()
-            .await
-            .as_ref()
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("Failed to get channel after reconnection"))
+        self.channel.read().await.as_ref().cloned().ok_or_else(|| anyhow::anyhow!("Failed to get channel after reconnection"))
     }
 
     pub async fn close(&self) -> Result<()> {
