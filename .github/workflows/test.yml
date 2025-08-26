@@ -98,7 +98,7 @@ jobs:
         run: |
           # Run tests in groups to avoid async conflicts
           echo "Running core tests..."
-          uv run pytest tests/test_config.py tests/test_integration.py tests/extractor/ -v
+          PYTHONPATH="${GITHUB_WORKSPACE}/extractor:${PYTHONPATH}" uv run pytest tests/test_config.py tests/test_integration.py tests/extractor/ -v
 
           echo "Running dashboard tests..."
           uv run pytest tests/dashboard/ -v -m "not e2e"
@@ -114,7 +114,7 @@ jobs:
 
           # Generate combined coverage report
           echo "Generating coverage report..."
-          uv run pytest --cov --cov-append --cov-report=term --cov-report=xml -m "not e2e" --no-header -q
+          PYTHONPATH="${GITHUB_WORKSPACE}/extractor:${PYTHONPATH}" uv run pytest --cov --cov-append --cov-report=term --cov-report=xml -m "not e2e" --no-header -q
 
       - name: 📊 Upload Python coverage reports
         if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
