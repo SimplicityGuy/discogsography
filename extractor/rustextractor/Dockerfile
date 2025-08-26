@@ -12,8 +12,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy Cargo files and benchmark directory from extractor/rust-extractor subdirectory
-COPY extractor/rust-extractor/Cargo.toml extractor/rust-extractor/Cargo.lock ./
-COPY extractor/rust-extractor/benches ./benches
+COPY extractor/rustextractor/Cargo.toml extractor/rustextractor/Cargo.lock ./
+COPY extractor/rustextractor/benches ./benches
 
 # Create dummy main to cache dependencies
 RUN mkdir src && \
@@ -22,7 +22,7 @@ RUN mkdir src && \
     rm -rf src
 
 # Copy actual source code from extractor/rust-extractor subdirectory
-COPY extractor/rust-extractor/src ./src
+COPY extractor/rustextractor/src ./src
 
 # Build the application
 RUN touch src/main.rs && \

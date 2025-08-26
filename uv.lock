@@ -471,7 +471,7 @@ discovery = [
 graphinator = [
     { name = "neo4j", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
-python-extractor = [
+pyextractor = [
     { name = "boto3", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "pika", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "xmltodict", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -507,9 +507,9 @@ requires-dist = [
     { name = "asyncpg", marker = "extra == 'discovery'", specifier = ">=0.29.0" },
     { name = "bandit", marker = "extra == 'dev'", specifier = ">=1.7.0" },
     { name = "black", marker = "extra == 'dev'", specifier = ">=24.0.0" },
-    { name = "boto3", marker = "extra == 'python-extractor'", specifier = ">=1.34.0" },
+    { name = "boto3", marker = "extra == 'pyextractor'", specifier = ">=1.34.0" },
     { name = "dict-hash", specifier = ">=1.1.0" },
-    { name = "discogsography", extras = ["dashboard", "discovery", "python-extractor", "graphinator", "tableinator", "dev", "utilities"], marker = "extra == 'all'" },
+    { name = "discogsography", extras = ["dashboard", "discovery", "pyextractor", "graphinator", "tableinator", "dev", "utilities"], marker = "extra == 'all'" },
     { name = "fastapi", marker = "extra == 'dashboard'", specifier = ">=0.115.6" },
     { name = "fastapi", marker = "extra == 'discovery'", specifier = ">=0.115.6" },
     { name = "httpx", marker = "extra == 'dashboard'", specifier = ">=0.27.0" },
@@ -526,7 +526,7 @@ requires-dist = [
     { name = "orjson", specifier = ">=3.9.0" },
     { name = "pandas", marker = "extra == 'discovery'", specifier = ">=2.1.0" },
     { name = "pika", specifier = ">=1.3.0" },
-    { name = "pika", marker = "extra == 'python-extractor'", specifier = ">=1.3.0" },
+    { name = "pika", marker = "extra == 'pyextractor'", specifier = ">=1.3.0" },
     { name = "playwright", marker = "extra == 'dev'", specifier = ">=1.40.0" },
     { name = "plotly", marker = "extra == 'discovery'", specifier = ">=5.17.0" },
     { name = "pre-commit", marker = "extra == 'dev'", specifier = ">=3.5.0" },
@@ -560,9 +560,9 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'discovery'", specifier = ">=0.34.0" },
     { name = "websockets", marker = "extra == 'dashboard'", specifier = ">=14.2" },
     { name = "websockets", marker = "extra == 'discovery'", specifier = ">=14.2" },
-    { name = "xmltodict", marker = "extra == 'python-extractor'", specifier = ">=0.13.0" },
+    { name = "xmltodict", marker = "extra == 'pyextractor'", specifier = ">=0.13.0" },
 ]
-provides-extras = ["dashboard", "python-extractor", "graphinator", "tableinator", "dev", "utilities", "discovery", "all"]
+provides-extras = ["dashboard", "pyextractor", "graphinator", "tableinator", "dev", "utilities", "discovery", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -699,7 +699,7 @@ requires-dist = [
 [[package]]
 name = "discogsography-extractor"
 version = "0.1.0"
-source = { editable = "extractor/python-extractor" }
+source = { editable = "extractor/pyextractor" }
 dependencies = [
     { name = "aio-pika", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "boto3", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },

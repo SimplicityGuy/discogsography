@@ -382,7 +382,7 @@ update_precommit_hooks() {
 
 # Update Rust crates
 update_rust_crates() {
-    if [[ ! -d "extractor/rust-extractor" ]] || [[ ! -f "extractor/rust-extractor/Cargo.toml" ]]; then
+    if [[ ! -d "extractor/rustextractor" ]] || [[ ! -f "extractor/rustextractor/Cargo.toml" ]]; then
         return
     fi
 
@@ -390,25 +390,25 @@ update_rust_crates() {
 
     # Backup Cargo files
     if [[ "$BACKUP" == true ]] && [[ "$DRY_RUN" == false ]]; then
-        backup_file "extractor/rust-extractor/Cargo.toml"
-        backup_file "extractor/rust-extractor/Cargo.lock"
+        backup_file "extractor/rustextractor/Cargo.toml"
+        backup_file "extractor/rustextractor/Cargo.lock"
     fi
 
     print_info "Checking for Rust crate updates..."
 
     if [[ "$DRY_RUN" == false ]]; then
         # Update crates
-        cd extractor/rust-extractor
+        cd extractor/rustextractor
         if cargo update; then
             print_success "Rust crates updated successfully"
-            FILE_CHANGES+=("extractor/rust-extractor/Cargo.lock: Updated Rust dependencies")
+            FILE_CHANGES+=("extractor/rustextractor/Cargo.lock: Updated Rust dependencies")
             CHANGES_MADE=true
         else
             print_warning "Failed to update Rust crates"
         fi
         cd ..
     else
-        print_info "[DRY RUN] Would run: cargo update in extractor/rust-extractor/"
+        print_info "[DRY RUN] Would run: cargo update in extractor/rustextractor/"
     fi
 }
 

@@ -14,8 +14,8 @@ on:
       - "**/*.py"
       - "**/pyproject.toml"
       - "**/uv.lock"
-      - "extractor/rust-extractor/**/*.rs"
-      - "extractor/rust-extractor/**/Cargo.toml"
+      - "extractor/rustextractor/**/*.rs"
+      - "extractor/rustextractor/**/Cargo.toml"
       - ".github/workflows/test.yml"
   pull_request:
     branches:
@@ -24,8 +24,8 @@ on:
       - "**/*.py"
       - "**/pyproject.toml"
       - "**/uv.lock"
-      - "extractor/rust-extractor/**/*.rs"
-      - "extractor/rust-extractor/**/Cargo.toml"
+      - "extractor/rustextractor/**/*.rs"
+      - "extractor/rustextractor/**/Cargo.toml"
       - ".github/workflows/test.yml"
 
 env:
@@ -135,7 +135,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            extractor/rust-extractor/target/
+            extractor/rustextractor/target/
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-test-
@@ -143,5 +143,5 @@ jobs:
 
       - name: 🧪 Run Rust tests
         run: |
-          cd extractor/rust-extractor
+          cd extractor/rustextractor
           cargo test --verbose

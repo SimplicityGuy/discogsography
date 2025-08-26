@@ -26,7 +26,7 @@ status() {
 
     if docker compose ps | grep -q "discogsography-extractor.*Up"; then
         echo -e "${YELLOW}Python extractor is running${NC}"
-    elif docker compose ps | grep -q "discogsography-rust-extractor.*Up"; then
+    elif docker compose ps | grep -q "discogsography-rustextractor.*Up"; then
         echo -e "${YELLOW}Rust extractor is running${NC}"
     else
         echo -e "${RED}No extractor service is currently running${NC}"
@@ -36,8 +36,8 @@ status() {
 switch_to_python() {
     echo -e "${GREEN}Switching to Python extractor...${NC}"
 
-    # Stop rust-extractor if running
-    docker compose --profile rust-extractor stop rust-extractor 2>/dev/null || true
+    # Stop rustextractor if running
+    docker compose --profile rustextractor stop rustextractor 2>/dev/null || true
 
     # Start Python extractor (default profile, no need to specify)
     docker compose up -d extractor
@@ -52,7 +52,7 @@ switch_to_rust() {
     docker compose stop extractor 2>/dev/null || true
 
     # Start Rust extractor
-    docker compose --profile rust-extractor up -d rust-extractor
+    docker compose --profile rustextractor up -d rustextractor
 
     echo -e "${GREEN}✅ Rust extractor is now active${NC}"
 }

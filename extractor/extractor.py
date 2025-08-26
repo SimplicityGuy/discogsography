@@ -1,35 +1,21 @@
 """Compatibility import for extractor module."""
 
-import sys
+import importlib.util
 from pathlib import Path
 
 
-# Add the python-extractor directory to the path
-python_extractor_path = Path(__file__).parent / "python-extractor"
-sys.path.insert(0, str(python_extractor_path))
+# Add the pyextractor directory to the path
+python_extractor_path = Path(__file__).parent / "pyextractor"
 
-# Import specific functions from the actual extractor
-try:
-    # Import the module directly to avoid naming conflicts
-    import importlib.util
+# Load the actual extractor module directly
+spec = importlib.util.spec_from_file_location("pyextractor_module", python_extractor_path / "extractor.py")
+if spec is None or spec.loader is None:
+    raise ImportError("Could not load pyextractor module")
+pyextractor_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(pyextractor_module)
 
-    spec = importlib.util.spec_from_file_location("python_extractor", python_extractor_path / "extractor.py")
-    python_extractor_module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(python_extractor_module)
+# Export main functions
+main = pyextractor_module.main
+main_async = pyextractor_module.main_async
 
-    # Export the main functions
-    main = python_extractor_module.main
-    main_async = python_extractor_module.main_async
-
-    __all__ = ["main", "main_async"]
-except Exception as e:
-    # Fallback for import issues
-    print(f"Warning: Could not import from extractor: {e}")
-
-    def main() -> None:
-        """Placeholder main function."""
-        raise ImportError("Extractor main function not available")
-
-    def main_async() -> None:
-        """Placeholder async main function."""
-        raise ImportError("Extractor main_async function not available")
+__all__ = ["main", "main_async"]

@@ -45,7 +45,7 @@ repos:
     rev: 412de98d50e846f31ea6f4b0ad036f2c24a7a024  # frozen: v1.17.1
     hooks:
       - id: mypy
-        files: ^(common|dashboard|discovery|extractor/extractor\.py|extractor/discogs\.py|graphinator|tableinator)/.*\.py$
+        files: ^(common|dashboard|discovery|extractor|graphinator|tableinator)/.*\.py$
         additional_dependencies:
           - types-tqdm
           - types-xmltodict
@@ -101,13 +101,13 @@ repos:
     hooks:
       - id: cargo-fmt
         name: cargo fmt
-        entry: bash -c 'cd extractor/rust-extractor && (rustup component add rustfmt 2>/dev/null || true) && cargo fmt --check'
+        entry: bash -c 'cd extractor/rustextractor && (rustup component add rustfmt 2>/dev/null || true) && cargo fmt --check'
         language: system
-        files: '^extractor/rust-extractor/.*\.rs$'
+        files: '^extractor/rustextractor/.*\.rs$'
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
-        entry: bash -c 'cd extractor/rust-extractor && (rustup component add clippy 2>/dev/null || true) && cargo clippy -- -D warnings'
+        entry: bash -c 'cd extractor/rustextractor && (rustup component add clippy 2>/dev/null || true) && cargo clippy -- -D warnings'
         language: system
-        files: '^extractor/rust-extractor/.*\.rs$'
+        files: '^extractor/rustextractor/.*\.rs$'
         pass_filenames: false

@@ -113,13 +113,13 @@ services:
       - no-new-privileges:true
 
   # Rust-based extractor service
-  rust-extractor:
+  rustextractor:
     build:
       context: .
-      dockerfile: extractor/rust-extractor/Dockerfile
-    image: discogsography/rust-extractor:latest
-    container_name: discogsography-rust-extractor
-    hostname: rust-extractor
+      dockerfile: extractor/rustextractor/Dockerfile
+    image: discogsography/rustextractor:latest
+    container_name: discogsography-rustextractor
+    hostname: rustextractor
     user: "1000:1000"
     environment:
       AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
@@ -147,13 +147,13 @@ services:
     cap_drop:
       - ALL
     profiles:
-      - rust-extractor
+      - rustextractor
 
   # Python-based extractor service (default)
   extractor:
     build:
       context: .
-      dockerfile: extractor/python-extractor/Dockerfile
+      dockerfile: extractor/pyextractor/Dockerfile
       args:
         PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
         UID: ${UID:-1000}
