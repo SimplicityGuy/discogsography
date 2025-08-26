@@ -161,9 +161,9 @@ mod tests {
 
     #[test]
     fn test_data_type_conversion() {
-        assert_eq!(DataType::from_str("artists"), Some(DataType::Artists));
-        assert_eq!(DataType::from_str("LABELS"), Some(DataType::Labels));
-        assert_eq!(DataType::from_str("unknown"), None);
+        assert_eq!(DataType::from_str("artists"), Ok(DataType::Artists));
+        assert_eq!(DataType::from_str("LABELS"), Ok(DataType::Labels));
+        assert!(DataType::from_str("unknown").is_err());
         assert_eq!(DataType::Artists.as_str(), "artists");
     }
 
