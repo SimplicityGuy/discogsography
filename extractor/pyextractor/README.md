@@ -123,7 +123,7 @@ PERIODIC_CHECK_DAYS=1 uv run python extractor/extractor.py
 
 ```bash
 # Install dependencies
-uv sync --extra python-extractor
+uv sync --extra pyextractor
 
 # Run the extractor
 uv run python extractor/extractor.py
@@ -145,7 +145,7 @@ Build and run with Docker:
 
 ```bash
 # Build
-docker build -f extractor/python-extractor/Dockerfile .
+docker build -f extractor/pyextractor/Dockerfile .
 
 # Run with docker-compose
 docker-compose up extractor

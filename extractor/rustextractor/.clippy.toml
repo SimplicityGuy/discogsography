@@ -1,4 +1,4 @@
-# Clippy configuration for rust-extractor
+# Clippy configuration for rustextractor
 
 # Maximum cognitive complexity
 cognitive-complexity-threshold = 30

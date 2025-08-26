@@ -84,10 +84,10 @@ RUST_LOG=rust_extractor=debug cargo run
 
 ```bash
 # Build image
-docker build -t rust-extractor .
+docker build -t rustextractor .
 
 # Run container
-docker run -e AMQP_CONNECTION=amqp://rabbitmq:5672 rust-extractor
+docker run -e AMQP_CONNECTION=amqp://rabbitmq:5672 rustextractor
 ```
 
 ## Testing
@@ -149,7 +149,7 @@ Rust Extractor is a drop-in replacement for the Python extractor:
 1. Produces identical message formats
 1. Maintains the same file processing state
 
-To migrate, simply replace the Python extractor service with rust-extractor in your deployment configuration.
+To migrate, simply replace the Python extractor service with rustextractor in your deployment configuration.
 
 ## License
 

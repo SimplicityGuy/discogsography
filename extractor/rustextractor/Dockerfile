@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create app directory
 WORKDIR /app
 
-# Copy Cargo files and benchmark directory from extractor/rust-extractor subdirectory
+# Copy Cargo files and benchmark directory from extractor/rustextractor subdirectory
 COPY extractor/rustextractor/Cargo.toml extractor/rustextractor/Cargo.lock ./
 COPY extractor/rustextractor/benches ./benches
 
@@ -21,7 +21,7 @@ RUN mkdir src && \
     cargo build --release && \
     rm -rf src
 
-# Copy actual source code from extractor/rust-extractor subdirectory
+# Copy actual source code from extractor/rustextractor subdirectory
 COPY extractor/rustextractor/src ./src
 
 # Build the application
@@ -40,17 +40,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN groupadd -r rust-extractor && useradd -r -g rust-extractor rust-extractor
+RUN groupadd -r rustextractor && useradd -r -g rustextractor rustextractor
 
 # Create necessary directories
 RUN mkdir -p /discogs-data /logs && \
-    chown -R rust-extractor:rust-extractor /discogs-data /logs
+    chown -R rustextractor:rustextractor /discogs-data /logs
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/rust_extractor /usr/local/bin/rust-extractor
+COPY --from=builder /app/target/release/rust_extractor /usr/local/bin/rustextractor
 
 # Switch to non-root user
-USER rust-extractor
+USER rustextractor
 
 # Set environment variables
 ENV RUST_LOG=rust_extractor=info,lapin=warn
@@ -64,4 +64,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 EXPOSE 8000
 
 # Run the application
-CMD ["rust-extractor"]
+CMD ["rustextractor"]
