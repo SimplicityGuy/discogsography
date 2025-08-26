@@ -39,11 +39,11 @@ dotenvy = "0.15"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "2.0"
+thiserror = "1.0"
 
 # HTTP client for S3 downloads
-reqwest = { version = "0.12", features = ["stream", "rustls-tls"] }
-bytes = "1.9"
+reqwest = { version = "0.11", features = ["stream", "rustls-tls"] }
+bytes = "1.5"
 
 # Progress tracking
 indicatif = "0.17"
@@ -70,9 +70,10 @@ mockito = "1.6"
 proptest = "1.6"
 criterion = "0.6"
 
-[[bench]]
-name = "parser_bench"
-harness = false
+# Temporarily commented out due to dependency issues with edition2024
+# [[bench]]
+# name = "parser_bench"
+# harness = false
 
 [profile.release]
 opt-level = 3
