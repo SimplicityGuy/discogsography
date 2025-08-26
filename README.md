@@ -38,7 +38,8 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 | Service | Purpose | Key Technologies |
 |---------|---------|------------------|
-| **[📥](docs/emoji-guide.md#service-identifiers) Extractor** | Downloads & processes Discogs XML dumps | `asyncio`, `orjson`, `aio-pika` |
+| **[📥](docs/emoji-guide.md#service-identifiers) Extractor** | Downloads & processes Discogs XML dumps (Python) | `asyncio`, `orjson`, `aio-pika` |
+| **[⚡](docs/emoji-guide.md#service-identifiers) Distiller** | High-performance Rust-based extractor | `tokio`, `quick-xml`, `lapin` |
 | **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs | `neo4j-driver`, graph algorithms |
 | **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search |
 | **[🎵](docs/emoji-guide.md#service-identifiers) Discovery** | AI-powered music intelligence | `sentence-transformers`, `plotly`, `networkx` |
@@ -176,8 +177,12 @@ cd discogsography
 # 2. Copy environment template (optional - has sensible defaults)
 cp .env.example .env
 
-# 3. Start all services
+# 3. Start all services (default: Python extractor)
 docker-compose up -d
+
+# 3b. (Optional) Use high-performance Rust distiller instead
+./scripts/switch-extractor.sh rust
+# To switch back: ./scripts/switch-extractor.sh python
 
 # 4. Watch the magic happen!
 docker-compose logs -f
@@ -642,6 +647,7 @@ Typical processing rates on modern hardware:
 | Service | Records/Second | Bottleneck |
 |---------|----------------|------------|
 | 📥 **Extractor** | 5,000-10,000 | XML parsing, I/O |
+| ⚡ **Distiller** | 20,000-400,000+ | Network I/O (Rust-based) |
 | 🔗 **Graphinator** | 1,000-2,000 | Neo4j transactions |
 | 🐘 **Tableinator** | 3,000-5,000 | PostgreSQL inserts |
 

@@ -94,3 +94,19 @@ repos:
     hooks:
       - id: shfmt
         args: ["-i", "2", "-ci", "-bn", "-sr"]  # 2 space indent, indent case, binary next line, redirect operators
+
+  # Rust checks
+  - repo: local
+    hooks:
+      - id: cargo-fmt
+        name: cargo fmt
+        entry: bash -c 'cd extractor/rust-extractor && cargo fmt --check'
+        language: system
+        files: '^extractor/rust-extractor/.*\.rs$'
+        pass_filenames: false
+      - id: cargo-clippy
+        name: cargo clippy
+        entry: bash -c 'cd extractor/rust-extractor && cargo clippy -- -D warnings'
+        language: system
+        files: '^extractor/rust-extractor/.*\.rs$'
+        pass_filenames: false

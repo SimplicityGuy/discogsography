@@ -14,6 +14,8 @@ on:
       - "**/pyproject.toml"
       - "**/uv.lock"
       - "**/Dockerfile"
+      - "extractor/rust-extractor/**/*.rs"
+      - "extractor/rust-extractor/**/Cargo.toml"
       - ".github/workflows/code-quality.yml"
       - ".pre-commit-config.yaml"
   pull_request:
@@ -24,6 +26,8 @@ on:
       - "**/pyproject.toml"
       - "**/uv.lock"
       - "**/Dockerfile"
+      - "extractor/rust-extractor/**/*.rs"
+      - "extractor/rust-extractor/**/Cargo.toml"
       - ".github/workflows/code-quality.yml"
       - ".pre-commit-config.yaml"
 
@@ -75,6 +79,24 @@ jobs:
         uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
         with:
           hadolint: latest
+
+      - name: 🦀 Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: 💾 Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            extractor/rust-extractor/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
       - name: 📦 Install dependencies
         run: |

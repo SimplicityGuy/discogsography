@@ -41,7 +41,7 @@ dashboard = [
     "uvicorn[standard]>=0.34.0",
     "websockets>=14.2",
 ]
-extractor = [
+python-extractor = [
     "boto3>=1.34.0",
     "pika>=1.3.0",
     "xmltodict>=0.13.0",
@@ -96,7 +96,7 @@ discovery = [
     "asyncpg>=0.29.0",                  # Async PostgreSQL driver
 ]
 all = [
-    "discogsography[dashboard,discovery,extractor,graphinator,tableinator,dev,utilities]",
+    "discogsography[dashboard,discovery,python-extractor,graphinator,tableinator,dev,utilities]",
 ]
 
 [tool.ruff.format]
@@ -195,7 +195,7 @@ module = "tests.*"
 disallow_untyped_decorators = false
 
 [tool.coverage.run]
-source = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
+source = ["common", "dashboard", "discovery", "extractor/python-extractor", "graphinator", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
 
 [tool.coverage.report]
@@ -263,7 +263,7 @@ split_on_trailing_comma = true
 
 # uv workspace configuration
 [tool.uv.workspace]
-members = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
+members = ["common", "dashboard", "discovery", "extractor/python-extractor", "graphinator", "tableinator"]
 
 # Environment restrictions for uv to avoid iOS and other incompatible platforms
 [tool.uv]
@@ -310,15 +310,26 @@ clean-all = "task clean && rm -rf .venv && echo '✅ Deep cleanup complete! Run 
 # Service tasks
 dashboard = "uv run python dashboard/dashboard.py"
 discovery = "uv run python discovery/discovery.py"
-extractor = "uv run python extractor/extractor.py"
+python-extractor = "uv run python extractor/python-extractor/extractor.py"
+extractor = "uv run python extractor/python-extractor/extractor.py"  # Alias for backwards compatibility
 graphinator = "uv run python graphinator/graphinator.py"
 tableinator = "uv run python tableinator/tableinator.py"
+
+# Rust extractor tasks
+rust-extractor-build = "cd extractor/rust-extractor && cargo build --release"
+rust-extractor-test = "cd extractor/rust-extractor && cargo test"
+rust-extractor-bench = "cd extractor/rust-extractor && cargo bench"
+rust-extractor-run = "cd extractor/rust-extractor && cargo run --release"
+rust-extractor-lint = "cd extractor/rust-extractor && cargo clippy -- -D warnings"
+rust-extractor-fmt = "cd extractor/rust-extractor && cargo fmt"
+rust-extractor-clean = "cd extractor/rust-extractor && cargo clean"
 
 # Docker tasks
 up = "docker-compose up -d"
 down = "docker-compose down"
 logs = "docker-compose logs -f"
 rebuild = "docker-compose down && docker-compose build && docker-compose up -d"
+build = "docker-compose build dashboard discovery python-extractor rust-extractor graphinator tableinator"
 build-prod = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml build"
 deploy-prod = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
 

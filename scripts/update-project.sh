@@ -5,6 +5,7 @@
 # This script provides a safe and comprehensive way to update:
 # - Python version across all project files
 # - Python package dependencies (with detailed change tracking)
+# - Rust crate dependencies in rust-extractor
 # - UV package manager version in Dockerfiles
 # - Docker base images to latest versions
 #
@@ -346,6 +347,38 @@ update_uv_version() {
     fi
 }
 
+# Update Rust crates
+update_rust_crates() {
+    if [[ ! -d "extractor/rust-extractor" ]] || [[ ! -f "extractor/rust-extractor/Cargo.toml" ]]; then
+        return
+    fi
+
+    print_section "🦀" "Updating Rust Crates"
+
+    # Backup Cargo files
+    if [[ "$BACKUP" == true ]] && [[ "$DRY_RUN" == false ]]; then
+        backup_file "extractor/rust-extractor/Cargo.toml"
+        backup_file "extractor/rust-extractor/Cargo.lock"
+    fi
+
+    print_info "Checking for Rust crate updates..."
+
+    if [[ "$DRY_RUN" == false ]]; then
+        # Update crates
+        cd extractor/rust-extractor
+        if cargo update; then
+            print_success "Rust crates updated successfully"
+            FILE_CHANGES+=("extractor/rust-extractor/Cargo.lock: Updated Rust dependencies")
+            CHANGES_MADE=true
+        else
+            print_warning "Failed to update Rust crates"
+        fi
+        cd ..
+    else
+        print_info "[DRY RUN] Would run: cargo update in extractor/rust-extractor/"
+    fi
+}
+
 # Update Python packages
 update_python_packages() {
     print_section "$EMOJI_PACKAGE" "Updating Python Packages"
@@ -652,6 +685,9 @@ main() {
 
     # Update Python packages
     update_python_packages
+
+    # Update Rust crates
+    update_rust_crates
 
     # Run tests
     run_tests

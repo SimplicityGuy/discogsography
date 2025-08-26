@@ -14,6 +14,8 @@ on:
       - "**/*.py"
       - "**/pyproject.toml"
       - "**/uv.lock"
+      - "extractor/rust-extractor/**/*.rs"
+      - "extractor/rust-extractor/**/Cargo.toml"
       - ".github/workflows/test.yml"
   pull_request:
     branches:
@@ -22,6 +24,8 @@ on:
       - "**/*.py"
       - "**/pyproject.toml"
       - "**/uv.lock"
+      - "extractor/rust-extractor/**/*.rs"
+      - "extractor/rust-extractor/**/Cargo.toml"
       - ".github/workflows/test.yml"
 
 env:
@@ -111,3 +115,33 @@ jobs:
           # Generate combined coverage report
           echo "Generating coverage report..."
           uv run pytest --cov --cov-append --cov-report=term --cov-report=xml -m "not e2e" --no-header -q
+
+  rust-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v5
+
+      - name: 🦀 Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 💾 Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            extractor/rust-extractor/target/
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+            ${{ runner.os }}-cargo-
+
+      - name: 🧪 Run Rust tests
+        run: |
+          cd extractor/rust-extractor
+          cargo test --verbose

@@ -33,6 +33,7 @@ jobs:
           [
             {"name": "dashboard", "use_cache": true},
             {"name": "discovery", "use_cache": false},
+            {"name": "distiller", "use_cache": true},
             {"name": "extractor", "use_cache": true},
             {"name": "graphinator", "use_cache": true},
             {"name": "tableinator", "use_cache": true}
