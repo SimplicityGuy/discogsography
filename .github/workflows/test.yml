@@ -36,9 +36,9 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  python-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - name: 🔀 Checkout repository
@@ -116,18 +116,52 @@ jobs:
           echo "Generating coverage report..."
           uv run pytest --cov --cov-append --cov-report=term --cov-report=xml -m "not e2e" --no-header -q
 
+      - name: 📊 Upload Python coverage reports
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          flags: python
+          name: python-coverage
+          fail_ci_if_error: false
+
   rust-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: 🔀 Checkout repository
         uses: actions/checkout@v5
 
+      - name: 🔍 Check if Rust extractor exists
+        id: check-rust
+        run: |
+          if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Rust extractor found - tests will run"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ No Rust extractor found - skipping Rust tests"
+          fi
+
+      - name: ⏭️ Skip remaining steps if Rust extractor doesn't exist
+        if: steps.check-rust.outputs.exists == 'false'
+        run: |
+          echo "::notice title=Rust Tests Skipped::No Rust extractor found in this branch"
+          exit 0
+
       - name: 🦀 Setup Rust toolchain
+        if: steps.check-rust.outputs.exists == 'true'
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: 📦 Install cargo-llvm-cov
+        if: steps.check-rust.outputs.exists == 'true'
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: 💾 Cache Rust dependencies
+        if: steps.check-rust.outputs.exists == 'true'
         uses: actions/cache@v4
         with:
           path: |
@@ -141,7 +175,17 @@ jobs:
             ${{ runner.os }}-cargo-test-
             ${{ runner.os }}-cargo-
 
-      - name: 🧪 Run Rust tests
+      - name: 🧪 Run Rust tests with coverage
+        if: steps.check-rust.outputs.exists == 'true'
         run: |
           cd extractor/rustextractor
-          cargo test --verbose
+          cargo llvm-cov test --verbose --lcov --output-path lcov.info
+
+      - name: 📊 Upload Rust coverage reports
+        if: steps.check-rust.outputs.exists == 'true'
+        uses: codecov/codecov-action@v5
+        with:
+          files: extractor/rustextractor/lcov.info
+          flags: rust
+          name: rust-coverage
+          fail_ci_if_error: false
