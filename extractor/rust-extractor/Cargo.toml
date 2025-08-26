@@ -1,7 +1,7 @@
 [package]
 name = "rust_extractor"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 authors = ["Robert Wlodarczyk <robert@simplicityguy.com>"]
 license = "MIT"
 description = "High-performance Rust-based Discogs data extractor"
@@ -9,16 +9,16 @@ repository = "https://github.com/SimplicityGuy/discogsography"
 
 [dependencies]
 # Core async runtime
-tokio = { version = "1.42", features = ["full"] }
+tokio = { version = "1.43", features = ["full"] }
 
 # XML parsing (following disco-quick's approach)
-quick-xml = { version = "0.36", features = ["serialize"] }
+quick-xml = { version = "0.37", features = ["serialize"] }
 
 # Compression handling
 flate2 = "1.0"
 
 # Message queue (AMQP)
-lapin = "2.5"
+lapin = "3.2"
 futures = "0.3"
 
 # Serialization
@@ -42,8 +42,8 @@ anyhow = "1.0"
 thiserror = "1.0"
 
 # HTTP client for S3 downloads
-reqwest = { version = "0.11", features = ["stream", "rustls-tls"] }
-bytes = "1.5"
+reqwest = { version = "0.12", features = ["stream", "rustls-tls"] }
+bytes = "1.8"
 
 # Progress tracking
 indicatif = "0.17"
@@ -70,10 +70,9 @@ mockito = "1.6"
 proptest = "1.6"
 criterion = "0.6"
 
-# Temporarily commented out due to dependency issues with edition2024
-# [[bench]]
-# name = "parser_bench"
-# harness = false
+[[bench]]
+name = "parser_bench"
+harness = false
 
 [profile.release]
 opt-level = 3

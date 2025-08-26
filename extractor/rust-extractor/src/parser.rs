@@ -1,8 +1,8 @@
 use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
-use quick_xml::events::Event;
 use quick_xml::Reader;
-use serde_json::{json, Value};
+use quick_xml::events::Event;
+use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 // use std::collections::HashMap; // Not currently needed
 use std::fs::File;
@@ -67,10 +67,10 @@ impl XmlParser {
                             let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
                             let value = String::from_utf8_lossy(&attr.value).to_string();
 
-                            if key == "id" {
-                                if let Some(ref mut record) = current_record {
-                                    record["id"] = json!(value);
-                                }
+                            if key == "id"
+                                && let Some(ref mut record) = current_record
+                            {
+                                record["id"] = json!(value);
                             }
                         }
                     }
@@ -85,10 +85,10 @@ impl XmlParser {
                     if in_target_element && !text_content.is_empty() {
                         // Process the collected text content
                         let trimmed = text_content.trim();
-                        if !trimmed.is_empty() {
-                            if let Some(ref mut record) = current_record {
-                                self.add_field_to_record(record, &current_element, trimmed);
-                            }
+                        if !trimmed.is_empty()
+                            && let Some(ref mut record) = current_record
+                        {
+                            self.add_field_to_record(record, &current_element, trimmed);
                         }
                     }
 
@@ -245,8 +245,8 @@ fn calculate_record_hash(record: &Value) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use flate2::write::GzEncoder;
     use flate2::Compression;
+    use flate2::write::GzEncoder;
     use std::io::Write;
     use tempfile::NamedTempFile;
 

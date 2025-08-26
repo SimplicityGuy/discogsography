@@ -1,4 +1,4 @@
-use axum::{extract::State, http::StatusCode, response::Json, routing::get, Router};
+use axum::{Router, extract::State, http::StatusCode, response::Json, routing::get};
 use chrono::Utc;
 use serde_json::json;
 use std::net::SocketAddr;

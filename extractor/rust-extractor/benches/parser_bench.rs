@@ -1,4 +1,4 @@
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use std::hint::black_box as hint_black_box;
 
 fn parse_xml_benchmark(c: &mut Criterion) {

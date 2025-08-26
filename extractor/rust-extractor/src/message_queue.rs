@@ -1,6 +1,6 @@
 use anyhow::{Context, Result};
 // use futures::StreamExt; // Not needed for current implementation
-use lapin::{options::*, types::FieldTable, BasicProperties, Channel, Connection, ConnectionProperties, ExchangeKind};
+use lapin::{BasicProperties, Channel, Connection, ConnectionProperties, ExchangeKind, options::*, types::FieldTable};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
@@ -194,10 +194,10 @@ impl MessageQueue {
     async fn get_channel(&self) -> Result<Channel> {
         let channel_guard = self.channel.read().await;
 
-        if let Some(channel) = &*channel_guard {
-            if channel.status().connected() {
-                return Ok(channel.clone());
-            }
+        if let Some(channel) = &*channel_guard
+            && channel.status().connected()
+        {
+            return Ok(channel.clone());
         }
 
         drop(channel_guard);

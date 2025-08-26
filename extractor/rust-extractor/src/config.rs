@@ -64,7 +64,7 @@ impl DistillerConfig {
             .parse::<usize>()
             .unwrap_or_else(|_| num_cpus::get());
 
-        let batch_size = 100; // Fixed for compatibility
+        let batch_size = std::env::var("BATCH_SIZE").unwrap_or_else(|_| "100".to_string()).parse::<usize>().unwrap_or(100);
         let queue_size = 5000; // Fixed for compatibility
         let progress_log_interval = 1000; // Fixed for compatibility
         let health_port = 8000; // Fixed port for drop-in replacement
@@ -103,9 +103,11 @@ mod tests {
 
     #[test]
     fn test_from_env() {
-        env::set_var("AMQP_CONNECTION", "amqp://test:5672");
-        env::set_var("PERIODIC_CHECK_DAYS", "30");
-        env::set_var("BATCH_SIZE", "200");
+        unsafe {
+            env::set_var("AMQP_CONNECTION", "amqp://test:5672");
+            env::set_var("PERIODIC_CHECK_DAYS", "30");
+            env::set_var("BATCH_SIZE", "200");
+        }
 
         let config = DistillerConfig::from_env().unwrap();
         assert_eq!(config.amqp_connection, "amqp://test:5672");
@@ -113,8 +115,10 @@ mod tests {
         assert_eq!(config.batch_size, 200);
 
         // Cleanup
-        env::remove_var("AMQP_CONNECTION");
-        env::remove_var("PERIODIC_CHECK_DAYS");
-        env::remove_var("BATCH_SIZE");
+        unsafe {
+            env::remove_var("AMQP_CONNECTION");
+            env::remove_var("PERIODIC_CHECK_DAYS");
+            env::remove_var("BATCH_SIZE");
+        }
     }
 }

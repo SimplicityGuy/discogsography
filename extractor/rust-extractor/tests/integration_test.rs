@@ -1,13 +1,17 @@
 #[tokio::test]
 async fn test_config_from_env() {
     // Test that configuration loads from environment variables
-    std::env::set_var("AMQP_CONNECTION", "amqp://localhost:5672");
+    unsafe {
+        std::env::set_var("AMQP_CONNECTION", "amqp://localhost:5672");
+    }
 
     // This should not panic
     let _config = rust_extractor::config::DistillerConfig::from_env();
 
     // Clean up
-    std::env::remove_var("AMQP_CONNECTION");
+    unsafe {
+        std::env::remove_var("AMQP_CONNECTION");
+    }
 }
 
 #[tokio::test]

@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::sync::{mpsc, RwLock};
-use tokio::time::{sleep, Duration};
+use tokio::sync::{RwLock, mpsc};
+use tokio::time::{Duration, sleep};
 // use tokio::select; // Not needed with current implementation
 use tracing::{debug, error, info, warn};
 

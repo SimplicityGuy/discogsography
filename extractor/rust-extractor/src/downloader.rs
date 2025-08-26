@@ -273,10 +273,10 @@ async fn calculate_file_checksum(path: &Path) -> Result<String> {
 
 fn extract_month_from_filename(filename: &str) -> String {
     // Extract YYYYMMDD from filename like discogs_20241201_artists.xml.gz
-    if let Some(date_part) = filename.split('_').nth(1) {
-        if date_part.len() >= 6 {
-            return date_part[0..6].to_string(); // YYYYMM
-        }
+    if let Some(date_part) = filename.split('_').nth(1)
+        && date_part.len() >= 6
+    {
+        return date_part[0..6].to_string(); // YYYYMM
     }
     Utc::now().format("%Y%m").to_string()
 }

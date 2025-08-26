@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.83-slim AS builder
+FROM rust:1.89-slim AS builder
 
 # Install build dependencies
 # hadolint ignore=DL3008
