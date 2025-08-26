@@ -11,8 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create app directory
 WORKDIR /app
 
-# Copy Cargo files from extractor/rust-extractor subdirectory
+# Copy Cargo files and benchmark directory from extractor/rust-extractor subdirectory
 COPY extractor/rust-extractor/Cargo.toml extractor/rust-extractor/Cargo.lock ./
+COPY extractor/rust-extractor/benches ./benches
 
 # Create dummy main to cache dependencies
 RUN mkdir src && \
