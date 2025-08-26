@@ -289,23 +289,7 @@ test-e2e = "uv run pytest tests/dashboard/test_dashboard_ui.py -v"
 test-all = "uv run pytest"
 security = "uv run bandit -r . -x './.venv/*,./tests/*'"
 
-# Cleanup tasks
-clean = """
-find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "dist" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "build" -exec rm -rf {} + 2>/dev/null || true;
-find . -type f -name "*.pyc" -delete 2>/dev/null || true;
-find . -type f -name "*.pyo" -delete 2>/dev/null || true;
-find . -type f -name ".coverage" -delete 2>/dev/null || true;
-find . -type f -name "coverage.xml" -delete 2>/dev/null || true;
-echo "✅ Cleanup complete!"
-"""
-clean-all = "task clean && rm -rf .venv && echo '✅ Deep cleanup complete! Run task install to reinstall.'"
+# Cleanup tasks (moved to end of file for comprehensive version)
 
 # Service tasks
 dashboard = "uv run python dashboard/dashboard.py"
@@ -340,3 +324,9 @@ system-monitor = "uv run python utilities/system_monitor.py"
 check-updates = "uv pip list --outdated"
 update-hooks = "uv run pre-commit autoupdate --freeze"
 init = "uv run pre-commit install && echo '✅ Pre-commit hooks installed!'"
+
+# Clean command - removes temporary files, caches, and build artifacts
+clean = """echo '🧹 Cleaning project directory...' && find . -type d -name '__pycache__' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.pytest_cache' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.ruff_cache' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.mypy_cache' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.coverage' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name 'htmlcov' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name 'dist' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name 'build' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '*.egg-info' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type f -name '*.pyc' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.pyo' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.pyd' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '.DS_Store' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.orig' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.rej' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.bak' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.swp' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.swo' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*~' ! -path './.claude/*' -delete 2>/dev/null || true && if [ -d 'extractor/rust-extractor/target' ]; then rm -rf extractor/rust-extractor/target; fi && if [ -d '.hypothesis' ]; then rm -rf .hypothesis; fi && if [ -d '.benchmarks' ]; then rm -rf .benchmarks; fi && echo '✅ Project cleaned!' && echo '📁 Preserved: .claude, .git, uv.lock'"""
+
+# Deep clean - more aggressive cleaning including docker volumes (use with caution)
+deep-clean = "task clean && echo '🐳 Cleaning Docker...' && docker compose down -v --remove-orphans 2>/dev/null || true && docker system prune -f 2>/dev/null || true && echo '✅ Deep clean done!'"

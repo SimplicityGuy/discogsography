@@ -347,6 +347,39 @@ update_uv_version() {
     fi
 }
 
+# Update pre-commit hooks to latest versions
+update_precommit_hooks() {
+    print_section "🪝" "Updating Pre-commit Hooks"
+
+    if ! command -v pre-commit >/dev/null 2>&1; then
+        print_warning "pre-commit not installed, skipping hook updates"
+        return
+    fi
+
+    print_info "Updating pre-commit hooks to latest versions..."
+
+    if [[ "$DRY_RUN" == false ]]; then
+        # Backup the pre-commit config
+        if [[ "$BACKUP" == true ]]; then
+            backup_file ".pre-commit-config.yaml"
+        fi
+
+        # Update all hooks to latest versions
+        if pre-commit autoupdate; then
+            print_success "Pre-commit hooks updated successfully"
+            FILE_CHANGES+=(".pre-commit-config.yaml: Updated pre-commit hooks to latest versions")
+            CHANGES_MADE=true
+
+            # Run pre-commit install to ensure hooks are installed
+            pre-commit install
+        else
+            print_warning "Failed to update pre-commit hooks"
+        fi
+    else
+        print_info "[DRY RUN] Would run: pre-commit autoupdate"
+    fi
+}
+
 # Update Rust crates
 update_rust_crates() {
     if [[ ! -d "extractor/rust-extractor" ]] || [[ ! -f "extractor/rust-extractor/Cargo.toml" ]]; then
@@ -682,6 +715,9 @@ main() {
 
     # Update UV version in Dockerfiles
     update_uv_version
+
+    # Update pre-commit hooks
+    update_precommit_hooks
 
     # Update Python packages
     update_python_packages
