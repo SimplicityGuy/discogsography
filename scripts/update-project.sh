@@ -365,7 +365,7 @@ update_precommit_hooks() {
         fi
 
         # Update all hooks to latest versions
-        if pre-commit autoupdate; then
+        if pre-commit autoupdate --freeze; then
             print_success "Pre-commit hooks updated successfully"
             FILE_CHANGES+=(".pre-commit-config.yaml: Updated pre-commit hooks to latest versions")
             CHANGES_MADE=true
@@ -376,7 +376,7 @@ update_precommit_hooks() {
             print_warning "Failed to update pre-commit hooks"
         fi
     else
-        print_info "[DRY RUN] Would run: pre-commit autoupdate"
+        print_info "[DRY RUN] Would run: pre-commit autoupdate --freeze"
     fi
 }
 
