@@ -112,11 +112,48 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # Extractor service
+  # Rust-based extractor service
+  rustextractor:
+    build:
+      context: .
+      dockerfile: extractor/rustextractor/Dockerfile
+    image: discogsography/rustextractor:latest
+    container_name: discogsography-rustextractor
+    hostname: rustextractor
+    user: "1000:1000"
+    environment:
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      DISCOGS_ROOT: /discogs-data
+      RUST_LOG: rust_extractor=info,lapin=warn
+      STARTUP_DELAY: "10"
+    volumes:
+      - discogs_data:/discogs-data
+      - rust_extractor_logs:/logs
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    profiles:
+      - rustextractor
+
+  # Python-based extractor service (default)
   extractor:
     build:
       context: .
-      dockerfile: extractor/Dockerfile
+      dockerfile: extractor/pyextractor/Dockerfile
       args:
         PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
         UID: ${UID:-1000}
@@ -370,3 +407,4 @@ volumes:
   neo4j_plugins:
   discogs_data:
   discovery_models:
+  rust_extractor_logs:

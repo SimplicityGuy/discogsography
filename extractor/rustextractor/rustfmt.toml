@@ -1,0 +1,16 @@
+# Rust formatter configuration for rustextractor
+
+# Line length configuration (stable features only)
+max_width = 150
+
+# Code style preferences
+use_small_heuristics = "Max"
+fn_params_layout = "Tall"
+
+# String and array formatting
+array_width = 120
+chain_width = 120
+single_line_if_else_max_width = 80
+
+# Miscellaneous
+remove_nested_parens = true

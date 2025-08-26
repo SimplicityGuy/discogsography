@@ -1,0 +1,13 @@
+# Clippy configuration for rustextractor
+
+# Maximum cognitive complexity
+cognitive-complexity-threshold = 30
+
+# Maximum number of lines in a single function
+too-many-lines-threshold = 120
+
+# Maximum number of arguments in a function
+too-many-arguments-threshold = 8
+
+# Line length to match rustfmt configuration
+max-suggested-slice-pattern-length = 150

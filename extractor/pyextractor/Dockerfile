@@ -22,12 +22,12 @@ WORKDIR /app
 # Copy dependency files first for better caching
 COPY pyproject.toml uv.lock README.md ./
 COPY common/pyproject.toml ./common/
-COPY extractor/pyproject.toml ./extractor/
+COPY extractor/pyextractor/pyproject.toml ./extractor/
 
 # Install dependencies and clean up
 # hadolint ignore=SC2015
 RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --extra extractor && \
+    uv sync --frozen --no-dev --extra pyextractor && \
     # Clean up cache and test files
     find /app/.venv -type f -name "*.pyc" -delete && \
     find /app/.venv -type f -name "*.pyo" -delete && \
@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/tmp/.cache/uv \
 
 # Copy source files
 COPY common/ ./common/
-COPY extractor/ ./extractor/
+COPY extractor/pyextractor/ ./extractor/
 
 # Final stage
 FROM python:${PYTHON_VERSION}-slim

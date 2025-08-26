@@ -41,7 +41,7 @@ dashboard = [
     "uvicorn[standard]>=0.34.0",
     "websockets>=14.2",
 ]
-extractor = [
+pyextractor = [
     "boto3>=1.34.0",
     "pika>=1.3.0",
     "xmltodict>=0.13.0",
@@ -96,7 +96,7 @@ discovery = [
     "asyncpg>=0.29.0",                  # Async PostgreSQL driver
 ]
 all = [
-    "discogsography[dashboard,discovery,extractor,graphinator,tableinator,dev,utilities]",
+    "discogsography[dashboard,discovery,pyextractor,graphinator,tableinator,dev,utilities]",
 ]
 
 [tool.ruff.format]
@@ -195,7 +195,7 @@ module = "tests.*"
 disallow_untyped_decorators = false
 
 [tool.coverage.run]
-source = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
+source = ["common", "dashboard", "discovery", "extractor/pyextractor", "graphinator", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
 
 [tool.coverage.report]
@@ -263,7 +263,7 @@ split_on_trailing_comma = true
 
 # uv workspace configuration
 [tool.uv.workspace]
-members = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
+members = ["common", "dashboard", "discovery", "extractor/pyextractor", "graphinator", "tableinator"]
 
 # Environment restrictions for uv to avoid iOS and other incompatible platforms
 [tool.uv]
@@ -289,36 +289,31 @@ test-e2e = "uv run pytest tests/dashboard/test_dashboard_ui.py -v"
 test-all = "uv run pytest"
 security = "uv run bandit -r . -x './.venv/*,./tests/*'"
 
-# Cleanup tasks
-clean = """
-find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "dist" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "build" -exec rm -rf {} + 2>/dev/null || true;
-find . -type f -name "*.pyc" -delete 2>/dev/null || true;
-find . -type f -name "*.pyo" -delete 2>/dev/null || true;
-find . -type f -name ".coverage" -delete 2>/dev/null || true;
-find . -type f -name "coverage.xml" -delete 2>/dev/null || true;
-echo "✅ Cleanup complete!"
-"""
-clean-all = "task clean && rm -rf .venv && echo '✅ Deep cleanup complete! Run task install to reinstall.'"
+# Cleanup tasks (moved to end of file for comprehensive version)
 
 # Service tasks
 dashboard = "uv run python dashboard/dashboard.py"
 discovery = "uv run python discovery/discovery.py"
-extractor = "uv run python extractor/extractor.py"
+pyextractor = "uv run python extractor/pyextractor/extractor.py"
+extractor = "uv run python extractor/pyextractor/extractor.py"  # Alias for backwards compatibility
 graphinator = "uv run python graphinator/graphinator.py"
 tableinator = "uv run python tableinator/tableinator.py"
+
+# Rust extractor tasks
+rustextractor-build = "cd extractor/rustextractor && cargo build --release"
+rustextractor-test = "cd extractor/rustextractor && cargo test"
+rustextractor-bench = "cd extractor/rustextractor && cargo bench"
+rustextractor-run = "cd extractor/rustextractor && cargo run --release"
+rustextractor-lint = "cd extractor/rustextractor && cargo clippy -- -D warnings"
+rustextractor-fmt = "cd extractor/rustextractor && cargo fmt"
+rustextractor-clean = "cd extractor/rustextractor && cargo clean"
 
 # Docker tasks
 up = "docker-compose up -d"
 down = "docker-compose down"
 logs = "docker-compose logs -f"
 rebuild = "docker-compose down && docker-compose build && docker-compose up -d"
+build = "docker-compose build dashboard discovery pyextractor rustextractor graphinator tableinator"
 build-prod = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml build"
 deploy-prod = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
 
@@ -329,3 +324,9 @@ system-monitor = "uv run python utilities/system_monitor.py"
 check-updates = "uv pip list --outdated"
 update-hooks = "uv run pre-commit autoupdate --freeze"
 init = "uv run pre-commit install && echo '✅ Pre-commit hooks installed!'"
+
+# Clean command - removes temporary files, caches, and build artifacts
+clean = """echo '🧹 Cleaning project directory...' && find . -type d -name '__pycache__' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.pytest_cache' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.ruff_cache' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.mypy_cache' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.coverage' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name 'htmlcov' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name 'dist' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name 'build' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '*.egg-info' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type f -name '*.pyc' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.pyo' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.pyd' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '.DS_Store' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.orig' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.rej' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.bak' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.swp' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.swo' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*~' ! -path './.claude/*' -delete 2>/dev/null || true && if [ -d 'extractor/rustextractor/target' ]; then rm -rf extractor/rustextractor/target; fi && if [ -d '.hypothesis' ]; then rm -rf .hypothesis; fi && if [ -d '.benchmarks' ]; then rm -rf .benchmarks; fi && echo '✅ Project cleaned!' && echo '📁 Preserved: .claude, .git, uv.lock'"""
+
+# Deep clean - more aggressive cleaning including docker volumes (use with caution)
+deep-clean = "task clean && echo '🐳 Cleaning Docker...' && docker compose down -v --remove-orphans 2>/dev/null || true && docker system prune -f 2>/dev/null || true && echo '✅ Deep clean done!'"
