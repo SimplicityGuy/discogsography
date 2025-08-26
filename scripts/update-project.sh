@@ -5,7 +5,7 @@
 # This script provides a safe and comprehensive way to update:
 # - Python version across all project files
 # - Python package dependencies (with detailed change tracking)
-# - Rust crate dependencies in rust-extractor
+# - Rust crate dependencies in Rust extractor
 # - UV package manager version in Dockerfiles
 # - Docker base images to latest versions
 #

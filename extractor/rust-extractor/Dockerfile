@@ -37,21 +37,21 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN groupadd -r distiller && useradd -r -g distiller distiller
+RUN groupadd -r rust-extractor && useradd -r -g rust-extractor rust-extractor
 
 # Create necessary directories
 RUN mkdir -p /discogs-data /logs && \
-    chown -R distiller:distiller /discogs-data /logs
+    chown -R rust-extractor:rust-extractor /discogs-data /logs
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/distiller /usr/local/bin/distiller
+COPY --from=builder /app/target/release/rust_extractor /usr/local/bin/rust-extractor
 
 # Switch to non-root user
-USER distiller
+USER rust-extractor
 
 # Set environment variables
-ENV RUST_LOG=distiller=info,lapin=warn
-ENV DISTILLER_CONFIG=/config.toml
+ENV RUST_LOG=rust_extractor=info,lapin=warn
+ENV RUST_EXTRACTOR_CONFIG=/config.toml
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
@@ -61,4 +61,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 EXPOSE 8000
 
 # Run the application
-CMD ["distiller"]
+CMD ["rust-extractor"]

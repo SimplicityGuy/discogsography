@@ -96,16 +96,16 @@ async fn main() -> Result<()> {
     .await;
 
     // Cleanup
-    info!("🛑 Shutting down distiller...");
+    info!("🛑 Shutting down rust-extractor...");
     health_handle.abort();
 
     match extraction_result {
         Ok(_) => {
-            info!("✅ Distiller service shutdown complete");
+            info!("✅ Rust-extractor service shutdown complete");
             Ok(())
         }
         Err(e) => {
-            error!("❌ Distiller failed: {}", e);
+            error!("❌ Rust-extractor failed: {}", e);
             std::process::exit(1);
         }
     }

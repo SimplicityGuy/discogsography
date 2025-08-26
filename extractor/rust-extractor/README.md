@@ -1,10 +1,10 @@
-# Distiller
+# Rust Extractor
 
 High-performance Rust-based Discogs data extractor for the Discogsography platform.
 
 ## Overview
 
-Distiller is a Rust reimplementation of the Python-based extractor service, offering significantly improved performance and lower resource usage. It streams and parses Discogs XML data dumps, sending processed records to RabbitMQ for consumption by downstream services.
+Rust Extractor is a Rust reimplementation of the Python-based extractor service, offering significantly improved performance and lower resource usage. It streams and parses Discogs XML data dumps, sending processed records to RabbitMQ for consumption by downstream services.
 
 ## Features
 
@@ -33,7 +33,7 @@ Based on disco-quick reference implementation:
 
 ## Configuration
 
-Distiller can be configured via environment variables or a TOML configuration file.
+Rust Extractor can be configured via environment variables or a TOML configuration file.
 
 ### Environment Variables
 
@@ -77,17 +77,17 @@ cargo build --release
 cargo test
 
 # Run with verbose logging
-RUST_LOG=distiller=debug cargo run
+RUST_LOG=rust_extractor=debug cargo run
 ```
 
 ### Docker
 
 ```bash
 # Build image
-docker build -t distiller .
+docker build -t rust-extractor .
 
 # Run container
-docker run -e AMQP_CONNECTION=amqp://rabbitmq:5672 distiller
+docker run -e AMQP_CONNECTION=amqp://rabbitmq:5672 rust-extractor
 ```
 
 ## Testing
@@ -105,7 +105,7 @@ cargo bench
 
 ## Architecture
 
-Distiller uses a streaming pipeline architecture:
+Rust Extractor uses a streaming pipeline architecture:
 
 1. **Downloader**: Fetches latest Discogs dumps from S3
 1. **Parser**: Streams XML using quick-xml, extracting records
@@ -114,7 +114,7 @@ Distiller uses a streaming pipeline architecture:
 
 ## Logging
 
-Distiller uses structured JSON logging with emoji indicators:
+Rust Extractor uses structured JSON logging with emoji indicators:
 
 - 🚀 Service starting
 - 📥 Download operations
@@ -133,7 +133,7 @@ Distiller uses structured JSON logging with emoji indicators:
 
 ## Integration
 
-Distiller integrates with the Discogsography platform:
+Rust Extractor integrates with the Discogsography platform:
 
 - Publishes to the same AMQP exchange as the Python extractor
 - Maintains compatibility with existing message formats
@@ -142,14 +142,14 @@ Distiller integrates with the Discogsography platform:
 
 ## Migration from Python Extractor
 
-Distiller is a drop-in replacement for the Python extractor:
+Rust Extractor is a drop-in replacement for the Python extractor:
 
 1. Uses the same environment variables
 1. Publishes to the same AMQP queues
 1. Produces identical message formats
 1. Maintains the same file processing state
 
-To migrate, simply replace the extractor service with distiller in your deployment configuration.
+To migrate, simply replace the Python extractor service with rust-extractor in your deployment configuration.
 
 ## License
 

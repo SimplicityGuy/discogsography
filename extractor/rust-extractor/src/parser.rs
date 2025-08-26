@@ -50,7 +50,7 @@ impl XmlParser {
             DataType::Releases => "release",
         };
 
-        let container_element = format!("{}s", target_element);
+        let _container_element = format!("{}s", target_element);
 
         loop {
             match reader.read_event_into(&mut buf) {
@@ -64,15 +64,13 @@ impl XmlParser {
                         current_record = Some(json!({}));
 
                         // Parse attributes
-                        for attr in e.attributes() {
-                            if let Ok(attr) = attr {
-                                let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
-                                let value = String::from_utf8_lossy(&attr.value).to_string();
+                        for attr in e.attributes().flatten() {
+                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+                            let value = String::from_utf8_lossy(&attr.value).to_string();
 
-                                if key == "id" {
-                                    if let Some(ref mut record) = current_record {
-                                        record["id"] = json!(value);
-                                    }
+                            if key == "id" {
+                                if let Some(ref mut record) = current_record {
+                                    record["id"] = json!(value);
                                 }
                             }
                         }
@@ -97,7 +95,7 @@ impl XmlParser {
 
                     if name == target_element && element_stack.len() == 2 {
                         // End of record, send it
-                        if let Some(mut record) = current_record.take() {
+                        if let Some(record) = current_record.take() {
                             record_count += 1;
 
                             // Calculate SHA256 hash

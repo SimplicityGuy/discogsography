@@ -2,6 +2,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fmt;
+use std::str::FromStr;
 
 /// Supported data types from Discogs
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -33,17 +34,6 @@ impl DataType {
         }
     }
 
-    /// Parse from a string
-    pub fn from_str(s: &str) -> Option<DataType> {
-        match s.to_lowercase().as_str() {
-            "artists" => Some(DataType::Artists),
-            "labels" => Some(DataType::Labels),
-            "masters" => Some(DataType::Masters),
-            "releases" => Some(DataType::Releases),
-            _ => None,
-        }
-    }
-
     /// Get the AMQP routing key
     pub fn routing_key(&self) -> &'static str {
         self.as_str()
@@ -53,6 +43,20 @@ impl DataType {
 impl fmt::Display for DataType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+impl FromStr for DataType {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "artists" => Ok(DataType::Artists),
+            "labels" => Ok(DataType::Labels),
+            "masters" => Ok(DataType::Masters),
+            "releases" => Ok(DataType::Releases),
+            _ => Err(format!("Unknown data type: {}", s)),
+        }
     }
 }
 

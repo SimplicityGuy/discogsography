@@ -180,7 +180,7 @@ cp .env.example .env
 # 3. Start all services (default: Python extractor)
 docker-compose up -d
 
-# 3b. (Optional) Use high-performance Rust distiller instead
+# 3b. (Optional) Use high-performance Rust extractor instead
 ./scripts/switch-extractor.sh rust
 # To switch back: ./scripts/switch-extractor.sh python
 

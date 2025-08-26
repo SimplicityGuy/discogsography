@@ -4,7 +4,7 @@ async fn test_config_from_env() {
     std::env::set_var("AMQP_CONNECTION", "amqp://localhost:5672");
 
     // This should not panic
-    let _config = distiller::config::DistillerConfig::from_env();
+    let _config = rust_extractor::config::DistillerConfig::from_env();
 
     // Clean up
     std::env::remove_var("AMQP_CONNECTION");
@@ -12,18 +12,19 @@ async fn test_config_from_env() {
 
 #[tokio::test]
 async fn test_data_type_conversion() {
-    use distiller::types::DataType;
+    use rust_extractor::types::DataType;
+    use std::str::FromStr;
 
-    assert_eq!(DataType::from_str("artists"), Some(DataType::Artists));
-    assert_eq!(DataType::from_str("labels"), Some(DataType::Labels));
-    assert_eq!(DataType::from_str("masters"), Some(DataType::Masters));
-    assert_eq!(DataType::from_str("releases"), Some(DataType::Releases));
-    assert_eq!(DataType::from_str("invalid"), None);
+    assert_eq!(DataType::from_str("artists"), Ok(DataType::Artists));
+    assert_eq!(DataType::from_str("labels"), Ok(DataType::Labels));
+    assert_eq!(DataType::from_str("masters"), Ok(DataType::Masters));
+    assert_eq!(DataType::from_str("releases"), Ok(DataType::Releases));
+    assert!(DataType::from_str("invalid").is_err());
 }
 
 #[tokio::test]
 async fn test_extraction_progress() {
-    use distiller::types::{DataType, ExtractionProgress};
+    use rust_extractor::types::{DataType, ExtractionProgress};
 
     let mut progress = ExtractionProgress::default();
     assert_eq!(progress.total(), 0);

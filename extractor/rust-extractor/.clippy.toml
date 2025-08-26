@@ -1,4 +1,4 @@
-# Clippy configuration for distiller
+# Clippy configuration for rust-extractor
 
 # Maximum cognitive complexity
 cognitive-complexity-threshold = 30
@@ -8,19 +8,3 @@ too-many-lines-threshold = 100
 
 # Maximum number of arguments in a function
 too-many-arguments-threshold = 7
-
-# Warn on common issues
-warn = [
-    "clippy::all",
-    "clippy::pedantic",
-    "clippy::nursery",
-    "clippy::cargo"
-]
-
-# Allow certain patterns
-allow = [
-    "clippy::module_name_repetitions",
-    "clippy::must_use_candidate",
-    "clippy::missing_errors_doc",
-    "clippy::missing_panics_doc"
-]

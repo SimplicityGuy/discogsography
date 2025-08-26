@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Script to switch between Python extractor and Rust distiller
+# Script to switch between Python extractor and Rust extractor
 
 set -euo pipefail
 
@@ -15,7 +15,7 @@ usage() {
     echo ""
     echo "Commands:"
     echo "  python  - Use the Python-based extractor service"
-    echo "  rust    - Use the Rust-based distiller service"
+    echo "  rust    - Use the Rust-based extractor service"
     echo "  status  - Show which extractor is currently active"
     echo ""
     exit 1
@@ -24,7 +24,7 @@ usage() {
 status() {
     echo -e "${GREEN}Checking extractor status...${NC}"
 
-    if docker compose ps | grep -q "discogsography-python-extractor.*Up"; then
+    if docker compose ps | grep -q "discogsography-extractor.*Up"; then
         echo -e "${YELLOW}Python extractor is running${NC}"
     elif docker compose ps | grep -q "discogsography-rust-extractor.*Up"; then
         echo -e "${YELLOW}Rust extractor is running${NC}"
@@ -40,7 +40,7 @@ switch_to_python() {
     docker compose --profile rust-extractor stop rust-extractor 2>/dev/null || true
 
     # Start Python extractor (default profile, no need to specify)
-    docker compose up -d python-extractor
+    docker compose up -d extractor
 
     echo -e "${GREEN}✅ Python extractor is now active${NC}"
 }
@@ -49,7 +49,7 @@ switch_to_rust() {
     echo -e "${GREEN}Switching to Rust extractor...${NC}"
 
     # Stop Python extractor if running
-    docker compose stop python-extractor 2>/dev/null || true
+    docker compose stop extractor 2>/dev/null || true
 
     # Start Rust extractor
     docker compose --profile rust-extractor up -d rust-extractor

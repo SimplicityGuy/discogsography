@@ -84,8 +84,8 @@ impl Downloader {
         let mut downloaded_files = Vec::new();
 
         for file_info in &latest_files {
-            if self.should_download(&file_info).await? {
-                match self.download_file(&file_info).await {
+            if self.should_download(file_info).await? {
+                match self.download_file(file_info).await {
                     Ok(_) => {
                         info!("✅ Successfully downloaded: {}", file_info.name);
                         downloaded_files.push(file_info.name.clone());

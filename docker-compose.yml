@@ -150,7 +150,7 @@ services:
       - rust-extractor
 
   # Python-based extractor service (default)
-  python-extractor:
+  extractor:
     build:
       context: .
       dockerfile: extractor/python-extractor/Dockerfile
@@ -158,9 +158,9 @@ services:
         PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
         UID: ${UID:-1000}
         GID: ${GID:-1000}
-    image: discogsography/python-extractor:latest
-    container_name: discogsography-python-extractor
-    hostname: python-extractor
+    image: discogsography/extractor:latest
+    container_name: discogsography-extractor
+    hostname: extractor
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
@@ -189,13 +189,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-
-  # Extractor service alias (points to python-extractor by default)
-  # Note: This is just a service definition, the actual container uses python-extractor's config
-  extractor:
-    extends:
-      service: python-extractor
-    container_name: discogsography-extractor  # Override container name for alias
 
   # Graphinator service
   graphinator:

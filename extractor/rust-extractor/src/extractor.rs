@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 // use chrono::{DateTime, Utc}; // Not directly used in this module
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{mpsc, RwLock};
@@ -64,7 +65,7 @@ pub async fn process_discogs_data(
 
     // Check processing state
     let processing_state_path = config.discogs_root.join(".processing_state.json");
-    let mut processing_state = load_processing_state(&processing_state_path).await?;
+    let processing_state = load_processing_state(&processing_state_path).await?;
 
     let mut files_to_process = Vec::new();
     for file in &data_files {
@@ -343,10 +344,10 @@ async fn progress_reporter(state: Arc<RwLock<ExtractorState>>, shutdown: Arc<tok
             if !s
                 .completed_files
                 .contains(&format!("discogs_*_{}.xml.gz", data_type))
+                && *last_time > 0.0
+                && (current_time - last_time) > 120.0
             {
-                if *last_time > 0.0 && (current_time - last_time) > 120.0 {
-                    stalled.push(data_type.to_string());
-                }
+                stalled.push(data_type.to_string());
             }
         }
 
@@ -383,7 +384,7 @@ fn extract_data_type(filename: &str) -> Option<DataType> {
     let parts: Vec<&str> = filename.split('_').collect();
     if parts.len() >= 3 {
         let type_part = parts[2].split('.').next()?;
-        DataType::from_str(type_part)
+        DataType::from_str(type_part).ok()
     } else {
         None
     }

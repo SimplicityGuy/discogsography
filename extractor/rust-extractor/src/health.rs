@@ -47,8 +47,8 @@ async fn health_handler(
 
     let health = json!({
         "status": "healthy",
-        "service": "distiller",
-        "current_task": state.current_task.as_ref().map(|t| t.as_str()),
+        "service": "rust-extractor",
+        "current_task": state.current_task.as_deref(),
         "progress": state.current_progress,
         "extraction_progress": {
             "artists": state.extraction_progress.artists,
