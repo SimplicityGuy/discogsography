@@ -5,14 +5,13 @@ from typing import Any
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
-
-from extractor.pyextractor.discogs import download_discogs_data
+from pyextractor.discogs import download_discogs_data
 
 
 class TestDownloadDiscogsData:
     """Test download_discogs_data function."""
 
-    @patch("extractor.pyextractor.discogs.client")
+    @patch("pyextractor.discogs.client")
     def test_successful_download(self, mock_boto_client: Mock, tmp_path: Path) -> None:
         """Test successful download of Discogs data."""
         # Setup mock S3 client
@@ -73,7 +72,7 @@ class TestDownloadDiscogsData:
         # download_fileobj is called once for CHECKSUM file, then for each data file that needs downloading
         assert mock_s3.download_fileobj.call_count >= 1  # At least checksum file
 
-    @patch("extractor.pyextractor.discogs.client")
+    @patch("pyextractor.discogs.client")
     def test_empty_bucket(self, mock_boto_client: Mock, tmp_path: Path) -> None:
         """Test handling of empty S3 bucket."""
         mock_s3 = MagicMock()
@@ -86,7 +85,7 @@ class TestDownloadDiscogsData:
         with pytest.raises(ValueError, match="No contents found in S3 bucket"):
             download_discogs_data(str(tmp_path))
 
-    @patch("extractor.pyextractor.discogs.client")
+    @patch("pyextractor.discogs.client")
     def test_skip_non_xml_files(self, mock_boto_client: Mock, tmp_path: Path) -> None:
         """Test that non-XML files are skipped."""
         mock_s3 = MagicMock()
