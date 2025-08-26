@@ -28,7 +28,7 @@ from pika import DeliveryMode
 from pika.spec import BasicProperties
 from xmltodict import parse
 
-from extractor.discogs import download_discogs_data
+from discogs import download_discogs_data
 
 
 if TYPE_CHECKING:
