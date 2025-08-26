@@ -100,13 +100,13 @@ repos:
     hooks:
       - id: cargo-fmt
         name: cargo fmt
-        entry: bash -c 'cd extractor/rust-extractor && cargo fmt --check'
+        entry: bash -c 'cd extractor/rust-extractor && (rustup component add rustfmt 2>/dev/null || true) && cargo fmt --check'
         language: system
         files: '^extractor/rust-extractor/.*\.rs$'
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
-        entry: bash -c 'cd extractor/rust-extractor && cargo clippy -- -D warnings'
+        entry: bash -c 'cd extractor/rust-extractor && (rustup component add clippy 2>/dev/null || true) && cargo clippy -- -D warnings'
         language: system
         files: '^extractor/rust-extractor/.*\.rs$'
         pass_filenames: false

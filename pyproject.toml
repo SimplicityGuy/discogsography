@@ -166,6 +166,9 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 explicit_package_bases = true
+exclude = [
+    "extractor/python-extractor/.*",  # Exclude directory with hyphen that mypy treats as invalid package name
+]
 
 # Ignore missing imports for third-party libraries without stubs
 [[tool.mypy.overrides]]

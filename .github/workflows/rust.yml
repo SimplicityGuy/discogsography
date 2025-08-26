@@ -1,0 +1,50 @@
+---
+name: Rust CI
+
+on:
+  workflow_call:
+
+jobs:
+  rust-checks:
+    name: 🦀 Rust Quality Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    defaults:
+      run:
+        working-directory: extractor/rust-extractor
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v5
+
+      - name: 🦀 Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.89
+          components: rustfmt, clippy
+
+      - name: 💾 Cache Rust dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            extractor/rust-extractor/target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('extractor/rust-extractor/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: 🔍 Check Rust formatting
+        run: cargo fmt --check
+
+      - name: 📎 Run Clippy lints
+        run: cargo clippy -- -D warnings
+
+      - name: 🧪 Run Rust tests
+        run: cargo test --verbose
+
+      - name: 🚀 Build release binary
+        run: cargo build --release --verbose
