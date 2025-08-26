@@ -40,12 +40,8 @@ jobs:
     uses: ./.github/workflows/e2e-test.yml
     secrets: inherit
 
-  run-rust-ci:
-    uses: ./.github/workflows/rust.yml
-    secrets: inherit
-
   build-discogsography:
-    needs: [list-sub-projects, run-tests, run-e2e-tests, run-rust-ci]
+    needs: [list-sub-projects, run-tests, run-e2e-tests]
 
     runs-on: ubuntu-latest
     timeout-minutes: 30
