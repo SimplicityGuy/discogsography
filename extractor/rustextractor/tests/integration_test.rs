@@ -6,7 +6,7 @@ async fn test_config_from_env() {
     }
 
     // This should not panic
-    let _config = rust_extractor::config::DistillerConfig::from_env();
+    let _config = rust_extractor::config::ExtractorConfig::from_env();
 
     // Clean up
     unsafe {

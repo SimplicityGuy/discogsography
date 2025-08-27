@@ -1,4 +1,4 @@
-# Example configuration for Distiller
+# Example configuration for Rust Extractor
 
 # RabbitMQ connection URL
 amqp_connection = "amqp://localhost:5672"

@@ -15,7 +15,7 @@ use tracing::{debug, error, info, warn};
 use crate::types::{LocalFileInfo, S3FileInfo};
 
 const S3_ENDPOINT: &str = "https://discogs-data-dumps.s3.us-west-2.amazonaws.com";
-const USER_AGENT: &str = "Mozilla/5.0 (compatible; DiscogsDistiller/0.1.0)";
+const USER_AGENT: &str = "Mozilla/5.0 (compatible; DiscogsExtractor/0.1.0)";
 
 #[derive(Debug, Serialize, Deserialize)]
 struct S3ListResponse {

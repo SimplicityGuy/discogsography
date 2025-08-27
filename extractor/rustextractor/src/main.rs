@@ -14,7 +14,7 @@ mod message_queue;
 mod parser;
 mod types;
 
-use config::DistillerConfig;
+use config::ExtractorConfig;
 use health::HealthServer;
 
 /// High-performance Discogs data extractor written in Rust
@@ -59,7 +59,7 @@ async fn main() -> Result<()> {
     info!("🚀 Starting Rust-based Discogs data extractor with high performance");
 
     // Load configuration from environment (drop-in replacement for extractor)
-    let config = match DistillerConfig::from_env() {
+    let config = match ExtractorConfig::from_env() {
         Ok(c) => Arc::new(c),
         Err(e) => {
             error!("❌ Configuration error: {}", e);

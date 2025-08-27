@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DistillerConfig {
+pub struct ExtractorConfig {
     pub amqp_connection: String,
     pub discogs_root: PathBuf,
     pub max_temp_size: u64,
@@ -18,7 +18,7 @@ pub struct DistillerConfig {
     pub s3_region: String,
 }
 
-impl Default for DistillerConfig {
+impl Default for ExtractorConfig {
     fn default() -> Self {
         Self {
             amqp_connection: "amqp://localhost:5672".to_string(),
@@ -36,13 +36,13 @@ impl Default for DistillerConfig {
     }
 }
 
-impl DistillerConfig {
+impl ExtractorConfig {
     /// Load configuration from file
     #[allow(dead_code)]
     pub fn from_file(path: &Path) -> Result<Self> {
         let config = Config::builder()
             .add_source(File::from(path).required(false))
-            .add_source(config::Environment::with_prefix("DISTILLER"))
+            .add_source(config::Environment::with_prefix("EXTRACTOR"))
             .build()
             .context("Failed to build configuration")?;
 
@@ -95,7 +95,7 @@ mod tests {
 
     #[test]
     fn test_default_config() {
-        let config = DistillerConfig::default();
+        let config = ExtractorConfig::default();
         assert_eq!(config.periodic_check_days, 15);
         assert_eq!(config.batch_size, 100);
         assert_eq!(config.queue_size, 5000);
@@ -109,7 +109,7 @@ mod tests {
             env::set_var("BATCH_SIZE", "200");
         }
 
-        let config = DistillerConfig::from_env().unwrap();
+        let config = ExtractorConfig::from_env().unwrap();
         assert_eq!(config.amqp_connection, "amqp://test:5672");
         assert_eq!(config.periodic_check_days, 30);
         assert_eq!(config.batch_size, 200);

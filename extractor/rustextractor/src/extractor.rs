@@ -10,7 +10,7 @@ use tokio::time::{Duration, sleep};
 // use tokio::select; // Not needed with current implementation
 use tracing::{debug, error, info, warn};
 
-use crate::config::DistillerConfig;
+use crate::config::ExtractorConfig;
 use crate::downloader::Downloader;
 use crate::message_queue::MessageQueue;
 use crate::parser::XmlParser;
@@ -30,7 +30,7 @@ pub struct ExtractorState {
 
 /// Process Discogs data files
 pub async fn process_discogs_data(
-    config: Arc<DistillerConfig>,
+    config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
     shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
@@ -146,7 +146,7 @@ pub async fn process_discogs_data(
 /// Process a single file
 async fn process_single_file(
     file_name: &str,
-    config: Arc<DistillerConfig>,
+    config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
     _shutdown: Arc<tokio::sync::Notify>,
 ) -> Result<()> {
@@ -370,7 +370,7 @@ async fn save_processing_state(path: &PathBuf, state: &ProcessingState) -> Resul
 
 /// Main extraction loop with periodic checks
 pub async fn run_extraction_loop(
-    config: Arc<DistillerConfig>,
+    config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
     shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
