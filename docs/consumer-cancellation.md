@@ -14,7 +14,7 @@ The consumer cancellation feature automatically closes RabbitMQ queue consumers 
 
 ## How It Works
 
-1. When the extractor sends a "file_complete" message, both tableinator and graphinator:
+1. When the Python/Rust extractor sends a "file_complete" message, both tableinator and graphinator:
 
    - Mark the file as complete (shows 🎉 in progress reports)
    - Schedule the consumer for that queue to be canceled after a grace period
@@ -111,18 +111,18 @@ docker-compose logs -f tableinator graphinator
 - Cancellation tasks are tracked to allow proper cleanup on shutdown
 - The `nowait=True` parameter prevents hanging if RabbitMQ is slow to respond
 
-## Extractor Integration
+## Python/Rust Extractor Integration
 
-The extractor service integrates with consumer cancellation by:
+Both the Python and Rust extractor services integrate with consumer cancellation by:
 
-1. **Sending File Completion Messages**: When a file finishes processing, the extractor sends a "file_complete" message
-1. **Tracking Completed Files**: The extractor maintains a `completed_files` set to avoid false stalled warnings
+1. **Sending File Completion Messages**: When a file finishes processing, the extractor (Python or Rust) sends a "file_complete" message
+1. **Tracking Completed Files**: Both extractors maintain a `completed_files` set to avoid false stalled warnings
 1. **Progress Monitoring**: Completed files are excluded from stalled detection logic
 
-This prevents the extractor from incorrectly reporting files as "stalled" when they have actually completed processing and their consumers have been canceled.
+This prevents the extractors from incorrectly reporting files as "stalled" when they have actually completed processing and their consumers have been canceled.
 
 ### Recent Improvements (January 2025)
 
-- Added `completed_files` tracking in extractor to prevent false stalled warnings
+- Added `completed_files` tracking in both extractors to prevent false stalled warnings
 - Enhanced progress reporting to show which file types are completed
 - Fixed issue where completed files would show as stalled after 2 minutes of inactivity

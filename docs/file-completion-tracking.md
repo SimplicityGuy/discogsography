@@ -35,7 +35,7 @@ graph LR
 
 When a file finishes processing:
 
-1. **Extractor** sends a `file_complete` message with:
+1. **Python/Rust Extractor** sends a `file_complete` message with:
 
    - `type`: "file_complete"
    - `data_type`: The type of data (artists, labels, masters, releases)
@@ -43,7 +43,7 @@ When a file finishes processing:
    - `total_processed`: Number of records processed
    - `file`: Original filename
 
-1. **Extractor** adds the data type to `completed_files` set
+1. **Python/Rust Extractor** adds the data type to `completed_files` set
 
 1. **Consumers** (graphinator/tableinator) receive the message and:
 
@@ -52,7 +52,7 @@ When a file finishes processing:
 
 ### 3. Stalled Detection
 
-The extractor's progress monitoring:
+The extractors' progress monitoring:
 
 - Checks for files with no activity for >2 minutes
 - **Excludes** files in the `completed_files` set
@@ -60,7 +60,7 @@ The extractor's progress monitoring:
 
 ## Implementation Details
 
-### Extractor Changes
+### Python/Rust Extractor Changes
 
 ```python
 # Global tracking variables
@@ -108,7 +108,7 @@ No additional configuration needed - the feature works automatically with existi
 
 ### Log Messages to Watch
 
-**Extractor**:
+**Python/Rust Extractor**:
 
 - `✅ Sent file completion message for {type}` - File marked complete
 - `✅ Completed file types: [...]` - Shows all completed files
@@ -144,7 +144,8 @@ Test the feature:
 docker-compose up -d
 
 # Watch logs for completion tracking
-docker-compose logs -f extractor | grep -E "(Completed file types|Stalled extractors)"
+docker-compose logs -f extractor-python | grep -E "(Completed file types|Stalled extractors)"  # For Python
+docker-compose logs -f extractor-rust | grep -E "(Completed file types|Stalled extractors)"    # For Rust
 
 # Force a quick test with small files
 # Files will complete quickly and should not show as stalled
@@ -161,8 +162,8 @@ docker-compose logs -f extractor | grep -E "(Completed file types|Stalled extrac
 
 ### Integration Points
 
-1. **Extractor → RabbitMQ**: Sends completion message
-1. **Extractor Internal**: Updates completion tracking
+1. **Python/Rust Extractor → RabbitMQ**: Sends completion message
+1. **Python/Rust Extractor Internal**: Updates completion tracking
 1. **Consumers → RabbitMQ**: Cancel queue consumers
 1. **Progress Reporter**: Excludes completed files
 

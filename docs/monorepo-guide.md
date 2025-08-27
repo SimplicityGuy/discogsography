@@ -23,8 +23,11 @@ graph TD
     Discovery[discovery/<br/>AI Service]
     DiscFiles[discovery.py]
 
-    Extractor[extractor/<br/>Data Service]
-    ExtFiles[extractor.py<br/>discogs.py]
+    Extractor[extractor/<br/>Data Extraction]
+    PyExtractor[pyextractor/<br/>Python Service]
+    PyExtFiles[extractor.py<br/>discogs.py]
+    RustExtractor[rustextractor/<br/>Rust Service]
+    RustExtFiles[src/main.rs<br/>Cargo.toml]
 
     Graphinator[graphinator/<br/>Neo4j Service]
     GraphFiles[graphinator.py]
@@ -43,7 +46,10 @@ graph TD
     Common --> CommonFiles
     Dashboard --> DashFiles
     Discovery --> DiscFiles
-    Extractor --> ExtFiles
+    Extractor --> PyExtractor
+    Extractor --> RustExtractor
+    PyExtractor --> PyExtFiles
+    RustExtractor --> RustExtFiles
     Graphinator --> GraphFiles
     Tableinator --> TableFiles
 
@@ -51,7 +57,9 @@ graph TD
     style Common fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
     style Dashboard fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
     style Discovery fill:#fce4ec,stroke:#e91e63,stroke-width:2px
-    style Extractor fill:#fff3e0,stroke:#ff9800,stroke-width:2px
+    style Extractor fill:#fff3e0,stroke:#ff9800,stroke-width:3px
+    style PyExtractor fill:#fff9c4,stroke:#f57c00,stroke-width:2px
+    style RustExtractor fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style Graphinator fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
     style Tableinator fill:#e0f2f1,stroke:#009688,stroke-width:2px
 ```
@@ -79,9 +87,14 @@ discogsography/                    # Root workspace
 │   ├── pyproject.toml           # AI/ML dependencies
 │   └── discovery.py
 │
-├── extractor/                     # Service (workspace member)
-│   ├── pyproject.toml           # Data processing dependencies
-│   └── extractor.py
+├── extractor/                     # Data extraction services
+│   ├── pyextractor/              # Python extraction service
+│   │   ├── pyproject.toml       # Python dependencies
+│   │   └── extractor.py         # Python entry point
+│   └── rustextractor/            # Rust extraction service
+│       ├── Cargo.toml           # Rust dependencies
+│       └── src/
+│           └── main.rs          # Rust entry point
 │
 ├── graphinator/                   # Service (workspace member)
 │   ├── pyproject.toml           # Neo4j dependencies
@@ -125,7 +138,7 @@ members = [
     "common",
     "dashboard",
     "discovery",
-    "extractor",
+    "extractor/pyextractor",
     "graphinator",
     "tableinator"
 ]
@@ -180,11 +193,11 @@ uv add "neo4j>=5.15.0"
 ```bash
 # From project root (recommended)
 uv run python dashboard/dashboard.py
-uv run python extractor/extractor.py
+uv run python extractor/pyextractor/extractor.py
 
 # Using task commands
 uv run task dashboard
-uv run task extractor
+uv run task extractor-python
 ```
 
 ### Import Patterns
@@ -247,7 +260,7 @@ uv sync
 uv run pytest tests/dashboard/
 
 # Test with coverage
-uv run pytest tests/extractor/ --cov=extractor
+uv run pytest tests/extractor/pyextractor/ --cov=extractor.pyextractor
 
 # Test everything
 uv run task test
@@ -281,7 +294,7 @@ uv add package-name
 ```python
 # ❌ Bad: Services importing from each other
 # dashboard/dashboard.py
-from extractor.something import thing
+from extractor.pyextractor.something import thing
 
 # ✅ Good: Only import from common
 from common.config import Config

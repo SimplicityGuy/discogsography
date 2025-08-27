@@ -8,8 +8,11 @@
 [![E2E Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml)
 ![License: MIT](https://img.shields.io/github/license/SimplicityGuy/discogsography)
 ![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)
+![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 [![uv](https://img.shields.io/badge/uv-package%20manager-orange?logo=python)](https://github.com/astral-sh/uv)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Cargo](https://img.shields.io/badge/cargo-rust%20package%20manager-brown)](https://doc.rust-lang.org/cargo/)
+[![Clippy](https://img.shields.io/badge/clippy-rust%20linter-green)](https://github.com/rust-lang/rust-clippy)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 [![mypy](https://img.shields.io/badge/mypy-checked-blue)](http://mypy-lang.org/)
 [![Bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
@@ -38,8 +41,8 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 | Service | Purpose | Key Technologies |
 |---------|---------|------------------|
-| **[📥](docs/emoji-guide.md#service-identifiers) Extractor** | Downloads & processes Discogs XML dumps (Python) | `asyncio`, `orjson`, `aio-pika` |
-| **[⚡](docs/emoji-guide.md#service-identifiers) Distiller** | High-performance Rust-based extractor | `tokio`, `quick-xml`, `lapin` |
+| **[📥](docs/emoji-guide.md#service-identifiers) Python Extractor** | Downloads & processes Discogs XML dumps (Python) | `asyncio`, `orjson`, `aio-pika` |
+| **[⚡](docs/emoji-guide.md#service-identifiers) Rust Extractor** | High-performance Rust-based extractor | `tokio`, `quick-xml`, `lapin` |
 | **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs | `neo4j-driver`, graph algorithms |
 | **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search |
 | **[🎵](docs/emoji-guide.md#service-identifiers) Discovery** | AI-powered music intelligence | `sentence-transformers`, `plotly`, `networkx` |
@@ -50,17 +53,20 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
-    EXT[["📥 Extractor<br/>XML → JSON<br/>Deduplication"]]
+    PYEXT[["📥 Python Extractor<br/>XML → JSON<br/>Deduplication"]]
+    RSEXT[["⚡ Rust Extractor<br/>High-Performance<br/>XML Processing"]]
     RMQ{{"🐰 RabbitMQ<br/>Message Broker<br/>4 Queues"}}
-    NEO4J[(🔗 Neo4j<br/>Graph Database<br/>Relationships")]
-    PG[(🐘 PostgreSQL<br/>Analytics DB<br/>Full-text Search")]
+    NEO4J[("🔗 Neo4j<br/>Graph Database<br/>Relationships")]
+    PG[("🐘 PostgreSQL<br/>Analytics DB<br/>Full-text Search")]
     GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     DISCO[["🎵 Discovery<br/>AI Engine<br/>ML Models"]]
 
-    S3 -->|1. Download & Parse| EXT
-    EXT -->|2. Publish Messages| RMQ
+    S3 -->|1a. Download & Parse| PYEXT
+    S3 -->|1b. Download & Parse| RSEXT
+    PYEXT -->|2. Publish Messages| RMQ
+    RSEXT -->|2. Publish Messages| RMQ
     RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
     RMQ -->|3b. Artists/Labels/Releases/Masters| TABLE
     GRAPH -->|4a. Build Graph| NEO4J
@@ -70,7 +76,8 @@ graph TD
     DISCO -.->|Query| PG
     DISCO -.->|Analyze| DISCO
 
-    DASH -.->|Monitor| EXT
+    DASH -.->|Monitor| PYEXT
+    DASH -.->|Monitor| RSEXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
     DASH -.->|Monitor| DISCO
@@ -79,6 +86,8 @@ graph TD
     DASH -.->|Stats| PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style PYEXT fill:#fff9c4,stroke:#f57c00,stroke-width:2px
+    style RSEXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
@@ -177,12 +186,12 @@ cd discogsography
 # 2. Copy environment template (optional - has sensible defaults)
 cp .env.example .env
 
-# 3. Start all services (default: Python extractor)
+# 3. Start all services (default: Python Extractor)
 docker-compose up -d
 
-# 3b. (Optional) Use high-performance Rust extractor instead
+# 3b. (Optional) Use high-performance Rust Extractor instead
 ./scripts/switch-extractor.sh rust
-# To switch back: ./scripts/switch-extractor.sh python
+# To switch back to Python Extractor: ./scripts/switch-extractor.sh python
 
 # 4. Watch the magic happen!
 docker-compose logs -f
@@ -216,11 +225,12 @@ uv sync --all-extras
 uv run task init
 
 # 4. Run any service
-uv run task dashboard    # Monitoring UI
-uv run task discovery    # AI discovery
-uv run task extractor    # Data ingestion
-uv run task graphinator  # Neo4j builder
-uv run task tableinator  # PostgreSQL builder
+uv run task dashboard         # Monitoring UI
+uv run task discovery         # AI discovery
+uv run task extractor-python  # Python data ingestion
+uv run task extractor-rust    # Rust data ingestion (requires cargo)
+uv run task graphinator       # Neo4j builder
+uv run task tableinator       # PostgreSQL builder
 ```
 
 #### Environment Setup
@@ -258,8 +268,8 @@ cp .env.example .env
 | Variable | Description | Default | Used By |
 |----------|-------------|---------|---------|
 | `AMQP_CONNECTION` | RabbitMQ URL | `amqp://guest:guest@localhost:5672/` | All services |
-| `DISCOGS_ROOT` | Data storage path | `/discogs-data` | Extractor |
-| `PERIODIC_CHECK_DAYS` | Update check interval | `15` | Extractor |
+| `DISCOGS_ROOT` | Data storage path | `/discogs-data` | Python/Rust Extractors |
+| `PERIODIC_CHECK_DAYS` | Update check interval | `15` | Python/Rust Extractors |
 | `PYTHON_VERSION` | Python version for builds | `3.13` | Docker, CI/CD |
 
 #### Database Connections
@@ -451,7 +461,7 @@ uv run task test
 uv run task test-cov
 
 # Run specific test suites
-uv run pytest tests/extractor/      # Extractor tests
+uv run pytest tests/extractor/      # Extractor tests (Python)
 uv run pytest tests/graphinator/    # Graphinator tests
 uv run pytest tests/tableinator/    # Tableinator tests
 uv run pytest tests/dashboard/      # Dashboard tests
@@ -498,9 +508,14 @@ discogsography/
 ├── 📊 dashboard/           # Real-time monitoring dashboard
 │   ├── dashboard.py        # FastAPI backend with WebSocket
 │   └── static/             # Frontend HTML/CSS/JS
-├── 📥 extractor/           # Discogs data ingestion service
-│   ├── extractor.py        # Main processing logic
-│   └── discogs.py          # S3 download and validation
+├── 📥 extractor/           # Data extraction services
+│   ├── pyextractor/        # Python-based Discogs data ingestion
+│   │   ├── extractor.py    # Main processing logic
+│   │   └── discogs.py      # S3 download and validation
+│   └── rustextractor/      # Rust-based high-performance extractor
+│       ├── src/
+│       │   └── main.rs     # Rust processing logic
+│       └── Cargo.toml      # Rust dependencies
 ├── 🔗 graphinator/         # Neo4j graph database service
 │   └── graphinator.py      # Graph relationship builder
 ├── 🐘 tableinator/         # PostgreSQL storage service
@@ -646,8 +661,8 @@ Typical processing rates on modern hardware:
 
 | Service | Records/Second | Bottleneck |
 |---------|----------------|------------|
-| 📥 **Extractor** | 5,000-10,000 | XML parsing, I/O |
-| ⚡ **Distiller** | 20,000-400,000+ | Network I/O (Rust-based) |
+| 📥 **Python Extractor** | 5,000-10,000 | XML parsing, I/O |
+| ⚡ **Rust Extractor** | 20,000-400,000+ | Network I/O (Rust-based) |
 | 🔗 **Graphinator** | 1,000-2,000 | Neo4j transactions |
 | 🐘 **Tableinator** | 3,000-5,000 | PostgreSQL inserts |
 
@@ -708,7 +723,7 @@ PREFETCH_COUNT: 100  # Adjust based on processing speed
 
 ### ❌ Common Issues & Solutions
 
-#### Extractor Download Failures
+#### Python/Rust Extractor Download Failures
 
 ```bash
 # Check connectivity
@@ -772,7 +787,7 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
 1. **📋 Check Service Health**
 
    ```bash
-   curl http://localhost:8000/health  # Extractor
+   curl http://localhost:8000/health  # Python/Rust Extractor
    curl http://localhost:8001/health  # Graphinator
    curl http://localhost:8002/health  # Tableinator
    curl http://localhost:8003/health  # Dashboard
@@ -786,7 +801,8 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
    uv run task logs
 
    # Specific service
-   docker-compose logs -f extractor
+   docker-compose logs -f extractor-python  # For Python Extractor
+   docker-compose logs -f extractor-rust    # For Rust Extractor
    ```
 
 1. **🔍 Analyze Errors**
