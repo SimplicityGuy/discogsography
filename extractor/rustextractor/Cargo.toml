@@ -17,7 +17,7 @@ quick-xml = { version = "0.37", features = ["serialize"] }
 # Compression handling
 flate2 = "1.0"
 
-# Message queue (AMQP)
+# Message queue (AMQP) - latest
 lapin = "3.2"
 futures = "0.3"
 
@@ -41,7 +41,11 @@ dotenvy = "0.15"
 anyhow = "1.0"
 thiserror = "1.0"
 
-# HTTP client for S3 downloads
+# AWS S3 SDK (equivalent to Python boto3) - latest
+aws-config = "1.8.5"
+aws-sdk-s3 = "1.103.0"
+
+# HTTP client for progress tracking during downloads
 reqwest = { version = "0.12", features = ["stream", "rustls-tls"] }
 bytes = "1.8"
 

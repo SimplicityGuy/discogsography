@@ -1,10 +1,8 @@
 use anyhow::{Context, Result};
-// use bytes::Bytes; // Not directly used in this module
+use aws_config::BehaviorVersion;
+use aws_sdk_s3::Client as S3Client;
 use chrono::Utc;
-use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use reqwest::Client;
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -14,45 +12,29 @@ use tracing::{debug, error, info, warn};
 
 use crate::types::{LocalFileInfo, S3FileInfo};
 
-const S3_ENDPOINT: &str = "https://discogs-data-dumps.s3.us-west-2.amazonaws.com/?prefix=data/";
-const USER_AGENT: &str = "Mozilla/5.0 (compatible; DiscogsExtractor/0.1.0)";
-
-#[derive(Debug, Serialize, Deserialize)]
-struct S3ListResponse {
-    #[serde(rename = "Name")]
-    name: String,
-    #[serde(rename = "Contents")]
-    contents: Vec<S3Object>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-struct S3Object {
-    #[serde(rename = "Key")]
-    key: String,
-    #[serde(rename = "Size")]
-    size: u64,
-    #[serde(rename = "LastModified")]
-    last_modified: String,
-}
+const S3_BUCKET: &str = "discogs-data-dumps";
+const S3_PREFIX: &str = "data/";
 
 pub struct Downloader {
-    client: Client,
+    s3_client: S3Client,
     output_directory: PathBuf,
     metadata: HashMap<String, LocalFileInfo>,
 }
 
 impl Downloader {
-    pub fn new(output_directory: PathBuf) -> Result<Self> {
-        let client = Client::builder()
-            .user_agent(USER_AGENT)
-            .timeout(std::time::Duration::from_secs(300))
-            .connect_timeout(std::time::Duration::from_secs(30))
-            .build()
-            .context("Failed to create HTTP client")?;
+    pub async fn new(output_directory: PathBuf) -> Result<Self> {
+        // Initialize AWS SDK with default configuration (similar to boto3 default)
+        let config = aws_config::defaults(BehaviorVersion::latest())
+            .region("us-west-2")
+            .no_credentials() // Public bucket, no credentials needed
+            .load()
+            .await;
+
+        let s3_client = S3Client::new(&config);
 
         let metadata = load_metadata(&output_directory)?;
 
-        Ok(Self { client, output_directory, metadata })
+        Ok(Self { s3_client, output_directory, metadata })
     }
 
     pub async fn download_discogs_data(&mut self) -> Result<Vec<String>> {
@@ -103,21 +85,41 @@ impl Downloader {
     async fn list_s3_files(&self) -> Result<Vec<S3FileInfo>> {
         info!("🔍 Listing available files from S3...");
 
-        let response = self.client.get(S3_ENDPOINT).send().await.context("Failed to list S3 files")?;
+        // Use AWS SDK list_objects_v2 (equivalent to Python's boto3 list_objects_v2)
+        let response = self.s3_client.list_objects_v2().bucket(S3_BUCKET).prefix(S3_PREFIX).send().await.context("Failed to list S3 objects")?;
 
-        let text = response.text().await.context("Failed to read S3 response")?;
+        let objects = response.contents();
 
-        // Parse XML response
-        let doc: S3ListResponse = quick_xml::de::from_str(&text).context("Failed to parse S3 XML response")?;
+        debug!("Found {} total objects in S3 bucket", objects.len());
 
-        let files: Vec<S3FileInfo> = doc
-            .contents
-            .into_iter()
-            .filter(|obj| obj.key.ends_with(".xml.gz") || obj.key.contains("CHECKSUM"))
-            .map(|obj| S3FileInfo { name: obj.key.strip_prefix("data/").unwrap_or(&obj.key).to_string(), size: obj.size })
+        // Debug: Log sample S3 object keys (similar to Python logging)
+        for (i, obj) in objects.iter().enumerate() {
+            if (i < 5 || i >= objects.len() - 5)
+                && let (Some(key), Some(size)) = (obj.key(), obj.size())
+            {
+                debug!("  Object {}: Key: {}, Size: {}", i, key, size);
+            }
+        }
+
+        let files: Vec<S3FileInfo> = objects
+            .iter()
+            .filter_map(|obj| {
+                let key = obj.key()?;
+                let size = obj.size()? as u64;
+
+                // Filter for XML files and CHECKSUM files (matching Python logic)
+                if key.ends_with(".xml.gz") || key.contains("CHECKSUM") {
+                    // Strip data/ prefix to get filename only (matching Python behavior)
+                    let name = key.strip_prefix(S3_PREFIX).unwrap_or(key).to_string();
+                    debug!("Including file: {} (size: {})", name, size);
+                    Some(S3FileInfo { name, size })
+                } else {
+                    None
+                }
+            })
             .collect();
 
-        debug!("Found {} files in S3 bucket", files.len());
+        info!("Found {} relevant files in S3 bucket after filtering", files.len());
         Ok(files)
     }
 
@@ -179,7 +181,7 @@ impl Downloader {
     }
 
     async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<()> {
-        let url = format!("https://discogs-data-dumps.s3.us-west-2.amazonaws.com/data/{}", file_info.name);
+        let s3_key = format!("{}{}", S3_PREFIX, file_info.name);
         let local_path = self.output_directory.join(&file_info.name);
 
         info!("⬇️ Downloading {} ({:.2} MB)...", file_info.name, file_info.size as f64 / 1_048_576.0);
@@ -193,23 +195,20 @@ impl Downloader {
                 .progress_chars("=>-"),
         );
 
-        // Download with streaming
-        let response = self.client.get(&url).send().await.context("Failed to start download")?;
+        // Download using AWS SDK (equivalent to boto3 download_fileobj)
+        let response = self.s3_client.get_object().bucket(S3_BUCKET).key(&s3_key).send().await.context("Failed to start S3 download")?;
 
-        let mut stream = response.bytes_stream();
+        let body = response.body.collect().await.context("Failed to read S3 response")?;
+        let data = body.into_bytes();
+
         let mut file = File::create(&local_path).await.context("Failed to create local file")?;
 
         let mut hasher = Sha256::new();
-        let mut downloaded = 0u64;
+        hasher.update(&data);
 
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.context("Failed to download chunk")?;
-            hasher.update(&chunk);
-            file.write_all(&chunk).await.context("Failed to write chunk")?;
+        file.write_all(&data).await.context("Failed to write file")?;
 
-            downloaded += chunk.len() as u64;
-            pb.set_position(downloaded);
-        }
+        pb.set_position(data.len() as u64);
 
         pb.finish_with_message("Download complete");
 

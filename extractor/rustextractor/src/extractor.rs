@@ -46,7 +46,7 @@ pub async fn process_discogs_data(
     }
 
     // Download latest data
-    let mut downloader = Downloader::new(config.discogs_root.clone())?;
+    let mut downloader = Downloader::new(config.discogs_root.clone()).await?;
     let data_files = downloader.download_discogs_data().await.context("Failed to download Discogs data")?;
 
     // Filter out checksum files

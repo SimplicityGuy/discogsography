@@ -11,8 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create app directory
 WORKDIR /app
 
-# Copy Cargo files and benchmark directory from extractor/rustextractor subdirectory
-COPY extractor/rustextractor/Cargo.toml extractor/rustextractor/Cargo.lock ./
+# Copy Cargo files from extractor/rustextractor subdirectory
+COPY extractor/rustextractor/Cargo.toml ./
 COPY extractor/rustextractor/benches ./benches
 
 # Create dummy main to cache dependencies
@@ -29,7 +29,7 @@ RUN touch src/main.rs && \
     cargo build --release
 
 # Runtime stage
-FROM debian:bookworm-slim
+FROM rust:1.89-slim
 
 # Install runtime dependencies
 # hadolint ignore=DL3008
