@@ -22,6 +22,7 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: discogsography
       RABBITMQ_DEFAULT_PASS: discogsography
+      RABBITMQ_DEFAULT_VHOST: /
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit log_levels [{connection,error},{default,warning}]"
     ports:
       - "5672:5672"      # AMQP port
@@ -122,7 +123,7 @@ services:
     hostname: rustextractor
     user: "1000:1000"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       DISCOGS_ROOT: /discogs-data
       RUST_LOG: rust_extractor=info,lapin=warn
       STARTUP_DELAY: "10"
@@ -163,7 +164,7 @@ services:
     hostname: extractor
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       DISCOGS_ROOT: /discogs-data
       PYTHONUNBUFFERED: "1"
       STARTUP_DELAY: "10"
@@ -204,7 +205,7 @@ services:
     hostname: graphinator
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       NEO4J_ADDRESS: bolt://neo4j:7687
       NEO4J_USERNAME: neo4j
       NEO4J_PASSWORD: discogsography
@@ -251,7 +252,7 @@ services:
     hostname: tableinator
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       POSTGRES_ADDRESS: postgres:5432
       POSTGRES_USERNAME: discogsography
       POSTGRES_PASSWORD: discogsography
@@ -299,7 +300,7 @@ services:
     hostname: dashboard
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       NEO4J_ADDRESS: bolt://neo4j:7687
       NEO4J_USERNAME: neo4j
       NEO4J_PASSWORD: discogsography
@@ -353,7 +354,7 @@ services:
     hostname: discovery
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       NEO4J_ADDRESS: bolt://neo4j:7687
       NEO4J_USERNAME: neo4j
       NEO4J_PASSWORD: discogsography
