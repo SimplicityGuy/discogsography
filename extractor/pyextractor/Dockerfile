@@ -22,7 +22,7 @@ WORKDIR /app
 # Copy dependency files first for better caching
 COPY pyproject.toml uv.lock README.md ./
 COPY common/pyproject.toml ./common/
-COPY extractor/pyextractor/pyproject.toml ./extractor/
+COPY extractor/pyextractor/pyproject.toml ./extractor/pyextractor/
 
 # Install dependencies and clean up
 # hadolint ignore=SC2015
@@ -41,7 +41,7 @@ RUN --mount=type=cache,target=/tmp/.cache/uv \
 
 # Copy source files
 COPY common/ ./common/
-COPY extractor/pyextractor/ ./extractor/
+COPY extractor/pyextractor/ ./extractor/pyextractor/
 
 # Final stage
 FROM python:${PYTHON_VERSION}-slim
@@ -92,13 +92,13 @@ WORKDIR /app
 # Copy only necessary files from builder
 COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
 COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
-COPY --from=builder --chown=discogsography:discogsography /app/extractor /app/extractor
+COPY --from=builder --chown=discogsography:discogsography /app/extractor/pyextractor /app/extractor/pyextractor
 
 # UV not needed at runtime
 
 # Create startup script
 # hadolint ignore=SC2016
-RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m extractor.extractor "$@"\n' > /app/start.sh && \
+RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m extractor.pyextractor.extractor "$@"\n' > /app/start.sh && \
     chmod +x /app/start.sh
 
 # Health check
