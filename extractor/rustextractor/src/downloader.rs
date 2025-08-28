@@ -99,17 +99,6 @@ impl Downloader {
 
         let objects = response.contents();
 
-        debug!("Found {} total objects in S3 bucket", objects.len());
-
-        // Debug: Log sample S3 object keys (similar to Python logging)
-        for (i, obj) in objects.iter().enumerate() {
-            if (i < 5 || i >= objects.len() - 5)
-                && let (Some(key), Some(size)) = (obj.key(), obj.size())
-            {
-                debug!("  Object {}: Key: {}, Size: {}", i, key, size);
-            }
-        }
-
         let files: Vec<S3FileInfo> = objects
             .iter()
             .filter_map(|obj| {
@@ -119,7 +108,6 @@ impl Downloader {
                 // Filter for XML files and CHECKSUM files (matching Python logic)
                 if key.ends_with(".xml.gz") || key.contains("CHECKSUM") {
                     // Store full key like Python does - this is crucial for version grouping
-                    debug!("Including file: {} (size: {})", key, size);
                     Some(S3FileInfo { name: key.to_string(), size })
                 } else {
                     None
@@ -136,26 +124,15 @@ impl Downloader {
         let mut ids: std::collections::HashMap<String, Vec<S3FileInfo>> = std::collections::HashMap::new();
 
         for file in files {
-            debug!("Processing file: {}", file.name);
             // Split the full S3 key exactly like Python does
             let parts: Vec<&str> = file.name.split('_').collect();
-            debug!("Split parts: {:?}", parts);
             if parts.len() >= 2 {
                 let id = parts[1].to_string();
-                debug!("Found version ID: {}", id);
                 ids.entry(id).or_default().push(file.clone());
-            } else {
-                debug!("Skipping file (invalid format): {}", file.name);
             }
         }
 
         info!("Found {} unique version IDs", ids.len());
-        for (id, files) in &ids {
-            info!("  Version {}: {} files", id, files.len());
-            for file in files {
-                info!("    - {}", file.name);
-            }
-        }
 
         // Get the most recent version (sorted in reverse order)
         let mut sorted_ids: Vec<_> = ids.keys().collect();
@@ -163,14 +140,9 @@ impl Downloader {
 
         for id in sorted_ids {
             let files_for_id = ids.get(id).unwrap();
-            info!("Checking version {}: {} files", id, files_for_id.len());
-
             // Check if we have a complete set - exactly like Python logic
             // Python requires exactly 5 files total (1 CHECKSUM + 4 data files)
-            info!("Version {} has {} total files", id, files_for_id.len());
-
             if files_for_id.len() != 5 {
-                info!("Skipping version {} - has {} files, need exactly 5", id, files_for_id.len());
                 continue;
             }
 
@@ -256,7 +228,6 @@ impl Downloader {
         );
 
         // Download using AWS SDK (equivalent to boto3 download_fileobj)
-        debug!("Attempting to download S3 object: bucket={}, key={}", S3_BUCKET, s3_key);
         let response = self.s3_client.get_object().bucket(S3_BUCKET).key(s3_key).send().await
             .with_context(|| format!("Failed to start S3 download for key: {}", s3_key))?;
 
