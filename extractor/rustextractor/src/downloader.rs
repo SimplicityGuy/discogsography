@@ -14,7 +14,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::types::{LocalFileInfo, S3FileInfo};
 
-const S3_ENDPOINT: &str = "https://discogs-data-dumps.s3.us-west-2.amazonaws.com";
+const S3_ENDPOINT: &str = "https://discogs-data-dumps.s3.us-west-2.amazonaws.com/?prefix=data/";
 const USER_AGENT: &str = "Mozilla/5.0 (compatible; DiscogsExtractor/0.1.0)";
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -113,8 +113,8 @@ impl Downloader {
         let files: Vec<S3FileInfo> = doc
             .contents
             .into_iter()
-            .filter(|obj| obj.key.ends_with(".xml.gz"))
-            .map(|obj| S3FileInfo { name: obj.key, size: obj.size })
+            .filter(|obj| obj.key.ends_with(".xml.gz") || obj.key.contains("CHECKSUM"))
+            .map(|obj| S3FileInfo { name: obj.key.strip_prefix("data/").unwrap_or(&obj.key).to_string(), size: obj.size })
             .collect();
 
         debug!("Found {} files in S3 bucket", files.len());
@@ -179,7 +179,7 @@ impl Downloader {
     }
 
     async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<()> {
-        let url = format!("{}/{}", S3_ENDPOINT, file_info.name);
+        let url = format!("https://discogs-data-dumps.s3.us-west-2.amazonaws.com/data/{}", file_info.name);
         let local_path = self.output_directory.join(&file_info.name);
 
         info!("⬇️ Downloading {} ({:.2} MB)...", file_info.name, file_info.size as f64 / 1_048_576.0);
