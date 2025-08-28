@@ -63,16 +63,25 @@ impl Downloader {
             if self.should_download(file_info).await? {
                 match self.download_file(file_info).await {
                     Ok(_) => {
-                        info!("✅ Successfully downloaded: {}", file_info.name);
-                        downloaded_files.push(file_info.name.clone());
+                        let filename = std::path::Path::new(&file_info.name).file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("unknown_file");
+                        info!("✅ Successfully downloaded: {}", filename);
+                        downloaded_files.push(filename.to_string());
                     }
                     Err(e) => {
-                        error!("❌ Failed to download {}: {}", file_info.name, e);
+                        let filename = std::path::Path::new(&file_info.name).file_name()
+                            .and_then(|name| name.to_str())
+                            .unwrap_or("unknown_file");
+                        error!("❌ Failed to download {}: {}", filename, e);
                     }
                 }
             } else {
-                info!("✅ Already have latest version of: {}", file_info.name);
-                downloaded_files.push(file_info.name.clone());
+                let filename = std::path::Path::new(&file_info.name).file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("unknown_file");
+                info!("✅ Already have latest version of: {}", filename);
+                downloaded_files.push(filename.to_string());
             }
         }
 
@@ -109,10 +118,9 @@ impl Downloader {
 
                 // Filter for XML files and CHECKSUM files (matching Python logic)
                 if key.ends_with(".xml.gz") || key.contains("CHECKSUM") {
-                    // Strip data/ prefix to get filename only (matching Python behavior)
-                    let name = key.strip_prefix(S3_PREFIX).unwrap_or(key).to_string();
-                    debug!("Including file: {} (size: {})", name, size);
-                    Some(S3FileInfo { name, size })
+                    // Store full key like Python does - this is crucial for version grouping
+                    debug!("Including file: {} (size: {})", key, size);
+                    Some(S3FileInfo { name: key.to_string(), size })
                 } else {
                     None
                 }
@@ -124,31 +132,79 @@ impl Downloader {
     }
 
     fn get_latest_monthly_files(&self, files: &[S3FileInfo]) -> Result<Vec<S3FileInfo>> {
-        // Filter for monthly dumps (format: discogs_YYYYMMDD_datatype.xml.gz)
-        let mut monthly_files: Vec<_> = files
-            .iter()
-            .filter(|f| f.name.starts_with("discogs_") && f.name.contains('_') && !f.name.contains("CHECKSUM"))
-            .cloned()
-            .collect();
+        // Group files by their ID (date part like "20250801") - matching Python logic
+        let mut ids: std::collections::HashMap<String, Vec<S3FileInfo>> = std::collections::HashMap::new();
 
-        if monthly_files.is_empty() {
-            return Ok(Vec::new());
+        for file in files {
+            debug!("Processing file: {}", file.name);
+            // Split the full S3 key exactly like Python does
+            let parts: Vec<&str> = file.name.split('_').collect();
+            debug!("Split parts: {:?}", parts);
+            if parts.len() >= 2 {
+                let id = parts[1].to_string();
+                debug!("Found version ID: {}", id);
+                ids.entry(id).or_default().push(file.clone());
+            } else {
+                debug!("Skipping file (invalid format): {}", file.name);
+            }
         }
 
-        // Sort by date (embedded in filename)
-        monthly_files.sort_by(|a, b| b.name.cmp(&a.name));
+        info!("Found {} unique version IDs", ids.len());
+        for (id, files) in &ids {
+            info!("  Version {}: {} files", id, files.len());
+            for file in files {
+                info!("    - {}", file.name);
+            }
+        }
 
-        // Get the latest month
-        let latest_month = extract_month_from_filename(&monthly_files[0].name);
+        // Get the most recent version (sorted in reverse order)
+        let mut sorted_ids: Vec<_> = ids.keys().collect();
+        sorted_ids.sort_by(|a, b| b.cmp(a));
 
-        // Filter for all files from the latest month
-        let latest_files: Vec<_> = monthly_files.into_iter().filter(|f| extract_month_from_filename(&f.name) == latest_month).collect();
+        for id in sorted_ids {
+            let files_for_id = ids.get(id).unwrap();
+            info!("Checking version {}: {} files", id, files_for_id.len());
 
-        Ok(latest_files)
+            // Check if we have a complete set - exactly like Python logic
+            // Python requires exactly 5 files total (1 CHECKSUM + 4 data files)
+            info!("Version {} has {} total files", id, files_for_id.len());
+
+            if files_for_id.len() != 5 {
+                info!("Skipping version {} - has {} files, need exactly 5", id, files_for_id.len());
+                continue;
+            }
+
+            // Only return data files (not CHECKSUM) for processing, with filename only
+            let data_files: Vec<_> = files_for_id
+                .iter()
+                .filter(|f| f.name.ends_with(".xml.gz"))
+                .map(|f| {
+                    let filename = f.name.strip_prefix(S3_PREFIX).unwrap_or(&f.name);
+                    S3FileInfo {
+                        name: filename.to_string(),
+                        size: f.size,
+                    }
+                })
+                .collect();
+
+            debug!("Version {} has {} data files", id, data_files.len());
+
+            if data_files.len() == 4 {  // We expect exactly 4 data files
+                info!("📅 Using version {} with {} data files", id, data_files.len());
+                return Ok(data_files);
+            }
+        }
+
+        warn!("No complete version found with all expected data files");
+        Ok(Vec::new())
     }
 
     async fn should_download(&self, file_info: &S3FileInfo) -> Result<bool> {
-        let local_path = self.output_directory.join(&file_info.name);
+        // Extract just the base filename for local checks
+        let filename = std::path::Path::new(&file_info.name).file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("unknown_file");
+        let local_path = self.output_directory.join(filename);
 
         // Check if file exists locally
         if !local_path.exists() {
@@ -156,7 +212,7 @@ impl Downloader {
         }
 
         // Check metadata
-        if let Some(local_info) = self.metadata.get(&file_info.name) {
+        if let Some(local_info) = self.metadata.get(filename) {
             // Compare sizes
             if local_info.size != file_info.size {
                 info!("📊 File size changed for {}: {} -> {}", file_info.name, local_info.size, file_info.size);
@@ -181,10 +237,14 @@ impl Downloader {
     }
 
     async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<()> {
-        let s3_key = format!("{}{}", S3_PREFIX, file_info.name);
-        let local_path = self.output_directory.join(&file_info.name);
+        let s3_key = &file_info.name;  // file_info.name is already the full S3 key
+        // Extract just the base filename for local storage (remove path components)
+        let filename = std::path::Path::new(&file_info.name).file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("unknown_file");
+        let local_path = self.output_directory.join(filename);
 
-        info!("⬇️ Downloading {} ({:.2} MB)...", file_info.name, file_info.size as f64 / 1_048_576.0);
+        info!("⬇️ Downloading {} ({:.2} MB)...", filename, file_info.size as f64 / 1_048_576.0);
 
         // Create progress bar
         let pb = ProgressBar::new(file_info.size);
@@ -196,7 +256,9 @@ impl Downloader {
         );
 
         // Download using AWS SDK (equivalent to boto3 download_fileobj)
-        let response = self.s3_client.get_object().bucket(S3_BUCKET).key(&s3_key).send().await.context("Failed to start S3 download")?;
+        debug!("Attempting to download S3 object: bucket={}, key={}", S3_BUCKET, s3_key);
+        let response = self.s3_client.get_object().bucket(S3_BUCKET).key(s3_key).send().await
+            .with_context(|| format!("Failed to start S3 download for key: {}", s3_key))?;
 
         let body = response.body.collect().await.context("Failed to read S3 response")?;
         let data = body.into_bytes();
@@ -217,11 +279,11 @@ impl Downloader {
 
         // Update metadata
         self.metadata.insert(
-            file_info.name.clone(),
+            filename.to_string(),
             LocalFileInfo {
                 path: local_path.to_string_lossy().to_string(),
                 checksum,
-                version: extract_month_from_filename(&file_info.name),
+                version: extract_month_from_filename(filename),
                 size: file_info.size,
             },
         );
