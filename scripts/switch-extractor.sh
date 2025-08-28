@@ -39,7 +39,8 @@ switch_to_python() {
     # Stop rustextractor if running
     docker compose --profile rustextractor stop rustextractor 2>/dev/null || true
 
-    # Start Python extractor (default profile, no need to specify)
+    # Build and start Python extractor with no cache
+    docker compose build --no-cache extractor
     docker compose up -d extractor
 
     echo -e "${GREEN}✅ Python extractor is now active${NC}"
@@ -51,7 +52,8 @@ switch_to_rust() {
     # Stop Python extractor if running
     docker compose stop extractor 2>/dev/null || true
 
-    # Start Rust extractor
+    # Build and start Rust extractor with no cache
+    docker compose --profile rustextractor build --no-cache rustextractor
     docker compose --profile rustextractor up -d rustextractor
 
     echo -e "${GREEN}✅ Rust extractor is now active${NC}"
