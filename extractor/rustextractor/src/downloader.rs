@@ -63,23 +63,17 @@ impl Downloader {
             if self.should_download(file_info).await? {
                 match self.download_file(file_info).await {
                     Ok(_) => {
-                        let filename = std::path::Path::new(&file_info.name).file_name()
-                            .and_then(|name| name.to_str())
-                            .unwrap_or("unknown_file");
+                        let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
                         info!("✅ Successfully downloaded: {}", filename);
                         downloaded_files.push(filename.to_string());
                     }
                     Err(e) => {
-                        let filename = std::path::Path::new(&file_info.name).file_name()
-                            .and_then(|name| name.to_str())
-                            .unwrap_or("unknown_file");
+                        let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
                         error!("❌ Failed to download {}: {}", filename, e);
                     }
                 }
             } else {
-                let filename = std::path::Path::new(&file_info.name).file_name()
-                    .and_then(|name| name.to_str())
-                    .unwrap_or("unknown_file");
+                let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
                 info!("✅ Already have latest version of: {}", filename);
                 downloaded_files.push(filename.to_string());
             }
@@ -152,16 +146,14 @@ impl Downloader {
                 .filter(|f| f.name.ends_with(".xml.gz"))
                 .map(|f| {
                     let filename = f.name.strip_prefix(S3_PREFIX).unwrap_or(&f.name);
-                    S3FileInfo {
-                        name: filename.to_string(),
-                        size: f.size,
-                    }
+                    S3FileInfo { name: filename.to_string(), size: f.size }
                 })
                 .collect();
 
             debug!("Version {} has {} data files", id, data_files.len());
 
-            if data_files.len() == 4 {  // We expect exactly 4 data files
+            if data_files.len() == 4 {
+                // We expect exactly 4 data files
                 info!("📅 Using version {} with {} data files", id, data_files.len());
                 return Ok(data_files);
             }
@@ -173,9 +165,7 @@ impl Downloader {
 
     async fn should_download(&self, file_info: &S3FileInfo) -> Result<bool> {
         // Extract just the base filename for local checks
-        let filename = std::path::Path::new(&file_info.name).file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("unknown_file");
+        let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
         let local_path = self.output_directory.join(filename);
 
         // Check if file exists locally
@@ -209,11 +199,9 @@ impl Downloader {
     }
 
     async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<()> {
-        let s3_key = &file_info.name;  // file_info.name is already the full S3 key
+        let s3_key = &file_info.name; // file_info.name is already the full S3 key
         // Extract just the base filename for local storage (remove path components)
-        let filename = std::path::Path::new(&file_info.name).file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("unknown_file");
+        let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
         let local_path = self.output_directory.join(filename);
 
         info!("⬇️ Downloading {} ({:.2} MB)...", filename, file_info.size as f64 / 1_048_576.0);
@@ -228,7 +216,13 @@ impl Downloader {
         );
 
         // Download using AWS SDK (equivalent to boto3 download_fileobj)
-        let response = self.s3_client.get_object().bucket(S3_BUCKET).key(s3_key).send().await
+        let response = self
+            .s3_client
+            .get_object()
+            .bucket(S3_BUCKET)
+            .key(s3_key)
+            .send()
+            .await
             .with_context(|| format!("Failed to start S3 download for key: {}", s3_key))?;
 
         let body = response.body.collect().await.context("Failed to read S3 response")?;
