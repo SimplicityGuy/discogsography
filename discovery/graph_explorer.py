@@ -1,14 +1,14 @@
 """Real-time Music Knowledge Graph Explorer for interactive relationship discovery."""
 
-import logging
 from typing import Any
 
+import structlog
 from common import get_config
 from neo4j import AsyncDriver, AsyncGraphDatabase
 from pydantic import BaseModel
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class GraphNode(BaseModel):
@@ -90,7 +90,7 @@ class MusicGraphExplorer:
 
     async def search_nodes(self, search_term: str, node_types: list[str] | None = None, limit: int = 20) -> GraphData:
         """Search for nodes by name/title."""
-        logger.info(f"🔍 Searching for nodes: {search_term}")
+        logger.info("🔍 Searching for nodes", search_term=search_term)
 
         assert self.driver is not None, "Driver must be initialized before searching nodes"  # nosec B101
         # Build type filter
@@ -146,7 +146,7 @@ class MusicGraphExplorer:
 
     async def expand_node(self, node_id: str, max_depth: int = 1, limit: int = 30) -> GraphData:
         """Expand around a specific node to show its relationships."""
-        logger.info(f"📈 Expanding node: {node_id}")
+        logger.info("📈 Expanding node", node_id=node_id)
 
         assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
@@ -247,7 +247,7 @@ class MusicGraphExplorer:
 
     async def find_path(self, source_node: str, target_node: str, _max_depth: int = 4) -> tuple[GraphData, PathResult]:
         """Find shortest paths between two nodes."""
-        logger.info(f"🛤️ Finding path from {source_node} to {target_node}")
+        logger.info("🛤️ Finding path", source_node=source_node, target_node=target_node)
 
         assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
@@ -343,7 +343,7 @@ class MusicGraphExplorer:
 
     async def get_neighborhood(self, node_id: str, radius: int = 2, limit: int = 50) -> GraphData:
         """Get the neighborhood around a node up to a certain radius."""
-        logger.info(f"🏘️ Getting neighborhood for node: {node_id}")
+        logger.info("🏘️ Getting neighborhood for node", node_id=node_id)
 
         assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
@@ -436,7 +436,7 @@ class MusicGraphExplorer:
 
     async def semantic_search(self, query: str, _limit: int = 20) -> GraphData:
         """Perform semantic search across the knowledge graph."""
-        logger.info(f"🧠 Performing semantic search: {query}")
+        logger.info("🧠 Performing semantic search", query=query)
 
         # For now, implement as enhanced text search
         # Could be extended with embedding-based similarity

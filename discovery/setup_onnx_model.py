@@ -1,10 +1,11 @@
 """Setup script to export model to ONNX format on first run."""
 
-import logging
 from pathlib import Path
 
+import structlog
 
-logger = logging.getLogger(__name__)
+
+logger = structlog.get_logger(__name__)
 
 
 def setup_onnx_model() -> None:
@@ -25,7 +26,7 @@ def setup_onnx_model() -> None:
 
         # Ensure the model is downloaded first
         model_name = "all-MiniLM-L6-v2"
-        logger.info(f"📥 Loading model: {model_name}")
+        logger.info("📥 Loading model", model_name=model_name)
         model = SentenceTransformer(model_name)
 
         # Save in standard format first
@@ -61,11 +62,11 @@ def setup_onnx_model() -> None:
         shutil.rmtree(temp_path)
 
         logger.info("✅ Successfully exported model to ONNX format")
-        logger.info(f"📁 ONNX model saved at: {onnx_output_path}")
+        logger.info("📁 ONNX model saved", onnx_output_path=onnx_output_path)
 
     except ImportError as e:
-        logger.warning(f"⚠️ Could not export to ONNX: {e}")
+        logger.warning("⚠️ Could not export to ONNX", error=str(e))
         logger.warning("📌 Falling back to PyTorch model")
     except Exception as e:
-        logger.error(f"❌ Error exporting model to ONNX: {e}")
+        logger.error("❌ Error exporting model to ONNX", error=str(e))
         logger.warning("📌 Falling back to PyTorch model")

@@ -2,13 +2,13 @@
 """Discovery service for music exploration and analytics."""
 
 import asyncio
-import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import structlog
 from common import get_config, setup_logging
 from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -29,7 +29,7 @@ from discovery.recommender import (
 )
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
@@ -114,13 +114,13 @@ class DiscoveryApp:
         """Connect a new WebSocket client."""
         await websocket.accept()
         self.active_connections.append(websocket)
-        logger.info(f"🔌 WebSocket connected. Total connections: {len(self.active_connections)}")
+        logger.info("🔌 WebSocket connected", total_connections=len(self.active_connections))
 
     def disconnect_websocket(self, websocket: WebSocket) -> None:
         """Disconnect a WebSocket client."""
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-        logger.info(f"🔌 WebSocket disconnected. Total connections: {len(self.active_connections)}")
+        logger.info("🔌 WebSocket disconnected", total_connections=len(self.active_connections))
 
     async def broadcast_update(self, message: dict[str, Any]) -> None:
         """Broadcast an update to all connected WebSocket clients."""
@@ -174,7 +174,7 @@ async def get_recommendations_api(request: RecommendationRequest) -> dict[str, A
             "request": request.model_dump(),
         }
     except Exception as e:
-        logger.error(f"❌ Error getting recommendations: {e}")
+        logger.error("❌ Error getting recommendations", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -186,7 +186,7 @@ async def get_analytics_api(request: AnalyticsRequest) -> AnalyticsResult:
         result = await get_analytics(request)
         return result
     except Exception as e:
-        logger.error(f"❌ Error getting analytics: {e}")
+        logger.error("❌ Error getting analytics", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
@@ -204,7 +204,7 @@ async def explore_graph_api(query: GraphQuery) -> dict[str, Any]:
 
         return response
     except Exception as e:
-        logger.error(f"❌ Error exploring graph: {e}")
+        logger.error("❌ Error exploring graph", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

@@ -1,16 +1,16 @@
 """ONNX-based sentence transformer for optimized inference without PyTorch."""
 
 import json
-import logging
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import onnxruntime as ort
+import structlog
 from transformers import AutoTokenizer
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class ONNXSentenceTransformer:
@@ -38,7 +38,7 @@ class ONNXSentenceTransformer:
             self.config = {"max_seq_length": 256, "do_lower_case": False}
 
         # Load tokenizer
-        logger.info(f"Loading tokenizer from {model_path}")
+        logger.info("Loading tokenizer", model_path=model_path)
         self.tokenizer = AutoTokenizer.from_pretrained(model_path)  # nosec B615
 
         # Load ONNX model
@@ -47,7 +47,7 @@ class ONNXSentenceTransformer:
             # Fallback to direct model.onnx
             onnx_model_path = self.model_path / "model.onnx"
 
-        logger.info(f"Loading ONNX model from {onnx_model_path}")
+        logger.info("Loading ONNX model", onnx_model_path=onnx_model_path)
 
         # Create ONNX Runtime session with optimization
         session_options = ort.SessionOptions()
@@ -124,7 +124,7 @@ class ONNXSentenceTransformer:
 
     def save(self, path: str) -> None:
         """Save model (no-op for compatibility)."""
-        logger.info(f"Save called on ONNX model (no-op): {path}")
+        logger.info("Save called on ONNX model (no-op)", path=path)
 
     @property
     def device(self) -> Any:

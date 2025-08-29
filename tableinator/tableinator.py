@@ -1,14 +1,15 @@
 import asyncio
 import contextlib
-import logging
 import os
 import signal
 import time
 from asyncio import run
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import psycopg
+import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
     AMQP_EXCHANGE,
@@ -27,7 +28,7 @@ from psycopg.errors import DatabaseError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Config will be initialized in main
 config: TableinatorConfig | None = None
@@ -67,7 +68,6 @@ connection_params: dict[str, Any] = {}
 
 def get_health_data() -> dict[str, Any]:
     """Get current health data for monitoring."""
-    from datetime import datetime
 
     return {
         "status": "healthy",
@@ -90,7 +90,9 @@ shutdown_requested = False
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    logger.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
+    logger.info(
+        "🛑 Received signal signum, initiating graceful shutdown...", signum=signum
+    )
     shutdown_requested = True
 
 
@@ -108,10 +110,10 @@ def safe_execute_query(cursor: Any, query: Any, parameters: tuple[Any, ...]) -> 
         cursor.execute(query, parameters)
         return True
     except DatabaseError as e:
-        logger.error(f"❌ Database error executing query: {e}")
+        logger.error("❌ Database error executing query", error=str(e))
         return False
     except Exception as e:
-        logger.error(f"❌ Unexpected error executing query: {e}")
+        logger.error("❌ Unexpected error executing query", error=str(e))
         return False
 
 
@@ -125,7 +127,9 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
             if data_type in consumer_tags:
                 consumer_tag = consumer_tags[data_type]
                 logger.info(
-                    f"🔌 Canceling consumer for {data_type} after {CONSUMER_CANCEL_DELAY}s grace period"
+                    "🔌 Canceling consumer for data_type after CONSUMER_CANCEL_DELAYs grace period",
+                    data_type=data_type,
+                    CONSUMER_CANCEL_DELAY=CONSUMER_CANCEL_DELAY,
                 )
 
                 # Cancel the consumer with nowait to avoid hanging
@@ -134,13 +138,18 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
                 # Remove from tracking
                 del consumer_tags[data_type]
 
-                logger.info(f"✅ Consumer for {data_type} successfully canceled")
+                logger.info(
+                    "✅ Consumer for data_type successfully canceled",
+                    data_type=data_type,
+                )
 
                 # Schedule periodic reconnection if enabled
                 if RECONNECT_INTERVAL > 0:
                     await schedule_periodic_reconnection(data_type)
         except Exception as e:
-            logger.error(f"❌ Failed to cancel consumer for {data_type}: {e}")
+            logger.error(
+                "❌ Failed to cancel consumer", data_type=data_type, error=str(e)
+            )
         finally:
             # Clean up the task reference
             if data_type in consumer_cancel_tasks:
@@ -163,27 +172,35 @@ async def schedule_periodic_reconnection(data_type: str) -> None:
             try:
                 # Wait for the reconnect interval
                 logger.info(
-                    f"⏰ Scheduled reconnection for {data_type} in {RECONNECT_INTERVAL}s ({RECONNECT_INTERVAL / 3600:.1f} hours)"
+                    "⏰ Scheduled reconnection",
+                    data_type=data_type,
+                    interval_seconds=RECONNECT_INTERVAL,
+                    interval_hours=RECONNECT_INTERVAL / 3600,
                 )
                 await asyncio.sleep(RECONNECT_INTERVAL)
 
                 # Check if we're still marked as complete and not already consuming
                 if data_type not in completed_files or data_type in consumer_tags:
                     logger.info(
-                        f"🔄 Skipping reconnection for {data_type} - state changed"
+                        "🔄 Skipping reconnection for data_type - state changed",
+                        data_type=data_type,
                     )
                     break
 
                 # Get the queue for this data type
                 if data_type not in queues:
                     logger.warning(
-                        f"⚠️ Queue not found for {data_type}, skipping reconnection"
+                        "⚠️ Queue not found for data_type, skipping reconnection",
+                        data_type=data_type,
                     )
                     break
 
                 queue = queues[data_type]
 
-                logger.info(f"🔄 Attempting periodic reconnection for {data_type}...")
+                logger.info(
+                    "🔄 Attempting periodic reconnection for data_type...",
+                    data_type=data_type,
+                )
 
                 # Start consuming messages again (all data types use the same handler)
                 consumer_tag = await queue.consume(
@@ -191,7 +208,9 @@ async def schedule_periodic_reconnection(data_type: str) -> None:
                 )
                 consumer_tags[data_type] = consumer_tag
 
-                logger.info(f"✅ Reconnected consumer for {data_type}")
+                logger.info(
+                    "✅ Reconnected consumer for data_type", data_type=data_type
+                )
 
                 # Track that we've reconnected
                 last_message_time[data_type] = time.time()
@@ -208,21 +227,28 @@ async def schedule_periodic_reconnection(data_type: str) -> None:
                     elif time.time() - empty_queue_start > EMPTY_QUEUE_TIMEOUT:
                         # No messages for timeout period, disconnect
                         logger.info(
-                            f"⏱️ No messages for {data_type} in {EMPTY_QUEUE_TIMEOUT}s, disconnecting..."
+                            "⏱️ No messages for data_type in EMPTY_QUEUE_TIMEOUTs, disconnecting...",
+                            data_type=data_type,
+                            EMPTY_QUEUE_TIMEOUT=EMPTY_QUEUE_TIMEOUT,
                         )
 
                         if data_type in consumer_tags:
                             await queue.cancel(consumer_tags[data_type], nowait=True)
                             del consumer_tags[data_type]
                             logger.info(
-                                f"🔌 Disconnected idle consumer for {data_type}"
+                                "🔌 Disconnected idle consumer for data_type",
+                                data_type=data_type,
                             )
 
                         # File is still considered complete, will reconnect again later
                         break
 
             except Exception as e:
-                logger.error(f"❌ Error in periodic reconnection for {data_type}: {e}")
+                logger.error(
+                    "❌ Error in periodic reconnection",
+                    data_type=data_type,
+                    error=str(e),
+                )
                 # Clean up consumer if it exists
                 if data_type in consumer_tags:
                     try:
@@ -273,7 +299,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
         # Normal message processing - require 'id' field
         if "id" not in data:
-            logger.error(f"❌ Message missing 'id' field: {data}")
+            logger.error("❌ Message missing 'id' field: data", data=data)
             await message.nack(requeue=False)
             return
 
@@ -287,7 +313,9 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             current_task = f"Processing {data_type}"
             if message_counts[data_type] % progress_interval == 0:
                 logger.info(
-                    f"📊 Processed {message_counts[data_type]} {data_type} in PostgreSQL"
+                    "📊 Processed records in PostgreSQL",
+                    count=message_counts[data_type],
+                    data_type=data_type,
                 )
 
         # Extract record details for logging
@@ -303,12 +331,19 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
         # Log at debug level to reduce noise
         if record_name:
-            logger.debug(f"🔄 Processing {data_type[:-1]} ID={data_id}: {record_name}")
+            logger.debug(
+                "🔄 Processing record",
+                data_type=data_type[:-1],
+                data_id=data_id,
+                record_name=record_name,
+            )
         else:
-            logger.debug(f"🔄 Processing {data_type[:-1]} ID={data_id}")
+            logger.debug(
+                "🔄 Processing record", data_type=data_type[:-1], data_id=data_id
+            )
 
     except Exception as e:
-        logger.error(f"❌ Failed to parse message: {e}")
+        logger.error("❌ Failed to parse message", error=str(e))
         await message.nack(requeue=False)
         return
 
@@ -348,19 +383,23 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             )
 
             # Commit is automatic when exiting the connection context
-            logger.debug(f"🐘 Updated {data_type[:-1]} ID={data_id} in PostgreSQL")
+            logger.debug(
+                "🐘 Updated record in PostgreSQL",
+                data_type=data_type[:-1],
+                data_id=data_id,
+            )
 
         await message.ack()
 
     except (InterfaceError, OperationalError) as e:
-        logger.warning(f"⚠️ Database connection issue, will retry: {e}")
+        logger.warning("⚠️ Database connection issue, will retry", error=str(e))
         await message.nack(requeue=True)
     except Exception as e:
-        logger.error(f"❌ Failed to process {data_type} message: {e}")
+        logger.error("❌ Failed to process message", data_type=data_type, error=str(e))
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning("⚠️ Failed to nack message", error=str(nack_error))
 
 
 async def main() -> None:
@@ -377,7 +416,8 @@ async def main() -> None:
     startup_delay = int(os.environ.get("STARTUP_DELAY", "5"))
     if startup_delay > 0:
         logger.info(
-            f"⏳ Waiting {startup_delay} seconds for dependent services to start..."
+            "⏳ Waiting startup_delay seconds for dependent services to start...",
+            startup_delay=startup_delay,
         )
         await asyncio.sleep(startup_delay)
 
@@ -390,7 +430,7 @@ async def main() -> None:
     try:
         config = TableinatorConfig.from_env()
     except ValueError as e:
-        logger.error(f"❌ Configuration error: {e}")
+        logger.error("❌ Configuration error", error=str(e))
         return
 
     # Parse host and port from address
@@ -425,19 +465,26 @@ async def main() -> None:
                     (config.postgres_database,),
                 )
                 if not cursor.fetchone():
-                    logger.info(f"🔧 Creating database '{config.postgres_database}'...")
+                    logger.info(
+                        "🔧 Creating database 'postgres_database'...",
+                        postgres_database=config.postgres_database,
+                    )
                     cursor.execute(
                         sql.SQL("CREATE DATABASE {}").format(
                             sql.Identifier(config.postgres_database)
                         )
                     )
-                    logger.info(f"✅ Database '{config.postgres_database}' created")
+                    logger.info(
+                        "✅ Database 'postgres_database' created",
+                        postgres_database=config.postgres_database,
+                    )
                 else:
                     logger.info(
-                        f"✅ Database '{config.postgres_database}' already exists"
+                        "✅ Database 'postgres_database' already exists",
+                        postgres_database=config.postgres_database,
                     )
     except Exception as e:
-        logger.error(f"❌ Failed to ensure database exists: {e}")
+        logger.error("❌ Failed to ensure database exists", error=str(e))
         return
 
     # Initialize resilient connection pool for concurrent access
@@ -452,7 +499,7 @@ async def main() -> None:
         logger.info("🐘 Connected to PostgreSQL with resilient connection pool")
         logger.info("✅ Connection pool initialized (min: 2, max: 20 connections)")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize connection pool: {e}")
+        logger.error("❌ Failed to initialize connection pool", error=str(e))
         return
 
     # Initialize database tables
@@ -476,7 +523,7 @@ async def main() -> None:
             # Autocommit is enabled, so tables are created immediately
         logger.info("✅ Database tables created/verified")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize database: {e}")
+        logger.error("❌ Failed to initialize database", error=str(e))
         if connection_pool:
             connection_pool.close()
         return
@@ -514,7 +561,9 @@ async def main() -> None:
     while startup_retry < max_startup_retries and not shutdown_requested:
         try:
             logger.info(
-                f"🐰 Attempting to connect to RabbitMQ (attempt {startup_retry + 1}/{max_startup_retries})"
+                "🐰 Attempting to connect to RabbitMQ",
+                attempt=startup_retry + 1,
+                max_attempts=max_startup_retries,
             )
             amqp_connection = await rabbitmq.connect()
             break
@@ -523,12 +572,16 @@ async def main() -> None:
             if startup_retry < max_startup_retries:
                 wait_time = min(30, 5 * startup_retry)  # Exponential backoff up to 30s
                 logger.warning(
-                    f"⚠️ RabbitMQ connection failed: {e}. Retrying in {wait_time} seconds..."
+                    "⚠️ RabbitMQ connection failed. Retrying...",
+                    error=str(e),
+                    wait_seconds=wait_time,
                 )
                 await asyncio.sleep(wait_time)
             else:
                 logger.error(
-                    f"❌ Failed to connect to AMQP broker after {max_startup_retries} attempts: {e}"
+                    "❌ Failed to connect to AMQP broker",
+                    max_attempts=max_startup_retries,
+                    error=str(e),
                 )
                 return
 
@@ -636,7 +689,10 @@ async def main() -> None:
                         for dt, lt in last_message_time.items()
                         if lt > 0 and 5 < current_time - lt < 120
                     ]
-                    logger.warning(f"⚠️ Slow consumers detected: {slow_consumers}")
+                    logger.warning(
+                        "⚠️ Slow consumers detected: slow_consumers",
+                        slow_consumers=slow_consumers,
+                    )
 
                 # Log consumer status
                 active_consumers = list(consumer_tags.keys())
@@ -647,9 +703,15 @@ async def main() -> None:
                 ]
 
                 if canceled_consumers:
-                    logger.info(f"🔌 Canceled consumers: {canceled_consumers}")
+                    logger.info(
+                        "🔌 Canceled consumers: canceled_consumers",
+                        canceled_consumers=canceled_consumers,
+                    )
                 if active_consumers:
-                    logger.info(f"✅ Active consumers: {active_consumers}")
+                    logger.info(
+                        "✅ Active consumers: active_consumers",
+                        active_consumers=active_consumers,
+                    )
 
         progress_task = asyncio.create_task(progress_reporter())
 
@@ -687,7 +749,7 @@ async def main() -> None:
                     connection_pool.close()
                     logger.info("✅ Connection pool closed")
             except Exception as e:
-                logger.warning(f"⚠️ Error closing connection pool: {e}")
+                logger.warning("⚠️ Error closing connection pool", error=str(e))
 
         # Stop health server
         health_server.stop()
@@ -699,6 +761,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("⚠️ Application interrupted")
     except Exception as e:
-        logger.error(f"❌ Application error: {e}")
+        logger.error("❌ Application error", error=str(e))
     finally:
         logger.info("✅ Tableinator service shutdown complete")

@@ -5,9 +5,11 @@ import os
 import signal
 import time
 from asyncio import run
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
     AMQP_EXCHANGE,
@@ -24,7 +26,7 @@ from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
 from orjson import loads
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Suppress Neo4j notifications for missing labels/properties during initial setup
 logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
@@ -70,7 +72,6 @@ shutdown_requested = False
 
 def get_health_data() -> dict[str, Any]:
     """Get current health data for monitoring."""
-    from datetime import datetime
 
     return {
         "status": "healthy" if graph else "unhealthy",
@@ -86,7 +87,9 @@ def get_health_data() -> dict[str, Any]:
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    logger.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
+    logger.info(
+        "🛑 Received signal signum, initiating graceful shutdown...", signum=signum
+    )
     shutdown_requested = True
 
 
@@ -99,7 +102,12 @@ def get_existing_hash(session: Any, node_type: str, node_id: str) -> str | None:
         record = result.single()
         return record["hash"] if record else None
     except Exception as e:
-        logger.warning(f"⚠️ Error checking existing hash for {node_type} {node_id}: {e}")
+        logger.warning(
+            "⚠️ Error checking existing hash for node_type node_id: e",
+            node_type=node_type,
+            node_id=node_id,
+            e=e,
+        )
         return None
 
 
@@ -109,10 +117,10 @@ def safe_execute_query(session: Any, query: str, parameters: dict[str, Any]) -> 
         session.run(query, parameters)
         return True
     except Neo4jError as e:
-        logger.error(f"❌ Neo4j error executing query: {e}")
+        logger.error("❌ Neo4j error executing query: e", e=e)
         return False
     except Exception as e:
-        logger.error(f"❌ Unexpected error executing query: {e}")
+        logger.error("❌ Unexpected error executing query: e", e=e)
         return False
 
 
@@ -135,13 +143,20 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
                 # Remove from tracking
                 del consumer_tags[data_type]
 
-                logger.info(f"✅ Consumer for {data_type} successfully canceled")
+                logger.info(
+                    "✅ Consumer for data_type successfully canceled",
+                    data_type=data_type,
+                )
 
                 # Schedule periodic reconnection if enabled
                 if RECONNECT_INTERVAL > 0:
                     await schedule_periodic_reconnection(data_type)
         except Exception as e:
-            logger.error(f"❌ Failed to cancel consumer for {data_type}: {e}")
+            logger.error(
+                "❌ Failed to cancel consumer for data_type: e",
+                data_type=data_type,
+                e=e,
+            )
         finally:
             # Clean up the task reference
             if data_type in consumer_cancel_tasks:
@@ -184,7 +199,10 @@ async def schedule_periodic_reconnection(data_type: str) -> None:
 
                 queue = queues[data_type]
 
-                logger.info(f"🔄 Attempting periodic reconnection for {data_type}...")
+                logger.info(
+                    "🔄 Attempting periodic reconnection for data_type...",
+                    data_type=data_type,
+                )
 
                 # Set up message handler based on data type
                 handler = None
@@ -198,7 +216,9 @@ async def schedule_periodic_reconnection(data_type: str) -> None:
                     handler = on_release_message
 
                 if handler is None:
-                    logger.error(f"❌ No handler found for {data_type}")
+                    logger.error(
+                        "❌ No handler found for data_type", data_type=data_type
+                    )
                     break
 
                 # Start consuming messages again
@@ -207,7 +227,9 @@ async def schedule_periodic_reconnection(data_type: str) -> None:
                 )
                 consumer_tags[data_type] = consumer_tag
 
-                logger.info(f"✅ Reconnected consumer for {data_type}")
+                logger.info(
+                    "✅ Reconnected consumer for data_type", data_type=data_type
+                )
 
                 # Track that we've reconnected
                 last_message_time[data_type] = time.time()
@@ -238,7 +260,11 @@ async def schedule_periodic_reconnection(data_type: str) -> None:
                         break
 
             except Exception as e:
-                logger.error(f"❌ Error in periodic reconnection for {data_type}: {e}")
+                logger.error(
+                    "❌ Error in periodic reconnection for data_type: e",
+                    data_type=data_type,
+                    e=e,
+                )
                 # Clean up consumer if it exists
                 if data_type in consumer_tags:
                     try:
@@ -305,13 +331,22 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         global current_task
         current_task = "Processing artists"
         if message_counts["artists"] % progress_interval == 0:
-            logger.info(f"📊 Processed {message_counts['artists']} artists in Neo4j")
+            logger.info(
+                "📊 Processed message_counts artists in Neo4j",
+                message_counts=message_counts["artists"],
+            )
 
-        logger.debug(f"🔄 Received artist message ID={artist_id}: {artist_name}")
+        logger.debug(
+            "🔄 Received artist message ID=artist_id: artist_name",
+            artist_id=artist_id,
+            artist_name=artist_name,
+        )
 
         # Process entire artist in a single session with proper transaction handling
         try:
-            logger.debug(f"🔄 Starting transaction for artist ID={artist_id}")
+            logger.debug(
+                "🔄 Starting transaction for artist ID=artist_id", artist_id=artist_id
+            )
             # Get session from resilient driver
             if graph is None:
                 raise RuntimeError("Neo4j driver not initialized")
@@ -440,13 +475,21 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                     return True  # Updated successfully
 
                 # Execute the transaction with explicit timeout
-                logger.debug(f"🔄 Executing transaction for artist ID={artist_id}")
+                logger.debug(
+                    "🔄 Executing transaction for artist ID=artist_id",
+                    artist_id=artist_id,
+                )
                 # Session configuration is done at creation time
                 updated = session.execute_write(process_artist_tx)
-                logger.debug(f"✅ Transaction completed for artist ID={artist_id}")
+                logger.debug(
+                    "✅ Transaction completed for artist ID=artist_id",
+                    artist_id=artist_id,
+                )
 
                 if updated:
-                    logger.debug(f"💾 Updated artist ID={artist_id} in Neo4j")
+                    logger.debug(
+                        "💾 Updated artist ID=artist_id in Neo4j", artist_id=artist_id
+                    )
                 else:
                     logger.debug(
                         f"⏩ Skipped artist ID={artist_id} (no changes needed)"
@@ -462,21 +505,27 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
             )
             raise
 
-        logger.debug(f"✅ Acknowledging artist message ID={artist_id}")
+        logger.debug(
+            "✅ Acknowledging artist message ID=artist_id", artist_id=artist_id
+        )
         await message.ack()
-        logger.debug(f"✅ Completed artist message ID={artist_id}")
+        logger.debug("✅ Completed artist message ID=artist_id", artist_id=artist_id)
     except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning(f"⚠️ Neo4j unavailable, will retry artist message: {e}")
+        logger.warning("⚠️ Neo4j unavailable, will retry artist message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
     except Exception as e:
-        logger.error(f"❌ Failed to process artist message: {e}")
+        logger.error("❌ Failed to process artist message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
 
 
 async def on_label_message(message: AbstractIncomingMessage) -> None:
@@ -502,9 +551,16 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         global current_task
         current_task = "Processing labels"
         if message_counts["labels"] % progress_interval == 0:
-            logger.info(f"📊 Processed {message_counts['labels']} labels in Neo4j")
+            logger.info(
+                "📊 Processed message_counts labels in Neo4j",
+                message_counts=message_counts["labels"],
+            )
 
-        logger.debug(f"🔄 Processing label ID={label_id}: {label_name}")
+        logger.debug(
+            "🔄 Processing label ID=label_id: label_name",
+            label_id=label_id,
+            label_name=label_name,
+        )
 
         # Process entire label in a single session with proper transaction handling
         if graph is None:
@@ -586,23 +642,30 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
             updated = session.execute_write(process_label_tx)
 
             if updated:
-                logger.debug(f"💾 Updated label ID={label_id} in Neo4j")
+                logger.debug("💾 Updated label ID=label_id in Neo4j", label_id=label_id)
             else:
-                logger.debug(f"⏩ Skipped label ID={label_id} (no changes needed)")
+                logger.debug(
+                    "⏩ Skipped label ID=label_id (no changes needed)",
+                    label_id=label_id,
+                )
 
         await message.ack()
     except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning(f"⚠️ Neo4j unavailable, will retry label message: {e}")
+        logger.warning("⚠️ Neo4j unavailable, will retry label message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
     except Exception as e:
-        logger.error(f"❌ Failed to process label message: {e}")
+        logger.error("❌ Failed to process label message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
 
 
 async def on_master_message(message: AbstractIncomingMessage) -> None:
@@ -628,9 +691,16 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         global current_task
         current_task = "Processing masters"
         if message_counts["masters"] % progress_interval == 0:
-            logger.info(f"📊 Processed {message_counts['masters']} masters in Neo4j")
+            logger.info(
+                "📊 Processed message_counts masters in Neo4j",
+                message_counts=message_counts["masters"],
+            )
 
-        logger.debug(f"🔄 Processing master ID={master_id}: {master_title}")
+        logger.debug(
+            "🔄 Processing master ID=master_id: master_title",
+            master_id=master_id,
+            master_title=master_title,
+        )
 
         # Process entire master in a single session with proper transaction handling
         if graph is None:
@@ -747,17 +817,24 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
             updated = session.execute_write(process_master_tx)
 
             if updated:
-                logger.debug(f"💾 Updated master ID={master_id} in Neo4j")
+                logger.debug(
+                    "💾 Updated master ID=master_id in Neo4j", master_id=master_id
+                )
             else:
-                logger.debug(f"⏩ Skipped master ID={master_id} (no changes needed)")
+                logger.debug(
+                    "⏩ Skipped master ID=master_id (no changes needed)",
+                    master_id=master_id,
+                )
 
         await message.ack()
     except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning(f"⚠️ Neo4j unavailable, will retry master message: {e}")
+        logger.warning("⚠️ Neo4j unavailable, will retry master message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
     except Exception as e:
         # Include more context in error message
         error_context = (
@@ -777,7 +854,9 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
 
 
 async def on_release_message(message: AbstractIncomingMessage) -> None:
@@ -803,9 +882,16 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         global current_task
         current_task = "Processing releases"
         if message_counts["releases"] % progress_interval == 0:
-            logger.info(f"📊 Processed {message_counts['releases']} releases in Neo4j")
+            logger.info(
+                "📊 Processed message_counts releases in Neo4j",
+                message_counts=message_counts["releases"],
+            )
 
-        logger.debug(f"🔄 Processing release ID={release_id}: {release_title}")
+        logger.debug(
+            "🔄 Processing release ID=release_id: release_title",
+            release_id=release_id,
+            release_title=release_title,
+        )
 
         # Process entire release in a single session with proper transaction handling
         if graph is None:
@@ -977,18 +1063,25 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
             updated = session.execute_write(process_release_tx)
 
             if updated:
-                logger.debug(f"💾 Updated release ID={release_id} in Neo4j")
+                logger.debug(
+                    "💾 Updated release ID=release_id in Neo4j", release_id=release_id
+                )
             else:
-                logger.debug(f"⏩ Skipped release ID={release_id} (no changes needed)")
+                logger.debug(
+                    "⏩ Skipped release ID=release_id (no changes needed)",
+                    release_id=release_id,
+                )
 
         await message.ack()
-        logger.debug(f"💾 Stored release ID={release_id} in Neo4j")
+        logger.debug("💾 Stored release ID=release_id in Neo4j", release_id=release_id)
     except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning(f"⚠️ Neo4j unavailable, will retry release message: {e}")
+        logger.warning("⚠️ Neo4j unavailable, will retry release message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
     except Exception as e:
         # Include more context in error message
         error_context = (
@@ -1008,7 +1101,9 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
 
 
 async def main() -> None:
@@ -1038,7 +1133,7 @@ async def main() -> None:
     try:
         config = GraphinatorConfig.from_env()
     except ValueError as e:
-        logger.error(f"❌ Configuration error: {e}")
+        logger.error("❌ Configuration error: e", e=e)
         return
 
     # Initialize resilient Neo4j driver
@@ -1072,12 +1167,15 @@ async def main() -> None:
                         f"✅ Created/verified constraint: {constraint.split('FOR')[1].split('REQUIRE')[0].strip()}"
                     )
                 except Exception as constraint_error:
-                    logger.warning(f"⚠️ Constraint creation note: {constraint_error}")
+                    logger.warning(
+                        "⚠️ Constraint creation note: constraint_error",
+                        constraint_error=constraint_error,
+                    )
 
             logger.info("✅ Neo4j indexes setup complete")
 
     except Exception as e:
-        logger.error(f"❌ Failed to connect to Neo4j: {e}")
+        logger.error("❌ Failed to connect to Neo4j: e", e=e)
         return
     # fmt: off
     print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗                                   ")
@@ -1245,7 +1343,10 @@ async def main() -> None:
                         for dt, lt in last_message_time.items()
                         if lt > 0 and 5 < current_time - lt < 120
                     ]
-                    logger.warning(f"⚠️ Slow consumers detected: {slow_consumers}")
+                    logger.warning(
+                        "⚠️ Slow consumers detected: slow_consumers",
+                        slow_consumers=slow_consumers,
+                    )
 
                 # Log consumer status
                 active_consumers = list(consumer_tags.keys())
@@ -1256,9 +1357,15 @@ async def main() -> None:
                 ]
 
                 if canceled_consumers:
-                    logger.info(f"🔌 Canceled consumers: {canceled_consumers}")
+                    logger.info(
+                        "🔌 Canceled consumers: canceled_consumers",
+                        canceled_consumers=canceled_consumers,
+                    )
                 if active_consumers:
-                    logger.info(f"✅ Active consumers: {active_consumers}")
+                    logger.info(
+                        "✅ Active consumers: active_consumers",
+                        active_consumers=active_consumers,
+                    )
 
         progress_task = asyncio.create_task(progress_reporter())
 
@@ -1295,7 +1402,7 @@ async def main() -> None:
                 graph.close()
                 logger.info("✅ Neo4j driver closed")
             except Exception as e:
-                logger.warning(f"⚠️ Error closing Neo4j driver: {e}")
+                logger.warning("⚠️ Error closing Neo4j driver: e", e=e)
 
         # Stop health server
         health_server.stop()
@@ -1307,6 +1414,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("⚠️ Application interrupted")
     except Exception as e:
-        logger.error(f"❌ Application error: {e}")
+        logger.error("❌ Application error: e", e=e)
     finally:
         logger.info("✅ Graphinator service shutdown complete")

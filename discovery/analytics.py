@@ -1,6 +1,5 @@
 """Music Industry Analytics & Insights engine for trend analysis."""
 
-import logging
 from datetime import datetime
 from typing import Any
 
@@ -8,13 +7,14 @@ import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import structlog
 from common import get_config
 from neo4j import AsyncDriver, AsyncGraphDatabase
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 def convert_numpy_to_json_serializable(obj: Any) -> Any:
@@ -176,7 +176,7 @@ class MusicAnalytics:
 
     async def analyze_artist_evolution(self, artist_name: str) -> AnalyticsResult:
         """Analyze an artist's career evolution and collaboration patterns."""
-        logger.info(f"🎤 Analyzing career evolution for {artist_name}...")
+        logger.info("🎤 Analyzing career evolution...", artist_name=artist_name)
 
         assert self.neo4j_driver is not None, "Neo4j driver must be initialized"  # nosec B101
         async with self.neo4j_driver.session() as session:
@@ -409,7 +409,7 @@ class MusicAnalytics:
 
     async def analyze_market_trends(self, analysis_focus: str = "format") -> AnalyticsResult:
         """Analyze music market trends and format adoption."""
-        logger.info(f"📈 Analyzing market trends focused on {analysis_focus}...")
+        logger.info("📈 Analyzing market trends...", analysis_focus=analysis_focus)
 
         assert self.neo4j_driver is not None, "Neo4j driver must be initialized"  # nosec B101
         async with self.neo4j_driver.session() as session:

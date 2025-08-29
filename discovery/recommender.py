@@ -1,10 +1,10 @@
 """AI-Powered Music Discovery Engine using graph algorithms and ML."""
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 import numpy as np
+import structlog
 from common import get_config
 from neo4j import AsyncDriver, AsyncGraphDatabase
 from pydantic import BaseModel
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
     from sklearn.feature_extraction.text import TfidfVectorizer
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class RecommendationRequest(BaseModel):
@@ -119,7 +119,7 @@ class MusicRecommender:
 
                 self.graph.add_edge(artist1, artist2, weight=weight)
 
-        logger.info(f"📊 Built collaboration graph with {self.graph.number_of_nodes()} artists and {self.graph.number_of_edges()} collaborations")
+        logger.info("📊 Built collaboration graph", artists=self.graph.number_of_nodes(), collaborations=self.graph.number_of_edges())
 
     async def _generate_artist_embeddings(self) -> None:
         """Generate semantic embeddings for artists based on their profiles."""
@@ -166,7 +166,7 @@ class MusicRecommender:
             self.artist_to_index[data["name"]] = i
             self.index_to_artist[i] = data["name"]
 
-        logger.info(f"✅ Generated embeddings for {len(artists_data)} artists")
+        logger.info("✅ Generated embeddings for artists", count=len(artists_data))
 
     async def get_similar_artists(self, artist_name: str, limit: int = 10) -> list[RecommendationResult]:
         """Get similar artists using graph algorithms and embeddings."""
