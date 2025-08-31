@@ -37,14 +37,14 @@ graph LR
 
 The Python version is configured in these locations:
 
-| Location | Purpose | Auto-Updated |
+| Location                  | Purpose                      | Auto-Updated |
 | ------------------------- | ---------------------------- | ------------ |
-| `.env` / `.env.example` | `PYTHON_VERSION` variable | ✅ Yes |
-| `pyproject.toml` (root) | `requires-python` constraint | ✅ Yes |
-| `*/pyproject.toml` | Service-specific constraints | ✅ Yes |
-| `Dockerfile` files | Base image and build args | ✅ Yes |
-| `.github/workflows/*.yml` | CI/CD environment | Via env var |
-| `pyrightconfig.json` | Type checker version | ✅ Yes |
+| `.env` / `.env.example`   | `PYTHON_VERSION` variable    | ✅ Yes       |
+| `pyproject.toml` (root)   | `requires-python` constraint | ✅ Yes       |
+| `*/pyproject.toml`        | Service-specific constraints | ✅ Yes       |
+| `Dockerfile` files        | Base image and build args    | ✅ Yes       |
+| `.github/workflows/*.yml` | CI/CD environment            | Via env var  |
+| `pyrightconfig.json`      | Type checker version         | ✅ Yes       |
 
 ## 📝 How to Update Python Version
 

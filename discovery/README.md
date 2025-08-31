@@ -64,11 +64,11 @@ uv run python discovery/discovery.py
 
 ## 🌐 Service URLs
 
-| Service | URL | Purpose |
+| Service          | URL                          | Purpose                          |
 | ---------------- | ---------------------------- | -------------------------------- |
-| **Discovery UI** | http://localhost:8005 | Main interface with all features |
-| **Health Check** | http://localhost:8004/health | Service health status |
-| **API Docs** | http://localhost:8005/docs | Interactive API documentation |
+| **Discovery UI** | http://localhost:8005        | Main interface with all features |
+| **Health Check** | http://localhost:8004/health | Service health status            |
+| **API Docs**     | http://localhost:8005/docs   | Interactive API documentation    |
 
 ## 🎨 User Interface
 
@@ -157,15 +157,15 @@ Content-Type: application/json
 
 ### Environment Variables
 
-| Variable | Description | Default |
+| Variable            | Description          | Default                 |
 | ------------------- | -------------------- | ----------------------- |
-| `NEO4J_ADDRESS` | Neo4j connection URL | `bolt://localhost:7687` |
-| `NEO4J_USERNAME` | Neo4j username | `neo4j` |
-| `NEO4J_PASSWORD` | Neo4j password | Required |
-| `POSTGRES_ADDRESS` | PostgreSQL host:port | `localhost:5433` |
-| `POSTGRES_USERNAME` | PostgreSQL username | Required |
-| `POSTGRES_PASSWORD` | PostgreSQL password | Required |
-| `POSTGRES_DATABASE` | PostgreSQL database | `discogsography` |
+| `NEO4J_ADDRESS`     | Neo4j connection URL | `bolt://localhost:7687` |
+| `NEO4J_USERNAME`    | Neo4j username       | `neo4j`                 |
+| `NEO4J_PASSWORD`    | Neo4j password       | Required                |
+| `POSTGRES_ADDRESS`  | PostgreSQL host:port | `localhost:5433`        |
+| `POSTGRES_USERNAME` | PostgreSQL username  | Required                |
+| `POSTGRES_PASSWORD` | PostgreSQL password  | Required                |
+| `POSTGRES_DATABASE` | PostgreSQL database  | `discogsography`        |
 
 ### ML Model Configuration
 

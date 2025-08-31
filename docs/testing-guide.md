@@ -35,11 +35,11 @@ graph BT
 
 ### Coverage Goals
 
-| Test Type | Target Coverage | Current Focus |
+| Test Type   | Target Coverage | Current Focus       |
 | ----------- | --------------- | ------------------- |
-| Unit Tests | 80%+ | Core business logic |
-| Integration | 70%+ | Service boundaries |
-| E2E Tests | Critical paths | User workflows |
+| Unit Tests  | 80%+            | Core business logic |
+| Integration | 70%+            | Service boundaries  |
+| E2E Tests   | Critical paths  | User workflows      |
 
 ## 🛠️ Test Structure
 

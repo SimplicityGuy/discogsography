@@ -2,13 +2,13 @@
 
 ## Summary of Size Reductions
 
-| Service | Before | After | Reduction | Percentage |
-|-------------|--------|--------|-----------|------------|
-| dashboard | 284MB | 253MB | 31MB | 10.9% |
-| extractor | 241MB | 210MB | 31MB | 12.9% |
-| graphinator | 251MB | 220MB | 31MB | 12.4% |
-| tableinator | 230MB | 199MB | 31MB | 13.5% |
-| discovery | 1.32GB | 982MB | 350MB | 26.5% |
+| Service     | Before | After | Reduction | Percentage |
+| ----------- | ------ | ----- | --------- | ---------- |
+| dashboard   | 284MB  | 253MB | 31MB      | 10.9%      |
+| extractor   | 241MB  | 210MB | 31MB      | 12.9%      |
+| graphinator | 251MB  | 220MB | 31MB      | 12.4%      |
+| tableinator | 230MB  | 199MB | 31MB      | 13.5%      |
+| discovery   | 1.32GB | 982MB | 350MB     | 26.5%      |
 
 **Total reduction across all services: 474MB**
 

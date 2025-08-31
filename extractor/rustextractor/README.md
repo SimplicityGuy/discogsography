@@ -30,10 +30,10 @@ Based on disco-quick reference implementation:
 
 | Data Type | Records/Second | Memory Usage |
 | --------- | -------------- | ------------ |
-| Artists | ~430,000 | ~5MB |
-| Labels | ~640,000 | ~5MB |
-| Masters | ~95,000 | ~8MB |
-| Releases | ~22,000 | ~10MB |
+| Artists   | ~430,000       | ~5MB         |
+| Labels    | ~640,000       | ~5MB         |
+| Masters   | ~95,000        | ~8MB         |
+| Releases  | ~22,000        | ~10MB        |
 
 ## Configuration
 

@@ -12,33 +12,33 @@
 
 ### 🏗️ Development & Standards
 
-| Document | Description |
+| Document                                                      | Description                                                 |
 | ------------------------------------------------------------- | ----------------------------------------------------------- |
-| **[Dockerfile Standards](dockerfile-standards.md)** | 🐋 Best practices for writing secure, efficient Dockerfiles |
-| **[Monorepo Guide](monorepo-guide.md)** | 📦 Managing a Python monorepo with shared dependencies |
-| **[Python Version Management](python-version-management.md)** | 🐍 Managing Python 3.13+ across the project |
-| **[Platform Targeting](platform-targeting.md)** | 🎯 Cross-platform compatibility guidelines |
-| **[Logging Guide](logging-guide.md)** | 📊 Structured logging standards and best practices |
-| **[Testing Guide](testing-guide.md)** | 🧪 Comprehensive testing strategies and patterns |
+| **[Dockerfile Standards](dockerfile-standards.md)**           | 🐋 Best practices for writing secure, efficient Dockerfiles |
+| **[Monorepo Guide](monorepo-guide.md)**                       | 📦 Managing a Python monorepo with shared dependencies      |
+| **[Python Version Management](python-version-management.md)** | 🐍 Managing Python 3.13+ across the project                 |
+| **[Platform Targeting](platform-targeting.md)**               | 🎯 Cross-platform compatibility guidelines                  |
+| **[Logging Guide](logging-guide.md)**                         | 📊 Structured logging standards and best practices          |
+| **[Testing Guide](testing-guide.md)**                         | 🧪 Comprehensive testing strategies and patterns            |
 
 ### 🚀 Operations & Deployment
 
-| Document | Description |
+| Document                                            | Description                                      |
 | --------------------------------------------------- | ------------------------------------------------ |
-| **[GitHub Actions Guide](github-actions-guide.md)** | 🔄 CI/CD workflows, automation & best practices |
-| **[Task Automation](task-automation.md)** | ⚡ Complete taskipy command reference |
-| **[Docker Security](docker-security.md)** | 🔒 Container hardening & security practices |
-| **[Database Resilience](database-resilience.md)** | 💾 Database connection patterns & error handling |
-| **[Performance Guide](performance-guide.md)** | ⚡ Performance optimization strategies |
+| **[GitHub Actions Guide](github-actions-guide.md)** | 🔄 CI/CD workflows, automation & best practices  |
+| **[Task Automation](task-automation.md)**           | ⚡ Complete taskipy command reference            |
+| **[Docker Security](docker-security.md)**           | 🔒 Container hardening & security practices      |
+| **[Database Resilience](database-resilience.md)**   | 💾 Database connection patterns & error handling |
+| **[Performance Guide](performance-guide.md)**       | ⚡ Performance optimization strategies           |
 
 ### 📋 Features & Updates
 
-| Document | Description |
+| Document                                                    | Description                                              |
 | ----------------------------------------------------------- | -------------------------------------------------------- |
-| **[Consumer Cancellation](consumer-cancellation.md)** | 🔄 File completion and consumer lifecycle management |
+| **[Consumer Cancellation](consumer-cancellation.md)**       | 🔄 File completion and consumer lifecycle management     |
 | **[File Completion Tracking](file-completion-tracking.md)** | 📊 Intelligent completion tracking and stalled detection |
-| **[Recent Improvements](recent-improvements.md)** | 🚀 Latest platform enhancements and changes |
-| **[Emoji Guide](emoji-guide.md)** | 📋 Standardized emoji usage across the project |
+| **[Recent Improvements](recent-improvements.md)**           | 🚀 Latest platform enhancements and changes              |
+| **[Emoji Guide](emoji-guide.md)**                           | 📋 Standardized emoji usage across the project           |
 
 ## 🎯 Quick Links by Topic
 

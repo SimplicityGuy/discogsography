@@ -41,13 +41,13 @@ flowchart TD
 
 ## 🎯 Performance Goals
 
-| Metric | Target | Current | Bottleneck |
+| Metric                 | Target       | Current      | Bottleneck       |
 | ---------------------- | ------------ | ------------ | ---------------- |
-| **XML Parsing** | 10,000 rec/s | 5,000-10,000 | I/O, Memory |
-| **Message Processing** | 5,000 msg/s | 3,000-5,000 | Network |
-| **Neo4j Writes** | 2,000 rec/s | 1,000-2,000 | Transactions |
-| **PostgreSQL Writes** | 5,000 rec/s | 3,000-5,000 | Indexes |
-| **API Response Time** | \<100ms | \<200ms | Query complexity |
+| **XML Parsing**        | 10,000 rec/s | 5,000-10,000 | I/O, Memory      |
+| **Message Processing** | 5,000 msg/s  | 3,000-5,000  | Network          |
+| **Neo4j Writes**       | 2,000 rec/s  | 1,000-2,000  | Transactions     |
+| **PostgreSQL Writes**  | 5,000 rec/s  | 3,000-5,000  | Indexes          |
+| **API Response Time**  | \<100ms      | \<200ms      | Query complexity |
 
 ## 🔍 Profiling & Monitoring
 

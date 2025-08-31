@@ -337,13 +337,13 @@ RUN uv sync --frozen --no-dev --extra dashboard
 
 ## 📊 Workspace Benefits
 
-| Benefit | Description |
+| Benefit                 | Description                         |
 | ----------------------- | ----------------------------------- |
-| **Code Reuse** | Share utilities via common/ |
+| **Code Reuse**          | Share utilities via common/         |
 | **Version Consistency** | Single lock file prevents conflicts |
-| **Faster Installation** | uv caches dependencies efficiently |
-| **Atomic Updates** | Update all services simultaneously |
-| **Simplified CI/CD** | One install step for everything |
+| **Faster Installation** | uv caches dependencies efficiently  |
+| **Atomic Updates**      | Update all services simultaneously  |
+| **Simplified CI/CD**    | One install step for everything     |
 
 ## 🔍 Debugging
 

@@ -30,79 +30,79 @@ Tasks are organized into logical groups for easier navigation:
 
 ### 🛠️ Setup Group
 
-| Task | Description |
+| Task            | Description                                   |
 | --------------- | --------------------------------------------- |
-| `install` | Install all dependencies including dev extras |
-| `init` | Initialize pre-commit hooks for development |
-| `update-hooks` | Update pre-commit hooks to latest versions |
-| `check-updates` | Check for outdated dependencies |
+| `install`       | Install all dependencies including dev extras |
+| `init`          | Initialize pre-commit hooks for development   |
+| `update-hooks`  | Update pre-commit hooks to latest versions    |
+| `check-updates` | Check for outdated dependencies               |
 
 ### ✨ Quality Group
 
-| Task | Description |
+| Task          | Description                               |
 | ------------- | ----------------------------------------- |
-| `lint` | Run all pre-commit hooks on all files |
+| `lint`        | Run all pre-commit hooks on all files     |
 | `lint-python` | Run Python-specific linters (ruff + mypy) |
-| `format` | Format all Python code with ruff |
-| `security` | Run security checks with bandit |
+| `format`      | Format all Python code with ruff          |
+| `security`    | Run security checks with bandit           |
 
 ### 🧪 Test Group
 
-| Task | Description |
+| Task       | Description                                    |
 | ---------- | ---------------------------------------------- |
-| `test` | Run unit and integration tests (excluding E2E) |
-| `test-cov` | Run tests with coverage report |
-| `test-e2e` | Run end-to-end browser tests |
-| `test-all` | Run all tests including E2E |
+| `test`     | Run unit and integration tests (excluding E2E) |
+| `test-cov` | Run tests with coverage report                 |
+| `test-e2e` | Run end-to-end browser tests                   |
+| `test-all` | Run all tests including E2E                    |
 
 ### 🚀 Services Group
 
-| Task | Description | Port |
+| Task          | Description                                                | Port |
 | ------------- | ---------------------------------------------------------- | ---- |
-| `dashboard` | Run the dashboard service (monitoring UI) | 8000 |
-| `discovery` | Run the discovery service (AI-powered music intelligence) | 8001 |
-| `pyextractor` | Run the Python extractor service | - |
-| `extractor` | Run the Python extractor service (backwards compatibility) | - |
-| `graphinator` | Run the graphinator service (Neo4j graph builder) | - |
-| `tableinator` | Run the tableinator service (PostgreSQL table builder) | - |
+| `dashboard`   | Run the dashboard service (monitoring UI)                  | 8000 |
+| `discovery`   | Run the discovery service (AI-powered music intelligence)  | 8001 |
+| `pyextractor` | Run the Python extractor service                           | -    |
+| `extractor`   | Run the Python extractor service (backwards compatibility) | -    |
+| `graphinator` | Run the graphinator service (Neo4j graph builder)          | -    |
+| `tableinator` | Run the tableinator service (PostgreSQL table builder)     | -    |
 
 ### 🦀 Rust Group
 
-| Task | Description |
+| Task                  | Description                          |
 | --------------------- | ------------------------------------ |
 | `rustextractor-build` | Build Rust extractor in release mode |
-| `rustextractor-test` | Run Rust extractor tests |
-| `rustextractor-bench` | Run Rust extractor benchmarks |
-| `rustextractor-run` | Run Rust extractor in release mode |
-| `rustextractor-lint` | Lint Rust code with clippy |
-| `rustextractor-fmt` | Format Rust code |
-| `rustextractor-clean` | Clean Rust build artifacts |
+| `rustextractor-test`  | Run Rust extractor tests             |
+| `rustextractor-bench` | Run Rust extractor benchmarks        |
+| `rustextractor-run`   | Run Rust extractor in release mode   |
+| `rustextractor-lint`  | Lint Rust code with clippy           |
+| `rustextractor-fmt`   | Format Rust code                     |
+| `rustextractor-clean` | Clean Rust build artifacts           |
 
 ### 🐋 Docker Group
 
-| Task | Description |
+| Task          | Description                                    |
 | ------------- | ---------------------------------------------- |
-| `up` | Start all Docker services in background |
-| `down` | Stop all Docker services |
-| `logs` | Show logs from all services (follow mode) |
-| `rebuild` | Rebuild all Docker images and restart services |
-| `build` | Build specific service Docker images |
-| `build-prod` | Build production Docker images |
-| `deploy-prod` | Deploy services in production mode |
+| `up`          | Start all Docker services in background        |
+| `down`        | Stop all Docker services                       |
+| `logs`        | Show logs from all services (follow mode)      |
+| `rebuild`     | Rebuild all Docker images and restart services |
+| `build`       | Build specific service Docker images           |
+| `build-prod`  | Build production Docker images                 |
+| `deploy-prod` | Deploy services in production mode             |
 
 ### 📊 Monitor Group
 
-| Task | Description |
+| Task             | Description                              |
 | ---------------- | ---------------------------------------- |
-| `monitor` | Monitor RabbitMQ queues in real-time |
-| `check-errors` | Check for errors in service logs |
+| `monitor`        | Monitor RabbitMQ queues in real-time     |
+| `check-errors`   | Check for errors in service logs         |
 | `system-monitor` | Monitor system resources and performance |
 
 ### 🧹 Clean Group
 
-| Task | Description |
+| Task         | Description                                             |
 | ------------ | ------------------------------------------------------- |
-| `clean` | Clean project directory of temporary files and caches |
+| `clean`      | Clean project directory of temporary files and caches   |
 | `deep-clean` | Deep clean including Docker volumes (use with caution!) |
 
 ## 🗑️ What Gets Cleaned
