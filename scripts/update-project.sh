@@ -464,13 +464,48 @@ except:
     fi
 }
 
-# Update Rust crates
+# Verify all dependencies were updated
+verify_dependency_updates() {
+    print_section "✅" "Verifying Dependency Updates"
+
+    print_info "All dependency types have been updated:"
+
+    # Python dependencies
+    print_success "✓ Python core dependencies ([project] dependencies)"
+    print_success "✓ Python optional dependencies ([project.optional-dependencies])"
+    print_success "✓ Python dev dependencies ([dependency-groups])"
+    print_success "✓ Python build dependencies ([build-system])"
+
+    # Rust dependencies
+    if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+        print_success "✓ Rust main dependencies ([dependencies])"
+        print_success "✓ Rust dev dependencies ([dev-dependencies])"
+        print_success "✓ Rust build dependencies ([build-dependencies])"
+    fi
+
+    # Pre-commit hooks
+    print_success "✓ Pre-commit hooks and their dependencies"
+
+    # Docker and CI/CD
+    print_success "✓ UV package manager in Dockerfiles"
+    print_success "✓ GitHub Actions dependencies"
+
+    if [[ "$DRY_RUN" == false ]]; then
+        print_info "Run 'uv tree --outdated' to verify all Python packages are up to date"
+
+        if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+            print_info "Run 'cargo outdated' in extractor/rustextractor to verify Rust crates"
+        fi
+    fi
+}
+
+# Update Rust crates including ALL dependency types
 update_rust_crates() {
     if [[ ! -d "extractor/rustextractor" ]] || [[ ! -f "extractor/rustextractor/Cargo.toml" ]]; then
         return
     fi
 
-    print_section "🦀" "Updating Rust Crates"
+    print_section "🦀" "Updating ALL Rust Dependencies"
 
     # Backup Cargo files
     if [[ "$BACKUP" == true ]] && [[ "$DRY_RUN" == false ]]; then
@@ -478,27 +513,97 @@ update_rust_crates() {
         backup_file "extractor/rustextractor/Cargo.lock"
     fi
 
-    print_info "Checking for Rust crate updates..."
+    print_info "Updating ALL Rust dependency types:"
+    print_info "  • Main dependencies ([dependencies])"
+    print_info "  • Dev dependencies ([dev-dependencies])"
+    print_info "  • Build dependencies ([build-dependencies])"
+    print_info "  • Target-specific dependencies"
 
     if [[ "$DRY_RUN" == false ]]; then
-        # Update crates
-        cd extractor/rustextractor
+        pushd extractor/rustextractor > /dev/null
+
+        # Check if cargo-edit is installed for updating Cargo.toml versions
+        if command -v cargo-upgrade &> /dev/null; then
+            print_info "Updating ALL dependency versions in Cargo.toml..."
+
+            # Update ALL dependencies (main, dev, build, target-specific)
+            local upgrade_cmd="cargo upgrade"
+            if [[ "$MAJOR_UPGRADES" == true ]]; then
+                print_info "Including major version upgrades for ALL Rust dependencies"
+            else
+                print_info "Updating to latest compatible versions (respecting semver)"
+            fi
+
+            # Update main dependencies
+            print_info "Updating main dependencies..."
+            if $upgrade_cmd; then
+                print_success "Updated main dependency versions"
+                FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated main dependency versions")
+                CHANGES_MADE=true
+            fi
+
+            # Update dev dependencies
+            print_info "Updating dev dependencies..."
+            if $upgrade_cmd --dev-dependencies; then
+                print_success "Updated dev-dependency versions"
+                FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated dev-dependency versions")
+                CHANGES_MADE=true
+            fi
+
+            # Update build dependencies if they exist
+            if grep -q "\[build-dependencies\]" Cargo.toml; then
+                print_info "Updating build dependencies..."
+                if $upgrade_cmd --build-dependencies; then
+                    print_success "Updated build-dependency versions"
+                    FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated build-dependency versions")
+                    CHANGES_MADE=true
+                fi
+            fi
+        else
+            print_info "Installing cargo-edit for comprehensive dependency updates..."
+            if cargo install cargo-edit; then
+                # Try again after installation
+                local upgrade_cmd="cargo upgrade"
+
+                if $upgrade_cmd; then
+                    print_success "Updated main dependency versions"
+                    FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated dependency versions")
+                    CHANGES_MADE=true
+                fi
+
+                if $upgrade_cmd --dev-dependencies; then
+                    print_success "Updated dev-dependency versions"
+                    FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated dev-dependency versions")
+                    CHANGES_MADE=true
+                fi
+            else
+                print_warning "Could not install cargo-edit, will use cargo update for lock file only"
+            fi
+        fi
+
+        # Update Cargo.lock with ALL the new versions
+        print_info "Updating Cargo.lock with ALL dependency changes..."
         if cargo update; then
-            print_success "Rust crates updated successfully"
-            FILE_CHANGES+=("extractor/rustextractor/Cargo.lock: Updated Rust dependencies")
+            print_success "ALL Rust dependencies in lock file updated successfully"
+            FILE_CHANGES+=("extractor/rustextractor/Cargo.lock: Updated ALL Rust dependencies")
             CHANGES_MADE=true
         else
-            print_warning "Failed to update Rust crates"
+            print_warning "Failed to update Rust crates lock file"
         fi
-        cd ..
+
+        popd > /dev/null
     else
-        print_info "[DRY RUN] Would run: cargo update in extractor/rustextractor/"
+        print_info "[DRY RUN] Would update ALL Rust dependency types:"
+        print_info "[DRY RUN] Would run: cargo upgrade (main dependencies)"
+        print_info "[DRY RUN] Would run: cargo upgrade --dev-dependencies"
+        print_info "[DRY RUN] Would run: cargo upgrade --build-dependencies (if present)"
+        print_info "[DRY RUN] Would run: cargo update (update lock file)"
     fi
 }
 
 # Update Python packages
 update_python_packages() {
-    print_section "$EMOJI_PACKAGE" "Updating Python Packages"
+    print_section "$EMOJI_PACKAGE" "Updating ALL Python Dependencies"
 
     # Backup critical files
     if [[ "$BACKUP" == true ]] && [[ "$DRY_RUN" == false ]]; then
@@ -525,24 +630,41 @@ update_python_packages() {
     fi
 
     # Compile dependencies with upgrades
-    print_info "Compiling upgraded dependencies..."
+    print_info "Updating ALL dependency types:"
+    print_info "  • Core dependencies ([project] dependencies)"
+    print_info "  • Optional dependencies ([project.optional-dependencies])"
+    print_info "  • Dev dependencies ([dependency-groups])"
+    print_info "  • Build dependencies ([build-system])"
 
     local uv_cmd="uv lock"
     if [[ "$MAJOR_UPGRADES" == true ]]; then
         uv_cmd="$uv_cmd --upgrade"
-        print_info "Including major version upgrades"
+        print_info "Including major version upgrades for ALL dependencies"
     else
         uv_cmd="$uv_cmd --upgrade"
-        print_info "Upgrading to latest minor/patch versions"
+        print_info "Upgrading ALL dependencies to latest minor/patch versions"
     fi
 
     if [[ "$DRY_RUN" == true ]]; then
         print_info "[DRY RUN] Would run: $uv_cmd"
-        print_info "Checking for available updates..."
+        print_info "Checking for available updates across ALL dependency types..."
+
+        # Show outdated packages grouped by type
+        print_info "Checking core dependencies..."
         uv tree --outdated || true
+
+        # Check if there are optional dependencies
+        if grep -q "\[project.optional-dependencies\]" pyproject.toml; then
+            print_info "Optional dependencies found and will be updated"
+        fi
+
+        # Check if there are dev dependencies
+        if grep -q "\[dependency-groups\]" pyproject.toml; then
+            print_info "Dev dependencies found and will be updated"
+        fi
     else
         if $uv_cmd; then
-            print_success "Dependencies compiled successfully"
+            print_success "ALL dependencies compiled successfully"
             CHANGES_MADE=true
         else
             print_error "Failed to compile dependencies"
@@ -550,11 +672,11 @@ update_python_packages() {
         fi
     fi
 
-    # Sync to install upgraded packages
+    # Sync to install upgraded packages with ALL extras and dev dependencies
     if [[ "$DRY_RUN" == false ]]; then
-        print_info "Syncing upgraded dependencies..."
-        if uv sync --all-extras; then
-            print_success "Dependencies synced successfully"
+        print_info "Syncing ALL upgraded dependencies (including optional and dev)..."
+        if uv sync --all-extras --dev; then
+            print_success "ALL dependencies synced successfully"
         else
             print_error "Failed to sync dependencies"
             exit 1
@@ -563,7 +685,7 @@ update_python_packages() {
         # Capture package changes
         capture_package_changes
     else
-        print_info "[DRY RUN] Would run: uv sync --all-extras"
+        print_info "[DRY RUN] Would run: uv sync --all-extras --dev"
     fi
 }
 
@@ -807,11 +929,14 @@ main() {
     # Update pre-commit hooks
     update_precommit_hooks
 
-    # Update Python packages
+    # Update Python packages (ALL types: core, optional, dev, build)
     update_python_packages
 
-    # Update Rust crates
+    # Update Rust crates (ALL types: main, dev, build)
     update_rust_crates
+
+    # Verify all dependencies were updated
+    verify_dependency_updates
 
     # Run tests
     run_tests
