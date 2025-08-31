@@ -44,9 +44,8 @@ dependencies = [
     "onnx>=1.14.0",                     # ONNX format
     "onnxruntime>=1.16.0",              # ONNX inference runtime
     "optimum[onnxruntime]>=1.13.0",     # HuggingFace ONNX optimization
-    # Note: sentence-transformers is installed but PyTorch is excluded
-    "sentence-transformers>=2.2.0",     # Semantic search
-    "transformers>=4.30.0",             # Required by sentence-transformers
+    # Note: sentence-transformers with ONNX backend (no PyTorch needed)
+    "sentence-transformers[onnx]>=2.2.0",   # Semantic search with ONNX backend
     "plotly>=5.17.0",                   # Advanced visualizations
     "sqlalchemy[asyncio]>=2.0.0",       # Async SQL toolkit
 ]

@@ -25,7 +25,7 @@ COPY common/pyproject.toml ./common/
 COPY discovery/pyproject.toml ./discovery/
 COPY discovery/constraints.txt ./discovery/
 
-# Install dependencies
+# Install dependencies (sentence-transformers[onnx] excludes PyTorch)
 # hadolint ignore=SC2015
 RUN --mount=type=cache,target=/tmp/.cache/uv \
     uv sync --frozen --no-dev --extra discovery && \
