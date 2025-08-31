@@ -10,7 +10,8 @@ Last Updated: January 2025
 
 ## Overview
 
-The consumer cancellation feature automatically closes RabbitMQ queue consumers after files have completed processing. This helps free up resources and provides clearer monitoring of active vs. completed file processing.
+The consumer cancellation feature automatically closes RabbitMQ queue consumers after files have completed processing.
+This helps free up resources and provides clearer monitoring of active vs. completed file processing.
 
 ## How It Works
 
@@ -115,11 +116,13 @@ docker-compose logs -f tableinator graphinator
 
 Both the Python and Rust extractor services integrate with consumer cancellation by:
 
-1. **Sending File Completion Messages**: When a file finishes processing, the extractor (Python or Rust) sends a "file_complete" message
+1. **Sending File Completion Messages**: When a file finishes processing, the extractor (Python or Rust) sends a
+   "file_complete" message
 1. **Tracking Completed Files**: Both extractors maintain a `completed_files` set to avoid false stalled warnings
 1. **Progress Monitoring**: Completed files are excluded from stalled detection logic
 
-This prevents the extractors from incorrectly reporting files as "stalled" when they have actually completed processing and their consumers have been canceled.
+This prevents the extractors from incorrectly reporting files as "stalled" when they have actually completed processing
+and their consumers have been canceled.
 
 ### Recent Improvements (January 2025)
 

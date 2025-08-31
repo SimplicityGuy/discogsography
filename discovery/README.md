@@ -2,7 +2,8 @@
 
 🎵 **AI-Powered Music Discovery, Analytics, and Graph Exploration**
 
-The Discovery service provides three powerful features for exploring and understanding the Discogs music database through intelligent analysis and interactive visualization.
+The Discovery service provides three powerful features for exploring and understanding the Discogs music database
+through intelligent analysis and interactive visualization.
 
 ## 🌟 Features
 
@@ -64,7 +65,7 @@ uv run python discovery/discovery.py
 ## 🌐 Service URLs
 
 | Service | URL | Purpose |
-|---------|-----|---------|
+| ---------------- | ---------------------------- | -------------------------------- |
 | **Discovery UI** | http://localhost:8005 | Main interface with all features |
 | **Health Check** | http://localhost:8004/health | Service health status |
 | **API Docs** | http://localhost:8005/docs | Interactive API documentation |
@@ -157,7 +158,7 @@ Content-Type: application/json
 ### Environment Variables
 
 | Variable | Description | Default |
-|----------|-------------|---------|
+| ------------------- | -------------------- | ----------------------- |
 | `NEO4J_ADDRESS` | Neo4j connection URL | `bolt://localhost:7687` |
 | `NEO4J_USERNAME` | Neo4j username | `neo4j` |
 | `NEO4J_PASSWORD` | Neo4j password | Required |

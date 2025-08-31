@@ -4,7 +4,9 @@ High-performance Rust-based Discogs data extractor for the Discogsography platfo
 
 ## Overview
 
-Rust Extractor is a Rust reimplementation of the Python-based extractor service, offering significantly improved performance and lower resource usage. It streams and parses Discogs XML data dumps, sending processed records to RabbitMQ for consumption by downstream services.
+Rust Extractor is a Rust reimplementation of the Python-based extractor service, offering significantly improved
+performance and lower resource usage. It streams and parses Discogs XML data dumps, sending processed records to
+RabbitMQ for consumption by downstream services.
 
 ## Features
 
@@ -18,14 +20,16 @@ Rust Extractor is a Rust reimplementation of the Python-based extractor service,
 
 ## Credits
 
-This implementation is inspired by and references the excellent [disco-quick](https://github.com/sublipri/disco-quick) library by sublipri, which demonstrated the incredible performance gains possible with Rust-based XML parsing for Discogs data.
+This implementation is inspired by and references the excellent [disco-quick](https://github.com/sublipri/disco-quick)
+library by sublipri, which demonstrated the incredible performance gains possible with Rust-based XML parsing for
+Discogs data.
 
 ## Performance Benchmarks
 
 Based on disco-quick reference implementation:
 
 | Data Type | Records/Second | Memory Usage |
-|-----------|---------------|--------------|
+| --------- | -------------- | ------------ |
 | Artists | ~430,000 | ~5MB |
 | Labels | ~640,000 | ~5MB |
 | Masters | ~95,000 | ~8MB |

@@ -4,7 +4,8 @@
 
 ## Overview
 
-Discogsography employs a multi-layered testing approach including unit tests, integration tests, and end-to-end (E2E) tests. This guide covers testing patterns, best practices, and common scenarios.
+Discogsography employs a multi-layered testing approach including unit tests, integration tests, and end-to-end (E2E)
+tests. This guide covers testing patterns, best practices, and common scenarios.
 
 ## 🎯 Testing Philosophy
 
@@ -35,7 +36,7 @@ graph BT
 ### Coverage Goals
 
 | Test Type | Target Coverage | Current Focus |
-|-----------|----------------|---------------|
+| ----------- | --------------- | ------------------- |
 | Unit Tests | 80%+ | Core business logic |
 | Integration | 70%+ | Service boundaries |
 | E2E Tests | Critical paths | User workflows |

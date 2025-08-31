@@ -4,7 +4,8 @@
 
 ## Overview
 
-Discogsography uses a **monorepo** structure with **uv workspaces**, allowing multiple services to share code while maintaining independent dependencies. This guide explains how to effectively work within this structure.
+Discogsography uses a **monorepo** structure with **uv workspaces**, allowing multiple services to share code while
+maintaining independent dependencies. This guide explains how to effectively work within this structure.
 
 ## 🏗️ Repository Structure
 
@@ -337,7 +338,7 @@ RUN uv sync --frozen --no-dev --extra dashboard
 ## 📊 Workspace Benefits
 
 | Benefit | Description |
-|---------|-------------|
+| ----------------------- | ----------------------------------- |
 | **Code Reuse** | Share utilities via common/ |
 | **Version Consistency** | Single lock file prevents conflicts |
 | **Faster Installation** | uv caches dependencies efficiently |

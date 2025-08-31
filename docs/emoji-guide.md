@@ -17,7 +17,7 @@ Emojis in Discogsography serve to:
 ### Service Identifiers
 
 | Emoji | Service | Usage |
-|-------|---------|--------|
+| ----- | ---------------- | ---------------------------------------------- |
 | 📥 | Python Extractor | Python-based data extraction service |
 | ⚡ | Rust Extractor | Rust-based high-performance extraction service |
 | 🔗 | Graphinator | Neo4j graph service |
@@ -29,7 +29,7 @@ Emojis in Discogsography serve to:
 ### Status Indicators
 
 | Emoji | Status | Usage |
-|-------|--------|--------|
+| ----- | ------------- | -------------------------------- |
 | 🚀 | Startup | Service initialization |
 | ✅ | Success | Operation completed successfully |
 | ❌ | Error | Operation failed |
@@ -42,7 +42,7 @@ Emojis in Discogsography serve to:
 ### Documentation Sections
 
 | Emoji | Section | Usage |
-|-------|---------|--------|
+| ----- | ------------- | ---------------------- |
 | 🎯 | Overview | Project goals, targets |
 | 🚀 | Quick Start | Getting started guides |
 | 📖 | Documentation | Links to docs |
@@ -59,7 +59,7 @@ Emojis in Discogsography serve to:
 ### Operation Types
 
 | Emoji | Operation | Usage |
-|-------|-----------|--------|
+| ----- | ----------- | ----------------------- |
 | 📊 | Analytics | Statistics, metrics |
 | 🤖 | AI/ML | Model operations |
 | 🧠 | ML Model | Model loading |
@@ -77,7 +77,7 @@ Emojis in Discogsography serve to:
 ### Music Domain
 
 | Emoji | Entity | Usage |
-|-------|--------|--------|
+| ----- | -------- | ----------------------- |
 | 🎵 | Music | General music reference |
 | 🎤 | Artists | Artist entities |
 | 💿 | Albums | Album/release entities |
@@ -86,7 +86,7 @@ Emojis in Discogsography serve to:
 ### Development
 
 | Emoji | Purpose | Usage |
-|-------|---------|--------|
+| ----- | ----------- | --------------------- |
 | 💡 | Tips | Pro tips, insights |
 | 🤖 | AI/Claude | AI assistance |
 | 📚 | Reference | Quick reference |
@@ -99,7 +99,7 @@ Emojis in Discogsography serve to:
 ### CI/CD & GitHub Actions
 
 | Emoji | Purpose | Usage |
-|-------|---------|--------|
+| ----- | --------------- | --------------------- |
 | 🔀 | Checkout | Repository checkout |
 | 🐍 | Python | Python setup |
 | 📦 | Package Manager | UV/pip installation |
@@ -131,7 +131,7 @@ Emojis in Discogsography serve to:
 ### Performance & Features
 
 | Emoji | Feature | Usage |
-|-------|---------|--------|
+| ----- | ------------- | ------------------- |
 | ⚡ | Speed | High performance |
 | 🔄 | Deduplication | Smart dedup |
 | 📈 | Big Data | Large scale |
@@ -218,4 +218,5 @@ When adding new emojis:
 - 💾 = Saved/stored
 - 🔧 = Config/setup
 
-Remember: Emojis enhance readability but should not be required for understanding. Always include clear text descriptions alongside emojis.
+Remember: Emojis enhance readability but should not be required for understanding. Always include clear text
+descriptions alongside emojis.

@@ -4,7 +4,8 @@
 
 ## Overview
 
-Processing 20+ million music records requires careful attention to performance. This guide covers optimization strategies, bottleneck identification, and performance tuning across all services.
+Processing 20+ million music records requires careful attention to performance. This guide covers optimization
+strategies, bottleneck identification, and performance tuning across all services.
 
 ### Performance Optimization Flow
 
@@ -41,7 +42,7 @@ flowchart TD
 ## 🎯 Performance Goals
 
 | Metric | Target | Current | Bottleneck |
-|--------|--------|---------|------------|
+| ---------------------- | ------------ | ------------ | ---------------- |
 | **XML Parsing** | 10,000 rec/s | 5,000-10,000 | I/O, Memory |
 | **Message Processing** | 5,000 msg/s | 3,000-5,000 | Network |
 | **Neo4j Writes** | 2,000 rec/s | 1,000-2,000 | Transactions |

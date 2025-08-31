@@ -4,18 +4,20 @@
 
 **Comprehensive guide to Discogsography's CI/CD workflows and automation**
 
-[📋 Workflows](#-workflows) | [🔧 Composite Actions](#-composite-actions) | [⚡ Performance](#-performance-optimizations) | [🛡️ Security](#-security-features) | [🎯 Best Practices](#-best-practices)
+[📋 Workflows](#-workflows) | [🔧 Composite Actions](#-composite-actions) | [⚡ Performance](#-performance-optimizations) |
+[🛡️ Security](#-security-features) | [🎯 Best Practices](#-best-practices)
 
 </div>
 
 ## 📋 Workflows
 
-Discogsography uses GitHub Actions for continuous integration, testing, and deployment automation. All workflows follow consistent patterns with emojis for visual clarity and optimal performance through parallelization and caching.
+Discogsography uses GitHub Actions for continuous integration, testing, and deployment automation. All workflows follow
+consistent patterns with emojis for visual clarity and optimal performance through parallelization and caching.
 
 ### 🏗️ Build Workflow (`build.yml`)
 
-**Trigger**: Push to main, PRs, weekly schedule
-**Purpose**: Main CI pipeline that orchestrates all quality checks and Docker builds
+**Trigger**: Push to main, PRs, weekly schedule **Purpose**: Main CI pipeline that orchestrates all quality checks and
+Docker builds
 
 ```yaml
 on:
@@ -43,8 +45,7 @@ on:
 
 ### 🧹 Code Quality Workflow (`code-quality.yml`)
 
-**Trigger**: Push/PR on Python files, configs, or Dockerfiles
-**Purpose**: Ensures code quality standards are met
+**Trigger**: Push/PR on Python files, configs, or Dockerfiles **Purpose**: Ensures code quality standards are met
 
 **Checks**:
 
@@ -56,8 +57,7 @@ on:
 
 ### 🧪 Test Workflow (`test.yml`)
 
-**Trigger**: Push/PR on Python files
-**Purpose**: Runs comprehensive test suite
+**Trigger**: Push/PR on Python files **Purpose**: Runs comprehensive test suite
 
 **Features**:
 
@@ -68,8 +68,7 @@ on:
 
 ### 🎭 E2E Test Workflow (`e2e-test.yml`)
 
-**Trigger**: Dashboard or test changes
-**Purpose**: Cross-browser end-to-end testing
+**Trigger**: Dashboard or test changes **Purpose**: Cross-browser end-to-end testing
 
 **Test Matrix**:
 
@@ -86,8 +85,7 @@ on:
 
 ### 🔄 Update Dependencies (`update-dependencies.yml`)
 
-**Trigger**: Weekly schedule (Monday 9 AM UTC) or manual
-**Purpose**: Automated dependency updates with PR creation
+**Trigger**: Weekly schedule (Monday 9 AM UTC) or manual **Purpose**: Automated dependency updates with PR creation
 
 **Options**:
 
@@ -117,8 +115,7 @@ on:
 
 ### 🐳 Docker Validation (`docker-validate.yml`)
 
-**Trigger**: Docker-related file changes
-**Purpose**: Validates Docker configurations
+**Trigger**: Docker-related file changes **Purpose**: Validates Docker configurations
 
 **Checks**:
 
@@ -129,8 +126,7 @@ on:
 
 ### 📋 List Sub-Projects (`list-sub-projects.yml`)
 
-**Trigger**: Called by other workflows
-**Purpose**: Provides service matrix for build jobs
+**Trigger**: Called by other workflows **Purpose**: Provides service matrix for build jobs
 
 **Output**: JSON matrix of services with cache settings
 

@@ -10,7 +10,8 @@ Last Updated: January 2025
 
 ## 📋 Overview
 
-This document tracks recent improvements made to the Discogsography platform, focusing on CI/CD, automation, and development experience enhancements.
+This document tracks recent improvements made to the Discogsography platform, focusing on CI/CD, automation, and
+development experience enhancements.
 
 ## 🎯 GitHub Actions Improvements
 

@@ -4,7 +4,8 @@
 
 ## Overview
 
-This project uses a centralized approach to Python version management, ensuring consistency across all services, Docker builds, and CI/CD pipelines. The current Python version (3.13) can be updated from a single location.
+This project uses a centralized approach to Python version management, ensuring consistency across all services, Docker
+builds, and CI/CD pipelines. The current Python version (3.13) can be updated from a single location.
 
 ## 🔧 Configuration Points
 
@@ -37,7 +38,7 @@ graph LR
 The Python version is configured in these locations:
 
 | Location | Purpose | Auto-Updated |
-|----------|---------|--------------|
+| ------------------------- | ---------------------------- | ------------ |
 | `.env` / `.env.example` | `PYTHON_VERSION` variable | ✅ Yes |
 | `pyproject.toml` (root) | `requires-python` constraint | ✅ Yes |
 | `*/pyproject.toml` | Service-specific constraints | ✅ Yes |

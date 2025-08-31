@@ -1,6 +1,7 @@
 # Database Resilience Documentation
 
-This document describes the database resilience features implemented in the Discogsography platform to handle nightly maintenance windows and other database outages.
+This document describes the database resilience features implemented in the Discogsography platform to handle nightly
+maintenance windows and other database outages.
 
 ## Overview
 

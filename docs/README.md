@@ -13,7 +13,7 @@
 ### 🏗️ Development & Standards
 
 | Document | Description |
-|----------|-------------|
+| ------------------------------------------------------------- | ----------------------------------------------------------- |
 | **[Dockerfile Standards](dockerfile-standards.md)** | 🐋 Best practices for writing secure, efficient Dockerfiles |
 | **[Monorepo Guide](monorepo-guide.md)** | 📦 Managing a Python monorepo with shared dependencies |
 | **[Python Version Management](python-version-management.md)** | 🐍 Managing Python 3.13+ across the project |
@@ -24,7 +24,7 @@
 ### 🚀 Operations & Deployment
 
 | Document | Description |
-|----------|-------------|
+| --------------------------------------------------- | ------------------------------------------------ |
 | **[GitHub Actions Guide](github-actions-guide.md)** | 🔄 CI/CD workflows, automation & best practices |
 | **[Task Automation](task-automation.md)** | ⚡ Complete taskipy command reference |
 | **[Docker Security](docker-security.md)** | 🔒 Container hardening & security practices |
@@ -34,7 +34,7 @@
 ### 📋 Features & Updates
 
 | Document | Description |
-|----------|-------------|
+| ----------------------------------------------------------- | -------------------------------------------------------- |
 | **[Consumer Cancellation](consumer-cancellation.md)** | 🔄 File completion and consumer lifecycle management |
 | **[File Completion Tracking](file-completion-tracking.md)** | 📊 Intelligent completion tracking and stalled detection |
 | **[Recent Improvements](recent-improvements.md)** | 🚀 Latest platform enhancements and changes |

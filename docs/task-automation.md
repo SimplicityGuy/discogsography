@@ -2,7 +2,8 @@
 
 > 🤖 Streamlined development workflows using just task automation
 
-This project uses [just](https://github.com/casey/just) for task automation, providing a simple and intuitive interface similar to `make` or npm scripts. All tasks are defined in the `justfile` in the project root.
+This project uses [just](https://github.com/casey/just) for task automation, providing a simple and intuitive interface
+similar to `make` or npm scripts. All tasks are defined in the `justfile` in the project root.
 
 ## 🚀 Quick Start
 
@@ -30,7 +31,7 @@ Tasks are organized into logical groups for easier navigation:
 ### 🛠️ Setup Group
 
 | Task | Description |
-|------|-------------|
+| --------------- | --------------------------------------------- |
 | `install` | Install all dependencies including dev extras |
 | `init` | Initialize pre-commit hooks for development |
 | `update-hooks` | Update pre-commit hooks to latest versions |
@@ -39,7 +40,7 @@ Tasks are organized into logical groups for easier navigation:
 ### ✨ Quality Group
 
 | Task | Description |
-|------|-------------|
+| ------------- | ----------------------------------------- |
 | `lint` | Run all pre-commit hooks on all files |
 | `lint-python` | Run Python-specific linters (ruff + mypy) |
 | `format` | Format all Python code with ruff |
@@ -48,7 +49,7 @@ Tasks are organized into logical groups for easier navigation:
 ### 🧪 Test Group
 
 | Task | Description |
-|------|-------------|
+| ---------- | ---------------------------------------------- |
 | `test` | Run unit and integration tests (excluding E2E) |
 | `test-cov` | Run tests with coverage report |
 | `test-e2e` | Run end-to-end browser tests |
@@ -57,7 +58,7 @@ Tasks are organized into logical groups for easier navigation:
 ### 🚀 Services Group
 
 | Task | Description | Port |
-|------|-------------|------|
+| ------------- | ---------------------------------------------------------- | ---- |
 | `dashboard` | Run the dashboard service (monitoring UI) | 8000 |
 | `discovery` | Run the discovery service (AI-powered music intelligence) | 8001 |
 | `pyextractor` | Run the Python extractor service | - |
@@ -68,7 +69,7 @@ Tasks are organized into logical groups for easier navigation:
 ### 🦀 Rust Group
 
 | Task | Description |
-|------|-------------|
+| --------------------- | ------------------------------------ |
 | `rustextractor-build` | Build Rust extractor in release mode |
 | `rustextractor-test` | Run Rust extractor tests |
 | `rustextractor-bench` | Run Rust extractor benchmarks |
@@ -80,7 +81,7 @@ Tasks are organized into logical groups for easier navigation:
 ### 🐋 Docker Group
 
 | Task | Description |
-|------|-------------|
+| ------------- | ---------------------------------------------- |
 | `up` | Start all Docker services in background |
 | `down` | Stop all Docker services |
 | `logs` | Show logs from all services (follow mode) |
@@ -92,7 +93,7 @@ Tasks are organized into logical groups for easier navigation:
 ### 📊 Monitor Group
 
 | Task | Description |
-|------|-------------|
+| ---------------- | ---------------------------------------- |
 | `monitor` | Monitor RabbitMQ queues in real-time |
 | `check-errors` | Check for errors in service logs |
 | `system-monitor` | Monitor system resources and performance |
@@ -100,7 +101,7 @@ Tasks are organized into logical groups for easier navigation:
 ### 🧹 Clean Group
 
 | Task | Description |
-|------|-------------|
+| ------------ | ------------------------------------------------------- |
 | `clean` | Clean project directory of temporary files and caches |
 | `deep-clean` | Deep clean including Docker volumes (use with caution!) |
 

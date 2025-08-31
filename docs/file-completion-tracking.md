@@ -12,7 +12,9 @@ Last Updated: January 2025
 
 ## Overview
 
-The file completion tracking system ensures accurate monitoring of file processing status across the Discogsography platform. It prevents false warnings about stalled extractors and coordinates with the consumer cancellation feature for optimal resource management.
+The file completion tracking system ensures accurate monitoring of file processing status across the Discogsography
+platform. It prevents false warnings about stalled extractors and coordinates with the consumer cancellation feature for
+optimal resource management.
 
 ## How It Works
 
@@ -125,7 +127,8 @@ No additional configuration needed - the feature works automatically with existi
 
 **Cause**: Service was restarted and lost completion state
 
-**Solution**: The `completed_files` set is reset on restart. This is expected behavior - the warnings will stop once files complete in the new session.
+**Solution**: The `completed_files` set is reset on restart. This is expected behavior - the warnings will stop once
+files complete in the new session.
 
 ### Issue: Consumer not being canceled after completion
 
