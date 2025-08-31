@@ -55,7 +55,7 @@ export POSTGRES_PASSWORD="password"
 export POSTGRES_DATABASE="discogsography"
 
 # Start the discovery service
-uv run task discovery
+just discovery
 
 # Or run directly
 uv run python discovery/discovery.py

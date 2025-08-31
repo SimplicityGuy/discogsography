@@ -66,7 +66,6 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pre-commit>=3.5.0",
     "ruff>=0.1.0",
-    "taskipy>=1.14.0",
     "types-tqdm>=4.67.0.20250516",
     "types-xmltodict>=0.14.0.20241009",
     "types-psutil>=6.1.0.20241102",
@@ -276,58 +275,3 @@ environments = [
     "sys_platform == 'darwin' and platform_machine == 'x86_64'",  # macOS Intel
     "sys_platform == 'darwin' and platform_machine == 'arm64'",   # macOS Apple Silicon
 ]
-
-# taskipy configuration for task automation
-[tool.taskipy.tasks]
-# Development tasks
-install = "uv sync --all-extras"
-lint = "uv run pre-commit run --all-files"
-lint-python = "uv run ruff check . && uv run mypy ."
-format = "uv run ruff format ."
-test = "uv run pytest -m 'not e2e'"
-test-cov = "uv run pytest --cov -m 'not e2e'"
-test-e2e = "uv run pytest tests/dashboard/test_dashboard_ui.py -v"
-test-all = "uv run pytest"
-security = "uv run bandit -r . -x './.venv/*,./tests/*'"
-
-# Cleanup tasks (moved to end of file for comprehensive version)
-
-# Service tasks
-dashboard = "uv run python dashboard/dashboard.py"
-discovery = "uv run python discovery/discovery.py"
-pyextractor = "uv run python extractor/pyextractor/extractor.py"
-extractor = "uv run python extractor/pyextractor/extractor.py"  # Alias for backwards compatibility
-graphinator = "uv run python graphinator/graphinator.py"
-tableinator = "uv run python tableinator/tableinator.py"
-
-# Rust extractor tasks
-rustextractor-build = "cd extractor/rustextractor && cargo build --release"
-rustextractor-test = "cd extractor/rustextractor && cargo test"
-rustextractor-bench = "cd extractor/rustextractor && cargo bench"
-rustextractor-run = "cd extractor/rustextractor && cargo run --release"
-rustextractor-lint = "cd extractor/rustextractor && cargo clippy -- -D warnings"
-rustextractor-fmt = "cd extractor/rustextractor && cargo fmt"
-rustextractor-clean = "cd extractor/rustextractor && cargo clean"
-
-# Docker tasks
-up = "docker-compose up -d"
-down = "docker-compose down"
-logs = "docker-compose logs -f"
-rebuild = "docker-compose down && docker-compose build && docker-compose up -d"
-build = "docker-compose build dashboard discovery pyextractor rustextractor graphinator tableinator"
-build-prod = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml build"
-deploy-prod = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
-
-# Utility tasks
-monitor = "uv run python utilities/monitor_queues.py"
-check-errors = "uv run python utilities/check_errors.py"
-system-monitor = "uv run python utilities/system_monitor.py"
-check-updates = "uv pip list --outdated"
-update-hooks = "uv run pre-commit autoupdate --freeze"
-init = "uv run pre-commit install && echo '✅ Pre-commit hooks installed!'"
-
-# Clean command - removes temporary files, caches, and build artifacts
-clean = """echo '🧹 Cleaning project directory...' && find . -type d -name '__pycache__' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.pytest_cache' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.ruff_cache' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.mypy_cache' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '.coverage' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name 'htmlcov' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name 'dist' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name 'build' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type d -name '*.egg-info' ! -path './.claude/*' -exec rm -rf {} + 2>/dev/null || true && find . -type f -name '*.pyc' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.pyo' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.pyd' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '.DS_Store' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.orig' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.rej' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.bak' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.swp' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*.swo' ! -path './.claude/*' -delete 2>/dev/null || true && find . -type f -name '*~' ! -path './.claude/*' -delete 2>/dev/null || true && if [ -d 'extractor/rustextractor/target' ]; then rm -rf extractor/rustextractor/target; fi && if [ -d '.hypothesis' ]; then rm -rf .hypothesis; fi && if [ -d '.benchmarks' ]; then rm -rf .benchmarks; fi && echo '✅ Project cleaned!' && echo '📁 Preserved: .claude, .git, uv.lock'"""
-
-# Deep clean - more aggressive cleaning including docker volumes (use with caution)
-deep-clean = "task clean && echo '🐳 Cleaning Docker...' && docker compose down -v --remove-orphans 2>/dev/null || true && docker system prune -f 2>/dev/null || true && echo '✅ Deep clean done!'"

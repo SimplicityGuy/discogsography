@@ -489,7 +489,7 @@ run_tests() {
 
     # Run linting
     print_info "Running linters..."
-    if uv run task lint; then
+    if just lint; then
         print_success "Linting passed"
     else
         print_warning "Linting failed - review the changes"
@@ -497,7 +497,7 @@ run_tests() {
 
     # Run tests
     print_info "Running tests..."
-    if uv run task test; then
+    if just test; then
         print_success "Tests passed"
     else
         print_warning "Tests failed - review the changes"

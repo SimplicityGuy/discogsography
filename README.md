@@ -10,6 +10,7 @@
 ![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 [![uv](https://img.shields.io/badge/uv-package%20manager-orange?logo=python)](https://github.com/astral-sh/uv)
+[![just](https://img.shields.io/badge/just-task%20runner-blue)](https://just.systems)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 [![Cargo](https://img.shields.io/badge/cargo-rust%20package%20manager-brown)](https://doc.rust-lang.org/cargo/)
 [![Clippy](https://img.shields.io/badge/clippy-rust%20linter-green)](https://github.com/rust-lang/rust-clippy)
@@ -218,19 +219,24 @@ open http://localhost:8003
 # 1. Install uv (10-100x faster than pip)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Install all dependencies
-uv sync --all-extras
+# 2. Install just (task runner)
+brew install just  # macOS
+# or: cargo install just
+# or: https://just.systems/install.sh
 
-# 3. Set up pre-commit hooks
-uv run task init
+# 3. Install all dependencies
+just install
 
-# 4. Run any service
-uv run task dashboard         # Monitoring UI
-uv run task discovery         # AI discovery
-uv run task extractor-python  # Python data ingestion
-uv run task extractor-rust    # Rust data ingestion (requires cargo)
-uv run task graphinator       # Neo4j builder
-uv run task tableinator       # PostgreSQL builder
+# 4. Set up pre-commit hooks
+just init
+
+# 5. Run any service
+just dashboard         # Monitoring UI
+just discovery         # AI discovery
+just pyextractor       # Python data ingestion
+just rustextractor-run # Rust data ingestion (requires cargo)
+just graphinator       # Neo4j builder
+just tableinator       # PostgreSQL builder
 ```
 
 #### Environment Setup
@@ -489,10 +495,10 @@ uv sync --all-extras
 uv run task init  # Install pre-commit hooks
 
 # Before committing
-uv run task lint     # Run linting
-uv run task format   # Format code
+just lint     # Run linting
+just format   # Format code
 uv run task test     # Run tests
-uv run task security # Security scan
+just security # Security scan
 
 # Or run everything at once
 uv run pre-commit run --all-files
@@ -868,9 +874,9 @@ We welcome contributions! Please follow these guidelines:
 1. **Validate Changes**
 
    ```bash
-   uv run task lint      # Fix any linting issues
-   uv run task test      # Ensure tests pass
-   uv run task security  # Check for vulnerabilities
+   just lint      # Fix any linting issues
+   just test      # Ensure tests pass
+   just security  # Check for vulnerabilities
    ```
 
 1. **Commit with Conventional Commits**

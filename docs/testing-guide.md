@@ -255,10 +255,10 @@ flowchart TD
 
 ```bash
 # Run all tests (excluding E2E)
-uv run task test
+just test
 
 # Run with coverage
-uv run task test-cov
+just test-cov
 
 # Run specific service tests
 uv run pytest tests/dashboard/ -v
@@ -271,7 +271,7 @@ uv run pytest -m "not integration and not e2e"
 uv run pytest -m integration
 
 # Run E2E tests
-uv run task test-e2e
+just test-e2e
 ```
 
 ### Advanced Testing
@@ -501,7 +501,7 @@ class TestCounter:
 
 ```bash
 # Generate coverage report
-uv run task test-cov
+just test-cov
 
 # View in terminal
 coverage report

@@ -1,0 +1,56 @@
+---
+name: 'Setup Just'
+description: 'Install just task runner'
+inputs:
+  version:
+    description: 'Version of just to install'
+    required: false
+    default: '1.38.0'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: '🔧 Install just'
+      shell: bash
+      run: |
+        echo "Installing just version ${{ inputs.version }}..."
+
+        # Determine OS and architecture
+        case "${{ runner.os }}" in
+          Linux)
+            PLATFORM="x86_64-unknown-linux-musl"
+            ;;
+          macOS)
+            if [[ "${{ runner.arch }}" == "ARM64" ]]; then
+              PLATFORM="aarch64-apple-darwin"
+            else
+              PLATFORM="x86_64-apple-darwin"
+            fi
+            ;;
+          Windows)
+            PLATFORM="x86_64-pc-windows-msvc"
+            EXT=".zip"
+            ;;
+          *)
+            echo "Unsupported OS: ${{ runner.os }}"
+            exit 1
+            ;;
+        esac
+
+        # Download and install
+        URL="https://github.com/casey/just/releases/download/${{ inputs.version }}/just-${{ inputs.version }}-${PLATFORM}.tar.gz"
+        if [[ "${{ runner.os }}" == "Windows" ]]; then
+          URL="https://github.com/casey/just/releases/download/${{ inputs.version }}/just-${{ inputs.version }}-${PLATFORM}.zip"
+          curl -L -o just.zip "$URL"
+          unzip just.zip
+          mkdir -p "$HOME/.local/bin"
+          mv just.exe "$HOME/.local/bin/"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+        else
+          curl -L "$URL" | tar xz
+          chmod +x just
+          sudo mv just /usr/local/bin/
+        fi
+
+        # Verify installation
+        just --version

@@ -312,8 +312,8 @@ class JSONFormatter(logging.Formatter):
 ### Finding Errors
 
 ```bash
-# Using task command
-uv run task check-errors
+# Using just command
+just check-errors
 
 # Manual grep
 grep "❌" logs/*.log

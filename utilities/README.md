@@ -14,8 +14,8 @@ Analyzes service log files for errors and warnings.
 # Check all service logs
 uv run python utilities/check_errors.py
 
-# Or use taskipy
-uv run task check-errors
+# Or use just
+just check-errors
 ```
 
 **Features:**
@@ -48,8 +48,8 @@ Real-time monitoring of RabbitMQ queue activity.
 # Monitor with auto-refresh
 uv run python utilities/monitor_queues.py
 
-# Or use taskipy
-uv run task monitor
+# Or use just
+just monitor
 ```
 
 **Features:**
@@ -67,8 +67,8 @@ Comprehensive system health dashboard.
 # Run system monitor
 uv run python utilities/system_monitor.py
 
-# Or use taskipy
-uv run task system-monitor
+# Or use just
+just system-monitor
 ```
 
 **Displays:**
@@ -135,4 +135,4 @@ These suppressions are appropriate because:
 
 - [README.md](../README.md) - Project overview
 - [CLAUDE.md](../CLAUDE.md) - Development guide
-- [Task Automation](../docs/task-automation.md) - Taskipy commands
+- [Task Automation](../docs/task-automation.md) - Just commands

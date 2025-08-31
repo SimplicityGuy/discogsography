@@ -1,79 +1,108 @@
-# Task Automation with taskipy
+# Task Automation with just
 
-> 🤖 Streamlined development workflows using Python-native task automation
+> 🤖 Streamlined development workflows using just task automation
 
-This project uses [taskipy](https://github.com/taskipy/taskipy) for task automation, providing a simple and intuitive interface similar to `make` or npm scripts. All tasks are defined in `pyproject.toml` and run through the `uv` package manager.
+This project uses [just](https://github.com/casey/just) for task automation, providing a simple and intuitive interface similar to `make` or npm scripts. All tasks are defined in the `justfile` in the project root.
 
 ## 🚀 Quick Start
 
 ```bash
 # Run any task
-uv run task <task-name>
+just <task-name>
 
 # List all available tasks
-uv run task --list
+just --list
+
+# List tasks by group
+just --list --list-heading ''
 
 # Common workflows
-uv run task install      # Setup development environment
-uv run task lint         # Check code quality
-uv run task test         # Run test suite
-uv run task up           # Start all services
+just install      # Setup development environment
+just lint         # Check code quality
+just test         # Run test suite
+just up           # Start all services
 ```
 
 ## 📋 Available Tasks
 
-### 🧪 Development Tasks
+Tasks are organized into logical groups for easier navigation:
 
-| Task | Description | Command |
-|------|-------------|---------|
-| `install` | Install all dependencies including dev extras | `uv sync --all-extras` |
-| `lint` | Run all code quality checks | `ruff check . && mypy .` |
-| `lint-python` | Python linting only (ruff + mypy) | `ruff check . && mypy .` |
-| `format` | Auto-format code with ruff | `ruff format .` |
-| `test` | Run tests (excluding E2E) | `pytest -m "not e2e"` |
-| `test-cov` | Run tests with coverage report | `pytest --cov --cov-report=term-missing` |
-| `test-e2e` | Run Playwright E2E tests | `pytest -m e2e --headed=false` |
-| `test-all` | Run all tests including E2E | `pytest` |
-| `security` | Security vulnerability scan | `bandit -r . -x "./.venv/*,./tests/*"` |
-| `pre-commit` | Run all pre-commit hooks | `pre-commit run --all-files` |
-| `init` | Initialize pre-commit hooks | `pre-commit install` |
+### 🛠️ Setup Group
 
-### 🧹 Cleanup Tasks
+| Task | Description |
+|------|-------------|
+| `install` | Install all dependencies including dev extras |
+| `init` | Initialize pre-commit hooks for development |
+| `update-hooks` | Update pre-commit hooks to latest versions |
+| `check-updates` | Check for outdated dependencies |
 
-| Task | Description | Command |
-|------|-------------|---------|
-| `clean` | Clean build artifacts and caches | Removes `__pycache__`, `.pytest_cache`, etc. |
-| `clean-all` | Deep clean including .venv | ⚠️ Requires full reinstall after |
+### ✨ Quality Group
 
-### 🚀 Service Tasks
+| Task | Description |
+|------|-------------|
+| `lint` | Run all pre-commit hooks on all files |
+| `lint-python` | Run Python-specific linters (ruff + mypy) |
+| `format` | Format all Python code with ruff |
+| `security` | Run security checks with bandit |
+
+### 🧪 Test Group
+
+| Task | Description |
+|------|-------------|
+| `test` | Run unit and integration tests (excluding E2E) |
+| `test-cov` | Run tests with coverage report |
+| `test-e2e` | Run end-to-end browser tests |
+| `test-all` | Run all tests including E2E |
+
+### 🚀 Services Group
 
 | Task | Description | Port |
 |------|-------------|------|
-| `dashboard` | Start monitoring dashboard | 8003 |
-| `extractor` | Start data extractor service | 8000 |
-| `graphinator` | Start Neo4j service | 8001 |
-| `tableinator` | Start PostgreSQL service | 8002 |
+| `dashboard` | Run the dashboard service (monitoring UI) | 8000 |
+| `discovery` | Run the discovery service (AI-powered music intelligence) | 8001 |
+| `pyextractor` | Run the Python extractor service | - |
+| `extractor` | Run the Python extractor service (backwards compatibility) | - |
+| `graphinator` | Run the graphinator service (Neo4j graph builder) | - |
+| `tableinator` | Run the tableinator service (PostgreSQL table builder) | - |
 
-### 🐋 Docker Tasks
+### 🦀 Rust Group
 
-| Task | Description | Details |
-|------|-------------|---------|
-| `up` | Start all services | `docker-compose up -d` |
-| `down` | Stop all services | `docker-compose down` |
-| `logs` | Follow all service logs | `docker-compose logs -f` |
-| `rebuild` | Rebuild and restart | `docker-compose up -d --build` |
-| `build-prod` | Build production images | Uses production overlay |
-| `deploy-prod` | Deploy to production | Build and start with prod config |
+| Task | Description |
+|------|-------------|
+| `rustextractor-build` | Build Rust extractor in release mode |
+| `rustextractor-test` | Run Rust extractor tests |
+| `rustextractor-bench` | Run Rust extractor benchmarks |
+| `rustextractor-run` | Run Rust extractor in release mode |
+| `rustextractor-lint` | Lint Rust code with clippy |
+| `rustextractor-fmt` | Format Rust code |
+| `rustextractor-clean` | Clean Rust build artifacts |
 
-### 📊 Monitoring Tasks
+### 🐋 Docker Group
 
-| Task | Description | Purpose |
-|------|-------------|---------|
-| `monitor` | Real-time queue monitoring | Watch RabbitMQ activity |
-| `check-errors` | Analyze service logs | Find errors and warnings |
-| `system-monitor` | System health dashboard | Comprehensive monitoring |
-| `check-updates` | Check dependencies | Find outdated packages |
-| `update-hooks` | Update pre-commit | Freeze to latest versions |
+| Task | Description |
+|------|-------------|
+| `up` | Start all Docker services in background |
+| `down` | Stop all Docker services |
+| `logs` | Show logs from all services (follow mode) |
+| `rebuild` | Rebuild all Docker images and restart services |
+| `build` | Build specific service Docker images |
+| `build-prod` | Build production Docker images |
+| `deploy-prod` | Deploy services in production mode |
+
+### 📊 Monitor Group
+
+| Task | Description |
+|------|-------------|
+| `monitor` | Monitor RabbitMQ queues in real-time |
+| `check-errors` | Check for errors in service logs |
+| `system-monitor` | Monitor system resources and performance |
+
+### 🧹 Clean Group
+
+| Task | Description |
+|------|-------------|
+| `clean` | Clean project directory of temporary files and caches |
+| `deep-clean` | Deep clean including Docker volumes (use with caution!) |
 
 ## 🗑️ What Gets Cleaned
 
@@ -91,14 +120,17 @@ uv run task up           # Start all services
 ✓ *.pyc, *.pyo          # Compiled Python files
 ✓ .coverage             # Coverage data
 ✓ coverage.xml          # Coverage XML report
+✓ Rust target/          # Rust build artifacts
+✓ .hypothesis/          # Hypothesis test cache
+✓ .benchmarks/          # Benchmark results
 ```
 
-### `clean-all` Additionally Removes:
+### `deep-clean` Additionally Removes:
 
 ```
-⚠️ .venv/               # Virtual environment
-⚠️ logs/                # Service logs
-⚠️ /discogs-data/       # Downloaded data
+⚠️ Docker volumes       # Database data
+⚠️ Docker orphans       # Unused containers
+⚠️ Docker system cache  # Build cache
 ```
 
 ## 💡 Common Workflows
@@ -109,87 +141,126 @@ uv run task up           # Start all services
 # Clone and setup project
 git clone https://github.com/SimplicityGuy/discogsography.git
 cd discogsography
-uv run task install
-uv run task init
+just install
+just init
 ```
 
 ### Development Cycle
 
 ```bash
 # Before coding
-uv run task lint
-uv run task test
+just lint
+just test
 
 # After changes
-uv run task format
-uv run task lint
-uv run task test
-
-# Before commit
-uv run task pre-commit
+just format
+just lint
+just test
 ```
 
 ### Running Services
 
 ```bash
 # Start everything with Docker
-uv run task up
-uv run task logs
+just up
+just logs
 
 # Or run individual services
-uv run task dashboard    # Terminal 1
-uv run task extractor   # Terminal 2
-uv run task graphinator # Terminal 3
-uv run task tableinator # Terminal 4
+just dashboard    # Terminal 1
+just pyextractor  # Terminal 2
+just graphinator  # Terminal 3
+just tableinator  # Terminal 4
 ```
 
 ### Debugging Issues
 
 ```bash
 # Check for errors
-uv run task check-errors
+just check-errors
 
 # Monitor queues
-uv run task monitor
+just monitor
 
 # Full system health
-uv run task system-monitor
+just system-monitor
 ```
 
 ## ⚙️ Configuration
 
-All task definitions are located in the root `pyproject.toml` file under the `[tool.taskipy.tasks]` section.
+All task definitions are located in the root `justfile`.
 
 ### Task Definition Syntax
 
-```toml
-[tool.taskipy.tasks]
-# Simple command
-task-name = "command to run"
+```just
+# Simple task
+task-name:
+    command to run
 
-# Multi-line command
-complex-task = """
-    command one && \
-    command two && \
+# Multi-line task
+complex-task:
+    command one
+    command two
     command three
-"""
 
-# Using other tasks
-combo-task = "task lint && task test"
+# Task with dependencies
+combo-task: lint test
+    echo "All checks passed!"
+
+# Task with parameters
+greet name="World":
+    echo "Hello, {{name}}!"
+
+# Grouped task
+[group('setup')]
+my-task:
+    echo 'This task belongs to the setup group'
 ```
 
 ### Adding New Tasks
 
-1. Open `pyproject.toml`
-1. Navigate to `[tool.taskipy.tasks]`
-1. Add your task:
-   ```toml
-   my-task = "echo 'Hello from my task!'"
+1. Open `justfile`
+1. Find the appropriate group section
+1. Add your task with the group annotation:
+   ```just
+   [group('quality')]
+   my-linter:
+       echo 'Running my custom linter'
+       my-linter-command --strict
    ```
 1. Run it:
    ```bash
-   uv run task my-task
+   just my-linter
    ```
+
+## 🔄 Installing just
+
+If you don't have `just` installed, you can install it using:
+
+### macOS
+
+```bash
+brew install just
+```
+
+### Linux
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh | bash -s -- --to /usr/local/bin
+```
+
+### Windows
+
+```powershell
+scoop install just
+# or
+cargo install just
+```
+
+### From source
+
+```bash
+cargo install just
+```
 
 ## 🔗 Related Documentation
 
@@ -197,3 +268,4 @@ combo-task = "task lint && task test"
 - [CLAUDE.md](../CLAUDE.md) - Development guide
 - [Docker Security](docker-security.md) - Container security
 - [Dockerfile Standards](dockerfile-standards.md) - Docker best practices
+- [Just Documentation](https://just.systems) - Official just documentation

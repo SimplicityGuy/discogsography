@@ -71,6 +71,10 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: 🔧 Setup Just
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
+        uses: ./.github/actions/setup-just
+
       # Test cache (pytest)
       - name: 💾 Cache test results
         if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
@@ -88,7 +92,7 @@ jobs:
       - name: 📦 Install dependencies
         if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
         run: |
-          uv sync --all-extras --frozen
+          just install
           # Install workspace packages
           uv pip install -e dashboard
           uv pip install -e common
@@ -96,25 +100,11 @@ jobs:
       - name: 🧪 Run unit tests with coverage (excluding E2E)
         if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
         run: |
-          # Run tests in groups to avoid async conflicts
-          echo "Running core tests..."
-          PYTHONPATH="${GITHUB_WORKSPACE}/extractor:${PYTHONPATH}" uv run pytest tests/test_config.py tests/test_integration.py tests/extractor/ -v
+          # Run tests with coverage using just
+          just test-cov
 
-          echo "Running dashboard tests..."
-          uv run pytest tests/dashboard/ -v -m "not e2e"
-
-          echo "Running graphinator tests..."
-          uv run pytest tests/graphinator/ -v
-
-          echo "Running tableinator tests..."
-          uv run pytest tests/tableinator/ -v
-
-          echo "Running discovery tests..."
-          uv run pytest tests/discovery/ -v
-
-          # Generate combined coverage report
-          echo "Generating coverage report..."
-          PYTHONPATH="${GITHUB_WORKSPACE}/extractor:${PYTHONPATH}" uv run pytest --cov --cov-append --cov-report=term --cov-report=xml -m "not e2e" --no-header -q
+          # Generate XML coverage report for upload
+          uv run coverage xml
 
       - name: 📊 Upload Python coverage reports
         if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'

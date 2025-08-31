@@ -263,7 +263,7 @@ uv run pytest tests/dashboard/
 uv run pytest tests/extractor/pyextractor/ --cov=extractor.pyextractor
 
 # Test everything
-uv run task test
+just test
 ```
 
 ## ⚠️ Common Pitfalls

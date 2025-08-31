@@ -22,16 +22,16 @@ license = {text = "MIT"}
 # These are included for consistency with other services
 
 [tool.ruff]
-extend = "../pyproject.toml"
+extend = "../../pyproject.toml"
 
 [tool.mypy]
-extend = "../pyproject.toml"
+extend = "../../pyproject.toml"
 
 [tool.coverage]
-extend = "../pyproject.toml"
+extend = "../../pyproject.toml"
 
 [tool.pytest.ini_options]
-extend = "../pyproject.toml"
+extend = "../../pyproject.toml"
 
 [tool.hatch.build.targets.wheel]
 packages = []
