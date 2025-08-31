@@ -16,9 +16,10 @@ try:
 
     ONNX_AVAILABLE = True
 except ImportError:
-    from sentence_transformers import SentenceTransformer
-
     ONNX_AVAILABLE = False
+
+# Always import SentenceTransformer for fallback
+from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
 
