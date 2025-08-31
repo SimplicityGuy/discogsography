@@ -32,7 +32,7 @@ recovery_timeout: 30 - 60  # Seconds before trying half-open
 
 Failed connections retry with exponential backoff:
 
-```python
+```yaml
 # Backoff configuration
 initial_delay: 0.5-1.0    # Initial retry delay (seconds)
 max_delay: 30-60         # Maximum retry delay

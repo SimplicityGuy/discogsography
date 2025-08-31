@@ -331,7 +331,7 @@ async def test_dashboard_navigation(page: Page, test_server):
 
 ### Browser Configuration
 
-```python
+```bash
 # Run on specific browser
 pytest -m e2e --browser chromium
 pytest -m e2e --browser firefox
