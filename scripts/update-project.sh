@@ -369,6 +369,9 @@ update_precommit_hooks() {
             FILE_CHANGES+=(".pre-commit-config.yaml: Updated pre-commit hooks to latest versions")
             CHANGES_MADE=true
 
+            # Update mdformat plugin versions in additional_dependencies
+            update_mdformat_plugins
+
             # Run pre-commit install to ensure hooks are installed
             pre-commit install
         else
@@ -376,6 +379,88 @@ update_precommit_hooks() {
         fi
     else
         print_info "[DRY RUN] Would run: pre-commit autoupdate --freeze"
+        print_info "[DRY RUN] Would update mdformat plugin versions"
+    fi
+}
+
+# Update mdformat plugin versions in .pre-commit-config.yaml
+update_mdformat_plugins() {
+    print_info "Checking for mdformat plugin updates..."
+
+    local config_file=".pre-commit-config.yaml"
+    local updated_plugins=()
+
+    # Define the plugins to update
+    local plugins=("mdformat-black" "mdformat-gfm" "mdformat-tables")
+
+    for plugin in "${plugins[@]}"; do
+        # Get current version from config file
+        local current_version
+        current_version=$(grep -E "^\s*-\s*${plugin}==" "$config_file" | sed -E "s/.*${plugin}==([0-9.]+).*/\1/")
+
+        if [[ -z "$current_version" ]]; then
+            continue
+        fi
+
+        # Get latest version from PyPI
+        local latest_version
+        latest_version=$(curl -s "https://pypi.org/pypi/${plugin}/json" | python3 -c "
+import json, sys
+try:
+    data = json.load(sys.stdin)
+    print(data['info']['version'])
+except:
+    sys.exit(1)
+" 2>/dev/null)
+
+        if [[ -z "$latest_version" ]]; then
+            print_warning "Could not fetch latest version for $plugin"
+            continue
+        fi
+
+        # Compare versions
+        if [[ "$current_version" != "$latest_version" ]]; then
+            print_info "Updating $plugin: $current_version → $latest_version"
+
+            # Update the version in the config file
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' "s/${plugin}==${current_version}/${plugin}==${latest_version}/g" "$config_file"
+            else
+                sed -i "s/${plugin}==${current_version}/${plugin}==${latest_version}/g" "$config_file"
+            fi
+
+            updated_plugins+=("$plugin: $current_version → $latest_version")
+            CHANGES_MADE=true
+        else
+            print_success "$plugin is already up to date ($current_version)"
+        fi
+    done
+
+    # Update pyproject.toml dev dependencies to match
+    if [[ ${#updated_plugins[@]} -gt 0 ]]; then
+        print_info "Synchronizing mdformat plugin versions in pyproject.toml..."
+
+        for plugin in "${plugins[@]}"; do
+            # Get the updated version from config file
+            local new_version
+            new_version=$(grep -E "^\s*-\s*${plugin}==" "$config_file" | sed -E "s/.*${plugin}==([0-9.]+).*/\1/")
+
+            if [[ -n "$new_version" ]]; then
+                # Update pyproject.toml
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    sed -i '' "s/\"${plugin}>=[0-9.]*\"/\"${plugin}>=${new_version}\"/g" pyproject.toml
+                else
+                    sed -i "s/\"${plugin}>=[0-9.]*\"/\"${plugin}>=${new_version}\"/g" pyproject.toml
+                fi
+            fi
+        done
+
+        FILE_CHANGES+=("pyproject.toml: Updated mdformat plugin versions to match pre-commit")
+
+        # Add summary of plugin updates
+        for update in "${updated_plugins[@]}"; do
+            FILE_CHANGES+=(".pre-commit-config.yaml: $update")
+        done
     fi
 }
 
