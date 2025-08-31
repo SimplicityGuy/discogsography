@@ -35,7 +35,7 @@ repos:
           - mdformat-black==0.1.1
           - mdformat-gfm==0.4.1
           - mdformat-tables==1.0.0
-        exclude: ^(.venv/|venv/|.*\.egg-info/)
+        files: '^(?!.*/(\.venv|venv|__pycache__|\.git|node_modules|\.egg-info|\.pytest_cache|\.mypy_cache|\.ruff_cache|dist|build)/).*\.md$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: db90487f48a9dd992d243ef63c156eaffddeaf28  # frozen: v0.12.11
