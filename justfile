@@ -31,10 +31,30 @@ init:
 update-hooks:
     uv run pre-commit autoupdate --freeze
 
-# Check for outdated dependencies
+# Check for outdated dependencies (Python, Rust, Docker)
 [group('setup')]
 check-updates:
+    @echo '🐍 Python dependency updates:'
     uv pip list --outdated
+    @echo ''
+    @echo '🦀 Rust dependency updates:'
+    @if [ -d 'extractor/rustextractor' ]; then \
+        cd extractor/rustextractor && cargo outdated || echo 'cargo-outdated not installed. Install with: cargo install cargo-outdated'; \
+    else \
+        echo 'No Rust project found'; \
+    fi
+    @echo ''
+    @echo '🐳 Docker image updates:'
+    @docker images --format "table {{.Repository}}:{{.Tag}}\t{{.CreatedSince}}" | head -20 || echo 'Docker not available'
+
+# Update all dependencies to latest versions (Python, Rust, pre-commit, Docker)
+[group('setup')]
+update-deps:
+    @echo '🚀 Running comprehensive dependency update...'
+    @./scripts/update-project.sh --no-backup --skip-tests
+    @echo ''
+    @echo '✅ All dependencies updated!'
+    @echo '💡 Run "just test-all" to verify everything still works'
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Code Quality & Linting

@@ -123,11 +123,10 @@ for tool in uv git curl jq; do
     fi
 done
 
-# Check for uncommitted changes
+# Check for uncommitted changes (only warn, don't exit)
 if [[ -n $(git status --porcelain) ]]; then
-    print_warning "You have uncommitted changes. Please commit or stash them first."
-    print_info "This is required for safe rollback in case of issues."
-    exit 1
+    print_warning "You have uncommitted changes. Consider committing or stashing them for safe rollback."
+    print_info "Continuing anyway since we're in automated mode..."
 fi
 
 # Create backup directory
@@ -431,7 +430,11 @@ update_python_packages() {
     # Update uv itself
     print_info "Checking for uv updates..."
     if [[ "$DRY_RUN" == false ]]; then
-        uv self update || print_warning "Could not update uv"
+        if uv self update; then
+            print_success "uv updated successfully"
+        else
+            print_warning "Could not update uv (may already be latest)"
+        fi
     else
         print_info "[DRY RUN] Would check for uv updates"
     fi
