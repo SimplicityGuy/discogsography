@@ -45,7 +45,7 @@ check-updates:
     fi
     @echo ''
     @echo '🐳 Docker image updates:'
-    @docker images --format "table {{.Repository}}:{{.Tag}}\t{{.CreatedSince}}" | head -20 || echo 'Docker not available'
+    @docker images --format "table \{\{.Repository\}\}:\{\{.Tag\}\}\t\{\{.CreatedSince\}\}" | head -20 || echo 'Docker not available'
 
 # Update all dependencies to latest versions (Python, Rust, pre-commit, Docker)
 [group('setup')]
