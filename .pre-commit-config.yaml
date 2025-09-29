@@ -22,7 +22,7 @@ repos:
         args: [--autofix, --indent=2]
 
   - repo: https://github.com/python-jsonschema/check-jsonschema
-    rev: 9b9df9f1d3bd9a5e7a52d8f61a3be3e29e73d127  # frozen: 0.33.3
+    rev: 83987cd6ad8943c7f029b500b14aaf82c00a01fa  # frozen: 0.34.0
     hooks:
       - id: check-github-workflows
       - id: check-github-actions
@@ -41,14 +41,14 @@ repos:
   #       files: '^(README\.md|CLAUDE\.md|docs/.*\.md|[^/]+/README\.md|[^/]+/.*\.md)$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: db90487f48a9dd992d243ef63c156eaffddeaf28  # frozen: v0.12.11
+    rev: f298305809c552671cc47e0fec0ba43e96c146a2  # frozen: v0.13.2
     hooks:
       - id: ruff
         args: [--fix]
       - id: ruff-format
 
   - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: 412de98d50e846f31ea6f4b0ad036f2c24a7a024  # frozen: v1.17.1
+    rev: 9f70dc58c23dfcca1b97af99eaeee3140a807c7e  # frozen: v1.18.2
     hooks:
       - id: mypy
         files: ^(common|dashboard|discovery|extractor|graphinator|tableinator)/.*\.py$
@@ -68,7 +68,7 @@ repos:
         args: [-x, "tests"]
 
   - repo: https://github.com/hadolint/hadolint
-    rev: c3dc18df7a501f02a560a2cc7ba3c69a85ca01d3  # frozen: v2.13.1-beta
+    rev: 4e697ba704fd23b2409b947a319c19c3ee54d24f  # frozen: v2.14.0
     hooks:
       - id: hadolint
 
