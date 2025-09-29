@@ -368,7 +368,7 @@ class ConcurrentExtractor:
         """Synchronous XML parsing that queues records."""
         try:
             with GzipFile(self.input_path.resolve()) as gz_file:
-                parse(gz_file, item_depth=2, item_callback=self.__queue_record)
+                parse(gz_file, item_depth=2, item_callback=self.__queue_record)  # type: ignore[arg-type]
         except Exception as e:
             logger.error("❌ Error parsing XML", error=str(e))
             raise

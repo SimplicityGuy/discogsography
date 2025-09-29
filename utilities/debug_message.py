@@ -21,7 +21,7 @@ def get_message_from_queue(
         channel = connection.channel()
 
         # Get a single message
-        method, properties, body = channel.basic_get(queue=queue_name, auto_ack=False)
+        method, _properties, body = channel.basic_get(queue=queue_name, auto_ack=False)
 
         if method:
             # Parse the message
