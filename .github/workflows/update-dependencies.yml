@@ -33,7 +33,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
@@ -116,7 +116,7 @@ jobs:
       - name: 📝 Create Pull Request
         if: steps.update.outputs.no_changes != 'true'
         id: create-pr
-        uses: peter-evans/create-pull-request@271a8d0340265f705b14b6d32b9829c1cb33d45e # v.7.0.8
+        uses: peter-evans/create-pull-request@84ae59a2cdc2258d6fa0732dd66352dddae2a412 # v.7.0.9
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           branch: automation/updates
@@ -199,7 +199,7 @@ jobs:
           fi
 
       - name: 📢 Send notification to Discord
-        uses: sarisia/actions-status-discord@11a0bfe3b50977e38aa2bd4a4ebd296415e83c19 # v1.15.4
+        uses: sarisia/actions-status-discord@b8381b25576cb341b2af39926ab42c5056cc44ed # v1.15.5
         if: always()
         with:
           title: Weekly Dependency Update
