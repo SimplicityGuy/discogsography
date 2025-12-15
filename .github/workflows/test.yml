@@ -42,7 +42,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0  # Need full history for diff
 
@@ -78,7 +78,7 @@ jobs:
       # Test cache (pytest)
       - name: 💾 Cache test results
         if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             .pytest_cache
@@ -121,7 +121,7 @@ jobs:
 
     steps:
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: 🔍 Check if Rust extractor exists
         id: check-rust
@@ -152,7 +152,7 @@ jobs:
 
       - name: 💾 Cache Rust dependencies
         if: steps.check-rust.outputs.exists == 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
