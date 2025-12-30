@@ -50,7 +50,7 @@ jobs:
           echo "IMAGE_NAME=$(echo "${{ github.repository }}" | tr "[:upper:]" "[:lower:]")" >> "$GITHUB_ENV"
 
       - name: 🔀 Checkout repository
-        uses: actions/checkout@v5
+        uses: actions/checkout@v6
 
       - name: 🔧 Setup Python and UV
         uses: ./.github/actions/setup-python-uv
@@ -61,7 +61,7 @@ jobs:
         uses: ./.github/actions/setup-just
 
       - name: 💾 Cache pre-commit
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pre-commit
           key: ${{ runner.os }}-pre-commit-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -70,7 +70,7 @@ jobs:
 
       # Tools cache (arkade)
       - name: 💾 Cache tools
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.arkade
           key: ${{ runner.os }}-tools-arkade-v1
@@ -89,7 +89,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: 💾 Cache Rust dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: |
             ~/.cargo/bin/
