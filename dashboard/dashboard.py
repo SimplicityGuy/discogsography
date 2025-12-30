@@ -459,7 +459,7 @@ app.add_middleware(
 )
 
 
-@app.get("/health")  # type: ignore[misc]
+@app.get("/health")  # type: ignore[untyped-decorator]
 async def health_check() -> ORJSONResponse:
     """Health check endpoint for Docker and monitoring."""
     return ORJSONResponse(
@@ -472,7 +472,7 @@ async def health_check() -> ORJSONResponse:
     )
 
 
-@app.get("/api/metrics")  # type: ignore[misc]
+@app.get("/api/metrics")  # type: ignore[untyped-decorator]
 async def get_metrics() -> ORJSONResponse:
     """Get current system metrics."""
     API_REQUESTS.labels(endpoint="/api/metrics", method="GET").inc()
@@ -487,7 +487,7 @@ async def get_metrics() -> ORJSONResponse:
         return ORJSONResponse(content={})
 
 
-@app.get("/api/services")  # type: ignore[misc]
+@app.get("/api/services")  # type: ignore[untyped-decorator]
 async def get_services() -> ORJSONResponse:
     """Get service statuses."""
     API_REQUESTS.labels(endpoint="/api/services", method="GET").inc()
@@ -497,7 +497,7 @@ async def get_services() -> ORJSONResponse:
     return ORJSONResponse(content=[s.model_dump() for s in services])
 
 
-@app.get("/api/queues")  # type: ignore[misc]
+@app.get("/api/queues")  # type: ignore[untyped-decorator]
 async def get_queues() -> ORJSONResponse:
     """Get queue information."""
     API_REQUESTS.labels(endpoint="/api/queues", method="GET").inc()
@@ -507,7 +507,7 @@ async def get_queues() -> ORJSONResponse:
     return ORJSONResponse(content=[q.model_dump() for q in queues])
 
 
-@app.get("/api/databases")  # type: ignore[misc]
+@app.get("/api/databases")  # type: ignore[untyped-decorator]
 async def get_databases() -> ORJSONResponse:
     """Get database information."""
     API_REQUESTS.labels(endpoint="/api/databases", method="GET").inc()
@@ -517,13 +517,13 @@ async def get_databases() -> ORJSONResponse:
     return ORJSONResponse(content=[d.model_dump() for d in databases])
 
 
-@app.get("/metrics")  # type: ignore[misc]
+@app.get("/metrics")  # type: ignore[untyped-decorator]
 async def prometheus_metrics() -> Response:
     """Expose Prometheus metrics."""
     return Response(content=generate_latest(), media_type="text/plain")
 
 
-@app.websocket("/ws")  # type: ignore[misc]
+@app.websocket("/ws")  # type: ignore[untyped-decorator]
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await websocket.accept()

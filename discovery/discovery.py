@@ -144,14 +144,14 @@ discovery_app = DiscoveryApp()
 
 
 # API Routes
-@app.get("/")  # type: ignore[misc]
+@app.get("/")  # type: ignore[untyped-decorator]
 async def root() -> Response:
     """Serve the main discovery interface."""
     with (static_path / "index.html").open() as f:
         return Response(content=f.read(), media_type="text/html")
 
 
-@app.get("/health")  # type: ignore[misc]
+@app.get("/health")  # type: ignore[untyped-decorator]
 async def health_check() -> dict[str, Any]:
     """Health check endpoint."""
     return {
@@ -163,7 +163,7 @@ async def health_check() -> dict[str, Any]:
 
 
 # Recommendation API
-@app.post("/api/recommendations")  # type: ignore[misc]
+@app.post("/api/recommendations")  # type: ignore[untyped-decorator]
 async def get_recommendations_api(request: RecommendationRequest) -> dict[str, Any]:
     """Get music recommendations."""
     try:
@@ -179,7 +179,7 @@ async def get_recommendations_api(request: RecommendationRequest) -> dict[str, A
 
 
 # Analytics API
-@app.post("/api/analytics")  # type: ignore[misc]
+@app.post("/api/analytics")  # type: ignore[untyped-decorator]
 async def get_analytics_api(request: AnalyticsRequest) -> AnalyticsResult:
     """Get music industry analytics."""
     try:
@@ -191,7 +191,7 @@ async def get_analytics_api(request: AnalyticsRequest) -> AnalyticsResult:
 
 
 # Graph Explorer API
-@app.post("/api/graph/explore")  # type: ignore[misc]
+@app.post("/api/graph/explore")  # type: ignore[untyped-decorator]
 async def explore_graph_api(query: GraphQuery) -> dict[str, Any]:
     """Explore the music knowledge graph."""
     try:
@@ -209,7 +209,7 @@ async def explore_graph_api(query: GraphQuery) -> dict[str, Any]:
 
 
 # WebSocket endpoint for real-time updates
-@app.websocket("/ws")  # type: ignore[misc]
+@app.websocket("/ws")  # type: ignore[untyped-decorator]
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await discovery_app.connect_websocket(websocket)
