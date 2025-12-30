@@ -34,6 +34,7 @@ env:
 
 permissions:
   contents: read
+  pull-requests: write  # Required for coverage report comments
 
 jobs:
   python-test:
@@ -106,6 +107,23 @@ jobs:
           # Generate XML coverage report for upload
           uv run coverage xml
 
+          # Generate JSON coverage report for PR comments
+          uv run coverage json
+
+      - name: 📋 Process coverage reports
+        id: coverage-setup
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
+        run: |
+          jq '{
+            total: {
+              statements: {total: .totals.num_statements, covered: .totals.covered_lines},
+              lines: {total: .totals.num_statements, covered: .totals.covered_lines},
+              functions: {total: 0, covered: 0},
+              branches: {total: 0, covered: 0}
+            }
+          }' coverage.json > coverage-summary.json
+          echo "coverage-exists=true" >> "$GITHUB_OUTPUT"
+
       - name: 📊 Upload Python coverage reports
         if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
         uses: codecov/codecov-action@v5
@@ -114,6 +132,16 @@ jobs:
           flags: python
           name: python-coverage
           fail_ci_if_error: false
+
+      - name: 📊 Coverage Report
+        if: github.event_name == 'pull_request' && steps.coverage-setup.outputs.coverage-exists == 'true'
+        uses: slavcodev/coverage-monitor-action@398c4cbbb710e549a8407fdef96ae8b9454d0463 # v1.10.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          coverage_path: "coverage-summary.json"
+          coverage_format: "json-summary"
+          status_context: "Coverage Report"
+          comment_context: "Coverage Report"
 
   rust-test:
     runs-on: ubuntu-latest
