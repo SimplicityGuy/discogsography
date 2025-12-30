@@ -199,7 +199,8 @@ impl Downloader {
     }
 
     async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<()> {
-        let s3_key = &file_info.name; // file_info.name is already the full S3 key
+        // Reconstruct the full S3 key by prepending the prefix
+        let s3_key = format!("{}{}", S3_PREFIX, &file_info.name);
         // Extract just the base filename for local storage (remove path components)
         let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
         let local_path = self.output_directory.join(filename);
@@ -220,7 +221,7 @@ impl Downloader {
             .s3_client
             .get_object()
             .bucket(S3_BUCKET)
-            .key(s3_key)
+            .key(&s3_key)
             .send()
             .await
             .with_context(|| format!("Failed to start S3 download for key: {}", s3_key))?;
