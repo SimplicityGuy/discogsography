@@ -34,6 +34,9 @@ jobs:
     needs: [run-code-quality]
     uses: ./.github/workflows/test.yml
     secrets: inherit
+    permissions:
+      contents: read
+      pull-requests: write  # Required for coverage report comments
 
   run-e2e-tests:
     needs: [run-code-quality]
@@ -68,6 +71,24 @@ jobs:
         uses: actions/checkout@v6
         with:
           submodules: true
+
+      - name: 🧹 Free disk space
+        run: |
+          echo "📊 Disk space before cleanup:"
+          df -h
+
+          echo "🗑️ Removing unnecessary software..."
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+          echo "🧹 Cleaning Docker..."
+          docker system prune -af --volumes || true
+
+          echo "📊 Disk space after cleanup:"
+          df -h
 
       - name: 🔒 Log in to the GitHub Container Registry
         if: github.event_name != 'pull_request'
@@ -147,6 +168,16 @@ jobs:
         run: |
           rm -rf ${{ runner.temp }}/.buildx-cache
           mv ${{ runner.temp }}/.buildx-cache-new ${{ runner.temp }}/.buildx-cache
+
+      - name: 🧹 Cleanup build artifacts
+        if: always()
+        run: |
+          echo "🗑️ Pruning Docker build cache..."
+          docker buildx prune -f --filter until=1h || true
+          docker system prune -f --filter until=1h || true
+
+          echo "📊 Remaining disk space:"
+          df -h
 
       - name: 📊 Collect metrics
         if: always()
