@@ -7,24 +7,34 @@ on:
     - cron: "0 0 15 * *"
 
 concurrency:
-  group: cleanup-images
+  group: cleanup-images-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  list-sub-projects:
+    uses: ./.github/workflows/list-sub-projects.yml
+
   cleanup:
+    needs: [list-sub-projects]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
+    strategy:
+      matrix:
+        package: ${{ fromJson(needs.list-sub-projects.outputs.simple-matrix) }}
+      fail-fast: false
+
     permissions:
       packages: write  # Required to delete packages
       contents: read
+
     steps:
-      - name: 🧹 Cleanup Docker Images
+      - name: 🧹 Cleanup Docker Images - ${{ matrix.package }}
         uses: dataaxiom/ghcr-cleanup-action@cd0cdb900b5dbf3a6f2cc869f0dbb0b8211f50c4 # v1.0.16
         with:
           delete-partial-images: true
           delete-untagged: true
           keep-n-tagged: 2
           older-than: 30 days
-          owner: SimplicityGuy
-          packages: dashboard,discovery,extractor,graphinator,tableinator
-          repository: discogsography
+          token: ${{ secrets.GITHUB_TOKEN }}
+          package: ${{ matrix.package }}
