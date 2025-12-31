@@ -100,13 +100,13 @@ All `pyproject.toml` files in the project follow a consistent structure and orde
 
 1. **Standard Fields**:
 
-   - All service pyproject.toml files must include:
+   - All service pyproject.toml files should include:
      - `name`, `version`, `description`
      - `authors` with name and email
-     - `readme = "README.md"`
+     - `readme` field (if applicable)
      - `requires-python = ">=3.13"`
-     - `classifiers` list
-     - `license = {text = "MIT"}`
+     - `classifiers` list (for published packages)
+     - `license` field (for published packages)
 
 1. **Dependencies**:
 
@@ -162,11 +162,14 @@ http://localhost:8000/api/health
 
 ### Service Ports
 
-- Dashboard: 8000
-- Discovery: 8001
+- Dashboard: 8003
+- Discovery: 8005 (service), 8004 (health)
 - Neo4j: 7474 (browser), 7687 (bolt)
-- PostgreSQL: 5432
+- PostgreSQL: 5433 (mapped from 5432)
 - RabbitMQ: 5672 (AMQP), 15672 (management)
+- Extractor: 8000 (health)
+- Graphinator: 8001 (health)
+- Tableinator: 8002 (health)
 
 ### Environment Variables
 
