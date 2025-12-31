@@ -37,4 +37,5 @@ jobs:
           keep-n-tagged: 2
           older-than: 30 days
           token: ${{ secrets.GITHUB_TOKEN }}
-          package: ${{ matrix.package }}
+          package: discogsography/${{ matrix.package }}
+          owner: ${{ github.repository_owner }}
