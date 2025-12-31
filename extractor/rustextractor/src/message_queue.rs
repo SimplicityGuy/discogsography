@@ -6,6 +6,7 @@ use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
 use tracing::{debug, info, warn};
+use url::Url;
 
 use crate::types::{DataMessage, DataType, FileCompleteMessage, Message};
 
@@ -23,10 +24,42 @@ pub struct MessageQueue {
 
 impl MessageQueue {
     pub async fn new(url: &str, max_retries: u32) -> Result<Self> {
-        let mq = Self { connection: Arc::new(RwLock::new(None)), channel: Arc::new(RwLock::new(None)), url: url.to_string(), max_retries };
+        // Normalize the AMQP URL to handle trailing slash consistently with Python extractor
+        let normalized_url = Self::normalize_amqp_url(url)?;
+
+        let mq = Self {
+            connection: Arc::new(RwLock::new(None)),
+            channel: Arc::new(RwLock::new(None)),
+            url: normalized_url,
+            max_retries
+        };
 
         mq.connect().await?;
         Ok(mq)
+    }
+
+    /// Normalize AMQP URL to ensure compatibility with Python extractor
+    ///
+    /// Handles the case where a trailing slash in the URL (e.g., amqp://host:5672/)
+    /// should be interpreted as the default vhost "/" rather than an empty vhost.
+    /// This matches the behavior of Python's aio-pika library.
+    fn normalize_amqp_url(url: &str) -> Result<String> {
+        let mut parsed_url = Url::parse(url)
+            .context("Failed to parse AMQP URL")?;
+
+        // Get the path (which represents the vhost)
+        let path = parsed_url.path();
+
+        // If path is "/" (trailing slash with no vhost), it means default vhost
+        // lapin interprets this as empty vhost, so we need to remove the trailing slash
+        // to make it connect to the default vhost "/"
+        if path == "/" {
+            parsed_url.set_path("");
+        }
+        // If path is empty, lapin correctly uses default vhost
+        // If path is something else (e.g., "/discogsography"), lapin uses that vhost
+
+        Ok(parsed_url.to_string())
     }
 
     async fn connect(&self) -> Result<()> {
@@ -235,5 +268,53 @@ mod tests {
 
         assert_eq!(graphinator, "discogsography-graphinator-artists");
         assert_eq!(tableinator, "discogsography-tableinator-artists");
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_with_trailing_slash() {
+        // Trailing slash should be removed to use default vhost
+        let url = "amqp://user:pass@host:5672/";
+        let normalized = MessageQueue::normalize_amqp_url(url).unwrap();
+        assert_eq!(normalized, "amqp://user:pass@host:5672");
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_without_trailing_slash() {
+        // No trailing slash should remain unchanged
+        let url = "amqp://user:pass@host:5672";
+        let normalized = MessageQueue::normalize_amqp_url(url).unwrap();
+        assert_eq!(normalized, "amqp://user:pass@host:5672");
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_with_explicit_vhost() {
+        // Explicit vhost should be preserved
+        let url = "amqp://user:pass@host:5672/discogsography";
+        let normalized = MessageQueue::normalize_amqp_url(url).unwrap();
+        assert_eq!(normalized, "amqp://user:pass@host:5672/discogsography");
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_with_encoded_default_vhost() {
+        // URL-encoded default vhost %2F should be preserved
+        let url = "amqp://user:pass@host:5672/%2F";
+        let normalized = MessageQueue::normalize_amqp_url(url).unwrap();
+        assert_eq!(normalized, "amqp://user:pass@host:5672/%2F");
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_minimal() {
+        // Minimal URL without credentials
+        let url = "amqp://localhost:5672/";
+        let normalized = MessageQueue::normalize_amqp_url(url).unwrap();
+        assert_eq!(normalized, "amqp://localhost:5672");
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_invalid() {
+        // Invalid URL should return error
+        let url = "not-a-valid-url";
+        let result = MessageQueue::normalize_amqp_url(url);
+        assert!(result.is_err());
     }
 }
