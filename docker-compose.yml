@@ -123,7 +123,7 @@ services:
     hostname: rustextractor
     user: "1000:1000"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672//
       DISCOGS_ROOT: /discogs-data
       RUST_LOG: rust_extractor=info,lapin=warn
       STARTUP_DELAY: "10"
