@@ -391,7 +391,12 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                             # Filter and log members without IDs
                             valid_members = []
                             for member in members_list:
-                                member_id = member.get("@id") or member.get("id")
+                                # Handle both string ID and dict with @id/id fields
+                                if isinstance(member, str):
+                                    member_id = member
+                                else:
+                                    member_id = member.get("@id") or member.get("id")
+
                                 if member_id:
                                     valid_members.append({"id": member_id})
                                 else:
@@ -422,7 +427,12 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                             # Filter and log groups without IDs
                             valid_groups = []
                             for group in groups_list:
-                                group_id = group.get("@id") or group.get("id")
+                                # Handle both string ID and dict with @id/id fields
+                                if isinstance(group, str):
+                                    group_id = group
+                                else:
+                                    group_id = group.get("@id") or group.get("id")
+
                                 if group_id:
                                     valid_groups.append({"id": group_id})
                                 else:
@@ -453,7 +463,12 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                             # Filter and log aliases without IDs
                             valid_aliases = []
                             for alias in aliases_list:
-                                alias_id = alias.get("@id") or alias.get("id")
+                                # Handle both string ID and dict with @id/id fields
+                                if isinstance(alias, str):
+                                    alias_id = alias
+                                else:
+                                    alias_id = alias.get("@id") or alias.get("id")
+
                                 if alias_id:
                                     valid_aliases.append({"id": alias_id})
                                 else:
@@ -588,9 +603,15 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
                 )
 
                 # Handle parent label relationship
-                parent: dict[str, Any] | None = label.get("parentLabel")
+                parent: dict[str, Any] | str | None = label.get("parentLabel")
                 if parent is not None:
-                    parent_id = parent.get("@id") or parent.get("id")
+                    # Handle both string ID and dict with @id/id fields
+                    parent_id: str | None
+                    if isinstance(parent, str):
+                        parent_id = parent
+                    else:
+                        parent_id = parent.get("@id") or parent.get("id")
+
                     if parent_id:
                         tx.run(
                             "MATCH (l:Label {id: $id}) "
@@ -605,18 +626,36 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
                         )
 
                 # Handle sublabels in batch
-                sublabels: dict[str, Any] | None = label.get("sublabels")
+                sublabels: dict[str, Any] | list[Any] | str | None = label.get(
+                    "sublabels"
+                )
                 if sublabels is not None:
-                    sublabels_list = (
-                        sublabels["label"]
-                        if isinstance(sublabels["label"], list)
-                        else [sublabels["label"]]
-                    )
+                    # Handle different sublabel formats
+                    sublabels_list: list[Any] = []
+                    if isinstance(sublabels, str):
+                        # Single string ID
+                        sublabels_list = [sublabels]
+                    elif isinstance(sublabels, list):
+                        # Direct list of items
+                        sublabels_list = sublabels
+                    elif isinstance(sublabels, dict) and "label" in sublabels:
+                        # Nested dict with "label" key
+                        sublabels_list = (
+                            sublabels["label"]
+                            if isinstance(sublabels["label"], list)
+                            else [sublabels["label"]]
+                        )
+
                     if sublabels_list:
                         # Filter and log sublabels without IDs
                         valid_sublabels = []
                         for sublabel in sublabels_list:
-                            sublabel_id = sublabel.get("@id") or sublabel.get("id")
+                            # Handle both string ID and dict with @id/id fields
+                            if isinstance(sublabel, str):
+                                sublabel_id = sublabel
+                            else:
+                                sublabel_id = sublabel.get("@id") or sublabel.get("id")
+
                             if sublabel_id:
                                 valid_sublabels.append({"id": sublabel_id})
                             else:
@@ -741,7 +780,12 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
                         # Filter and log artists without IDs
                         valid_artists = []
                         for artist in artists_list:
-                            artist_id = artist.get("id") or artist.get("@id")
+                            # Handle both string ID and dict with @id/id fields
+                            if isinstance(artist, str):
+                                artist_id = artist
+                            else:
+                                artist_id = artist.get("id") or artist.get("@id")
+
                             if artist_id:
                                 valid_artists.append({"id": artist_id})
                             else:
@@ -931,7 +975,12 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                         # Filter and log artists without IDs
                         valid_artists = []
                         for artist in artists_list:
-                            artist_id = artist.get("id") or artist.get("@id")
+                            # Handle both string ID and dict with @id/id fields
+                            if isinstance(artist, str):
+                                artist_id = artist
+                            else:
+                                artist_id = artist.get("id") or artist.get("@id")
+
                             if artist_id:
                                 valid_artists.append({"id": artist_id})
                             else:
@@ -962,7 +1011,12 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                         # Filter and log labels without IDs
                         valid_labels = []
                         for label in labels_list:
-                            label_id = label.get("@id") or label.get("id")
+                            # Handle both string ID and dict with @id/id fields
+                            if isinstance(label, str):
+                                label_id = label
+                            else:
+                                label_id = label.get("@id") or label.get("id")
+
                             if label_id:
                                 valid_labels.append({"id": label_id})
                             else:

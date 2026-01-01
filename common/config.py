@@ -146,8 +146,18 @@ DATA_TYPES = ["artists", "labels", "masters", "releases"]
 
 
 def orjson_serializer(msg: dict[str, Any], **kwargs: Any) -> str:  # noqa: ARG001
-    """Custom JSON serializer using orjson for consistency with Rust extractor."""
-    return orjson.dumps(msg, option=orjson.OPT_SORT_KEYS).decode("utf-8")
+    """Custom JSON serializer using orjson for consistency with Rust extractor.
+
+    Handles non-serializable types like exceptions by converting them to strings.
+    """
+
+    def default(obj: Any) -> Any:
+        """Convert non-serializable objects to strings."""
+        if isinstance(obj, Exception):
+            return f"{type(obj).__name__}: {obj!s}"
+        return str(obj)
+
+    return orjson.dumps(msg, option=orjson.OPT_SORT_KEYS, default=default).decode("utf-8")
 
 
 def setup_logging(
