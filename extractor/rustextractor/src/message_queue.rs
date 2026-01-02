@@ -27,12 +27,7 @@ impl MessageQueue {
         // Normalize the AMQP URL to handle trailing slash consistently with Python extractor
         let normalized_url = Self::normalize_amqp_url(url)?;
 
-        let mq = Self {
-            connection: Arc::new(RwLock::new(None)),
-            channel: Arc::new(RwLock::new(None)),
-            url: normalized_url,
-            max_retries
-        };
+        let mq = Self { connection: Arc::new(RwLock::new(None)), channel: Arc::new(RwLock::new(None)), url: normalized_url, max_retries };
 
         mq.connect().await?;
         Ok(mq)
@@ -44,8 +39,7 @@ impl MessageQueue {
     /// should be interpreted as the default vhost "/" rather than an empty vhost.
     /// This matches the behavior of Python's aio-pika library.
     fn normalize_amqp_url(url: &str) -> Result<String> {
-        let mut parsed_url = Url::parse(url)
-            .context("Failed to parse AMQP URL")?;
+        let mut parsed_url = Url::parse(url).context("Failed to parse AMQP URL")?;
 
         // Get the path (which represents the vhost)
         let path = parsed_url.path();
