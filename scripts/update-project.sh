@@ -622,9 +622,7 @@ update_python_packages() {
         if [[ -f "extractor/pyextractor/pyproject.toml" ]]; then
             backup_file "extractor/pyextractor/pyproject.toml"
         fi
-        if [[ -f "extractor/rustextractor/pyproject.toml" ]]; then
-            backup_file "extractor/rustextractor/pyproject.toml"
-        fi
+        # Note: extractor/rustextractor is a Rust project, skip Python backups
     fi
 
     # Update uv itself
@@ -882,7 +880,7 @@ show_file_report() {
     echo "  ✓ dashboard/pyproject.toml"
     echo "  ✓ discovery/pyproject.toml"
     echo "  ✓ extractor/pyextractor/pyproject.toml"
-    echo "  ✓ extractor/rustextractor/pyproject.toml"
+    echo "  ✓ extractor/rustextractor/pyproject.toml (tools only - Rust project)"
     echo "  ✓ graphinator/pyproject.toml"
     echo "  ✓ tableinator/pyproject.toml"
     echo "  ✓ uv.lock (root)"

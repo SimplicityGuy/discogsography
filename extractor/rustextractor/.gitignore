@@ -28,3 +28,7 @@ cobertura.xml
 # Temporary files
 *.tmp
 temp/
+
+# Python tooling (this is a Rust project)
+.venv/
+uv.lock
