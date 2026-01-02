@@ -38,7 +38,7 @@ config: GraphinatorConfig | None = None
 message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
-completed_files = set()  # Track which files have completed processing
+completed_files: set[str] = set()  # Track which files have completed processing
 current_task = None
 current_progress = 0.0
 
@@ -59,12 +59,23 @@ RECONNECT_INTERVAL = int(
 EMPTY_QUEUE_TIMEOUT = int(
     os.environ.get("EMPTY_QUEUE_TIMEOUT", "1800")
 )  # Default 30 minutes
+QUEUE_CHECK_INTERVAL = int(
+    os.environ.get("QUEUE_CHECK_INTERVAL", "3600")
+)  # Default 1 hour - how often to check for new messages when connection is closed
 reconnect_tasks: dict[
     str, asyncio.Task[None]
 ] = {}  # Tracks periodic reconnection tasks
 
 # Driver will be initialized in main
 graph: ResilientNeo4jDriver | None = None
+
+# Connection state tracking
+rabbitmq_manager: Any = None  # Will hold AsyncResilientRabbitMQ instance
+active_connection: Any = None  # Current active connection
+active_channel: Any = None  # Current active channel
+connection_check_task: asyncio.Task[None] | None = (
+    None  # Background task for periodic queue checks
+)
 
 # Global shutdown flag
 shutdown_requested = False
@@ -148,9 +159,10 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
                     data_type=data_type,
                 )
 
-                # Schedule periodic reconnection if enabled
-                if RECONNECT_INTERVAL > 0:
-                    await schedule_periodic_reconnection(data_type)
+                # Check if all consumers are now idle
+                if await check_all_consumers_idle():
+                    logger.info("🔌 All consumers idle, closing RabbitMQ connection")
+                    await close_rabbitmq_connection()
         except Exception as e:
             logger.error(
                 "❌ Failed to cancel consumer for data_type: e",
@@ -170,121 +182,151 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
     consumer_cancel_tasks[data_type] = asyncio.create_task(cancel_after_delay())
 
 
-async def schedule_periodic_reconnection(data_type: str) -> None:
-    """Schedule periodic reconnection to check for new messages after file completion."""
+async def close_rabbitmq_connection() -> None:
+    """Close the RabbitMQ connection and channel when all consumers are idle."""
+    global active_connection, active_channel
 
-    async def periodic_reconnect() -> None:
-        """Periodically reconnect to check for new messages."""
-        while data_type in completed_files:
+    try:
+        if active_channel:
             try:
-                # Wait for the reconnect interval
-                logger.info(
-                    f"⏰ Scheduled reconnection for {data_type} in {RECONNECT_INTERVAL}s ({RECONNECT_INTERVAL / 3600:.1f} hours)"
-                )
-                await asyncio.sleep(RECONNECT_INTERVAL)
+                await active_channel.close()
+                logger.info("🔌 Closed RabbitMQ channel - all consumers idle")
+            except Exception as e:
+                logger.warning("⚠️ Error closing channel", error=str(e))
+            active_channel = None
 
-                # Check if we're still marked as complete and not already consuming
-                if data_type not in completed_files or data_type in consumer_tags:
-                    logger.info(
-                        f"🔄 Skipping reconnection for {data_type} - state changed"
+        if active_connection:
+            try:
+                await active_connection.close()
+                logger.info("🔌 Closed RabbitMQ connection - all consumers idle")
+            except Exception as e:
+                logger.warning("⚠️ Error closing connection", error=str(e))
+            active_connection = None
+
+        logger.info(
+            f"✅ RabbitMQ connection closed. Will check for new messages every {QUEUE_CHECK_INTERVAL}s"
+        )
+    except Exception as e:
+        logger.error(f"❌ Error closing RabbitMQ connection: {e}")
+
+
+async def check_all_consumers_idle() -> bool:
+    """Check if all consumers are cancelled (idle)."""
+    return len(consumer_tags) == 0 and len(DATA_TYPES) == len(completed_files)
+
+
+async def periodic_queue_checker() -> None:
+    """Periodically check all queues for pending messages when connection is closed."""
+    global active_connection, active_channel, queues, consumer_tags
+
+    while not shutdown_requested:
+        try:
+            await asyncio.sleep(QUEUE_CHECK_INTERVAL)
+
+            # Only check if all consumers are idle and connection is closed
+            if not await check_all_consumers_idle() or active_connection:
+                continue
+
+            logger.info("🔄 Checking all queues for new messages...")
+
+            # Temporarily connect to check queue depths
+            temp_connection = await rabbitmq_manager.connect()
+            temp_channel = await temp_connection.channel()
+
+            try:
+                # Check each queue for pending messages
+                queues_with_messages = []
+                for data_type in DATA_TYPES:
+                    queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+
+                    # Use queue.declare with passive=True to get message count without affecting the queue
+                    declared_queue = await temp_channel.declare_queue(
+                        name=queue_name, passive=True
                     )
-                    break
 
-                # Get the queue for this data type
-                if data_type not in queues:
-                    logger.warning(
-                        f"⚠️ Queue not found for {data_type}, skipping reconnection"
-                    )
-                    break
-
-                queue = queues[data_type]
-
-                logger.info(
-                    "🔄 Attempting periodic reconnection for data_type...",
-                    data_type=data_type,
-                )
-
-                # Set up message handler based on data type
-                handler = None
-                if data_type == "artists":
-                    handler = on_artist_message
-                elif data_type == "labels":
-                    handler = on_label_message
-                elif data_type == "masters":
-                    handler = on_master_message
-                elif data_type == "releases":
-                    handler = on_release_message
-
-                if handler is None:
-                    logger.error(
-                        "❌ No handler found for data_type", data_type=data_type
-                    )
-                    break
-
-                # Start consuming messages again
-                consumer_tag = await queue.consume(
-                    handler, consumer_tag=f"graphinator-{data_type}-reconnect"
-                )
-                consumer_tags[data_type] = consumer_tag
-
-                logger.info(
-                    "✅ Reconnected consumer for data_type", data_type=data_type
-                )
-
-                # Track that we've reconnected
-                last_message_time[data_type] = time.time()
-                empty_queue_start = time.time()
-
-                # Monitor for empty queue timeout
-                while data_type in consumer_tags:
-                    await asyncio.sleep(60)  # Check every minute
-
-                    # Check if we've received any messages recently
-                    if time.time() - last_message_time[data_type] < 60:
-                        # Reset empty queue timer if we received messages
-                        empty_queue_start = time.time()
-                    elif time.time() - empty_queue_start > EMPTY_QUEUE_TIMEOUT:
-                        # No messages for timeout period, disconnect
-                        logger.info(
-                            f"⏱️ No messages for {data_type} in {EMPTY_QUEUE_TIMEOUT}s, disconnecting..."
+                    if declared_queue.declaration_result.message_count > 0:
+                        queues_with_messages.append(
+                            (data_type, declared_queue.declaration_result.message_count)
                         )
 
-                        if data_type in consumer_tags:
-                            await queue.cancel(consumer_tags[data_type], nowait=True)
-                            del consumer_tags[data_type]
-                            logger.info(
-                                f"🔌 Disconnected idle consumer for {data_type}"
-                            )
+                if queues_with_messages:
+                    logger.info(
+                        f"📬 Found messages in queues, restarting consumers: {queues_with_messages}"
+                    )
 
-                        # File is still considered complete, will reconnect again later
-                        break
+                    # Re-establish full connection and start consuming
+                    active_connection = temp_connection
+                    active_channel = temp_channel
+
+                    # Declare exchange and queues
+                    exchange = await active_channel.declare_exchange(
+                        AMQP_EXCHANGE,
+                        AMQP_EXCHANGE_TYPE,
+                        durable=True,
+                        auto_delete=False,
+                    )
+
+                    # Set QoS
+                    await active_channel.set_qos(prefetch_count=1, global_=True)
+
+                    # Declare and bind all queues
+                    queues = {}
+                    for data_type in DATA_TYPES:
+                        queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+                        queue = await active_channel.declare_queue(
+                            auto_delete=False, durable=True, name=queue_name
+                        )
+                        await queue.bind(exchange, routing_key=data_type)
+                        queues[data_type] = queue
+
+                    # Start consumers for queues with messages
+                    for data_type, _ in queues_with_messages:
+                        if data_type in queues and data_type not in consumer_tags:
+                            # Get appropriate handler for this data type
+                            handler = None
+                            if data_type == "artists":
+                                handler = on_artist_message
+                            elif data_type == "labels":
+                                handler = on_label_message
+                            elif data_type == "masters":
+                                handler = on_master_message
+                            elif data_type == "releases":
+                                handler = on_release_message
+
+                            if handler:
+                                consumer_tag = await queues[data_type].consume(
+                                    handler, consumer_tag=f"graphinator-{data_type}"
+                                )
+                                consumer_tags[data_type] = consumer_tag
+                                # Remove from completed files so it will be processed
+                                completed_files.discard(data_type)
+                                last_message_time[data_type] = time.time()
+                                logger.info(f"✅ Started consumer for {data_type}")
+
+                    # Don't close temp_connection since we're using it as active_connection
+                else:
+                    logger.info(
+                        "📭 No messages in any queue, connection remains closed"
+                    )
+                    # Close the temporary connection
+                    await temp_channel.close()
+                    await temp_connection.close()
 
             except Exception as e:
-                logger.error(
-                    "❌ Error in periodic reconnection for data_type: e",
-                    data_type=data_type,
-                    e=e,
-                )
-                # Clean up consumer if it exists
-                if data_type in consumer_tags:
-                    try:
-                        queue = queues.get(data_type)
-                        if queue:
-                            await queue.cancel(consumer_tags[data_type], nowait=True)
-                    except Exception:  # nosec: B110 - Ignore cancellation errors during cleanup
-                        pass
-                    del consumer_tags[data_type]
-            finally:
-                # Clean up task reference
-                if data_type in reconnect_tasks:
-                    del reconnect_tasks[data_type]
+                logger.error(f"❌ Error checking queues: {e}")
+                # Make sure to close temporary connection on error
+                try:
+                    await temp_channel.close()
+                    await temp_connection.close()
+                except Exception:  # nosec: B110
+                    pass
 
-    # Cancel any existing reconnection task
-    if data_type in reconnect_tasks:
-        reconnect_tasks[data_type].cancel()
-
-    # Schedule new reconnection task
-    reconnect_tasks[data_type] = asyncio.create_task(periodic_reconnect())
+        except asyncio.CancelledError:
+            logger.info("🛑 Queue checker task cancelled")
+            break
+        except Exception as e:
+            logger.error(f"❌ Error in periodic queue checker: {e}")
+            # Continue running despite errors
 
 
 async def check_file_completion(
@@ -1161,7 +1203,14 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
 
 
 async def main() -> None:
-    global config, graph, queues
+    global \
+        config, \
+        graph, \
+        queues, \
+        rabbitmq_manager, \
+        active_connection, \
+        active_channel, \
+        connection_check_task
 
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
@@ -1248,8 +1297,8 @@ async def main() -> None:
     print()
     # fmt: on
 
-    # Initialize resilient RabbitMQ connection
-    rabbitmq = AsyncResilientRabbitMQ(
+    # Initialize resilient RabbitMQ connection manager (not connecting yet)
+    rabbitmq_manager = AsyncResilientRabbitMQ(
         connection_url=config.amqp_connection,
         max_retries=10,  # More retries for startup
         heartbeat=600,
@@ -1267,7 +1316,8 @@ async def main() -> None:
             logger.info(
                 f"🐰 Attempting to connect to RabbitMQ (attempt {startup_retry + 1}/{max_startup_retries})"
             )
-            amqp_connection = await rabbitmq.connect()
+            amqp_connection = await rabbitmq_manager.connect()
+            active_connection = amqp_connection
             break
         except Exception as e:
             startup_retry += 1
@@ -1289,6 +1339,7 @@ async def main() -> None:
 
     async with amqp_connection:
         channel = await amqp_connection.channel()
+        active_channel = channel
 
         # Set QoS to prevent overwhelming Neo4j with too many concurrent transactions
         # Reduce to minimal prefetch to force sequential processing and avoid deadlocks
@@ -1345,6 +1396,11 @@ async def main() -> None:
                 else:
                     await asyncio.sleep(30)  # Then every 30 seconds
                 report_count += 1
+
+                # Skip all logging if all files are complete
+                if len(completed_files) == len(DATA_TYPES):
+                    continue
+
                 total = sum(message_counts.values())
                 current_time = time.time()
 
@@ -1423,6 +1479,12 @@ async def main() -> None:
 
         progress_task = asyncio.create_task(progress_reporter())
 
+        # Start periodic queue checker task
+        connection_check_task = asyncio.create_task(periodic_queue_checker())
+        logger.info(
+            f"🔄 Started periodic queue checker (interval: {QUEUE_CHECK_INTERVAL}s)"
+        )
+
         try:
             # Create a shutdown event that can be triggered by signal handler
             shutdown_event = asyncio.Event()
@@ -1443,6 +1505,13 @@ async def main() -> None:
             with contextlib.suppress(asyncio.CancelledError):
                 await progress_task
 
+            # Cancel connection check task
+            if connection_check_task:
+                connection_check_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await connection_check_task
+                logger.info("✅ Queue checker task stopped")
+
             # Cancel any pending consumer cancellation tasks
             for task in consumer_cancel_tasks.values():
                 task.cancel()
@@ -1450,6 +1519,9 @@ async def main() -> None:
             # Cancel any pending reconnection tasks
             for task in reconnect_tasks.values():
                 task.cancel()
+
+            # Close RabbitMQ connection if still active
+            await close_rabbitmq_connection()
 
             # Close Neo4j driver
             try:
