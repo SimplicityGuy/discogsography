@@ -128,7 +128,6 @@ All workflows now have status badges for quick health monitoring:
 - ✅ **Auto-Reconnection**: Automatically detects new messages and restarts consumers
 - ✅ **Silent When Idle**: Progress logging stops when all queues are complete to reduce log noise
 - ✅ **Type Safety**: Added explicit type annotations for better code quality
-- ✅ **Deprecated Settings**: Marked `RECONNECT_INTERVAL` and `EMPTY_QUEUE_TIMEOUT` as deprecated
 
 **Benefits:**
 - **Resource Efficiency**: 90%+ reduction in idle RabbitMQ connection resources

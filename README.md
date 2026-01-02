@@ -292,12 +292,10 @@ cp .env.example .env
 
 #### Consumer Management Settings
 
-| Variable                | Description                                                          | Default          | Used By                  |
-| ----------------------- | -------------------------------------------------------------------- | ---------------- | ------------------------ |
-| `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers after file completion        | `300` (5 min)    | Graphinator, Tableinator |
-| `QUEUE_CHECK_INTERVAL`  | Seconds between queue checks when all consumers are idle             | `3600` (1 hr)    | Graphinator, Tableinator |
-| `RECONNECT_INTERVAL`    | ⚠️ **Deprecated** - Use `QUEUE_CHECK_INTERVAL` instead              | `86400` (24 hrs) | _(Not used)_             |
-| `EMPTY_QUEUE_TIMEOUT`   | ⚠️ **Deprecated** - Connections now close immediately when all idle | `1800` (30 min)  | _(Not used)_             |
+| Variable                | Description                                                      | Default       | Used By                  |
+| ----------------------- | ---------------------------------------------------------------- | ------------- | ------------------------ |
+| `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers after file completion    | `300` (5 min) | Graphinator, Tableinator |
+| `QUEUE_CHECK_INTERVAL`  | Seconds between queue checks when all consumers are idle         | `3600` (1 hr) | Graphinator, Tableinator |
 
 > **📝 Note**: The consumer management system implements smart connection lifecycle management:
 >
