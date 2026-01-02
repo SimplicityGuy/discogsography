@@ -292,13 +292,21 @@ cp .env.example .env
 
 #### Consumer Management Settings
 
-| Variable                | Description                                                        | Default          | Used By                  |
-| ----------------------- | ------------------------------------------------------------------ | ---------------- | ------------------------ |
-| `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers after file completion      | `300` (5 min)    | Graphinator, Tableinator |
-| `RECONNECT_INTERVAL`    | Seconds between periodic reconnection attempts for completed files | `86400` (24 hrs) | Graphinator, Tableinator |
-| `EMPTY_QUEUE_TIMEOUT`   | Seconds to wait for messages before disconnecting on reconnect     | `1800` (30 min)  | Graphinator, Tableinator |
+| Variable                | Description                                                          | Default          | Used By                  |
+| ----------------------- | -------------------------------------------------------------------- | ---------------- | ------------------------ |
+| `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers after file completion        | `300` (5 min)    | Graphinator, Tableinator |
+| `QUEUE_CHECK_INTERVAL`  | Seconds between queue checks when all consumers are idle             | `3600` (1 hr)    | Graphinator, Tableinator |
+| `RECONNECT_INTERVAL`    | ⚠️ **Deprecated** - Use `QUEUE_CHECK_INTERVAL` instead              | `86400` (24 hrs) | _(Not used)_             |
+| `EMPTY_QUEUE_TIMEOUT`   | ⚠️ **Deprecated** - Connections now close immediately when all idle | `1800` (30 min)  | _(Not used)_             |
 
-> **📝 Note**: The consumer management settings enable automatic reconnection after file processing completes. This ensures that if the extractor processes new Discogs files later, the downstream services will automatically resume consuming messages without manual intervention.
+> **📝 Note**: The consumer management system implements smart connection lifecycle management:
+>
+> - **Automatic Idle Detection**: When all consumers complete processing, RabbitMQ connections are automatically closed to conserve resources
+> - **Periodic Queue Checking**: Every `QUEUE_CHECK_INTERVAL` seconds, the service briefly connects to check for new messages in all queues
+> - **Auto-Reconnection**: When new messages are detected, connections are re-established and consumers restart automatically
+> - **Silent When Idle**: Progress logging stops when all queues are complete to reduce log noise
+>
+> This ensures efficient resource usage while maintaining automatic responsiveness to new data.
 
 ### 💿 Dataset Scale
 

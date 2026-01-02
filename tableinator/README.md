@@ -36,7 +36,22 @@ POSTGRES_DATABASE=discogsography
 
 # RabbitMQ
 AMQP_CONNECTION=amqp://discogsography:discogsography@rabbitmq:5672
+
+# Consumer Management (Smart Connection Lifecycle)
+CONSUMER_CANCEL_DELAY=300           # Seconds before canceling idle consumers (default: 5 min)
+QUEUE_CHECK_INTERVAL=3600           # Seconds between queue checks when idle (default: 1 hr)
 ```
+
+### Smart Connection Lifecycle
+
+The tableinator implements intelligent RabbitMQ connection management:
+
+- **Automatic Closure**: When all queues complete processing, the RabbitMQ connection is automatically closed
+- **Periodic Checks**: Every `QUEUE_CHECK_INTERVAL` seconds, briefly connects to check all queues for new messages
+- **Auto-Reconnection**: When messages are detected, automatically reconnects and resumes processing
+- **Silent When Idle**: Progress logging stops when all queues are complete to reduce log noise
+
+This ensures minimal resource usage while maintaining responsiveness to new data.
 
 ## Database Schema
 
