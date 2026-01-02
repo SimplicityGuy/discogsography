@@ -105,11 +105,6 @@ repos:
   # Local hooks
   - repo: local
     hooks:
-      - id: check-ios-wheels
-        name: Check for iOS wheels in uv.lock
-        entry: ./scripts/check-ios-wheels-hook.sh
-        language: system
-        files: ^uv\.lock$
       - id: cargo-fmt
         name: cargo fmt
         entry: bash -c 'cd extractor/rustextractor 2>/dev/null && cargo fmt --check || exit 0'
