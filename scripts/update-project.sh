@@ -267,7 +267,8 @@ update_uv_version() {
 
     # Find current UV version in Dockerfiles
     local current_uv=""
-    for dockerfile in */Dockerfile docs/dockerfile-standards.md; do
+    # Use find to catch all Dockerfiles including nested ones
+    while IFS= read -r dockerfile; do
         if [[ -f "$dockerfile" ]]; then
             local version
             version=$(grep "ghcr.io/astral-sh/uv:" "$dockerfile" 2>/dev/null | head -1 | sed -E 's/.*uv:([0-9.]+).*/\1/')
@@ -276,7 +277,7 @@ update_uv_version() {
                 break
             fi
         fi
-    done
+    done < <(find . -maxdepth 3 -name "Dockerfile" -type f; echo "docs/dockerfile-standards.md")
 
     # Update Dockerfiles
     if [[ -n "$current_uv" ]] && [[ "$current_uv" != "$latest_uv" ]]; then
@@ -284,8 +285,8 @@ update_uv_version() {
         print_info "Updating UV from $current_uv to $latest_uv in Dockerfiles"
 
         if [[ "$DRY_RUN" == false ]]; then
-            # Backup and update Dockerfiles
-            for dockerfile in */Dockerfile docs/dockerfile-standards.md; do
+            # Backup and update all Dockerfiles including nested ones
+            while IFS= read -r dockerfile; do
                 if [[ -f "$dockerfile" ]]; then
                     backup_file "$dockerfile"
 
@@ -299,7 +300,7 @@ update_uv_version() {
                     FILE_CHANGES+=("$dockerfile: UV $current_uv → $latest_uv")
                     CHANGES_MADE=true
                 fi
-            done
+            done < <(find . -maxdepth 3 -name "Dockerfile" -type f; echo "docs/dockerfile-standards.md")
         else
             print_info "[DRY RUN] Would update UV version in Dockerfiles"
         fi
@@ -610,11 +611,20 @@ update_python_packages() {
         backup_file "uv.lock"
         backup_file "pyproject.toml"
 
-        for service in common dashboard discovery extractor graphinator tableinator; do
+        # Backup all pyproject.toml files including nested ones
+        for service in common dashboard discovery graphinator tableinator; do
             if [[ -f "$service/pyproject.toml" ]]; then
                 backup_file "$service/pyproject.toml"
             fi
         done
+
+        # Backup extractor subdirectories
+        if [[ -f "extractor/pyextractor/pyproject.toml" ]]; then
+            backup_file "extractor/pyextractor/pyproject.toml"
+        fi
+        if [[ -f "extractor/rustextractor/pyproject.toml" ]]; then
+            backup_file "extractor/rustextractor/pyproject.toml"
+        fi
     fi
 
     # Update uv itself
@@ -791,13 +801,13 @@ generate_summary() {
     fi
 
     if [[ -n "$PYTHON_VERSION_CHANGE" ]]; then
-        echo "   git add pyproject.toml */pyproject.toml"
+        echo "   git add pyproject.toml */pyproject.toml extractor/*/pyproject.toml"
         echo "   git add .github/workflows/*.yml"
         echo "   git add pyrightconfig.json"
     fi
 
     if [[ -n "$UV_VERSION_CHANGE" ]] || [[ $(array_length FILE_CHANGES) -gt 0 ]]; then
-        echo "   git add */Dockerfile docs/dockerfile-standards.md"
+        echo "   git add */Dockerfile extractor/*/Dockerfile docs/dockerfile-standards.md"
     fi
 
     if [[ $(array_length WORKFLOW_CHANGES) -gt 0 ]]; then
@@ -867,19 +877,38 @@ show_file_report() {
 
     # Python files
     echo "🐍 Python Configuration:"
-    echo "  ✓ pyproject.toml (root and all services)"
-    echo "  ✓ uv.lock"
+    echo "  ✓ pyproject.toml (root)"
+    echo "  ✓ common/pyproject.toml"
+    echo "  ✓ dashboard/pyproject.toml"
+    echo "  ✓ discovery/pyproject.toml"
+    echo "  ✓ extractor/pyextractor/pyproject.toml"
+    echo "  ✓ extractor/rustextractor/pyproject.toml"
+    echo "  ✓ graphinator/pyproject.toml"
+    echo "  ✓ tableinator/pyproject.toml"
+    echo "  ✓ uv.lock (root)"
     echo "  ✓ pyrightconfig.json"
-    echo "  ✓ .env.example (if exists)"
     echo ""
 
     # Docker files
     echo "🐳 Docker Configuration:"
-    echo "  ✓ All service Dockerfiles"
+    echo "  ✓ dashboard/Dockerfile"
+    echo "  ✓ discovery/Dockerfile"
+    echo "  ✓ extractor/pyextractor/Dockerfile"
+    echo "  ✓ extractor/rustextractor/Dockerfile"
+    echo "  ✓ graphinator/Dockerfile"
+    echo "  ✓ tableinator/Dockerfile"
     echo "  ✓ docs/dockerfile-standards.md"
     echo "  ✓ docker-compose.yml"
     echo "  ✓ docker-compose.prod.yml"
     echo ""
+
+    # Rust files
+    if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+        echo "🦀 Rust Configuration:"
+        echo "  ✓ extractor/rustextractor/Cargo.toml"
+        echo "  ✓ extractor/rustextractor/Cargo.lock"
+        echo ""
+    fi
 
     # GitHub files
     echo "🔄 GitHub Workflows:"
@@ -898,6 +927,79 @@ show_file_report() {
     echo "  • Python packages updated: $(array_length PACKAGE_CHANGES)"
     echo "  • Dockerfiles updated: $(printf '%s\n' "${FILE_CHANGES[@]:-}" | grep -c Dockerfile || echo 0)"
     echo "  • Workflows updated: $(array_length WORKFLOW_CHANGES)"
+}
+
+# Verify all expected components exist
+verify_components() {
+    print_section "$EMOJI_VERIFY" "Verifying Project Components"
+
+    local missing_components=()
+    local total_components=0
+    local found_components=0
+
+    # Check pyproject.toml files
+    print_info "Checking Python configuration files..."
+    local pyproject_files=(
+        "pyproject.toml"
+        "common/pyproject.toml"
+        "dashboard/pyproject.toml"
+        "discovery/pyproject.toml"
+        "extractor/pyextractor/pyproject.toml"
+        "extractor/rustextractor/pyproject.toml"
+        "graphinator/pyproject.toml"
+        "tableinator/pyproject.toml"
+    )
+
+    for file in "${pyproject_files[@]}"; do
+        total_components=$((total_components + 1))
+        if [[ -f "$file" ]]; then
+            found_components=$((found_components + 1))
+        else
+            missing_components+=("$file")
+        fi
+    done
+
+    # Check Dockerfiles
+    print_info "Checking Dockerfiles..."
+    local dockerfile_list=(
+        "dashboard/Dockerfile"
+        "discovery/Dockerfile"
+        "extractor/pyextractor/Dockerfile"
+        "extractor/rustextractor/Dockerfile"
+        "graphinator/Dockerfile"
+        "tableinator/Dockerfile"
+    )
+
+    for file in "${dockerfile_list[@]}"; do
+        total_components=$((total_components + 1))
+        if [[ -f "$file" ]]; then
+            found_components=$((found_components + 1))
+        else
+            missing_components+=("$file")
+        fi
+    done
+
+    # Check Rust components
+    if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+        print_info "Found Rust extractor (Cargo.toml)"
+        total_components=$((total_components + 1))
+        found_components=$((found_components + 1))
+    fi
+
+    # Report results
+    print_success "Found $found_components/$total_components expected components"
+
+    if [[ ${#missing_components[@]} -gt 0 ]]; then
+        print_warning "Missing ${#missing_components[@]} components:"
+        for component in "${missing_components[@]}"; do
+            echo "  ⚠️  $component"
+        done
+        print_info "This may be normal if components were removed from the project."
+    else
+        print_success "All expected components found!"
+    fi
+
+    echo ""
 }
 
 # Handle errors
@@ -919,6 +1021,9 @@ handle_error() {
 # Main execution
 main() {
     print_section "$EMOJI_ROCKET" "Starting Project Update"
+
+    # Verify all components exist before starting
+    verify_components
 
     # Update Python version if requested
     update_python_version

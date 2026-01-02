@@ -10,11 +10,13 @@ The main script for updating project dependencies and versions. This is a compre
 
 - 🐍 **Python Version Updates**: Update Python version across all project files
 - 📦 **Package Dependency Updates**: Update all Python packages with detailed change tracking
-- 🐳 **UV Package Manager Updates**: Update UV version in all Dockerfiles
+- 🦀 **Rust Dependency Updates**: Update all Rust crates in rustextractor (main, dev, and build deps)
+- 🐳 **UV Package Manager Updates**: Update UV version in all Dockerfiles (including nested ones)
+- 🔍 **Component Verification**: Verifies all expected components exist before updating
 - 💾 **Automatic Backups**: Creates timestamped backups before making changes
 - 📝 **Detailed Summaries**: Shows exactly what changed with before/after versions
 - 🧪 **Automatic Testing**: Runs lints and tests after updates
-- 🔍 **Manual Verification Guide**: Provides step-by-step verification instructions
+- 🛡️ **Manual Verification Guide**: Provides step-by-step verification instructions
 
 ### Usage
 
@@ -62,11 +64,36 @@ The script provides:
 1. **Git commands** for staging and committing changes
 1. **Manual verification steps** for ensuring everything works
 
+### Component Coverage
+
+The script now includes comprehensive component verification and updates **all** project files:
+
+**Python Configuration (8 files)**:
+- ✅ Root `pyproject.toml`
+- ✅ All service `pyproject.toml` files including nested extractor subdirectories
+
+**Docker Configuration (7 files)**:
+- ✅ All service Dockerfiles including nested `extractor/pyextractor` and `extractor/rustextractor`
+- ✅ Documentation standards file
+
+**Rust Configuration (2 files)**:
+- ✅ `Cargo.toml` and `Cargo.lock` for rustextractor
+
+**Total: 15+ components verified and updated automatically**
+
 ### Example Output
 
 ```
 🚀  Starting Project Update
 ============================================================
+
+🔍  Verifying Project Components
+============================================================
+ℹ️  [INFO] Checking Python configuration files...
+ℹ️  [INFO] Checking Dockerfiles...
+ℹ️  [INFO] Found Rust extractor (Cargo.toml)
+✅  [SUCCESS] Found 15/15 expected components
+✅  [SUCCESS] All expected components found!
 
 🐳  Updating UV Version in Dockerfiles
 ============================================================
@@ -118,8 +145,14 @@ Standalone script for updating Python version across the codebase. This is calle
 
 ### What it updates
 
-- All `pyproject.toml` files (requires-python, classifiers, tool configs)
-- All Dockerfiles (base images, labels)
+- All `pyproject.toml` files in:
+  - Root directory
+  - `common/`, `dashboard/`, `discovery/`, `graphinator/`, `tableinator/`
+  - `extractor/pyextractor/` and `extractor/rustextractor/`
+- All Dockerfiles including nested ones in:
+  - `dashboard/`, `discovery/`, `graphinator/`, `tableinator/`
+  - `extractor/pyextractor/` and `extractor/rustextractor/`
+  - `docs/dockerfile-standards.md`
 - GitHub workflow files
 - `pyrightconfig.json`
 - `.env.example` (if exists)
