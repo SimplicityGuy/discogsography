@@ -8,11 +8,12 @@ ARG GID=1000
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.9.21 /uv /bin/uv
 
 # Set environment for build
 ENV UV_SYSTEM_PYTHON=1 \
     UV_CACHE_DIR=/tmp/.cache/uv \
+    UV_LINK_MODE=copy \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
@@ -22,10 +23,25 @@ WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
 COPY common/pyproject.toml ./common/
 COPY discovery/pyproject.toml ./discovery/
+COPY discovery/constraints.txt ./discovery/
 
-# Install dependencies
+# Install dependencies (sentence-transformers[onnx] excludes PyTorch)
+# hadolint ignore=SC2015
 RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --extra discovery
+    uv sync --frozen --no-dev --extra discovery && \
+    # Clean up unnecessary files from site-packages
+    find /app/.venv -type f -name "*.pyc" -delete && \
+    find /app/.venv -type f -name "*.pyo" -delete && \
+    find /app/.venv -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true && \
+    find /app/.venv -type d -name "tests" -exec rm -rf {} + 2>/dev/null || true && \
+    # Remove unnecessary torch files if present
+    find /app/.venv -type f -name "*.cpp" -delete 2>/dev/null || true && \
+    find /app/.venv -type f -name "*.cu" -delete 2>/dev/null || true && \
+    find /app/.venv -type f -name "*.cuh" -delete 2>/dev/null || true && \
+    find /app/.venv -type f -name "*.h" -delete 2>/dev/null || true && \
+    # Strip debug symbols from compiled libraries
+    find /app/.venv -name "*.so" -exec strip --strip-unneeded {} \; 2>/dev/null || true
 
 # Copy source files
 COPY common/ ./common/
@@ -56,33 +72,34 @@ LABEL org.opencontainers.image.title="Discogsography Discovery" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.base.name="docker.io/library/python:${PYTHON_VERSION}-slim" \
       com.discogsography.service="discovery" \
-      com.discogsography.dependencies="fastapi,sentence-transformers,scikit-learn,plotly" \
+      com.discogsography.dependencies="fastapi,onnxruntime,scikit-learn,plotly" \
       com.discogsography.python.version="${PYTHON_VERSION}"
 
-# Install security updates, curl for healthcheck, and gcc/g++ for numpy/pandas
+# Install minimal runtime dependencies
 # hadolint ignore=DL3008
 RUN apt-get update && \
     apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         curl \
-        gcc \
-        g++ && \
+        libgomp1 && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # Create user and directories with configurable UID/GID
 RUN groupadd -r -g ${GID} discogsography && \
     useradd -r -l -u ${UID} -g discogsography -m -s /bin/bash discogsography && \
-    mkdir -p /tmp /app /logs && \
-    chown -R discogsography:discogsography /tmp /app /logs
+    mkdir -p /tmp /app /logs /models && \
+    chown -R discogsography:discogsography /tmp /app /logs /models
 
 WORKDIR /app
 
-# Copy from builder
-COPY --from=builder --chown=discogsography:discogsography /app /app
+# Copy only necessary files from builder
+COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
+COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
+COPY --from=builder --chown=discogsography:discogsography /app/discovery /app/discovery
+COPY --from=builder --chown=discogsography:discogsography /app/pyproject.toml /app/uv.lock /app/
 
-# Install uv for runtime
-COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
+# We don't need uv at runtime since we're not installing packages
 
 # Create startup script
 # hadolint ignore=SC2016
@@ -109,8 +126,8 @@ ENV HOME=/home/discogsography \
     POSTGRES_USERNAME="" \
     POSTGRES_DATABASE=""
 
-# Declare volume for logs
-VOLUME ["/logs"]
+# Declare volumes
+VOLUME ["/logs", "/models"]
 
 # Expose ports
 EXPOSE 8004 8005

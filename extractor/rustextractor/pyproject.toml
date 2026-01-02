@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rustextractor"
+version = "0.1.0"
+description = "High-performance Rust-based Discogs data extractor"
+authors = [{name = "Robert Wlodarczyk", email = "robert@simplicityguy.com"}]
+readme = "README.md"
+requires-python = ">=3.13"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Rust",
+]
+license = {text = "MIT"}
+# No Python dependencies - this is a Rust project
+
+# Tool configurations inherit from root pyproject.toml
+# These are included for consistency with other services
+
+[tool.ruff]
+extend = "../../pyproject.toml"
+
+[tool.mypy]
+extend = "../../pyproject.toml"
+
+[tool.coverage]
+extend = "../../pyproject.toml"
+
+[tool.pytest.ini_options]
+extend = "../../pyproject.toml"
+
+[tool.hatch.build.targets.wheel]
+packages = []

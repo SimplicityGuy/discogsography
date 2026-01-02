@@ -1,13 +1,24 @@
 """AI-Powered Music Discovery Engine using graph algorithms and ML."""
 
-import logging
 from typing import TYPE_CHECKING, Any
 
 import networkx as nx
 import numpy as np
+import structlog
 from common import get_config
 from neo4j import AsyncDriver, AsyncGraphDatabase
 from pydantic import BaseModel
+
+
+# Import ONNX sentence transformer if available, fallback to regular
+try:
+    from discovery.onnx_sentence_transformer import ONNXSentenceTransformer
+
+    ONNX_AVAILABLE = True
+except ImportError:
+    ONNX_AVAILABLE = False
+
+# Always import SentenceTransformer for fallback
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
 
@@ -16,7 +27,7 @@ if TYPE_CHECKING:
     from sklearn.feature_extraction.text import TfidfVectorizer
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 class RecommendationRequest(BaseModel):
@@ -34,9 +45,9 @@ class RecommendationResult(BaseModel):
     """Result model for music recommendations."""
 
     artist_name: str
-    release_title: str
-    year: int | None
-    genres: list[str]
+    release_title: str | None = None
+    year: int | None = None
+    genres: list[str] = []
     similarity_score: float
     explanation: str
     neo4j_id: str
@@ -49,7 +60,7 @@ class MusicRecommender:
         self.config = get_config()
         self.driver: AsyncDriver | None = None
         self.graph: nx.Graph | None = None
-        self.embedding_model: SentenceTransformer | None = None
+        self.embedding_model: ONNXSentenceTransformer | SentenceTransformer | None = None
         self.tfidf_vectorizer: TfidfVectorizer | None = None
         self.artist_embeddings: np.ndarray | None = None
         self.artist_to_index: dict[str, int] = {}
@@ -64,7 +75,18 @@ class MusicRecommender:
 
         # Initialize ML models
         logger.info("🧠 Loading sentence transformer model...")
-        self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+        # Check for ONNX model first
+        from pathlib import Path
+
+        onnx_model_path = Path("/models/onnx/all-MiniLM-L6-v2")
+
+        if ONNX_AVAILABLE and onnx_model_path.exists():
+            logger.info("⚡ Using optimized ONNX model for inference")
+            self.embedding_model = ONNXSentenceTransformer(str(onnx_model_path))
+        else:
+            logger.info("🔄 Using standard PyTorch model")
+            self.embedding_model = SentenceTransformer("all-MiniLM-L6-v2")
 
         # Build collaboration graph
         await self._build_collaboration_graph()
@@ -98,7 +120,7 @@ class MusicRecommender:
 
                 self.graph.add_edge(artist1, artist2, weight=weight)
 
-        logger.info(f"📊 Built collaboration graph with {self.graph.number_of_nodes()} artists and {self.graph.number_of_edges()} collaborations")
+        logger.info("📊 Built collaboration graph", artists=self.graph.number_of_nodes(), collaborations=self.graph.number_of_edges())
 
     async def _generate_artist_embeddings(self) -> None:
         """Generate semantic embeddings for artists based on their profiles."""
@@ -145,7 +167,7 @@ class MusicRecommender:
             self.artist_to_index[data["name"]] = i
             self.index_to_artist[i] = data["name"]
 
-        logger.info(f"✅ Generated embeddings for {len(artists_data)} artists")
+        logger.info("✅ Generated embeddings for artists", count=len(artists_data))
 
     async def get_similar_artists(self, artist_name: str, limit: int = 10) -> list[RecommendationResult]:
         """Get similar artists using graph algorithms and embeddings."""
@@ -182,7 +204,7 @@ class MusicRecommender:
                     recommendations.append(
                         RecommendationResult(
                             artist_name=similar_artist,
-                            release_title=artist_info.get("recent_release", ""),
+                            release_title=artist_info.get("recent_release"),
                             year=artist_info.get("recent_year"),
                             genres=artist_info.get("genres", []),
                             similarity_score=score,
@@ -212,7 +234,7 @@ class MusicRecommender:
                     recommendations.append(
                         RecommendationResult(
                             artist_name=similar_artist,
-                            release_title=artist_info.get("recent_release", ""),
+                            release_title=artist_info.get("recent_release"),
                             year=artist_info.get("recent_year"),
                             genres=artist_info.get("genres", []),
                             similarity_score=float(score),
@@ -261,7 +283,7 @@ class MusicRecommender:
                 trending.append(
                     RecommendationResult(
                         artist_name=record["name"],
-                        release_title=record["recent_release"] or "",
+                        release_title=record["recent_release"],
                         year=record["recent_year"],
                         genres=record["genres"] or [],
                         similarity_score=float(record["release_count"]) / 100.0,  # Normalize to 0-1
@@ -295,7 +317,7 @@ class MusicRecommender:
                     results.append(
                         RecommendationResult(
                             artist_name=artist_name,
-                            release_title=artist_info.get("recent_release", ""),
+                            release_title=artist_info.get("recent_release"),
                             year=artist_info.get("recent_year"),
                             genres=artist_info.get("genres", []),
                             similarity_score=float(score),

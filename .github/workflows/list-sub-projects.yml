@@ -1,0 +1,53 @@
+---
+name: List Sub-Projects
+
+on:
+  workflow_call:
+    outputs:
+      matrix:
+        description: "JSON matrix of sub-projects with their properties"
+        value: ${{ jobs.list-sub-projects.outputs.matrix }}
+      simple-matrix:
+        description: "Simple JSON array of sub-project names"
+        value: ${{ jobs.list-sub-projects.outputs.simple-matrix }}
+
+permissions:
+  contents: read
+
+jobs:
+  list-sub-projects:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      simple-matrix: ${{ steps.set-matrix.outputs.simple-matrix }}
+
+    steps:
+      - name: 📋 Get all sub-projects with properties
+        id: set-matrix
+        run: |
+          # Define sub-projects with their properties
+          # Note: discovery image is >3GB and often fails with cache actions
+          cat << "EOF" > projects.json
+          [
+            {"name": "dashboard", "use_cache": true},
+            {"name": "discovery", "use_cache": false},
+            {"name": "extractor/pyextractor", "use_cache": true},
+            {"name": "extractor/rustextractor", "use_cache": true},
+            {"name": "graphinator", "use_cache": true},
+            {"name": "tableinator", "use_cache": true}
+          ]
+          EOF
+
+          # Output the full matrix with properties
+          matrix=$(jq -c . < projects.json)
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+          # Also output a simple array of names for backward compatibility
+          simple_matrix=$(jq -c "[.[].name]" < projects.json)
+          echo "simple-matrix=$simple_matrix" >> "$GITHUB_OUTPUT"
+
+          # Debug output
+          echo "Full matrix: $matrix"
+          echo "Simple matrix: $simple_matrix"

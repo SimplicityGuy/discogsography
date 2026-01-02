@@ -1,6 +1,6 @@
 import asyncio
 import contextlib
-import logging
+import os
 import signal
 import sys
 import threading
@@ -11,6 +11,7 @@ from gzip import GzipFile
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+import structlog
 from common import (
     AMQP_EXCHANGE,
     AMQP_EXCHANGE_TYPE,
@@ -27,15 +28,20 @@ from pika import DeliveryMode
 from pika.spec import BasicProperties
 from xmltodict import parse
 
-from extractor.discogs import download_discogs_data
+from extractor.pyextractor.discogs import download_discogs_data
 
 
 if TYPE_CHECKING:
     from pika.adapters.blocking_connection import BlockingChannel
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 MAX_RETRIES = 3
 RETRY_DELAY = 5
+
+# Flush queue rate limiting
+FLUSH_QUEUE_WARNING_INTERVAL = 60.0  # Only log warning once per minute
+FLUSH_QUEUE_MAX_BACKOFF = 300.0  # Maximum backoff time in seconds (5 minutes)
+FLUSH_QUEUE_INITIAL_BACKOFF = 30.0  # Initial backoff time in seconds
 
 # Global shutdown flag
 shutdown_requested = False
@@ -43,8 +49,10 @@ shutdown_requested = False
 # Progress tracking for monitoring
 extraction_progress = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 last_extraction_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+completed_files = set()  # Track which files have been completed
 current_task = None
 current_progress = 0.0
+active_connections = {}  # Track active AMQP connections by data type
 
 # Periodic check configuration will be loaded from config
 
@@ -65,7 +73,7 @@ def get_health_data() -> dict[str, Any]:
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    logger.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
+    logger.info("🛑 Received signal, initiating graceful shutdown...", signal=signum)
     shutdown_requested = True
 
 
@@ -98,6 +106,9 @@ class ConcurrentExtractor:
         self.pending_messages_lock = (
             threading.Lock()
         )  # Thread safety for concurrent access
+        self.last_flush_queue_warning = 0.0  # Track last warning time
+        self.flush_retry_backoff = FLUSH_QUEUE_INITIAL_BACKOFF  # Current backoff time
+        self.flush_retry_task: asyncio.Task[None] | None = None  # Retry task
         self.record_queue: asyncio.Queue[dict[str, Any] | None] | None = None
         self.flush_queue: asyncio.Queue[bool] | None = (
             None  # Queue to trigger AMQP flushes
@@ -176,35 +187,82 @@ class ConcurrentExtractor:
             )
 
             logger.info(
-                f"✅ Successfully connected to AMQP broker for {self.data_type} "
-                f"(exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE})"
+                "✅ Successfully connected to AMQP broker",
+                data_type=self.data_type,
+                exchange=AMQP_EXCHANGE,
+                exchange_type=AMQP_EXCHANGE_TYPE,
             )
+
+            # Track active connection
+            global active_connections
+            active_connections[self.data_type] = self.amqp_connection
+
             return self
 
         except Exception as e:
-            logger.error(f"❌ Failed to set up AMQP channel: {e}")
+            logger.error("❌ Failed to set up AMQP channel", error=str(e))
             if self.amqp_connection:
                 self.amqp_connection.close()
             raise
 
     def __exit__(self, exc_type: Any, exc_value: Any, exc_tb: Any) -> None:
+        global active_connections
+
         # Flush any pending messages
         try:
             self._flush_pending_messages()
         except Exception as e:
-            logger.warning(f"⚠️ Failed to flush pending messages during cleanup: {e}")
+            logger.warning(
+                "⚠️ Failed to flush pending messages during cleanup", error=str(e)
+            )
+
+        # Send file completion message before closing connection
+        if self.amqp_channel is not None and not self.amqp_channel.is_closed:
+            try:
+                completion_message = {
+                    "type": "file_complete",
+                    "data_type": self.data_type,
+                    "timestamp": datetime.now().isoformat(),
+                    "total_processed": self.total_count,
+                    "file": self.input_file,
+                }
+
+                self.amqp_channel.basic_publish(
+                    body=dumps(completion_message, option=OPT_SORT_KEYS | OPT_INDENT_2),
+                    exchange=AMQP_EXCHANGE,
+                    properties=self.amqp_properties,
+                    routing_key=self.data_type,
+                    mandatory=True,
+                )
+                logger.info(
+                    "🎉 File processing complete!",
+                    data_type=self.data_type,
+                    total_records=self.total_count,
+                )
+                # Mark this data type as completed to avoid stalled warnings
+                completed_files.add(self.data_type)
+            except Exception as e:
+                logger.warning("⚠️ Failed to send file completion message", error=str(e))
 
         if self.amqp_connection is not None:
             try:
                 self.amqp_connection.close()
-                logger.info("✅ AMQP connection closed gracefully")
+                logger.info(
+                    "🔌 Closing AMQP connection after file completion",
+                    data_type=self.data_type,
+                )
+
+                # Remove from active connections tracking
+                if self.data_type in active_connections:
+                    del active_connections[self.data_type]
+
             except Exception as e:
-                logger.warning(f"⚠️ Error closing AMQP connection: {e}")
+                logger.warning("⚠️ Error closing AMQP connection", error=str(e))
 
     async def extract_async(self) -> None:
         """Async extraction with concurrent record processing."""
         logger.info(
-            f"🚀 Starting extraction of {self.data_type} from {self.input_file}"
+            "🚀 Starting extraction", data_type=self.data_type, file=self.input_file
         )
         self.start_time = datetime.now()
 
@@ -252,7 +310,9 @@ class ConcurrentExtractor:
             try:
                 self._flush_pending_messages()
             except Exception as flush_error:
-                logger.error(f"❌ Failed to flush final messages: {flush_error}")
+                logger.error(
+                    "❌ Failed to flush final messages", error=str(flush_error)
+                )
 
         except KeyboardInterrupt:
             logger.info("⚠️ Extraction interrupted by user")
@@ -260,16 +320,18 @@ class ConcurrentExtractor:
                 self._flush_pending_messages()
             except Exception as flush_error:
                 logger.warning(
-                    f"⚠️ Failed to flush messages during interrupt: {flush_error}"
+                    "⚠️ Failed to flush messages during interrupt",
+                    error=str(flush_error),
                 )
             raise
         except Exception as e:
-            logger.error(f"❌ Error during extraction: {e}")
+            logger.error("❌ Error during extraction", error=str(e))
             try:
                 self._flush_pending_messages()
             except Exception as flush_error:
                 logger.warning(
-                    f"⚠️ Failed to flush messages during error handling: {flush_error}"
+                    "⚠️ Failed to flush messages during error handling",
+                    error=str(flush_error),
                 )
             raise
         finally:
@@ -283,8 +345,12 @@ class ConcurrentExtractor:
                 else 0
             )
             logger.info(
-                f"✅ Extractor Complete: {self.total_count:,} {self.data_type} processed "
-                f"({self.error_count:,} errors) in {elapsed} (avg {final_tps:.1f} records/sec)"
+                "✅ Extractor Complete",
+                data_type=self.data_type,
+                total_records=self.total_count,
+                error_count=self.error_count,
+                elapsed=str(elapsed),
+                records_per_sec=final_tps,
             )
 
     def extract(self) -> None:
@@ -302,9 +368,9 @@ class ConcurrentExtractor:
         """Synchronous XML parsing that queues records."""
         try:
             with GzipFile(self.input_path.resolve()) as gz_file:
-                parse(gz_file, item_depth=2, item_callback=self.__queue_record)
+                parse(gz_file, item_depth=2, item_callback=self.__queue_record)  # type: ignore[arg-type]
         except Exception as e:
-            logger.error(f"❌ Error parsing XML: {e}")
+            logger.error("❌ Error parsing XML", error=str(e))
             raise
 
     async def _process_records_async(self) -> None:
@@ -333,7 +399,7 @@ class ConcurrentExtractor:
                     break
                 continue
             except Exception as e:
-                logger.error(f"❌ Error processing record: {e}")
+                logger.error("❌ Error processing record", error=str(e))
                 self.error_count += 1
 
     async def _amqp_flush_worker(self) -> None:
@@ -362,7 +428,7 @@ class ConcurrentExtractor:
                 self.flush_queue.task_done()
 
             except Exception as e:
-                logger.warning(f"⚠️ Error in AMQP flush worker: {e}")
+                logger.warning("⚠️ Error in AMQP flush worker", error=str(e))
                 continue
 
     async def _process_record_async(self, data: dict[str, Any]) -> None:
@@ -379,21 +445,65 @@ class ConcurrentExtractor:
 
             # Process batch if it's full
             if should_flush:
-                try:
-                    # Signal flush worker to process batch (non-blocking)
-                    if self.flush_queue is not None:
-                        self.flush_queue.put_nowait(True)  # True means flush request
-                except asyncio.QueueFull:
-                    logger.warning("⚠️ Flush queue is full, will retry later")
-                except Exception as flush_error:
-                    logger.warning(f"⚠️ Failed to queue flush request: {flush_error}")
+                await self._try_queue_flush()
 
         except Exception as e:
             self.error_count += 1
             record_id = data.get("id", "unknown")
             logger.error(
-                f"❌ Error processing {self.data_type[:-1]} ID={record_id}: {e}"
+                "❌ Error processing record",
+                data_type=self.data_type[:-1],
+                record_id=record_id,
+                error=str(e),
             )
+
+    async def _try_queue_flush(self) -> None:
+        """Try to queue a flush request with exponential backoff on failure."""
+        if self.flush_queue is None:
+            return
+
+        try:
+            # Try to queue the flush request
+            self.flush_queue.put_nowait(True)
+            # Reset backoff on success
+            self.flush_retry_backoff = FLUSH_QUEUE_INITIAL_BACKOFF
+        except asyncio.QueueFull:
+            # Rate limit the warning messages
+            current_time = time.time()
+            if (
+                current_time - self.last_flush_queue_warning
+                >= FLUSH_QUEUE_WARNING_INTERVAL
+            ):
+                logger.warning(
+                    "⚠️ Flush queue is full, will retry with backoff",
+                    backoff_seconds=self.flush_retry_backoff,
+                )
+                self.last_flush_queue_warning = current_time
+
+            # Schedule a retry with backoff if not already scheduled
+            if self.flush_retry_task is None or self.flush_retry_task.done():
+                self.flush_retry_task = asyncio.create_task(
+                    self._retry_flush_with_backoff()
+                )
+        except Exception as flush_error:
+            logger.warning("⚠️ Failed to queue flush request", error=str(flush_error))
+
+    async def _retry_flush_with_backoff(self) -> None:
+        """Retry flushing with exponential backoff."""
+        await asyncio.sleep(self.flush_retry_backoff)
+
+        # Increase backoff for next retry (exponential with cap)
+        self.flush_retry_backoff = min(
+            self.flush_retry_backoff * 2, FLUSH_QUEUE_MAX_BACKOFF
+        )
+
+        # Check if we still need to flush
+        with self.pending_messages_lock:
+            needs_flush = len(self.pending_messages) >= self.batch_size
+
+        if needs_flush:
+            # Try to flush again
+            await self._try_queue_flush()
 
     def __queue_record(
         self, path: list[tuple[str, dict[str, Any] | None]], data: dict[str, Any]
@@ -405,7 +515,7 @@ class ConcurrentExtractor:
         data_type = path[0][0]
         if data_type != self.data_type:
             logger.warning(
-                f"⚠️ Data type mismatch: expected {self.data_type}, got {data_type}"
+                "⚠️ Data type mismatch", expected=self.data_type, got=data_type
             )
             return False
 
@@ -447,10 +557,17 @@ class ConcurrentExtractor:
         # Log only at debug level for individual records to reduce noise
         if record_name:
             logger.debug(
-                f"🔄 Processing {self.data_type[:-1]} ID={record_id}: {record_name}"
+                "🔄 Processing record",
+                data_type=self.data_type[:-1],
+                record_id=record_id,
+                name=record_name,
             )
         else:
-            logger.debug(f"🔄 Processing {self.data_type[:-1]} ID={record_id}")
+            logger.debug(
+                "🔄 Processing record",
+                data_type=self.data_type[:-1],
+                record_id=record_id,
+            )
 
         try:
             # Queue the record for async processing
@@ -478,20 +595,30 @@ class ConcurrentExtractor:
                 except TimeoutError:
                     # If we still get timeout after 30 seconds, there's a serious issue
                     logger.error(
-                        f"⚠️ Severe queue timeout for {self.data_type[:-1]} ID={record_id}. "
-                        f"Queue size: {queue_size}/5000. System may be deadlocked."
+                        "⚠️ Severe queue timeout",
+                        data_type=self.data_type[:-1],
+                        record_id=record_id,
+                        queue_size=queue_size,
+                        max_size=5000,
                     )
                     # Drop this record rather than hanging the entire process
                     self.error_count += 1
                 except Exception as queue_error:
                     logger.error(
-                        f"⚠️ Queue error for {self.data_type[:-1]} ID={record_id}: {queue_error}"
+                        "⚠️ Queue error",
+                        data_type=self.data_type[:-1],
+                        record_id=record_id,
+                        error=str(queue_error),
                     )
                     self.error_count += 1
         except Exception as e:
             self.error_count += 1
             logger.error(
-                f"❌ Error queuing {self.data_type[:-1]} ID={record_id}: {e.__class__.__name__}: {str(e) if str(e) else 'Unknown error'}"
+                "❌ Error queuing record",
+                data_type=self.data_type[:-1],
+                record_id=record_id,
+                error_type=e.__class__.__name__,
+                error_msg=str(e) if str(e) else "Unknown error",
             )
             # Continue processing other records
 
@@ -506,8 +633,12 @@ class ConcurrentExtractor:
             )
 
             logger.info(
-                f"📊 Extractor Progress: {self.total_count:,} {self.data_type} processed "
-                f"({self.error_count:,} errors, {current_tps:.1f} records/sec, elapsed: {elapsed})"
+                "📊 Extractor Progress",
+                data_type=self.data_type,
+                total_processed=self.total_count,
+                error_count=self.error_count,
+                records_per_sec=current_tps,
+                elapsed=str(elapsed),
             )
             self.last_progress_log = current_time
 
@@ -544,7 +675,7 @@ class ConcurrentExtractor:
             return True
 
         except Exception as e:
-            logger.error(f"❌ Failed to establish AMQP channel: {e}")
+            logger.error("❌ Failed to establish AMQP channel", error=str(e))
             return False
 
     def _flush_pending_messages(self) -> None:
@@ -588,15 +719,17 @@ class ConcurrentExtractor:
                     if published is False:
                         logger.warning("⚠️ Message was not routed properly")
                 except Exception as publish_error:
-                    logger.error(f"❌ Failed to publish message: {publish_error}")
+                    logger.error(
+                        "❌ Failed to publish message", error=str(publish_error)
+                    )
                     raise
 
             logger.debug(
-                f"✅ Flushed {len(messages_to_send)} messages to AMQP exchange"
+                "✅ Flushed messages to AMQP exchange", count=len(messages_to_send)
             )
 
         except Exception as e:
-            logger.error(f"❌ Error flushing messages to AMQP: {e}")
+            logger.error("❌ Error flushing messages to AMQP", error=str(e))
             # Put messages back for retry
             with self.pending_messages_lock:
                 self.pending_messages.extend(messages_to_send)
@@ -606,20 +739,55 @@ class ConcurrentExtractor:
             logger.warning("⚠️ Messages will be retried on next flush")
 
 
+def _load_processing_state(discogs_root: Path) -> dict[str, bool]:
+    """Load processing state from file."""
+    state_file = Path(discogs_root) / ".processing_state.json"
+    if not state_file.exists():
+        return {}
+
+    try:
+        with state_file.open("rb") as f:
+            data = loads(f.read())
+            # Ensure we return the correct type
+            return {k: bool(v) for k, v in data.items()}
+    except Exception as e:
+        logger.warning("⚠️ Failed to load processing state", error=str(e))
+        return {}
+
+
+def _save_processing_state(discogs_root: Path, state: dict[str, bool]) -> None:
+    """Save processing state to file."""
+    state_file = Path(discogs_root) / ".processing_state.json"
+
+    try:
+        with state_file.open("wb") as f:
+            f.write(dumps(state, option=OPT_INDENT_2))
+    except Exception as e:
+        logger.warning("⚠️ Failed to save processing state", error=str(e))
+
+
 async def process_file_async(discogs_data_file: str, config: ExtractorConfig) -> None:
     """Process a single file asynchronously."""
     try:
         extractor = ConcurrentExtractor(discogs_data_file, config)
         with extractor:
             await extractor.extract_async()
+            # Note: File completion is handled in __exit__ method where:
+            # - File completion message is sent to consumers
+            # - AMQP connection is closed
+            # - completed_files set is updated
     except Exception as e:
-        logger.error(f"❌ Failed to process {discogs_data_file}: {e}")
+        logger.error("❌ Failed to process file", file=discogs_data_file, error=str(e))
         raise
 
 
 async def process_discogs_data(config: ExtractorConfig) -> bool:
     """Process Discogs data files. Returns True if successful."""
-    global extraction_progress, last_extraction_time
+    global \
+        extraction_progress, \
+        last_extraction_time, \
+        completed_files, \
+        active_connections
 
     # Reset progress counters for new processing run
     extraction_progress = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
@@ -629,11 +797,13 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
         "masters": 0.0,
         "releases": 0.0,
     }
+    completed_files.clear()  # Clear completed files for new run
+    active_connections.clear()  # Clear active connections tracking
 
     try:
         discogs_data = download_discogs_data(str(config.discogs_root))
     except Exception as e:
-        logger.error(f"❌ Failed to download Discogs data: {e}")
+        logger.error("❌ Failed to download Discogs data", error=str(e))
         return False
 
     # Filter out checksum files
@@ -642,6 +812,27 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
     if not data_files:
         logger.warning("⚠️ No data files to process")
         return True
+
+    # Check processing state to handle restarts
+    processing_state = _load_processing_state(config.discogs_root)
+    files_to_process = []
+
+    for data_file in data_files:
+        if data_file not in processing_state or not processing_state[data_file]:
+            files_to_process.append(data_file)
+            logger.info("📋 Will process", file=data_file)
+        else:
+            logger.info("✅ Already processed", file=data_file)
+
+    if not files_to_process:
+        logger.info("✅ All files have been processed previously")
+        # Force reprocessing if explicitly requested via environment variable
+        if os.environ.get("FORCE_REPROCESS", "").lower() == "true":
+            logger.info("🔄 FORCE_REPROCESS=true, will reprocess all files")
+            files_to_process = data_files
+            processing_state = {}  # Clear processing state
+        else:
+            return True
 
     # Process files concurrently with a semaphore to limit concurrent files
     semaphore = asyncio.Semaphore(3)  # Limit to 3 concurrent files
@@ -652,8 +843,12 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
             if shutdown_requested:
                 return
             await process_file_async(file, config)
+            # Mark file as processed
+            processing_state[file] = True
+            _save_processing_state(config.discogs_root, processing_state)
+            logger.info("✅ Marked as processed", file=file)
 
-    for data_file in data_files:
+    for data_file in files_to_process:
         if shutdown_requested:
             break
         tasks.append(asyncio.create_task(process_with_semaphore(data_file)))
@@ -674,6 +869,10 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
             # Check for stalled extractors
             stalled_extractors = []
             for data_type, last_time in last_extraction_time.items():
+                # Skip if this file type has been completed
+                if data_type in completed_files:
+                    continue
+
                 if (
                     last_time > 0
                     and extraction_progress[data_type] > 0
@@ -683,16 +882,40 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
 
             if stalled_extractors:
                 logger.error(
-                    f"⚠️ Stalled extractors detected: {stalled_extractors}. "
-                    f"No data extracted for >2 minutes."
+                    "⚠️ Stalled extractors detected",
+                    stalled=stalled_extractors,
+                    message="No data extracted for >2 minutes",
                 )
 
-            # Always show progress
+            # Always show progress with completion emojis similar to other services
+            progress_parts = []
+            for data_type in ["artists", "labels", "masters", "releases"]:
+                emoji = "🎉 " if data_type in completed_files else ""
+                progress_parts.append(
+                    f"{emoji}{data_type.capitalize()}: {extraction_progress[data_type]}"
+                )
+
             logger.info(
-                f"📊 Extraction Progress: {total} total records extracted "
-                f"(Artists: {extraction_progress['artists']}, Labels: {extraction_progress['labels']}, "
-                f"Masters: {extraction_progress['masters']}, Releases: {extraction_progress['releases']})"
+                "📊 Extraction Progress",
+                total_records=total,
+                progress=", ".join(progress_parts),
             )
+
+            # Show completed files clearly
+            if completed_files:
+                logger.info("🎉 Completed files", files=sorted(completed_files))
+
+            # Show connection status
+            if active_connections:
+                logger.info(
+                    "🔗 Active AMQP connections",
+                    connections=list(active_connections.keys()),
+                )
+            elif completed_files:
+                logger.info(
+                    "🔌 Connections closed for completed files",
+                    files=sorted(completed_files),
+                )
 
             # Log current extraction state
             if total == 0:
@@ -702,6 +925,10 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
                 active_extractors = []
                 slow_extractors = []
                 for data_type, last_time in last_extraction_time.items():
+                    # Skip if this file type has been completed
+                    if data_type in completed_files:
+                        continue
+
                     if last_time > 0:
                         time_since_last = current_time - last_time
                         if time_since_last < 5:
@@ -710,14 +937,18 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
                             slow_extractors.append(data_type)
 
                 if active_extractors:
-                    logger.info(f"✅ Active extractors: {active_extractors}")
+                    logger.info("✅ Active extractors", extractors=active_extractors)
                 if slow_extractors:
-                    logger.warning(f"⚠️ Slow extractors detected: {slow_extractors}")
+                    logger.warning(
+                        "⚠️ Slow extractors detected", extractors=slow_extractors
+                    )
 
     progress_task = asyncio.create_task(progress_reporter())
 
     if tasks:
-        logger.info(f"🔄 Processing {len(tasks)} files concurrently (max 3 at once)")
+        logger.info(
+            "🔄 Processing files concurrently", count=len(tasks), max_concurrent=3
+        )
 
         try:
             # Wait for all tasks to complete, handling exceptions gracefully
@@ -726,7 +957,9 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
             # Log any exceptions
             for i, result in enumerate(results):
                 if isinstance(result, Exception):
-                    logger.error(f"❌ File {data_files[i]} failed: {result}")
+                    logger.error(
+                        "❌ File failed", file=data_files[i], error=str(result)
+                    )
                     # Don't return False here - continue with periodic checks even if some files failed
         finally:
             # Cancel progress reporting
@@ -734,21 +967,52 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
             with contextlib.suppress(asyncio.CancelledError):
                 await progress_task
 
+    # Log final completion status
+    if completed_files:
+        logger.info(
+            "🎉 All processing complete! Finished files", files=sorted(completed_files)
+        )
+
+        # Log final statistics
+        total_extracted = sum(extraction_progress.values())
+        logger.info(
+            "📊 Final statistics",
+            total_records=total_extracted,
+            message="Total records extracted across all files",
+        )
+
+        # Confirm all connections are closed
+        if not active_connections:
+            logger.info("🔌 All AMQP connections closed after file completion")
+        else:
+            logger.warning(
+                "⚠️ Unexpected active connections remaining",
+                connections=list(active_connections.keys()),
+            )
+
     return True
 
 
 async def periodic_check_loop(config: ExtractorConfig) -> None:
     """Run periodic checks for new or updated files at configured interval."""
+    global active_connections
     periodic_check_days = config.periodic_check_days
     periodic_check_seconds = periodic_check_days * 24 * 60 * 60
 
-    logger.info(
-        f"🔄 Starting periodic check loop (interval: {periodic_check_days} days)"
-    )
+    logger.info("🔄 Starting periodic check loop", interval_days=periodic_check_days)
 
     while True:
         # Wait for the specified interval
-        logger.info(f"⏰ Waiting {periodic_check_days} days before next check...")
+        logger.info("⏰ Waiting before next check", days=periodic_check_days)
+
+        # Verify all connections are closed during wait
+        if not active_connections:
+            logger.info("✅ No active connections during wait period")
+        else:
+            logger.warning(
+                "⚠️ Unexpected active connections",
+                connections=list(active_connections.keys()),
+            )
 
         # Use shorter sleep intervals to check for shutdown more frequently
         elapsed_seconds = 0
@@ -769,8 +1033,9 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
                 hours_elapsed = elapsed_seconds // 3600
                 hours_remaining = (periodic_check_seconds - elapsed_seconds) // 3600
                 logger.info(
-                    f"⏰ Periodic check timer: {hours_elapsed} hours elapsed, "
-                    f"{hours_remaining} hours remaining"
+                    "⏰ Periodic check timer",
+                    hours_elapsed=hours_elapsed,
+                    hours_remaining=hours_remaining,
                 )
 
         if shutdown_requested:
@@ -779,6 +1044,7 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
 
         # Perform the periodic check
         logger.info("🔄 Starting periodic check for new or updated Discogs files...")
+        logger.info("🔄 Re-establishing connections for data check...")
         check_start_time = datetime.now()
 
         try:
@@ -787,17 +1053,37 @@ async def periodic_check_loop(config: ExtractorConfig) -> None:
 
             if success:
                 logger.info(
-                    f"✅ Periodic check completed successfully in {check_duration}. "
-                    f"Next check in {periodic_check_days} days."
+                    "✅ Periodic check completed successfully",
+                    duration=str(check_duration),
+                    next_check_days=periodic_check_days,
                 )
+
+                # Log what was processed in this check
+                if completed_files:
+                    logger.info(
+                        "🎉 Files processed in this check",
+                        files=sorted(completed_files),
+                    )
+                else:
+                    logger.info("ℹ️ No new files found in this check")
+
+                # Verify connections are closed
+                if not active_connections:
+                    logger.info("🔌 All connections closed after periodic check")
+                else:
+                    logger.warning(
+                        "⚠️ Active connections remaining",
+                        connections=list(active_connections.keys()),
+                    )
             else:
                 logger.error(
-                    f"❌ Periodic check failed after {check_duration}. "
-                    f"Will retry in {periodic_check_days} days."
+                    "❌ Periodic check failed",
+                    duration=str(check_duration),
+                    retry_days=periodic_check_days,
                 )
         except Exception as e:
-            logger.error(f"❌ Error during periodic check: {e}")
-            logger.info(f"⏳ Will retry in {periodic_check_days} days.")
+            logger.error("❌ Error during periodic check", error=str(e))
+            logger.info("⏳ Will retry", days=periodic_check_days)
 
 
 async def main_async() -> None:
@@ -811,7 +1097,7 @@ async def main_async() -> None:
     try:
         config = ExtractorConfig.from_env()
     except ValueError as e:
-        logger.error(f"❌ Configuration error: {e}")
+        logger.error("❌ Configuration error", error=str(e))
         sys.exit(1)
 
     # fmt: off
@@ -834,11 +1120,13 @@ async def main_async() -> None:
     logger.info(
         "🚀 Starting Discogs data extractor with concurrent processing and periodic checks"
     )
+    logger.info("📋 Will check for incomplete processing from previous runs")
+    logger.info("💡 Tip: Set FORCE_REPROCESS=true to reprocess all files")
 
     # Start health server
     health_server = HealthServer(8000, get_health_data)
     health_server.start_background()
-    logger.info("🏥 Health server started on port 8000")
+    logger.info("🏥 Health server started", port=8000)
 
     # Process initial data
     logger.info("📥 Starting initial data processing...")
@@ -849,6 +1137,12 @@ async def main_async() -> None:
         sys.exit(1)
 
     logger.info("✅ Initial data processing completed successfully")
+
+    # Log summary of what was processed
+    if completed_files:
+        logger.info("🎉 Initial processing complete", files=sorted(completed_files))
+    if not active_connections:
+        logger.info("🔌 All connections properly closed after initial processing")
 
     # Start periodic check loop
     if not shutdown_requested:
@@ -867,7 +1161,7 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("⚠️ Extractor interrupted by user")
     except Exception as e:
-        logger.error(f"❌ Extractor failed: {e}")
+        logger.error("❌ Extractor failed", error=str(e))
         sys.exit(1)
 
 

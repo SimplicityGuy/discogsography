@@ -1,0 +1,56 @@
+---
+name: "Retry Step"
+description: "Retry a command with exponential backoff"
+author: "SimplicityGuy"
+
+inputs:
+  command:
+    description: "Command to run"
+    required: true
+  max-attempts:
+    description: "Maximum number of attempts"
+    required: false
+    default: "3"
+  retry-delay:
+    description: "Initial delay between retries in seconds"
+    required: false
+    default: "10"
+  timeout-minutes:
+    description: "Timeout for each attempt in minutes"
+    required: false
+    default: "5"
+
+runs:
+  using: composite
+  steps:
+    - name: 🔄 Run with retry
+      shell: bash
+      run: |
+        attempts=0
+        delay=${{ inputs.retry-delay }}
+        max_attempts=${{ inputs.max-attempts }}
+
+        while [ $attempts -lt $max_attempts ]; do
+          attempts=$((attempts + 1))
+          echo "::group::Attempt $attempts of $max_attempts"
+
+          if timeout ${{ inputs.timeout-minutes }}m bash -c "${{ inputs.command }}"; then
+            echo "✅ Command succeeded on attempt $attempts"
+            echo "::endgroup::"
+            exit 0
+          else
+            exit_code=$?
+            echo "❌ Command failed with exit code $exit_code on attempt $attempts"
+            echo "::endgroup::"
+
+            if [ $attempts -lt $max_attempts ]; then
+              echo "⏳ Waiting ${delay}s before retry..."
+              sleep $delay
+              # Exponential backoff
+              delay=$((delay * 2))
+            fi
+          fi
+        done
+
+        echo "❌ All $max_attempts attempts failed"
+        exit 1

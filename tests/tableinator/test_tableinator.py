@@ -1,5 +1,7 @@
 """Tests for tableinator module."""
 
+import asyncio
+import contextlib
 import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -217,16 +219,35 @@ class TestMain:
 
         # Simulate shutdown by setting shutdown_requested
         with patch("tableinator.tableinator.shutdown_requested", False):
-            # Make the main loop exit after setup
-            async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
-                # Set shutdown_requested to exit the loop
-                import tableinator.tableinator
+            # Track created tasks
+            created_tasks = []
 
-                tableinator.tableinator.shutdown_requested = True
-                raise TimeoutError()
+            # Mock create_task to capture and return real tasks
+            original_create_task = asyncio.create_task
 
-            with patch("asyncio.wait_for", mock_wait_for):
-                await main()
+            def mock_create_task(coro: Any) -> asyncio.Task[Any]:
+                task = original_create_task(coro)
+                created_tasks.append(task)
+                return task
+
+            with patch("asyncio.create_task", side_effect=mock_create_task):
+                # Make the main loop exit after setup
+                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+                    # Set shutdown_requested to exit the loop
+                    import tableinator.tableinator
+
+                    tableinator.tableinator.shutdown_requested = True
+                    raise TimeoutError()
+
+                with patch("asyncio.wait_for", mock_wait_for):
+                    await main()
+
+            # Clean up any created tasks
+            for task in created_tasks:
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
 
         # Verify setup was performed
         assert mock_pool_class.call_count == 1
@@ -413,16 +434,35 @@ class TestMain:
 
         # Simulate shutdown by setting shutdown_requested
         with patch("tableinator.tableinator.shutdown_requested", False):
-            # Make the main loop exit after setup
-            async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
-                # Set shutdown_requested to exit the loop
-                import tableinator.tableinator
+            # Track created tasks
+            created_tasks = []
 
-                tableinator.tableinator.shutdown_requested = True
-                raise TimeoutError()
+            # Mock create_task to capture and return real tasks
+            original_create_task = asyncio.create_task
 
-            with patch("asyncio.wait_for", mock_wait_for):
-                await main()
+            def mock_create_task(coro: Any) -> asyncio.Task[Any]:
+                task = original_create_task(coro)
+                created_tasks.append(task)
+                return task
+
+            with patch("asyncio.create_task", side_effect=mock_create_task):
+                # Make the main loop exit after setup
+                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+                    # Set shutdown_requested to exit the loop
+                    import tableinator.tableinator
+
+                    tableinator.tableinator.shutdown_requested = True
+                    raise TimeoutError()
+
+                with patch("asyncio.wait_for", mock_wait_for):
+                    await main()
+
+            # Clean up any created tasks
+            for task in created_tasks:
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
 
         # Verify database was created
         assert mock_admin_cursor.execute.call_count == 2  # 1 check + 1 CREATE DATABASE

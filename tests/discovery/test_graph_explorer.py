@@ -304,7 +304,7 @@ class TestGraphExplorerAPI:
 
             query = GraphQuery(query_type="expand", node_id="123")
 
-            graph_data, path_result = await explore_graph(query)
+            graph_data, _path_result = await explore_graph(query)
 
             assert isinstance(graph_data, dict)
 

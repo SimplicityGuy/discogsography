@@ -22,8 +22,12 @@ dependencies = [
     "aio-pika>=9.0.0",
     "dict-hash>=1.1.0",
     "multidict>=6.5.1",
+    "neo4j>=5.0.0",
     "orjson>=3.9.0",
+    "pika>=1.3.0",
+    "psycopg[binary]>=3.0.0",
     "redis[hiredis]>=6.2.0",
+    "structlog>=24.0.0",
     "tqdm>=4.65.0",
 ]
 
@@ -39,7 +43,7 @@ dashboard = [
     "uvicorn[standard]>=0.34.0",
     "websockets>=14.2",
 ]
-extractor = [
+pyextractor = [
     "boto3>=1.34.0",
     "pika>=1.3.0",
     "xmltodict>=0.13.0",
@@ -63,7 +67,6 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pre-commit>=3.5.0",
     "ruff>=0.1.0",
-    "taskipy>=1.14.0",
     "types-tqdm>=4.67.0.20250516",
     "types-xmltodict>=0.14.0.20241009",
     "types-psutil>=6.1.0.20241102",
@@ -84,17 +87,17 @@ discovery = [
     "uvicorn[standard]>=0.34.0",
     "websockets>=14.2",
     # Discovery-specific dependencies
-    "networkx>=3.2.1",           # Graph algorithms
-    "numpy>=1.26.0",             # Numerical computations
-    "pandas>=2.1.0",             # Data analysis
-    "scikit-learn>=1.3.0",       # Machine learning
-    "sentence-transformers>=2.2.0",  # Semantic search
-    "plotly>=5.17.0",            # Advanced visualizations
-    "sqlalchemy[asyncio]>=2.0.0",  # Async SQL toolkit
-    "asyncpg>=0.29.0",           # Async PostgreSQL driver
+    "networkx>=3.2.1",                  # Graph algorithms
+    "numpy>=1.26.0",                    # Numerical computations
+    "pandas>=2.1.0",                    # Data analysis
+    "scikit-learn>=1.3.0",              # Machine learning
+    "sentence-transformers[onnx]>=2.2.0",   # Semantic search with ONNX backend
+    "plotly>=5.17.0",                   # Advanced visualizations
+    "sqlalchemy[asyncio]>=2.0.0",       # Async SQL toolkit
+    "asyncpg>=0.29.0",                  # Async PostgreSQL driver
 ]
 all = [
-    "discogsography[dashboard,discovery,extractor,graphinator,tableinator,dev,utilities]",
+    "discogsography[dashboard,discovery,pyextractor,graphinator,tableinator,dev,utilities]",
 ]
 
 [tool.ruff.format]
@@ -145,7 +148,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"*/extractor.py" = ["T201"]  # Allow print statements for ASCII art
+"*/extractor.py" = ["T201"]    # Allow print statements for ASCII art
 "*/graphinator.py" = ["T201"]  # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]  # Allow print statements for ASCII art
 
@@ -193,7 +196,7 @@ module = "tests.*"
 disallow_untyped_decorators = false
 
 [tool.coverage.run]
-source = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
+source = ["common", "dashboard", "discovery", "extractor/pyextractor", "graphinator", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
 
 [tool.coverage.report]
@@ -240,7 +243,16 @@ dev = [
     "types-xmltodict>=0.14.0.20241009",
     "types-psutil>=6.1.0.20241102",
     "pytest-timeout>=2.4.0",
+    "mdformat>=0.7.22",
+    "mdformat-black>=0.1.1",
+    "mdformat-gfm>=0.4.1",
+    "mdformat-tables>=1.0.0",
 ]
+
+[tool.mdformat]
+wrap = "no"  # Don't wrap lines
+number = false  # Don't number headings
+end_of_line = "lf"  # Use Unix line endings
 
 [tool.bandit]
 exclude_dirs = [".venv", "tests", "venv", "*/.venv/*", "*/venv/*"]
@@ -261,69 +273,15 @@ split_on_trailing_comma = true
 
 # uv workspace configuration
 [tool.uv.workspace]
-members = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
+members = ["common", "dashboard", "discovery", "extractor/pyextractor", "graphinator", "tableinator"]
 
 # Environment restrictions for uv to avoid iOS and other incompatible platforms
 [tool.uv]
 environments = [
     # Only support Linux platforms that we build for in CI/CD
-    "sys_platform == 'linux' and platform_machine == 'x86_64'",  # linux/amd64
+    "sys_platform == 'linux' and platform_machine == 'x86_64'",   # linux/amd64
     "sys_platform == 'linux' and platform_machine == 'aarch64'",  # linux/arm64
     # Also support local development on macOS
     "sys_platform == 'darwin' and platform_machine == 'x86_64'",  # macOS Intel
     "sys_platform == 'darwin' and platform_machine == 'arm64'",   # macOS Apple Silicon
 ]
-
-# taskipy configuration for task automation
-[tool.taskipy.tasks]
-# Development tasks
-install = "uv sync --all-extras"
-lint = "uv run pre-commit run --all-files"
-lint-python = "uv run ruff check . && uv run mypy ."
-format = "uv run ruff format ."
-test = "uv run pytest -m 'not e2e'"
-test-cov = "uv run pytest --cov -m 'not e2e'"
-test-e2e = "uv run pytest tests/dashboard/test_dashboard_ui.py -v"
-test-all = "uv run pytest"
-security = "uv run bandit -r . -x './.venv/*,./tests/*'"
-
-# Cleanup tasks
-clean = """
-find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name ".ruff_cache" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name ".mypy_cache" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "htmlcov" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "dist" -exec rm -rf {} + 2>/dev/null || true;
-find . -type d -name "build" -exec rm -rf {} + 2>/dev/null || true;
-find . -type f -name "*.pyc" -delete 2>/dev/null || true;
-find . -type f -name "*.pyo" -delete 2>/dev/null || true;
-find . -type f -name ".coverage" -delete 2>/dev/null || true;
-find . -type f -name "coverage.xml" -delete 2>/dev/null || true;
-echo "✅ Cleanup complete!"
-"""
-clean-all = "task clean && rm -rf .venv && echo '✅ Deep cleanup complete! Run task install to reinstall.'"
-
-# Service tasks
-dashboard = "uv run python dashboard/dashboard.py"
-discovery = "uv run python discovery/discovery.py"
-extractor = "uv run python extractor/extractor.py"
-graphinator = "uv run python graphinator/graphinator.py"
-tableinator = "uv run python tableinator/tableinator.py"
-
-# Docker tasks
-up = "docker-compose up -d"
-down = "docker-compose down"
-logs = "docker-compose logs -f"
-rebuild = "docker-compose down && docker-compose build && docker-compose up -d"
-build-prod = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml build"
-deploy-prod = "docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d"
-
-# Utility tasks
-monitor = "uv run python utilities/monitor_queues.py"
-check-errors = "uv run python utilities/check_errors.py"
-system-monitor = "uv run python utilities/system_monitor.py"
-check-updates = "uv pip list --outdated"
-update-hooks = "uv run pre-commit autoupdate --freeze"
-init = "uv run pre-commit install && echo '✅ Pre-commit hooks installed!'"

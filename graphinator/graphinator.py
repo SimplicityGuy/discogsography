@@ -1,12 +1,15 @@
 import asyncio
 import contextlib
 import logging
+import os
 import signal
 import time
 from asyncio import run
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
     AMQP_EXCHANGE,
@@ -23,7 +26,7 @@ from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
 from orjson import loads
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Suppress Neo4j notifications for missing labels/properties during initial setup
 logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
@@ -35,11 +38,35 @@ config: GraphinatorConfig | None = None
 message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+completed_files: set[str] = set()  # Track which files have completed processing
 current_task = None
 current_progress = 0.0
 
+# Consumer management
+consumer_tags: dict[str, str] = {}  # {"artists": "consumer-tag-123", ...}
+consumer_cancel_tasks: dict[
+    str, asyncio.Task[None]
+] = {}  # {"artists": asyncio.Task, ...}
+queues: dict[str, Any] = {}  # {"artists": queue_object, ...}
+CONSUMER_CANCEL_DELAY = int(
+    os.environ.get("CONSUMER_CANCEL_DELAY", "300")
+)  # Default 5 minutes
+
+# Periodic queue checking settings
+QUEUE_CHECK_INTERVAL = int(
+    os.environ.get("QUEUE_CHECK_INTERVAL", "3600")
+)  # Default 1 hour - how often to check for new messages when connection is closed
+
 # Driver will be initialized in main
 graph: ResilientNeo4jDriver | None = None
+
+# Connection state tracking
+rabbitmq_manager: Any = None  # Will hold AsyncResilientRabbitMQ instance
+active_connection: Any = None  # Current active connection
+active_channel: Any = None  # Current active channel
+connection_check_task: asyncio.Task[None] | None = (
+    None  # Background task for periodic queue checks
+)
 
 # Global shutdown flag
 shutdown_requested = False
@@ -47,7 +74,6 @@ shutdown_requested = False
 
 def get_health_data() -> dict[str, Any]:
     """Get current health data for monitoring."""
-    from datetime import datetime
 
     return {
         "status": "healthy" if graph else "unhealthy",
@@ -63,7 +89,9 @@ def get_health_data() -> dict[str, Any]:
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    logger.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
+    logger.info(
+        "🛑 Received signal signum, initiating graceful shutdown...", signum=signum
+    )
     shutdown_requested = True
 
 
@@ -76,7 +104,12 @@ def get_existing_hash(session: Any, node_type: str, node_id: str) -> str | None:
         record = result.single()
         return record["hash"] if record else None
     except Exception as e:
-        logger.warning(f"⚠️ Error checking existing hash for {node_type} {node_id}: {e}")
+        logger.warning(
+            "⚠️ Error checking existing hash for node_type node_id: e",
+            node_type=node_type,
+            node_id=node_id,
+            e=e,
+        )
         return None
 
 
@@ -86,11 +119,226 @@ def safe_execute_query(session: Any, query: str, parameters: dict[str, Any]) -> 
         session.run(query, parameters)
         return True
     except Neo4jError as e:
-        logger.error(f"❌ Neo4j error executing query: {e}")
+        logger.error("❌ Neo4j error executing query: e", e=e)
         return False
     except Exception as e:
-        logger.error(f"❌ Unexpected error executing query: {e}")
+        logger.error("❌ Unexpected error executing query: e", e=e)
         return False
+
+
+async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
+    """Schedule cancellation of a consumer after a delay."""
+
+    async def cancel_after_delay() -> None:
+        try:
+            await asyncio.sleep(CONSUMER_CANCEL_DELAY)
+
+            if data_type in consumer_tags:
+                consumer_tag = consumer_tags[data_type]
+                logger.info(
+                    f"🔌 Canceling consumer for {data_type} after {CONSUMER_CANCEL_DELAY}s grace period"
+                )
+
+                # Cancel the consumer with nowait to avoid hanging
+                await queue.cancel(consumer_tag, nowait=True)
+
+                # Remove from tracking
+                del consumer_tags[data_type]
+
+                logger.info(
+                    "✅ Consumer for data_type successfully canceled",
+                    data_type=data_type,
+                )
+
+                # Check if all consumers are now idle
+                if await check_all_consumers_idle():
+                    logger.info("🔌 All consumers idle, closing RabbitMQ connection")
+                    await close_rabbitmq_connection()
+        except Exception as e:
+            logger.error(
+                "❌ Failed to cancel consumer for data_type: e",
+                data_type=data_type,
+                e=e,
+            )
+        finally:
+            # Clean up the task reference
+            if data_type in consumer_cancel_tasks:
+                del consumer_cancel_tasks[data_type]
+
+    # Cancel any existing scheduled cancellation
+    if data_type in consumer_cancel_tasks:
+        consumer_cancel_tasks[data_type].cancel()
+
+    # Schedule new cancellation
+    consumer_cancel_tasks[data_type] = asyncio.create_task(cancel_after_delay())
+
+
+async def close_rabbitmq_connection() -> None:
+    """Close the RabbitMQ connection and channel when all consumers are idle."""
+    global active_connection, active_channel
+
+    try:
+        if active_channel:
+            try:
+                await active_channel.close()
+                logger.info("🔌 Closed RabbitMQ channel - all consumers idle")
+            except Exception as e:
+                logger.warning("⚠️ Error closing channel", error=str(e))
+            active_channel = None
+
+        if active_connection:
+            try:
+                await active_connection.close()
+                logger.info("🔌 Closed RabbitMQ connection - all consumers idle")
+            except Exception as e:
+                logger.warning("⚠️ Error closing connection", error=str(e))
+            active_connection = None
+
+        logger.info(
+            f"✅ RabbitMQ connection closed. Will check for new messages every {QUEUE_CHECK_INTERVAL}s"
+        )
+    except Exception as e:
+        logger.error(f"❌ Error closing RabbitMQ connection: {e}")
+
+
+async def check_all_consumers_idle() -> bool:
+    """Check if all consumers are cancelled (idle)."""
+    return len(consumer_tags) == 0 and len(DATA_TYPES) == len(completed_files)
+
+
+async def periodic_queue_checker() -> None:
+    """Periodically check all queues for pending messages when connection is closed."""
+    global active_connection, active_channel, queues, consumer_tags
+
+    while not shutdown_requested:
+        try:
+            await asyncio.sleep(QUEUE_CHECK_INTERVAL)
+
+            # Only check if all consumers are idle and connection is closed
+            if not await check_all_consumers_idle() or active_connection:
+                continue
+
+            logger.info("🔄 Checking all queues for new messages...")
+
+            # Temporarily connect to check queue depths
+            temp_connection = await rabbitmq_manager.connect()
+            temp_channel = await temp_connection.channel()
+
+            try:
+                # Check each queue for pending messages
+                queues_with_messages = []
+                for data_type in DATA_TYPES:
+                    queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+
+                    # Use queue.declare with passive=True to get message count without affecting the queue
+                    declared_queue = await temp_channel.declare_queue(
+                        name=queue_name, passive=True
+                    )
+
+                    if declared_queue.declaration_result.message_count > 0:
+                        queues_with_messages.append(
+                            (data_type, declared_queue.declaration_result.message_count)
+                        )
+
+                if queues_with_messages:
+                    logger.info(
+                        f"📬 Found messages in queues, restarting consumers: {queues_with_messages}"
+                    )
+
+                    # Re-establish full connection and start consuming
+                    active_connection = temp_connection
+                    active_channel = temp_channel
+
+                    # Declare exchange and queues
+                    exchange = await active_channel.declare_exchange(
+                        AMQP_EXCHANGE,
+                        AMQP_EXCHANGE_TYPE,
+                        durable=True,
+                        auto_delete=False,
+                    )
+
+                    # Set QoS
+                    await active_channel.set_qos(prefetch_count=1, global_=True)
+
+                    # Declare and bind all queues
+                    queues = {}
+                    for data_type in DATA_TYPES:
+                        queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+                        queue = await active_channel.declare_queue(
+                            auto_delete=False, durable=True, name=queue_name
+                        )
+                        await queue.bind(exchange, routing_key=data_type)
+                        queues[data_type] = queue
+
+                    # Start consumers for queues with messages
+                    for data_type, _ in queues_with_messages:
+                        if data_type in queues and data_type not in consumer_tags:
+                            # Get appropriate handler for this data type
+                            handler = None
+                            if data_type == "artists":
+                                handler = on_artist_message
+                            elif data_type == "labels":
+                                handler = on_label_message
+                            elif data_type == "masters":
+                                handler = on_master_message
+                            elif data_type == "releases":
+                                handler = on_release_message
+
+                            if handler:
+                                consumer_tag = await queues[data_type].consume(
+                                    handler, consumer_tag=f"graphinator-{data_type}"
+                                )
+                                consumer_tags[data_type] = consumer_tag
+                                # Remove from completed files so it will be processed
+                                completed_files.discard(data_type)
+                                last_message_time[data_type] = time.time()
+                                logger.info(f"✅ Started consumer for {data_type}")
+
+                    # Don't close temp_connection since we're using it as active_connection
+                else:
+                    logger.info(
+                        "📭 No messages in any queue, connection remains closed"
+                    )
+                    # Close the temporary connection
+                    await temp_channel.close()
+                    await temp_connection.close()
+
+            except Exception as e:
+                logger.error(f"❌ Error checking queues: {e}")
+                # Make sure to close temporary connection on error
+                try:
+                    await temp_channel.close()
+                    await temp_connection.close()
+                except Exception:  # nosec: B110
+                    pass
+
+        except asyncio.CancelledError:
+            logger.info("🛑 Queue checker task cancelled")
+            break
+        except Exception as e:
+            logger.error(f"❌ Error in periodic queue checker: {e}")
+            # Continue running despite errors
+
+
+async def check_file_completion(
+    data: dict[str, Any], data_type: str, message: AbstractIncomingMessage
+) -> bool:
+    """Check if message is a file completion message and handle it."""
+    if data.get("type") == "file_complete":
+        completed_files.add(data_type)
+        total_processed = data.get("total_processed", 0)
+        logger.info(
+            f"🎉 File processing complete for {data_type}! "
+            f"Total records processed: {total_processed}"
+        )
+
+        # Schedule consumer cancellation if enabled
+        if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
+            await schedule_consumer_cancellation(data_type, queues[data_type])
+
+        await message.ack()
+        return True
+    return False
 
 
 async def on_artist_message(message: AbstractIncomingMessage) -> None:
@@ -102,6 +350,11 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
     try:
         logger.debug("📥 Received artist message")
         artist: dict[str, Any] = loads(message.body)
+
+        # Check if this is a file completion message
+        if await check_file_completion(artist, "artists", message):
+            return
+
         artist_id = artist.get("id", "unknown")
         artist_name = artist.get("name", "Unknown Artist")
 
@@ -111,13 +364,22 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         global current_task
         current_task = "Processing artists"
         if message_counts["artists"] % progress_interval == 0:
-            logger.info(f"📊 Processed {message_counts['artists']} artists in Neo4j")
+            logger.info(
+                "📊 Processed message_counts artists in Neo4j",
+                message_counts=message_counts["artists"],
+            )
 
-        logger.debug(f"🔄 Received artist message ID={artist_id}: {artist_name}")
+        logger.debug(
+            "🔄 Received artist message ID=artist_id: artist_name",
+            artist_id=artist_id,
+            artist_name=artist_name,
+        )
 
         # Process entire artist in a single session with proper transaction handling
         try:
-            logger.debug(f"🔄 Starting transaction for artist ID={artist_id}")
+            logger.debug(
+                "🔄 Starting transaction for artist ID=artist_id", artist_id=artist_id
+            )
             # Get session from resilient driver
             if graph is None:
                 raise RuntimeError("Neo4j driver not initialized")
@@ -162,7 +424,12 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                             # Filter and log members without IDs
                             valid_members = []
                             for member in members_list:
-                                member_id = member.get("@id") or member.get("id")
+                                # Handle both string ID and dict with @id/id fields
+                                if isinstance(member, str):
+                                    member_id = member
+                                else:
+                                    member_id = member.get("@id") or member.get("id")
+
                                 if member_id:
                                     valid_members.append({"id": member_id})
                                 else:
@@ -193,7 +460,12 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                             # Filter and log groups without IDs
                             valid_groups = []
                             for group in groups_list:
-                                group_id = group.get("@id") or group.get("id")
+                                # Handle both string ID and dict with @id/id fields
+                                if isinstance(group, str):
+                                    group_id = group
+                                else:
+                                    group_id = group.get("@id") or group.get("id")
+
                                 if group_id:
                                     valid_groups.append({"id": group_id})
                                 else:
@@ -224,7 +496,12 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                             # Filter and log aliases without IDs
                             valid_aliases = []
                             for alias in aliases_list:
-                                alias_id = alias.get("@id") or alias.get("id")
+                                # Handle both string ID and dict with @id/id fields
+                                if isinstance(alias, str):
+                                    alias_id = alias
+                                else:
+                                    alias_id = alias.get("@id") or alias.get("id")
+
                                 if alias_id:
                                     valid_aliases.append({"id": alias_id})
                                 else:
@@ -246,13 +523,21 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                     return True  # Updated successfully
 
                 # Execute the transaction with explicit timeout
-                logger.debug(f"🔄 Executing transaction for artist ID={artist_id}")
+                logger.debug(
+                    "🔄 Executing transaction for artist ID=artist_id",
+                    artist_id=artist_id,
+                )
                 # Session configuration is done at creation time
                 updated = session.execute_write(process_artist_tx)
-                logger.debug(f"✅ Transaction completed for artist ID={artist_id}")
+                logger.debug(
+                    "✅ Transaction completed for artist ID=artist_id",
+                    artist_id=artist_id,
+                )
 
                 if updated:
-                    logger.debug(f"💾 Updated artist ID={artist_id} in Neo4j")
+                    logger.debug(
+                        "💾 Updated artist ID=artist_id in Neo4j", artist_id=artist_id
+                    )
                 else:
                     logger.debug(
                         f"⏩ Skipped artist ID={artist_id} (no changes needed)"
@@ -268,21 +553,27 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
             )
             raise
 
-        logger.debug(f"✅ Acknowledging artist message ID={artist_id}")
+        logger.debug(
+            "✅ Acknowledging artist message ID=artist_id", artist_id=artist_id
+        )
         await message.ack()
-        logger.debug(f"✅ Completed artist message ID={artist_id}")
+        logger.debug("✅ Completed artist message ID=artist_id", artist_id=artist_id)
     except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning(f"⚠️ Neo4j unavailable, will retry artist message: {e}")
+        logger.warning("⚠️ Neo4j unavailable, will retry artist message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
     except Exception as e:
-        logger.error(f"❌ Failed to process artist message: {e}")
+        logger.error("❌ Failed to process artist message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
 
 
 async def on_label_message(message: AbstractIncomingMessage) -> None:
@@ -294,6 +585,11 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
     try:
         logger.debug("📥 Received label message")
         label: dict[str, Any] = loads(message.body)
+
+        # Check if this is a file completion message
+        if await check_file_completion(label, "labels", message):
+            return
+
         label_id = label.get("id", "unknown")
         label_name = label.get("name", "Unknown Label")
 
@@ -303,9 +599,16 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         global current_task
         current_task = "Processing labels"
         if message_counts["labels"] % progress_interval == 0:
-            logger.info(f"📊 Processed {message_counts['labels']} labels in Neo4j")
+            logger.info(
+                "📊 Processed message_counts labels in Neo4j",
+                message_counts=message_counts["labels"],
+            )
 
-        logger.debug(f"🔄 Processing label ID={label_id}: {label_name}")
+        logger.debug(
+            "🔄 Processing label ID=label_id: label_name",
+            label_id=label_id,
+            label_name=label_name,
+        )
 
         # Process entire label in a single session with proper transaction handling
         if graph is None:
@@ -333,9 +636,15 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
                 )
 
                 # Handle parent label relationship
-                parent: dict[str, Any] | None = label.get("parentLabel")
+                parent: dict[str, Any] | str | None = label.get("parentLabel")
                 if parent is not None:
-                    parent_id = parent.get("@id") or parent.get("id")
+                    # Handle both string ID and dict with @id/id fields
+                    parent_id: str | None
+                    if isinstance(parent, str):
+                        parent_id = parent
+                    else:
+                        parent_id = parent.get("@id") or parent.get("id")
+
                     if parent_id:
                         tx.run(
                             "MATCH (l:Label {id: $id}) "
@@ -350,18 +659,36 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
                         )
 
                 # Handle sublabels in batch
-                sublabels: dict[str, Any] | None = label.get("sublabels")
+                sublabels: dict[str, Any] | list[Any] | str | None = label.get(
+                    "sublabels"
+                )
                 if sublabels is not None:
-                    sublabels_list = (
-                        sublabels["label"]
-                        if isinstance(sublabels["label"], list)
-                        else [sublabels["label"]]
-                    )
+                    # Handle different sublabel formats
+                    sublabels_list: list[Any] = []
+                    if isinstance(sublabels, str):
+                        # Single string ID
+                        sublabels_list = [sublabels]
+                    elif isinstance(sublabels, list):
+                        # Direct list of items
+                        sublabels_list = sublabels
+                    elif isinstance(sublabels, dict) and "label" in sublabels:
+                        # Nested dict with "label" key
+                        sublabels_list = (
+                            sublabels["label"]
+                            if isinstance(sublabels["label"], list)
+                            else [sublabels["label"]]
+                        )
+
                     if sublabels_list:
                         # Filter and log sublabels without IDs
                         valid_sublabels = []
                         for sublabel in sublabels_list:
-                            sublabel_id = sublabel.get("@id") or sublabel.get("id")
+                            # Handle both string ID and dict with @id/id fields
+                            if isinstance(sublabel, str):
+                                sublabel_id = sublabel
+                            else:
+                                sublabel_id = sublabel.get("@id") or sublabel.get("id")
+
                             if sublabel_id:
                                 valid_sublabels.append({"id": sublabel_id})
                             else:
@@ -387,23 +714,30 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
             updated = session.execute_write(process_label_tx)
 
             if updated:
-                logger.debug(f"💾 Updated label ID={label_id} in Neo4j")
+                logger.debug("💾 Updated label ID=label_id in Neo4j", label_id=label_id)
             else:
-                logger.debug(f"⏩ Skipped label ID={label_id} (no changes needed)")
+                logger.debug(
+                    "⏩ Skipped label ID=label_id (no changes needed)",
+                    label_id=label_id,
+                )
 
         await message.ack()
     except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning(f"⚠️ Neo4j unavailable, will retry label message: {e}")
+        logger.warning("⚠️ Neo4j unavailable, will retry label message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
     except Exception as e:
-        logger.error(f"❌ Failed to process label message: {e}")
+        logger.error("❌ Failed to process label message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
 
 
 async def on_master_message(message: AbstractIncomingMessage) -> None:
@@ -415,6 +749,11 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
     try:
         logger.debug("📥 Received master message")
         master: dict[str, Any] = loads(message.body)
+
+        # Check if this is a file completion message
+        if await check_file_completion(master, "masters", message):
+            return
+
         master_id = master.get("id", "unknown")
         master_title = master.get("title", "Unknown Master")
 
@@ -424,9 +763,16 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         global current_task
         current_task = "Processing masters"
         if message_counts["masters"] % progress_interval == 0:
-            logger.info(f"📊 Processed {message_counts['masters']} masters in Neo4j")
+            logger.info(
+                "📊 Processed message_counts masters in Neo4j",
+                message_counts=message_counts["masters"],
+            )
 
-        logger.debug(f"🔄 Processing master ID={master_id}: {master_title}")
+        logger.debug(
+            "🔄 Processing master ID=master_id: master_title",
+            master_id=master_id,
+            master_title=master_title,
+        )
 
         # Process entire master in a single session with proper transaction handling
         if graph is None:
@@ -467,7 +813,12 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
                         # Filter and log artists without IDs
                         valid_artists = []
                         for artist in artists_list:
-                            artist_id = artist.get("id") or artist.get("@id")
+                            # Handle both string ID and dict with @id/id fields
+                            if isinstance(artist, str):
+                                artist_id = artist
+                            else:
+                                artist_id = artist.get("id") or artist.get("@id")
+
                             if artist_id:
                                 valid_artists.append({"id": artist_id})
                             else:
@@ -543,17 +894,24 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
             updated = session.execute_write(process_master_tx)
 
             if updated:
-                logger.debug(f"💾 Updated master ID={master_id} in Neo4j")
+                logger.debug(
+                    "💾 Updated master ID=master_id in Neo4j", master_id=master_id
+                )
             else:
-                logger.debug(f"⏩ Skipped master ID={master_id} (no changes needed)")
+                logger.debug(
+                    "⏩ Skipped master ID=master_id (no changes needed)",
+                    master_id=master_id,
+                )
 
         await message.ack()
     except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning(f"⚠️ Neo4j unavailable, will retry master message: {e}")
+        logger.warning("⚠️ Neo4j unavailable, will retry master message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
     except Exception as e:
         # Include more context in error message
         error_context = (
@@ -573,7 +931,9 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
 
 
 async def on_release_message(message: AbstractIncomingMessage) -> None:
@@ -585,6 +945,11 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
     try:
         logger.debug("📥 Received release message")
         release: dict[str, Any] = loads(message.body)
+
+        # Check if this is a file completion message
+        if await check_file_completion(release, "releases", message):
+            return
+
         release_id = release.get("id", "unknown")
         release_title = release.get("title", "Unknown Release")
 
@@ -594,9 +959,16 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         global current_task
         current_task = "Processing releases"
         if message_counts["releases"] % progress_interval == 0:
-            logger.info(f"📊 Processed {message_counts['releases']} releases in Neo4j")
+            logger.info(
+                "📊 Processed message_counts releases in Neo4j",
+                message_counts=message_counts["releases"],
+            )
 
-        logger.debug(f"🔄 Processing release ID={release_id}: {release_title}")
+        logger.debug(
+            "🔄 Processing release ID=release_id: release_title",
+            release_id=release_id,
+            release_title=release_title,
+        )
 
         # Process entire release in a single session with proper transaction handling
         if graph is None:
@@ -636,7 +1008,12 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                         # Filter and log artists without IDs
                         valid_artists = []
                         for artist in artists_list:
-                            artist_id = artist.get("id") or artist.get("@id")
+                            # Handle both string ID and dict with @id/id fields
+                            if isinstance(artist, str):
+                                artist_id = artist
+                            else:
+                                artist_id = artist.get("id") or artist.get("@id")
+
                             if artist_id:
                                 valid_artists.append({"id": artist_id})
                             else:
@@ -667,7 +1044,12 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                         # Filter and log labels without IDs
                         valid_labels = []
                         for label in labels_list:
-                            label_id = label.get("@id") or label.get("id")
+                            # Handle both string ID and dict with @id/id fields
+                            if isinstance(label, str):
+                                label_id = label
+                            else:
+                                label_id = label.get("@id") or label.get("id")
+
                             if label_id:
                                 valid_labels.append({"id": label_id})
                             else:
@@ -768,18 +1150,25 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
             updated = session.execute_write(process_release_tx)
 
             if updated:
-                logger.debug(f"💾 Updated release ID={release_id} in Neo4j")
+                logger.debug(
+                    "💾 Updated release ID=release_id in Neo4j", release_id=release_id
+                )
             else:
-                logger.debug(f"⏩ Skipped release ID={release_id} (no changes needed)")
+                logger.debug(
+                    "⏩ Skipped release ID=release_id (no changes needed)",
+                    release_id=release_id,
+                )
 
         await message.ack()
-        logger.debug(f"💾 Stored release ID={release_id} in Neo4j")
+        logger.debug("💾 Stored release ID=release_id in Neo4j", release_id=release_id)
     except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning(f"⚠️ Neo4j unavailable, will retry release message: {e}")
+        logger.warning("⚠️ Neo4j unavailable, will retry release message: e", e=e)
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
     except Exception as e:
         # Include more context in error message
         error_context = (
@@ -799,11 +1188,20 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning(
+                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            )
 
 
 async def main() -> None:
-    global config, graph
+    global \
+        config, \
+        graph, \
+        queues, \
+        rabbitmq_manager, \
+        active_connection, \
+        active_channel, \
+        connection_check_task
 
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
@@ -811,6 +1209,14 @@ async def main() -> None:
 
     setup_logging("graphinator", log_file=Path("/logs/graphinator.log"))
     logger.info("🚀 Starting Neo4j graphinator service")
+
+    # Add startup delay for dependent services
+    startup_delay = int(os.environ.get("STARTUP_DELAY", "5"))
+    if startup_delay > 0:
+        logger.info(
+            f"⏳ Waiting {startup_delay} seconds for dependent services to start..."
+        )
+        await asyncio.sleep(startup_delay)
 
     # Start health server
     health_server = HealthServer(8001, get_health_data)
@@ -821,7 +1227,7 @@ async def main() -> None:
     try:
         config = GraphinatorConfig.from_env()
     except ValueError as e:
-        logger.error(f"❌ Configuration error: {e}")
+        logger.error("❌ Configuration error: e", e=e)
         return
 
     # Initialize resilient Neo4j driver
@@ -855,12 +1261,15 @@ async def main() -> None:
                         f"✅ Created/verified constraint: {constraint.split('FOR')[1].split('REQUIRE')[0].strip()}"
                     )
                 except Exception as constraint_error:
-                    logger.warning(f"⚠️ Constraint creation note: {constraint_error}")
+                    logger.warning(
+                        "⚠️ Constraint creation note: constraint_error",
+                        constraint_error=constraint_error,
+                    )
 
             logger.info("✅ Neo4j indexes setup complete")
 
     except Exception as e:
-        logger.error(f"❌ Failed to connect to Neo4j: {e}")
+        logger.error("❌ Failed to connect to Neo4j: e", e=e)
         return
     # fmt: off
     print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗                                   ")
@@ -879,22 +1288,49 @@ async def main() -> None:
     print()
     # fmt: on
 
-    # Initialize resilient RabbitMQ connection
-    rabbitmq = AsyncResilientRabbitMQ(
+    # Initialize resilient RabbitMQ connection manager (not connecting yet)
+    rabbitmq_manager = AsyncResilientRabbitMQ(
         connection_url=config.amqp_connection,
+        max_retries=10,  # More retries for startup
         heartbeat=600,
         connection_attempts=10,
         retry_delay=5.0,
     )
 
-    try:
-        amqp_connection = await rabbitmq.connect()
-    except Exception as e:
-        logger.error(f"❌ Failed to connect to AMQP broker: {e}")
+    # Try to connect with additional retry logic for startup
+    max_startup_retries = 5
+    startup_retry = 0
+    amqp_connection = None
+
+    while startup_retry < max_startup_retries and not shutdown_requested:
+        try:
+            logger.info(
+                f"🐰 Attempting to connect to RabbitMQ (attempt {startup_retry + 1}/{max_startup_retries})"
+            )
+            amqp_connection = await rabbitmq_manager.connect()
+            active_connection = amqp_connection
+            break
+        except Exception as e:
+            startup_retry += 1
+            if startup_retry < max_startup_retries:
+                wait_time = min(30, 5 * startup_retry)  # Exponential backoff up to 30s
+                logger.warning(
+                    f"⚠️ RabbitMQ connection failed: {e}. Retrying in {wait_time} seconds..."
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(
+                    f"❌ Failed to connect to AMQP broker after {max_startup_retries} attempts: {e}"
+                )
+                return
+
+    if amqp_connection is None:
+        logger.error("❌ No AMQP connection available")
         return
 
     async with amqp_connection:
         channel = await amqp_connection.channel()
+        active_channel = channel
 
         # Set QoS to prevent overwhelming Neo4j with too many concurrent transactions
         # Reduce to minimal prefetch to force sequential processing and avoid deadlocks
@@ -921,15 +1357,17 @@ async def main() -> None:
         masters_queue = queues["masters"]
         releases_queue = queues["releases"]
 
-        # Start consumers with consumer tags for better debugging
-        await artists_queue.consume(
+        # Start consumers and store their tags
+        consumer_tags["artists"] = await artists_queue.consume(
             on_artist_message, consumer_tag="graphinator-artists"
         )
-        await labels_queue.consume(on_label_message, consumer_tag="graphinator-labels")
-        await masters_queue.consume(
+        consumer_tags["labels"] = await labels_queue.consume(
+            on_label_message, consumer_tag="graphinator-labels"
+        )
+        consumer_tags["masters"] = await masters_queue.consume(
             on_master_message, consumer_tag="graphinator-masters"
         )
-        await releases_queue.consume(
+        consumer_tags["releases"] = await releases_queue.consume(
             on_release_message, consumer_tag="graphinator-releases"
         )
 
@@ -949,14 +1387,21 @@ async def main() -> None:
                 else:
                     await asyncio.sleep(30)  # Then every 30 seconds
                 report_count += 1
+
+                # Skip all logging if all files are complete
+                if len(completed_files) == len(DATA_TYPES):
+                    continue
+
                 total = sum(message_counts.values())
                 current_time = time.time()
 
-                # Check for stalled consumers and force reconnection if needed
+                # Check for stalled consumers (skip completed files)
                 stalled_consumers = []
                 for data_type, last_time in last_message_time.items():
                     if (
-                        last_time > 0 and (current_time - last_time) > 120
+                        data_type not in completed_files
+                        and last_time > 0
+                        and (current_time - last_time) > 120
                     ):  # No messages for 2 minutes
                         stalled_consumers.append(data_type)
 
@@ -968,10 +1413,17 @@ async def main() -> None:
                     # The resilient driver will handle reconnection automatically
 
                 # Always show progress, even if no messages processed yet
+                # Build progress string with completion emojis
+                progress_parts = []
+                for data_type in ["artists", "labels", "masters", "releases"]:
+                    emoji = "🎉 " if data_type in completed_files else ""
+                    progress_parts.append(
+                        f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}"
+                    )
+
                 logger.info(
                     f"📊 Neo4j Progress: {total} total messages processed "
-                    f"(Artists: {message_counts['artists']}, Labels: {message_counts['labels']}, "
-                    f"Masters: {message_counts['masters']}, Releases: {message_counts['releases']})"
+                    f"({', '.join(progress_parts)})"
                 )
 
                 # Log current processing state
@@ -992,9 +1444,37 @@ async def main() -> None:
                         for dt, lt in last_message_time.items()
                         if lt > 0 and 5 < current_time - lt < 120
                     ]
-                    logger.warning(f"⚠️ Slow consumers detected: {slow_consumers}")
+                    logger.warning(
+                        "⚠️ Slow consumers detected: slow_consumers",
+                        slow_consumers=slow_consumers,
+                    )
+
+                # Log consumer status
+                active_consumers = list(consumer_tags.keys())
+                canceled_consumers = [
+                    dt
+                    for dt in DATA_TYPES
+                    if dt not in consumer_tags and dt in completed_files
+                ]
+
+                if canceled_consumers:
+                    logger.info(
+                        "🔌 Canceled consumers: canceled_consumers",
+                        canceled_consumers=canceled_consumers,
+                    )
+                if active_consumers:
+                    logger.info(
+                        "✅ Active consumers: active_consumers",
+                        active_consumers=active_consumers,
+                    )
 
         progress_task = asyncio.create_task(progress_reporter())
+
+        # Start periodic queue checker task
+        connection_check_task = asyncio.create_task(periodic_queue_checker())
+        logger.info(
+            f"🔄 Started periodic queue checker (interval: {QUEUE_CHECK_INTERVAL}s)"
+        )
 
         try:
             # Create a shutdown event that can be triggered by signal handler
@@ -1016,12 +1496,26 @@ async def main() -> None:
             with contextlib.suppress(asyncio.CancelledError):
                 await progress_task
 
+            # Cancel connection check task
+            if connection_check_task:
+                connection_check_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await connection_check_task
+                logger.info("✅ Queue checker task stopped")
+
+            # Cancel any pending consumer cancellation tasks
+            for task in consumer_cancel_tasks.values():
+                task.cancel()
+
+            # Close RabbitMQ connection if still active
+            await close_rabbitmq_connection()
+
             # Close Neo4j driver
             try:
                 graph.close()
                 logger.info("✅ Neo4j driver closed")
             except Exception as e:
-                logger.warning(f"⚠️ Error closing Neo4j driver: {e}")
+                logger.warning("⚠️ Error closing Neo4j driver: e", e=e)
 
         # Stop health server
         health_server.stop()
@@ -1033,6 +1527,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("⚠️ Application interrupted")
     except Exception as e:
-        logger.error(f"❌ Application error: {e}")
+        logger.error("❌ Application error: e", e=e)
     finally:
         logger.info("✅ Graphinator service shutdown complete")

@@ -1,13 +1,15 @@
 import asyncio
 import contextlib
-import logging
+import os
 import signal
 import time
 from asyncio import run
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 import psycopg
+import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
     AMQP_EXCHANGE,
@@ -26,7 +28,7 @@ from psycopg.errors import DatabaseError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Config will be initialized in main
 config: TableinatorConfig | None = None
@@ -35,16 +37,39 @@ config: TableinatorConfig | None = None
 message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
 last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+completed_files: set[str] = set()  # Track which files have completed processing
 current_task = None
 current_progress = 0.0
+
+# Consumer management
+consumer_tags: dict[str, str] = {}  # {"artists": "consumer-tag-123", ...}
+consumer_cancel_tasks: dict[
+    str, asyncio.Task[None]
+] = {}  # {"artists": asyncio.Task, ...}
+queues: dict[str, Any] = {}  # {"artists": queue_object, ...}
+CONSUMER_CANCEL_DELAY = int(
+    os.environ.get("CONSUMER_CANCEL_DELAY", "300")
+)  # Default 5 minutes
+
+# Periodic queue checking settings
+QUEUE_CHECK_INTERVAL = int(
+    os.environ.get("QUEUE_CHECK_INTERVAL", "3600")
+)  # Default 1 hour - how often to check for new messages when connection is closed
 
 # Connection parameters will be initialized in main
 connection_params: dict[str, Any] = {}
 
+# Connection state tracking
+rabbitmq_manager: Any = None  # Will hold AsyncResilientRabbitMQ instance
+active_connection: Any = None  # Current active connection
+active_channel: Any = None  # Current active channel
+connection_check_task: asyncio.Task[None] | None = (
+    None  # Background task for periodic queue checks
+)
+
 
 def get_health_data() -> dict[str, Any]:
     """Get current health data for monitoring."""
-    from datetime import datetime
 
     return {
         "status": "healthy",
@@ -67,7 +92,9 @@ shutdown_requested = False
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    logger.info(f"🛑 Received signal {signum}, initiating graceful shutdown...")
+    logger.info(
+        "🛑 Received signal signum, initiating graceful shutdown...", signum=signum
+    )
     shutdown_requested = True
 
 
@@ -85,11 +112,199 @@ def safe_execute_query(cursor: Any, query: Any, parameters: tuple[Any, ...]) -> 
         cursor.execute(query, parameters)
         return True
     except DatabaseError as e:
-        logger.error(f"❌ Database error executing query: {e}")
+        logger.error("❌ Database error executing query", error=str(e))
         return False
     except Exception as e:
-        logger.error(f"❌ Unexpected error executing query: {e}")
+        logger.error("❌ Unexpected error executing query", error=str(e))
         return False
+
+
+async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
+    """Schedule cancellation of a consumer after a delay."""
+
+    async def cancel_after_delay() -> None:
+        try:
+            await asyncio.sleep(CONSUMER_CANCEL_DELAY)
+
+            if data_type in consumer_tags:
+                consumer_tag = consumer_tags[data_type]
+                logger.info(
+                    "🔌 Canceling consumer for data_type after CONSUMER_CANCEL_DELAYs grace period",
+                    data_type=data_type,
+                    CONSUMER_CANCEL_DELAY=CONSUMER_CANCEL_DELAY,
+                )
+
+                # Cancel the consumer with nowait to avoid hanging
+                await queue.cancel(consumer_tag, nowait=True)
+
+                # Remove from tracking
+                del consumer_tags[data_type]
+
+                logger.info(
+                    "✅ Consumer for data_type successfully canceled",
+                    data_type=data_type,
+                )
+
+                # Check if all consumers are now idle
+                if await check_all_consumers_idle():
+                    logger.info("🔌 All consumers idle, closing RabbitMQ connection")
+                    await close_rabbitmq_connection()
+        except Exception as e:
+            logger.error(
+                "❌ Failed to cancel consumer", data_type=data_type, error=str(e)
+            )
+        finally:
+            # Clean up the task reference
+            if data_type in consumer_cancel_tasks:
+                del consumer_cancel_tasks[data_type]
+
+    # Cancel any existing scheduled cancellation
+    if data_type in consumer_cancel_tasks:
+        consumer_cancel_tasks[data_type].cancel()
+
+    # Schedule new cancellation
+    consumer_cancel_tasks[data_type] = asyncio.create_task(cancel_after_delay())
+
+
+async def close_rabbitmq_connection() -> None:
+    """Close the RabbitMQ connection and channel when all consumers are idle."""
+    global active_connection, active_channel
+
+    try:
+        if active_channel:
+            try:
+                await active_channel.close()
+                logger.info("🔌 Closed RabbitMQ channel - all consumers idle")
+            except Exception as e:
+                logger.warning("⚠️ Error closing channel", error=str(e))
+            active_channel = None
+
+        if active_connection:
+            try:
+                await active_connection.close()
+                logger.info("🔌 Closed RabbitMQ connection - all consumers idle")
+            except Exception as e:
+                logger.warning("⚠️ Error closing connection", error=str(e))
+            active_connection = None
+
+        logger.info(
+            "✅ RabbitMQ connection closed. Will check for new messages every QUEUE_CHECK_INTERVALs",
+            QUEUE_CHECK_INTERVAL=QUEUE_CHECK_INTERVAL,
+        )
+    except Exception as e:
+        logger.error("❌ Error closing RabbitMQ connection", error=str(e))
+
+
+async def check_all_consumers_idle() -> bool:
+    """Check if all consumers are cancelled (idle)."""
+    return len(consumer_tags) == 0 and len(DATA_TYPES) == len(completed_files)
+
+
+async def periodic_queue_checker() -> None:
+    """Periodically check all queues for pending messages when connection is closed."""
+    global active_connection, active_channel, queues, consumer_tags
+
+    while not shutdown_requested:
+        try:
+            await asyncio.sleep(QUEUE_CHECK_INTERVAL)
+
+            # Only check if all consumers are idle and connection is closed
+            if not await check_all_consumers_idle() or active_connection:
+                continue
+
+            logger.info("🔄 Checking all queues for new messages...")
+
+            # Temporarily connect to check queue depths
+            temp_connection = await rabbitmq_manager.connect()
+            temp_channel = await temp_connection.channel()
+
+            try:
+                # Check each queue for pending messages
+                queues_with_messages = []
+                for data_type in DATA_TYPES:
+                    queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{data_type}"
+                    queue = await temp_channel.get_queue(queue_name)
+
+                    # Use queue.declare with passive=True to get message count without affecting the queue
+                    declared_queue = await temp_channel.declare_queue(
+                        name=queue_name, passive=True
+                    )
+
+                    if declared_queue.declaration_result.message_count > 0:
+                        queues_with_messages.append(
+                            (data_type, declared_queue.declaration_result.message_count)
+                        )
+
+                if queues_with_messages:
+                    logger.info(
+                        "📬 Found messages in queues, restarting consumers",
+                        queues=queues_with_messages,
+                    )
+
+                    # Re-establish full connection and start consuming
+                    active_connection = temp_connection
+                    active_channel = temp_channel
+
+                    # Declare exchange and queues
+                    exchange = await active_channel.declare_exchange(
+                        AMQP_EXCHANGE,
+                        AMQP_EXCHANGE_TYPE,
+                        durable=True,
+                        auto_delete=False,
+                    )
+
+                    # Set QoS
+                    await active_channel.set_qos(prefetch_count=50)
+
+                    # Declare and bind all queues
+                    queues = {}
+                    for data_type in DATA_TYPES:
+                        queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{data_type}"
+                        queue = await active_channel.declare_queue(
+                            auto_delete=False, durable=True, name=queue_name
+                        )
+                        await queue.bind(exchange, routing_key=data_type)
+                        queues[data_type] = queue
+
+                    # Start consumers for queues with messages
+                    for data_type, _ in queues_with_messages:
+                        if data_type in queues and data_type not in consumer_tags:
+                            consumer_tag = await queues[data_type].consume(
+                                on_data_message
+                            )
+                            consumer_tags[data_type] = consumer_tag
+                            # Remove from completed files so it will be processed
+                            completed_files.discard(data_type)
+                            last_message_time[data_type] = time.time()
+                            logger.info(
+                                "✅ Started consumer for data_type",
+                                data_type=data_type,
+                            )
+
+                    # Don't close temp_connection since we're using it as active_connection
+                else:
+                    logger.info(
+                        "📭 No messages in any queue, connection remains closed"
+                    )
+                    # Close the temporary connection
+                    await temp_channel.close()
+                    await temp_connection.close()
+
+            except Exception as e:
+                logger.error("❌ Error checking queues", error=str(e))
+                # Make sure to close temporary connection on error
+                try:
+                    await temp_channel.close()
+                    await temp_connection.close()
+                except Exception:  # nosec: B110
+                    pass
+
+        except asyncio.CancelledError:
+            logger.info("🛑 Queue checker task cancelled")
+            break
+        except Exception as e:
+            logger.error("❌ Error in periodic queue checker", error=str(e))
+            # Continue running despite errors
 
 
 async def on_data_message(message: AbstractIncomingMessage) -> None:
@@ -101,6 +316,29 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
     try:
         data: dict[str, Any] = loads(message.body)
         data_type: str = message.routing_key or "unknown"
+
+        # Check if this is a file completion message
+        if data.get("type") == "file_complete":
+            completed_files.add(data_type)
+            total_processed = data.get("total_processed", 0)
+            logger.info(
+                f"🎉 File processing complete for {data_type}! "
+                f"Total records processed: {total_processed}"
+            )
+
+            # Schedule consumer cancellation if enabled
+            if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
+                await schedule_consumer_cancellation(data_type, queues[data_type])
+
+            await message.ack()
+            return
+
+        # Normal message processing - require 'id' field
+        if "id" not in data:
+            logger.error("❌ Message missing 'id' field: data", data=data)
+            await message.nack(requeue=False)
+            return
+
         data_id: str = data["id"]
 
         # Increment counter and log progress
@@ -111,7 +349,9 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             current_task = f"Processing {data_type}"
             if message_counts[data_type] % progress_interval == 0:
                 logger.info(
-                    f"📊 Processed {message_counts[data_type]} {data_type} in PostgreSQL"
+                    "📊 Processed records in PostgreSQL",
+                    count=message_counts[data_type],
+                    data_type=data_type,
                 )
 
         # Extract record details for logging
@@ -127,12 +367,19 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
         # Log at debug level to reduce noise
         if record_name:
-            logger.debug(f"🔄 Processing {data_type[:-1]} ID={data_id}: {record_name}")
+            logger.debug(
+                "🔄 Processing record",
+                data_type=data_type[:-1],
+                data_id=data_id,
+                record_name=record_name,
+            )
         else:
-            logger.debug(f"🔄 Processing {data_type[:-1]} ID={data_id}")
+            logger.debug(
+                "🔄 Processing record", data_type=data_type[:-1], data_id=data_id
+            )
 
     except Exception as e:
-        logger.error(f"❌ Failed to parse message: {e}")
+        logger.error("❌ Failed to parse message", error=str(e))
         await message.nack(requeue=False)
         return
 
@@ -172,23 +419,35 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             )
 
             # Commit is automatic when exiting the connection context
-            logger.debug(f"🐘 Updated {data_type[:-1]} ID={data_id} in PostgreSQL")
+            logger.debug(
+                "🐘 Updated record in PostgreSQL",
+                data_type=data_type[:-1],
+                data_id=data_id,
+            )
 
         await message.ack()
 
     except (InterfaceError, OperationalError) as e:
-        logger.warning(f"⚠️ Database connection issue, will retry: {e}")
+        logger.warning("⚠️ Database connection issue, will retry", error=str(e))
         await message.nack(requeue=True)
     except Exception as e:
-        logger.error(f"❌ Failed to process {data_type} message: {e}")
+        logger.error("❌ Failed to process message", data_type=data_type, error=str(e))
         try:
             await message.nack(requeue=True)
         except Exception as nack_error:
-            logger.warning(f"⚠️ Failed to nack message: {nack_error}")
+            logger.warning("⚠️ Failed to nack message", error=str(nack_error))
 
 
 async def main() -> None:
-    global connection_pool, config, connection_params
+    global \
+        connection_pool, \
+        config, \
+        connection_params, \
+        queues, \
+        rabbitmq_manager, \
+        active_connection, \
+        active_channel, \
+        connection_check_task
 
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
@@ -196,6 +455,15 @@ async def main() -> None:
 
     setup_logging("tableinator", log_file=Path("/logs/tableinator.log"))
     logger.info("🚀 Starting PostgreSQL tableinator service with connection pooling")
+
+    # Add startup delay for dependent services
+    startup_delay = int(os.environ.get("STARTUP_DELAY", "5"))
+    if startup_delay > 0:
+        logger.info(
+            "⏳ Waiting startup_delay seconds for dependent services to start...",
+            startup_delay=startup_delay,
+        )
+        await asyncio.sleep(startup_delay)
 
     # Start health server
     health_server = HealthServer(8002, get_health_data)
@@ -206,7 +474,7 @@ async def main() -> None:
     try:
         config = TableinatorConfig.from_env()
     except ValueError as e:
-        logger.error(f"❌ Configuration error: {e}")
+        logger.error("❌ Configuration error", error=str(e))
         return
 
     # Parse host and port from address
@@ -241,19 +509,26 @@ async def main() -> None:
                     (config.postgres_database,),
                 )
                 if not cursor.fetchone():
-                    logger.info(f"🔧 Creating database '{config.postgres_database}'...")
+                    logger.info(
+                        "🔧 Creating database 'postgres_database'...",
+                        postgres_database=config.postgres_database,
+                    )
                     cursor.execute(
                         sql.SQL("CREATE DATABASE {}").format(
                             sql.Identifier(config.postgres_database)
                         )
                     )
-                    logger.info(f"✅ Database '{config.postgres_database}' created")
+                    logger.info(
+                        "✅ Database 'postgres_database' created",
+                        postgres_database=config.postgres_database,
+                    )
                 else:
                     logger.info(
-                        f"✅ Database '{config.postgres_database}' already exists"
+                        "✅ Database 'postgres_database' already exists",
+                        postgres_database=config.postgres_database,
                     )
     except Exception as e:
-        logger.error(f"❌ Failed to ensure database exists: {e}")
+        logger.error("❌ Failed to ensure database exists", error=str(e))
         return
 
     # Initialize resilient connection pool for concurrent access
@@ -268,7 +543,7 @@ async def main() -> None:
         logger.info("🐘 Connected to PostgreSQL with resilient connection pool")
         logger.info("✅ Connection pool initialized (min: 2, max: 20 connections)")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize connection pool: {e}")
+        logger.error("❌ Failed to initialize connection pool", error=str(e))
         return
 
     # Initialize database tables
@@ -292,7 +567,7 @@ async def main() -> None:
             # Autocommit is enabled, so tables are created immediately
         logger.info("✅ Database tables created/verified")
     except Exception as e:
-        logger.error(f"❌ Failed to initialize database: {e}")
+        logger.error("❌ Failed to initialize database", error=str(e))
         if connection_pool:
             connection_pool.close()
         return
@@ -313,22 +588,55 @@ async def main() -> None:
     print()
     # fmt: on
 
-    # Initialize resilient RabbitMQ connection
-    rabbitmq = AsyncResilientRabbitMQ(
+    # Initialize resilient RabbitMQ connection manager (not connecting yet)
+    rabbitmq_manager = AsyncResilientRabbitMQ(
         connection_url=config.amqp_connection,
+        max_retries=10,  # More retries for startup
         heartbeat=600,
         connection_attempts=10,
         retry_delay=5.0,
     )
 
-    try:
-        amqp_connection = await rabbitmq.connect()
-    except Exception as e:
-        logger.error(f"❌ Failed to connect to AMQP broker: {e}")
+    # Try to connect with additional retry logic for startup
+    max_startup_retries = 5
+    startup_retry = 0
+    amqp_connection = None
+
+    while startup_retry < max_startup_retries and not shutdown_requested:
+        try:
+            logger.info(
+                "🐰 Attempting to connect to RabbitMQ",
+                attempt=startup_retry + 1,
+                max_attempts=max_startup_retries,
+            )
+            amqp_connection = await rabbitmq_manager.connect()
+            active_connection = amqp_connection
+            break
+        except Exception as e:
+            startup_retry += 1
+            if startup_retry < max_startup_retries:
+                wait_time = min(30, 5 * startup_retry)  # Exponential backoff up to 30s
+                logger.warning(
+                    "⚠️ RabbitMQ connection failed. Retrying...",
+                    error=str(e),
+                    wait_seconds=wait_time,
+                )
+                await asyncio.sleep(wait_time)
+            else:
+                logger.error(
+                    "❌ Failed to connect to AMQP broker",
+                    max_attempts=max_startup_retries,
+                    error=str(e),
+                )
+                return
+
+    if amqp_connection is None:
+        logger.error("❌ No AMQP connection available")
         return
 
     async with amqp_connection:
         channel = await amqp_connection.channel()
+        active_channel = channel
 
         # Set QoS to allow more concurrent message processing with connection pooling
         await channel.set_qos(prefetch_count=50)
@@ -354,10 +662,11 @@ async def main() -> None:
         masters_queue = queues["masters"]
         releases_queue = queues["releases"]
 
-        await artists_queue.consume(on_data_message)
-        await labels_queue.consume(on_data_message)
-        await masters_queue.consume(on_data_message)
-        await releases_queue.consume(on_data_message)
+        # Start consumers and store their tags
+        consumer_tags["artists"] = await artists_queue.consume(on_data_message)
+        consumer_tags["labels"] = await labels_queue.consume(on_data_message)
+        consumer_tags["masters"] = await masters_queue.consume(on_data_message)
+        consumer_tags["releases"] = await releases_queue.consume(on_data_message)
 
         logger.info(
             f"🚀 Tableinator started! Connected to AMQP broker (exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE}). "
@@ -375,14 +684,21 @@ async def main() -> None:
                 else:
                     await asyncio.sleep(30)  # Then every 30 seconds
                 report_count += 1
+
+                # Skip all logging if all files are complete
+                if len(completed_files) == len(DATA_TYPES):
+                    continue
+
                 total = sum(message_counts.values())
                 current_time = time.time()
 
-                # Check for stalled consumers
+                # Check for stalled consumers (skip completed files)
                 stalled_consumers = []
                 for data_type, last_time in last_message_time.items():
                     if (
-                        last_time > 0 and (current_time - last_time) > 120
+                        data_type not in completed_files
+                        and last_time > 0
+                        and (current_time - last_time) > 120
                     ):  # No messages for 2 minutes
                         stalled_consumers.append(data_type)
 
@@ -393,10 +709,17 @@ async def main() -> None:
                     )
 
                 # Always show progress, even if no messages processed yet
+                # Build progress string with completion emojis
+                progress_parts = []
+                for data_type in ["artists", "labels", "masters", "releases"]:
+                    emoji = "🎉 " if data_type in completed_files else ""
+                    progress_parts.append(
+                        f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}"
+                    )
+
                 logger.info(
                     f"📊 PostgreSQL Progress: {total} total messages processed "
-                    f"(Artists: {message_counts['artists']}, Labels: {message_counts['labels']}, "
-                    f"Masters: {message_counts['masters']}, Releases: {message_counts['releases']})"
+                    f"({', '.join(progress_parts)})"
                 )
 
                 # Log current processing state
@@ -417,9 +740,38 @@ async def main() -> None:
                         for dt, lt in last_message_time.items()
                         if lt > 0 and 5 < current_time - lt < 120
                     ]
-                    logger.warning(f"⚠️ Slow consumers detected: {slow_consumers}")
+                    logger.warning(
+                        "⚠️ Slow consumers detected: slow_consumers",
+                        slow_consumers=slow_consumers,
+                    )
+
+                # Log consumer status
+                active_consumers = list(consumer_tags.keys())
+                canceled_consumers = [
+                    dt
+                    for dt in DATA_TYPES
+                    if dt not in consumer_tags and dt in completed_files
+                ]
+
+                if canceled_consumers:
+                    logger.info(
+                        "🔌 Canceled consumers: canceled_consumers",
+                        canceled_consumers=canceled_consumers,
+                    )
+                if active_consumers:
+                    logger.info(
+                        "✅ Active consumers: active_consumers",
+                        active_consumers=active_consumers,
+                    )
 
         progress_task = asyncio.create_task(progress_reporter())
+
+        # Start periodic queue checker task
+        connection_check_task = asyncio.create_task(periodic_queue_checker())
+        logger.info(
+            "🔄 Started periodic queue checker (interval: QUEUE_CHECK_INTERVALs)",
+            QUEUE_CHECK_INTERVAL=QUEUE_CHECK_INTERVAL,
+        )
 
         try:
             # Create a shutdown event that can be triggered by signal handler
@@ -441,13 +793,27 @@ async def main() -> None:
             with contextlib.suppress(asyncio.CancelledError):
                 await progress_task
 
+            # Cancel connection check task
+            if connection_check_task:
+                connection_check_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await connection_check_task
+                logger.info("✅ Queue checker task stopped")
+
+            # Cancel any pending consumer cancellation tasks
+            for task in consumer_cancel_tasks.values():
+                task.cancel()
+
+            # Close RabbitMQ connection if still active
+            await close_rabbitmq_connection()
+
             # Close connection pool
             try:
                 if connection_pool:
                     connection_pool.close()
                     logger.info("✅ Connection pool closed")
             except Exception as e:
-                logger.warning(f"⚠️ Error closing connection pool: {e}")
+                logger.warning("⚠️ Error closing connection pool", error=str(e))
 
         # Stop health server
         health_server.stop()
@@ -459,6 +825,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("⚠️ Application interrupted")
     except Exception as e:
-        logger.error(f"❌ Application error: {e}")
+        logger.error("❌ Application error", error=str(e))
     finally:
         logger.info("✅ Tableinator service shutdown complete")

@@ -4,7 +4,8 @@
 
 ## Overview
 
-Discogsography uses a standardized logging approach with emoji prefixes for visual clarity and quick issue identification. This guide ensures consistent logging across all services.
+Discogsography uses a standardized logging approach with emoji prefixes for visual clarity and quick issue
+identification. This guide ensures consistent logging across all services.
 
 ### Logging Flow
 
@@ -51,57 +52,57 @@ flowchart LR
 
 ### 🚀 Service Lifecycle
 
-| Emoji | Usage | Example |
-|-------|-------|---------|
-| 🚀 | Service startup | `logger.info("🚀 Starting extractor service...")` |
-| 🛑 | Service shutdown | `logger.info("🛑 Shutting down gracefully")` |
-| 🔧 | Configuration/Setup | `logger.info("🔧 Configuring database connections")` |
-| 🏥 | Health check server | `logger.info("🏥 Health server started on port 8000")` |
+| Emoji | Usage               | Example                                                |
+| ----- | ------------------- | ------------------------------------------------------ |
+| 🚀    | Service startup     | `logger.info("🚀 Starting extractor service...")`      |
+| 🛑    | Service shutdown    | `logger.info("🛑 Shutting down gracefully")`           |
+| 🔧    | Configuration/Setup | `logger.info("🔧 Configuring database connections")`   |
+| 🏥    | Health check server | `logger.info("🏥 Health server started on port 8000")` |
 
 ### ✅ Success & Completion
 
-| Emoji | Usage | Example |
-|-------|-------|---------|
-| ✅ | Operation success | `logger.info("✅ All files processed successfully")` |
-| 💾 | Data saved | `logger.info("💾 Saved 1000 records to database")` |
-| 📋 | Metadata loaded | `logger.info("📋 Loaded configuration from disk")` |
-| 🆕 | New version/data | `logger.info("🆕 Found new Discogs data release")` |
+| Emoji | Usage             | Example                                              |
+| ----- | ----------------- | ---------------------------------------------------- |
+| ✅    | Operation success | `logger.info("✅ All files processed successfully")` |
+| 💾    | Data saved        | `logger.info("💾 Saved 1000 records to database")`   |
+| 📋    | Metadata loaded   | `logger.info("📋 Loaded configuration from disk")`   |
+| 🆕    | New version/data  | `logger.info("🆕 Found new Discogs data release")`   |
 
 ### ❌ Errors & Warnings
 
-| Emoji | Usage | Example |
-|-------|-------|---------|
-| ❌ | Error occurred | `logger.error("❌ Failed to connect to database")` |
-| ⚠️ | Warning | `logger.warning("⚠️ Retry attempt 3/5")` |
-| 🚨 | Critical issue | `logger.critical("🚨 Out of memory")` |
-| ⏩ | Skipped operation | `logger.info("⏩ Skipped duplicate record")` |
+| Emoji | Usage             | Example                                            |
+| ----- | ----------------- | -------------------------------------------------- |
+| ❌    | Error occurred    | `logger.error("❌ Failed to connect to database")` |
+| ⚠️    | Warning           | `logger.warning("⚠️ Retry attempt 3/5")`           |
+| 🚨    | Critical issue    | `logger.critical("🚨 Out of memory")`              |
+| ⏩    | Skipped operation | `logger.info("⏩ Skipped duplicate record")`       |
 
 ### 🔄 Processing & Progress
 
-| Emoji | Usage | Example |
-|-------|-------|---------|
-| 🔄 | Processing | `logger.info("🔄 Processing batch 5/10")` |
-| ⏳ | Waiting | `logger.info("⏳ Waiting for messages...")` |
-| 📊 | Progress/Stats | `logger.info("📊 Processed 5000/10000 records")` |
-| ⏰ | Scheduled task | `logger.info("⏰ Running periodic check")` |
+| Emoji | Usage          | Example                                          |
+| ----- | -------------- | ------------------------------------------------ |
+| 🔄    | Processing     | `logger.info("🔄 Processing batch 5/10")`        |
+| ⏳    | Waiting        | `logger.info("⏳ Waiting for messages...")`      |
+| 📊    | Progress/Stats | `logger.info("📊 Processed 5000/10000 records")` |
+| ⏰    | Scheduled task | `logger.info("⏰ Running periodic check")`       |
 
 ### 📥 Data Operations
 
-| Emoji | Usage | Example |
-|-------|-------|---------|
-| 📥 | Download start | `logger.info("📥 Starting download of releases.xml")` |
-| ⬇️ | Downloading | `logger.info("⬇️ Downloaded 50MB/200MB")` |
-| 📄 | File operation | `logger.info("📄 Created output.json")` |
-| 🔍 | Searching | `logger.info("🔍 Checking for updates...")` |
+| Emoji | Usage          | Example                                               |
+| ----- | -------------- | ----------------------------------------------------- |
+| 📥    | Download start | `logger.info("📥 Starting download of releases.xml")` |
+| ⬇️    | Downloading    | `logger.info("⬇️ Downloaded 50MB/200MB")`             |
+| 📄    | File operation | `logger.info("📄 Created output.json")`               |
+| 🔍    | Searching      | `logger.info("🔍 Checking for updates...")`           |
 
 ### 🔗 Service Connections
 
-| Emoji | Usage | Example |
-|-------|-------|---------|
-| 🐰 | RabbitMQ | `logger.info("🐰 Connected to RabbitMQ")` |
-| 🔗 | Neo4j | `logger.info("🔗 Connected to Neo4j database")` |
-| 🐘 | PostgreSQL | `logger.info("🐘 Connected to PostgreSQL")` |
-| 🌐 | Network/API | `logger.info("🌐 Fetching from Discogs API")` |
+| Emoji | Usage       | Example                                         |
+| ----- | ----------- | ----------------------------------------------- |
+| 🐰    | RabbitMQ    | `logger.info("🐰 Connected to RabbitMQ")`       |
+| 🔗    | Neo4j       | `logger.info("🔗 Connected to Neo4j database")` |
+| 🐘    | PostgreSQL  | `logger.info("🐘 Connected to PostgreSQL")`     |
+| 🌐    | Network/API | `logger.info("🌐 Fetching from Discogs API")`   |
 
 ## 💻 Implementation Examples
 
@@ -312,8 +313,8 @@ class JSONFormatter(logging.Formatter):
 ### Finding Errors
 
 ```bash
-# Using task command
-uv run task check-errors
+# Using just command
+just check-errors
 
 # Manual grep
 grep "❌" logs/*.log

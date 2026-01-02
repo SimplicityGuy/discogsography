@@ -4,7 +4,8 @@
 
 ## Overview
 
-Discogsography employs a multi-layered testing approach including unit tests, integration tests, and end-to-end (E2E) tests. This guide covers testing patterns, best practices, and common scenarios.
+Discogsography employs a multi-layered testing approach including unit tests, integration tests, and end-to-end (E2E)
+tests. This guide covers testing patterns, best practices, and common scenarios.
 
 ## 🎯 Testing Philosophy
 
@@ -34,11 +35,11 @@ graph BT
 
 ### Coverage Goals
 
-| Test Type | Target Coverage | Current Focus |
-|-----------|----------------|---------------|
-| Unit Tests | 80%+ | Core business logic |
-| Integration | 70%+ | Service boundaries |
-| E2E Tests | Critical paths | User workflows |
+| Test Type   | Target Coverage | Current Focus       |
+| ----------- | --------------- | ------------------- |
+| Unit Tests  | 80%+            | Core business logic |
+| Integration | 70%+            | Service boundaries  |
+| E2E Tests   | Critical paths  | User workflows      |
 
 ## 🛠️ Test Structure
 
@@ -255,10 +256,10 @@ flowchart TD
 
 ```bash
 # Run all tests (excluding E2E)
-uv run task test
+just test
 
 # Run with coverage
-uv run task test-cov
+just test-cov
 
 # Run specific service tests
 uv run pytest tests/dashboard/ -v
@@ -271,7 +272,7 @@ uv run pytest -m "not integration and not e2e"
 uv run pytest -m integration
 
 # Run E2E tests
-uv run task test-e2e
+just test-e2e
 ```
 
 ### Advanced Testing
@@ -331,7 +332,7 @@ async def test_dashboard_navigation(page: Page, test_server):
 
 ### Browser Configuration
 
-```python
+```bash
 # Run on specific browser
 pytest -m e2e --browser chromium
 pytest -m e2e --browser firefox
@@ -501,7 +502,7 @@ class TestCounter:
 
 ```bash
 # Generate coverage report
-uv run task test-cov
+just test-cov
 
 # View in terminal
 coverage report

@@ -1,10 +1,12 @@
 # Platform Targeting Configuration
 
-This document explains how Discogsography handles platform-specific Python package wheels to ensure compatibility with our Docker build environments.
+This document explains how Discogsography handles platform-specific Python package wheels to ensure compatibility with
+our Docker build environments.
 
 ## Problem
 
-Some Python packages (like Pillow) include platform-specific wheels for iOS that are incompatible with Docker builds on Linux. These wheels cause `uv sync` to fail with errors like:
+Some Python packages (like Pillow) include platform-specific wheels for iOS that are incompatible with Docker builds on
+Linux. These wheels cause `uv sync` to fail with errors like:
 
 ```
 failed to parse `pillow-11.3.0-cp313-cp313-ios_13_0_arm64_iphoneos.whl` as wheel filename:

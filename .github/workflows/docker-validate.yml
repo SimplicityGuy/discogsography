@@ -20,29 +20,20 @@ on:
       - ".dockerignore"
       - ".github/workflows/docker-validate.yml"
 
+concurrency:
+  group: docker-validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   COMPOSE_VERSION: "v2.32.0"
   PYTHON_VERSION: "3.13"
 
+permissions:
+  contents: read
+
 jobs:
   list-sub-projects:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Get all sub-projects
-        id: set-matrix
-        run: |
-          # Only include actual service directories (sorted alphabetically)
-          services=("dashboard" "discovery" "extractor" "graphinator" "tableinator")
-          matrix=$(printf "%s\n" "${services[@]}" | jq -R -s -c 'split("\n")[:-1]')
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+    uses: ./.github/workflows/list-sub-projects.yml
 
   validate-dockerfiles:
     needs: list-sub-projects
@@ -52,22 +43,22 @@ jobs:
 
     strategy:
       matrix:
-        sub-project: ${{ fromJson(needs.list-sub-projects.outputs.matrix) }}
+        sub-project: ${{ fromJson(needs.list-sub-projects.outputs.simple-matrix) }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
 
-      - name: Set up Docker Buildx
+      - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Validate Dockerfile with hadolint
-        uses: hadolint/hadolint-action@v3.1.0
+      - name: 🔍 Validate Dockerfile with hadolint
+        uses: hadolint/hadolint-action@2332a7b74a6de0dda2e2221d575162eba76ba5e5 # v3.3.0
         with:
           dockerfile: ${{ matrix.sub-project }}/Dockerfile
           failure-threshold: error
 
-      - name: Test Docker build for ${{ matrix.sub-project }}
+      - name: 🐳 Test Docker build for ${{ matrix.sub-project }}
         run: |
           echo "🔨 Testing build for ${{ matrix.sub-project }}..."
           docker build --build-arg PYTHON_VERSION=${{ env.PYTHON_VERSION }} -f ${{ matrix.sub-project }}/Dockerfile . --target builder
@@ -78,30 +69,15 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
 
-      # Tools cache (docker-compose)
-      - name: Cache tools
-        uses: actions/cache@v4
+      - name: 🔧 Install docker-compose
+        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
         with:
-          path: /usr/local/bin/docker-compose
-          key: ${{ runner.os }}-tools-docker-compose-${{ env.COMPOSE_VERSION }}
-          restore-keys: |
-            ${{ runner.os }}-tools-docker-compose-
-            ${{ runner.os }}-tools-
+          docker-compose: latest
 
-      - name: Install docker-compose
-        run: |
-          if ! command -v docker-compose &> /dev/null; then
-            echo "Installing docker-compose..."
-            sudo curl -L "https://github.com/docker/compose/releases/download/${{ env.COMPOSE_VERSION }}/docker-compose-$(uname -s)-$(uname -m)" \
-              -o /usr/local/bin/docker-compose
-            sudo chmod +x /usr/local/bin/docker-compose
-          fi
-          docker-compose --version
-
-      - name: Validate docker-compose syntax
+      - name: 📋 Validate docker-compose syntax
         run: |
           docker-compose config --quiet
           echo "✅ docker-compose.yml is valid"
@@ -111,7 +87,7 @@ jobs:
             echo "✅ docker-compose.prod.yml overlay is valid"
           fi
 
-      - name: Check docker-compose services
+      - name: 🔍 Check docker-compose services
         run: |
           services=$(docker-compose config --services | sort | tr "\n" " " | sed "s/ $//")
           expected="dashboard discovery extractor graphinator neo4j postgres rabbitmq redis tableinator"
@@ -124,7 +100,7 @@ jobs:
           fi
           echo "✅ All expected services are defined"
 
-      - name: Validate service dependencies
+      - name: 🔒 Validate service dependencies
         run: |
           # Check that services have correct dependencies
           deps=$(docker-compose config | yq eval '.services.dashboard.depends_on | keys | sort | join(" ")' -)
@@ -159,7 +135,7 @@ jobs:
 
           echo "✅ Service dependencies are correct"
 
-      - name: Check for security best practices
+      - name: 🛡️ Check for security best practices
         run: |
           # Check that services run as non-root user
           for service in dashboard discovery extractor graphinator tableinator; do

@@ -26,6 +26,11 @@
 
 - ✅ Create Mermaid style diagrams when diagrams are added to Markdown files.
 - ✅ New markdown files should have a lowercase filename preferring - instead \_, unless the document is a README. Do not rename any existing markdown files.
+- ✅ All pyproject.toml files should follow the standard structure and ordering (see pyproject.toml Standards section).
+- ✅ GitHub Actions workflows use emojis at the start of each step name for visual clarity.
+- ✅ Use single quotes in GitHub Actions expressions (`${{ }}`) and double quotes for YAML strings.
+- ✅ Composite actions are preferred for reusable workflow steps (see `.github/actions/`).
+- ✅ Run tests and E2E tests in parallel for optimal performance.
 
 ## 📋 Development Guidelines
 
@@ -74,6 +79,47 @@ Each service displays ASCII art on startup:
 - Run containers as non-root users
 - Keep dependencies updated
 
+### pyproject.toml Standards
+
+All `pyproject.toml` files in the project follow a consistent structure and ordering:
+
+1. **Section Order**:
+
+   - `[build-system]` - Build system configuration
+   - `[project]` - Project metadata and dependencies
+   - `[project.scripts]` - Entry points (if applicable)
+   - `[project.optional-dependencies]` - Optional dependencies (root only)
+   - `[tool.hatch.build.targets.wheel]` - Package configuration
+   - Tool configurations (inherit from root):
+     - `[tool.ruff]` and related sections
+     - `[tool.mypy]` and overrides
+     - `[tool.coverage]`
+     - `[tool.pytest.ini_options]`
+     - Other tools as needed
+   - `[dependency-groups]` - Development dependencies (root only)
+
+1. **Standard Fields**:
+
+   - All service pyproject.toml files should include:
+     - `name`, `version`, `description`
+     - `authors` with name and email
+     - `readme` field (if applicable)
+     - `requires-python = ">=3.13"`
+     - `classifiers` list (for published packages)
+     - `license` field (for published packages)
+
+1. **Dependencies**:
+
+   - Sort dependencies alphabetically within logical groups
+   - Use comments to describe dependency groups or specific purposes
+   - Align end-of-line comments vertically for readability
+
+1. **Tool Configuration**:
+
+   - Service-specific files should extend from root configuration
+   - Only include overrides specific to that service
+   - Include comment: `# Tool configurations inherit from root pyproject.toml`
+
 ## 🛠️ Development Commands
 
 ### Service Management
@@ -116,11 +162,14 @@ http://localhost:8000/api/health
 
 ### Service Ports
 
-- Dashboard: 8000
-- Discovery: 8001
+- Dashboard: 8003
+- Discovery: 8005 (service), 8004 (health)
 - Neo4j: 7474 (browser), 7687 (bolt)
-- PostgreSQL: 5432
+- PostgreSQL: 5433 (mapped from 5432)
 - RabbitMQ: 5672 (AMQP), 15672 (management)
+- Extractor: 8000 (health)
+- Graphinator: 8001 (health)
+- Tableinator: 8002 (health)
 
 ### Environment Variables
 

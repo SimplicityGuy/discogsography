@@ -1,6 +1,7 @@
 # Database Resilience Documentation
 
-This document describes the database resilience features implemented in the Discogsography platform to handle nightly maintenance windows and other database outages.
+This document describes the database resilience features implemented in the Discogsography platform to handle nightly
+maintenance windows and other database outages.
 
 ## Overview
 
@@ -32,7 +33,7 @@ recovery_timeout: 30 - 60  # Seconds before trying half-open
 
 Failed connections retry with exponential backoff:
 
-```python
+```yaml
 # Backoff configuration
 initial_delay: 0.5-1.0    # Initial retry delay (seconds)
 max_delay: 30-60         # Maximum retry delay
@@ -74,7 +75,7 @@ During database outages:
 
 ## Service-Specific Implementation
 
-### Extractor Service
+### Python/Rust Extractor Services
 
 - Uses `ResilientRabbitMQConnection` for publishing
 - Buffers messages during connection issues
@@ -166,7 +167,8 @@ When databases undergo nightly maintenance:
 
 Each service exposes health data including connection status:
 
-- Extractor: `http://localhost:8000/health`
+- Python Extractor: `http://localhost:8000/health`
+- Rust Extractor: `http://localhost:8000/health`
 - Graphinator: `http://localhost:8001/health`
 - Tableinator: `http://localhost:8002/health`
 - Dashboard: `http://localhost:8003/health`

@@ -20,7 +20,7 @@ ARG GID=1000
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.9.21 /uv /bin/uv
 
 # Set environment for build
 ENV UV_SYSTEM_PYTHON=1 \
@@ -68,7 +68,7 @@ WORKDIR /app
 COPY --from=builder --chown=discogsography:discogsography /app /app
 
 # Install uv for runtime
-COPY --from=ghcr.io/astral-sh/uv:0.5.19 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.9.21 /uv /bin/uv
 
 # Create startup script
 # [Startup script section - see below]
@@ -167,7 +167,8 @@ RUN groupadd -r -g ${GID} discogsography && \
 
 Additional directories:
 
-- **extractor**: Add `/discogs-data` directory
+- **extractor/pyextractor**: Add `/discogs-data` directory
+- **extractor/rustextractor**: Add `/discogs-data` directory
 
 ### 5. Startup Script
 
@@ -214,7 +215,8 @@ Service-specific additions:
 
 - **dashboard**: All database connections
 - **discovery**: All database connections
-- **extractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
+- **extractor/pyextractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
+- **extractor/rustextractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
 - **graphinator**: Neo4j connections
 - **tableinator**: PostgreSQL connections
 
@@ -235,7 +237,8 @@ VOLUME ["/logs"]
 
 Additional volumes:
 
-- **extractor**: Add `"/discogs-data"`
+- **extractor/pyextractor**: Add `"/discogs-data"`
+- **extractor/rustextractor**: Add `"/discogs-data"`
 
 ## 🔧 Service-Specific Requirements
 
@@ -251,8 +254,15 @@ Additional volumes:
 - Expose ports 8004 and 8005
 - All database connections in environment
 
-### Extractor
+### Python Extractor (extractor/pyextractor)
 
+- Create /discogs-data directory
+- Add /discogs-data volume
+- Special environment variables for Discogs configuration
+
+### Rust Extractor (extractor/rustextractor)
+
+- Rust-based container using multi-stage build
 - Create /discogs-data directory
 - Add /discogs-data volume
 - Special environment variables for Discogs configuration

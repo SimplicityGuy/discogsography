@@ -38,6 +38,8 @@ class MockDashboardApp:
             postgres_username="test",
             postgres_password="test",  # noqa: S106
             postgres_database="test",
+            rabbitmq_management_user="test",
+            rabbitmq_management_password="test",  # noqa: S106
         )
         self.websocket_connections: set[WebSocket] = set()
         self.latest_metrics: dict[str, Any] | None = None

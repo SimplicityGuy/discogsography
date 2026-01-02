@@ -2,13 +2,13 @@
 """Discovery service for music exploration and analytics."""
 
 import asyncio
-import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import structlog
 from common import get_config, setup_logging
 from fastapi import FastAPI, HTTPException, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -39,7 +39,7 @@ from discovery.recommender import (
 )
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @asynccontextmanager
@@ -63,6 +63,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # fmt: on
 
     logger.info("🚀 Starting Discovery service...")
+
+    # Setup ONNX model if needed
+    from discovery.setup_onnx_model import setup_onnx_model
+
+    setup_onnx_model()
 
     # Initialize all engines
     recommender = get_recommender_instance()
@@ -121,13 +126,13 @@ class DiscoveryApp:
         """Connect a new WebSocket client."""
         await websocket.accept()
         self.active_connections.append(websocket)
-        logger.info(f"🔌 WebSocket connected. Total connections: {len(self.active_connections)}")
+        logger.info("🔌 WebSocket connected", total_connections=len(self.active_connections))
 
     def disconnect_websocket(self, websocket: WebSocket) -> None:
         """Disconnect a WebSocket client."""
         if websocket in self.active_connections:
             self.active_connections.remove(websocket)
-        logger.info(f"🔌 WebSocket disconnected. Total connections: {len(self.active_connections)}")
+        logger.info("🔌 WebSocket disconnected", total_connections=len(self.active_connections))
 
     async def broadcast_update(self, message: dict[str, Any]) -> None:
         """Broadcast an update to all connected WebSocket clients."""
@@ -151,14 +156,14 @@ discovery_app = DiscoveryApp()
 
 
 # API Routes
-@app.get("/")  # type: ignore[misc]
+@app.get("/")  # type: ignore[untyped-decorator]
 async def root() -> Response:
     """Serve the main discovery interface."""
     with (static_path / "index.html").open() as f:
         return Response(content=f.read(), media_type="text/html")
 
 
-@app.get("/health")  # type: ignore[misc]
+@app.get("/health")  # type: ignore[untyped-decorator]
 async def health_check() -> dict[str, Any]:
     """Health check endpoint."""
     return {
@@ -170,7 +175,7 @@ async def health_check() -> dict[str, Any]:
 
 
 # Recommendation API
-@app.post("/api/recommendations")  # type: ignore[misc]
+@app.post("/api/recommendations")  # type: ignore[untyped-decorator]
 async def get_recommendations_api(request: RecommendationRequest) -> dict[str, Any]:
     """Get music recommendations."""
     try:
@@ -181,24 +186,24 @@ async def get_recommendations_api(request: RecommendationRequest) -> dict[str, A
             "request": request.model_dump(),
         }
     except Exception as e:
-        logger.error(f"❌ Error getting recommendations: {e}")
+        logger.error("❌ Error getting recommendations", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # Analytics API
-@app.post("/api/analytics")  # type: ignore[misc]
+@app.post("/api/analytics")  # type: ignore[untyped-decorator]
 async def get_analytics_api(request: AnalyticsRequest) -> AnalyticsResult:
     """Get music industry analytics."""
     try:
         result = await get_analytics(request)
         return result
     except Exception as e:
-        logger.error(f"❌ Error getting analytics: {e}")
+        logger.error("❌ Error getting analytics", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # Graph Explorer API
-@app.post("/api/graph/explore")  # type: ignore[misc]
+@app.post("/api/graph/explore")  # type: ignore[untyped-decorator]
 async def explore_graph_api(query: GraphQuery) -> dict[str, Any]:
     """Explore the music knowledge graph."""
     try:
@@ -211,12 +216,12 @@ async def explore_graph_api(query: GraphQuery) -> dict[str, Any]:
 
         return response
     except Exception as e:
-        logger.error(f"❌ Error exploring graph: {e}")
+        logger.error("❌ Error exploring graph", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 # Playground API Routes
-@app.get("/api/search")  # type: ignore[misc]
+@app.get("/api/search")  # type: ignore[untyped-decorator]
 async def search_api(
     q: str,
     type: str = "all",
@@ -226,7 +231,7 @@ async def search_api(
     return await search_handler(q=q, type=type, limit=limit)
 
 
-@app.get("/api/graph")  # type: ignore[misc]
+@app.get("/api/graph")  # type: ignore[untyped-decorator]
 async def graph_api(
     node_id: str,
     depth: int = 2,
@@ -236,13 +241,13 @@ async def graph_api(
     return await graph_data_handler(node_id=node_id, depth=depth, limit=limit)
 
 
-@app.post("/api/journey")  # type: ignore[misc]
+@app.post("/api/journey")  # type: ignore[untyped-decorator]
 async def journey_api(request: JourneyRequest) -> dict[str, Any]:
     """Music journey endpoint for playground."""
     return await journey_handler(request)
 
 
-@app.get("/api/trends")  # type: ignore[misc]
+@app.get("/api/trends")  # type: ignore[untyped-decorator]
 async def trends_api(
     type: str,
     start_year: int = 1950,
@@ -253,7 +258,7 @@ async def trends_api(
     return await trends_handler(type=type, start_year=start_year, end_year=end_year, top_n=top_n)
 
 
-@app.get("/api/heatmap")  # type: ignore[misc]
+@app.get("/api/heatmap")  # type: ignore[untyped-decorator]
 async def heatmap_api(
     type: str,
     top_n: int = 20,
@@ -262,14 +267,14 @@ async def heatmap_api(
     return await heatmap_handler(type=type, top_n=top_n)
 
 
-@app.get("/api/artists/{artist_id}")  # type: ignore[misc]
+@app.get("/api/artists/{artist_id}")  # type: ignore[untyped-decorator]
 async def artist_details_api(artist_id: str) -> dict[str, Any]:
     """Artist details endpoint for playground."""
     return await artist_details_handler(artist_id)
 
 
 # WebSocket endpoint for real-time updates
-@app.websocket("/ws")  # type: ignore[misc]
+@app.websocket("/ws")  # type: ignore[untyped-decorator]
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await discovery_app.connect_websocket(websocket)

@@ -1,19 +1,33 @@
 """Music Industry Analytics & Insights engine for trend analysis."""
 
-import logging
 from datetime import datetime
 from typing import Any
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+import structlog
 from common import get_config
 from neo4j import AsyncDriver, AsyncGraphDatabase
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import create_async_engine
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
+
+
+def convert_numpy_to_json_serializable(obj: Any) -> Any:
+    """Convert numpy arrays and other non-serializable objects to JSON-serializable format."""
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, np.integer | np.floating):
+        return obj.item()
+    elif isinstance(obj, dict):
+        return {key: convert_numpy_to_json_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [convert_numpy_to_json_serializable(item) for item in obj]
+    return obj
 
 
 class AnalyticsRequest(BaseModel):
@@ -151,7 +165,7 @@ class MusicAnalytics:
 
         return AnalyticsResult(
             chart_type="line",
-            chart_data=fig.to_dict(),
+            chart_data=convert_numpy_to_json_serializable(fig.to_dict()),
             insights=insights,
             metadata={
                 "time_range": (start_year, end_year),
@@ -162,7 +176,7 @@ class MusicAnalytics:
 
     async def analyze_artist_evolution(self, artist_name: str) -> AnalyticsResult:
         """Analyze an artist's career evolution and collaboration patterns."""
-        logger.info(f"🎤 Analyzing career evolution for {artist_name}...")
+        logger.info("🎤 Analyzing career evolution...", artist_name=artist_name)
 
         assert self.neo4j_driver is not None, "Neo4j driver must be initialized"  # nosec B101
         async with self.neo4j_driver.session() as session:
@@ -279,7 +293,7 @@ class MusicAnalytics:
 
         return AnalyticsResult(
             chart_type="scatter",
-            chart_data=fig.to_dict(),
+            chart_data=convert_numpy_to_json_serializable(fig.to_dict()),
             insights=insights,
             metadata={
                 "artist": artist_name,
@@ -388,14 +402,14 @@ class MusicAnalytics:
 
         return AnalyticsResult(
             chart_type="bar",
-            chart_data=fig.to_dict(),
+            chart_data=convert_numpy_to_json_serializable(fig.to_dict()),
             insights=insights,
             metadata={"label": label_name, "total_records": len(label_data)},
         )
 
     async def analyze_market_trends(self, analysis_focus: str = "format") -> AnalyticsResult:
         """Analyze music market trends and format adoption."""
-        logger.info(f"📈 Analyzing market trends focused on {analysis_focus}...")
+        logger.info("📈 Analyzing market trends...", analysis_focus=analysis_focus)
 
         assert self.neo4j_driver is not None, "Neo4j driver must be initialized"  # nosec B101
         async with self.neo4j_driver.session() as session:
@@ -499,7 +513,7 @@ class MusicAnalytics:
 
         return AnalyticsResult(
             chart_type="area" if analysis_focus == "format" else "line",
-            chart_data=fig.to_dict(),
+            chart_data=convert_numpy_to_json_serializable(fig.to_dict()),
             insights=insights,
             metadata={"focus": analysis_focus, "total_records": len(market_data)},
         )

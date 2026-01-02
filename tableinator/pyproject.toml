@@ -21,7 +21,9 @@ dependencies = [
     "aio-pika>=9.0.0",
     "dict-hash>=1.1.0",
     "orjson>=3.9.0",
+    "pika>=1.3.0",
     "psycopg[binary]>=3.1.0",
+    "structlog>=24.0.0",
 ]
 
 [project.scripts]
@@ -34,7 +36,7 @@ packages = ["."]
 # Only service-specific overrides are defined here
 
 [tool.ruff.lint.per-file-ignores]
-"tableinator.py" = ["T201"]  # Allow print statements for ASCII art
+"tableinator.py" = ["T201"]    # Allow print statements for ASCII art
 
 [[tool.mypy.overrides]]
 module = [

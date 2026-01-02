@@ -1,0 +1,36 @@
+---
+name: Cleanup Cache
+
+on:
+  pull_request:
+    types:
+      - closed
+
+concurrency:
+  group: cleanup-cache-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: write
+    steps:
+      - name: 🧹 Cleanup Cache
+        run: |
+          echo "Fetching list of cache keys"
+          cacheKeysForPR=$(gh cache list --ref "$BRANCH" --limit 100 --json id --jq ".[].id")
+
+          ## Setting this to not fail the workflow while deleting cache keys.
+          set +e
+          echo "Deleting caches..."
+          for cacheKey in $cacheKeysForPR
+          do
+              gh cache delete "$cacheKey"
+          done
+          echo "Done"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: refs/pull/${{ github.event.pull_request.number }}/merge

@@ -14,6 +14,8 @@ on:
       - "**/*.py"
       - "**/pyproject.toml"
       - "**/uv.lock"
+      - "extractor/rustextractor/**/*.rs"
+      - "extractor/rustextractor/**/Cargo.toml"
       - ".github/workflows/test.yml"
   pull_request:
     branches:
@@ -22,48 +24,62 @@ on:
       - "**/*.py"
       - "**/pyproject.toml"
       - "**/uv.lock"
+      - "extractor/rustextractor/**/*.rs"
+      - "extractor/rustextractor/**/Cargo.toml"
       - ".github/workflows/test.yml"
 
 env:
   CI: true
   PYTHON_VERSION: "3.13"
 
+permissions:
+  contents: read
+  pull-requests: write  # Required for coverage report comments
+
 jobs:
-  test:
+  python-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
         with:
-          version: latest
-          enable-cache: true
-          cache-dependency-glob: "**/uv.lock"
+          fetch-depth: 0  # Need full history for diff
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: 🔍 Check if tests needed
+        id: check-tests
+        if: github.event_name == 'pull_request'
+        run: |
+          # Check if any Python files or test files changed
+          if git diff --name-only "origin/${{ github.base_ref }}...HEAD" | grep -qE "\.(py|yaml|yml|toml)$|^tests/"; then
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Tests needed - Python or config files changed"
+          else
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ No Python or config files changed - tests can be skipped"
+          fi
+
+      - name: ⏭️ Skip remaining steps if not needed
+        if: github.event_name == 'pull_request' && steps.check-tests.outputs.needed == 'false'
+        run: |
+          echo "::notice title=Tests Skipped::No relevant files changed, skipping tests"
+          exit 0
+
+      - name: 🔧 Setup Python and UV
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
+        uses: ./.github/actions/setup-python-uv
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # Combined Python dependencies cache (uv + venv)
-      - name: Cache Python dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cache/uv
-            .venv
-          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
-            ${{ runner.os }}-python-
+      - name: 🔧 Setup Just
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
+        uses: ./.github/actions/setup-just
 
       # Test cache (pytest)
-      - name: Cache test results
-        uses: actions/cache@v4
+      - name: 💾 Cache test results
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
+        uses: actions/cache@v5
         with:
           path: |
             .pytest_cache
@@ -74,31 +90,120 @@ jobs:
             ${{ runner.os }}-test-unit-
             ${{ runner.os }}-test-
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
         run: |
-          uv sync --all-extras --frozen
+          just install
           # Install workspace packages
           uv pip install -e dashboard
           uv pip install -e common
 
-      - name: Run unit tests with coverage (excluding E2E)
+      - name: 🧪 Run unit tests with coverage (excluding E2E)
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
         run: |
-          # Run tests in groups to avoid async conflicts
-          echo "Running core tests..."
-          uv run pytest tests/test_config.py tests/test_integration.py tests/extractor/ -v
+          # Run tests with coverage using just
+          just test-cov
 
-          echo "Running dashboard tests..."
-          uv run pytest tests/dashboard/ -v -m "not e2e"
+          # Generate XML coverage report for upload
+          uv run coverage xml
 
-          echo "Running graphinator tests..."
-          uv run pytest tests/graphinator/ -v
+          # Generate JSON coverage report for PR comments
+          uv run coverage json
 
-          echo "Running tableinator tests..."
-          uv run pytest tests/tableinator/ -v
+      - name: 📋 Process coverage reports
+        id: coverage-setup
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
+        run: |
+          jq '{
+            total: {
+              statements: {total: .totals.num_statements, covered: .totals.covered_lines},
+              lines: {total: .totals.num_statements, covered: .totals.covered_lines},
+              functions: {total: 0, covered: 0},
+              branches: {total: 0, covered: 0}
+            }
+          }' coverage.json > coverage-summary.json
+          echo "coverage-exists=true" >> "$GITHUB_OUTPUT"
 
-          echo "Running discovery tests..."
-          uv run pytest tests/discovery/ -v
+      - name: 📊 Upload Python coverage reports
+        if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.xml
+          flags: python
+          name: python-coverage
+          fail_ci_if_error: false
 
-          # Generate combined coverage report
-          echo "Generating coverage report..."
-          uv run pytest --cov --cov-append --cov-report=term --cov-report=xml -m "not e2e" --no-header -q
+      - name: 📊 Coverage Report
+        if: github.event_name == 'pull_request' && steps.coverage-setup.outputs.coverage-exists == 'true'
+        uses: slavcodev/coverage-monitor-action@398c4cbbb710e549a8407fdef96ae8b9454d0463 # v1.10.0
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          coverage_path: "coverage-summary.json"
+          coverage_format: "json-summary"
+          status_context: "Coverage Report"
+          comment_context: "Coverage Report"
+
+  rust-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔍 Check if Rust extractor exists
+        id: check-rust
+        run: |
+          if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "✅ Rust extractor found - tests will run"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "⏭️ No Rust extractor found - skipping Rust tests"
+          fi
+
+      - name: ⏭️ Skip remaining steps if Rust extractor doesn't exist
+        if: steps.check-rust.outputs.exists == 'false'
+        run: |
+          echo "::notice title=Rust Tests Skipped::No Rust extractor found in this branch"
+          exit 0
+
+      - name: 🦀 Setup Rust toolchain
+        if: steps.check-rust.outputs.exists == 'true'
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: 📦 Install cargo-llvm-cov
+        if: steps.check-rust.outputs.exists == 'true'
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: 💾 Cache Rust dependencies
+        if: steps.check-rust.outputs.exists == 'true'
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            extractor/rustextractor/target/
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-test-
+            ${{ runner.os }}-cargo-
+
+      - name: 🧪 Run Rust tests with coverage
+        if: steps.check-rust.outputs.exists == 'true'
+        run: |
+          cd extractor/rustextractor
+          cargo llvm-cov test --verbose --lcov --output-path lcov.info
+
+      - name: 📊 Upload Rust coverage reports
+        if: steps.check-rust.outputs.exists == 'true'
+        uses: codecov/codecov-action@v5
+        with:
+          files: extractor/rustextractor/lcov.info
+          flags: rust
+          name: rust-coverage
+          fail_ci_if_error: false

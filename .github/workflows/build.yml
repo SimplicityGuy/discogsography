@@ -24,23 +24,7 @@ permissions:
 
 jobs:
   list-sub-projects:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Get all sub-projects
-        id: set-matrix
-        run: |
-          # Only include actual service directories (sorted alphabetically)
-          services=("dashboard" "discovery" "extractor" "graphinator" "tableinator")
-          matrix=$(printf "%s\n" "${services[@]}" | jq -R -s -c 'split("\n")[:-1]')
-          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+    uses: ./.github/workflows/list-sub-projects.yml
 
   run-code-quality:
     uses: ./.github/workflows/code-quality.yml
@@ -50,6 +34,9 @@ jobs:
     needs: [run-code-quality]
     uses: ./.github/workflows/test.yml
     secrets: inherit
+    permissions:
+      contents: read
+      pull-requests: write  # Required for coverage report comments
 
   run-e2e-tests:
     needs: [run-code-quality]
@@ -57,31 +44,53 @@ jobs:
     secrets: inherit
 
   build-discogsography:
-    needs: [list-sub-projects, run-code-quality, run-tests, run-e2e-tests]
+    needs: [list-sub-projects, run-tests, run-e2e-tests]
 
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
     strategy:
       matrix:
-        sub-project: ${{ fromJson(needs.list-sub-projects.outputs.matrix) }}
+        include: ${{ fromJson(needs.list-sub-projects.outputs.matrix) }}
 
     permissions:
       contents: read
       packages: write
 
     steps:
-      - name: Set lowercase image name
+      - name: ⏱️ Start timer
+        id: timer
+        run: echo "start_time=$(date +%s)" >> "$GITHUB_OUTPUT"
+
+      - name: 🏷️ Set lowercase image name
         id: image
         run: |
           echo "IMAGE_NAME=$(echo "${{ github.repository }}" | tr "[:upper:]" "[:lower:]")" >> "$GITHUB_ENV"
 
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
         with:
           submodules: true
 
-      - name: Log in to the GitHub Container Registry
+      - name: 🧹 Free disk space
+        run: |
+          echo "📊 Disk space before cleanup:"
+          df -h
+
+          echo "🗑️ Removing unnecessary software..."
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+
+          echo "🧹 Cleaning Docker..."
+          docker system prune -af --volumes || true
+
+          echo "📊 Disk space after cleanup:"
+          df -h
+
+      - name: 🔒 Log in to the GitHub Container Registry
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
@@ -89,63 +98,39 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Anchore security scan - discogsography/${{ matrix.sub-project }}
-        uses: anchore/scan-action@16910ac423301c6d30554b83a7f71ac6ff4a51f3 # v6.4.0
+      - name: 🛡️ Anchore security scan - discogsography/${{ matrix.name }}
+        uses: anchore/scan-action@3c9a191a0fbab285ca6b8530b5de5a642cba332f # v7.2.2
         with:
-          path: ${{ matrix.sub-project }}
+          path: ${{ matrix.name }}
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@e92bafb6253dcd438e0484186d7669ea7a8ca1cc # v6.4.3
-        with:
-          version: latest
-          enable-cache: true
-          cache-dependency-glob: "**/uv.lock"
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: 🔧 Setup Python and UV
+        uses: ./.github/actions/setup-python-uv
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      # Combined Python dependencies cache (uv + venv)
-      - name: Cache Python dependencies
-        uses: actions/cache@v4
+      - name: 💾 Setup Docker build cache
+        id: docker-cache
+        uses: ./.github/actions/docker-build-cache
         with:
-          path: |
-            ~/.cache/uv
-            .venv
-          key: ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-${{ hashFiles('**/uv.lock', '**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-python-${{ env.PYTHON_VERSION }}-
-            ${{ runner.os }}-python-
+          service-name: ${{ matrix.name }}
+          dockerfile-path: ${{ matrix.name }}/Dockerfile
+          use-cache: ${{ matrix.use_cache }}
 
-      # Docker build cache
-      - name: Cache Docker layers
-        uses: actions/cache@v4
-        with:
-          path: /tmp/.buildx-cache
-          key: ${{ runner.os }}-docker-buildx-${{ matrix.sub-project }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-docker-buildx-${{ matrix.sub-project }}-
-            ${{ runner.os }}-docker-buildx-
-
-      - name: Generate uv.lock for Docker build
+      - name: 🔧 Generate uv.lock for Docker build
         run: uv sync --frozen
 
-      - name: Extract metadata (tags, labels) for Docker
+      - name: 📊 Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.sub-project }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/${{ matrix.name }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
             type=ref,event=pr
             type=schedule,pattern={{date 'YYYYMMDD'}}
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
+      - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           platforms: linux/amd64
@@ -153,44 +138,65 @@ jobs:
             image=moby/buildkit:latest
             network=host
 
-      - name: Build and push Docker image to GitHub Container Registry - discogsography/${{ matrix.sub-project }}
+      - name: 🚀 Build and push Docker image to GitHub Container Registry - discogsography/${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ${{ matrix.sub-project }}/Dockerfile
+          file: ${{ matrix.name }}/Dockerfile
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: true
           sbom: true
-          cache-from: |
-            type=gha
-            ${{ github.event_name != 'pull_request' &&
-                format('type=registry,ref={0}/{1}/{2}:buildcache',
-                       env.REGISTRY, env.IMAGE_NAME, matrix.sub-project) || '' }}
-            type=local,src=/tmp/.buildx-cache
-          cache-to: |
-            type=gha,mode=max
-            ${{ github.event_name != 'pull_request' &&
-                format('type=registry,ref={0}/{1}/{2}:buildcache,mode=max',
-                       env.REGISTRY, env.IMAGE_NAME, matrix.sub-project) || '' }}
-            type=local,dest=/tmp/.buildx-cache-new,mode=max
+          cache-from: ${{ steps.docker-cache.outputs.cache-from }}
+          cache-to: ${{ steps.docker-cache.outputs.cache-to }}
           build-args: |
             BUILDKIT_INLINE_CACHE=1
+            BUILDKIT_CACHE_MOUNT_NS=discogsography
+            DOCKER_BUILDKIT=1
             PYTHON_VERSION=${{ env.PYTHON_VERSION }}
             BUILD_DATE=${{ github.event.head_commit.timestamp || github.event.repository.updated_at }}
             BUILD_VERSION=${{ steps.meta.outputs.version }}
             VCS_REF=${{ github.sha }}
 
-      - name: Move cache
+      - # Temp fix
+        # https://github.com/docker/build-push-action/issues/252
+        # https://github.com/moby/buildkit/issues/1896
+        name: 💾 Move cache
+        if: ${{ matrix.use_cache }}
         run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+          rm -rf ${{ runner.temp }}/.buildx-cache
+          mv ${{ runner.temp }}/.buildx-cache-new ${{ runner.temp }}/.buildx-cache
 
-      - name: Send notification to Discord
-        uses: sarisia/actions-status-discord@5ddd3b114a98457dd80a39b2f00b6a998cd69008 # v1.15.3
+      - name: 🧹 Cleanup build artifacts
+        if: always()
+        run: |
+          echo "🗑️ Pruning Docker build cache..."
+          docker buildx prune -f --filter until=1h || true
+          docker system prune -f --filter until=1h || true
+
+          echo "📊 Remaining disk space:"
+          df -h
+
+      - name: 📊 Collect metrics
+        if: always()
+        run: |
+          end_time=$(date +%s)
+          duration=$((end_time - ${{ steps.timer.outputs.start_time }}))
+          echo "::notice title=Build Metrics::Service: ${{ matrix.name }}, Duration: ${duration}s, Cache Used: ${{ matrix.use_cache }}"
+
+          # Check cache hit rate
+          if [[ -n "${{ steps.docker-cache.outputs.cache-hit }}" ]]; then
+            echo "::notice title=Cache Performance::Docker cache hit for ${{ matrix.name }}"
+          fi
+
+      - name: 📢 Send notification to Discord
+        uses: sarisia/actions-status-discord@b8381b25576cb341b2af39926ab42c5056cc44ed # v1.15.5
         if: always()
         with:
-          title: discogsography/${{ matrix.sub-project }}
+          title: discogsography/${{ matrix.name }}
+          description: |
+            Build duration: ${{ steps.timer.outputs.duration || 'N/A' }}s
+            Cache used: ${{ matrix.use_cache }}
           webhook: ${{ secrets.DISCORD_WEBHOOK }}

@@ -2,11 +2,18 @@
 
 <div align="center">
 
-![Build Status](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml/badge.svg)
+[![Build](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/build.yml)
+[![Code Quality](https://github.com/SimplicityGuy/discogsography/actions/workflows/code-quality.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/code-quality.yml)
+[![Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml)
+[![E2E Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml)
 ![License: MIT](https://img.shields.io/github/license/SimplicityGuy/discogsography)
 ![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)
+![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
 [![uv](https://img.shields.io/badge/uv-package%20manager-orange?logo=python)](https://github.com/astral-sh/uv)
+[![just](https://img.shields.io/badge/just-task%20runner-blue)](https://just.systems)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![Cargo](https://img.shields.io/badge/cargo-rust%20package%20manager-brown)](https://doc.rust-lang.org/cargo/)
+[![Clippy](https://img.shields.io/badge/clippy-rust%20linter-green)](https://github.com/rust-lang/rust-clippy)
 [![pre-commit](https://img.shields.io/badge/pre--commit-enabled-brightgreen?logo=pre-commit)](https://github.com/pre-commit/pre-commit)
 [![mypy](https://img.shields.io/badge/mypy-checked-blue)](http://mypy-lang.org/)
 [![Bandit](https://img.shields.io/badge/security-bandit-yellow.svg)](https://github.com/PyCQA/bandit)
@@ -33,30 +40,34 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 ### ⚙️ Core Services
 
-| Service | Purpose | Key Technologies |
-|---------|---------|------------------|
-| **[📥](docs/emoji-guide.md#service-identifiers) Extractor** | Downloads & processes Discogs XML dumps | `asyncio`, `orjson`, `aio-pika` |
-| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs | `neo4j-driver`, graph algorithms |
-| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search |
-| **[🎵](docs/emoji-guide.md#service-identifiers) Discovery** | AI-powered music intelligence | `sentence-transformers`, `plotly`, `networkx` |
-| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard** | Real-time system monitoring | `FastAPI`, WebSocket, reactive UI |
+| Service                                                            | Purpose                                          | Key Technologies                              |
+| ------------------------------------------------------------------ | ------------------------------------------------ | --------------------------------------------- |
+| **[📥](docs/emoji-guide.md#service-identifiers) Python Extractor** | Downloads & processes Discogs XML dumps (Python) | `asyncio`, `orjson`, `aio-pika`               |
+| **[⚡](docs/emoji-guide.md#service-identifiers) Rust Extractor**   | High-performance Rust-based extractor            | `tokio`, `quick-xml`, `lapin`                 |
+| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator**      | Builds Neo4j knowledge graphs                    | `neo4j-driver`, graph algorithms              |
+| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator**      | Creates PostgreSQL analytics tables              | `psycopg3`, JSONB, full-text search           |
+| **[🎵](docs/emoji-guide.md#service-identifiers) Discovery**        | AI-powered music intelligence                    | `sentence-transformers`, `plotly`, `networkx` |
+| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**        | Real-time system monitoring                      | `FastAPI`, WebSocket, reactive UI             |
 
 ### 📐 System Architecture
 
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
-    EXT[["📥 Extractor<br/>XML → JSON<br/>Deduplication"]]
+    PYEXT[["📥 Python Extractor<br/>XML → JSON<br/>Deduplication"]]
+    RSEXT[["⚡ Rust Extractor<br/>High-Performance<br/>XML Processing"]]
     RMQ{{"🐰 RabbitMQ<br/>Message Broker<br/>4 Queues"}}
-    NEO4J[(🔗 Neo4j<br/>Graph Database<br/>Relationships")]
-    PG[(🐘 PostgreSQL<br/>Analytics DB<br/>Full-text Search")]
+    NEO4J[("🔗 Neo4j<br/>Graph Database<br/>Relationships")]
+    PG[("🐘 PostgreSQL<br/>Analytics DB<br/>Full-text Search")]
     GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     DISCO[["🎵 Discovery<br/>AI Engine<br/>ML Models"]]
 
-    S3 -->|1. Download & Parse| EXT
-    EXT -->|2. Publish Messages| RMQ
+    S3 -->|1a. Download & Parse| PYEXT
+    S3 -->|1b. Download & Parse| RSEXT
+    PYEXT -->|2. Publish Messages| RMQ
+    RSEXT -->|2. Publish Messages| RMQ
     RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
     RMQ -->|3b. Artists/Labels/Releases/Masters| TABLE
     GRAPH -->|4a. Build Graph| NEO4J
@@ -66,7 +77,8 @@ graph TD
     DISCO -.->|Query| PG
     DISCO -.->|Analyze| DISCO
 
-    DASH -.->|Monitor| EXT
+    DASH -.->|Monitor| PYEXT
+    DASH -.->|Monitor| RSEXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
     DASH -.->|Monitor| DISCO
@@ -75,6 +87,8 @@ graph TD
     DASH -.->|Stats| PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style PYEXT fill:#fff9c4,stroke:#f57c00,stroke-width:2px
+    style RSEXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
@@ -114,25 +128,54 @@ graph TD
 
 ## 📖 Documentation
 
-| Document | Purpose |
-|----------|---------|
-| **[CLAUDE.md](CLAUDE.md)** | 🤖 Claude Code integration guide & development standards |
-| **[Task Automation](docs/task-automation.md)** | 🚀 Complete taskipy command reference |
-| **[Docker Security](docs/docker-security.md)** | 🔒 Container hardening & security practices |
-| **[Dockerfile Standards](docs/dockerfile-standards.md)** | 🏗️ Best practices for writing Dockerfiles |
-| **Service Guides** | 📚 Individual README for each service |
+### 🎯 Essential Guides
+
+| Document                                                 | Purpose                                                  |
+| -------------------------------------------------------- | -------------------------------------------------------- |
+| **[CLAUDE.md](CLAUDE.md)**                               | 🤖 Claude Code integration guide & development standards |
+| **[Documentation Index](docs/README.md)**                | 📚 Complete documentation directory with all guides      |
+| **[GitHub Actions Guide](docs/github-actions-guide.md)** | 🚀 CI/CD workflows, automation & best practices          |
+| **[Task Automation](docs/task-automation.md)**           | ⚡ Complete taskipy command reference                    |
+
+### 🏗️ Development Standards
+
+| Document                                                           | Purpose                                              |
+| ------------------------------------------------------------------ | ---------------------------------------------------- |
+| **[Monorepo Guide](docs/monorepo-guide.md)**                       | 📦 Managing Python monorepo with shared dependencies |
+| **[Testing Guide](docs/testing-guide.md)**                         | 🧪 Comprehensive testing strategies and patterns     |
+| **[Logging Guide](docs/logging-guide.md)**                         | 📊 Structured logging standards and practices        |
+| **[Python Version Management](docs/python-version-management.md)** | 🐍 Managing Python 3.13+ across the project          |
+
+### 🛡️ Operations & Security
+
+| Document                                                 | Purpose                                          |
+| -------------------------------------------------------- | ------------------------------------------------ |
+| **[Docker Security](docs/docker-security.md)**           | 🔒 Container hardening & security practices      |
+| **[Dockerfile Standards](docs/dockerfile-standards.md)** | 🐋 Best practices for writing Dockerfiles        |
+| **[Database Resilience](docs/database-resilience.md)**   | 💾 Database connection patterns & error handling |
+| **[Performance Guide](docs/performance-guide.md)**       | ⚡ Performance optimization strategies           |
+
+### 📋 Features & References
+
+| Document                                                   | Purpose                                   |
+| ---------------------------------------------------------- | ----------------------------------------- |
+| **[Consumer Cancellation](docs/consumer-cancellation.md)** | 🔄 File completion and consumer lifecycle |
+| **[Platform Targeting](docs/platform-targeting.md)**       | 🎯 Cross-platform compatibility           |
+| **[Emoji Guide](docs/emoji-guide.md)**                     | 📋 Standardized emoji usage               |
+| **[Recent Improvements](docs/recent-improvements.md)**     | 🚀 Latest platform enhancements           |
+| **Service Guides**                                         | 📚 Individual README for each service     |
 
 ## 🚀 Quick Start
 
 ### ✅ Prerequisites
 
-| Requirement | Minimum | Recommended | Notes |
-|-------------|---------|-------------|--------|
-| **Python** | 3.13+ | Latest | Install via [uv](https://github.com/astral-sh/uv) |
-| **Docker** | 20.10+ | Latest | With Docker Compose v2 |
-| **Storage** | 100GB | 200GB SSD | For data + processing |
-| **Memory** | 8GB | 16GB+ | More RAM = faster processing |
-| **Network** | 10 Mbps | 100 Mbps+ | Initial download ~50GB |
+| Requirement | Minimum | Recommended | Notes                                             |
+| ----------- | ------- | ----------- | ------------------------------------------------- |
+| **Python**  | 3.13+   | Latest      | Install via [uv](https://github.com/astral-sh/uv) |
+| **Docker**  | 20.10+  | Latest      | With Docker Compose v2                            |
+| **Storage** | 100GB   | 200GB SSD   | For data + processing                             |
+| **Memory**  | 8GB     | 16GB+       | More RAM = faster processing                      |
+| **Network** | 10 Mbps | 100 Mbps+   | Initial download ~50GB                            |
 
 ### 🐳 Using Docker Compose (Recommended)
 
@@ -144,8 +187,12 @@ cd discogsography
 # 2. Copy environment template (optional - has sensible defaults)
 cp .env.example .env
 
-# 3. Start all services
+# 3. Start all services (default: Python Extractor)
 docker-compose up -d
+
+# 3b. (Optional) Use high-performance Rust Extractor instead
+./scripts/switch-extractor.sh rust
+# To switch back to Python Extractor: ./scripts/switch-extractor.sh python
 
 # 4. Watch the magic happen!
 docker-compose logs -f
@@ -156,13 +203,13 @@ open http://localhost:8003
 
 ### 🌐 Service Access
 
-| Service | URL | Default Credentials | Purpose |
-|---------|-----|---------------------|---------|
-| 📊 **Dashboard** | http://localhost:8003 | None | System monitoring |
-| 🎵 **Discovery** | http://localhost:8005 | None | AI music discovery |
-| 🐰 **RabbitMQ** | http://localhost:15672 | `discogsography` / `discogsography` | Queue management |
-| 🔗 **Neo4j** | http://localhost:7474 | `neo4j` / `discogsography` | Graph exploration |
-| 🐘 **PostgreSQL** | `localhost:5433` | `discogsography` / `discogsography` | Database access |
+| Service           | URL                    | Default Credentials                 | Purpose            |
+| ----------------- | ---------------------- | ----------------------------------- | ------------------ |
+| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring  |
+| 🎵 **Discovery**  | http://localhost:8005  | None                                | AI music discovery |
+| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management   |
+| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph exploration  |
+| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access    |
 
 ### 💻 Local Development
 
@@ -172,18 +219,24 @@ open http://localhost:8003
 # 1. Install uv (10-100x faster than pip)
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
-# 2. Install all dependencies
-uv sync --all-extras
+# 2. Install just (task runner)
+brew install just  # macOS
+# or: cargo install just
+# or: https://just.systems/install.sh
 
-# 3. Set up pre-commit hooks
-uv run task init
+# 3. Install all dependencies
+just install
 
-# 4. Run any service
-uv run task dashboard    # Monitoring UI
-uv run task discovery    # AI discovery
-uv run task extractor    # Data ingestion
-uv run task graphinator  # Neo4j builder
-uv run task tableinator  # PostgreSQL builder
+# 4. Set up pre-commit hooks
+just init
+
+# 5. Run any service
+just dashboard         # Monitoring UI
+just discovery         # AI discovery
+just pyextractor       # Python data ingestion
+just rustextractor-run # Rust data ingestion (requires cargo)
+just graphinator       # Neo4j builder
+just tableinator       # PostgreSQL builder
 ```
 
 #### Environment Setup
@@ -218,35 +271,51 @@ cp .env.example .env
 
 #### Core Settings
 
-| Variable | Description | Default | Used By |
-|----------|-------------|---------|---------|
-| `AMQP_CONNECTION` | RabbitMQ URL | `amqp://guest:guest@localhost:5672/` | All services |
-| `DISCOGS_ROOT` | Data storage path | `/discogs-data` | Extractor |
-| `PERIODIC_CHECK_DAYS` | Update check interval | `15` | Extractor |
-| `PYTHON_VERSION` | Python version for builds | `3.13` | Docker, CI/CD |
+| Variable              | Description               | Default                              | Used By                |
+| --------------------- | ------------------------- | ------------------------------------ | ---------------------- |
+| `AMQP_CONNECTION`     | RabbitMQ URL              | `amqp://guest:guest@localhost:5672/` | All services           |
+| `DISCOGS_ROOT`        | Data storage path         | `/discogs-data`                      | Python/Rust Extractors |
+| `PERIODIC_CHECK_DAYS` | Update check interval     | `15`                                 | Python/Rust Extractors |
+| `PYTHON_VERSION`      | Python version for builds | `3.13`                               | Docker, CI/CD          |
 
 #### Database Connections
 
-| Variable | Description | Default | Used By |
-|----------|-------------|---------|---------|
-| `NEO4J_ADDRESS` | Neo4j bolt URL | `bolt://localhost:7687` | Graphinator, Dashboard, Discovery |
-| `NEO4J_USERNAME` | Neo4j username | `neo4j` | Graphinator, Dashboard, Discovery |
-| `NEO4J_PASSWORD` | Neo4j password | Required | Graphinator, Dashboard, Discovery |
-| `POSTGRES_ADDRESS` | PostgreSQL host:port | `localhost:5432` | Tableinator, Dashboard, Discovery |
-| `POSTGRES_USERNAME` | PostgreSQL username | `postgres` | Tableinator, Dashboard, Discovery |
-| `POSTGRES_PASSWORD` | PostgreSQL password | Required | Tableinator, Dashboard, Discovery |
-| `POSTGRES_DATABASE` | Database name | `discogsography` | Tableinator, Dashboard, Discovery |
+| Variable            | Description          | Default                 | Used By                           |
+| ------------------- | -------------------- | ----------------------- | --------------------------------- |
+| `NEO4J_ADDRESS`     | Neo4j bolt URL       | `bolt://localhost:7687` | Graphinator, Dashboard, Discovery |
+| `NEO4J_USERNAME`    | Neo4j username       | `neo4j`                 | Graphinator, Dashboard, Discovery |
+| `NEO4J_PASSWORD`    | Neo4j password       | Required                | Graphinator, Dashboard, Discovery |
+| `POSTGRES_ADDRESS`  | PostgreSQL host:port | `localhost:5432`        | Tableinator, Dashboard, Discovery |
+| `POSTGRES_USERNAME` | PostgreSQL username  | `postgres`              | Tableinator, Dashboard, Discovery |
+| `POSTGRES_PASSWORD` | PostgreSQL password  | Required                | Tableinator, Dashboard, Discovery |
+| `POSTGRES_DATABASE` | Database name        | `discogsography`        | Tableinator, Dashboard, Discovery |
+
+#### Consumer Management Settings
+
+| Variable                | Description                                                      | Default       | Used By                  |
+| ----------------------- | ---------------------------------------------------------------- | ------------- | ------------------------ |
+| `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers after file completion    | `300` (5 min) | Graphinator, Tableinator |
+| `QUEUE_CHECK_INTERVAL`  | Seconds between queue checks when all consumers are idle         | `3600` (1 hr) | Graphinator, Tableinator |
+
+> **📝 Note**: The consumer management system implements smart connection lifecycle management:
+>
+> - **Automatic Idle Detection**: When all consumers complete processing, RabbitMQ connections are automatically closed to conserve resources
+> - **Periodic Queue Checking**: Every `QUEUE_CHECK_INTERVAL` seconds, the service briefly connects to check for new messages in all queues
+> - **Auto-Reconnection**: When new messages are detected, connections are re-established and consumers restart automatically
+> - **Silent When Idle**: Progress logging stops when all queues are complete to reduce log noise
+>
+> This ensures efficient resource usage while maintaining automatic responsiveness to new data.
 
 ### 💿 Dataset Scale
 
 <div align="center">
 
-| Data Type | Record Count | XML Size | Processing Time |
-|:---------:|:------------:|:--------:|:---------------:|
-| [📀](docs/emoji-guide.md#music-domain) **Releases** | ~15 million | ~40GB | 1-3 hours |
-| [🎤](docs/emoji-guide.md#music-domain) **Artists** | ~2 million | ~5GB | 15-30 mins |
-| [🎵](docs/emoji-guide.md#music-domain) **Masters** | ~2 million | ~3GB | 10-20 mins |
-| 🏢 **Labels** | ~1.5 million | ~2GB | 10-15 mins |
+|                      Data Type                      | Record Count | XML Size | Processing Time |
+| :-------------------------------------------------: | :----------: | :------: | :-------------: |
+| [📀](docs/emoji-guide.md#music-domain) **Releases** | ~15 million  |  ~40GB   |    1-3 hours    |
+| [🎤](docs/emoji-guide.md#music-domain) **Artists**  |  ~2 million  |   ~5GB   |   15-30 mins    |
+| [🎵](docs/emoji-guide.md#music-domain) **Masters**  |  ~2 million  |   ~3GB   |   10-20 mins    |
+|                    🏢 **Labels**                    | ~1.5 million |   ~2GB   |   10-15 mins    |
 
 **📊 Total: ~20 million records • 50GB compressed • 100GB processed**
 
@@ -384,13 +453,13 @@ Each service provides detailed telemetry:
 
 The project leverages cutting-edge Python tooling:
 
-| Tool | Purpose | Configuration |
-|------|---------|---------------|
-| **[uv](https://github.com/astral-sh/uv)** | 10-100x faster package management | `pyproject.toml` |
-| **[ruff](https://github.com/astral-sh/ruff)** | Lightning-fast linting & formatting | `pyproject.toml` |
-| **[mypy](http://mypy-lang.org/)** | Strict static type checking | `pyproject.toml` |
-| **[bandit](https://github.com/PyCQA/bandit)** | Security vulnerability scanning | `pyproject.toml` |
-| **[pre-commit](https://pre-commit.com/)** | Git hooks for code quality | `.pre-commit-config.yaml` |
+| Tool                                          | Purpose                             | Configuration             |
+| --------------------------------------------- | ----------------------------------- | ------------------------- |
+| **[uv](https://github.com/astral-sh/uv)**     | 10-100x faster package management   | `pyproject.toml`          |
+| **[ruff](https://github.com/astral-sh/ruff)** | Lightning-fast linting & formatting | `pyproject.toml`          |
+| **[mypy](http://mypy-lang.org/)**             | Strict static type checking         | `pyproject.toml`          |
+| **[bandit](https://github.com/PyCQA/bandit)** | Security vulnerability scanning     | `pyproject.toml`          |
+| **[pre-commit](https://pre-commit.com/)**     | Git hooks for code quality          | `.pre-commit-config.yaml` |
 
 ### 🧪 Testing
 
@@ -404,7 +473,7 @@ uv run task test
 uv run task test-cov
 
 # Run specific test suites
-uv run pytest tests/extractor/      # Extractor tests
+uv run pytest tests/extractor/      # Extractor tests (Python)
 uv run pytest tests/graphinator/    # Graphinator tests
 uv run pytest tests/tableinator/    # Tableinator tests
 uv run pytest tests/dashboard/      # Dashboard tests
@@ -432,10 +501,10 @@ uv sync --all-extras
 uv run task init  # Install pre-commit hooks
 
 # Before committing
-uv run task lint     # Run linting
-uv run task format   # Format code
+just lint     # Run linting
+just format   # Format code
 uv run task test     # Run tests
-uv run task security # Security scan
+just security # Security scan
 
 # Or run everything at once
 uv run pre-commit run --all-files
@@ -451,9 +520,14 @@ discogsography/
 ├── 📊 dashboard/           # Real-time monitoring dashboard
 │   ├── dashboard.py        # FastAPI backend with WebSocket
 │   └── static/             # Frontend HTML/CSS/JS
-├── 📥 extractor/           # Discogs data ingestion service
-│   ├── extractor.py        # Main processing logic
-│   └── discogs.py          # S3 download and validation
+├── 📥 extractor/           # Data extraction services
+│   ├── pyextractor/        # Python-based Discogs data ingestion
+│   │   ├── extractor.py    # Main processing logic
+│   │   └── discogs.py      # S3 download and validation
+│   └── rustextractor/      # Rust-based high-performance extractor
+│       ├── src/
+│       │   └── main.rs     # Rust processing logic
+│       └── Cargo.toml      # Rust dependencies
 ├── 🔗 graphinator/         # Neo4j graph database service
 │   └── graphinator.py      # Graph relationship builder
 ├── 🐘 tableinator/         # PostgreSQL storage service
@@ -474,30 +548,30 @@ All logger calls (`logger.info`, `logger.warning`, `logger.error`) in this proje
 
 ### Emoji Key
 
-| Emoji | Usage | Example |
-|-------|-------|---------|
-| 🚀 | Startup messages | `logger.info("🚀 Starting service...")` |
-| ✅ | Success/completion messages | `logger.info("✅ Operation completed successfully")` |
-| ❌ | Errors | `logger.error("❌ Failed to connect to database")` |
-| ⚠️ | Warnings | `logger.warning("⚠️ Connection timeout, retrying...")` |
-| 🛑 | Shutdown/stop messages | `logger.info("🛑 Shutting down gracefully")` |
-| 📊 | Progress/statistics | `logger.info("📊 Processed 1000 records")` |
-| 📥 | Downloads | `logger.info("📥 Starting download of data")` |
-| ⬇️ | Downloading files | `logger.info("⬇️ Downloading file.xml")` |
-| 🔄 | Processing operations | `logger.info("🔄 Processing batch of messages")` |
-| ⏳ | Waiting/pending | `logger.info("⏳ Waiting for messages...")` |
-| 📋 | Metadata operations | `logger.info("📋 Loaded metadata from cache")` |
-| 🔍 | Checking/searching | `logger.info("🔍 Checking for updates...")` |
-| 📄 | File operations | `logger.info("📄 File created successfully")` |
-| 🆕 | New versions | `logger.info("🆕 Found newer version available")` |
-| ⏰ | Periodic operations | `logger.info("⏰ Running periodic check")` |
-| 🔧 | Setup/configuration | `logger.info("🔧 Creating database indexes")` |
-| 🐰 | RabbitMQ connections | `logger.info("🐰 Connected to RabbitMQ")` |
-| 🔗 | Neo4j connections | `logger.info("🔗 Connected to Neo4j")` |
-| 🐘 | PostgreSQL operations | `logger.info("🐘 Connected to PostgreSQL")` |
-| 💾 | Database save operations | `logger.info("💾 Updated artist ID=123 in Neo4j")` |
-| 🏥 | Health server | `logger.info("🏥 Health server started on port 8001")` |
-| ⏩ | Skipping operations | `logger.info("⏩ Skipped artist ID=123 (no changes)")` |
+| Emoji | Usage                       | Example                                                |
+| ----- | --------------------------- | ------------------------------------------------------ |
+| 🚀    | Startup messages            | `logger.info("🚀 Starting service...")`                |
+| ✅    | Success/completion messages | `logger.info("✅ Operation completed successfully")`   |
+| ❌    | Errors                      | `logger.error("❌ Failed to connect to database")`     |
+| ⚠️    | Warnings                    | `logger.warning("⚠️ Connection timeout, retrying...")` |
+| 🛑    | Shutdown/stop messages      | `logger.info("🛑 Shutting down gracefully")`           |
+| 📊    | Progress/statistics         | `logger.info("📊 Processed 1000 records")`             |
+| 📥    | Downloads                   | `logger.info("📥 Starting download of data")`          |
+| ⬇️    | Downloading files           | `logger.info("⬇️ Downloading file.xml")`               |
+| 🔄    | Processing operations       | `logger.info("🔄 Processing batch of messages")`       |
+| ⏳    | Waiting/pending             | `logger.info("⏳ Waiting for messages...")`            |
+| 📋    | Metadata operations         | `logger.info("📋 Loaded metadata from cache")`         |
+| 🔍    | Checking/searching          | `logger.info("🔍 Checking for updates...")`            |
+| 📄    | File operations             | `logger.info("📄 File created successfully")`          |
+| 🆕    | New versions                | `logger.info("🆕 Found newer version available")`      |
+| ⏰    | Periodic operations         | `logger.info("⏰ Running periodic check")`             |
+| 🔧    | Setup/configuration         | `logger.info("🔧 Creating database indexes")`          |
+| 🐰    | RabbitMQ connections        | `logger.info("🐰 Connected to RabbitMQ")`              |
+| 🔗    | Neo4j connections           | `logger.info("🔗 Connected to Neo4j")`                 |
+| 🐘    | PostgreSQL operations       | `logger.info("🐘 Connected to PostgreSQL")`            |
+| 💾    | Database save operations    | `logger.info("💾 Updated artist ID=123 in Neo4j")`     |
+| 🏥    | Health server               | `logger.info("🏥 Health server started on port 8001")` |
+| ⏩    | Skipping operations         | `logger.info("⏩ Skipped artist ID=123 (no changes)")` |
 
 ### Example Usage
 
@@ -516,14 +590,14 @@ The graph database models complex music industry relationships:
 
 #### Node Types
 
-| Node | Description | Key Properties |
-|------|-------------|----------------|
-| `Artist` | Musicians, bands, producers | id, name, real_name, profile |
-| `Label` | Record labels and imprints | id, name, profile, parent_label |
-| `Master` | Master recordings | id, title, year, main_release |
-| `Release` | Physical/digital releases | id, title, year, country, format |
-| `Genre` | Musical genres | name |
-| `Style` | Sub-genres and styles | name |
+| Node      | Description                 | Key Properties                   |
+| --------- | --------------------------- | -------------------------------- |
+| `Artist`  | Musicians, bands, producers | id, name, real_name, profile     |
+| `Label`   | Record labels and imprints  | id, name, profile, parent_label  |
+| `Master`  | Master recordings           | id, title, year, main_release    |
+| `Release` | Physical/digital releases   | id, title, year, country, format |
+| `Genre`   | Musical genres              | name                             |
+| `Style`   | Sub-genres and styles       | name                             |
 
 #### Relationships
 
@@ -597,11 +671,12 @@ CREATE INDEX idx_releases_gin ON releases USING GIN (data);
 
 Typical processing rates on modern hardware:
 
-| Service | Records/Second | Bottleneck |
-|---------|----------------|------------|
-| 📥 **Extractor** | 5,000-10,000 | XML parsing, I/O |
-| 🔗 **Graphinator** | 1,000-2,000 | Neo4j transactions |
-| 🐘 **Tableinator** | 3,000-5,000 | PostgreSQL inserts |
+| Service                 | Records/Second  | Bottleneck               |
+| ----------------------- | --------------- | ------------------------ |
+| 📥 **Python Extractor** | 5,000-10,000    | XML parsing, I/O         |
+| ⚡ **Rust Extractor**   | 20,000-400,000+ | Network I/O (Rust-based) |
+| 🔗 **Graphinator**      | 1,000-2,000     | Neo4j transactions       |
+| 🐘 **Tableinator**      | 3,000-5,000     | PostgreSQL inserts       |
 
 ### 💻 Hardware Requirements
 
@@ -660,7 +735,7 @@ PREFETCH_COUNT: 100  # Adjust based on processing speed
 
 ### ❌ Common Issues & Solutions
 
-#### Extractor Download Failures
+#### Python/Rust Extractor Download Failures
 
 ```bash
 # Check connectivity
@@ -724,7 +799,7 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
 1. **📋 Check Service Health**
 
    ```bash
-   curl http://localhost:8000/health  # Extractor
+   curl http://localhost:8000/health  # Python/Rust Extractor
    curl http://localhost:8001/health  # Graphinator
    curl http://localhost:8002/health  # Tableinator
    curl http://localhost:8003/health  # Dashboard
@@ -738,7 +813,8 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
    uv run task logs
 
    # Specific service
-   docker-compose logs -f extractor
+   docker-compose logs -f extractor-python  # For Python Extractor
+   docker-compose logs -f extractor-rust    # For Rust Extractor
    ```
 
 1. **🔍 Analyze Errors**
@@ -804,9 +880,9 @@ We welcome contributions! Please follow these guidelines:
 1. **Validate Changes**
 
    ```bash
-   uv run task lint      # Fix any linting issues
-   uv run task test      # Ensure tests pass
-   uv run task security  # Check for vulnerabilities
+   just lint      # Fix any linting issues
+   just test      # Ensure tests pass
+   just security  # Check for vulnerabilities
    ```
 
 1. **Commit with Conventional Commits**
@@ -879,11 +955,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ### Documentation
 
-- 📖 **[CLAUDE.md](CLAUDE.md)** - Detailed technical documentation
-- 🤖 **[Task Automation](docs/task-automation.md)** - Available tasks and workflows
-- 🔒 **[Docker Security](docs/docker-security.md)** - Security best practices
-- 🏗️ **[Dockerfile Standards](docs/dockerfile-standards.md)** - Container standards
-- 📦 **[Service READMEs](/)** - Individual service documentation
+- 📚 **[Complete Documentation Index](docs/README.md)** - All guides and references
+- 🤖 **[CLAUDE.md](CLAUDE.md)** - AI development guide
+- 📦 **Service Documentation** - README in each service directory
 
 ### Project Status
 

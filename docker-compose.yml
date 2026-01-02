@@ -22,6 +22,7 @@ services:
     environment:
       RABBITMQ_DEFAULT_USER: discogsography
       RABBITMQ_DEFAULT_PASS: discogsography
+      RABBITMQ_DEFAULT_VHOST: /
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit log_levels [{connection,error},{default,warning}]"
     ports:
       - "5672:5672"      # AMQP port
@@ -138,11 +139,48 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # Extractor service
+  # Rust-based extractor service
+  rustextractor:
+    build:
+      context: .
+      dockerfile: extractor/rustextractor/Dockerfile
+    image: discogsography/rustextractor:latest
+    container_name: discogsography-rustextractor
+    hostname: rustextractor
+    user: "1000:1000"
+    environment:
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672//
+      DISCOGS_ROOT: /discogs-data
+      RUST_LOG: rust_extractor=info,lapin=warn
+      STARTUP_DELAY: "10"
+    volumes:
+      - discogs_data:/discogs-data
+      - rust_extractor_logs:/logs
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    profiles:
+      - rustextractor
+
+  # Python-based extractor service (default)
   extractor:
     build:
       context: .
-      dockerfile: extractor/Dockerfile
+      dockerfile: extractor/pyextractor/Dockerfile
       args:
         PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
         UID: ${UID:-1000}
@@ -152,7 +190,7 @@ services:
     hostname: extractor
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       DISCOGS_ROOT: /discogs-data
       PYTHONUNBUFFERED: "1"
       STARTUP_DELAY: "10"
@@ -193,12 +231,15 @@ services:
     hostname: graphinator
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       NEO4J_ADDRESS: bolt://neo4j:7687
       NEO4J_USERNAME: neo4j
       NEO4J_PASSWORD: discogsography
       PYTHONUNBUFFERED: "1"
       STARTUP_DELAY: "15"
+      # Consumer management settings
+      CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
+      QUEUE_CHECK_INTERVAL: "3600"      # 1 hour between queue checks when idle
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -236,13 +277,16 @@ services:
     hostname: tableinator
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       POSTGRES_ADDRESS: postgres:5432
       POSTGRES_USERNAME: discogsography
       POSTGRES_PASSWORD: discogsography
       POSTGRES_DATABASE: discogsography
       PYTHONUNBUFFERED: "1"
       STARTUP_DELAY: "20"
+      # Consumer management settings
+      CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
+      QUEUE_CHECK_INTERVAL: "3600"      # 1 hour between queue checks when idle
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -280,7 +324,7 @@ services:
     hostname: dashboard
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       NEO4J_ADDRESS: bolt://neo4j:7687
       NEO4J_USERNAME: neo4j
       NEO4J_PASSWORD: discogsography
@@ -289,6 +333,8 @@ services:
       POSTGRES_PASSWORD: discogsography
       POSTGRES_DATABASE: discogsography
       REDIS_URL: redis://redis:6379/0
+      RABBITMQ_MANAGEMENT_USER: discogsography
+      RABBITMQ_MANAGEMENT_PASSWORD: discogsography
       PYTHONUNBUFFERED: "1"
       UV_CACHE_DIR: "/tmp/.cache/uv"
     ports:
@@ -335,7 +381,7 @@ services:
     hostname: discovery
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/
+      AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672/%2F
       NEO4J_ADDRESS: bolt://neo4j:7687
       NEO4J_USERNAME: neo4j
       NEO4J_PASSWORD: discogsography
@@ -346,7 +392,9 @@ services:
       REDIS_URL: redis://redis:6379/0
       PYTHONUNBUFFERED: "1"
       UV_CACHE_DIR: "/tmp/.cache/uv"
-      HF_HOME: "/tmp/.cache/huggingface"
+      HF_HOME: "/models/huggingface"
+      SENTENCE_TRANSFORMERS_HOME: "/models/sentence-transformers"
+      TRANSFORMERS_CACHE: "/models/transformers"
       XDG_CACHE_HOME: "/tmp/.cache"
     ports:
       - "8004:8004"      # Health check port
@@ -360,6 +408,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    volumes:
+      - discovery_models:/models
     networks:
       - discogsography
     healthcheck:
@@ -388,3 +438,5 @@ volumes:
   neo4j_plugins:
   redis_data:
   discogs_data:
+  discovery_models:
+  rust_extractor_logs:

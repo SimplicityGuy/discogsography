@@ -12,6 +12,9 @@ The extractor service:
 - Publishes parsed records to RabbitMQ queues
 - Implements periodic checking for new data updates
 - Tracks processed records to avoid duplicates
+- **NEW**: Manages AMQP connections per file, closing after completion
+- **NEW**: Sends file completion notifications to downstream services
+- **NEW**: Re-establishes connections when checking for new files
 
 ## Architecture
 
@@ -36,6 +39,38 @@ DISCOGS_ROOT=/discogs-data          # Directory for downloaded files
 # RabbitMQ
 AMQP_CONNECTION=amqp://discogsography:discogsography@rabbitmq:5672
 ```
+
+## Connection Management
+
+### Improved Connection Lifecycle
+
+The extractor now implements intelligent connection management:
+
+1. **Per-File Connections**: Each file type gets its own AMQP connection
+1. **Automatic Closure**: Connections are closed after file processing completes
+1. **Completion Notifications**: Sends `file_complete` messages before closing
+1. **Periodic Re-establishment**: Connections are re-created for periodic checks
+1. **Resource Efficiency**: No idle connections during wait periods
+
+### File Completion Messages
+
+When a file finishes processing, the extractor sends:
+
+```json
+{
+  "type": "file_complete",
+  "data_type": "artists",
+  "timestamp": "2024-01-01T12:00:00",
+  "total_processed": 12345,
+  "file": "discogs_20240101_artists.xml.gz"
+}
+```
+
+This allows downstream services (graphinator, tableinator) to:
+
+- Know when a file is complete
+- Close their own consumers if needed
+- Track processing progress
 
 ## Data Processing
 
@@ -88,7 +123,7 @@ PERIODIC_CHECK_DAYS=1 uv run python extractor/extractor.py
 
 ```bash
 # Install dependencies
-uv sync --extra extractor
+uv sync --extra pyextractor
 
 # Run the extractor
 uv run python extractor/extractor.py
@@ -110,7 +145,7 @@ Build and run with Docker:
 
 ```bash
 # Build
-docker build -f extractor/Dockerfile .
+docker build -f extractor/pyextractor/Dockerfile .
 
 # Run with docker-compose
 docker-compose up extractor
@@ -124,6 +159,21 @@ The Docker image includes a volume mount at `/discogs-data` for persistent stora
 - Structured JSON logging with emoji prefixes for visual clarity
 - Progress bars for long-running operations
 - Detailed error messages with stack traces
+
+### File Completion Tracking
+
+The extractor includes intelligent file completion tracking:
+
+- Sends "file_complete" messages when processing finishes
+- Tracks completed files to prevent false stalled warnings
+- Shows completion status in progress reports
+- Integrates with consumer cancellation for resource cleanup
+
+Progress reports show:
+
+- Active extractors currently processing files
+- Completed file types that have finished
+- Actual stalled extractors (excludes completed files)
 
 ## Performance
 

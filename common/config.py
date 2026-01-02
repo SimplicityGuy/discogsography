@@ -1,12 +1,17 @@
 """Configuration management for discogsography services."""
 
 import logging
+import sys
 from dataclasses import dataclass
 from os import getenv
 from pathlib import Path
+from typing import Any
+
+import orjson
+import structlog
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 @dataclass(frozen=True)
@@ -34,10 +39,12 @@ class ExtractorConfig:
             try:
                 periodic_check_days = int(periodic_check_env)
                 if periodic_check_days < 1:
-                    logger.warning(f"⚠️ Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days.")
+                    log = structlog.get_logger()
+                    log.warning("⚠️ Invalid PERIODIC_CHECK_DAYS value. Using default of 15 days.", value=periodic_check_env)
                     periodic_check_days = 15
             except ValueError:
-                logger.warning(f"⚠️ Invalid PERIODIC_CHECK_DAYS value: {periodic_check_env}. Using default of 15 days.")
+                log = structlog.get_logger()
+                log.warning("⚠️ Invalid PERIODIC_CHECK_DAYS value. Using default of 15 days.", value=periodic_check_env)
                 periodic_check_days = 15
 
         return cls(
@@ -138,22 +145,95 @@ AMQP_QUEUE_PREFIX_TABLEINATOR = "discogsography-tableinator"
 DATA_TYPES = ["artists", "labels", "masters", "releases"]
 
 
+def orjson_serializer(msg: dict[str, Any], **kwargs: Any) -> str:  # noqa: ARG001
+    """Custom JSON serializer using orjson for consistency with Rust extractor.
+
+    Handles non-serializable types like exceptions by converting them to strings.
+    """
+
+    def default(obj: Any) -> Any:
+        """Convert non-serializable objects to strings."""
+        if isinstance(obj, Exception):
+            return f"{type(obj).__name__}: {obj!s}"
+        return str(obj)
+
+    return orjson.dumps(msg, option=orjson.OPT_SORT_KEYS, default=default).decode("utf-8")
+
+
 def setup_logging(
     service_name: str,
-    level: str = "INFO",
+    level: str | None = "INFO",
     log_file: Path | None = None,
 ) -> None:
-    """Set up logging configuration."""
-    handlers: list[logging.Handler] = [logging.StreamHandler()]
+    """Set up structured logging configuration to match Rust extractor format."""
 
+    # Default to INFO if level is None
+    if level is None:
+        level = "INFO"
+
+    # Configure structlog processors
+    timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
+
+    shared_processors = [
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.PositionalArgumentsFormatter(),
+        timestamper,
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+        structlog.processors.UnicodeDecoder(),
+        structlog.processors.CallsiteParameterAdder(
+            parameters=[structlog.processors.CallsiteParameter.LINENO],
+            additional_ignores=["structlog"],
+        ),
+    ]
+
+    structlog.configure(
+        processors=[
+            *shared_processors,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+
+    # Set up standard logging handlers
+    handlers: list[logging.Handler] = []
+
+    # Console handler with JSON output
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            foreign_pre_chain=shared_processors,
+            processors=[
+                structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                structlog.processors.dict_tracebacks,
+                structlog.processors.JSONRenderer(serializer=orjson_serializer),
+            ],
+        )
+    )
+    handlers.append(console_handler)
+
+    # File handler if specified
     if log_file:
-        # Create parent directory if it doesn't exist
         log_file.parent.mkdir(parents=True, exist_ok=True)
-        handlers.append(logging.FileHandler(log_file))
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(
+            structlog.stdlib.ProcessorFormatter(
+                foreign_pre_chain=shared_processors,
+                processors=[
+                    structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+                    structlog.processors.dict_tracebacks,
+                    structlog.processors.JSONRenderer(serializer=orjson_serializer),
+                ],
+            )
+        )
+        handlers.append(file_handler)
 
+    # Configure root logger
     logging.basicConfig(
         level=getattr(logging, level.upper()),
-        format=f"%(asctime)s - {service_name} - %(name)s - %(levelname)s - %(message)s",
         handlers=handlers,
         force=True,
     )
@@ -166,7 +246,9 @@ def setup_logging(
     logging.getLogger("pika.adapters.blocking_connection").setLevel(logging.WARNING)
     logging.getLogger("pika.connection").setLevel(logging.WARNING)
 
-    logger.info(f"✅ Logging configured for {service_name}")
+    # Get structured logger
+    log = structlog.get_logger()
+    log.info("✅ Logging configured for service", service=service_name)
 
 
 @dataclass(frozen=True)
@@ -181,6 +263,8 @@ class DashboardConfig:
     postgres_username: str
     postgres_password: str
     postgres_database: str
+    rabbitmq_management_user: str
+    rabbitmq_management_password: str
     redis_url: str = "redis://localhost:6379/0"
 
     @classmethod
@@ -193,6 +277,10 @@ class DashboardConfig:
         # Redis configuration
         redis_url = getenv("REDIS_URL", "redis://localhost:6379/0")
 
+        # Get RabbitMQ management credentials
+        rabbitmq_management_user = getenv("RABBITMQ_MANAGEMENT_USER", "discogsography")
+        rabbitmq_management_password = getenv("RABBITMQ_MANAGEMENT_PASSWORD", "discogsography")
+
         return cls(
             amqp_connection=graphinator_config.amqp_connection,
             neo4j_address=graphinator_config.neo4j_address,
@@ -203,6 +291,8 @@ class DashboardConfig:
             postgres_password=tableinator_config.postgres_password,
             postgres_database=tableinator_config.postgres_database,
             redis_url=redis_url,
+            rabbitmq_management_user=rabbitmq_management_user,
+            rabbitmq_management_password=rabbitmq_management_password,
         )
 
 
