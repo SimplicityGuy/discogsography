@@ -51,19 +51,10 @@ CONSUMER_CANCEL_DELAY = int(
     os.environ.get("CONSUMER_CANCEL_DELAY", "300")
 )  # Default 5 minutes
 
-# Periodic reconnection settings
-RECONNECT_INTERVAL = int(
-    os.environ.get("RECONNECT_INTERVAL", "86400")
-)  # Default 24 hours (1 day)
-EMPTY_QUEUE_TIMEOUT = int(
-    os.environ.get("EMPTY_QUEUE_TIMEOUT", "1800")
-)  # Default 30 minutes
+# Periodic queue checking settings
 QUEUE_CHECK_INTERVAL = int(
     os.environ.get("QUEUE_CHECK_INTERVAL", "3600")
 )  # Default 1 hour - how often to check for new messages when connection is closed
-reconnect_tasks: dict[
-    str, asyncio.Task[None]
-] = {}  # Tracks periodic reconnection tasks
 
 # Connection parameters will be initialized in main
 connection_params: dict[str, Any] = {}
@@ -811,10 +802,6 @@ async def main() -> None:
 
             # Cancel any pending consumer cancellation tasks
             for task in consumer_cancel_tasks.values():
-                task.cancel()
-
-            # Cancel any pending reconnection tasks
-            for task in reconnect_tasks.values():
                 task.cancel()
 
             # Close RabbitMQ connection if still active
