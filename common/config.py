@@ -266,6 +266,7 @@ class DashboardConfig:
     rabbitmq_management_user: str
     rabbitmq_management_password: str
     redis_url: str = "redis://localhost:6379/0"
+    cors_origins: list[str] | None = None  # None = default to localhost only
 
     @classmethod
     def from_env(cls) -> "DashboardConfig":
@@ -281,6 +282,13 @@ class DashboardConfig:
         rabbitmq_management_user = getenv("RABBITMQ_MANAGEMENT_USER", "discogsography")
         rabbitmq_management_password = getenv("RABBITMQ_MANAGEMENT_PASSWORD", "discogsography")
 
+        # CORS configuration
+        cors_origins_env = getenv("CORS_ORIGINS")
+        cors_origins = None
+        if cors_origins_env:
+            # Parse comma-separated list of origins
+            cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
+
         return cls(
             amqp_connection=graphinator_config.amqp_connection,
             neo4j_address=graphinator_config.neo4j_address,
@@ -293,6 +301,7 @@ class DashboardConfig:
             redis_url=redis_url,
             rabbitmq_management_user=rabbitmq_management_user,
             rabbitmq_management_password=rabbitmq_management_password,
+            cors_origins=cors_origins,
         )
 
 

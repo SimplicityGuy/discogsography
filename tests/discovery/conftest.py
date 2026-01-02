@@ -1,5 +1,6 @@
 """Discovery service test configuration and fixtures."""
 
+import os
 from collections.abc import Generator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -7,6 +8,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
+
+# Set environment variables before any imports
+# This ensures discovery modules can initialize properly during import
+# These defaults match those in tests/conftest.py setup_test_env
+os.environ.setdefault("AMQP_CONNECTION", "amqp://test:test@localhost:5672/")
+os.environ.setdefault("DISCOGS_ROOT", "/tmp/test-discogs")  # noqa: S108
+os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
+os.environ.setdefault("NEO4J_USERNAME", "test")
+os.environ.setdefault("NEO4J_PASSWORD", "test")
+os.environ.setdefault("POSTGRES_ADDRESS", "localhost:5432")
+os.environ.setdefault("POSTGRES_USERNAME", "test")
+os.environ.setdefault("POSTGRES_PASSWORD", "test")
+os.environ.setdefault("POSTGRES_DATABASE", "test")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("PERIODIC_CHECK_DAYS", "15")
 
 
 @pytest.fixture(autouse=True)
