@@ -213,8 +213,7 @@ services:
       STARTUP_DELAY: "15"
       # Consumer management settings
       CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
-      RECONNECT_INTERVAL: "86400"       # 24 hours between reconnection attempts
-      EMPTY_QUEUE_TIMEOUT: "1800"       # 30 minutes timeout for empty queues
+      QUEUE_CHECK_INTERVAL: "3600"      # 1 hour between queue checks when idle
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -261,8 +260,7 @@ services:
       STARTUP_DELAY: "20"
       # Consumer management settings
       CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
-      RECONNECT_INTERVAL: "86400"       # 24 hours between reconnection attempts
-      EMPTY_QUEUE_TIMEOUT: "1800"       # 30 minutes timeout for empty queues
+      QUEUE_CHECK_INTERVAL: "3600"      # 1 hour between queue checks when idle
     depends_on:
       rabbitmq:
         condition: service_healthy
