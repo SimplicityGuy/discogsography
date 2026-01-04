@@ -208,13 +208,13 @@ async def test_search_all_types(api_instance: PlaygroundAPI, mock_neo4j_driver: 
     release_result = AsyncMock()
     label_result = AsyncMock()
 
-    async def artist_records(self: Any) -> Any:  # noqa: ARG001
+    async def artist_records(self: Any) -> Any:
         yield {"id": "1", "name": "Miles Davis", "real_name": "Miles Dewey Davis III"}
 
-    async def release_records(self: Any) -> Any:  # noqa: ARG001
+    async def release_records(self: Any) -> Any:
         yield {"id": "2", "title": "Kind of Blue", "year": 1959}
 
-    async def label_records(self: Any) -> Any:  # noqa: ARG001
+    async def label_records(self: Any) -> Any:
         yield {"id": "3", "name": "Blue Note"}
 
     artist_result.__aiter__ = artist_records
@@ -225,7 +225,7 @@ async def test_search_all_types(api_instance: PlaygroundAPI, mock_neo4j_driver: 
     session = await mock_neo4j_driver.session().__aenter__()
     call_count = [0]
 
-    async def mock_run(*args: Any, **kwargs: Any) -> Any:  # noqa: ARG001
+    async def mock_run(*args: Any, **kwargs: Any) -> Any:
         call_count[0] += 1
         if call_count[0] == 1:
             return artist_result
@@ -239,12 +239,19 @@ async def test_search_all_types(api_instance: PlaygroundAPI, mock_neo4j_driver: 
     # Test search
     result = await api_instance.search("test", "all", 10)
 
-    assert "artists" in result
-    assert "releases" in result
-    assert "labels" in result
-    assert len(result["artists"]) == 1
-    assert len(result["releases"]) == 1
-    assert len(result["labels"]) == 1
+    # Check paginated response structure
+    assert "items" in result
+    assert "has_more" in result
+    assert "next_cursor" in result
+    assert "page_info" in result
+
+    # Check items
+    assert "artists" in result["items"]
+    assert "releases" in result["items"]
+    assert "labels" in result["items"]
+    assert len(result["items"]["artists"]) == 1
+    assert len(result["items"]["releases"]) == 1
+    assert len(result["items"]["labels"]) == 1
 
 
 @pytest.mark.asyncio
@@ -252,7 +259,7 @@ async def test_search_artist_only(api_instance: PlaygroundAPI, mock_neo4j_driver
     """Test search with artist type only."""
     artist_result = AsyncMock()
 
-    async def artist_records(self: Any) -> Any:  # noqa: ARG001
+    async def artist_records(self: Any) -> Any:
         yield {"id": "1", "name": "Miles Davis", "real_name": "Miles Dewey Davis III"}
 
     artist_result.__aiter__ = artist_records
@@ -262,9 +269,11 @@ async def test_search_artist_only(api_instance: PlaygroundAPI, mock_neo4j_driver
 
     result = await api_instance.search("Miles", "artist", 10)
 
-    assert len(result["artists"]) == 1
-    assert len(result["releases"]) == 0
-    assert len(result["labels"]) == 0
+    # Check paginated response
+    assert "items" in result
+    assert len(result["items"]["artists"]) == 1
+    assert len(result["items"]["releases"]) == 0
+    assert len(result["items"]["labels"]) == 0
 
 
 @pytest.mark.asyncio
@@ -300,7 +309,7 @@ async def test_get_graph_data_success(api_instance: PlaygroundAPI, mock_neo4j_dr
     mock_rel = MagicMock()
     mock_rel.type = "BY"
 
-    async def mock_records(self: Any) -> Any:  # noqa: ARG001
+    async def mock_records(self: Any) -> Any:
         yield {
             "center": center_node,
             "connected": connected_node,
@@ -393,7 +402,7 @@ async def test_get_trends_genre(api_instance: PlaygroundAPI, mock_neo4j_driver: 
     """Test get_trends with genre type."""
     mock_result = AsyncMock()
 
-    async def mock_records(self: Any) -> Any:  # noqa: ARG001
+    async def mock_records(self: Any) -> Any:
         yield {
             "year": 1959,
             "top_genres": [{"genre": "Jazz", "count": 100}],
@@ -420,7 +429,7 @@ async def test_get_trends_artist(api_instance: PlaygroundAPI, mock_neo4j_driver:
     """Test get_trends with artist type."""
     mock_result = AsyncMock()
 
-    async def mock_records(self: Any) -> Any:  # noqa: ARG001
+    async def mock_records(self: Any) -> Any:
         yield {
             "year": 1959,
             "top_artists": [{"artist": "Miles Davis", "releases": 5}],
@@ -452,7 +461,7 @@ async def test_get_heatmap_genre(api_instance: PlaygroundAPI, mock_neo4j_driver:
     """Test get_heatmap with genre type."""
     mock_result = AsyncMock()
 
-    async def mock_records(self: Any) -> Any:  # noqa: ARG001
+    async def mock_records(self: Any) -> Any:
         yield {"artist1": "Miles Davis", "artist2": "John Coltrane", "shared_genres": 5}
         yield {"artist1": "Miles Davis", "artist2": "Bill Evans", "shared_genres": 3}
 
@@ -473,7 +482,7 @@ async def test_get_heatmap_collab(api_instance: PlaygroundAPI, mock_neo4j_driver
     """Test get_heatmap with collaboration type."""
     mock_result = AsyncMock()
 
-    async def mock_records(self: Any) -> Any:  # noqa: ARG001
+    async def mock_records(self: Any) -> Any:
         yield {"artist1": "Miles Davis", "artist2": "John Coltrane", "collaborated": 1}
         yield {"artist1": "Miles Davis", "artist2": "Bill Evans", "collaborated": 0}  # Should be filtered
 

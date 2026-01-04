@@ -9,6 +9,7 @@ import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
 
+
 # Set environment variables before any imports
 # This ensures discovery modules can initialize properly during import
 # These defaults match those in tests/conftest.py setup_test_env
