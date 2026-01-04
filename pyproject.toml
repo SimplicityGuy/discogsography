@@ -152,6 +152,7 @@ ignore = [
 "*/graphinator.py" = ["T201"]  # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]  # Allow print statements for ASCII art
 "tests/discovery/test_*.py" = ["S105", "S108", "ARG005"]  # Test fixtures can have hardcoded passwords, temp files, unused lambda args
+"tests/load/*.py" = ["S311"]  # Load tests use random for test data selection, not cryptography
 
 [tool.mypy]
 python_version = "3.13"
@@ -234,6 +235,7 @@ dev = [
     "bandit>=1.7.0",
     "black>=24.0.0",
     "isort>=5.13.0",
+    "locust>=2.0.0",                      # Load testing framework
     "mypy>=1.8.0",
     "pre-commit>=3.5.0",
     "pytest>=7.4.0",
