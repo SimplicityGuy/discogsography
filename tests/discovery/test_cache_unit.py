@@ -159,14 +159,18 @@ class TestCacheManagerUnit:
 
     @pytest.mark.asyncio
     async def test_set_not_connected(self) -> None:
-        """Test cache set when not connected."""
+        """Test cache set when L2 not connected but L1 available."""
         from discovery.cache import CacheManager
 
         cache = CacheManager()
         cache.connected = False
 
+        # Set should succeed with L1 even when L2 is not connected
         result = await cache.set("test_key", {"data": "test"})
-        assert result is False
+        assert result is True
+
+        # Verify value is in L1
+        assert cache.l1_cache.get("test_key") == {"data": "test"}
 
     @pytest.mark.asyncio
     async def test_delete_success(self) -> None:
