@@ -8,6 +8,8 @@ import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
+from discovery.metrics import active_requests, error_count, request_count, request_duration
+
 
 logger = structlog.get_logger(__name__)
 
@@ -38,6 +40,13 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             path=request.url.path,
         )
 
+        # Extract endpoint path and method for metrics
+        method = request.method
+        endpoint = request.url.path
+
+        # Increment active requests gauge
+        active_requests.labels(method=method, endpoint=endpoint).inc()
+
         # Record start time
         start_time = time.time()
 
@@ -47,6 +56,18 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
 
             # Calculate processing time
             process_time = time.time() - start_time
+
+            # Record metrics
+            request_count.labels(
+                method=method,
+                endpoint=endpoint,
+                status_code=response.status_code,
+            ).inc()
+
+            request_duration.labels(
+                method=method,
+                endpoint=endpoint,
+            ).observe(process_time)
 
             # Add request ID and processing time to response headers
             response.headers["X-Request-ID"] = request_id
@@ -65,6 +86,19 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             # Calculate processing time for failed request
             process_time = time.time() - start_time
 
+            # Record error metrics
+            error_count.labels(
+                method=method,
+                endpoint=endpoint,
+                error_type=type(e).__name__,
+            ).inc()
+
+            request_count.labels(
+                method=method,
+                endpoint=endpoint,
+                status_code=500,
+            ).inc()
+
             # Log error with request context
             logger.error(
                 "❌ Request failed",
@@ -76,6 +110,9 @@ class RequestIDMiddleware(BaseHTTPMiddleware):
             raise
 
         finally:
+            # Decrement active requests gauge
+            active_requests.labels(method=method, endpoint=endpoint).dec()
+
             # Clear context variables for next request
             structlog.contextvars.clear_contextvars()
 
