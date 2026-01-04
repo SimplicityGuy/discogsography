@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import warnings
 from dataclasses import dataclass
 from os import getenv
 from pathlib import Path
@@ -165,7 +166,14 @@ def setup_logging(
     level: str | None = "INFO",
     log_file: Path | None = None,
 ) -> None:
-    """Set up structured logging configuration to match Rust extractor format."""
+    """Set up structured logging configuration with correlation IDs and service context.
+
+    This configures structlog to:
+    - Include correlation IDs from contextvars in all log entries
+    - Add service-specific context (name, version, environment)
+    - Output structured JSON logs to console and optionally to file
+    - Support distributed tracing via request IDs
+    """
 
     # Default to INFO if level is None
     if level is None:
@@ -175,6 +183,8 @@ def setup_logging(
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
     shared_processors = [
+        # Merge contextvars (correlation IDs, request context) into log entries
+        structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
         structlog.stdlib.add_logger_name,
         structlog.stdlib.PositionalArgumentsFormatter(),
@@ -196,6 +206,12 @@ def setup_logging(
         context_class=dict,
         logger_factory=structlog.stdlib.LoggerFactory(),
         cache_logger_on_first_use=True,
+    )
+
+    # Bind service-specific context that will be included in all log entries
+    structlog.contextvars.bind_contextvars(
+        service=service_name,
+        environment=getenv("ENVIRONMENT", "development"),
     )
 
     # Set up standard logging handlers
@@ -246,6 +262,16 @@ def setup_logging(
     logging.getLogger("pika.adapters.blocking_connection").setLevel(logging.WARNING)
     logging.getLogger("pika.connection").setLevel(logging.WARNING)
 
+    # Suppress Neo4j schema warnings (unknown labels/relationships)
+    # These warnings appear when database is empty or being populated
+    # and don't indicate actual errors in the code
+    logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
+    logging.getLogger("neo4j").setLevel(logging.ERROR)  # Suppress all Neo4j warnings, keep errors
+
+    # Suppress Neo4j Python warnings about single record results
+    # This is expected behavior when using OPTIONAL MATCH patterns
+    warnings.filterwarnings("ignore", message="Expected a result with a single record", category=UserWarning, module="neo4j")
+
     # Get structured logger
     log = structlog.get_logger()
     log.info("✅ Logging configured for service", service=service_name)
@@ -267,6 +293,8 @@ class DashboardConfig:
     rabbitmq_management_password: str
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] | None = None  # None = default to localhost only
+    cache_warming_enabled: bool = True  # Enable cache warming on service startup
+    cache_webhook_secret: str | None = None  # Secret for cache invalidation webhooks
 
     @classmethod
     def from_env(cls) -> "DashboardConfig":
@@ -289,6 +317,12 @@ class DashboardConfig:
             # Parse comma-separated list of origins
             cors_origins = [origin.strip() for origin in cors_origins_env.split(",") if origin.strip()]
 
+        # Cache warming configuration
+        cache_warming_enabled = getenv("CACHE_WARMING_ENABLED", "true").lower() in ("true", "1", "yes")
+
+        # Cache invalidation webhook configuration
+        cache_webhook_secret = getenv("CACHE_WEBHOOK_SECRET")
+
         return cls(
             amqp_connection=graphinator_config.amqp_connection,
             neo4j_address=graphinator_config.neo4j_address,
@@ -302,6 +336,8 @@ class DashboardConfig:
             rabbitmq_management_user=rabbitmq_management_user,
             rabbitmq_management_password=rabbitmq_management_password,
             cors_origins=cors_origins,
+            cache_warming_enabled=cache_warming_enabled,
+            cache_webhook_secret=cache_webhook_secret,
         )
 
 

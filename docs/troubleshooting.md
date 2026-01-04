@@ -1,0 +1,161 @@
+# Troubleshooting Guide
+
+Common issues and solutions for the Discogsography project.
+
+## Neo4j Schema Warnings
+
+### Symptom
+
+You see many warning messages in the Discovery service logs like:
+
+```json
+{"event":"Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownRelationshipTypeWarning} {category: UNRECOGNIZED} {title: The provided relationship type is not in the database.} ...","level":"warning","lineno":337,"logger":"neo4j.notifications",...}
+```
+
+Warnings about:
+- Unknown relationship types: `BY`, `IS`
+- Unknown labels: `Genre`, `Style`
+- Unknown properties: `profile`
+
+### Cause
+
+These warnings appear when:
+1. The Neo4j database is **empty** (no data has been loaded yet)
+2. The database is **being populated** by the graphinator service
+3. The Discovery service tries to query data that doesn't exist yet
+
+**This is normal and not an error!** The Cypher queries use `OPTIONAL MATCH` patterns that gracefully handle missing data.
+
+### Solution
+
+**Option 1: Suppress the warnings (Recommended)**
+
+The warnings are already suppressed in the codebase by configuring the logging level:
+
+```python
+# In common/config.py setup_logging()
+logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
+logging.getLogger("neo4j").setLevel(logging.ERROR)
+warnings.filterwarnings("ignore", message="Expected a result with a single record", category=UserWarning, module="neo4j")
+```
+
+This configuration:
+- Only shows actual **errors** from Neo4j, not warnings
+- Keeps logs clean and focused on actionable issues
+- Still logs all Discovery service operations normally
+
+**Option 2: Populate the database**
+
+If you want the Discovery service to return results, you need to:
+
+1. **Run the extractor service** to download Discogs data:
+   ```bash
+   docker-compose up -d extractor
+   docker-compose logs -f extractor
+   ```
+
+2. **Run the graphinator service** to populate Neo4j:
+   ```bash
+   docker-compose up -d graphinator
+   docker-compose logs -f graphinator
+   ```
+
+3. **Wait for data processing** to complete (may take several hours for full dataset)
+
+4. **Verify data in Neo4j Browser**:
+   - Open http://localhost:7474
+   - Run: `MATCH (n) RETURN count(n)` to see node count
+   - Run: `MATCH ()-[r]->() RETURN count(r)` to see relationship count
+
+### Expected Schema
+
+The graphinator service creates the following schema:
+
+**Node Labels:**
+- `Artist` - Music artists and groups
+- `Release` - Album releases
+- `Master` - Master releases
+- `Label` - Record labels
+- `Genre` - Music genres
+- `Style` - Music styles (sub-genres)
+
+**Relationship Types:**
+- `[:BY]` - Artist to Release/Master (created by artist)
+- `[:IS]` - Release/Master to Genre/Style
+- `[:MEMBER_OF]` - Artist to Artist (group membership)
+- `[:ALIAS_OF]` - Artist to Artist (aliases)
+- `[:SUBLABEL_OF]` - Label to Label (parent-child)
+- `[:ON]` - Release to Label (released on)
+- `[:DERIVED_FROM]` - Release to Master (derived from master)
+- `[:PART_OF]` - Style to Genre (style is part of genre)
+
+**Properties:**
+- `Artist.id`, `Artist.name`, `Artist.profile` (may not exist for all artists)
+- `Release.id`, `Release.title`, `Release.year`
+- `Genre.name`, `Style.name`
+- `Label.id`, `Label.name`
+
+### Verification
+
+After populating the database, verify the warnings are gone:
+
+```bash
+# Check Discovery service logs (should be clean now)
+docker-compose logs -f discovery
+
+# Test recommendations endpoint
+curl http://localhost:8005/api/recommendations -X POST \
+  -H "Content-Type: application/json" \
+  -d '{"artist_name": "The Beatles", "top_n": 5}'
+
+# Test search endpoint
+curl "http://localhost:8005/api/search?q=Beatles&type=artist&limit=10"
+```
+
+## Other Common Issues
+
+### Port Conflicts
+
+**Symptom**: Services fail to start with "port already in use" errors.
+
+**Solution**: Check and update ports in `docker-compose.yml` or stop conflicting services.
+
+```bash
+# Check what's using a port (e.g., 8005)
+lsof -i :8005
+
+# Kill the process
+kill -9 <PID>
+```
+
+### Out of Memory
+
+**Symptom**: Containers crash or are killed by Docker.
+
+**Solution**: Increase Docker memory limits:
+1. Open Docker Desktop → Settings → Resources
+2. Increase memory allocation (recommend 8GB+ for full dataset)
+3. Restart Docker
+
+### Permission Denied
+
+**Symptom**: Cannot write to volumes or log files.
+
+**Solution**: Fix permissions on host directories:
+
+```bash
+chmod -R 755 logs/
+chmod -R 755 data/
+```
+
+## Getting Help
+
+If you encounter issues not covered here:
+
+1. **Check logs** for specific error messages
+2. **Search GitHub issues**: https://github.com/simplicityguy/discogsography/issues
+3. **Create a new issue** with:
+   - Service name and version
+   - Full error message and stack trace
+   - Steps to reproduce
+   - Docker/system environment details
