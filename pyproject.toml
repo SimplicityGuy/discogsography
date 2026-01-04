@@ -197,6 +197,10 @@ ignore_missing_imports = true
 module = "tests.*"
 disallow_untyped_decorators = false
 
+[[tool.mypy.overrides]]
+module = "discovery.discovery"
+disallow_untyped_decorators = false
+
 [tool.coverage.run]
 source = ["common", "dashboard", "discovery", "extractor/pyextractor", "graphinator", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
