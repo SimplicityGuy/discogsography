@@ -94,8 +94,13 @@ class PlaygroundAPI:
             await self.pg_engine.dispose()
 
     @cached("search", ttl=CACHE_TTL["search"])
-    async def search(self, query: str, search_type: str = "all", limit: int = 10) -> dict[str, Any]:
-        """Search for artists, releases, or labels."""
+    async def search(self, query: str, search_type: str = "all", limit: int = 10, cursor: str | None = None) -> dict[str, Any]:
+        """Search for artists, releases, or labels with cursor-based pagination."""
+        from discovery.pagination import OffsetPagination
+
+        # Extract offset from cursor
+        offset = OffsetPagination.get_offset_from_cursor(cursor)
+
         results: dict[str, list[dict[str, Any]]] = {"artists": [], "releases": [], "labels": []}
 
         if not self.neo4j_driver:
@@ -108,9 +113,11 @@ class PlaygroundAPI:
                 MATCH (a:Artist)
                 WHERE toLower(a.name) CONTAINS toLower($query)
                 RETURN a.id AS id, a.name AS name, a.real_name AS real_name
+                ORDER BY a.name
+                SKIP $offset
                 LIMIT $limit
                 """
-                artist_result = await session.run(artist_query, query=query, limit=limit)
+                artist_result = await session.run(artist_query, query=query, offset=offset, limit=limit)
                 results["artists"] = [dict(record) async for record in artist_result]
 
             # Search releases
@@ -119,9 +126,11 @@ class PlaygroundAPI:
                 MATCH (r:Release)
                 WHERE toLower(r.title) CONTAINS toLower($query)
                 RETURN r.id AS id, r.title AS title, r.year AS year
+                ORDER BY r.title
+                SKIP $offset
                 LIMIT $limit
                 """
-                release_result = await session.run(release_query, query=query, limit=limit)
+                release_result = await session.run(release_query, query=query, offset=offset, limit=limit)
                 results["releases"] = [dict(record) async for record in release_result]
 
             # Search labels
@@ -130,16 +139,47 @@ class PlaygroundAPI:
                 MATCH (l:Label)
                 WHERE toLower(l.name) CONTAINS toLower($query)
                 RETURN l.id AS id, l.name AS name
+                ORDER BY l.name
+                SKIP $offset
                 LIMIT $limit
                 """
-                label_result = await session.run(label_query, query=query, limit=limit)
+                label_result = await session.run(label_query, query=query, offset=offset, limit=limit)
                 results["labels"] = [dict(record) async for record in label_result]
 
-        return results
+        # Create paginated response
+        # For multi-type search, use the longest result list to determine has_more
+        all_items = []
+        if search_type == "all":
+            all_items = results["artists"] + results["releases"] + results["labels"]
+        elif search_type == "artist":
+            all_items = results["artists"]
+        elif search_type == "release":
+            all_items = results["releases"]
+        elif search_type == "label":
+            all_items = results["labels"]
+
+        # Determine if there are more results
+        has_more = len(all_items) >= limit
+        next_cursor = None
+        if has_more:
+            next_cursor = OffsetPagination.create_next_cursor(offset, limit)
+
+        return {
+            "items": results,
+            "total": None,
+            "has_more": has_more,
+            "next_cursor": next_cursor,
+            "page_info": {"query": query, "type": search_type, "offset": offset},
+        }
 
     @cached("graph", ttl=CACHE_TTL["graph"])
-    async def get_graph_data(self, node_id: str, depth: int = 2, limit: int = 50) -> dict[str, Any]:
-        """Get graph data for visualization."""
+    async def get_graph_data(self, node_id: str, depth: int = 2, limit: int = 50, cursor: str | None = None) -> dict[str, Any]:
+        """Get graph data for visualization with cursor-based pagination."""
+        from discovery.pagination import OffsetPagination
+
+        # Extract offset from cursor
+        offset = OffsetPagination.get_offset_from_cursor(cursor)
+
         nodes = []
         links = []
         node_ids = set()
@@ -154,11 +194,13 @@ class PlaygroundAPI:
             WHERE center.id = $node_id
             OPTIONAL MATCH path = (center)-[*1..$depth]-(connected)
             WITH center, connected, relationships(path) AS rels, nodes(path) AS path_nodes
+            ORDER BY connected.id
+            SKIP $offset
             LIMIT $limit
             RETURN DISTINCT center, connected, rels, path_nodes
             """
 
-            result = await session.run(query, node_id=node_id, depth=depth, limit=limit)
+            result = await session.run(query, node_id=node_id, depth=depth, offset=offset, limit=limit)
 
             async for record in result:
                 # Add center node
@@ -202,7 +244,20 @@ class PlaygroundAPI:
                                 }
                             )
 
-        return {"nodes": nodes, "links": links}
+        # Determine if there are more results
+        # We check if we got the full limit of results
+        has_more = len(nodes) >= limit
+        next_cursor = None
+        if has_more:
+            next_cursor = OffsetPagination.create_next_cursor(offset, limit)
+
+        return {
+            "nodes": nodes,
+            "links": links,
+            "has_more": has_more,
+            "next_cursor": next_cursor,
+            "page_info": {"node_id": node_id, "depth": depth, "offset": offset, "limit": limit},
+        }
 
     @cached("journey", ttl=CACHE_TTL["journey"])
     async def find_music_journey(self, start_artist_id: str, end_artist_id: str, max_depth: int = 5) -> dict[str, Any]:
@@ -248,13 +303,37 @@ class PlaygroundAPI:
             }
 
     @cached("trends", ttl=CACHE_TTL["trends"])
-    async def get_trends(self, trend_type: str, start_year: int, end_year: int, top_n: int = 20) -> dict[str, Any]:
-        """Get trend analysis data."""
+    async def get_trends(
+        self,
+        trend_type: str,
+        start_year: int,
+        end_year: int,
+        top_n: int = 20,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> dict[str, Any]:
+        """Get trend analysis data with cursor-based pagination."""
+        from discovery.pagination import OffsetPagination
+
+        # Extract offset from cursor
+        offset = OffsetPagination.get_offset_from_cursor(cursor)
+
         trends = []
 
         if trend_type == "genre":
             if not self.neo4j_driver:
-                return {"trends": [], "type": trend_type}
+                return {
+                    "trends": [],
+                    "type": trend_type,
+                    "has_more": False,
+                    "next_cursor": None,
+                    "page_info": {
+                        "type": trend_type,
+                        "start_year": start_year,
+                        "end_year": end_year,
+                        "offset": offset,
+                    },
+                }
 
             async with self.neo4j_driver.session() as session:
                 query = """
@@ -265,16 +344,29 @@ class PlaygroundAPI:
                 WITH year, collect({genre: genre, count: count})[0..$top_n] AS top_genres
                 RETURN year, top_genres
                 ORDER BY year
+                SKIP $offset
+                LIMIT $limit
                 """
 
-                result = await session.run(query, start_year=start_year, end_year=end_year, top_n=top_n)
+                result = await session.run(query, start_year=start_year, end_year=end_year, top_n=top_n, offset=offset, limit=limit)
 
                 async for record in result:
                     trends.append({"year": record["year"], "data": record["top_genres"]})
 
         elif trend_type == "artist":
             if not self.neo4j_driver:
-                return {"trends": [], "type": trend_type}
+                return {
+                    "trends": [],
+                    "type": trend_type,
+                    "has_more": False,
+                    "next_cursor": None,
+                    "page_info": {
+                        "type": trend_type,
+                        "start_year": start_year,
+                        "end_year": end_year,
+                        "offset": offset,
+                    },
+                }
 
             async with self.neo4j_driver.session() as session:
                 query = """
@@ -285,21 +377,47 @@ class PlaygroundAPI:
                 WITH year, collect({artist: artist, releases: releases})[0..$top_n] AS top_artists
                 RETURN year, top_artists
                 ORDER BY year
+                SKIP $offset
+                LIMIT $limit
                 """
 
-                result = await session.run(query, start_year=start_year, end_year=end_year, top_n=top_n)
+                result = await session.run(query, start_year=start_year, end_year=end_year, top_n=top_n, offset=offset, limit=limit)
 
                 async for record in result:
                     trends.append({"year": record["year"], "data": record["top_artists"]})
 
-        return {"trends": trends, "type": trend_type}
+        # Determine if there are more results
+        has_more = len(trends) >= limit
+        next_cursor = None
+        if has_more:
+            next_cursor = OffsetPagination.create_next_cursor(offset, limit)
+
+        return {
+            "trends": trends,
+            "type": trend_type,
+            "has_more": has_more,
+            "next_cursor": next_cursor,
+            "page_info": {"type": trend_type, "start_year": start_year, "end_year": end_year, "offset": offset},
+        }
 
     @cached("heatmap", ttl=CACHE_TTL["heatmap"])
-    async def get_heatmap(self, heatmap_type: str, top_n: int = 20) -> dict[str, Any]:
-        """Get similarity heatmap data."""
+    async def get_heatmap(self, heatmap_type: str, top_n: int = 20, limit: int = 100, cursor: str | None = None) -> dict[str, Any]:
+        """Get similarity heatmap data with cursor-based pagination."""
+        from discovery.pagination import OffsetPagination
+
+        # Extract offset from cursor
+        offset = OffsetPagination.get_offset_from_cursor(cursor)
+
         if heatmap_type == "genre":
             if not self.neo4j_driver:
-                return {"heatmap": [], "labels": [], "type": heatmap_type}
+                return {
+                    "heatmap": [],
+                    "labels": [],
+                    "type": heatmap_type,
+                    "has_more": False,
+                    "next_cursor": None,
+                    "page_info": {"type": heatmap_type, "top_n": top_n, "offset": offset},
+                }
 
             async with self.neo4j_driver.session() as session:
                 # Get top artists by release count
@@ -315,10 +433,12 @@ class PlaygroundAPI:
                 WHERE id(a1) < id(a2)
                 WITH a1.name AS artist1, a2.name AS artist2, COUNT(DISTINCT g) AS shared_genres
                 RETURN artist1, artist2, shared_genres
-                ORDER BY shared_genres DESC
+                ORDER BY shared_genres DESC, artist1, artist2
+                SKIP $offset
+                LIMIT $limit
                 """
 
-                result = await session.run(query, top_n=top_n)
+                result = await session.run(query, top_n=top_n, offset=offset, limit=limit)
                 data = []
                 artists = set()
 
@@ -333,15 +453,31 @@ class PlaygroundAPI:
                         }
                     )
 
+                # Determine if there are more results
+                has_more = len(data) >= limit
+                next_cursor = None
+                if has_more:
+                    next_cursor = OffsetPagination.create_next_cursor(offset, limit)
+
                 return {
                     "heatmap": data,
                     "labels": sorted(artists),
                     "type": heatmap_type,
+                    "has_more": has_more,
+                    "next_cursor": next_cursor,
+                    "page_info": {"type": heatmap_type, "top_n": top_n, "offset": offset},
                 }
 
         elif heatmap_type == "collab":
             if not self.neo4j_driver:
-                return {"heatmap": [], "labels": [], "type": heatmap_type}
+                return {
+                    "heatmap": [],
+                    "labels": [],
+                    "type": heatmap_type,
+                    "has_more": False,
+                    "next_cursor": None,
+                    "page_info": {"type": heatmap_type, "top_n": top_n, "offset": offset},
+                }
 
             async with self.neo4j_driver.session() as session:
                 query = """
@@ -357,9 +493,12 @@ class PlaygroundAPI:
                 WITH a1.name AS artist1, a2.name AS artist2,
                      CASE WHEN c IS NOT NULL THEN 1 ELSE 0 END AS collaborated
                 RETURN artist1, artist2, collaborated
+                ORDER BY collaborated DESC, artist1, artist2
+                SKIP $offset
+                LIMIT $limit
                 """
 
-                result = await session.run(query, top_n=top_n)
+                result = await session.run(query, top_n=top_n, offset=offset, limit=limit)
                 data = []
                 artists = set()
 
@@ -375,13 +514,29 @@ class PlaygroundAPI:
                             }
                         )
 
+                # Determine if there are more results
+                has_more = len(data) >= limit
+                next_cursor = None
+                if has_more:
+                    next_cursor = OffsetPagination.create_next_cursor(offset, limit)
+
                 return {
                     "heatmap": data,
                     "labels": sorted(artists),
                     "type": heatmap_type,
+                    "has_more": has_more,
+                    "next_cursor": next_cursor,
+                    "page_info": {"type": heatmap_type, "top_n": top_n, "offset": offset},
                 }
 
-        return {"heatmap": [], "labels": [], "type": heatmap_type}
+        return {
+            "heatmap": [],
+            "labels": [],
+            "type": heatmap_type,
+            "has_more": False,
+            "next_cursor": None,
+            "page_info": {"type": heatmap_type, "top_n": top_n, "offset": offset},
+        }
 
     @cached("artist_details", ttl=CACHE_TTL["artist_details"])
     async def get_artist_details(self, artist_id: str) -> dict[str, Any]:
@@ -432,9 +587,10 @@ async def search_handler(
     q: str = Query(..., description="Search query"),
     type: str = Query("all", description="Search type: all, artist, release, label"),
     limit: int = Query(10, ge=1, le=50),
+    cursor: str | None = Query(None, description="Cursor for pagination"),
 ) -> dict[str, Any]:
-    """Search endpoint handler."""
-    result: dict[str, Any] = await playground_api.search(q, type, limit)
+    """Search endpoint handler with cursor-based pagination."""
+    result: dict[str, Any] = await playground_api.search(q, type, limit, cursor)
     return result
 
 
@@ -442,9 +598,10 @@ async def graph_data_handler(
     node_id: str = Query(..., description="Node ID"),
     depth: int = Query(2, ge=1, le=5),
     limit: int = Query(50, ge=10, le=200),
+    cursor: str | None = Query(None, description="Cursor for pagination"),
 ) -> dict[str, Any]:
-    """Graph data endpoint handler."""
-    result: dict[str, Any] = await playground_api.get_graph_data(node_id, depth, limit)
+    """Graph data endpoint handler with cursor-based pagination."""
+    result: dict[str, Any] = await playground_api.get_graph_data(node_id, depth, limit, cursor)
     return result
 
 
@@ -459,18 +616,22 @@ async def trends_handler(
     start_year: int = Query(1950, ge=1950),
     end_year: int = Query(2024, le=2024),
     top_n: int = Query(20, ge=5, le=50),
+    limit: int = Query(20, ge=1, le=50),
+    cursor: str | None = Query(None, description="Cursor for pagination"),
 ) -> dict[str, Any]:
-    """Trends endpoint handler."""
-    result: dict[str, Any] = await playground_api.get_trends(type, start_year, end_year, top_n)
+    """Trends endpoint handler with cursor-based pagination."""
+    result: dict[str, Any] = await playground_api.get_trends(type, start_year, end_year, top_n, limit, cursor)
     return result
 
 
 async def heatmap_handler(
-    type: str = Query(..., description="Heatmap type: genre, collab, style"),
+    type: str = Query(..., description="Heatmap type: genre, collab"),
     top_n: int = Query(20, ge=10, le=50),
+    limit: int = Query(100, ge=10, le=500),
+    cursor: str | None = Query(None, description="Cursor for pagination"),
 ) -> dict[str, Any]:
-    """Heatmap endpoint handler."""
-    result: dict[str, Any] = await playground_api.get_heatmap(type, top_n)
+    """Heatmap endpoint handler with cursor-based pagination."""
+    result: dict[str, Any] = await playground_api.get_heatmap(type, top_n, limit, cursor)
     return result
 
 
