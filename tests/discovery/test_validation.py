@@ -236,7 +236,5 @@ def test_allowed_types_constants() -> None:
     assert "label" in ALLOWED_TREND_TYPES
     assert "genre" in ALLOWED_TREND_TYPES
 
-    assert "artist" in ALLOWED_HEATMAP_TYPES
-    assert "label" in ALLOWED_HEATMAP_TYPES
-    assert "country" in ALLOWED_HEATMAP_TYPES
-    assert "year" in ALLOWED_HEATMAP_TYPES
+    assert "genre" in ALLOWED_HEATMAP_TYPES
+    assert "collab" in ALLOWED_HEATMAP_TYPES

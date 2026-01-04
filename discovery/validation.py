@@ -14,7 +14,7 @@ NODE_ID_PATTERN = re.compile(r"^[a-zA-Z0-9\-_]+$")
 # Allowed values for type parameters
 ALLOWED_TYPES = {"all", "artist", "label", "master", "release"}
 ALLOWED_TREND_TYPES = {"artist", "label", "genre"}
-ALLOWED_HEATMAP_TYPES = {"artist", "label", "country", "year"}
+ALLOWED_HEATMAP_TYPES = {"genre", "collab"}
 
 
 def sanitize_string(value: str, max_length: int = 1000, pattern: re.Pattern[str] | None = None) -> str:
