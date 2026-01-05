@@ -27,24 +27,97 @@ router = APIRouter(prefix="/api/ml", tags=["Machine Learning"])
 class CollaborativeFilterRequest(BaseModel):
     """Request for collaborative filtering recommendations."""
 
-    artist_id: str = Field(..., description="Artist ID to get recommendations for")
-    limit: int = Field(10, description="Number of recommendations", ge=1, le=100)
-    min_similarity: float = Field(0.1, description="Minimum similarity threshold", ge=0.0, le=1.0)
+    artist_id: str = Field(
+        ...,
+        description="Artist ID to get recommendations for",
+        examples=["artist_12345", "artist_67890"],
+    )
+    limit: int = Field(
+        10,
+        description="Number of recommendations",
+        ge=1,
+        le=100,
+        examples=[10, 20],
+    )
+    min_similarity: float = Field(
+        0.1,
+        description="Minimum similarity threshold",
+        ge=0.0,
+        le=1.0,
+        examples=[0.1, 0.3, 0.5],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "artist_id": "artist_12345",
+                    "limit": 10,
+                    "min_similarity": 0.3,
+                }
+            ]
+        }
+    }
 
 
 class HybridRecommendRequest(BaseModel):
     """Request for hybrid recommendations."""
 
-    artist_name: str = Field(..., description="Artist name to get recommendations for")
-    limit: int = Field(10, description="Number of recommendations", ge=1, le=100)
-    strategy: str = Field("weighted", description="Hybrid combination strategy")
+    artist_name: str = Field(
+        ...,
+        description="Artist name to get recommendations for",
+        examples=["The Beatles", "Pink Floyd", "Led Zeppelin"],
+    )
+    limit: int = Field(
+        10,
+        description="Number of recommendations",
+        ge=1,
+        le=100,
+        examples=[10, 20],
+    )
+    strategy: str = Field(
+        "weighted",
+        description="Hybrid combination strategy (weighted, ranked, cascade)",
+        examples=["weighted", "ranked", "cascade"],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "artist_name": "The Beatles",
+                    "limit": 10,
+                    "strategy": "weighted",
+                }
+            ]
+        }
+    }
 
 
 class ExplainRequest(BaseModel):
     """Request for recommendation explanation."""
 
-    artist_id: str = Field(..., description="Target artist ID")
-    recommended_id: str = Field(..., description="Recommended artist ID")
+    artist_id: str = Field(
+        ...,
+        description="Target artist ID",
+        examples=["artist_12345"],
+    )
+    recommended_id: str = Field(
+        ...,
+        description="Recommended artist ID",
+        examples=["artist_67890"],
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "artist_id": "artist_12345",
+                    "recommended_id": "artist_67890",
+                }
+            ]
+        }
+    }
 
 
 # Module-level instances (initialized on startup)
@@ -81,11 +154,48 @@ async def close_ml_api() -> None:
 # API Endpoints
 
 
-@router.post("/recommend/collaborative")  # type: ignore[untyped-decorator]
+@router.post(
+    "/recommend/collaborative",
+    summary="Get collaborative filtering recommendations",
+    response_description="Artist recommendations based on collaboration networks",
+    responses={
+        200: {
+            "description": "Successful response with recommendations",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "artist_id": "artist_12345",
+                        "recommendations": [],
+                        "algorithm": "collaborative_filtering",
+                        "status": "not_implemented",
+                        "message": "Collaborative filtering will be fully implemented in Phase 4.2",
+                        "timestamp": "2024-01-01T12:00:00",
+                    }
+                }
+            },
+        },
+        503: {
+            "description": "ML API not initialized",
+            "content": {"application/json": {"example": {"detail": "ML API not initialized"}}},
+        },
+    },
+)  # type: ignore[untyped-decorator]
 async def collaborative_recommend(request: Request, req_body: CollaborativeFilterRequest) -> dict[str, Any]:  # noqa: ARG001
     """Get recommendations using collaborative filtering.
 
-    Uses artist collaboration networks and ALS algorithm to find similar artists.
+    Uses artist collaboration networks and ALS (Alternating Least Squares) algorithm
+    to find similar artists based on shared collaborators and release patterns.
+
+    **Algorithm Details:**
+    - Analyzes artist collaboration networks from graph database
+    - Uses matrix factorization to identify latent similarity factors
+    - Filters results by minimum similarity threshold
+    - Returns top-N most similar artists
+
+    **Use Cases:**
+    - Discover artists with similar collaboration patterns
+    - Find artists who work with similar musicians
+    - Explore genre-crossing collaborations
 
     Args:
         request: FastAPI request object (required for rate limiting)

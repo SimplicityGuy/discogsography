@@ -304,11 +304,100 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
 # Create FastAPI app
 app = FastAPI(
-    title="Discogsography Discovery",
-    description="Music discovery, analytics, and graph exploration service",
+    title="Discogsography Discovery API",
+    description="""
+## Music Discovery, Analytics, and Graph Exploration Service
+
+The Discogsography Discovery API provides comprehensive access to music data analytics,
+recommendations, search, and graph exploration capabilities.
+
+### Core Features
+
+#### 🤖 Machine Learning & Recommendations
+- **Collaborative Filtering**: Artist similarity based on collaboration networks
+- **Hybrid Recommendations**: Multi-signal approach combining collaborative, content-based, and graph signals
+- **Explainable AI**: Human-readable explanations for recommendations
+
+#### 🔍 Advanced Search
+- **Full-Text Search**: PostgreSQL tsvector-based search with ranking
+- **Semantic Search**: Natural language understanding with ONNX embeddings
+- **Faceted Search**: Dynamic filtering by genre, year, label, and more
+- **Autocomplete**: Real-time search suggestions
+
+#### 📊 Graph Analytics
+- **Centrality Metrics**: PageRank, betweenness, closeness, eigenvector centrality
+- **Community Detection**: Louvain and label propagation algorithms
+- **Genre Evolution**: Track genre popularity and trends over time
+- **Similarity Networks**: Build artist collaboration and influence networks
+
+#### ⚡ Real-Time Features
+- **WebSocket Connections**: Live updates and notifications
+- **Trending Tracking**: Real-time trending artists, genres, and releases
+- **Channel Subscriptions**: Subscribe to specific data channels
+- **Cache Management**: Manual cache invalidation and optimization
+
+### API Status
+
+**Current Phase**: 4.1 (API Integration)
+- Phase 4.1: API endpoints established with stable contracts
+- Phase 4.2: Full implementation and testing (planned)
+- Phase 4.3: UI enhancements (planned)
+
+### Rate Limiting
+
+- Default: 100 requests per minute per IP address
+- WebSocket connections: Unlimited duration, monitored for health
+- Rate limit headers included in all responses
+
+### Response Format
+
+All endpoints return JSON responses with:
+- `status`: Operation status ("success", "not_implemented", "error")
+- `timestamp`: ISO 8601 timestamp
+- `message`: Human-readable message (when applicable)
+- Data fields specific to each endpoint
+    """,
     version="1.0.0",
     lifespan=lifespan,
     default_response_class=ORJSONResponse,
+    contact={
+        "name": "Discogsography Project",
+        "url": "https://github.com/yourusername/discogsography",
+    },
+    license_info={
+        "name": "MIT License",
+        "url": "https://opensource.org/licenses/MIT",
+    },
+    openapi_tags=[
+        {
+            "name": "Machine Learning",
+            "description": "ML-based recommendations, collaborative filtering, and explainability",
+        },
+        {
+            "name": "Advanced Search",
+            "description": "Full-text, semantic, and faceted search capabilities",
+        },
+        {
+            "name": "Graph Analytics",
+            "description": "Network analysis, centrality metrics, and community detection",
+        },
+        {
+            "name": "Real-Time Features",
+            "description": "WebSocket connections, live updates, and trending data",
+        },
+        {
+            "name": "Discovery",
+            "description": "Core discovery endpoints for recommendations and exploration",
+        },
+        {
+            "name": "Analytics",
+            "description": "Music analytics and statistical insights",
+        },
+        {
+            "name": "Health",
+            "description": "Service health monitoring and status checks",
+        },
+    ],
 )
 
 # Configure rate limiting for the app
