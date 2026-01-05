@@ -122,6 +122,10 @@ class ExplainRequest(BaseModel):
 
 # Module-level instances (initialized on startup)
 ml_api_initialized = False
+collaborative_filter: Any = None
+content_based_filter: Any = None
+hybrid_recommender: Any = None
+explainer: Any = None
 
 
 async def initialize_ml_api(neo4j_driver: Any, postgres_conn: Any) -> None:  # noqa: ARG001
@@ -131,15 +135,31 @@ async def initialize_ml_api(neo4j_driver: Any, postgres_conn: Any) -> None:  # n
         neo4j_driver: Neo4j async driver instance
         postgres_conn: PostgreSQL async connection
     """
-    global ml_api_initialized
+    global ml_api_initialized, collaborative_filter, content_based_filter, hybrid_recommender, explainer
 
     logger.info("🚀 Initializing ML API components...")
 
-    # Phase 4.1.1 - Initial setup
-    # Full ML component initialization will be added incrementally
+    # Import Phase 3 components
+    from discovery.collaborative_filtering import CollaborativeFilter
+    from discovery.content_based import ContentBasedFilter
+    from discovery.explainability import RecommendationExplainer
+    from discovery.hybrid_recommender import HybridRecommender
+
+    # Initialize components
+    collaborative_filter = CollaborativeFilter(neo4j_driver)
+    content_based_filter = ContentBasedFilter(neo4j_driver)
+    hybrid_recommender = HybridRecommender(collaborative_filter, content_based_filter)
+    explainer = RecommendationExplainer(collaborative_filter, content_based_filter, hybrid_recommender)
+
+    # Build collaborative filtering model if needed
+    try:
+        await collaborative_filter.build_cooccurrence_matrix()
+        logger.info("✅ Collaborative filter model built successfully")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not build collaborative filter model: {e}")
 
     ml_api_initialized = True
-    logger.info("✅ ML API initialization complete (placeholder mode)")
+    logger.info("✅ ML API initialization complete")
 
 
 async def close_ml_api() -> None:
@@ -207,25 +227,39 @@ async def collaborative_recommend(request: Request, req_body: CollaborativeFilte
     Raises:
         HTTPException: If engine not initialized or not implemented yet
     """
-    if not ml_api_initialized:
+    if not ml_api_initialized or collaborative_filter is None:
         raise HTTPException(status_code=503, detail="ML API not initialized")
 
     logger.info(
-        "🤖 Collaborative filtering request (placeholder)",
+        "🤖 Collaborative filtering request",
         artist_id=req_body.artist_id,
         limit=req_body.limit,
     )
 
-    # Phase 4.1.1 - Placeholder response
-    # Full implementation requires CollaborativeFilter integration
-    return {
-        "artist_id": req_body.artist_id,
-        "recommendations": [],
-        "algorithm": "collaborative_filtering",
-        "status": "not_implemented",
-        "message": "Collaborative filtering will be fully implemented in Phase 4.2",
-        "timestamp": datetime.now().isoformat(),
-    }
+    try:
+        # Get recommendations from collaborative filter
+        # Note: collaborative_filter uses artist_name, so we need to convert artist_id
+        # For now, use artist_id as artist_name (Phase 4.2 enhancement)
+        recommendations = await collaborative_filter.get_recommendations(
+            artist_name=req_body.artist_id,
+            limit=req_body.limit,
+        )
+
+        # Filter by minimum similarity
+        filtered_recs = [rec for rec in recommendations if rec.get("similarity", 0.0) >= req_body.min_similarity]
+
+        return {
+            "artist_id": req_body.artist_id,
+            "recommendations": filtered_recs[: req_body.limit],
+            "algorithm": "collaborative_filtering",
+            "total": len(filtered_recs),
+            "min_similarity": req_body.min_similarity,
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"❌ Collaborative filtering error: {e}")
+        raise HTTPException(status_code=500, detail=f"Recommendation error: {e!s}") from e
 
 
 @router.post("/recommend/hybrid")  # type: ignore[untyped-decorator]
@@ -244,26 +278,36 @@ async def hybrid_recommend(request: Request, req_body: HybridRecommendRequest) -
     Raises:
         HTTPException: If engine not initialized or not implemented yet
     """
-    if not ml_api_initialized:
+    if not ml_api_initialized or hybrid_recommender is None:
         raise HTTPException(status_code=503, detail="ML API not initialized")
 
     logger.info(
-        "🤖 Hybrid recommendation request (placeholder)",
+        "🤖 Hybrid recommendation request",
         artist_name=req_body.artist_name,
         limit=req_body.limit,
         strategy=req_body.strategy,
     )
 
-    # Phase 4.1.1 - Placeholder response
-    return {
-        "artist_name": req_body.artist_name,
-        "recommendations": [],
-        "algorithm": "hybrid",
-        "strategy": req_body.strategy,
-        "status": "not_implemented",
-        "message": "Hybrid recommendations will be fully implemented in Phase 4.2",
-        "timestamp": datetime.now().isoformat(),
-    }
+    try:
+        # Get recommendations from hybrid recommender
+        recommendations = await hybrid_recommender.get_recommendations(
+            artist_name=req_body.artist_name,
+            limit=req_body.limit,
+            strategy=req_body.strategy,
+        )
+
+        return {
+            "artist_name": req_body.artist_name,
+            "recommendations": recommendations,
+            "algorithm": "hybrid",
+            "strategy": req_body.strategy,
+            "total": len(recommendations),
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"❌ Hybrid recommendation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Recommendation error: {e!s}") from e
 
 
 @router.post("/recommend/explain")  # type: ignore[untyped-decorator]
@@ -283,23 +327,35 @@ async def explain_recommendation(request: Request, req_body: ExplainRequest) -> 
     Raises:
         HTTPException: If explainer not initialized or not implemented yet
     """
-    if not ml_api_initialized:
+    if not ml_api_initialized or explainer is None:
         raise HTTPException(status_code=503, detail="ML API not initialized")
 
     logger.info(
-        "💡 Explanation request (placeholder)",
+        "💡 Explanation request",
         artist_id=req_body.artist_id,
         recommended_id=req_body.recommended_id,
     )
 
-    # Phase 4.1.1 - Placeholder response
-    return {
-        "artist_id": req_body.artist_id,
-        "recommended_id": req_body.recommended_id,
-        "explanation": "Explanation feature will be fully implemented in Phase 4.2",
-        "status": "not_implemented",
-        "timestamp": datetime.now().isoformat(),
-    }
+    try:
+        # Get explanation from explainer
+        explanation = await explainer.explain_recommendation(
+            source_artist=req_body.artist_id,
+            target_artist=req_body.recommended_id,
+        )
+
+        return {
+            "artist_id": req_body.artist_id,
+            "recommended_id": req_body.recommended_id,
+            "explanation": explanation.get("explanation", ""),
+            "reasons": explanation.get("reasons", []),
+            "confidence": explanation.get("confidence", 0.0),
+            "evidence": explanation.get("evidence", {}),
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"❌ Explanation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Explanation error: {e!s}") from e
 
 
 @router.get("/status")  # type: ignore[untyped-decorator]
@@ -315,12 +371,17 @@ async def get_ml_api_status(request: Request) -> dict[str, Any]:  # noqa: ARG001
     return {
         "status": "initialized" if ml_api_initialized else "not_initialized",
         "features": {
-            "collaborative_filtering": "placeholder",
-            "hybrid_recommendations": "placeholder",
-            "explanations": "placeholder",
+            "collaborative_filtering": "active" if collaborative_filter is not None else "unavailable",
+            "hybrid_recommendations": "active" if hybrid_recommender is not None else "unavailable",
+            "explanations": "active" if explainer is not None else "unavailable",
             "ab_testing": "planned",
             "metrics": "planned",
         },
-        "phase": "4.1.1",
+        "components": {
+            "collaborative_filter": collaborative_filter is not None,
+            "hybrid_recommender": hybrid_recommender is not None,
+            "explainer": explainer is not None,
+        },
+        "phase": "4.2 (Full Implementation)",
         "timestamp": datetime.now().isoformat(),
     }
