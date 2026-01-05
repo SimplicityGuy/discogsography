@@ -77,25 +77,74 @@ All 27 API endpoints created with stable contracts:
 
 All tests validate API contracts, validation, error handling, and response formats.
 
+### Phase 4.2.2: Search API Full Implementation (Complete) ✅
+
+**File**: `discovery/api_search.py`
+
+**Components Integrated**:
+- `FullTextSearch` - PostgreSQL tsvector full-text search with ranking
+- `SemanticSearchEngine` - ONNX embedding model (partial - needs embeddings DB)
+- `FacetedSearchEngine` - Dynamic faceted search with filter support
+- `SearchRanker` - Search result ranking engine
+
+**Endpoints Implemented**:
+
+1. **POST /api/search/fulltext**
+   - Uses `FullTextSearch.search()` with PostgreSQL tsvector
+   - Supports AND, OR, phrase, and proximity operators
+   - Returns ranked results with relevance scores
+   - Pagination support with offset/limit
+   - Error handling with 500 status on failures
+
+2. **POST /api/search/semantic**
+   - Uses `SemanticSearchEngine` for embedding-based search
+   - **Status**: Partial - engine initialized but needs embeddings database integration
+   - Returns message explaining architectural dependency
+   - Future enhancement: integrate with PostgreSQL embeddings table
+
+3. **POST /api/search/faceted**
+   - Uses `FacetedSearchEngine.search_with_facets()`
+   - Dynamic filter support for genres, years, labels
+   - Returns both results and available facet counts
+   - Pagination support
+   - Error handling with 500 status on failures
+
+4. **POST /api/search/autocomplete**
+   - Uses `FullTextSearch.suggest_completions()`
+   - Prefix-based autocomplete suggestions
+   - Supports all entity types (artist, release, label, master)
+   - Error handling with 500 status on failures
+
+5. **GET /api/search/stats**
+   - Uses `FullTextSearch.get_search_statistics()`
+   - Returns searchable content counts by entity type
+   - Error handling with 500 status on failures
+
+6. **GET /api/search/status**
+   - Shows component initialization status
+   - Features marked as "active", "partial", or "unavailable"
+   - Added components object for detailed status
+   - Updated phase to "4.2 (Full Implementation)"
+   - Includes notes about semantic search limitation
+
+**Initialization**:
+- Components initialized in `initialize_search_api()`
+- FullTextSearch and FacetedSearchEngine use PostgreSQL connection
+- SemanticSearchEngine uses ONNX-optimized model with caching
+- SearchRanker initialized with default weights
+- Module-level instances for endpoint access
+
+**Testing**:
+- All 16 Search API E2E tests passing
+- Tests validate API contracts and response formats
+- Comprehensive coverage of endpoints and edge cases
+
+**Known Limitations**:
+- Semantic search requires pre-built embeddings database (tracked as future enhancement)
+
 ## Pending Work 📋
 
 ### Phase 4.2: Full Implementation (Remaining)
-
-#### Search API Integration
-**Estimated Effort**: 4-6 hours
-
-**Components to Integrate**:
-- `FullTextSearch` - PostgreSQL tsvector search
-- `SemanticSearch` - ONNX embedding search
-- `FacetedSearch` - Dynamic faceted search
-- `SearchRanking` - Search result ranking
-
-**Endpoints to Implement**:
-- POST /api/search/fulltext
-- POST /api/search/semantic
-- POST /api/search/faceted
-- POST /api/search/autocomplete
-- GET /api/search/stats
 
 #### Graph Analytics API Integration
 **Estimated Effort**: 5-7 hours
@@ -261,12 +310,12 @@ All tests validate API contracts, validation, error handling, and response forma
 
 **Phase 4.2 Completion**:
 - ✅ ML API: 100% complete
-- ⏳ Search API: 0% complete
+- ✅ Search API: 95% complete (semantic search needs embeddings DB)
 - ⏳ Graph Analytics API: 0% complete
 - ⏳ Real-Time API: 0% complete
 
-**Overall Progress**: 25% of Phase 4.2 complete
+**Overall Progress**: 50% of Phase 4.2 complete
 
 **Phase 4.3 Completion**: 0% (blocked on Phase 4.2)
 
-**Total Phase 4 Progress**: ~60% (API Integration complete, 25% of Full Implementation, 0% of UI)
+**Total Phase 4 Progress**: ~65% (API Integration complete, 50% of Full Implementation, 0% of UI)
