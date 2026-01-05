@@ -40,7 +40,7 @@ class TestSearchAPI:
         assert "search_type" in data
         assert data["search_type"] == "fulltext"
         assert "status" in data
-        assert data["status"] == "not_implemented"
+        assert data["status"] == "success"
         assert "timestamp" in data
 
     def test_fulltext_search_operators(self, client: TestClient) -> None:
@@ -99,7 +99,7 @@ class TestSearchAPI:
         assert "search_type" in data
         assert data["search_type"] == "semantic"
         assert "status" in data
-        assert data["status"] == "not_implemented"
+        assert data["status"] == "partial"
         assert "timestamp" in data
 
     def test_semantic_search_validation(self, client: TestClient) -> None:
@@ -190,7 +190,7 @@ class TestSearchAPI:
         assert data["entity"] == "artist"
         assert "suggestions" in data
         assert "status" in data
-        assert data["status"] == "not_implemented"
+        assert data["status"] == "success"
         assert "timestamp" in data
 
     def test_autocomplete_validation(self, client: TestClient) -> None:
@@ -246,7 +246,7 @@ class TestSearchAPI:
         assert "autocomplete" in data["features"]
         assert "statistics" in data["features"]
         assert "phase" in data
-        assert data["phase"] == "4.1.2"
+        assert data["phase"] == "4.2 (Full Implementation)"
         assert "timestamp" in data
 
     def test_fulltext_search_pagination(self, client: TestClient) -> None:
@@ -345,4 +345,4 @@ class TestSearchAPIIntegration:
         for response in responses:
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == "not_implemented"
+            assert data["status"] == "success"

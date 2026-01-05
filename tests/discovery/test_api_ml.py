@@ -32,8 +32,7 @@ class TestMLAPI:
         assert "algorithm" in data
         assert data["algorithm"] == "collaborative_filtering"
         assert "status" in data
-        assert data["status"] == "not_implemented"
-        assert "message" in data
+        assert data["status"] == "success"
         assert "timestamp" in data
 
     def test_collaborative_recommend_validation(self, client: TestClient) -> None:
@@ -68,7 +67,7 @@ class TestMLAPI:
         assert "strategy" in data
         assert data["strategy"] == "weighted"
         assert "status" in data
-        assert data["status"] == "not_implemented"
+        assert data["status"] == "success"
         assert "timestamp" in data
 
     def test_hybrid_recommend_strategies(self, client: TestClient) -> None:
@@ -105,7 +104,7 @@ class TestMLAPI:
         assert data["recommended_id"] == "artist_67890"
         assert "explanation" in data
         assert "status" in data
-        assert data["status"] == "not_implemented"
+        assert data["status"] == "success"
         assert "timestamp" in data
 
     def test_ml_api_status_endpoint(self, client: TestClient) -> None:
@@ -123,7 +122,7 @@ class TestMLAPI:
         assert "ab_testing" in data["features"]
         assert "metrics" in data["features"]
         assert "phase" in data
-        assert data["phase"] == "4.1.1"
+        assert data["phase"] == "4.2 (Full Implementation)"
         assert "timestamp" in data
 
     def test_collaborative_recommend_missing_fields(self, client: TestClient) -> None:

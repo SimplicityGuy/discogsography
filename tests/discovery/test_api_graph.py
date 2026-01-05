@@ -33,7 +33,7 @@ class TestGraphAPI:
         assert data["node_type"] == "artist"
         assert "top_nodes" in data
         assert "status" in data
-        assert data["status"] == "not_implemented"
+        assert data["status"] == "success"
         assert "timestamp" in data
 
     def test_centrality_metrics(self, client: TestClient) -> None:
@@ -122,7 +122,7 @@ class TestGraphAPI:
         assert "communities" in data
         assert "modularity" in data
         assert "status" in data
-        assert data["status"] == "not_implemented"
+        assert data["status"] == "success"
         assert "timestamp" in data
 
     def test_community_detection_algorithms(self, client: TestClient) -> None:
@@ -176,7 +176,7 @@ class TestGraphAPI:
         assert data["end_year"] == 2020
         assert "evolution_data" in data
         assert "status" in data
-        assert data["status"] == "not_implemented"
+        assert data["status"] == "success"
         assert "timestamp" in data
 
     def test_genre_evolution_year_validation(self, client: TestClient) -> None:
@@ -231,7 +231,7 @@ class TestGraphAPI:
         assert "nodes" in data
         assert "edges" in data
         assert "status" in data
-        assert data["status"] == "not_implemented"
+        assert data["status"] == "success"
         assert "timestamp" in data
 
     def test_similarity_network_depth_validation(self, client: TestClient) -> None:
@@ -310,7 +310,7 @@ class TestGraphAPI:
         assert "similarity_networks" in data["features"]
         assert "statistics" in data["features"]
         assert "phase" in data
-        assert data["phase"] == "4.1.3"
+        assert data["phase"] == "4.2 (Full Implementation)"
         assert "timestamp" in data
 
     def test_similarity_threshold_boundaries(self, client: TestClient) -> None:
@@ -396,4 +396,4 @@ class TestGraphAPIIntegration:
         for response in responses:
             assert response.status_code == 200
             data = response.json()
-            assert data["status"] == "not_implemented"
+            assert data["status"] == "success"
