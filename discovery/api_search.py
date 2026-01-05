@@ -59,8 +59,12 @@ class AutocompleteRequest(BaseModel):
     limit: int = Field(10, description="Maximum number of suggestions", ge=1, le=50)
 
 
-# Module-level instances
+# Module-level instances (initialized on startup)
 search_api_initialized = False
+fulltext_search: Any = None
+semantic_search: Any = None
+faceted_search: Any = None
+search_ranker: Any = None
 
 
 async def initialize_search_api(neo4j_driver: Any, postgres_conn: Any) -> None:  # noqa: ARG001
@@ -70,15 +74,28 @@ async def initialize_search_api(neo4j_driver: Any, postgres_conn: Any) -> None: 
         neo4j_driver: Neo4j async driver instance
         postgres_conn: PostgreSQL async connection
     """
-    global search_api_initialized
+    global search_api_initialized, fulltext_search, semantic_search, faceted_search, search_ranker
 
     logger.info("🚀 Initializing Search API components...")
 
-    # Phase 4.1.2 - Initial setup
-    # Full search component initialization will be added incrementally
+    # Import Phase 3 components
+    from discovery.faceted_search import FacetedSearchEngine
+    from discovery.fulltext_search import FullTextSearch
+    from discovery.search_ranking import SearchRanker
+    from discovery.semantic_search import SemanticSearchEngine
+
+    # Initialize components
+    fulltext_search = FullTextSearch(postgres_conn)
+    semantic_search = SemanticSearchEngine(
+        model_name="all-MiniLM-L6-v2",
+        cache_dir="./data/embeddings_cache",
+        use_onnx=True,
+    )
+    faceted_search = FacetedSearchEngine(postgres_conn)
+    search_ranker = SearchRanker()
 
     search_api_initialized = True
-    logger.info("✅ Search API initialization complete (placeholder mode)")
+    logger.info("✅ Search API initialization complete")
 
 
 async def close_search_api() -> None:
@@ -94,7 +111,7 @@ async def close_search_api() -> None:
 
 
 @router.post("/fulltext")  # type: ignore[untyped-decorator]
-async def fulltext_search(request: Request, req_body: FullTextSearchRequest) -> dict[str, Any]:  # noqa: ARG001
+async def fulltext_search_endpoint(request: Request, req_body: FullTextSearchRequest) -> dict[str, Any]:  # noqa: ARG001
     """Perform full-text search using PostgreSQL tsvector.
 
     Supports AND, OR, phrase, and proximity search operators with ranking.
@@ -109,35 +126,57 @@ async def fulltext_search(request: Request, req_body: FullTextSearchRequest) -> 
     Raises:
         HTTPException: If search API not initialized
     """
-    if not search_api_initialized:
+    if not search_api_initialized or fulltext_search is None:
         raise HTTPException(status_code=503, detail="Search API not initialized")
 
     logger.info(
-        "🔍 Full-text search request (placeholder)",
+        "🔍 Full-text search request",
         query=req_body.query,
         entity=req_body.entity,
         operator=req_body.operator,
     )
 
-    # Phase 4.1.2 - Placeholder response
-    return {
-        "query": req_body.query,
-        "entity": req_body.entity,
-        "operator": req_body.operator,
-        "results": [],
-        "total": 0,
-        "search_type": "fulltext",
-        "status": "not_implemented",
-        "message": "Full-text search will be fully implemented in Phase 4.2",
-        "timestamp": datetime.now().isoformat(),
-    }
+    try:
+        # Import enums for mapping
+        from discovery.fulltext_search import SearchEntity, SearchOperator
+
+        # Map string values to enums
+        entity_enum = SearchEntity(req_body.entity)
+        operator_enum = SearchOperator(req_body.operator)
+
+        # Perform search using Phase 3 component
+        results = await fulltext_search.search(
+            query=req_body.query,
+            entity=entity_enum,
+            operator=operator_enum,
+            limit=req_body.limit,
+            offset=req_body.offset,
+            rank_threshold=req_body.rank_threshold,
+        )
+
+        return {
+            "query": req_body.query,
+            "entity": req_body.entity,
+            "operator": req_body.operator,
+            "results": results,
+            "total": len(results),
+            "search_type": "fulltext",
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"❌ Full-text search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Search error: {e!s}") from e
 
 
 @router.post("/semantic")  # type: ignore[untyped-decorator]
-async def semantic_search(request: Request, req_body: SemanticSearchRequest) -> dict[str, Any]:  # noqa: ARG001
+async def semantic_search_endpoint(request: Request, req_body: SemanticSearchRequest) -> dict[str, Any]:  # noqa: ARG001
     """Perform semantic search using ONNX embeddings.
 
     Uses natural language understanding for similarity-based search.
+
+    Note: Semantic search requires pre-built embeddings database integration.
+    This is tracked as future enhancement in Phase 4.2.
 
     Args:
         request: FastAPI request object (required for rate limiting)
@@ -149,29 +188,30 @@ async def semantic_search(request: Request, req_body: SemanticSearchRequest) -> 
     Raises:
         HTTPException: If search API not initialized
     """
-    if not search_api_initialized:
+    if not search_api_initialized or semantic_search is None:
         raise HTTPException(status_code=503, detail="Search API not initialized")
 
     logger.info(
-        "🔍 Semantic search request (placeholder)",
+        "🔍 Semantic search request",
         query=req_body.query,
         entity=req_body.entity,
     )
 
-    # Phase 4.1.2 - Placeholder response
+    # Note: SemanticSearchEngine requires pre-built embeddings to be passed in
+    # Future enhancement: Integrate with PostgreSQL embeddings table or Neo4j
     return {
         "query": req_body.query,
         "entity": req_body.entity,
         "results": [],
         "search_type": "semantic",
-        "status": "not_implemented",
-        "message": "Semantic search will be fully implemented in Phase 4.2",
+        "status": "partial",
+        "message": "Semantic search engine initialized but requires embeddings database integration",
         "timestamp": datetime.now().isoformat(),
     }
 
 
 @router.post("/faceted")  # type: ignore[untyped-decorator]
-async def faceted_search(request: Request, req_body: FacetedSearchRequest) -> dict[str, Any]:  # noqa: ARG001
+async def faceted_search_endpoint(request: Request, req_body: FacetedSearchRequest) -> dict[str, Any]:  # noqa: ARG001
     """Perform faceted search with dynamic filters.
 
     Supports filtering by genre, year, label, and other facets.
@@ -186,32 +226,44 @@ async def faceted_search(request: Request, req_body: FacetedSearchRequest) -> di
     Raises:
         HTTPException: If search API not initialized
     """
-    if not search_api_initialized:
+    if not search_api_initialized or faceted_search is None:
         raise HTTPException(status_code=503, detail="Search API not initialized")
 
     logger.info(
-        "🔍 Faceted search request (placeholder)",
+        "🔍 Faceted search request",
         query=req_body.query,
         entity=req_body.entity,
         facet_count=len(req_body.facets),
     )
 
-    # Phase 4.1.2 - Placeholder response
-    return {
-        "query": req_body.query,
-        "entity": req_body.entity,
-        "facets": req_body.facets,
-        "results": [],
-        "available_facets": {},
-        "search_type": "faceted",
-        "status": "not_implemented",
-        "message": "Faceted search will be fully implemented in Phase 4.2",
-        "timestamp": datetime.now().isoformat(),
-    }
+    try:
+        # Perform faceted search using Phase 3 component
+        search_result = await faceted_search.search_with_facets(
+            query=req_body.query or "",
+            entity_type=req_body.entity,
+            selected_facets=req_body.facets if req_body.facets else None,
+            limit=req_body.limit,
+            offset=req_body.offset,
+        )
+
+        return {
+            "query": req_body.query,
+            "entity": req_body.entity,
+            "facets": req_body.facets,
+            "results": search_result.get("results", []),
+            "available_facets": search_result.get("facets", {}),
+            "total": len(search_result.get("results", [])),
+            "search_type": "faceted",
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"❌ Faceted search error: {e}")
+        raise HTTPException(status_code=500, detail=f"Search error: {e!s}") from e
 
 
 @router.post("/autocomplete")  # type: ignore[untyped-decorator]
-async def autocomplete(request: Request, req_body: AutocompleteRequest) -> dict[str, Any]:  # noqa: ARG001
+async def autocomplete_endpoint(request: Request, req_body: AutocompleteRequest) -> dict[str, Any]:  # noqa: ARG001
     """Get search autocomplete suggestions.
 
     Provides prefix-based suggestions for search queries.
@@ -226,24 +278,40 @@ async def autocomplete(request: Request, req_body: AutocompleteRequest) -> dict[
     Raises:
         HTTPException: If search API not initialized
     """
-    if not search_api_initialized:
+    if not search_api_initialized or fulltext_search is None:
         raise HTTPException(status_code=503, detail="Search API not initialized")
 
     logger.info(
-        "🔍 Autocomplete request (placeholder)",
+        "🔍 Autocomplete request",
         prefix=req_body.prefix,
         entity=req_body.entity,
     )
 
-    # Phase 4.1.2 - Placeholder response
-    return {
-        "prefix": req_body.prefix,
-        "entity": req_body.entity,
-        "suggestions": [],
-        "status": "not_implemented",
-        "message": "Autocomplete will be fully implemented in Phase 4.2",
-        "timestamp": datetime.now().isoformat(),
-    }
+    try:
+        # Import enum for mapping
+        from discovery.fulltext_search import SearchEntity
+
+        # Map string to enum
+        entity_enum = SearchEntity(req_body.entity)
+
+        # Get suggestions using Phase 3 component
+        suggestions = await fulltext_search.suggest_completions(
+            prefix=req_body.prefix,
+            entity=entity_enum,
+            limit=req_body.limit,
+        )
+
+        return {
+            "prefix": req_body.prefix,
+            "entity": req_body.entity,
+            "suggestions": suggestions,
+            "total": len(suggestions),
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"❌ Autocomplete error: {e}")
+        raise HTTPException(status_code=500, detail=f"Autocomplete error: {e!s}") from e
 
 
 @router.get("/stats")  # type: ignore[untyped-decorator]
@@ -258,23 +326,23 @@ async def get_search_stats(request: Request) -> dict[str, Any]:  # noqa: ARG001
     Returns:
         Dictionary with search statistics
     """
-    if not search_api_initialized:
+    if not search_api_initialized or fulltext_search is None:
         raise HTTPException(status_code=503, detail="Search API not initialized")
 
-    logger.info("📊 Search statistics request (placeholder)")
+    logger.info("📊 Search statistics request")
 
-    # Phase 4.1.2 - Placeholder response
-    return {
-        "statistics": {
-            "artists": 0,
-            "releases": 0,
-            "labels": 0,
-            "masters": 0,
-            "total_searchable": 0,
-        },
-        "status": "not_implemented",
-        "timestamp": datetime.now().isoformat(),
-    }
+    try:
+        # Get statistics from Phase 3 component
+        stats = await fulltext_search.get_search_statistics()
+
+        return {
+            "statistics": stats,
+            "status": "success",
+            "timestamp": datetime.now().isoformat(),
+        }
+    except Exception as e:
+        logger.error(f"❌ Search statistics error: {e}")
+        raise HTTPException(status_code=500, detail=f"Statistics error: {e!s}") from e
 
 
 @router.get("/status")  # type: ignore[untyped-decorator]
@@ -290,12 +358,21 @@ async def get_search_api_status(request: Request) -> dict[str, Any]:  # noqa: AR
     return {
         "status": "initialized" if search_api_initialized else "not_initialized",
         "features": {
-            "fulltext_search": "placeholder",
-            "semantic_search": "placeholder",
-            "faceted_search": "placeholder",
-            "autocomplete": "placeholder",
-            "statistics": "placeholder",
+            "fulltext_search": "active" if fulltext_search is not None else "unavailable",
+            "semantic_search": "partial" if semantic_search is not None else "unavailable",
+            "faceted_search": "active" if faceted_search is not None else "unavailable",
+            "autocomplete": "active" if fulltext_search is not None else "unavailable",
+            "statistics": "active" if fulltext_search is not None else "unavailable",
         },
-        "phase": "4.1.2",
+        "components": {
+            "fulltext_search": fulltext_search is not None,
+            "semantic_search": semantic_search is not None,
+            "faceted_search": faceted_search is not None,
+            "search_ranker": search_ranker is not None,
+        },
+        "phase": "4.2 (Full Implementation)",
+        "notes": {
+            "semantic_search": "Initialized but requires embeddings database integration for full functionality",
+        },
         "timestamp": datetime.now().isoformat(),
     }
