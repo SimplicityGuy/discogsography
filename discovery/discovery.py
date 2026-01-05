@@ -27,7 +27,10 @@ from discovery.analytics import (
 )
 
 # Import API routers
+from discovery.api_graph import router as graph_router
 from discovery.api_ml import router as ml_router
+from discovery.api_realtime import router as realtime_router
+from discovery.api_search import router as search_router
 from discovery.graph_explorer import GraphQuery, explore_graph, get_graph_explorer_instance
 from discovery.middleware import RequestIDMiddleware
 from discovery.playground_api import (
@@ -172,6 +175,24 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         postgres_conn=analytics.postgres_engine if hasattr(analytics, "postgres_engine") else None,
     )
 
+    # Initialize Search API
+    from discovery.api_search import initialize_search_api
+
+    await initialize_search_api(
+        neo4j_driver=recommender.driver,
+        postgres_conn=analytics.postgres_engine if hasattr(analytics, "postgres_engine") else None,
+    )
+
+    # Initialize Graph Analytics API
+    from discovery.api_graph import initialize_graph_api
+
+    await initialize_graph_api(neo4j_driver=recommender.driver)
+
+    # Initialize Real-Time Features API
+    from discovery.api_realtime import initialize_realtime_api
+
+    await initialize_realtime_api(neo4j_driver=recommender.driver)
+
     # Create Neo4j indexes for optimal query performance
     from common import get_config
 
@@ -262,10 +283,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             with suppress(asyncio.CancelledError):
                 await cache_metrics_task
 
-        # Close ML API
+        # Close all Phase 4 APIs
+        from discovery.api_graph import close_graph_api
         from discovery.api_ml import close_ml_api
+        from discovery.api_realtime import close_realtime_api
+        from discovery.api_search import close_search_api
 
         await close_ml_api()
+        await close_search_api()
+        await close_graph_api()
+        await close_realtime_api()
 
         await recommender.close()
         await analytics.close()
@@ -315,6 +342,9 @@ app.mount("/static", StaticFiles(directory=static_path), name="static")
 
 # Include API routers
 app.include_router(ml_router)
+app.include_router(search_router)
+app.include_router(graph_router)
+app.include_router(realtime_router)
 
 
 class DiscoveryApp:
