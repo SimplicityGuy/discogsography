@@ -238,7 +238,7 @@ class TestSearchNodes:
             mock_node.element_id = "element-123"
             mock_node.items.return_value = [("name", "Miles Davis"), ("id", "123")]
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 yield {"n": mock_node, "node_labels": ["Artist"]}
 
             mock_result.__aiter__ = mock_records
@@ -277,7 +277,7 @@ class TestSearchNodes:
             mock_node.element_id = "element-123"
             mock_node.items.return_value = [("name", "Jazz"), ("id", "g123")]
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 yield {"n": mock_node, "node_labels": ["Genre"]}
 
             mock_result.__aiter__ = mock_records
@@ -333,7 +333,7 @@ class TestExpandNode:
 
             expand_result = AsyncMock()
 
-            async def mock_expand_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_expand_records(self: Any) -> Any:
                 yield {
                     "center": central_node,
                     "r": relationship,
@@ -347,7 +347,7 @@ class TestExpandNode:
             # Mock session to return different results
             call_count = [0]
 
-            async def mock_run(*args: Any, **kwargs: Any) -> Any:  # noqa: ARG001
+            async def mock_run(*args: Any, **kwargs: Any) -> Any:
                 call_count[0] += 1
                 return central_result if call_count[0] == 1 else expand_result
 
@@ -432,7 +432,7 @@ class TestFindPath:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 yield {"path": mock_path, "path_length": 1}
 
             mock_result.__aiter__ = mock_records
@@ -464,7 +464,7 @@ class TestFindPath:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 return
                 yield  # pragma: no cover
 
@@ -505,7 +505,7 @@ class TestGetNeighborhood:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 yield {
                     "neighbor": neighbor_node,
                     "neighbor_labels": ["Artist"],
@@ -551,7 +551,7 @@ class TestSemanticSearch:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 yield {
                     "node": mock_node,
                     "node_labels": ["Artist"],

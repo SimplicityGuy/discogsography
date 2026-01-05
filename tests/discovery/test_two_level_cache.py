@@ -1,6 +1,5 @@
 """Tests for two-level cache (L1: in-memory LRU, L2: Redis) implementation."""
 
-# ruff: noqa: ARG001
 import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 

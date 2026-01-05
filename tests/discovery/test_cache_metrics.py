@@ -1,6 +1,5 @@
 """Tests for cache metrics tracking."""
 
-# ruff: noqa: ARG001
 from unittest.mock import AsyncMock, patch
 
 import pytest

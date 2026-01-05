@@ -182,7 +182,7 @@ class TestAnalyzeGenreTrends:
             mock_result = AsyncMock()
 
             # Mock genre trend data
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 for record in [
                     {"genre": "Rock", "year": 2020, "releases": 100},
                     {"genre": "Jazz", "year": 2020, "releases": 50},
@@ -220,7 +220,7 @@ class TestAnalyzeGenreTrends:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 return
                 yield  # pragma: no cover
 
@@ -254,7 +254,7 @@ class TestAnalyzeGenreTrends:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 for record in [{"genre": "Rock", "year": 2020, "releases": 100}]:
                     yield record
 
@@ -294,7 +294,7 @@ class TestAnalyzeArtistEvolution:
             mock_result2 = AsyncMock()
 
             # Mock release data
-            async def mock_releases(self: Any) -> Any:  # noqa: ARG001
+            async def mock_releases(self: Any) -> Any:
                 for record in [
                     {
                         "year": 1959,
@@ -312,7 +312,7 @@ class TestAnalyzeArtistEvolution:
                     yield record
 
             # Mock collaborator data
-            async def mock_collabs(self: Any) -> Any:  # noqa: ARG001
+            async def mock_collabs(self: Any) -> Any:
                 for record in [
                     {"collaborator": "John Coltrane", "collaborations": 5},
                     {"collaborator": "Herbie Hancock", "collaborations": 3},
@@ -325,7 +325,7 @@ class TestAnalyzeArtistEvolution:
             # Mock session to return different results for different queries
             call_count = [0]  # Use list to avoid closure issues
 
-            async def mock_run(*args: Any, **kwargs: Any) -> Any:  # noqa: ARG001
+            async def mock_run(*args: Any, **kwargs: Any) -> Any:
                 call_count[0] += 1
                 return mock_result1 if call_count[0] == 1 else mock_result2
 
@@ -358,7 +358,7 @@ class TestAnalyzeArtistEvolution:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 return
                 yield  # pragma: no cover
 
@@ -396,7 +396,7 @@ class TestAnalyzeLabelInsights:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 for record in [
                     {
                         "label": "Blue Note",
@@ -441,7 +441,7 @@ class TestAnalyzeLabelInsights:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 for record in [
                     {
                         "label": "Blue Note",
@@ -494,7 +494,7 @@ class TestAnalyzeMarketTrends:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 for record in [
                     {"year": 2020, "format_type": "Vinyl", "releases": 100},
                     {"year": 2020, "format_type": "CD", "releases": 200},
@@ -532,7 +532,7 @@ class TestAnalyzeMarketTrends:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 for record in [
                     {"year": 2020, "country": "USA", "releases": 1000},
                     {"year": 2020, "country": "UK", "releases": 500},

@@ -1,6 +1,5 @@
 """Tests for cache warming functionality."""
 
-# ruff: noqa: ARG001
 from unittest.mock import AsyncMock, patch
 
 import pytest

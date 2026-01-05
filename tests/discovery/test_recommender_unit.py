@@ -186,7 +186,7 @@ class TestBuildCollaborationGraph:
             mock_result = AsyncMock()
 
             # Mock collaboration data
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 for record in [
                     {"artist1": "Artist A", "artist2": "Artist B", "collaborations": 5},
                     {"artist1": "Artist B", "artist2": "Artist C", "collaborations": 3},
@@ -243,7 +243,7 @@ class TestGenerateArtistEmbeddings:
             mock_result = AsyncMock()
 
             # Mock artist data
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 for record in [
                     {
                         "name": "Artist A",
@@ -298,7 +298,7 @@ class TestGenerateArtistEmbeddings:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 return
                 yield  # pragma: no cover
 
@@ -387,7 +387,7 @@ class TestGetTrendingMusic:
             mock_session = AsyncMock()
             mock_result = AsyncMock()
 
-            async def mock_records(self: Any) -> Any:  # noqa: ARG001
+            async def mock_records(self: Any) -> Any:
                 for record in [
                     {
                         "name": "Trending Artist",

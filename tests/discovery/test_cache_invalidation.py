@@ -1,6 +1,5 @@
 """Tests for cache invalidation webhook functionality."""
 
-# ruff: noqa: ARG001
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
