@@ -25,6 +25,9 @@ from discovery.analytics import (
     get_analytics,
     get_analytics_instance,
 )
+
+# Import API routers
+from discovery.api_ml import router as ml_router
 from discovery.graph_explorer import GraphQuery, explore_graph, get_graph_explorer_instance
 from discovery.middleware import RequestIDMiddleware
 from discovery.playground_api import (
@@ -161,6 +164,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     await graph_explorer.initialize()
     await playground_api.initialize()
 
+    # Initialize ML API with Neo4j and PostgreSQL connections
+    from discovery.api_ml import initialize_ml_api
+
+    await initialize_ml_api(
+        neo4j_driver=recommender.driver,
+        postgres_conn=analytics.postgres_engine if hasattr(analytics, "postgres_engine") else None,
+    )
+
     # Create Neo4j indexes for optimal query performance
     from common import get_config
 
@@ -251,6 +262,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             with suppress(asyncio.CancelledError):
                 await cache_metrics_task
 
+        # Close ML API
+        from discovery.api_ml import close_ml_api
+
+        await close_ml_api()
+
         await recommender.close()
         await analytics.close()
         await graph_explorer.close()
@@ -296,6 +312,9 @@ app.add_middleware(RequestIDMiddleware)
 # Mount static files
 static_path = Path(__file__).parent / "static"
 app.mount("/static", StaticFiles(directory=static_path), name="static")
+
+# Include API routers
+app.include_router(ml_router)
 
 
 class DiscoveryApp:
