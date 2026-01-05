@@ -33,6 +33,10 @@ def mock_discovery_dependencies() -> Generator[None]:
         patch("discovery.cache.cache_manager") as mock_cache,
         patch("discovery.playground_api.playground_api") as mock_playground,
         patch("discovery.discovery.get_config") as mock_config,
+        patch("discovery.api_ml.ml_api_initialized", True),
+        patch("discovery.api_search.search_api_initialized", True),
+        patch("discovery.api_graph.graph_api_initialized", True),
+        patch("discovery.api_realtime.realtime_api_initialized", True),
     ):
         # Mock cache manager
         mock_cache.initialize = AsyncMock()
