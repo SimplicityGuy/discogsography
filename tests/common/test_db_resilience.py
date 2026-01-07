@@ -76,7 +76,7 @@ class TestCircuitBreaker:
                 breaker.call(func)
 
         # Next call should be rejected without calling func
-        with pytest.raises(RuntimeError, match="Circuit breaker is OPEN"):
+        with pytest.raises(Exception, match="TestBreaker: Circuit breaker is OPEN"):
             breaker.call(Mock(return_value="success"))
 
     def test_circuit_half_open_after_timeout(self) -> None:

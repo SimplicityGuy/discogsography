@@ -1734,7 +1734,7 @@ class TestQueueErrorHandling:
 
         # Set up the event loop and queue
         extractor.event_loop = Mock()
-        extractor.record_queue = Mock()
+        extractor.record_queue = AsyncMock()  # Changed to AsyncMock to make put() a coroutine
         extractor.record_queue.qsize.return_value = 0
 
         # Mock run_coroutine_threadsafe to raise an exception

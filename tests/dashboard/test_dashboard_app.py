@@ -499,7 +499,7 @@ class TestDashboardAppDataCollection:
                 },
             ]
 
-            async def mock_get(_url: str, _auth: tuple[str, str]) -> Mock:
+            async def mock_get(_url: str, **_kwargs: Any) -> Mock:
                 response = Mock()
                 response.status_code = 200
                 response.json = Mock(return_value=queue_data)
@@ -549,7 +549,7 @@ class TestDashboardAppDataCollection:
             app = DashboardApp()
             app.rabbitmq = AsyncMock()
 
-            async def mock_get(_url: str, _auth: tuple[str, str]) -> Mock:
+            async def mock_get(_url: str, **_kwargs: Any) -> Mock:
                 response = Mock()
                 response.status_code = 401
                 return response
@@ -581,7 +581,7 @@ class TestDashboardAppDataCollection:
             app = DashboardApp()
             app.rabbitmq = AsyncMock()
 
-            async def mock_get(_url: str, _auth: tuple[str, str]) -> Mock:
+            async def mock_get(_url: str, **_kwargs: Any) -> Mock:
                 response = Mock()
                 response.status_code = 503
                 return response
@@ -613,7 +613,7 @@ class TestDashboardAppDataCollection:
             app = DashboardApp()
             app.rabbitmq = AsyncMock()
 
-            async def mock_get(_url: str, _auth: tuple[str, str]) -> Mock:
+            async def mock_get(_url: str, **_kwargs: Any) -> Mock:
                 raise httpx.ConnectError("Connection refused")
 
             with patch("httpx.AsyncClient") as mock_client_class:
@@ -1080,7 +1080,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"recommendations": [{"id": "1", "score": 0.95}]}
 
-        async def mock_post(_url: str, _json: dict[str, Any]) -> Mock:
+        async def mock_post(_url: str, **_kwargs: Any) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1112,7 +1112,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"recommendations": []}
 
-        async def mock_post(_url: str, _json: dict[str, Any]) -> Mock:
+        async def mock_post(_url: str, **_kwargs: Any) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1232,7 +1232,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"results": [{"node": "A", "score": 0.95}]}
 
-        async def mock_post(_url: str, _json: dict[str, Any]) -> Mock:
+        async def mock_post(_url: str, **_kwargs: Any) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1292,7 +1292,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"trending": [{"name": "Artist1", "score": 100}]}
 
-        async def mock_post(_url: str, _json: dict[str, Any]) -> Mock:
+        async def mock_post(_url: str, **_kwargs: Any) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
