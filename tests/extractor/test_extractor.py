@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
@@ -1841,3 +1842,129 @@ class TestFlushQueueBackoff:
         # Should still have messages pending
         with extractor.pending_messages_lock:
             assert len(extractor.pending_messages) > 0
+
+
+class TestConcurrentExtractorProperties:
+    """Tests for ConcurrentExtractor property methods."""
+
+    @pytest.fixture
+    def mock_config(self, test_discogs_root: Path) -> Mock:
+        """Create a mock ExtractorConfig."""
+        config = Mock()
+        config.discogs_root = test_discogs_root
+        config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
+        config.batch_size = 100
+        config.progress_log_interval = 1000
+        return config
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_elapsed_time_property(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test elapsed_time property calculation."""
+        mock_exists.return_value = True
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+
+        # Set start and end times
+        extractor.start_time = datetime(2023, 1, 1, 10, 0, 0)
+        extractor.end_time = datetime(2023, 1, 1, 10, 5, 30)
+
+        # Check elapsed time
+        elapsed = extractor.elapsed_time
+        assert elapsed.total_seconds() == 330.0  # 5 minutes 30 seconds
+
+    @patch("extractor.pyextractor.extractor.datetime")
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_tps_property_with_zero_elapsed(self, mock_exists: Mock, mock_datetime: Mock, mock_config: Mock) -> None:
+        """Test tps property when elapsed time is zero."""
+        mock_exists.return_value = True
+
+        # Mock datetime.now() to return the same time as start_time
+        now = datetime(2023, 1, 1, 10, 0, 0)
+        mock_datetime.now.return_value = now
+
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor.start_time = now
+        extractor.total_count = 100
+
+        # TPS should be 0 when elapsed time is 0
+        assert extractor.tps == 0.0
+
+    @patch("extractor.pyextractor.extractor.datetime")
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_tps_property_with_elapsed_time(self, mock_exists: Mock, mock_datetime: Mock, mock_config: Mock) -> None:
+        """Test tps property calculation with elapsed time."""
+        mock_exists.return_value = True
+
+        # Set start time and mock datetime.now() to return 60 seconds later
+        start_time = datetime(2023, 1, 1, 10, 0, 0)
+        end_time = datetime(2023, 1, 1, 10, 1, 0)  # 60 seconds later
+        mock_datetime.now.return_value = end_time
+
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor.start_time = start_time
+        extractor.total_count = 600
+
+        # TPS should be 600/60 = 10
+        assert extractor.tps == 10.0
+
+
+class TestConcurrentExtractorErrorHandling:
+    """Tests for error handling paths in ConcurrentExtractor."""
+
+    @pytest.fixture
+    def mock_config(self, test_discogs_root: Path) -> Mock:
+        """Create a mock ExtractorConfig."""
+        config = Mock()
+        config.discogs_root = test_discogs_root
+        config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
+        config.amqp_connection = "amqp://guest:guest@localhost:5672/"
+        config.batch_size = 100
+        config.progress_log_interval = 1000
+        return config
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
+    def test_enter_channel_setup_failure(self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __enter__ handles channel setup failures."""
+        mock_exists.return_value = True
+
+        # Mock connection that fails during channel creation
+        mock_connection = Mock()
+        mock_connection.channel.side_effect = Exception("Channel creation failed")
+        mock_rabbitmq.return_value = mock_connection
+
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+
+        # Should raise exception and close connection
+        with pytest.raises(Exception, match="Channel creation failed"), extractor:
+            pass
+
+        # Verify connection was closed
+        mock_connection.close.assert_called_once()
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
+    def test_exit_completion_message_failure(self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __exit__ handles completion message send failure."""
+        mock_exists.return_value = True
+
+        mock_connection = Mock()
+        mock_channel = Mock()
+        mock_channel.is_closed = False
+        mock_channel.is_open = True
+        mock_connection.channel.return_value = mock_channel
+        mock_rabbitmq.return_value = mock_connection
+
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+
+        # Enter context
+        extractor.__enter__()
+        extractor.total_count = 100  # Set some count
+
+        # Make publish fail for completion message
+        mock_channel.basic_publish.side_effect = Exception("Publish failed")
+
+        # Should not raise exception even though publishing fails
+        extractor.__exit__(None, None, None)
+
+        # Connection should still be closed despite failure
+        mock_connection.close.assert_called_once()
