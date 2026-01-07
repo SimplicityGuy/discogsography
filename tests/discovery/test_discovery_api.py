@@ -223,6 +223,19 @@ class TestDiscoveryAppClass:
 class TestAdditionalEndpoints:
     """Test additional API endpoints for coverage."""
 
+    @pytest.fixture(autouse=True)
+    def _reset_rate_limiter(self) -> Any:
+        """Reset rate limiter storage between tests."""
+        from discovery.discovery import limiter
+
+        # Reset the rate limiter's storage to prevent rate limit errors
+        if hasattr(limiter, "_storage"):
+            limiter._storage.storage.clear()  # type: ignore[union-attr]
+        yield
+        # Clean up after test
+        if hasattr(limiter, "_storage"):
+            limiter._storage.storage.clear()  # type: ignore[union-attr]
+
     @pytest.fixture
     def client(self) -> TestClient:
         """Create a test client for the Discovery service."""
