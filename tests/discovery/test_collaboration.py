@@ -350,8 +350,8 @@ class TestHelperMethods:
         mock_ws_manager = MagicMock()
         manager = CollaborationManager(mock_ws_manager)
 
-        session1 = manager.create_session("user1", SessionType.EXPLORATION)
-        session2 = manager.create_session("user1", SessionType.PLAYLIST)
+        manager.create_session("user1", SessionType.EXPLORATION)
+        manager.create_session("user1", SessionType.PLAYLIST)
         session3 = manager.create_session("user1", SessionType.DISCOVERY)
         session3.active = False
 
@@ -415,7 +415,7 @@ class TestGetStatistics:
         manager = CollaborationManager(mock_ws_manager)
 
         session1 = manager.create_session("user1", SessionType.EXPLORATION)
-        session2 = manager.create_session("user2", SessionType.PLAYLIST)
+        manager.create_session("user2", SessionType.PLAYLIST)
         session1.participants.add("user2")
 
         stats = manager.get_statistics()

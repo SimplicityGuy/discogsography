@@ -131,11 +131,11 @@ def sample_master_data() -> dict[str, Any]:
 
 
 @pytest.fixture(autouse=True)
-def setup_test_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def setup_test_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Set up test environment variables."""
     test_env = {
         "AMQP_CONNECTION": "amqp://test:test@localhost:5672/",
-        "DISCOGS_ROOT": "/tmp/test-discogs",  # noqa: S108
+        "DISCOGS_ROOT": str(tmp_path / "test-discogs"),
         "NEO4J_ADDRESS": "bolt://localhost:7687",
         "NEO4J_USERNAME": "test",
         "NEO4J_PASSWORD": "test",

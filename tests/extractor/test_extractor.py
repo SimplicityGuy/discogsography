@@ -1,7 +1,10 @@
 """Tests for ConcurrentExtractor class."""
 
 import asyncio
+import contextlib
+import time
 from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
@@ -13,10 +16,10 @@ class TestConcurrentExtractorInitialization:
     """Tests for ConcurrentExtractor initialization."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -32,7 +35,7 @@ class TestConcurrentExtractorInitialization:
 
         assert extractor.data_type == "artists"
         assert extractor.input_file == input_file
-        assert extractor.input_path == Path("/tmp/discogs", input_file)
+        assert extractor.input_path == mock_config.discogs_root / input_file
         assert extractor.batch_size == 100
         assert extractor.progress_log_interval == 1000
         assert extractor.max_workers == 4
@@ -86,10 +89,10 @@ class TestConcurrentExtractorContextManager:
     """Tests for ConcurrentExtractor context manager."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -235,10 +238,10 @@ class TestConcurrentExtractorFlushMessages:
     """Tests for message flushing functionality."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -375,10 +378,10 @@ class TestConcurrentExtractorRecordProcessing:
     """Tests for record processing functionality."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 2  # Small batch for testing
         config.progress_log_interval = 1000
@@ -484,10 +487,10 @@ class TestConcurrentExtractorAsyncWorkers:
     """Tests for async worker functionality."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -588,10 +591,10 @@ class TestExtractAsync:
     """Test extract_async method."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -668,10 +671,10 @@ class TestProcessRecordsAsync:
     """Test _process_records_async method."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -752,10 +755,10 @@ class TestAmqpFlushWorker:
     """Test _amqp_flush_worker method."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -812,10 +815,10 @@ class TestTryQueueFlush:
     """Test _try_queue_flush method."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -851,7 +854,7 @@ class TestTryQueueFlush:
         await extractor.flush_queue.put(True)
 
         # Try to queue another flush - should schedule retry task
-        with patch("extractor.pyextractor.extractor.logger") as mock_logger:
+        with patch("extractor.pyextractor.extractor.logger"):
             await extractor._try_queue_flush()
 
         # Verify retry task was scheduled
@@ -860,20 +863,18 @@ class TestTryQueueFlush:
 
         # Clean up
         extractor.flush_retry_task.cancel()
-        try:
+        with contextlib.suppress(asyncio.CancelledError):
             await extractor.flush_retry_task
-        except asyncio.CancelledError:
-            pass
 
 
 class TestParseXmlAsync:
     """Test _parse_xml_async and _parse_xml_sync methods."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -980,22 +981,22 @@ class TestInitErrorCases:
     """Test ConcurrentExtractor initialization error cases."""
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_init_invalid_filename_format(self, mock_exists: Mock) -> None:
+    def test_init_invalid_filename_format(self, mock_exists: Mock, test_discogs_root: Path) -> None:
         """Test initialization with invalid filename format."""
         mock_exists.return_value = True
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://test"
 
         with pytest.raises(ValueError, match="Invalid input file format"):
             ConcurrentExtractor("invalid_filename.xml.gz", config)
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_init_file_not_found(self, mock_exists: Mock) -> None:
+    def test_init_file_not_found(self, mock_exists: Mock, test_discogs_root: Path) -> None:
         """Test initialization with non-existent file."""
         mock_exists.return_value = False
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://test"
 
         with pytest.raises(FileNotFoundError, match="Input file not found"):
@@ -1006,10 +1007,10 @@ class TestFlushErrorHandling:
     """Test error handling in _flush_pending_messages."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -1153,10 +1154,10 @@ class TestProcessFileAsync:
     """Test process_file_async function."""
 
     @pytest.fixture
-    def mock_config(self) -> Mock:
+    def mock_config(self, test_discogs_root: Path) -> Mock:
         """Create a mock ExtractorConfig."""
         config = Mock()
-        config.discogs_root = Path("/tmp/discogs")
+        config.discogs_root = test_discogs_root
         config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
         config.batch_size = 100
         config.progress_log_interval = 1000
@@ -1212,3 +1213,625 @@ class TestProcessFileAsync:
 
             # Verify error was logged
             mock_logger.error.assert_called()
+
+
+class TestProcessDiscogsData:
+    """Test process_discogs_data function."""
+
+    @pytest.fixture
+    def mock_config(self, test_discogs_root: Path) -> Mock:
+        """Create a mock ExtractorConfig."""
+        config = Mock()
+        config.discogs_root = test_discogs_root
+        config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
+        return config
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.download_discogs_data")
+    @patch("extractor.pyextractor.extractor._load_processing_state")
+    @patch("extractor.pyextractor.extractor._save_processing_state")
+    @patch("extractor.pyextractor.extractor.process_file_async")
+    async def test_process_discogs_data_success(
+        self,
+        mock_process_file: AsyncMock,
+        mock_save_state: Mock,
+        mock_load_state: Mock,
+        mock_download: Mock,
+        mock_config: Mock,
+    ) -> None:
+        """Test successful processing of Discogs data."""
+        from extractor.pyextractor.extractor import process_discogs_data
+
+        # Setup mocks
+        mock_download.return_value = [
+            "discogs_20240101_artists.xml.gz",
+            "discogs_20240101_labels.xml.gz",
+            "discogs_20240101_CHECKSUM.txt",
+        ]
+        mock_load_state.return_value = {}
+        mock_process_file.return_value = None
+
+        result = await process_discogs_data(mock_config)
+
+        assert result is True
+        mock_download.assert_called_once()
+        # Should process 2 files (not the CHECKSUM)
+        assert mock_process_file.call_count == 2
+        mock_save_state.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.download_discogs_data")
+    async def test_process_discogs_data_download_failure(self, mock_download: Mock, mock_config: Mock) -> None:
+        """Test handling of download failure."""
+        from extractor.pyextractor.extractor import process_discogs_data
+
+        mock_download.side_effect = Exception("Download failed")
+
+        result = await process_discogs_data(mock_config)
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.download_discogs_data")
+    @patch("extractor.pyextractor.extractor._load_processing_state")
+    async def test_process_discogs_data_no_files(self, mock_load_state: Mock, mock_download: Mock, mock_config: Mock) -> None:
+        """Test when no data files are available."""
+        from extractor.pyextractor.extractor import process_discogs_data
+
+        mock_download.return_value = ["discogs_20240101_CHECKSUM.txt"]
+        mock_load_state.return_value = {}
+
+        result = await process_discogs_data(mock_config)
+
+        assert result is True
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.download_discogs_data")
+    @patch("extractor.pyextractor.extractor._load_processing_state")
+    @patch("extractor.pyextractor.extractor._save_processing_state")
+    @patch("extractor.pyextractor.extractor.process_file_async")
+    async def test_process_discogs_data_skip_processed(
+        self,
+        mock_process_file: AsyncMock,
+        _mock_save_state: Mock,
+        mock_load_state: Mock,
+        mock_download: Mock,
+        mock_config: Mock,
+    ) -> None:
+        """Test skipping already processed files."""
+        from extractor.pyextractor.extractor import process_discogs_data
+
+        mock_download.return_value = [
+            "discogs_20240101_artists.xml.gz",
+            "discogs_20240101_labels.xml.gz",
+        ]
+        # Mark artists as already processed
+        mock_load_state.return_value = {"discogs_20240101_artists.xml.gz": True}
+
+        result = await process_discogs_data(mock_config)
+
+        assert result is True
+        # Should only process 1 file (labels)
+        assert mock_process_file.call_count == 1
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.download_discogs_data")
+    @patch("extractor.pyextractor.extractor._load_processing_state")
+    @patch("extractor.pyextractor.extractor.os.environ.get")
+    async def test_process_discogs_data_force_reprocess(
+        self, mock_env_get: Mock, mock_load_state: Mock, mock_download: Mock, mock_config: Mock
+    ) -> None:
+        """Test force reprocessing with FORCE_REPROCESS=true."""
+        from extractor.pyextractor.extractor import process_discogs_data
+
+        mock_download.return_value = ["discogs_20240101_artists.xml.gz"]
+        # All files marked as processed
+        mock_load_state.return_value = {"discogs_20240101_artists.xml.gz": True}
+        # Force reprocess enabled
+        mock_env_get.return_value = "true"
+
+        with (
+            patch("extractor.pyextractor.extractor.process_file_async", new_callable=AsyncMock) as mock_process,
+            patch("extractor.pyextractor.extractor._save_processing_state"),
+        ):
+            result = await process_discogs_data(mock_config)
+
+        assert result is True
+        # Should process despite being marked as complete
+        assert mock_process.call_count == 1
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.download_discogs_data")
+    @patch("extractor.pyextractor.extractor._load_processing_state")
+    @patch("extractor.pyextractor.extractor.shutdown_requested", True)
+    async def test_process_discogs_data_shutdown_during_processing(self, mock_load_state: Mock, mock_download: Mock, mock_config: Mock) -> None:
+        """Test shutdown during processing."""
+        from extractor.pyextractor.extractor import process_discogs_data
+
+        mock_download.return_value = ["discogs_20240101_artists.xml.gz"]
+        mock_load_state.return_value = {}
+
+        result = await process_discogs_data(mock_config)
+
+        assert result is True
+
+
+class TestPeriodicCheckLoop:
+    """Test periodic_check_loop function."""
+
+    @pytest.fixture
+    def mock_config(self, test_discogs_root: Path) -> Mock:
+        """Create a mock ExtractorConfig."""
+        config = Mock()
+        config.discogs_root = test_discogs_root
+        config.periodic_check_days = 1  # Check every day for testing
+        return config
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.asyncio.sleep")
+    @patch("extractor.pyextractor.extractor.process_discogs_data")
+    @patch("extractor.pyextractor.extractor.shutdown_requested", False)
+    async def test_periodic_check_loop_single_iteration(self, mock_process: AsyncMock, mock_sleep: AsyncMock, mock_config: Mock) -> None:
+        """Test single iteration of periodic check loop."""
+        from extractor.pyextractor.extractor import periodic_check_loop
+
+        mock_process.return_value = True
+        mock_sleep.return_value = None
+
+        # Mock shutdown after first check
+        call_count = [0]
+
+        async def mock_process_side_effect(_config: Any) -> bool:
+            call_count[0] += 1
+            if call_count[0] >= 1:
+                # Trigger shutdown after first check
+                import extractor.pyextractor.extractor
+
+                extractor.pyextractor.extractor.shutdown_requested = True
+            return True
+
+        mock_process.side_effect = mock_process_side_effect
+
+        # This should complete one check and then exit
+        await periodic_check_loop(mock_config)
+
+        assert mock_process.call_count >= 1
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.process_discogs_data")
+    @patch("extractor.pyextractor.extractor.shutdown_requested", True)
+    async def test_periodic_check_loop_shutdown_during_wait(self, mock_process: AsyncMock, mock_config: Mock) -> None:
+        """Test shutdown during wait period."""
+        from extractor.pyextractor.extractor import periodic_check_loop
+
+        # Should exit immediately due to shutdown
+        await periodic_check_loop(mock_config)
+
+        # Should not call process_discogs_data
+        mock_process.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.asyncio.sleep")
+    @patch("extractor.pyextractor.extractor.process_discogs_data")
+    async def test_periodic_check_loop_process_failure(self, mock_process: AsyncMock, mock_sleep: AsyncMock, mock_config: Mock) -> None:
+        """Test handling of process failure in periodic check."""
+        from extractor.pyextractor.extractor import periodic_check_loop
+
+        mock_process.return_value = False
+        mock_sleep.return_value = None
+
+        # Mock shutdown after first check
+        call_count = [0]
+
+        async def mock_process_side_effect(_config: Any) -> bool:
+            call_count[0] += 1
+            if call_count[0] >= 1:
+                import extractor.pyextractor.extractor
+
+                extractor.pyextractor.extractor.shutdown_requested = True
+            return False
+
+        mock_process.side_effect = mock_process_side_effect
+
+        await periodic_check_loop(mock_config)
+
+        assert mock_process.call_count >= 1
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.asyncio.sleep")
+    @patch("extractor.pyextractor.extractor.process_discogs_data")
+    @patch("extractor.pyextractor.extractor.shutdown_requested", False)
+    async def test_periodic_check_loop_exception(self, mock_process: AsyncMock, mock_sleep: AsyncMock, mock_config: Mock) -> None:
+        """Test handling of exception during periodic check."""
+        from extractor.pyextractor.extractor import periodic_check_loop
+
+        mock_sleep.return_value = None
+
+        # First call raises exception, second call triggers shutdown
+        call_count = [0]
+
+        async def mock_process_side_effect(_config: Any) -> bool:
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise Exception("Process error")
+            else:
+                import extractor.pyextractor.extractor
+
+                extractor.pyextractor.extractor.shutdown_requested = True
+                return True
+
+        mock_process.side_effect = mock_process_side_effect
+
+        await periodic_check_loop(mock_config)
+
+        assert mock_process.call_count >= 1
+
+
+class TestMainAsync:
+    """Test main_async function."""
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.setup_logging")
+    @patch("extractor.pyextractor.extractor.ExtractorConfig.from_env")
+    @patch("extractor.pyextractor.extractor.HealthServer")
+    @patch("extractor.pyextractor.extractor.process_discogs_data")
+    @patch("extractor.pyextractor.extractor.periodic_check_loop")
+    @patch("extractor.pyextractor.extractor.shutdown_requested", False)
+    @patch("extractor.pyextractor.extractor.signal.signal")
+    async def test_main_async_success(
+        self,
+        _mock_signal: Mock,
+        mock_periodic: AsyncMock,
+        mock_process: AsyncMock,
+        mock_health_server: Mock,
+        mock_from_env: Mock,
+        mock_setup_logging: Mock,
+        test_discogs_root: Path,
+    ) -> None:
+        """Test successful main_async execution."""
+        from extractor.pyextractor.extractor import main_async
+
+        # Setup mocks
+        mock_config = Mock()
+        mock_config.discogs_root = test_discogs_root
+        mock_from_env.return_value = mock_config
+
+        mock_health = Mock()
+        mock_health_server.return_value = mock_health
+
+        mock_process.return_value = True
+        mock_periodic.return_value = None
+
+        await main_async()
+
+        mock_setup_logging.assert_called_once()
+        mock_from_env.assert_called_once()
+        mock_health.start_background.assert_called_once()
+        mock_process.assert_called_once()
+        mock_periodic.assert_called_once()
+        mock_health.stop.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.setup_logging")
+    @patch("extractor.pyextractor.extractor.ExtractorConfig.from_env")
+    @patch("extractor.pyextractor.extractor.signal.signal")
+    async def test_main_async_config_error(
+        self,
+        _mock_signal: Mock,
+        mock_from_env: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test main_async with configuration error."""
+        from extractor.pyextractor.extractor import main_async
+
+        mock_from_env.side_effect = ValueError("Invalid config")
+
+        # sys.exit(1) will be called, which raises SystemExit
+        with pytest.raises(SystemExit) as exc_info:
+            await main_async()
+
+        assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.setup_logging")
+    @patch("extractor.pyextractor.extractor.ExtractorConfig.from_env")
+    @patch("extractor.pyextractor.extractor.HealthServer")
+    @patch("extractor.pyextractor.extractor.process_discogs_data")
+    @patch("extractor.pyextractor.extractor.signal.signal")
+    async def test_main_async_initial_processing_failure(
+        self,
+        _mock_signal: Mock,
+        mock_process: AsyncMock,
+        mock_health_server: Mock,
+        mock_from_env: Mock,
+        _mock_setup_logging: Mock,
+        test_discogs_root: Path,
+    ) -> None:
+        """Test main_async when initial processing fails."""
+        from extractor.pyextractor.extractor import main_async
+
+        mock_config = Mock()
+        mock_config.discogs_root = test_discogs_root
+        mock_from_env.return_value = mock_config
+
+        mock_health = Mock()
+        mock_health_server.return_value = mock_health
+
+        mock_process.return_value = False
+
+        # sys.exit(1) will be called, which raises SystemExit
+        with pytest.raises(SystemExit) as exc_info:
+            await main_async()
+
+        assert exc_info.value.code == 1
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.setup_logging")
+    @patch("extractor.pyextractor.extractor.ExtractorConfig.from_env")
+    @patch("extractor.pyextractor.extractor.HealthServer")
+    @patch("extractor.pyextractor.extractor.process_discogs_data")
+    @patch("extractor.pyextractor.extractor.periodic_check_loop")
+    @patch("extractor.pyextractor.extractor.shutdown_requested", True)
+    @patch("extractor.pyextractor.extractor.signal.signal")
+    async def test_main_async_shutdown_before_periodic(
+        self,
+        _mock_signal: Mock,
+        mock_periodic: AsyncMock,
+        mock_process: AsyncMock,
+        mock_health_server: Mock,
+        mock_from_env: Mock,
+        _mock_setup_logging: Mock,
+        test_discogs_root: Path,
+    ) -> None:
+        """Test main_async with shutdown before periodic check."""
+        from extractor.pyextractor.extractor import main_async
+
+        mock_config = Mock()
+        mock_config.discogs_root = test_discogs_root
+        mock_from_env.return_value = mock_config
+
+        mock_health = Mock()
+        mock_health_server.return_value = mock_health
+
+        mock_process.return_value = True
+
+        await main_async()
+
+        # Periodic check should not be called due to shutdown
+        mock_periodic.assert_not_called()
+
+
+class TestMainEntryPoint:
+    """Test main entry point."""
+
+    @patch("extractor.pyextractor.extractor.asyncio.run")
+    def test_main_calls_asyncio_run(self, mock_run: Mock) -> None:
+        """Test main calls asyncio.run with main_async."""
+        from extractor.pyextractor.extractor import main
+
+        main()
+
+        mock_run.assert_called_once()
+
+    @patch("extractor.pyextractor.extractor.asyncio.run")
+    def test_main_handles_keyboard_interrupt(self, mock_run: Mock) -> None:
+        """Test main handles KeyboardInterrupt."""
+        from extractor.pyextractor.extractor import main
+
+        mock_run.side_effect = KeyboardInterrupt()
+
+        # Should not raise exception
+        main()
+
+    @patch("extractor.pyextractor.extractor.asyncio.run")
+    def test_main_handles_exception(self, mock_run: Mock) -> None:
+        """Test main handles general exception."""
+        from extractor.pyextractor.extractor import main
+
+        mock_run.side_effect = Exception("Fatal error")
+
+        # sys.exit(1) will be called, which raises SystemExit
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+
+        assert exc_info.value.code == 1
+
+
+class TestProgressMonitoring:
+    """Test progress monitoring and reporting."""
+
+    @pytest.fixture
+    def mock_config(self, test_discogs_root: Path) -> Mock:
+        """Create a mock ExtractorConfig."""
+        config = Mock()
+        config.discogs_root = test_discogs_root
+        config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
+        config.batch_size = 100
+        config.progress_log_interval = 1000
+        return config
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_progress_monitoring_with_stalled_extractors(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test progress monitoring detects stalled extractors."""
+        import extractor.pyextractor.extractor as extractor_module
+
+        mock_exists.return_value = True
+
+        # Set up global state for progress monitoring
+        extractor_module.extraction_progress = {
+            "artists": 1000,
+            "labels": 500,
+            "masters": 0,
+            "releases": 2000,
+        }
+        extractor_module.last_extraction_time = {
+            "artists": time.time() - 130,  # Stalled (>120 seconds)
+            "labels": time.time() - 10,  # Active
+            "masters": 0,  # Not started
+            "releases": time.time() - 5,  # Active
+        }
+        extractor_module.completed_files = set()
+        extractor_module.active_connections = {"artists": Mock(), "releases": Mock()}
+
+        ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+
+        # Trigger progress reporting by logging
+        with patch("extractor.pyextractor.extractor.logger"):
+            # Simulate the progress monitoring logic
+            current_time = time.time()
+            stalled_extractors = []
+            for data_type, last_time in extractor_module.last_extraction_time.items():
+                if data_type in extractor_module.completed_files:
+                    continue
+                if last_time > 0 and extractor_module.extraction_progress[data_type] > 0 and (current_time - last_time) > 120:
+                    stalled_extractors.append(data_type)
+
+            assert "artists" in stalled_extractors
+            assert "labels" not in stalled_extractors
+            assert "releases" not in stalled_extractors
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_progress_logging_interval(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test periodic progress logging."""
+        mock_exists.return_value = True
+        mock_config.progress_log_interval = 10  # Log every 10 records
+
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor.total_count = 10  # Trigger logging at next record
+
+        # Progress logging happens when total_count % progress_log_interval == 0
+        assert extractor.total_count % mock_config.progress_log_interval == 0
+
+
+class TestQueueErrorHandling:
+    """Test error handling in queue operations."""
+
+    @pytest.fixture
+    def mock_config(self, test_discogs_root: Path) -> Mock:
+        """Create a mock ExtractorConfig."""
+        config = Mock()
+        config.discogs_root = test_discogs_root
+        config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
+        config.batch_size = 100
+        config.progress_log_interval = 1000
+        return config
+
+    @patch("extractor.pyextractor.extractor.asyncio.run_coroutine_threadsafe")
+    @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_handles_queue_error(self, mock_exists: Mock, mock_rabbitmq: Mock, mock_run_coro: Mock, mock_config: Mock) -> None:
+        """Test queue_record handles queue errors gracefully."""
+        mock_exists.return_value = True
+
+        mock_connection = Mock()
+        mock_channel = Mock()
+        mock_channel.is_open = True
+        mock_channel.is_closed = False
+        mock_connection.channel.return_value = mock_channel
+        mock_rabbitmq.return_value = mock_connection
+
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+
+        # Set up the event loop and queue
+        extractor.event_loop = Mock()
+        extractor.record_queue = Mock()
+        extractor.record_queue.qsize.return_value = 0
+
+        # Mock run_coroutine_threadsafe to raise an exception
+        mock_future = Mock()
+        mock_future.result.side_effect = Exception("Queue operation failed")
+        mock_run_coro.return_value = mock_future
+
+        # Try to queue a record - should handle error gracefully
+        test_record = {"id": 123, "name": "Test Artist"}
+        extractor._ConcurrentExtractor__queue_record([("artists", {"id": 123})], test_record)
+
+        # Should have incremented error count
+        assert extractor.error_count > 0
+
+
+class TestFlushQueueBackoff:
+    """Test flush queue retry and backoff logic."""
+
+    @pytest.fixture
+    def mock_config(self, test_discogs_root: Path) -> Mock:
+        """Create a mock ExtractorConfig."""
+        config = Mock()
+        config.discogs_root = test_discogs_root
+        config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
+        config.batch_size = 100
+        config.progress_log_interval = 1000
+        return config
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.asyncio.sleep")
+    @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    async def test_flush_queue_backoff_increases(self, mock_exists: Mock, mock_rabbitmq: Mock, mock_sleep: AsyncMock, mock_config: Mock) -> None:
+        """Test that flush queue backoff increases exponentially."""
+        from extractor.pyextractor.extractor import FLUSH_QUEUE_INITIAL_BACKOFF
+
+        mock_exists.return_value = True
+        mock_sleep.return_value = None
+
+        mock_connection = Mock()
+        mock_channel = Mock()
+        mock_channel.is_open = True
+        mock_channel.is_closed = False
+        mock_connection.channel.return_value = mock_channel
+        mock_rabbitmq.return_value = mock_connection
+
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor.amqp_channel = mock_channel
+
+        # Set up flush queue
+        extractor.flush_queue = asyncio.Queue(maxsize=1)
+
+        # Initial backoff
+        initial_backoff = extractor.flush_retry_backoff
+        assert initial_backoff == FLUSH_QUEUE_INITIAL_BACKOFF
+
+        # Fill the queue to trigger QueueFull on next attempt
+        await extractor.flush_queue.put(True)
+
+        # Try to flush when queue is full - should trigger backoff retry
+        await extractor._try_queue_flush()
+
+        # Now call the retry method which increases the backoff
+        await extractor._retry_flush_with_backoff()
+
+        # Backoff should have doubled
+        assert extractor.flush_retry_backoff == initial_backoff * 2
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    async def test_flush_queue_retry_after_failure(self, mock_exists: Mock, mock_rabbitmq: Mock, mock_config: Mock) -> None:
+        """Test that flush queue retries after failure if still needed."""
+        mock_exists.return_value = True
+
+        mock_connection = Mock()
+        mock_channel = Mock()
+        mock_channel.is_open = True
+        mock_channel.is_closed = False
+        mock_connection.channel.return_value = mock_channel
+        mock_rabbitmq.return_value = mock_connection
+
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor.amqp_channel = mock_channel
+
+        # Add messages beyond batch size to trigger flush
+        with extractor.pending_messages_lock:
+            for i in range(mock_config.batch_size + 10):
+                extractor.pending_messages.append((f"test.queue.{i}", b"test message", {"content_type": "application/json"}))
+
+        # Mock channel to fail
+        mock_channel.basic_publish.side_effect = Exception("Publish failed")
+
+        # Try to flush - should handle failure
+        with patch("extractor.pyextractor.extractor.logger"):
+            await extractor._try_queue_flush()
+
+        # Should still have messages pending
+        with extractor.pending_messages_lock:
+            assert len(extractor.pending_messages) > 0

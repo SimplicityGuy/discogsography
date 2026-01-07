@@ -35,7 +35,7 @@ class TestResilientNeo4jDriver:
         return driver
 
     @patch("common.neo4j_resilient.GraphDatabase")
-    def test_init(self, mock_graph_db: Mock) -> None:
+    def test_init(self, _mock_graph_db: Mock) -> None:
         """Test ResilientNeo4jDriver initialization."""
         uri = "neo4j://localhost:7687"
         auth = ("neo4j", "password")
@@ -75,7 +75,7 @@ class TestResilientNeo4jDriver:
         mock_driver.session.assert_called_once_with(database="neo4j")
 
     @patch("common.neo4j_resilient.GraphDatabase")
-    def test_test_driver_failure(self, mock_graph_db: Mock) -> None:
+    def test_test_driver_failure(self, _mock_graph_db: Mock) -> None:
         """Test driver health check failure."""
         failing_driver = Mock()
         failing_driver.session = Mock(side_effect=ServiceUnavailable("Connection failed"))
@@ -97,7 +97,7 @@ class TestResilientNeo4jDriver:
         # Mock get_connection to return the mock driver directly
         resilient_driver.get_connection = Mock(return_value=mock_driver)
 
-        session = resilient_driver.session(database="neo4j")
+        _session = resilient_driver.session(database="neo4j")
 
         mock_driver.session.assert_called_once_with(database="neo4j")
 
@@ -115,7 +115,7 @@ class TestResilientNeo4jDriver:
         assert resilient_driver._connection is None
 
     @patch("common.neo4j_resilient.GraphDatabase")
-    def test_close_with_error(self, mock_graph_db: Mock) -> None:
+    def test_close_with_error(self, _mock_graph_db: Mock) -> None:
         """Test driver closure with error."""
         failing_driver = Mock()
         failing_driver.close = Mock(side_effect=Exception("Close failed"))
@@ -149,7 +149,7 @@ class TestAsyncResilientNeo4jDriver:
         return driver
 
     @patch("common.neo4j_resilient.AsyncGraphDatabase")
-    def test_init(self, mock_async_graph_db: Mock) -> None:
+    def test_init(self, _mock_async_graph_db: Mock) -> None:
         """Test AsyncResilientNeo4jDriver initialization."""
         uri = "neo4j://localhost:7687"
         auth = ("neo4j", "password")
@@ -175,7 +175,7 @@ class TestAsyncResilientNeo4jDriver:
 
     @pytest.mark.asyncio
     @patch("common.neo4j_resilient.AsyncGraphDatabase")
-    async def test_test_driver_success(self, mock_async_graph_db: Mock, mock_async_driver: AsyncMock) -> None:
+    async def test_test_driver_success(self, _mock_async_graph_db: Mock, mock_async_driver: AsyncMock) -> None:
         """Test async driver health check success."""
         resilient_driver = AsyncResilientNeo4jDriver("neo4j://localhost:7687", ("neo4j", "password"))
         result = await resilient_driver._test_driver(mock_async_driver)
@@ -184,7 +184,7 @@ class TestAsyncResilientNeo4jDriver:
 
     @pytest.mark.asyncio
     @patch("common.neo4j_resilient.AsyncGraphDatabase")
-    async def test_test_driver_failure(self, mock_async_graph_db: Mock) -> None:
+    async def test_test_driver_failure(self, _mock_async_graph_db: Mock) -> None:
         """Test async driver health check failure."""
         failing_driver = AsyncMock()
         failing_driver.session = Mock(side_effect=ServiceUnavailable("Connection failed"))
@@ -205,13 +205,13 @@ class TestAsyncResilientNeo4jDriver:
         # Mock get_connection to return the mock driver directly
         resilient_driver.get_connection = AsyncMock(return_value=mock_async_driver)
 
-        session = await resilient_driver.session(database="neo4j")
+        _session = await resilient_driver.session(database="neo4j")
 
         mock_async_driver.session.assert_called_once_with(database="neo4j")
 
     @pytest.mark.asyncio
     @patch("common.neo4j_resilient.AsyncGraphDatabase")
-    async def test_close(self, mock_async_graph_db: Mock, mock_async_driver: AsyncMock) -> None:
+    async def test_close(self, _mock_async_graph_db: Mock, mock_async_driver: AsyncMock) -> None:
         """Test async driver closure."""
         resilient_driver = AsyncResilientNeo4jDriver("neo4j://localhost:7687", ("neo4j", "password"))
         resilient_driver._connection = mock_async_driver
@@ -223,7 +223,7 @@ class TestAsyncResilientNeo4jDriver:
 
     @pytest.mark.asyncio
     @patch("common.neo4j_resilient.AsyncGraphDatabase")
-    async def test_close_with_error(self, mock_async_graph_db: Mock) -> None:
+    async def test_close_with_error(self, _mock_async_graph_db: Mock) -> None:
         """Test async driver closure with error."""
         failing_driver = AsyncMock()
         failing_driver.close = AsyncMock(side_effect=Exception("Close failed"))

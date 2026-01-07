@@ -383,7 +383,7 @@ class TestDashboardAppDataCollection:
                 "progress": 0.75,
             }
 
-            async def mock_get(url: str) -> Mock:
+            async def mock_get(_url: str) -> Mock:
                 response = Mock()
                 response.status_code = 200
                 response.json = Mock(return_value=mock_response_data)
@@ -418,7 +418,7 @@ class TestDashboardAppDataCollection:
 
             call_count = 0
 
-            async def mock_get(url: str) -> Mock:
+            async def mock_get(_url: str) -> Mock:
                 nonlocal call_count
                 call_count += 1
                 response = Mock()
@@ -499,7 +499,7 @@ class TestDashboardAppDataCollection:
                 },
             ]
 
-            async def mock_get(url: str, auth: tuple[str, str]) -> Mock:
+            async def mock_get(_url: str, _auth: tuple[str, str]) -> Mock:
                 response = Mock()
                 response.status_code = 200
                 response.json = Mock(return_value=queue_data)
@@ -549,7 +549,7 @@ class TestDashboardAppDataCollection:
             app = DashboardApp()
             app.rabbitmq = AsyncMock()
 
-            async def mock_get(url: str, auth: tuple[str, str]) -> Mock:
+            async def mock_get(_url: str, _auth: tuple[str, str]) -> Mock:
                 response = Mock()
                 response.status_code = 401
                 return response
@@ -581,7 +581,7 @@ class TestDashboardAppDataCollection:
             app = DashboardApp()
             app.rabbitmq = AsyncMock()
 
-            async def mock_get(url: str, auth: tuple[str, str]) -> Mock:
+            async def mock_get(_url: str, _auth: tuple[str, str]) -> Mock:
                 response = Mock()
                 response.status_code = 503
                 return response
@@ -613,7 +613,7 @@ class TestDashboardAppDataCollection:
             app = DashboardApp()
             app.rabbitmq = AsyncMock()
 
-            async def mock_get(url: str, auth: tuple[str, str]) -> Mock:
+            async def mock_get(_url: str, _auth: tuple[str, str]) -> Mock:
                 raise httpx.ConnectError("Connection refused")
 
             with patch("httpx.AsyncClient") as mock_client_class:
@@ -643,7 +643,7 @@ class TestDashboardAppDataCollection:
             app = DashboardApp()
             app.rabbitmq = AsyncMock()
 
-            async def mock_get(url: str, auth: tuple[str, str]) -> Mock:
+            async def mock_get(_url: str, _auth: tuple[str, str]) -> Mock:
                 raise Exception("Unexpected error")
 
             with patch("httpx.AsyncClient") as mock_client_class:
@@ -692,7 +692,7 @@ class TestDashboardAppDataCollection:
             mock_pg_conn.__aexit__ = AsyncMock(return_value=None)
 
             # Mock the connect function to return the connection
-            async def mock_connect(**kwargs):
+            async def mock_connect(**_kwargs):
                 return mock_pg_conn
 
             # Mock Neo4j session
@@ -776,7 +776,7 @@ class TestDashboardAppDataCollection:
             mock_pg_conn.__aenter__ = AsyncMock(return_value=mock_pg_conn)
             mock_pg_conn.__aexit__ = AsyncMock(return_value=None)
 
-            async def mock_connect(**kwargs):
+            async def mock_connect(**_kwargs):
                 return mock_pg_conn
 
             # Mock Neo4j session failure
@@ -1018,7 +1018,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"status": "healthy", "model": "loaded"}
 
-        async def mock_get(url: str) -> Mock:
+        async def mock_get(_url: str) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1048,12 +1048,12 @@ class TestDiscoveryProxyEndpoints:
 
         from dashboard.dashboard import get_ml_status
 
-        async def mock_get(url: str) -> Mock:
+        async def mock_get(_url: str) -> Mock:
             raise Exception("Discovery service unavailable")
 
         with (
             patch("httpx.AsyncClient") as mock_client_class,
-            patch("dashboard.dashboard.logger") as mock_logger,
+            patch("dashboard.dashboard.logger") as _mock_logger,
         ):
             mock_client = AsyncMock()
             mock_client.get = mock_get
@@ -1080,7 +1080,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"recommendations": [{"id": "1", "score": 0.95}]}
 
-        async def mock_post(url: str, json: dict[str, Any]) -> Mock:
+        async def mock_post(_url: str, _json: dict[str, Any]) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1112,7 +1112,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"recommendations": []}
 
-        async def mock_post(url: str, json: dict[str, Any]) -> Mock:
+        async def mock_post(_url: str, _json: dict[str, Any]) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1142,7 +1142,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"status": "healthy", "indexed": 1000}
 
-        async def mock_get(url: str) -> Mock:
+        async def mock_get(_url: str) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1172,7 +1172,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"queries": 500, "avg_time": 0.25}
 
-        async def mock_get(url: str) -> Mock:
+        async def mock_get(_url: str) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1202,7 +1202,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"status": "healthy", "algorithms": ["pagerank"]}
 
-        async def mock_get(url: str) -> Mock:
+        async def mock_get(_url: str) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1232,7 +1232,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"results": [{"node": "A", "score": 0.95}]}
 
-        async def mock_post(url: str, json: dict[str, Any]) -> Mock:
+        async def mock_post(_url: str, _json: dict[str, Any]) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1262,7 +1262,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"status": "healthy", "stream_active": True}
 
-        async def mock_get(url: str) -> Mock:
+        async def mock_get(_url: str) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1292,7 +1292,7 @@ class TestDiscoveryProxyEndpoints:
 
         mock_response_data = {"trending": [{"name": "Artist1", "score": 100}]}
 
-        async def mock_post(url: str, json: dict[str, Any]) -> Mock:
+        async def mock_post(_url: str, _json: dict[str, Any]) -> Mock:
             response = Mock()
             response.status_code = 200
             response.json = Mock(return_value=mock_response_data)
@@ -1337,12 +1337,12 @@ class TestWebSocketEndpoint:
             test_app = FastAPI()
             test_app.websocket("/ws")(websocket_endpoint)
 
-            with TestClient(test_app) as client, client.websocket_connect("/ws") as websocket:
+            with TestClient(test_app) as client, client.websocket_connect("/ws") as _websocket:
                 # Verify connection was added
                 assert len(mock_dashboard_instance.websocket_connections) == 1
 
                 # Should receive initial metrics
-                data = websocket.receive_json()
+                data = _websocket.receive_json()
                 assert data["type"] == "metrics_update"
                 assert "data" in data
 
@@ -1363,12 +1363,12 @@ class TestWebSocketEndpoint:
 
         with (
             patch("dashboard.dashboard.dashboard", mock_dashboard_instance),
-            patch("dashboard.dashboard.logger") as mock_logger,
+            patch("dashboard.dashboard.logger") as _mock_logger,
         ):
             test_app = FastAPI()
             test_app.websocket("/ws")(websocket_endpoint)
 
-            with TestClient(test_app) as client, client.websocket_connect("/ws") as websocket:
+            with TestClient(test_app) as client, client.websocket_connect("/ws") as _websocket:
                 # Verify connection was added
                 assert len(mock_dashboard_instance.websocket_connections) == 1
 
@@ -1408,12 +1408,12 @@ class TestPostgresAddressParsing:
                 patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_rabbitmq),
                 patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j),
                 patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_postgres),
-                patch("asyncio.create_task") as mock_create_task,
+                patch("asyncio.create_task") as _mock_create_task,
             ):
                 await app.startup()
 
                 # Verify PostgreSQL connection was created with default port 5432
-                mock_postgres_call_args = mock_postgres.__class__.call_args
+                # mock_postgres_call_args = mock_postgres.__class__.call_args
                 # PostgreSQL was initialized (exact args checking not critical for this test)
                 assert app.postgres_conn is not None
 

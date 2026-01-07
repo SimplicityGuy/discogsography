@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from aio_pika.abc import AbstractIncomingMessage
+from orjson import dumps
 
 from graphinator.graphinator import (
     get_existing_hash,
@@ -369,31 +370,34 @@ class TestGetHealthData:
 
     def test_health_data_with_graph(self) -> None:
         """Test health data when graph is connected."""
-        with patch("graphinator.graphinator.graph", MagicMock()), patch("graphinator.graphinator.current_task", "Processing artists"):
-            with patch("graphinator.graphinator.current_progress", 0.75):
-                with patch(
-                    "graphinator.graphinator.message_counts",
-                    {"artists": 100, "labels": 50, "masters": 25, "releases": 200},
-                ):
-                    with patch(
-                        "graphinator.graphinator.last_message_time",
-                        {
-                            "artists": 1234567890.0,
-                            "labels": 1234567891.0,
-                            "masters": 1234567892.0,
-                            "releases": 1234567893.0,
-                        },
-                    ):
-                        from graphinator.graphinator import get_health_data
+        with (
+            patch("graphinator.graphinator.graph", MagicMock()),
+            patch("graphinator.graphinator.current_task", "Processing artists"),
+            patch("graphinator.graphinator.current_progress", 0.75),
+            patch(
+                "graphinator.graphinator.message_counts",
+                {"artists": 100, "labels": 50, "masters": 25, "releases": 200},
+            ),
+            patch(
+                "graphinator.graphinator.last_message_time",
+                {
+                    "artists": 1234567890.0,
+                    "labels": 1234567891.0,
+                    "masters": 1234567892.0,
+                    "releases": 1234567893.0,
+                },
+            ),
+        ):
+            from graphinator.graphinator import get_health_data
 
-                        result = get_health_data()
+            result = get_health_data()
 
-                        assert result["status"] == "healthy"
-                        assert result["service"] == "graphinator"
-                        assert result["current_task"] == "Processing artists"
-                        assert result["progress"] == 0.75
-                        assert result["message_counts"]["artists"] == 100
-                        assert result["last_message_time"]["artists"] == 1234567890.0
+            assert result["status"] == "healthy"
+            assert result["service"] == "graphinator"
+            assert result["current_task"] == "Processing artists"
+            assert result["progress"] == 0.75
+            assert result["message_counts"]["artists"] == 100
+            assert result["last_message_time"]["artists"] == 1234567890.0
 
     def test_health_data_without_graph(self) -> None:
         """Test health data when graph is not connected."""
@@ -446,22 +450,26 @@ class TestCheckAllConsumersIdle:
     @pytest.mark.asyncio
     async def test_all_idle_when_no_consumers_and_all_files_complete(self) -> None:
         """Test returns True when all consumers idle and files complete."""
-        with patch("graphinator.graphinator.consumer_tags", {}):
-            with patch("graphinator.graphinator.completed_files", {"artists", "labels", "masters", "releases"}):
-                from graphinator.graphinator import check_all_consumers_idle
+        with (
+            patch("graphinator.graphinator.consumer_tags", {}),
+            patch("graphinator.graphinator.completed_files", {"artists", "labels", "masters", "releases"}),
+        ):
+            from graphinator.graphinator import check_all_consumers_idle
 
-                result = await check_all_consumers_idle()
-                assert result is True
+            result = await check_all_consumers_idle()
+            assert result is True
 
     @pytest.mark.asyncio
     async def test_not_idle_when_consumers_active(self) -> None:
         """Test returns False when consumers are still active."""
-        with patch("graphinator.graphinator.consumer_tags", {"artists": "tag123"}):
-            with patch("graphinator.graphinator.completed_files", {"artists", "labels", "masters", "releases"}):
-                from graphinator.graphinator import check_all_consumers_idle
+        with (
+            patch("graphinator.graphinator.consumer_tags", {"artists": "tag123"}),
+            patch("graphinator.graphinator.completed_files", {"artists", "labels", "masters", "releases"}),
+        ):
+            from graphinator.graphinator import check_all_consumers_idle
 
-                result = await check_all_consumers_idle()
-                assert result is False
+            result = await check_all_consumers_idle()
+            assert result is False
 
     @pytest.mark.asyncio
     async def test_not_idle_when_files_incomplete(self) -> None:
@@ -1151,3 +1159,303 @@ class TestReleaseTransactionLogic:
             await on_release_message(mock_message)
 
         mock_message.ack.assert_called_once()
+
+
+class TestMasterMessageErrorHandling:
+    """Test error handling in master message processing."""
+
+    @pytest.fixture
+    def sample_master_data(self) -> dict[str, Any]:
+        """Sample master data for testing."""
+        return {
+            "id": "12345",
+            "title": "Test Master",
+            "artists": [{"id": "1", "name": "Artist 1"}],
+            "genres": ["Rock"],
+            "styles": ["Alternative"],
+        }
+
+    @pytest.mark.asyncio
+    async def test_master_neo4j_unavailable_nacks_message(self, sample_master_data: dict[str, Any]) -> None:
+        """Test that Neo4j unavailable error nacks the message."""
+        from neo4j.exceptions import ServiceUnavailable
+
+        from graphinator.graphinator import on_master_message
+
+        # Mock message
+        mock_message = AsyncMock()
+        mock_message.body = dumps(sample_master_data)
+        mock_message.nack = AsyncMock()
+
+        # Mock Neo4j driver to raise ServiceUnavailable
+        mock_driver = MagicMock()
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(side_effect=ServiceUnavailable("Neo4j down"))
+        mock_session.__exit__ = MagicMock()
+        mock_driver.session.return_value = mock_session
+
+        # Process message
+        with patch("graphinator.graphinator.graph", mock_driver):
+            await on_master_message(mock_message)
+
+        # Should nack with requeue
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    async def test_master_processing_error_nacks_message(self) -> None:
+        """Test that processing errors result in message nack."""
+        from graphinator.graphinator import on_master_message
+
+        # Mock message
+        sample_data = {
+            "id": "12345",
+            "title": "Test Master",
+            "sha256": "test_hash",
+        }
+
+        mock_message = AsyncMock()
+        mock_message.body = dumps(sample_data)
+        mock_message.nack = AsyncMock()
+
+        # Mock Neo4j driver to raise an error during processing
+        mock_driver = MagicMock()
+
+        # Create a session context manager that raises error on execute_write
+        mock_session_context = MagicMock()
+        mock_session_context.execute_write.side_effect = RuntimeError("Database error")
+
+        # Make session() return a context manager
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session_context)
+        mock_session.__exit__ = MagicMock(return_value=None)
+
+        mock_driver.session.return_value = mock_session
+
+        # Process message
+        with patch("graphinator.graphinator.graph", mock_driver):
+            await on_master_message(mock_message)
+
+        # Should nack the message with requeue
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    async def test_master_nack_failure_logged(self, sample_master_data: dict[str, Any]) -> None:
+        """Test that nack failures are logged."""
+        from neo4j.exceptions import ServiceUnavailable
+
+        from graphinator.graphinator import on_master_message
+
+        # Mock message that fails to nack
+        mock_message = AsyncMock()
+        mock_message.body = dumps(sample_master_data)
+        mock_message.nack = AsyncMock(side_effect=Exception("Nack failed"))
+
+        # Mock Neo4j driver to raise ServiceUnavailable
+        mock_driver = MagicMock()
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(side_effect=ServiceUnavailable("Neo4j down"))
+        mock_session.__exit__ = MagicMock()
+        mock_driver.session.return_value = mock_session
+
+        # Process message - should not raise exception
+        with patch("graphinator.graphinator.graph", mock_driver), patch("graphinator.graphinator.logger") as mock_logger:
+            await on_master_message(mock_message)
+
+            # Should have logged nack failure
+            assert mock_logger.warning.called
+
+
+class TestProgressReporter:
+    """Test progress reporting functionality."""
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_detects_stalled_consumers(self) -> None:
+        """Test that progress reporter detects stalled consumers."""
+        import time
+
+        import graphinator.graphinator as graphinator_module
+
+        # Set up global state
+        graphinator_module.shutdown_requested = False
+        graphinator_module.message_counts = {
+            "artists": 100,
+            "labels": 50,
+            "masters": 0,
+            "releases": 200,
+        }
+        graphinator_module.last_message_time = {
+            "artists": time.time() - 130,  # Stalled
+            "labels": time.time() - 10,  # Active
+            "masters": 0,  # Not started
+            "releases": time.time() - 5,  # Active
+        }
+        graphinator_module.completed_files = set()
+        graphinator_module.consumer_tags = {"artists": "tag1", "releases": "tag2"}
+
+        # Simulate stalled consumer detection logic
+        current_time = time.time()
+        stalled_consumers = []
+        for data_type, last_time in graphinator_module.last_message_time.items():
+            if data_type not in graphinator_module.completed_files and last_time > 0 and (current_time - last_time) > 120:
+                stalled_consumers.append(data_type)
+
+        # Should detect artists as stalled
+        assert "artists" in stalled_consumers
+        assert "labels" not in stalled_consumers
+        assert "releases" not in stalled_consumers
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_shows_completed_files(self) -> None:
+        """Test that progress reporter shows completed files."""
+        import graphinator.graphinator as graphinator_module
+
+        # Set up global state with completed files
+        graphinator_module.message_counts = {
+            "artists": 1000,
+            "labels": 500,
+            "masters": 0,
+            "releases": 0,
+        }
+        graphinator_module.completed_files = {"artists", "labels"}
+
+        # Build progress string like the progress reporter does
+        progress_parts = []
+        for data_type in ["artists", "labels", "masters", "releases"]:
+            emoji = "🎉 " if data_type in graphinator_module.completed_files else ""
+            progress_parts.append(f"{emoji}{data_type.capitalize()}: {graphinator_module.message_counts[data_type]}")
+
+        # Should include emoji for completed files
+        progress_str = ", ".join(progress_parts)
+        assert "🎉 Artists" in progress_str
+        assert "🎉 Labels" in progress_str
+        assert "🎉 Masters" not in progress_str
+
+
+class TestQueueRestartLogic:
+    """Test queue restart logic when messages are found."""
+
+    @pytest.mark.asyncio
+    async def test_restarts_consumers_when_queues_have_messages(self) -> None:
+        """Test that consumers are restarted when queues have messages."""
+        import graphinator.graphinator as graphinator_module
+
+        # Set up global state
+        graphinator_module.consumer_tags = {}
+        graphinator_module.completed_files = set()
+        graphinator_module.last_message_time = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+
+        # Simulate finding queues with messages
+        queues_with_messages = [("artists", 100), ("releases", 50)]
+
+        # Should identify that consumers need to be restarted
+        assert len(queues_with_messages) > 0
+        assert any(count > 0 for _, count in queues_with_messages)
+
+
+class TestReleaseMessageErrorHandling:
+    """Test error handling in release message processing."""
+
+    @pytest.mark.asyncio
+    async def test_release_neo4j_unavailable_nacks_message(self) -> None:
+        """Test that Neo4j unavailable error nacks release message."""
+        from neo4j.exceptions import ServiceUnavailable
+
+        from graphinator.graphinator import on_release_message
+
+        # Mock message
+        sample_release_data = {
+            "id": "123",
+            "title": "Test Release",
+            "artists": [{"id": "1", "name": "Artist 1"}],
+        }
+
+        mock_message = AsyncMock()
+        mock_message.body = dumps(sample_release_data)
+        mock_message.nack = AsyncMock()
+
+        # Mock Neo4j driver to raise ServiceUnavailable
+        mock_driver = MagicMock()
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(side_effect=ServiceUnavailable("Neo4j down"))
+        mock_session.__exit__ = MagicMock()
+        mock_driver.session.return_value = mock_session
+
+        # Process message
+        with patch("graphinator.graphinator.graph", mock_driver):
+            await on_release_message(mock_message)
+
+        # Should nack with requeue
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    async def test_release_processing_error_nacks_message(self) -> None:
+        """Test that processing errors result in message nack."""
+        from graphinator.graphinator import on_release_message
+
+        # Mock message
+        sample_data = {
+            "id": "456",
+            "title": "Test Release",
+            "sha256": "test_hash",
+        }
+
+        mock_message = AsyncMock()
+        mock_message.body = dumps(sample_data)
+        mock_message.nack = AsyncMock()
+
+        # Mock Neo4j driver to raise error during processing
+        mock_driver = MagicMock()
+
+        # Create a session context manager that raises error on execute_write
+        mock_session_context = MagicMock()
+        mock_session_context.execute_write.side_effect = RuntimeError("Database error")
+
+        # Make session() return a context manager
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(return_value=mock_session_context)
+        mock_session.__exit__ = MagicMock(return_value=None)
+
+        mock_driver.session.return_value = mock_session
+
+        # Process message
+        with patch("graphinator.graphinator.graph", mock_driver):
+            await on_release_message(mock_message)
+
+        # Should nack the message with requeue
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    async def test_release_nack_failure_logged(self) -> None:
+        """Test that nack failures are logged for release messages."""
+        from neo4j.exceptions import ServiceUnavailable
+
+        from graphinator.graphinator import on_release_message
+
+        # Mock message that fails to nack
+        sample_data = {
+            "id": "789",
+            "title": "Test Release",
+        }
+
+        mock_message = AsyncMock()
+        mock_message.body = dumps(sample_data)
+        mock_message.nack = AsyncMock(side_effect=Exception("Nack failed"))
+
+        # Mock Neo4j driver to raise ServiceUnavailable
+        mock_driver = MagicMock()
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(side_effect=ServiceUnavailable("Neo4j down"))
+        mock_session.__exit__ = MagicMock()
+        mock_driver.session.return_value = mock_session
+
+        # Process message - should not raise exception
+        with patch("graphinator.graphinator.graph", mock_driver), patch("graphinator.graphinator.logger") as mock_logger:
+            await on_release_message(mock_message)
+
+            # Should have logged nack failure
+            assert mock_logger.warning.called

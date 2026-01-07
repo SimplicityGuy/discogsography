@@ -65,7 +65,7 @@ class TestResilientPostgreSQLPool:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_create_connection_success(self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
+    def test_create_connection_success(self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
         """Test successful connection creation."""
         mock_connect.return_value = mock_connection
 
@@ -78,7 +78,7 @@ class TestResilientPostgreSQLPool:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_test_connection_healthy(self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
+    def test_test_connection_healthy(self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
         """Test connection health check on healthy connection."""
         mock_connect.return_value = mock_connection
 
@@ -90,7 +90,7 @@ class TestResilientPostgreSQLPool:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_test_connection_closed(self, mock_thread: Mock, mock_connect: Mock, connection_params: dict) -> None:
+    def test_test_connection_closed(self, _mock_thread: Mock, _mock_connect: Mock, connection_params: dict) -> None:
         """Test connection health check on closed connection."""
         closed_conn = Mock()
         closed_conn.closed = True
@@ -102,7 +102,7 @@ class TestResilientPostgreSQLPool:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_test_connection_error(self, mock_thread: Mock, mock_connect: Mock, connection_params: dict) -> None:
+    def test_test_connection_error(self, _mock_thread: Mock, _mock_connect: Mock, connection_params: dict) -> None:
         """Test connection health check when query fails."""
         failing_conn = Mock()
         failing_conn.closed = False
@@ -115,7 +115,7 @@ class TestResilientPostgreSQLPool:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_connection_context_manager_success(self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
+    def test_connection_context_manager_success(self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
         """Test successful connection acquisition and release."""
         mock_connect.return_value = mock_connection
 
@@ -133,7 +133,7 @@ class TestResilientPostgreSQLPool:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_connection_pool_closed_error(self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
+    def test_connection_pool_closed_error(self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
         """Test that getting connection from closed pool raises error."""
         mock_connect.return_value = mock_connection
 
@@ -145,21 +145,21 @@ class TestResilientPostgreSQLPool:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_connection_error_during_use(self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
+    def test_connection_error_during_use(self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
         """Test connection error handling during use."""
         mock_connect.return_value = mock_connection
 
         pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=1)
         time.sleep(0.1)
 
-        with pytest.raises(InterfaceError), pool.connection() as conn:
+        with pytest.raises(InterfaceError), pool.connection():
             # Simulate error during use
             raise InterfaceError("Connection lost")
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
     def test_connection_creates_new_when_pool_empty(
-        self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
     ) -> None:
         """Test that new connection is created when pool is empty."""
         mock_connect.return_value = mock_connection
@@ -175,7 +175,9 @@ class TestResilientPostgreSQLPool:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_connection_respects_max_connections(self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
+    def test_connection_respects_max_connections(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
         """Test that pool respects max_connections limit."""
         mock_connect.return_value = mock_connection
 
@@ -190,7 +192,7 @@ class TestResilientPostgreSQLPool:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_close_pool(self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
+    def test_close_pool(self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
         """Test closing the connection pool."""
         mock_connect.return_value = mock_connection
 
@@ -208,7 +210,7 @@ class TestResilientPostgreSQLPool:
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
     def test_initialize_pool_with_min_connections(
-        self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
     ) -> None:
         """Test that pool initializes with minimum connections."""
         mock_connect.return_value = mock_connection
@@ -222,7 +224,7 @@ class TestResilientPostgreSQLPool:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_initialize_pool_handles_connection_failure(self, mock_thread: Mock, mock_connect: Mock, connection_params: dict) -> None:
+    def test_initialize_pool_handles_connection_failure(self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict) -> None:
         """Test pool initialization handles connection failures gracefully."""
         mock_connect.side_effect = [OperationalError("Connection failed"), OperationalError("Connection failed")]
 
@@ -235,7 +237,7 @@ class TestResilientPostgreSQLPool:
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
     def test_connection_returned_to_pool_when_healthy(
-        self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
     ) -> None:
         """Test that healthy connection is returned to pool after use."""
         mock_connect.return_value = mock_connection
@@ -255,7 +257,7 @@ class TestResilientPostgreSQLPool:
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
     def test_unhealthy_connection_not_returned_to_pool(
-        self, mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
     ) -> None:
         """Test that unhealthy connection is not returned to pool."""
         mock_connect.return_value = mock_connection
@@ -268,8 +270,8 @@ class TestResilientPostgreSQLPool:
                 # Mark connection as closed (unhealthy)
                 conn.closed = True
                 # Normal exit, connection should not be returned
-        except Exception:
-            pass
+        except Exception:  # noqa: S110
+            pass  # Expected exception for test cleanup
 
         # Verify connection cleanup occurred
         assert pool is not None
@@ -327,7 +329,7 @@ class TestAsyncResilientPostgreSQL:
 
     @pytest.mark.asyncio
     @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
-    async def test_test_connection_healthy(self, mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock) -> None:
+    async def test_test_connection_healthy(self, _mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock) -> None:
         """Test async connection health check on healthy connection."""
         async_conn = AsyncResilientPostgreSQL(connection_params=connection_params)
         result = await async_conn._test_connection(mock_async_connection)
@@ -336,7 +338,7 @@ class TestAsyncResilientPostgreSQL:
 
     @pytest.mark.asyncio
     @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
-    async def test_test_connection_closed(self, mock_connect: Mock, connection_params: dict) -> None:
+    async def test_test_connection_closed(self, _mock_connect: Mock, connection_params: dict) -> None:
         """Test async connection health check on closed connection."""
         closed_conn = AsyncMock()
         closed_conn.closed = True
@@ -348,7 +350,7 @@ class TestAsyncResilientPostgreSQL:
 
     @pytest.mark.asyncio
     @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
-    async def test_test_connection_error(self, mock_connect: Mock, connection_params: dict) -> None:
+    async def test_test_connection_error(self, _mock_connect: Mock, connection_params: dict) -> None:
         """Test async connection health check when query fails."""
         failing_conn = AsyncMock()
         failing_conn.closed = False

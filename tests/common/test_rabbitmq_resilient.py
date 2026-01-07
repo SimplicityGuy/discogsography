@@ -36,7 +36,7 @@ class TestResilientRabbitMQConnection:
         return "amqp://guest:guest@localhost:5672/"
 
     @patch("common.rabbitmq_resilient.BlockingConnection")
-    def test_init(self, mock_blocking_connection: Mock, connection_url: str) -> None:
+    def test_init(self, _mock_blocking_connection: Mock, connection_url: str) -> None:
         """Test ResilientRabbitMQConnection initialization."""
         conn = ResilientRabbitMQConnection(
             connection_url=connection_url,
@@ -63,7 +63,7 @@ class TestResilientRabbitMQConnection:
         mock_blocking_connection.assert_called_once()
 
     @patch("common.rabbitmq_resilient.BlockingConnection")
-    def test_test_connection_healthy(self, mock_blocking_connection: Mock, connection_url: str, mock_connection: Mock) -> None:
+    def test_test_connection_healthy(self, _mock_blocking_connection: Mock, connection_url: str, mock_connection: Mock) -> None:
         """Test connection health check on healthy connection."""
         conn = ResilientRabbitMQConnection(connection_url=connection_url)
         result = conn._test_connection(mock_connection)
@@ -71,7 +71,7 @@ class TestResilientRabbitMQConnection:
         assert result is True
 
     @patch("common.rabbitmq_resilient.BlockingConnection")
-    def test_test_connection_closed(self, mock_blocking_connection: Mock, connection_url: str) -> None:
+    def test_test_connection_closed(self, _mock_blocking_connection: Mock, connection_url: str) -> None:
         """Test connection health check on closed connection."""
         closed_conn = Mock()
         closed_conn.is_open = False
@@ -83,7 +83,7 @@ class TestResilientRabbitMQConnection:
         assert result is False
 
     @patch("common.rabbitmq_resilient.BlockingConnection")
-    def test_test_connection_error(self, mock_blocking_connection: Mock, connection_url: str) -> None:
+    def test_test_connection_error(self, _mock_blocking_connection: Mock, connection_url: str) -> None:
         """Test connection health check when query fails."""
         failing_conn = Mock()
         failing_conn.is_open = Mock(side_effect=PikaConnectionError("Connection lost"))
@@ -144,7 +144,7 @@ class TestResilientRabbitMQConnection:
         assert conn._connection is None
 
     @patch("common.rabbitmq_resilient.BlockingConnection")
-    def test_close_handles_errors(self, mock_blocking_connection: Mock, connection_url: str) -> None:
+    def test_close_handles_errors(self, _mock_blocking_connection: Mock, connection_url: str) -> None:
         """Test that close handles errors gracefully."""
         failing_channel = Mock()
         failing_channel.is_open = True

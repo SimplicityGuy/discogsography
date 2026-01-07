@@ -921,7 +921,7 @@ class TestPeriodicQueueChecker:
         mock_empty_queue = AsyncMock()
         mock_empty_queue.declaration_result.message_count = 0
 
-        async def declare_queue_side_effect(name: str | None = None, **kwargs: Any) -> Any:
+        async def declare_queue_side_effect(name: str | None = None, **_kwargs: Any) -> Any:
             if "artists" in (name or ""):
                 return mock_queue_with_msgs
             return mock_empty_queue
@@ -1016,7 +1016,7 @@ class TestProgressReporter:
 
         # Access the main function to get progress_reporter
         # We'll test this indirectly by ensuring the logic would work
-        with patch("tableinator.tableinator.logger") as mock_logger:
+        with patch("tableinator.tableinator.logger"):
             # Simulate progress reporter logic
             total = sum(tableinator.tableinator.message_counts.values())
             assert total == 185
@@ -1130,7 +1130,7 @@ class TestMainRabbitMQRetries:
         max_retries = 3
         connection = None
 
-        for attempt in range(max_retries):
+        for _attempt in range(max_retries):
             try:
                 connection = await mock_manager.connect()
                 break
@@ -1157,7 +1157,7 @@ class TestMainRabbitMQRetries:
         max_retries = 3
         connection = None
 
-        for attempt in range(max_retries):
+        for _attempt in range(max_retries):
             try:
                 connection = await mock_manager.connect()
                 break

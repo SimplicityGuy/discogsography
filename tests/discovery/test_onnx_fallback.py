@@ -3,6 +3,7 @@
 Tests ONNX model loading, fallback to PyTorch, and error handling.
 """
 
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -321,7 +322,7 @@ async def test_model_device_property() -> None:
 
 
 @pytest.mark.asyncio
-async def test_onnx_model_save_noop() -> None:
+async def test_onnx_model_save_noop(tmp_path: Path) -> None:
     """Test ONNX model save is a no-op for compatibility."""
     from unittest.mock import MagicMock
 
@@ -348,7 +349,7 @@ async def test_onnx_model_save_noop() -> None:
         model = ONNXSentenceTransformer("/models/onnx/test")
 
         # Test save (should not raise error)
-        model.save("/tmp/test")
+        model.save(str(tmp_path / "test"))
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,7 @@
 """Discovery service test configuration and fixtures."""
 
 import os
+import tempfile
 from collections.abc import Generator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,7 +15,7 @@ from fastapi.testclient import TestClient
 # This ensures discovery modules can initialize properly during import
 # These defaults match those in tests/conftest.py setup_test_env
 os.environ.setdefault("AMQP_CONNECTION", "amqp://test:test@localhost:5672/")
-os.environ.setdefault("DISCOGS_ROOT", "/tmp/test-discogs")  # noqa: S108
+os.environ.setdefault("DISCOGS_ROOT", tempfile.mkdtemp(prefix="discogs-test-"))
 os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USERNAME", "test")
 os.environ.setdefault("NEO4J_PASSWORD", "test")

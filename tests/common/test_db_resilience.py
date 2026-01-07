@@ -39,9 +39,9 @@ class TestCircuitBreaker:
         config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=3)
         breaker = CircuitBreaker(config)
 
-        func = Mock(side_effect=Exception("Failed"))
+        func = Mock(side_effect=RuntimeError("Failed"))
 
-        with pytest.raises(Exception, match="Failed"):
+        with pytest.raises(RuntimeError, match="Failed"):
             breaker.call(func)
 
         assert breaker.failure_count == 1
@@ -53,11 +53,11 @@ class TestCircuitBreaker:
         config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=3)
         breaker = CircuitBreaker(config)
 
-        func = Mock(side_effect=Exception("Failed"))
+        func = Mock(side_effect=RuntimeError("Failed"))
 
         # Cause threshold failures
         for _ in range(3):
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 breaker.call(func)
 
         assert breaker.failure_count == 3
@@ -68,15 +68,15 @@ class TestCircuitBreaker:
         config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=2, recovery_timeout=10)
         breaker = CircuitBreaker(config)
 
-        func = Mock(side_effect=Exception("Failed"))
+        func = Mock(side_effect=RuntimeError("Failed"))
 
         # Open the circuit
         for _ in range(2):
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 breaker.call(func)
 
         # Next call should be rejected without calling func
-        with pytest.raises(Exception, match="Circuit breaker is OPEN"):
+        with pytest.raises(RuntimeError, match="Circuit breaker is OPEN"):
             breaker.call(Mock(return_value="success"))
 
     def test_circuit_half_open_after_timeout(self) -> None:
@@ -84,11 +84,11 @@ class TestCircuitBreaker:
         config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=2, recovery_timeout=1)
         breaker = CircuitBreaker(config)
 
-        func_fail = Mock(side_effect=Exception("Failed"))
+        func_fail = Mock(side_effect=RuntimeError("Failed"))
 
         # Open the circuit
         for _ in range(2):
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 breaker.call(func_fail)
 
         assert breaker.state == CircuitState.OPEN
@@ -125,9 +125,9 @@ class TestCircuitBreaker:
         breaker = CircuitBreaker(config)
 
         async def async_func() -> None:
-            raise Exception("Failed")
+            raise RuntimeError("Failed")
 
-        with pytest.raises(Exception, match="Failed"):
+        with pytest.raises(RuntimeError, match="Failed"):
             await breaker.call_async(async_func)
 
         assert breaker.failure_count == 1
@@ -140,11 +140,11 @@ class TestCircuitBreaker:
         breaker = CircuitBreaker(config)
 
         async def async_func() -> None:
-            raise Exception("Failed")
+            raise RuntimeError("Failed")
 
         # Cause threshold failures
         for _ in range(2):
-            with pytest.raises(Exception):
+            with pytest.raises(RuntimeError):
                 await breaker.call_async(async_func)
 
         assert breaker.failure_count == 2

@@ -78,9 +78,9 @@ class TestTrackRequest:
     @patch("discovery.recommender_metrics.recommendation_diversity")
     def test_track_successful_request(
         self,
-        mock_diversity: MagicMock,
-        mock_latency: MagicMock,
-        mock_requests: MagicMock,
+        _mock_diversity: MagicMock,
+        _mock_latency: MagicMock,
+        _mock_requests: MagicMock,
     ) -> None:
         """Test tracking a successful request."""
         tracker = RecommenderMetricsTracker()
@@ -115,8 +115,8 @@ class TestTrackRequest:
     def test_track_failed_request(
         self,
         mock_errors: MagicMock,
-        mock_latency: MagicMock,
-        mock_requests: MagicMock,
+        _mock_latency: MagicMock,
+        _mock_requests: MagicMock,
     ) -> None:
         """Test tracking a failed request."""
         tracker = RecommenderMetricsTracker()
@@ -221,9 +221,9 @@ class TestAlgorithmPerformance:
     @patch("discovery.recommender_metrics.recommendation_diversity")
     def test_update_algorithm_performance(
         self,
-        mock_diversity: MagicMock,
-        mock_latency: MagicMock,
-        mock_requests: MagicMock,
+        _mock_diversity: MagicMock,
+        _mock_latency: MagicMock,
+        _mock_requests: MagicMock,
     ) -> None:
         """Test updating algorithm performance metrics."""
         tracker = RecommenderMetricsTracker()
@@ -250,9 +250,9 @@ class TestAlgorithmPerformance:
     @patch("discovery.recommender_metrics.recommendation_errors")
     def test_track_failures(
         self,
-        mock_errors: MagicMock,
-        mock_latency: MagicMock,
-        mock_requests: MagicMock,
+        _mock_errors: MagicMock,
+        _mock_latency: MagicMock,
+        _mock_requests: MagicMock,
     ) -> None:
         """Test tracking failed requests."""
         tracker = RecommenderMetricsTracker()
@@ -306,9 +306,9 @@ class TestPerformanceSummary:
     @patch("discovery.recommender_metrics.recommendation_diversity")
     def test_get_performance_summary(
         self,
-        mock_diversity: MagicMock,
-        mock_latency: MagicMock,
-        mock_requests: MagicMock,
+        _mock_diversity: MagicMock,
+        _mock_latency: MagicMock,
+        _mock_requests: MagicMock,
     ) -> None:
         """Test getting performance summary."""
         tracker = RecommenderMetricsTracker()
@@ -358,9 +358,9 @@ class TestABTesting:
     @patch("discovery.recommender_metrics.recommendation_diversity")
     def test_track_ab_test_result(
         self,
-        mock_diversity: MagicMock,
-        mock_latency: MagicMock,
-        mock_requests: MagicMock,
+        _mock_diversity: MagicMock,
+        _mock_latency: MagicMock,
+        _mock_requests: MagicMock,
     ) -> None:
         """Test tracking A/B test results."""
         tracker = RecommenderMetricsTracker()
@@ -391,9 +391,9 @@ class TestABTesting:
     @patch("discovery.recommender_metrics.recommendation_diversity")
     def test_get_ab_test_comparison(
         self,
-        mock_diversity: MagicMock,
-        mock_latency: MagicMock,
-        mock_requests: MagicMock,
+        _mock_diversity: MagicMock,
+        _mock_latency: MagicMock,
+        _mock_requests: MagicMock,
     ) -> None:
         """Test getting A/B test comparison."""
         tracker = RecommenderMetricsTracker()
@@ -429,7 +429,7 @@ class TestCoverageCalculation:
     """Test coverage metric calculation."""
 
     @patch("discovery.recommender_metrics.recommendation_coverage")
-    def test_calculate_coverage(self, mock_coverage: MagicMock) -> None:
+    def test_calculate_coverage(self, _mock_coverage: MagicMock) -> None:
         """Test calculating coverage metric."""
         tracker = RecommenderMetricsTracker()
         tracker.algorithm_performance["collaborative"] = AlgorithmPerformance(method="collaborative")
@@ -440,7 +440,7 @@ class TestCoverageCalculation:
         assert tracker.algorithm_performance["collaborative"].coverage == 0.8
 
     @patch("discovery.recommender_metrics.recommendation_coverage")
-    def test_calculate_coverage_zero_total(self, mock_coverage: MagicMock) -> None:
+    def test_calculate_coverage_zero_total(self, _mock_coverage: MagicMock) -> None:
         """Test coverage with zero total items."""
         tracker = RecommenderMetricsTracker()
 
@@ -449,7 +449,7 @@ class TestCoverageCalculation:
         assert coverage == 0.0
 
     @patch("discovery.recommender_metrics.recommendation_coverage")
-    def test_calculate_coverage_new_method(self, mock_coverage: MagicMock) -> None:
+    def test_calculate_coverage_new_method(self, _mock_coverage: MagicMock) -> None:
         """Test coverage for method not yet in performance dict."""
         tracker = RecommenderMetricsTracker()
 
@@ -467,9 +467,9 @@ class TestExportMetrics:
     @patch("discovery.recommender_metrics.recommendation_diversity")
     def test_export_metrics(
         self,
-        mock_diversity: MagicMock,
-        mock_latency: MagicMock,
-        mock_requests: MagicMock,
+        _mock_diversity: MagicMock,
+        _mock_latency: MagicMock,
+        _mock_requests: MagicMock,
     ) -> None:
         """Test exporting metrics to file."""
         tracker = RecommenderMetricsTracker()
@@ -503,9 +503,9 @@ class TestResetMetrics:
     @patch("discovery.recommender_metrics.recommendation_diversity")
     def test_reset_metrics(
         self,
-        mock_diversity: MagicMock,
-        mock_latency: MagicMock,
-        mock_requests: MagicMock,
+        _mock_diversity: MagicMock,
+        _mock_latency: MagicMock,
+        _mock_requests: MagicMock,
     ) -> None:
         """Test resetting all metrics."""
         tracker = RecommenderMetricsTracker()

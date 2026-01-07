@@ -155,7 +155,8 @@ ignore = [
 "*/extractor.py" = ["T201"]    # Allow print statements for ASCII art
 "*/graphinator.py" = ["T201"]  # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]  # Allow print statements for ASCII art
-"tests/discovery/test_*.py" = ["S105", "S108", "ARG001", "ARG005"]  # Test fixtures can have hardcoded passwords, temp files, unused function args, unused lambda args
+"tests/**/*.py" = ["S105"]  # Test files can have hardcoded passwords
+"tests/discovery/test_*.py" = ["ARG001", "ARG005"]  # Test fixtures can have unused function args, unused lambda args
 "tests/load/*.py" = ["S311"]  # Load tests use random for test data selection, not cryptography
 
 [tool.mypy]

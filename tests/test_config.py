@@ -67,7 +67,7 @@ class TestGraphinatorConfig:
         assert config.amqp_connection == "amqp://user:pass@host:5672/"
         assert config.neo4j_address == "bolt://neo4j:7687"
         assert config.neo4j_username == "neo4j"
-        assert config.neo4j_password == "secret"  # noqa: S105
+        assert config.neo4j_password == "secret"
 
     def test_from_env_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with missing required variables."""
@@ -93,7 +93,7 @@ class TestTableinatorConfig:
         assert config.amqp_connection == "amqp://user:pass@host:5672/"
         assert config.postgres_address == "pghost:5432"
         assert config.postgres_username == "pguser"
-        assert config.postgres_password == "pgpass"  # noqa: S105
+        assert config.postgres_password == "pgpass"
         assert config.postgres_database == "mydb"
 
     def test_from_env_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
