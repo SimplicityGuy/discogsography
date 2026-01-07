@@ -1721,6 +1721,11 @@ class TestQueueErrorHandling:
     @patch("extractor.pyextractor.extractor.Path.exists")
     def test_queue_record_handles_queue_error(self, mock_exists: Mock, mock_rabbitmq: Mock, mock_run_coro: Mock, mock_config: Mock) -> None:
         """Test queue_record handles queue errors gracefully."""
+        # Reset shutdown flag
+        import extractor.pyextractor.extractor
+
+        extractor.pyextractor.extractor.shutdown_requested = False
+
         mock_exists.return_value = True
 
         mock_connection = Mock()
@@ -1734,8 +1739,9 @@ class TestQueueErrorHandling:
 
         # Set up the event loop and queue
         extractor.event_loop = Mock()
-        extractor.record_queue = AsyncMock()  # Changed to AsyncMock to make put() a coroutine
+        extractor.record_queue = Mock()
         extractor.record_queue.qsize.return_value = 0
+        extractor.record_queue.put = AsyncMock()  # Only put() needs to be async
 
         # Mock run_coroutine_threadsafe to raise an exception
         mock_future = Mock()
