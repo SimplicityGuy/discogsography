@@ -1,5 +1,6 @@
 """Discovery service test configuration and fixtures."""
 
+import contextlib
 import os
 import tempfile
 from collections.abc import Generator
@@ -9,6 +10,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
+from prometheus_client import REGISTRY
+
+
+@pytest.fixture(scope="function", autouse=True)
+def clear_prometheus_registry():
+    """Clear Prometheus registry before each test to avoid duplicate metrics errors."""
+    # Get list of collectors to remove
+    collectors = list(REGISTRY._collector_to_names.keys())
+    for collector in collectors:
+        with contextlib.suppress(Exception):
+            REGISTRY.unregister(collector)
+    yield
+    # Clean up after test
+    collectors = list(REGISTRY._collector_to_names.keys())
+    for collector in collectors:
+        with contextlib.suppress(Exception):
+            REGISTRY.unregister(collector)
 
 
 # Set environment variables before any imports
