@@ -87,33 +87,8 @@ postgres_query_failures = Counter(
     ["query_type"],
 )
 
-# Recommendation metrics
-recommendation_requests = Counter(
-    "discovery_recommendation_requests_total",
-    "Total number of recommendation requests",
-    ["recommendation_type"],
-)
-
-recommendation_duration = Histogram(
-    "discovery_recommendation_duration_seconds",
-    "Recommendation generation duration in seconds",
-    ["recommendation_type"],
-    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
-)
-
-# Analytics metrics
-analytics_requests = Counter(
-    "discovery_analytics_requests_total",
-    "Total number of analytics requests",
-    ["analytics_type"],
-)
-
-analytics_duration = Histogram(
-    "discovery_analytics_duration_seconds",
-    "Analytics query duration in seconds",
-    ["analytics_type"],
-    buckets=[0.01, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
-)
+# Note: Recommendation metrics are defined in recommender_metrics.py
+# Note: Analytics metrics will be defined when analytics module needs them
 
 # Graph exploration metrics
 graph_exploration_requests = Counter(

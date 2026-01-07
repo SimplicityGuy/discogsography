@@ -13,20 +13,29 @@ from fastapi.testclient import TestClient
 from prometheus_client import REGISTRY
 
 
+def clear_registry():
+    """Clear all collectors from Prometheus registry."""
+    collectors = list(REGISTRY._collector_to_names.keys())
+    for collector in collectors:
+        with contextlib.suppress(Exception):
+            REGISTRY.unregister(collector)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def clear_prometheus_registry_session():
+    """Clear Prometheus registry at the start of the test session."""
+    clear_registry()
+    yield
+
+
 @pytest.fixture(scope="function", autouse=True)
 def clear_prometheus_registry():
-    """Clear Prometheus registry before each test to avoid duplicate metrics errors."""
-    # Get list of collectors to remove
-    collectors = list(REGISTRY._collector_to_names.keys())
-    for collector in collectors:
-        with contextlib.suppress(Exception):
-            REGISTRY.unregister(collector)
+    """Clear Prometheus registry before and after each test to avoid duplicate metrics errors."""
+    # Clear before test
+    clear_registry()
     yield
-    # Clean up after test
-    collectors = list(REGISTRY._collector_to_names.keys())
-    for collector in collectors:
-        with contextlib.suppress(Exception):
-            REGISTRY.unregister(collector)
+    # Clear after test
+    clear_registry()
 
 
 # Set environment variables before any imports
