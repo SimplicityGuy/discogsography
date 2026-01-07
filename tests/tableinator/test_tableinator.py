@@ -16,6 +16,7 @@ from tableinator.tableinator import (
     check_all_consumers_idle,
     close_rabbitmq_connection,
     get_connection,
+    get_health_data,
     main,
     on_data_message,
     safe_execute_query,
@@ -1169,3 +1170,110 @@ class TestMainRabbitMQRetries:
         # Should have retried max times and failed
         assert mock_manager.connect.call_count == 3
         assert connection is None
+
+
+class TestGetHealthData:
+    """Test get_health_data function."""
+
+    def test_returns_health_status_dictionary(self) -> None:
+        """Test that get_health_data returns a properly formatted dictionary."""
+        import tableinator.tableinator
+
+        # Set some test values in global state
+        tableinator.tableinator.current_task = "test_task"
+        tableinator.tableinator.current_progress = 50
+        tableinator.tableinator.message_counts = {"artists": 100, "labels": 50}
+        tableinator.tableinator.last_message_time = {"artists": 123.45, "labels": 678.90}
+
+        result = get_health_data()
+
+        # Verify structure
+        assert "status" in result
+        assert "service" in result
+        assert "current_task" in result
+        assert "progress" in result
+        assert "message_counts" in result
+        assert "last_message_time" in result
+        assert "timestamp" in result
+
+        # Verify values
+        assert result["status"] == "healthy"
+        assert result["service"] == "tableinator"
+        assert result["current_task"] == "test_task"
+        assert result["progress"] == 50
+        assert result["message_counts"] == {"artists": 100, "labels": 50}
+        assert result["last_message_time"] == {"artists": 123.45, "labels": 678.90}
+
+
+class TestCloseRabbitMQConnectionOuterException:
+    """Test outer exception handling in close_rabbitmq_connection."""
+
+    @pytest.mark.asyncio
+    async def test_handles_outer_exception(self) -> None:
+        """Test handling of unexpected exceptions in outer try block."""
+        import tableinator.tableinator
+
+        # Set up a scenario where accessing active_channel raises an exception
+        # This simulates an error before we even try to close anything
+        mock_channel = MagicMock()
+        # Make the channel raise an exception when accessed in any way
+        # that would happen before the nested try blocks
+        type(mock_channel).__bool__ = MagicMock(side_effect=RuntimeError("Unexpected error"))
+
+        tableinator.tableinator.active_channel = mock_channel
+        tableinator.tableinator.active_connection = None
+
+        with patch("tableinator.tableinator.logger") as mock_logger:
+            await close_rabbitmq_connection()
+
+        # Should log the error
+        mock_logger.error.assert_called_once()
+        call_args = mock_logger.error.call_args
+        assert "Error closing RabbitMQ connection" in call_args[0][0]
+
+
+class TestOnDataMessageProgressLogging:
+    """Test progress logging in on_data_message."""
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.progress_interval", 10)
+    async def test_logs_progress_at_interval(self) -> None:
+        """Test that progress is logged at the correct interval."""
+        import tableinator.tableinator
+
+        # Setup
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"id": "123", "name": "Test Artist", "sha256": "abc123"}).encode()
+        mock_message.routing_key = "artists"  # Set routing_key for data_type
+
+        mock_pool = MagicMock()
+        mock_connection = MagicMock()
+        mock_cursor = MagicMock()
+
+        # Mock cursor.fetchone to return a hash
+        mock_cursor.fetchone.return_value = ("abc123",)  # Same hash so it will ack and return
+
+        mock_pool.connection.return_value.__enter__ = MagicMock(return_value=mock_connection)
+        mock_pool.connection.return_value.__exit__ = MagicMock(return_value=None)
+        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
+        mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=None)
+
+        tableinator.tableinator.connection_pool = mock_pool
+        tableinator.tableinator.shutdown_requested = False
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.message_counts = {"artists": 9}  # Set to 9 so next increment hits 10
+        tableinator.tableinator.last_message_time = {}
+
+        with patch("tableinator.tableinator.logger") as mock_logger:
+            await on_data_message(mock_message)
+
+        # Should have logged progress because 10 % 10 == 0
+        # Look for the progress log call
+        progress_logged = False
+        for call in mock_logger.info.call_args_list:
+            if "Processed records in PostgreSQL" in str(call):
+                progress_logged = True
+                break
+
+        assert progress_logged, "Progress should be logged at interval"
+        mock_message.ack.assert_called_once()
