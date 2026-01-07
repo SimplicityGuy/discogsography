@@ -63,7 +63,7 @@ extend = "../pyproject.toml"
 
 [tool.ruff.lint.per-file-ignores]
 "discovery.py" = ["T201", "ARG001"]  # Allow print statements for ASCII art, unused request args (required by slowapi)
-"tests/discovery/test_*.py" = ["S105", "S108", "ARG005"]  # Test fixtures can have hardcoded passwords, temp files, unused lambda args
+"tests/discovery/test_*.py" = ["S105", "ARG005"]  # Test fixtures can have hardcoded passwords, unused lambda args
 
 [tool.mypy]
 extend = "../pyproject.toml"
