@@ -83,6 +83,20 @@ class TestSafeExecuteQuery:
             assert result is False
             mock_logger.error.assert_called()
 
+    def test_neo4j_specific_error(self) -> None:
+        """Test handling specific Neo4jError exceptions."""
+        from neo4j.exceptions import Neo4jError
+
+        mock_session = MagicMock()
+        mock_session.run.side_effect = Neo4jError("Database unavailable")
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            result = safe_execute_query(mock_session, "MATCH (n) RETURN n", {})
+
+            assert result is False
+            # Verify specific Neo4jError logging path
+            assert any("Neo4j error" in str(call) for call in mock_logger.error.call_args_list)
+
 
 class TestOnArtistMessage:
     """Test on_artist_message handler."""
