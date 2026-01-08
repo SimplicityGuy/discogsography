@@ -35,7 +35,7 @@ env:
 permissions:
   contents: read
   pull-requests: write  # Required for coverage report comments
-  statuses: write  # Required for coverage status creation
+  # Note: statuses: write is only needed for PRs and must be granted by the caller when used as a reusable workflow
 
 jobs:
   python-test:
