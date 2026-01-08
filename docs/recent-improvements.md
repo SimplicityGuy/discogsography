@@ -150,6 +150,7 @@ CONSUMER_CANCEL_DELAY=300    # Wait 5 minutes before canceling consumers (defaul
 - ✅ Updated main README with smart connection lifecycle documentation
 - ✅ Updated tableinator and graphinator READMEs with new environment variables
 - ✅ Documented deprecated settings with migration guidance
+- ✅ Cleaned up outdated progress and coverage reports
 
 ## 🎯 Next Steps
 
