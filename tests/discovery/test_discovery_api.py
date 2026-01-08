@@ -218,3 +218,132 @@ class TestDiscoveryAppClass:
         message = {"type": "test", "data": "hello"}
         # Should not raise any errors
         await app.broadcast_update(message)
+
+
+class TestAdditionalEndpoints:
+    """Test additional API endpoints for coverage."""
+
+    @pytest.fixture(autouse=True)
+    def _reset_rate_limiter(self) -> Any:
+        """Reset rate limiter storage between tests."""
+        from discovery.discovery import limiter
+
+        # Reset the rate limiter's storage to prevent rate limit errors
+        if hasattr(limiter, "_storage"):
+            limiter._storage.storage.clear()  # type: ignore[union-attr]
+        yield
+        # Clean up after test
+        if hasattr(limiter, "_storage"):
+            limiter._storage.storage.clear()  # type: ignore[union-attr]
+
+    @pytest.fixture
+    def client(self) -> TestClient:
+        """Create a test client for the Discovery service."""
+        from discovery.discovery import app
+
+        return TestClient(app)
+
+    def test_metrics_endpoint(self, client: TestClient) -> None:
+        """Test the Prometheus metrics endpoint."""
+        response = client.get("/metrics")
+        assert response.status_code == 200
+        # Prometheus metrics are plain text
+        assert "text/plain" in response.headers["content-type"] or "text" in response.headers["content-type"]
+
+    def test_cache_stats_endpoint(self, client: TestClient) -> None:
+        """Test the cache statistics endpoint."""
+        with patch("discovery.cache.cache_manager") as mock_manager:
+            mock_manager.get_cache_stats = AsyncMock(
+                return_value={
+                    "hits": 100,
+                    "misses": 20,
+                    "hit_rate": 0.83,
+                    "size": 500,
+                }
+            )
+
+            response = client.get("/api/cache/stats")
+            assert response.status_code == 200
+
+            data = response.json()
+            assert "cache_stats" in data
+            assert "timestamp" in data
+            assert data["cache_stats"]["hits"] == 100
+
+    def test_db_pool_stats_endpoint(self, client: TestClient) -> None:
+        """Test the database pool statistics endpoint."""
+        with (
+            patch("discovery.db_pool_metrics.pool_monitor.collect_all_metrics") as mock_metrics,
+            patch("discovery.db_pool_metrics.pool_monitor.get_metrics_summary") as mock_summary,
+        ):
+            mock_metrics.return_value = {
+                "neo4j": {"pool_size": 10, "active": 3},
+                "postgres": {"pool_size": 5, "active": 1},
+            }
+            mock_summary.return_value = {"total_pools": 2, "total_active": 4}
+
+            response = client.get("/api/db/pool/stats")
+            assert response.status_code == 200
+
+            data = response.json()
+            assert "metrics" in data
+            assert "summary" in data
+            assert "timestamp" in data
+            assert data["summary"]["total_pools"] == 2
+
+    def test_cache_invalidate_endpoint_no_secret_configured(self, client: TestClient) -> None:
+        """Test cache invalidation when no secret is configured."""
+        with patch("discovery.discovery.get_config") as mock_config:
+            mock_config.return_value.cache_webhook_secret = None
+
+            response = client.post(
+                "/api/cache/invalidate",
+                json={"pattern": "search:*", "secret": "test_secret"},
+            )
+
+            assert response.status_code == 503
+            assert "not configured" in response.json()["detail"]
+
+    def test_cache_invalidate_endpoint_invalid_secret(self, client: TestClient) -> None:
+        """Test cache invalidation with invalid secret."""
+        with patch("discovery.discovery.get_config") as mock_config:
+            mock_config.return_value.cache_webhook_secret = "correct_secret"
+
+            response = client.post(
+                "/api/cache/invalidate",
+                json={"pattern": "search:*", "secret": "wrong_secret"},
+            )
+
+            assert response.status_code == 401
+            assert "Invalid webhook secret" in response.json()["detail"]
+
+    def test_cache_invalidate_endpoint_success(self, client: TestClient) -> None:
+        """Test successful cache invalidation."""
+        with patch("discovery.discovery.get_config") as mock_config, patch("discovery.cache.cache_manager") as mock_manager:
+            mock_config.return_value.cache_webhook_secret = "correct_secret"
+            mock_manager.clear_pattern = AsyncMock(return_value=42)  # Number of keys deleted
+
+            response = client.post(
+                "/api/cache/invalidate",
+                json={"pattern": "search:*", "secret": "correct_secret"},
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["deleted_count"] == 42
+            assert data["pattern"] == "search:*"
+            mock_manager.clear_pattern.assert_called_once_with("search:*")
+
+    def test_cache_invalidate_endpoint_error(self, client: TestClient) -> None:
+        """Test cache invalidation with error during clearing."""
+        with patch("discovery.discovery.get_config") as mock_config, patch("discovery.cache.cache_manager") as mock_manager:
+            mock_config.return_value.cache_webhook_secret = "correct_secret"
+            mock_manager.clear_pattern = AsyncMock(side_effect=Exception("Redis connection failed"))
+
+            response = client.post(
+                "/api/cache/invalidate",
+                json={"pattern": "search:*", "secret": "correct_secret"},
+            )
+
+            assert response.status_code == 500
+            assert "Cache invalidation failed" in response.json()["detail"]

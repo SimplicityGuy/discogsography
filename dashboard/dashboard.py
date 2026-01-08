@@ -523,6 +523,158 @@ async def prometheus_metrics() -> Response:
     return Response(content=generate_latest(), media_type="text/plain")
 
 
+# Discovery API Proxy Endpoints for Phase 4.3 UI
+
+
+@app.get("/api/discovery/ml/status")  # type: ignore[untyped-decorator]
+async def get_ml_status() -> ORJSONResponse:
+    """Get ML API status from Discovery service."""
+    API_REQUESTS.labels(endpoint="/api/discovery/ml/status", method="GET").inc()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get("http://discovery:8005/api/ml/status")
+            if response.status_code == 200:
+                return ORJSONResponse(content=response.json())
+            return ORJSONResponse(content={"error": f"Discovery API returned {response.status_code}"}, status_code=response.status_code)
+    except Exception as e:
+        logger.error(f"❌ Error fetching ML status: {e}")
+        return ORJSONResponse(content={"error": str(e)}, status_code=503)
+
+
+@app.post("/api/discovery/ml/recommend/collaborative")  # type: ignore[untyped-decorator]
+async def get_collaborative_recommendations(artist_id: str = "The Beatles", limit: int = 10, min_similarity: float = 0.1) -> ORJSONResponse:
+    """Get collaborative filtering recommendations from Discovery service."""
+    API_REQUESTS.labels(endpoint="/api/discovery/ml/recommend/collaborative", method="POST").inc()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                "http://discovery:8005/api/ml/recommend/collaborative",
+                json={"artist_id": artist_id, "limit": limit, "min_similarity": min_similarity},
+            )
+            if response.status_code == 200:
+                return ORJSONResponse(content=response.json())
+            return ORJSONResponse(content={"error": f"Discovery API returned {response.status_code}"}, status_code=response.status_code)
+    except Exception as e:
+        logger.error(f"❌ Error fetching collaborative recommendations: {e}")
+        return ORJSONResponse(content={"error": str(e)}, status_code=503)
+
+
+@app.post("/api/discovery/ml/recommend/hybrid")  # type: ignore[untyped-decorator]
+async def get_hybrid_recommendations(artist_name: str = "The Beatles", limit: int = 10, strategy: str = "weighted") -> ORJSONResponse:
+    """Get hybrid recommendations from Discovery service."""
+    API_REQUESTS.labels(endpoint="/api/discovery/ml/recommend/hybrid", method="POST").inc()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                "http://discovery:8005/api/ml/recommend/hybrid",
+                json={"artist_name": artist_name, "limit": limit, "strategy": strategy},
+            )
+            if response.status_code == 200:
+                return ORJSONResponse(content=response.json())
+            return ORJSONResponse(content={"error": f"Discovery API returned {response.status_code}"}, status_code=response.status_code)
+    except Exception as e:
+        logger.error(f"❌ Error fetching hybrid recommendations: {e}")
+        return ORJSONResponse(content={"error": str(e)}, status_code=503)
+
+
+@app.get("/api/discovery/search/status")  # type: ignore[untyped-decorator]
+async def get_search_status() -> ORJSONResponse:
+    """Get Search API status from Discovery service."""
+    API_REQUESTS.labels(endpoint="/api/discovery/search/status", method="GET").inc()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get("http://discovery:8005/api/search/status")
+            if response.status_code == 200:
+                return ORJSONResponse(content=response.json())
+            return ORJSONResponse(content={"error": f"Discovery API returned {response.status_code}"}, status_code=response.status_code)
+    except Exception as e:
+        logger.error(f"❌ Error fetching search status: {e}")
+        return ORJSONResponse(content={"error": str(e)}, status_code=503)
+
+
+@app.get("/api/discovery/search/stats")  # type: ignore[untyped-decorator]
+async def get_search_stats() -> ORJSONResponse:
+    """Get search statistics from Discovery service."""
+    API_REQUESTS.labels(endpoint="/api/discovery/search/stats", method="GET").inc()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get("http://discovery:8005/api/search/stats")
+            if response.status_code == 200:
+                return ORJSONResponse(content=response.json())
+            return ORJSONResponse(content={"error": f"Discovery API returned {response.status_code}"}, status_code=response.status_code)
+    except Exception as e:
+        logger.error(f"❌ Error fetching search stats: {e}")
+        return ORJSONResponse(content={"error": str(e)}, status_code=503)
+
+
+@app.get("/api/discovery/graph/status")  # type: ignore[untyped-decorator]
+async def get_graph_status() -> ORJSONResponse:
+    """Get Graph Analytics API status from Discovery service."""
+    API_REQUESTS.labels(endpoint="/api/discovery/graph/status", method="GET").inc()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get("http://discovery:8005/api/graph/status")
+            if response.status_code == 200:
+                return ORJSONResponse(content=response.json())
+            return ORJSONResponse(content={"error": f"Discovery API returned {response.status_code}"}, status_code=response.status_code)
+    except Exception as e:
+        logger.error(f"❌ Error fetching graph status: {e}")
+        return ORJSONResponse(content={"error": str(e)}, status_code=503)
+
+
+@app.post("/api/discovery/graph/centrality")  # type: ignore[untyped-decorator]
+async def get_centrality_metrics(
+    metric: str = "pagerank", limit: int = 20, node_type: str = "artist", sample_size: int | None = None
+) -> ORJSONResponse:
+    """Get centrality metrics from Discovery service."""
+    API_REQUESTS.labels(endpoint="/api/discovery/graph/centrality", method="POST").inc()
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "http://discovery:8005/api/graph/centrality",
+                json={"metric": metric, "limit": limit, "node_type": node_type, "sample_size": sample_size},
+            )
+            if response.status_code == 200:
+                return ORJSONResponse(content=response.json())
+            return ORJSONResponse(content={"error": f"Discovery API returned {response.status_code}"}, status_code=response.status_code)
+    except Exception as e:
+        logger.error(f"❌ Error fetching centrality metrics: {e}")
+        return ORJSONResponse(content={"error": str(e)}, status_code=503)
+
+
+@app.get("/api/discovery/realtime/status")  # type: ignore[untyped-decorator]
+async def get_realtime_status() -> ORJSONResponse:
+    """Get Real-Time API status from Discovery service."""
+    API_REQUESTS.labels(endpoint="/api/discovery/realtime/status", method="GET").inc()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get("http://discovery:8005/api/realtime/status")
+            if response.status_code == 200:
+                return ORJSONResponse(content=response.json())
+            return ORJSONResponse(content={"error": f"Discovery API returned {response.status_code}"}, status_code=response.status_code)
+    except Exception as e:
+        logger.error(f"❌ Error fetching realtime status: {e}")
+        return ORJSONResponse(content={"error": str(e)}, status_code=503)
+
+
+@app.post("/api/discovery/realtime/trending")  # type: ignore[untyped-decorator]
+async def get_trending(category: str = "artists", limit: int = 10, time_window: str = "day") -> ORJSONResponse:
+    """Get trending items from Discovery service."""
+    API_REQUESTS.labels(endpoint="/api/discovery/realtime/trending", method="POST").inc()
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                "http://discovery:8005/api/realtime/trending",
+                json={"category": category, "limit": limit, "time_window": time_window},
+            )
+            if response.status_code == 200:
+                return ORJSONResponse(content=response.json())
+            return ORJSONResponse(content={"error": f"Discovery API returned {response.status_code}"}, status_code=response.status_code)
+    except Exception as e:
+        logger.error(f"❌ Error fetching trending items: {e}")
+        return ORJSONResponse(content={"error": str(e)}, status_code=503)
+
+
 @app.websocket("/ws")  # type: ignore[untyped-decorator]
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""

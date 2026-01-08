@@ -90,7 +90,7 @@ jobs:
       - name: 🔍 Check docker-compose services
         run: |
           services=$(docker-compose config --services | sort | tr "\n" " " | sed "s/ $//")
-          expected="dashboard discovery extractor graphinator neo4j postgres rabbitmq tableinator"
+          expected="dashboard discovery extractor graphinator neo4j postgres rabbitmq redis tableinator"
 
           if [ "$services" != "$expected" ]; then
             echo "❌ Service mismatch!"
@@ -104,14 +104,14 @@ jobs:
         run: |
           # Check that services have correct dependencies
           deps=$(docker-compose config | yq eval '.services.dashboard.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j postgres rabbitmq" ]; then
-            echo "❌ Dashboard should depend on neo4j, postgres, and rabbitmq"
+          if [ "$deps" != "neo4j postgres rabbitmq redis" ]; then
+            echo "❌ Dashboard should depend on neo4j, postgres, rabbitmq, and redis"
             exit 1
           fi
 
           deps=$(docker-compose config | yq eval '.services.discovery.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j postgres rabbitmq" ]; then
-            echo "❌ Discovery should depend on neo4j, postgres, and rabbitmq"
+          if [ "$deps" != "neo4j postgres rabbitmq redis" ]; then
+            echo "❌ Discovery should depend on neo4j, postgres, rabbitmq, and redis"
             exit 1
           fi
 

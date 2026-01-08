@@ -113,6 +113,32 @@ services:
     security_opt:
       - no-new-privileges:true
 
+  # Redis cache
+  redis:
+    image: redis:7.2-alpine
+    container_name: discogsography-redis
+    hostname: redis
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      discogsography:
+        aliases:
+          - cache
+          - redis-cache
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+
   # Rust-based extractor service
   rustextractor:
     build:
@@ -306,6 +332,7 @@ services:
       POSTGRES_USERNAME: discogsography
       POSTGRES_PASSWORD: discogsography
       POSTGRES_DATABASE: discogsography
+      REDIS_URL: redis://redis:6379/0
       RABBITMQ_MANAGEMENT_USER: discogsography
       RABBITMQ_MANAGEMENT_PASSWORD: discogsography
       PYTHONUNBUFFERED: "1"
@@ -318,6 +345,8 @@ services:
       postgres:
         condition: service_healthy
       neo4j:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - discogsography
@@ -360,6 +389,7 @@ services:
       POSTGRES_USERNAME: discogsography
       POSTGRES_PASSWORD: discogsography
       POSTGRES_DATABASE: discogsography
+      REDIS_URL: redis://redis:6379/0
       PYTHONUNBUFFERED: "1"
       UV_CACHE_DIR: "/tmp/.cache/uv"
       HF_HOME: "/models/huggingface"
@@ -375,6 +405,8 @@ services:
       postgres:
         condition: service_healthy
       neo4j:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     volumes:
       - discovery_models:/models
@@ -404,6 +436,7 @@ volumes:
   neo4j_logs:
   neo4j_import:
   neo4j_plugins:
+  redis_data:
   discogs_data:
   discovery_models:
   rust_extractor_logs:

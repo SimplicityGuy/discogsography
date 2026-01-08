@@ -3,221 +3,271 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Discogsography Discovery</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/plotly.js-dist@2.26.0/plotly.min.js"></script>
-    <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <title>Discogsography Music Discovery Playground</title>
+
+    <!-- External Libraries -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+
+    <!-- D3.js for visualizations -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <!-- Plotly for advanced charts -->
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="/static/css/playground.css">
 </head>
 <body>
     <!-- Navigation -->
-    <nav class="navbar">
-        <div class="nav-container">
-            <div class="nav-brand">
-                <h1><i class="fas fa-music"></i> Discovery</h1>
-            </div>
-
-            <!-- Hamburger Menu -->
-            <div class="hamburger" id="hamburger">
-                <span></span>
-                <span></span>
-                <span></span>
-            </div>
-
-            <!-- Navigation Menu -->
-            <div class="nav-menu" id="navMenu">
-                <a href="#recommendations" class="nav-item" data-section="recommendations">
-                    <i class="fas fa-magic"></i> AI Recommendations
-                </a>
-                <a href="#analytics" class="nav-item" data-section="analytics">
-                    <i class="fas fa-chart-line"></i> Industry Analytics
-                </a>
-                <a href="#graph" class="nav-item" data-section="graph">
-                    <i class="fas fa-project-diagram"></i> Graph Explorer
-                </a>
-                <a href="http://localhost:8003" class="nav-item external" target="_blank">
-                    <i class="fas fa-tachometer-alt"></i> Dashboard
-                </a>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-compact-disc"></i> Music Discovery Playground
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#" data-view="graph">
+                            <i class="fas fa-project-diagram"></i> Graph Explorer
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-view="journey">
+                            <i class="fas fa-route"></i> Music Journey
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-view="trends">
+                            <i class="fas fa-chart-line"></i> Trend Analysis
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" data-view="heatmap">
+                            <i class="fas fa-th"></i> Similarity Heatmap
+                        </a>
+                    </li>
+                </ul>
             </div>
         </div>
     </nav>
 
-    <!-- Main Content -->
-    <main class="main-content">
-        <!-- Recommendations Section -->
-        <section id="recommendations" class="content-section active">
-            <div class="section-header">
-                <h2><i class="fas fa-magic"></i> AI-Powered Music Discovery</h2>
-                <p>Discover new music through intelligent recommendations based on collaboration networks and semantic analysis.</p>
-            </div>
+    <!-- Main Container -->
+    <div class="container-fluid mt-3">
+        <div class="row">
+            <!-- Control Panel -->
+            <div class="col-lg-3">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-sliders-h"></i> Controls
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <!-- Search Input -->
+                        <div class="mb-3">
+                            <label for="searchInput" class="form-label">Search Artist/Album</label>
+                            <input type="text" class="form-control" id="searchInput"
+                                   placeholder="Enter artist or album name...">
+                        </div>
 
-            <div class="discovery-controls">
-                <div class="input-group">
-                    <label for="artistInput">Artist Name:</label>
-                    <input type="text" id="artistInput" placeholder="Enter artist name (e.g., Miles Davis)">
+                        <!-- Graph Controls (shown for graph view) -->
+                        <div id="graphControls" class="view-controls">
+                            <h6>Graph Options</h6>
+                            <div class="mb-2">
+                                <label for="depthSlider" class="form-label">
+                                    Depth: <span id="depthValue">2</span>
+                                </label>
+                                <input type="range" class="form-range" id="depthSlider"
+                                       min="1" max="5" value="2">
+                            </div>
+                            <div class="mb-2">
+                                <label for="nodeLimit" class="form-label">
+                                    Max Nodes: <span id="nodeLimitValue">50</span>
+                                </label>
+                                <input type="range" class="form-range" id="nodeLimit"
+                                       min="10" max="200" value="50" step="10">
+                            </div>
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="checkbox" id="showLabels" checked>
+                                <label class="form-check-label" for="showLabels">
+                                    Show Labels
+                                </label>
+                            </div>
+                        </div>
+
+                        <!-- Journey Controls -->
+                        <div id="journeyControls" class="view-controls" style="display: none;">
+                            <h6>Journey Builder</h6>
+                            <div class="mb-2">
+                                <label for="startArtist" class="form-label">Start Artist</label>
+                                <input type="text" class="form-control" id="startArtist"
+                                       placeholder="e.g., Pink Floyd">
+                            </div>
+                            <div class="mb-2">
+                                <label for="endArtist" class="form-label">End Artist</label>
+                                <input type="text" class="form-control" id="endArtist"
+                                       placeholder="e.g., Radiohead">
+                            </div>
+                            <button class="btn btn-primary w-100" id="findJourneyBtn">
+                                <i class="fas fa-search"></i> Find Musical Path
+                            </button>
+                        </div>
+
+                        <!-- Trend Controls -->
+                        <div id="trendControls" class="view-controls" style="display: none;">
+                            <h6>Trend Options</h6>
+                            <div class="mb-2">
+                                <label for="trendType" class="form-label">Analysis Type</label>
+                                <select class="form-select" id="trendType">
+                                    <option value="genre">Genre Evolution</option>
+                                    <option value="artist">Artist Popularity</option>
+                                    <option value="label">Label Activity</option>
+                                </select>
+                            </div>
+                            <div class="mb-2">
+                                <label for="yearRange" class="form-label">Year Range</label>
+                                <div class="d-flex gap-2">
+                                    <input type="number" class="form-control" id="yearStart"
+                                           placeholder="1950" min="1950" max="2024">
+                                    <input type="number" class="form-control" id="yearEnd"
+                                           placeholder="2024" min="1950" max="2024">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Heatmap Controls -->
+                        <div id="heatmapControls" class="view-controls" style="display: none;">
+                            <h6>Heatmap Options</h6>
+                            <div class="mb-2">
+                                <label for="heatmapType" class="form-label">Similarity Type</label>
+                                <select class="form-select" id="heatmapType">
+                                    <option value="genre">Genre Similarity</option>
+                                    <option value="collab">Collaboration Network</option>
+                                    <option value="style">Style Overlap</option>
+                                </select>
+                            </div>
+                            <div class="mb-2">
+                                <label for="topArtists" class="form-label">
+                                    Top Artists: <span id="topArtistsValue">20</span>
+                                </label>
+                                <input type="range" class="form-range" id="topArtists"
+                                       min="10" max="50" value="20" step="5">
+                            </div>
+                        </div>
+
+                        <!-- Action Buttons -->
+                        <div class="mt-3">
+                            <button class="btn btn-success w-100 mb-2" id="exploreBtn">
+                                <i class="fas fa-play"></i> Explore
+                            </button>
+                            <button class="btn btn-secondary w-100" id="resetBtn">
+                                <i class="fas fa-redo"></i> Reset View
+                            </button>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="input-group">
-                    <label for="recommendationType">Recommendation Type:</label>
-                    <select id="recommendationType">
-                        <option value="similar">Similar Artists</option>
-                        <option value="trending">Trending Music</option>
-                        <option value="discovery">Semantic Discovery</option>
-                    </select>
-                </div>
-
-                <div class="input-group">
-                    <label for="genreFilter">Genre Filter (optional):</label>
-                    <input type="text" id="genreFilter" placeholder="Jazz, Rock, Electronic...">
-                </div>
-
-                <button id="getRecommendations" class="btn btn-primary">
-                    <i class="fas fa-search"></i> Get Recommendations
-                </button>
-            </div>
-
-            <div id="recommendationsResults" class="results-container">
-                <!-- Recommendations will be populated here -->
-            </div>
-        </section>
-
-        <!-- Analytics Section -->
-        <section id="analytics" class="content-section">
-            <div class="section-header">
-                <h2><i class="fas fa-chart-line"></i> Music Industry Analytics</h2>
-                <p>Explore trends, patterns, and insights from the music industry data.</p>
-            </div>
-
-            <div class="analytics-controls">
-                <div class="input-group">
-                    <label for="analysisType">Analysis Type:</label>
-                    <select id="analysisType">
-                        <option value="genre_trends">Genre Popularity Trends</option>
-                        <option value="artist_evolution">Artist Career Evolution</option>
-                        <option value="label_insights">Record Label Insights</option>
-                        <option value="market_analysis">Market Format Analysis</option>
-                    </select>
-                </div>
-
-                <div class="input-group" id="artistAnalysisGroup" style="display: none;">
-                    <label for="artistAnalysisInput">Artist Name:</label>
-                    <input type="text" id="artistAnalysisInput" placeholder="Enter artist name">
-                </div>
-
-                <div class="input-group" id="labelAnalysisGroup" style="display: none;">
-                    <label for="labelAnalysisInput">Label Name (optional):</label>
-                    <input type="text" id="labelAnalysisInput" placeholder="Enter label name">
-                </div>
-
-                <div class="input-group">
-                    <label for="timeRange">Time Range:</label>
-                    <select id="timeRange">
-                        <option value="1990,2023">1990-2023</option>
-                        <option value="2000,2023">2000-2023</option>
-                        <option value="2010,2023">2010-2023</option>
-                        <option value="1970,2023">1970-2023</option>
-                        <option value="1950,2023">All Years (1950-2023)</option>
-                    </select>
-                </div>
-
-                <button id="runAnalysis" class="btn btn-primary">
-                    <i class="fas fa-chart-bar"></i> Run Analysis
-                </button>
-            </div>
-
-            <div id="analyticsChart" class="chart-container">
-                <!-- Analytics chart will be populated here -->
-            </div>
-
-            <div id="analyticsInsights" class="insights-container">
-                <!-- Insights will be populated here -->
-            </div>
-        </section>
-
-        <!-- Graph Explorer Section -->
-        <section id="graph" class="content-section">
-            <div class="section-header">
-                <h2><i class="fas fa-project-diagram"></i> Music Knowledge Graph Explorer</h2>
-                <p>Explore interactive relationships between artists, releases, labels, and genres.</p>
-            </div>
-
-            <div class="graph-controls">
-                <div class="input-group">
-                    <label for="graphQuery">Search Query:</label>
-                    <input type="text" id="graphQuery" placeholder="Search for artists, releases, labels...">
-                </div>
-
-                <div class="input-group">
-                    <label for="queryType">Query Type:</label>
-                    <select id="queryType">
-                        <option value="search">Search Nodes</option>
-                        <option value="expand">Expand Node</option>
-                        <option value="path">Find Path</option>
-                        <option value="neighborhood">Show Neighborhood</option>
-                        <option value="semantic">Semantic Search</option>
-                    </select>
-                </div>
-
-                <div class="input-group" id="pathControls" style="display: none;">
-                    <label for="targetNode">Target Node ID:</label>
-                    <input type="text" id="targetNode" placeholder="Target node ID for path finding">
-                </div>
-
-                <div class="input-group">
-                    <label for="maxDepth">Max Depth:</label>
-                    <select id="maxDepth">
-                        <option value="1">1</option>
-                        <option value="2" selected>2</option>
-                        <option value="3">3</option>
-                        <option value="4">4</option>
-                    </select>
-                </div>
-
-                <button id="exploreGraph" class="btn btn-primary">
-                    <i class="fas fa-search"></i> Explore Graph
-                </button>
-
-                <button id="clearGraph" class="btn btn-secondary">
-                    <i class="fas fa-trash"></i> Clear Graph
-                </button>
-            </div>
-
-            <div id="graphVisualization" class="graph-container">
-                <!-- Graph visualization will be rendered here -->
-            </div>
-
-            <div id="graphInfo" class="info-panel">
-                <h3>Graph Information</h3>
-                <div id="nodeInfo" class="node-info">
-                    Click on a node to see details
+                <!-- Info Panel -->
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="fas fa-info-circle"></i> Selection Info
+                        </h5>
+                    </div>
+                    <div class="card-body" id="infoPanel">
+                        <p class="text-muted">Select an item to view details</p>
+                    </div>
                 </div>
             </div>
 
-            <div id="pathResult" class="path-result" style="display: none;">
-                <!-- Path finding results will be shown here -->
+            <!-- Visualization Area -->
+            <div class="col-lg-9">
+                <div class="card h-100">
+                    <div class="card-header">
+                        <h5 class="mb-0 d-flex justify-content-between align-items-center">
+                            <span id="viewTitle">
+                                <i class="fas fa-project-diagram"></i> Graph Explorer
+                            </span>
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button class="btn btn-outline-secondary" id="zoomInBtn">
+                                    <i class="fas fa-search-plus"></i>
+                                </button>
+                                <button class="btn btn-outline-secondary" id="zoomOutBtn">
+                                    <i class="fas fa-search-minus"></i>
+                                </button>
+                                <button class="btn btn-outline-secondary" id="fullscreenBtn">
+                                    <i class="fas fa-expand"></i>
+                                </button>
+                            </div>
+                        </h5>
+                    </div>
+                    <div class="card-body p-0">
+                        <!-- Main Visualization Container -->
+                        <div id="visualizationContainer">
+                            <!-- Graph View -->
+                            <div id="graphView" class="view-container">
+                                <svg id="graphSvg"></svg>
+                            </div>
+
+                            <!-- Journey View -->
+                            <div id="journeyView" class="view-container" style="display: none;">
+                                <div id="journeyPath"></div>
+                            </div>
+
+                            <!-- Trends View -->
+                            <div id="trendsView" class="view-container" style="display: none;">
+                                <div id="trendsChart"></div>
+                            </div>
+
+                            <!-- Heatmap View -->
+                            <div id="heatmapView" class="view-container" style="display: none;">
+                                <div id="heatmapChart"></div>
+                            </div>
+                        </div>
+
+                        <!-- Loading Overlay -->
+                        <div id="loadingOverlay" style="display: none;">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2">Loading data...</p>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </section>
-    </main>
-
-    <!-- Loading Spinner -->
-    <div id="loadingSpinner" class="loading-spinner" style="display: none;">
-        <div class="spinner"></div>
-        <p>Processing your request...</p>
-    </div>
-
-    <!-- Notification Toast -->
-    <div id="toast" class="toast" style="display: none;">
-        <div class="toast-content">
-            <span id="toastMessage"></span>
-            <button id="toastClose" class="toast-close">&times;</button>
         </div>
     </div>
 
-    <!-- JavaScript -->
-    <script src="/static/js/app.js"></script>
-    <script src="/static/js/recommendations.js"></script>
-    <script src="/static/js/analytics.js"></script>
-    <script src="/static/js/graph.js"></script>
+    <!-- Toast Container for Notifications -->
+    <div class="toast-container position-fixed bottom-0 end-0 p-3">
+        <div id="notificationToast" class="toast" role="alert">
+            <div class="toast-header">
+                <i class="fas fa-info-circle text-primary me-2"></i>
+                <strong class="me-auto">Notification</strong>
+                <button type="button" class="btn-close" data-bs-dismiss="toast"></button>
+            </div>
+            <div class="toast-body" id="toastMessage">
+                <!-- Message will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- D3.js -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+
+    <!-- Custom JavaScript -->
+    <script src="/static/js/api-client.js"></script>
+    <script src="/static/js/graph-visualization.js"></script>
+    <script src="/static/js/journey-builder.js"></script>
+    <script src="/static/js/trend-analysis.js"></script>
+    <script src="/static/js/heatmap-visualization.js"></script>
+    <script src="/static/js/playground.js"></script>
 </body>
 </html>

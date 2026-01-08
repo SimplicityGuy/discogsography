@@ -6,6 +6,7 @@ class Dashboard {
         this.activityLog = [];
         this.maxLogEntries = 50;
         this.queueChart = null;
+        this.centralityChart = null;
         this.queueChartData = {
             labels: [],
             datasets: []
@@ -16,7 +17,10 @@ class Dashboard {
 
         this.initializeWebSocket();
         this.initializeChart();
+        this.initializeCentralityChart();
+        this.initializeDiscoveryUI();
         this.fetchInitialData();
+        this.fetchDiscoveryData();
     }
 
     initializeWebSocket() {
@@ -615,6 +619,309 @@ class Dashboard {
     formatTime(timestamp) {
         const date = new Date(timestamp);
         return date.toLocaleString();
+    }
+
+    // Discovery API Methods
+
+    initializeDiscoveryUI() {
+        // ML Recommendations button
+        const recBtn = document.getElementById('getRecommendationsBtn');
+        if (recBtn) {
+            recBtn.addEventListener('click', () => this.fetchRecommendations());
+        }
+
+        // Strategy select
+        const strategySelect = document.getElementById('strategySelect');
+        if (strategySelect) {
+            strategySelect.addEventListener('change', (e) => {
+                document.getElementById('currentStrategy').textContent = e.target.value;
+            });
+        }
+
+        // Centrality button
+        const centralityBtn = document.getElementById('getCentralityBtn');
+        if (centralityBtn) {
+            centralityBtn.addEventListener('click', () => this.fetchCentralityMetrics());
+        }
+
+        // Trending button
+        const trendingBtn = document.getElementById('getTrendingBtn');
+        if (trendingBtn) {
+            trendingBtn.addEventListener('click', () => this.fetchTrending());
+        }
+    }
+
+    async fetchDiscoveryData() {
+        await this.fetchSearchStats();
+        await this.fetchSearchStatus();
+    }
+
+    async fetchRecommendations() {
+        const artistInput = document.getElementById('artistInput');
+        const strategySelect = document.getElementById('strategySelect');
+        const artist = artistInput.value || 'The Beatles';
+        const strategy = strategySelect.value;
+
+        // Collaborative filtering
+        try {
+            const response = await fetch(`/api/discovery/ml/recommend/collaborative?artist_id=${encodeURIComponent(artist)}&limit=10&min_similarity=0.1`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                this.renderCollaborativeResults(data);
+            }
+        } catch (error) {
+            console.error('Error fetching collaborative recommendations:', error);
+            document.getElementById('collaborativeResults').innerHTML = '<div class="error">Error loading recommendations</div>';
+        }
+
+        // Hybrid recommendations
+        try {
+            const response = await fetch(`/api/discovery/ml/recommend/hybrid?artist_name=${encodeURIComponent(artist)}&limit=10&strategy=${strategy}`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                this.renderHybridResults(data);
+            }
+        } catch (error) {
+            console.error('Error fetching hybrid recommendations:', error);
+            document.getElementById('hybridResults').innerHTML = '<div class="error">Error loading recommendations</div>';
+        }
+    }
+
+    renderCollaborativeResults(data) {
+        const container = document.getElementById('collaborativeResults');
+        if (!data.recommendations || data.recommendations.length === 0) {
+            container.innerHTML = '<div class="no-results">No recommendations available</div>';
+            return;
+        }
+
+        container.innerHTML = data.recommendations.map((rec, index) => `
+            <div class="result-item">
+                <span class="rank">${index + 1}</span>
+                <span class="artist-name">${rec.artist_name || rec.artist_id}</span>
+                <span class="similarity">${(rec.similarity * 100).toFixed(1)}%</span>
+            </div>
+        `).join('');
+    }
+
+    renderHybridResults(data) {
+        const container = document.getElementById('hybridResults');
+        if (!data.recommendations || data.recommendations.length === 0) {
+            container.innerHTML = '<div class="no-results">No recommendations available</div>';
+            return;
+        }
+
+        container.innerHTML = data.recommendations.map((rec, index) => `
+            <div class="result-item">
+                <span class="rank">${index + 1}</span>
+                <span class="artist-name">${rec.artist_name || rec.name}</span>
+                <span class="score">${(rec.score * 100).toFixed(1)}%</span>
+            </div>
+        `).join('');
+    }
+
+    async fetchSearchStats() {
+        try {
+            const response = await fetch('/api/discovery/search/stats');
+            if (response.ok) {
+                const data = await response.json();
+                this.renderSearchStats(data);
+            }
+        } catch (error) {
+            console.error('Error fetching search stats:', error);
+        }
+    }
+
+    async fetchSearchStatus() {
+        try {
+            const response = await fetch('/api/discovery/search/status');
+            if (response.ok) {
+                const data = await response.json();
+                this.renderSearchStatus(data);
+            }
+        } catch (error) {
+            console.error('Error fetching search status:', error);
+        }
+    }
+
+    renderSearchStats(data) {
+        const container = document.getElementById('searchStats');
+        if (!data.statistics) {
+            container.innerHTML = '<div class="no-results">No statistics available</div>';
+            return;
+        }
+
+        const stats = data.statistics;
+        container.innerHTML = `
+            <div class="stat-row">
+                <span class="stat-label">Total Artists:</span>
+                <span class="stat-value">${(stats.artist_count || 0).toLocaleString()}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Total Releases:</span>
+                <span class="stat-value">${(stats.release_count || 0).toLocaleString()}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Total Labels:</span>
+                <span class="stat-value">${(stats.label_count || 0).toLocaleString()}</span>
+            </div>
+            <div class="stat-row">
+                <span class="stat-label">Total Masters:</span>
+                <span class="stat-value">${(stats.master_count || 0).toLocaleString()}</span>
+            </div>
+        `;
+    }
+
+    renderSearchStatus(data) {
+        const container = document.getElementById('searchStatus');
+        if (!data.features) {
+            container.innerHTML = '<div class="no-results">No status available</div>';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="status-row">
+                <span class="feature-label">Full-Text Search:</span>
+                <span class="feature-status ${data.features.fulltext_search}">${data.features.fulltext_search}</span>
+            </div>
+            <div class="status-row">
+                <span class="feature-label">Semantic Search:</span>
+                <span class="feature-status ${data.features.semantic_search}">${data.features.semantic_search}</span>
+            </div>
+            <div class="status-row">
+                <span class="feature-label">Faceted Search:</span>
+                <span class="feature-status ${data.features.faceted_search}">${data.features.faceted_search}</span>
+            </div>
+            <div class="status-row">
+                <span class="feature-label">Autocomplete:</span>
+                <span class="feature-status ${data.features.autocomplete}">${data.features.autocomplete}</span>
+            </div>
+        `;
+    }
+
+    initializeCentralityChart() {
+        const ctx = document.getElementById('centralityChart');
+        if (!ctx) return;
+
+        this.centralityChart = new Chart(ctx.getContext('2d'), {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Centrality Score',
+                    data: [],
+                    backgroundColor: 'rgba(24, 119, 242, 0.6)',
+                    borderColor: 'rgba(24, 119, 242, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    title: {
+                        display: true,
+                        text: 'Top Artists by Centrality',
+                        color: '#e4e6eb'
+                    }
+                },
+                scales: {
+                    x: {
+                        ticks: { color: '#b0b3b8' },
+                        grid: { color: 'rgba(45, 48, 81, 0.5)' }
+                    },
+                    y: {
+                        ticks: { color: '#b0b3b8' },
+                        grid: { color: 'rgba(45, 48, 81, 0.5)' }
+                    }
+                }
+            }
+        });
+    }
+
+    async fetchCentralityMetrics() {
+        const metricSelect = document.getElementById('centralityMetric');
+        const metric = metricSelect.value;
+
+        try {
+            const response = await fetch(`/api/discovery/graph/centrality?metric=${metric}&limit=20&node_type=artist`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                this.renderCentralityChart(data);
+            }
+        } catch (error) {
+            console.error('Error fetching centrality metrics:', error);
+            this.addLogEntry('Failed to fetch centrality metrics', 'error');
+        }
+    }
+
+    renderCentralityChart(data) {
+        if (!this.centralityChart || !data.top_nodes) return;
+
+        const labels = data.top_nodes.map(item => item.node);
+        const scores = data.top_nodes.map(item => item.score);
+
+        this.centralityChart.data.labels = labels;
+        this.centralityChart.data.datasets[0].data = scores;
+        this.centralityChart.data.datasets[0].label = `${data.metric} Score`;
+        this.centralityChart.options.plugins.title.text = `Top Artists by ${data.metric}`;
+        this.centralityChart.update();
+
+        this.addLogEntry(`Calculated ${data.metric} for ${data.total_nodes} nodes`, 'info');
+    }
+
+    async fetchTrending() {
+        const categorySelect = document.getElementById('trendingCategory');
+        const category = categorySelect.value;
+
+        try {
+            const response = await fetch(`/api/discovery/realtime/trending?category=${category}&limit=10&time_window=day`, {
+                method: 'POST'
+            });
+            if (response.ok) {
+                const data = await response.json();
+                this.renderTrending(data);
+            }
+        } catch (error) {
+            console.error('Error fetching trending:', error);
+            document.getElementById('trendingResults').innerHTML = '<div class="error">Error loading trending data</div>';
+        }
+    }
+
+    renderTrending(data) {
+        const container = document.getElementById('trendingResults');
+        if (!data.trending_items || data.trending_items.length === 0) {
+            container.innerHTML = '<div class="no-results">No trending data available</div>';
+            return;
+        }
+
+        container.innerHTML = `
+            <div class="trending-header">
+                <h3>${data.category} - ${data.time_window}</h3>
+                <span class="trending-count">${data.total} items</span>
+            </div>
+            <div class="trending-list">
+                ${data.trending_items.map((item, index) => `
+                    <div class="trending-item">
+                        <span class="trending-rank">#${index + 1}</span>
+                        <span class="trending-name">${item.item_name || item.item_id}</span>
+                        <span class="trending-score">${item.score.toFixed(2)}</span>
+                        <span class="trending-change ${item.change > 0 ? 'up' : item.change < 0 ? 'down' : 'stable'}">
+                            ${item.change > 0 ? '▲' : item.change < 0 ? '▼' : '─'} ${Math.abs(item.change).toFixed(2)}
+                        </span>
+                    </div>
+                `).join('')}
+            </div>
+        `;
     }
 }
 

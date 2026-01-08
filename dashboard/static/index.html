@@ -54,6 +54,87 @@
                     <div class="log-entry">Waiting for data...</div>
                 </div>
             </section>
+
+            <!-- Discovery API Section -->
+            <section class="dashboard-section">
+                <h2>Discovery API - ML Recommendations</h2>
+                <div class="discovery-controls">
+                    <input type="text" id="artistInput" placeholder="Enter artist name..." value="The Beatles">
+                    <button id="getRecommendationsBtn">Get Recommendations</button>
+                    <select id="strategySelect">
+                        <option value="weighted">Weighted</option>
+                        <option value="ranked">Ranked</option>
+                        <option value="cascade">Cascade</option>
+                    </select>
+                </div>
+                <div class="recommendations-container">
+                    <div class="recommendation-card">
+                        <h3>Collaborative Filtering</h3>
+                        <div id="collaborativeResults" class="results-list">
+                            <div class="loading">Click 'Get Recommendations' to start</div>
+                        </div>
+                    </div>
+                    <div class="recommendation-card">
+                        <h3>Hybrid Recommendations (<span id="currentStrategy">weighted</span>)</h3>
+                        <div id="hybridResults" class="results-list">
+                            <div class="loading">Click 'Get Recommendations' to start</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Search Analytics Section -->
+            <section class="dashboard-section">
+                <h2>Discovery API - Search Analytics</h2>
+                <div class="search-stats-container">
+                    <div class="stat-card" id="searchStatsCard">
+                        <h3>Search Index Statistics</h3>
+                        <div id="searchStats" class="stats-grid">
+                            <div class="loading">Loading stats...</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Search API Status</h3>
+                        <div id="searchStatus" class="status-grid">
+                            <div class="loading">Loading status...</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Graph Analytics Section -->
+            <section class="dashboard-section">
+                <h2>Discovery API - Graph Analytics</h2>
+                <div class="graph-controls">
+                    <select id="centralityMetric">
+                        <option value="pagerank">PageRank</option>
+                        <option value="degree">Degree Centrality</option>
+                        <option value="betweenness">Betweenness</option>
+                        <option value="closeness">Closeness</option>
+                        <option value="eigenvector">Eigenvector</option>
+                    </select>
+                    <button id="getCentralityBtn">Calculate Centrality</button>
+                </div>
+                <div class="graph-charts-container">
+                    <canvas id="centralityChart"></canvas>
+                </div>
+            </section>
+
+            <!-- Real-Time Trending Section -->
+            <section class="dashboard-section">
+                <h2>Discovery API - Real-Time Trending</h2>
+                <div class="trending-controls">
+                    <select id="trendingCategory">
+                        <option value="artists">Artists</option>
+                        <option value="genres">Genres</option>
+                        <option value="releases">Releases</option>
+                    </select>
+                    <button id="getTrendingBtn">Get Trending</button>
+                </div>
+                <div id="trendingResults" class="trending-container">
+                    <div class="loading">Click 'Get Trending' to start</div>
+                </div>
+            </section>
         </main>
 
         <footer>

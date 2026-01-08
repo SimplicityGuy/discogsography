@@ -102,7 +102,7 @@ repos:
       - id: shfmt
         args: ["-i", "2", "-ci", "-bn", "-sr"]  # 2 space indent, indent case, binary next line, redirect operators
 
-  # Rust checks
+  # Local hooks
   - repo: local
     hooks:
       - id: cargo-fmt

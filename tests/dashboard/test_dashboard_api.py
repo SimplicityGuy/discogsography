@@ -83,3 +83,72 @@ class TestDashboardAPI:
         response = test_client.get("/dashboard.js")
         assert response.status_code == 200
         assert "javascript" in response.headers["content-type"]
+
+    def test_services_endpoint_without_dashboard(
+        self,
+        mock_dashboard_config: Any,
+        mock_amqp_connection: Any,
+        mock_neo4j_driver: Any,
+        mock_psycopg_connect: Any,
+    ) -> None:
+        """Test /api/services endpoint when dashboard is not initialized."""
+        with (
+            patch("dashboard.dashboard.get_config", return_value=mock_dashboard_config),
+            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_amqp_connection),
+            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j_driver),
+            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_psycopg_connect),
+            patch("dashboard.dashboard.dashboard", None),  # Force dashboard to None
+        ):
+            from dashboard.dashboard import app
+
+            test_client = TestClient(app, raise_server_exceptions=False)
+
+            response = test_client.get("/api/services")
+            assert response.status_code == 200
+            assert response.json() == []
+
+    def test_queues_endpoint_without_dashboard(
+        self,
+        mock_dashboard_config: Any,
+        mock_amqp_connection: Any,
+        mock_neo4j_driver: Any,
+        mock_psycopg_connect: Any,
+    ) -> None:
+        """Test /api/queues endpoint when dashboard is not initialized."""
+        with (
+            patch("dashboard.dashboard.get_config", return_value=mock_dashboard_config),
+            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_amqp_connection),
+            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j_driver),
+            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_psycopg_connect),
+            patch("dashboard.dashboard.dashboard", None),  # Force dashboard to None
+        ):
+            from dashboard.dashboard import app
+
+            test_client = TestClient(app, raise_server_exceptions=False)
+
+            response = test_client.get("/api/queues")
+            assert response.status_code == 200
+            assert response.json() == []
+
+    def test_databases_endpoint_without_dashboard(
+        self,
+        mock_dashboard_config: Any,
+        mock_amqp_connection: Any,
+        mock_neo4j_driver: Any,
+        mock_psycopg_connect: Any,
+    ) -> None:
+        """Test /api/databases endpoint when dashboard is not initialized."""
+        with (
+            patch("dashboard.dashboard.get_config", return_value=mock_dashboard_config),
+            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_amqp_connection),
+            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j_driver),
+            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_psycopg_connect),
+            patch("dashboard.dashboard.dashboard", None),  # Force dashboard to None
+        ):
+            from dashboard.dashboard import app
+
+            test_client = TestClient(app, raise_server_exceptions=False)
+
+            response = test_client.get("/api/databases")
+            assert response.status_code == 200
+            assert response.json() == []

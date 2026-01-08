@@ -38,8 +38,10 @@ dependencies = [
     "psycopg[binary]>=3.1.0",
     "pydantic>=2.10.5",
     "python-multipart>=0.0.20",
+    "redis[hiredis]>=5.0.0",                # Redis caching with performance optimizations
     "scikit-learn>=1.3.0",                  # Machine learning
     "sentence-transformers[onnx]>=2.2.0",   # Semantic search with ONNX backend
+    "slowapi>=0.1.9",                       # Rate limiting for FastAPI
     "sqlalchemy[asyncio]>=2.0.0",           # Async SQL toolkit
     "structlog>=24.0.0",
     "tqdm>=4.65.0",
@@ -60,7 +62,8 @@ packages = ["."]
 extend = "../pyproject.toml"
 
 [tool.ruff.lint.per-file-ignores]
-"discovery.py" = ["T201"]        # Allow print statements for ASCII art
+"discovery.py" = ["T201", "ARG001"]  # Allow print statements for ASCII art, unused request args (required by slowapi)
+"tests/discovery/test_*.py" = ["S105", "ARG005"]  # Test fixtures can have hardcoded passwords, unused lambda args
 
 [tool.mypy]
 extend = "../pyproject.toml"
