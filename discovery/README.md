@@ -87,6 +87,110 @@ The Discovery UI features a modern, responsive design with a hamburger menu prov
 - **Mobile**: Optimized mobile experience with collapsible navigation
 - **Dark Theme**: Professional dark theme optimized for extended use
 
+## 🏗️ Service Architecture
+
+### Internal Architecture
+
+```mermaid
+graph TB
+    subgraph "Discovery Service"
+        API[["🌐 FastAPI Server<br/>Port 8005"]]
+        HEALTH[["🏥 Health Server<br/>Port 8004"]]
+
+        subgraph "Core Engines"
+            REC["🤖 Recommender Engine<br/>Collaborative Filtering<br/>Sentence Transformers"]
+            ANA["📊 Analytics Engine<br/>Trend Analysis<br/>Market Intelligence"]
+            GEX["🔍 Graph Explorer<br/>Path Finding<br/>Network Analysis"]
+        end
+
+        subgraph "Search & ML APIs"
+            SEARCH["🔎 Search API<br/>Full-text & Semantic<br/>Faceted Search"]
+            ML["🧠 ML API<br/>Collaborative Filter<br/>Content-based"]
+            GRAPH_API["📈 Graph Analytics API<br/>Community Detection<br/>PageRank"]
+            REALTIME["⚡ Real-time API<br/>WebSocket<br/>Live Updates"]
+        end
+
+        subgraph "Cache & Models"
+            CACHE["🔴 Redis Cache<br/>Query Results<br/>Embeddings"]
+            ONNX["⚡ ONNX Models<br/>Optimized Inference<br/>Sentence Transformers"]
+            HF["🤗 HuggingFace Cache<br/>Model Storage<br/>HF_HOME"]
+        end
+    end
+
+    subgraph "External Services"
+        NEO4J[("🔗 Neo4j<br/>Graph Database<br/>Cypher Queries")]
+        PG[("🐘 PostgreSQL<br/>Analytics DB<br/>asyncpg driver")]
+        REDIS_EXT[("🔴 Redis<br/>External Cache<br/>Shared State")]
+    end
+
+    API --> REC
+    API --> ANA
+    API --> GEX
+    API --> SEARCH
+    API --> ML
+    API --> GRAPH_API
+    API --> REALTIME
+
+    REC --> NEO4J
+    REC --> ONNX
+    REC --> CACHE
+
+    ANA --> PG
+    ANA --> NEO4J
+    ANA --> CACHE
+
+    GEX --> NEO4J
+    GEX --> CACHE
+
+    SEARCH --> PG
+    SEARCH --> ONNX
+    SEARCH --> CACHE
+
+    ML --> PG
+    ML --> ONNX
+
+    GRAPH_API --> NEO4J
+
+    CACHE -.->|Connected| REDIS_EXT
+    ONNX -.->|Loads from| HF
+
+    PG -.->|"asyncpg<br/>async driver"| ANA
+    PG -.->|"asyncpg<br/>async driver"| SEARCH
+    PG -.->|"asyncpg<br/>async driver"| ML
+
+    style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style HEALTH fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style REC fill:#fff9c4,stroke:#f57c00,stroke-width:2px
+    style ANA fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style GEX fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style CACHE fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+    style ONNX fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style HF fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style REDIS_EXT fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+```
+
+### Key Components
+
+- **🌐 FastAPI Server**: Main REST API server with async endpoints
+- **🤖 Recommender Engine**: Collaborative filtering using NetworkX and sentence transformers
+- **📊 Analytics Engine**: Industry insights with async PostgreSQL queries via asyncpg
+- **🔍 Graph Explorer**: Real-time Neo4j graph visualization
+- **🔴 Redis Cache**: Query result caching and session management
+- **⚡ ONNX Models**: Optimized ML model inference for semantic search
+- **🤗 HuggingFace Cache**: Model storage using HF_HOME (replaces deprecated TRANSFORMERS_CACHE)
+
+### Data Flow
+
+1. **User Request** → FastAPI API Server
+2. **Query Processing** → Appropriate engine (Recommender/Analytics/Explorer)
+3. **Cache Check** → Redis for previously computed results
+4. **Database Query** → Neo4j (graph) or PostgreSQL (analytics) via asyncpg
+5. **ML Processing** → ONNX models for semantic search and recommendations
+6. **Result Caching** → Store in Redis for future requests
+7. **Response** → JSON API response to client
+
 ## 🔌 API Endpoints
 
 ### Recommendations API

@@ -59,6 +59,7 @@ graph TD
     RMQ{{"🐰 RabbitMQ<br/>Message Broker<br/>4 Queues"}}
     NEO4J[("🔗 Neo4j<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL<br/>Analytics DB<br/>Full-text Search")]
+    REDIS[("🔴 Redis<br/>Cache Layer<br/>Query & ML Cache")]
     GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
@@ -74,7 +75,8 @@ graph TD
     TABLE -->|4b. Store Data| PG
 
     DISCO -.->|Query| NEO4J
-    DISCO -.->|Query| PG
+    DISCO -.->|Query via asyncpg| PG
+    DISCO -.->|Cache| REDIS
     DISCO -.->|Analyze| DISCO
 
     DASH -.->|Monitor| PYEXT
@@ -82,6 +84,7 @@ graph TD
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
     DASH -.->|Monitor| DISCO
+    DASH -.->|Cache| REDIS
     DASH -.->|Stats| RMQ
     DASH -.->|Stats| NEO4J
     DASH -.->|Stats| PG
@@ -92,6 +95,7 @@ graph TD
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
     style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style DISCO fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
 ```
