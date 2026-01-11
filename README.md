@@ -306,6 +306,23 @@ cp .env.example .env
 >
 > This ensures efficient resource usage while maintaining automatic responsiveness to new data.
 
+#### Discovery Service & ML Configuration
+
+| Variable                       | Description                              | Default                          | Used By   |
+| ------------------------------ | ---------------------------------------- | -------------------------------- | --------- |
+| `REDIS_URL`                    | Redis cache connection URL               | `redis://localhost:6379/0`       | Discovery, Dashboard |
+| `HF_HOME`                      | Hugging Face models cache directory      | `/models/huggingface`            | Discovery |
+| `SENTENCE_TRANSFORMERS_HOME`   | Sentence transformers cache directory    | `/models/sentence-transformers`  | Discovery |
+| `EMBEDDINGS_CACHE_DIR`         | Embeddings cache directory               | `/tmp/embeddings_cache`          | Discovery |
+| `XDG_CACHE_HOME`               | General cache directory                  | `/tmp/.cache`                    | Discovery |
+
+> **📝 Note**: The Discovery service uses several cache directories for ML models and embeddings:
+>
+> - **HF_HOME**: Primary cache for Hugging Face transformers models (replaces deprecated `TRANSFORMERS_CACHE`)
+> - **SENTENCE_TRANSFORMERS_HOME**: Specific cache for sentence transformer models
+> - **EMBEDDINGS_CACHE_DIR**: Configurable cache for generated embeddings
+> - All cache directories must be writable by the service user (UID 1000)
+
 ### 💿 Dataset Scale
 
 <div align="center">

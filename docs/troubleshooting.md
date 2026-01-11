@@ -148,6 +148,74 @@ chmod -R 755 logs/
 chmod -R 755 data/
 ```
 
+### Discovery Service Issues
+
+#### Missing asyncpg Dependency
+
+**Symptom**: Discovery service fails to start with error:
+
+```
+ModuleNotFoundError: No module named 'asyncpg'
+```
+
+**Cause**: The asyncpg Python package (required for async PostgreSQL connections) is not installed in the container.
+
+**Solution**: Rebuild the discovery service container:
+
+```bash
+docker-compose build discovery
+docker-compose up -d discovery
+```
+
+**Verification**: Check the service logs for successful startup:
+
+```bash
+docker-compose logs discovery | grep "Discovery service started successfully"
+```
+
+#### Cache Directory Permission Errors
+
+**Symptom**: Discovery service fails with filesystem permission errors:
+
+```
+OSError: [Errno 30] Read-only file system: 'data'
+```
+
+**Cause**: Cache directories are not writable or the service is trying to write to a read-only filesystem.
+
+**Solution**: The service is configured to use `/tmp` for caches which is writable. If you need to customize cache locations, ensure they are writable by UID 1000:
+
+```bash
+# Set custom cache directory (optional)
+export EMBEDDINGS_CACHE_DIR=/custom/path
+docker-compose up -d discovery
+
+# Verify cache directories are accessible
+docker exec -it discogsography-discovery ls -la /tmp/
+```
+
+#### Deprecated TRANSFORMERS_CACHE Warning
+
+**Symptom**: Warnings in logs about deprecated environment variable:
+
+```
+FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v5 of Transformers. Use `HF_HOME` instead.
+```
+
+**Cause**: Using the old `TRANSFORMERS_CACHE` environment variable instead of the new `HF_HOME` standard.
+
+**Solution**: The `docker-compose.yml` has been updated to use `HF_HOME`. If you see this warning:
+
+1. Pull the latest changes
+2. Rebuild the discovery service:
+
+```bash
+docker-compose build discovery
+docker-compose up -d discovery
+```
+
+**Note**: The transformers library automatically uses `$HF_HOME/transformers` for cache storage.
+
 ## Getting Help
 
 If you encounter issues not covered here:

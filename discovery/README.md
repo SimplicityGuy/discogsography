@@ -157,6 +157,8 @@ Content-Type: application/json
 
 ### Environment Variables
 
+#### Database Configuration
+
 | Variable            | Description          | Default                 |
 | ------------------- | -------------------- | ----------------------- |
 | `NEO4J_ADDRESS`     | Neo4j connection URL | `bolt://localhost:7687` |
@@ -166,6 +168,16 @@ Content-Type: application/json
 | `POSTGRES_USERNAME` | PostgreSQL username  | Required                |
 | `POSTGRES_PASSWORD` | PostgreSQL password  | Required                |
 | `POSTGRES_DATABASE` | PostgreSQL database  | `discogsography`        |
+| `REDIS_URL`         | Redis connection URL | `redis://localhost:6379/0` |
+
+#### ML & Cache Configuration
+
+| Variable                       | Description                              | Default                          |
+| ------------------------------ | ---------------------------------------- | -------------------------------- |
+| `HF_HOME`                      | Hugging Face models cache directory      | `/models/huggingface`            |
+| `SENTENCE_TRANSFORMERS_HOME`   | Sentence transformers cache directory    | `/models/sentence-transformers`  |
+| `EMBEDDINGS_CACHE_DIR`         | Embeddings cache directory               | `/tmp/embeddings_cache`          |
+| `XDG_CACHE_HOME`               | General cache directory                  | `/tmp/.cache`                    |
 
 ### ML Model Configuration
 
@@ -290,7 +302,27 @@ curl http://localhost:8004/health
 docker stats discogsography-discovery
 
 # Verify model downloads
-docker exec -it discogsography-discovery ls /app/.cache/
+docker exec -it discogsography-discovery ls -la /models/
+
+# Check HF_HOME is set correctly
+docker exec -it discogsography-discovery env | grep HF_HOME
+```
+
+**Missing asyncpg dependency error**
+
+```bash
+# If you see "ModuleNotFoundError: No module named 'asyncpg'":
+# Rebuild the discovery service to ensure asyncpg is installed
+docker-compose build discovery
+docker-compose up -d discovery
+```
+
+**Cache directory permission errors**
+
+```bash
+# If you see filesystem permission errors for cache directories:
+# Verify EMBEDDINGS_CACHE_DIR and other cache paths are writable
+docker exec -it discogsography-discovery ls -la /tmp/
 ```
 
 **Graph visualization not loading**
