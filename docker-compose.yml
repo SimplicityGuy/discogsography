@@ -394,7 +394,6 @@ services:
       UV_CACHE_DIR: "/tmp/.cache/uv"
       HF_HOME: "/models/huggingface"
       SENTENCE_TRANSFORMERS_HOME: "/models/sentence-transformers"
-      TRANSFORMERS_CACHE: "/models/transformers"
       XDG_CACHE_HOME: "/tmp/.cache"
     ports:
       - "8004:8004"      # Health check port
