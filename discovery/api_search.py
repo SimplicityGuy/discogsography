@@ -4,6 +4,7 @@ This module provides endpoints for full-text search, semantic search, faceted se
 autocomplete, and search ranking.
 """
 
+import os
 from datetime import datetime
 from typing import Any, Literal
 
@@ -88,7 +89,7 @@ async def initialize_search_api(neo4j_driver: Any, postgres_conn: Any) -> None: 
     fulltext_search = FullTextSearch(postgres_conn)
     semantic_search = SemanticSearchEngine(
         model_name="all-MiniLM-L6-v2",
-        cache_dir="./data/embeddings_cache",
+        cache_dir=os.environ.get("EMBEDDINGS_CACHE_DIR", "/tmp/embeddings_cache"),  # nosec B108  # noqa: S108
         use_onnx=True,
     )
     faceted_search = FacetedSearchEngine(postgres_conn)
