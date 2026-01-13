@@ -432,7 +432,8 @@ update_precommit_hooks() {
             update_mdformat_plugins
 
             # Run pre-commit install to ensure hooks are installed
-            pre-commit install
+            # Use || true to prevent script exit if hooks are already installed
+            pre-commit install || true
         else
             print_warning "Failed to update pre-commit hooks"
         fi
@@ -472,7 +473,7 @@ try:
     print(data['info']['version'])
 except Exception:
     sys.exit(1)
-" 2>/dev/null)
+" 2>/dev/null || echo "")
 
         if [[ -z "$latest_version" ]]; then
             print_warning "Could not fetch latest version for $plugin (timeout or network issue)"
@@ -498,6 +499,7 @@ except Exception:
     done
 
     print_success "Completed mdformat plugin checks"
+    echo ""  # Add blank line for visual separation
 
     # Update pyproject.toml dev dependencies to match
     if [[ ${#updated_plugins[@]} -gt 0 ]]; then
