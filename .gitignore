@@ -3,6 +3,7 @@
 ###
 discogs_*.txt
 discogs_*.xml.gz
+data/
 
 ###
 # Environments

@@ -27,18 +27,18 @@ repos:
       - id: check-github-workflows
       - id: check-github-actions
 
-  # TODO: Re-enable mdformat once CI environment differences are resolved
-  # The mdformat hook consistently fails in CI with "files were modified"
-  # but passes locally, indicating environmental differences (line endings, etc.)
-  # - repo: https://github.com/executablebooks/mdformat
-  #   rev: ff29be1a1ba8029d9375882aa2c812b62112a593  # frozen: 0.7.22
-  #   hooks:
-  #     - id: mdformat
-  #       additional_dependencies:
-  #         - mdformat-black==0.1.1
-  #         - mdformat-gfm==0.4.1
-  #         - mdformat-tables==1.0.0
-  #       files: '^(README\.md|CLAUDE\.md|docs/.*\.md|[^/]+/README\.md|[^/]+/.*\.md)$'
+  # mdformat for consistent markdown formatting
+  # Line endings normalized via .gitattributes to prevent CI/local differences
+  # Note: Using ruff for Python code formatting, not mdformat-black
+  # Note: mdformat-tables disabled due to compatibility issues with mdformat 1.0+
+  - repo: https://github.com/executablebooks/mdformat
+    rev: 2d496dbc18e31b83a1596685347ffe0b6041daf0  # frozen: 1.0.0
+    hooks:
+      - id: mdformat
+        additional_dependencies:
+          - mdformat-gfm==1.0.0
+          # - mdformat-tables==1.0.0  # Disabled: requires mdformat<0.8.0
+        files: '^(README\.md|CLAUDE\.md|docs/.*\.md|[^/]+/README\.md|[^/]+/.*\.md)$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: 6ce4b4fc349b8881cbce40207dac3bf78824a88e  # frozen: v0.14.11
