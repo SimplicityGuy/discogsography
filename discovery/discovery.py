@@ -93,7 +93,7 @@ async def _create_cache_warming_queries() -> list[dict[str, Any]]:
     for search_config in popular_searches:
         warming_queries.append(
             {
-                "query_func": lambda q=search_config["query"], t=search_config["type"]: playground_api.search(q=q, type=t, limit=10),
+                "query_func": lambda q=search_config["query"], t=search_config["type"]: playground_api.search(query=q, search_type=t, limit=10),
                 "cache_key": f"search:{search_config['type']}:{search_config['query'].lower()}",
                 "ttl": CACHE_TTL.get("search", 3600),
             }
@@ -102,7 +102,7 @@ async def _create_cache_warming_queries() -> list[dict[str, Any]]:
     # Warm trending data
     warming_queries.append(
         {
-            "query_func": lambda: playground_api.get_trends(type="genre", start_year=2000, end_year=2024, top_n=20),
+            "query_func": lambda: playground_api.get_trends(trend_type="genre", start_year=2000, end_year=2024, top_n=20),
             "cache_key": "trends:genre:2000-2024:20",
             "ttl": CACHE_TTL.get("trends", 7200),
         }
@@ -110,7 +110,7 @@ async def _create_cache_warming_queries() -> list[dict[str, Any]]:
 
     warming_queries.append(
         {
-            "query_func": lambda: playground_api.get_trends(type="artist", start_year=2000, end_year=2024, top_n=20),
+            "query_func": lambda: playground_api.get_trends(trend_type="artist", start_year=2000, end_year=2024, top_n=20),
             "cache_key": "trends:artist:2000-2024:20",
             "ttl": CACHE_TTL.get("trends", 7200),
         }
@@ -119,7 +119,7 @@ async def _create_cache_warming_queries() -> list[dict[str, Any]]:
     # Warm heatmap data
     warming_queries.append(
         {
-            "query_func": lambda: playground_api.get_heatmap(type="genre_year", top_n=20),
+            "query_func": lambda: playground_api.get_heatmap(heatmap_type="genre_year", top_n=20),
             "cache_key": "heatmap:genre_year:20",
             "ttl": CACHE_TTL.get("heatmap", 7200),
         }
