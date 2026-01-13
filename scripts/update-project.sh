@@ -455,25 +455,27 @@ update_mdformat_plugins() {
     for plugin in "${plugins[@]}"; do
         # Get current version from config file
         local current_version
-        current_version=$(grep -E "^\s*-\s*${plugin}==" "$config_file" | sed -E "s/.*${plugin}==([0-9.]+).*/\1/")
+        current_version=$(grep -E "^\s*-\s*${plugin}==" "$config_file" 2>/dev/null | sed -E "s/.*${plugin}==([0-9.]+).*/\1/")
 
         if [[ -z "$current_version" ]]; then
+            print_info "$plugin not found in config, skipping"
             continue
         fi
 
-        # Get latest version from PyPI
+        # Get latest version from PyPI with timeout
+        print_info "Checking PyPI for $plugin latest version..."
         local latest_version
-        latest_version=$(curl -s "https://pypi.org/pypi/${plugin}/json" | python3 -c "
+        latest_version=$(timeout 10 curl -s "https://pypi.org/pypi/${plugin}/json" 2>/dev/null | python3 -c "
 import json, sys
 try:
     data = json.load(sys.stdin)
     print(data['info']['version'])
-except:
+except Exception:
     sys.exit(1)
 " 2>/dev/null)
 
         if [[ -z "$latest_version" ]]; then
-            print_warning "Could not fetch latest version for $plugin"
+            print_warning "Could not fetch latest version for $plugin (timeout or network issue)"
             continue
         fi
 
@@ -494,6 +496,8 @@ except:
             print_success "$plugin is already up to date ($current_version)"
         fi
     done
+
+    print_success "Completed mdformat plugin checks"
 
     # Update pyproject.toml dev dependencies to match
     if [[ ${#updated_plugins[@]} -gt 0 ]]; then
@@ -561,6 +565,7 @@ verify_dependency_updates() {
 # Update Rust crates including ALL dependency types
 update_rust_crates() {
     if [[ ! -d "extractor/rustextractor" ]] || [[ ! -f "extractor/rustextractor/Cargo.toml" ]]; then
+        print_info "No Rust extractor found, skipping Rust updates"
         return
     fi
 
@@ -651,6 +656,8 @@ update_rust_crates() {
         fi
 
         popd > /dev/null
+
+        print_success "Completed Rust dependency updates"
     else
         print_info "[DRY RUN] Would update ALL Rust dependency types:"
         print_info "[DRY RUN] Would run: cargo upgrade (main dependencies)"
@@ -750,6 +757,8 @@ update_python_packages() {
 
         # Capture package changes
         capture_package_changes
+
+        print_success "Completed Python dependency updates"
     else
         print_info "[DRY RUN] Would run: uv sync --all-extras --dev"
     fi
