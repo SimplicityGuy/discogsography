@@ -5,8 +5,9 @@
 # This script provides a safe and comprehensive way to update:
 # - Python version across all project files
 # - Python package dependencies (with detailed change tracking)
-# - Rust crate dependencies in Rust extractor
-# - UV package manager version in Dockerfiles
+# - Rust crate dependencies in Rust extractor (main, dev, build)
+# - UV package manager version in Dockerfiles and GitHub workflows
+# - Pre-commit hooks to latest versions
 # - Docker base images to latest versions
 #
 # Usage: ./scripts/update-project.sh [options]
@@ -219,18 +220,71 @@ update_python_version() {
     print_info "Updating Python from $current_version to $PYTHON_VERSION"
 
     if [[ "$DRY_RUN" == false ]]; then
-        # Run the existing update script
-        ./scripts/update-python-version.sh "$PYTHON_VERSION"
+        # Update all pyproject.toml files
+        print_info "Updating pyproject.toml files..."
+        for pyproject in pyproject.toml */pyproject.toml */*/pyproject.toml; do
+            if [[ -f "$pyproject" ]]; then
+                backup_file "$pyproject"
 
-        # Also update docker-compose files if they have PYTHON_VERSION
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    # Update requires-python
+                    sed -i '' "s/requires-python = \">=\?[0-9.]\+\"/requires-python = \">=$PYTHON_VERSION\"/g" "$pyproject"
+                    # Update python_version in [tool.mypy] and [tool.ruff.lint.pydocstyle]
+                    sed -i '' "s/python_version = \"[0-9.]\+\"/python_version = \"$PYTHON_VERSION\"/g" "$pyproject"
+                else
+                    sed -i "s/requires-python = \">=\?[0-9.]\+\"/requires-python = \">=$PYTHON_VERSION\"/g" "$pyproject"
+                    sed -i "s/python_version = \"[0-9.]\+\"/python_version = \"$PYTHON_VERSION\"/g" "$pyproject"
+                fi
+
+                print_success "Updated $pyproject"
+                FILE_CHANGES+=("$pyproject: Python $current_version → $PYTHON_VERSION")
+            fi
+        done
+
+        # Update GitHub workflow files
+        print_info "Updating GitHub workflow files..."
+        for workflow in .github/workflows/*.yml; do
+            if [[ -f "$workflow" ]] && grep -q "PYTHON_VERSION" "$workflow"; then
+                backup_file "$workflow"
+
+                if [[ "$OSTYPE" == "darwin"* ]]; then
+                    sed -i '' "s/PYTHON_VERSION: \"[0-9.]\+\"/PYTHON_VERSION: \"$PYTHON_VERSION\"/g" "$workflow"
+                else
+                    sed -i "s/PYTHON_VERSION: \"[0-9.]\+\"/PYTHON_VERSION: \"$PYTHON_VERSION\"/g" "$workflow"
+                fi
+
+                print_success "Updated $workflow"
+                FILE_CHANGES+=("$workflow: Python $current_version → $PYTHON_VERSION")
+            fi
+        done
+
+        # Update pyrightconfig.json if it exists
+        if [[ -f "pyrightconfig.json" ]]; then
+            print_info "Updating pyrightconfig.json..."
+            backup_file "pyrightconfig.json"
+
+            if [[ "$OSTYPE" == "darwin"* ]]; then
+                sed -i '' "s/\"pythonVersion\": \"[0-9.]\+\"/\"pythonVersion\": \"$PYTHON_VERSION\"/g" pyrightconfig.json
+            else
+                sed -i "s/\"pythonVersion\": \"[0-9.]\+\"/\"pythonVersion\": \"$PYTHON_VERSION\"/g" pyrightconfig.json
+            fi
+
+            print_success "Updated pyrightconfig.json"
+            FILE_CHANGES+=("pyrightconfig.json: Python $current_version → $PYTHON_VERSION")
+        fi
+
+        # Update docker-compose files if they have PYTHON_VERSION
+        print_info "Updating docker-compose files..."
         for compose_file in docker-compose*.yml; do
             if [[ -f "$compose_file" ]] && grep -q "PYTHON_VERSION" "$compose_file"; then
                 backup_file "$compose_file"
+
                 if [[ "$OSTYPE" == "darwin"* ]]; then
                     sed -i '' "s/PYTHON_VERSION:-[0-9.]\+/PYTHON_VERSION:-$PYTHON_VERSION/g" "$compose_file"
                 else
                     sed -i "s/PYTHON_VERSION:-[0-9.]\+/PYTHON_VERSION:-$PYTHON_VERSION/g" "$compose_file"
                 fi
+
                 print_success "Updated $compose_file"
                 FILE_CHANGES+=("$compose_file: Python $current_version → $PYTHON_VERSION")
             fi
@@ -238,7 +292,11 @@ update_python_version() {
 
         CHANGES_MADE=true
     else
-        print_info "[DRY RUN] Would update Python version to $PYTHON_VERSION"
+        print_info "[DRY RUN] Would update Python version in:"
+        print_info "  • All pyproject.toml files"
+        print_info "  • GitHub workflow files"
+        print_info "  • pyrightconfig.json"
+        print_info "  • docker-compose files"
     fi
 }
 
