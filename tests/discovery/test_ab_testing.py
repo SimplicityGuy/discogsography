@@ -13,9 +13,9 @@ import pytest
 
 from discovery.ab_testing import (
     ABTestManager,
+    ABTestStatus,
+    ABTestVariant,
     AssignmentStrategy,
-    TestStatus,
-    TestVariant,
 )
 from discovery.recommender_metrics import RecommendationMetrics
 
@@ -36,9 +36,9 @@ def ab_test_manager(metrics_tracker):
 def sample_variants():
     """Sample test variants."""
     return [
-        TestVariant(name="control", description="Original algorithm", weight=1.0),
-        TestVariant(name="variant_a", description="New algorithm A", weight=1.0),
-        TestVariant(name="variant_b", description="New algorithm B", weight=1.0),
+        ABTestVariant(name="control", description="Original algorithm", weight=1.0),
+        ABTestVariant(name="variant_a", description="New algorithm A", weight=1.0),
+        ABTestVariant(name="variant_b", description="New algorithm B", weight=1.0),
     ]
 
 
@@ -56,12 +56,12 @@ def sample_metrics():
     )
 
 
-class TestTestVariant:
-    """Test TestVariant dataclass."""
+class TestABTestVariant:
+    """Test ABTestVariant dataclass."""
 
     def test_variant_creation(self):
         """Test creating a test variant."""
-        variant = TestVariant(
+        variant = ABTestVariant(
             name="test",
             description="Test variant",
             weight=2.0,
@@ -75,7 +75,7 @@ class TestTestVariant:
 
     def test_variant_defaults(self):
         """Test default values for variant."""
-        variant = TestVariant(name="test", description="Test")
+        variant = ABTestVariant(name="test", description="Test")
 
         assert variant.weight == 1.0
         assert variant.config == {}
@@ -95,7 +95,7 @@ class TestABTestCreation:
 
         assert test.test_id == "test_001"
         assert test.name == "Algorithm Comparison"
-        assert test.status == TestStatus.DRAFT
+        assert test.status == ABTestStatus.DRAFT
         assert len(test.variants) == 3
         assert test.assignment_strategy == AssignmentStrategy.HASH_BASED
 
@@ -142,7 +142,7 @@ class TestABTestCreation:
 
     def test_create_test_insufficient_variants(self, ab_test_manager):
         """Test that < 2 variants raises ValueError."""
-        single_variant = [TestVariant(name="only", description="Only variant")]
+        single_variant = [ABTestVariant(name="only", description="Only variant")]
 
         with pytest.raises(ValueError, match="At least 2 variants required"):
             ab_test_manager.create_test(
@@ -179,12 +179,12 @@ class TestTestLifecycle:
             variants=sample_variants,
         )
 
-        assert test.status == TestStatus.DRAFT
+        assert test.status == ABTestStatus.DRAFT
         assert test.started_at is None
 
         ab_test_manager.start_test("lifecycle_test")
 
-        assert test.status == TestStatus.RUNNING
+        assert test.status == ABTestStatus.RUNNING
         assert test.started_at is not None
         assert isinstance(test.started_at, datetime)
 
@@ -200,7 +200,7 @@ class TestTestLifecycle:
         ab_test_manager.start_test("pause_test")
         ab_test_manager.pause_test("pause_test")
 
-        assert test.status == TestStatus.PAUSED
+        assert test.status == ABTestStatus.PAUSED
 
     def test_complete_test(self, ab_test_manager, sample_variants):
         """Test completing an A/B test."""
@@ -214,7 +214,7 @@ class TestTestLifecycle:
         ab_test_manager.start_test("complete_test")
         ab_test_manager.complete_test("complete_test")
 
-        assert test.status == TestStatus.COMPLETED
+        assert test.status == ABTestStatus.COMPLETED
         assert test.completed_at is not None
         assert isinstance(test.completed_at, datetime)
 
@@ -228,19 +228,19 @@ class TestTestLifecycle:
         )
 
         # DRAFT -> RUNNING -> PAUSED -> RUNNING -> COMPLETED
-        assert test.status == TestStatus.DRAFT
+        assert test.status == ABTestStatus.DRAFT
 
         ab_test_manager.start_test("full_lifecycle")
-        assert test.status == TestStatus.RUNNING
+        assert test.status == ABTestStatus.RUNNING
 
         ab_test_manager.pause_test("full_lifecycle")
-        assert test.status == TestStatus.PAUSED
+        assert test.status == ABTestStatus.PAUSED
 
         ab_test_manager.start_test("full_lifecycle")
-        assert test.status == TestStatus.RUNNING
+        assert test.status == ABTestStatus.RUNNING
 
         ab_test_manager.complete_test("full_lifecycle")
-        assert test.status == TestStatus.COMPLETED
+        assert test.status == ABTestStatus.COMPLETED
 
     def test_start_nonexistent_test_raises_error(self, ab_test_manager):
         """Test that starting nonexistent test raises ValueError."""
@@ -305,9 +305,9 @@ class TestUserAssignment:
         """Test weighted assignment respects weights."""
         # Create variants with different weights
         weighted_variants = [
-            TestVariant(name="control", description="Control", weight=1.0),
-            TestVariant(name="variant_a", description="Variant A", weight=2.0),
-            TestVariant(name="variant_b", description="Variant B", weight=3.0),
+            ABTestVariant(name="control", description="Control", weight=1.0),
+            ABTestVariant(name="variant_a", description="Variant A", weight=2.0),
+            ABTestVariant(name="variant_b", description="Variant B", weight=3.0),
         ]
 
         ab_test_manager.create_test(
@@ -440,7 +440,7 @@ class TestResultsTracking:
 
         assert results["test_id"] == "no_data_test"
         assert results["name"] == "No Data Test"
-        assert results["status"] == TestStatus.DRAFT
+        assert results["status"] == ABTestStatus.DRAFT
 
         # All variants should show no data
         for variant in sample_variants:

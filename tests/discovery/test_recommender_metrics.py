@@ -17,10 +17,6 @@ with patch("prometheus_client.Counter"), patch("prometheus_client.Gauge"), patch
     )
 
 
-# Disable autouse fixture for this module to avoid metric conflicts
-pytestmark = pytest.mark.usefixtures()
-
-
 class TestDataclasses:
     """Test dataclass definitions."""
 

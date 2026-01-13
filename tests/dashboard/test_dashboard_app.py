@@ -56,6 +56,7 @@ class TestDashboardAppStartup:
             patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j),
             patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_postgres),
             patch("asyncio.create_task") as mock_create_task,
+            patch.object(DashboardApp, "collect_metrics_loop", new_callable=AsyncMock),
         ):
             app = DashboardApp()
             await app.startup()
@@ -88,6 +89,7 @@ class TestDashboardAppStartup:
             patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=AsyncMock()),
             patch("dashboard.dashboard.AsyncResilientPostgreSQL") as mock_postgres_class,
             patch("asyncio.create_task"),
+            patch.object(DashboardApp, "collect_metrics_loop", new_callable=AsyncMock),
         ):
             app = DashboardApp()
             await app.startup()
@@ -1433,7 +1435,8 @@ class TestPrometheusMetricsInitialization:
         import dashboard.dashboard
 
         # Force reload to trigger the ValueError paths
-        importlib.reload(dashboard.dashboard)
+        with patch.object(DashboardApp, "collect_metrics_loop", new_callable=AsyncMock):
+            importlib.reload(dashboard.dashboard)
 
         # If we get here without exception, the error handling worked
         assert True
