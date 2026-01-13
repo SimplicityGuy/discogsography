@@ -4,6 +4,7 @@ class DiscoveryPlayground {
     constructor() {
         this.currentView = 'graph';
         this.currentData = null;
+        this.selectedArtist = null;  // Track currently selected artist
         this.visualizations = {
             graph: null,
             journey: null,
@@ -134,8 +135,12 @@ class DiscoveryPlayground {
         };
         document.getElementById('viewTitle').innerHTML = titles[view] || view;
 
-        // Load default data for the view
-        this.loadDefaultData();
+        // Load data for the view - if artist selected, load artist data; otherwise load defaults
+        if (this.selectedArtist) {
+            this.loadDataForCurrentView();
+        } else {
+            this.loadDefaultData();
+        }
     }
 
     async performSearch(query) {
@@ -157,27 +162,58 @@ class DiscoveryPlayground {
         // Update current data
         this.currentData = results;
 
-        // Display based on current view
-        switch (this.currentView) {
-            case 'graph':
-                if (this.visualizations.graph && results.artists?.length > 0) {
-                    this.loadGraphData(results.artists[0].id);
-                }
-                break;
-            case 'journey':
-                // Update journey inputs with search results
-                if (results.artists?.length > 0) {
-                    const startInput = document.getElementById('startArtist');
-                    if (!startInput.value) {
-                        startInput.value = results.artists[0].name;
-                        startInput.dataset.artistId = results.artists[0].id;
-                    }
-                }
-                break;
+        // Store selected artist if search returned artists
+        if (results.artists?.length > 0) {
+            this.selectedArtist = results.artists[0];
+            console.log('Selected artist:', this.selectedArtist);
+        } else {
+            console.warn('No artists found in search results');
+            this.showNotification('No artists found', 'warning');
+            return;
         }
+
+        // Load data for current view
+        this.loadDataForCurrentView();
 
         // Update info panel
         this.updateInfoPanel(results);
+    }
+
+    async loadDataForCurrentView() {
+        if (!this.selectedArtist) {
+            console.warn('No artist selected');
+            return;
+        }
+
+        console.log(`Loading data for view: ${this.currentView}, artist: ${this.selectedArtist.name}`);
+
+        try {
+            switch (this.currentView) {
+                case 'graph':
+                    await this.loadGraphData(this.selectedArtist.id);
+                    break;
+                case 'journey':
+                    // Populate start artist for journey
+                    const startInput = document.getElementById('startArtist');
+                    if (startInput && !startInput.value) {
+                        startInput.value = this.selectedArtist.name;
+                        startInput.dataset.artistId = this.selectedArtist.id;
+                    }
+                    break;
+                case 'trends':
+                    // For trends, show artist-specific message or data
+                    // Could filter trends by artist's genres/styles
+                    console.log('Trends view - artist selected:', this.selectedArtist.name);
+                    break;
+                case 'heatmap':
+                    // For heatmap, could show artist's collaboration network
+                    console.log('Heatmap view - artist selected:', this.selectedArtist.name);
+                    break;
+            }
+        } catch (error) {
+            console.error('Error loading data for current view:', error);
+            this.showError('Failed to load data: ' + error.message);
+        }
     }
 
     async explore() {
@@ -429,6 +465,10 @@ class DiscoveryPlayground {
     resetView() {
         // Clear search
         document.getElementById('searchInput').value = '';
+
+        // Clear selected artist
+        this.selectedArtist = null;
+        this.currentData = null;
 
         // Reset controls to defaults
         document.getElementById('depthSlider').value = 2;
