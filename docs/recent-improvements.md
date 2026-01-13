@@ -130,12 +130,14 @@ All workflows now have status badges for quick health monitoring:
 - ✅ **Type Safety**: Added explicit type annotations for better code quality
 
 **Benefits:**
+
 - **Resource Efficiency**: 90%+ reduction in idle RabbitMQ connection resources
 - **Cleaner Logs**: No repetitive progress messages when idle
 - **Automatic Recovery**: Services automatically resume when new data arrives
 - **Zero Configuration**: Works out of the box with sensible defaults
 
 **Configuration:**
+
 ```bash
 QUEUE_CHECK_INTERVAL=3600    # Check queues every hour when idle (default)
 CONSUMER_CANCEL_DELAY=300    # Wait 5 minutes before canceling consumers (default)

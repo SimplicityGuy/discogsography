@@ -13,6 +13,7 @@ You see many warning messages in the Discovery service logs like:
 ```
 
 Warnings about:
+
 - Unknown relationship types: `BY`, `IS`
 - Unknown labels: `Genre`, `Style`
 - Unknown properties: `profile`
@@ -20,9 +21,10 @@ Warnings about:
 ### Cause
 
 These warnings appear when:
+
 1. The Neo4j database is **empty** (no data has been loaded yet)
-2. The database is **being populated** by the graphinator service
-3. The Discovery service tries to query data that doesn't exist yet
+1. The database is **being populated** by the graphinator service
+1. The Discovery service tries to query data that doesn't exist yet
 
 **This is normal and not an error!** The Cypher queries use `OPTIONAL MATCH` patterns that gracefully handle missing data.
 
@@ -40,6 +42,7 @@ warnings.filterwarnings("ignore", message="Expected a result with a single recor
 ```
 
 This configuration:
+
 - Only shows actual **errors** from Neo4j, not warnings
 - Keeps logs clean and focused on actionable issues
 - Still logs all Discovery service operations normally
@@ -49,20 +52,23 @@ This configuration:
 If you want the Discovery service to return results, you need to:
 
 1. **Run the extractor service** to download Discogs data:
+
    ```bash
    docker-compose up -d extractor
    docker-compose logs -f extractor
    ```
 
-2. **Run the graphinator service** to populate Neo4j:
+1. **Run the graphinator service** to populate Neo4j:
+
    ```bash
    docker-compose up -d graphinator
    docker-compose logs -f graphinator
    ```
 
-3. **Wait for data processing** to complete (may take several hours for full dataset)
+1. **Wait for data processing** to complete (may take several hours for full dataset)
 
-4. **Verify data in Neo4j Browser**:
+1. **Verify data in Neo4j Browser**:
+
    - Open http://localhost:7474
    - Run: `MATCH (n) RETURN count(n)` to see node count
    - Run: `MATCH ()-[r]->() RETURN count(r)` to see relationship count
@@ -72,6 +78,7 @@ If you want the Discovery service to return results, you need to:
 The graphinator service creates the following schema:
 
 **Node Labels:**
+
 - `Artist` - Music artists and groups
 - `Release` - Album releases
 - `Master` - Master releases
@@ -80,6 +87,7 @@ The graphinator service creates the following schema:
 - `Style` - Music styles (sub-genres)
 
 **Relationship Types:**
+
 - `[:BY]` - Artist to Release/Master (created by artist)
 - `[:IS]` - Release/Master to Genre/Style
 - `[:MEMBER_OF]` - Artist to Artist (group membership)
@@ -90,6 +98,7 @@ The graphinator service creates the following schema:
 - `[:PART_OF]` - Style to Genre (style is part of genre)
 
 **Properties:**
+
 - `Artist.id`, `Artist.name`, `Artist.profile` (may not exist for all artists)
 - `Release.id`, `Release.title`, `Release.year`
 - `Genre.name`, `Style.name`
@@ -133,9 +142,10 @@ kill -9 <PID>
 **Symptom**: Containers crash or are killed by Docker.
 
 **Solution**: Increase Docker memory limits:
+
 1. Open Docker Desktop → Settings → Resources
-2. Increase memory allocation (recommend 8GB+ for full dataset)
-3. Restart Docker
+1. Increase memory allocation (recommend 8GB+ for full dataset)
+1. Restart Docker
 
 ### Permission Denied
 
@@ -207,7 +217,7 @@ FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated and will be removed in v
 **Solution**: The `docker-compose.yml` has been updated to use `HF_HOME`. If you see this warning:
 
 1. Pull the latest changes
-2. Rebuild the discovery service:
+1. Rebuild the discovery service:
 
 ```bash
 docker-compose build discovery
@@ -221,8 +231,8 @@ docker-compose up -d discovery
 If you encounter issues not covered here:
 
 1. **Check logs** for specific error messages
-2. **Search GitHub issues**: https://github.com/simplicityguy/discogsography/issues
-3. **Create a new issue** with:
+1. **Search GitHub issues**: https://github.com/simplicityguy/discogsography/issues
+1. **Create a new issue** with:
    - Service name and version
    - Full error message and stack trace
    - Steps to reproduce

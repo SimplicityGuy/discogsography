@@ -5,6 +5,7 @@ Comprehensive performance benchmarking guide for the Discovery service, includin
 ## Overview
 
 This document provides:
+
 - Baseline performance metrics for the Discovery service
 - Step-by-step benchmarking procedures
 - Performance targets and SLAs
@@ -28,6 +29,7 @@ docker-compose logs -f discovery
 ```
 
 Required services:
+
 - **Discovery Service**: Port 8005
 - **Neo4j**: Port 7474 (browser), 7687 (bolt)
 - **PostgreSQL**: Port 5433
@@ -75,8 +77,9 @@ locust -f tests/load/locustfile.py \
 ```
 
 **Expected Results** (with warm cache):
-- Response time (median): <100ms
-- Response time (95th percentile): <250ms
+
+- Response time (median): \<100ms
+- Response time (95th percentile): \<250ms
 - Error rate: 0%
 - Requests per second: >10 RPS
 
@@ -97,13 +100,14 @@ locust -f tests/load/locustfile.py \
 ```
 
 **Expected Results**:
-- Response time (median): <150ms
-- Response time (95th percentile): <400ms
-- Response time (99th percentile): <800ms
-- Error rate: <0.1%
+
+- Response time (median): \<150ms
+- Response time (95th percentile): \<400ms
+- Response time (99th percentile): \<800ms
+- Error rate: \<0.1%
 - Requests per second: >50 RPS
-- CPU usage: <40%
-- Memory usage: <2GB
+- CPU usage: \<40%
+- Memory usage: \<2GB
 
 ### Moderate Load Test (15 minutes)
 
@@ -122,13 +126,14 @@ locust -f tests/load/locustfile.py \
 ```
 
 **Expected Results**:
-- Response time (median): <200ms
-- Response time (95th percentile): <500ms
-- Response time (99th percentile): <1000ms
-- Error rate: <0.5%
+
+- Response time (median): \<200ms
+- Response time (95th percentile): \<500ms
+- Response time (99th percentile): \<1000ms
+- Error rate: \<0.5%
 - Requests per second: >100 RPS
-- CPU usage: <60%
-- Memory usage: <3GB
+- CPU usage: \<60%
+- Memory usage: \<3GB
 
 ### Heavy Load Test (20 minutes)
 
@@ -147,13 +152,14 @@ locust -f tests/load/locustfile.py \
 ```
 
 **Expected Results**:
-- Response time (median): <300ms
-- Response time (95th percentile): <800ms
-- Response time (99th percentile): <1500ms
-- Error rate: <1%
+
+- Response time (median): \<300ms
+- Response time (95th percentile): \<800ms
+- Response time (99th percentile): \<1500ms
+- Error rate: \<1%
 - Requests per second: >200 RPS
-- CPU usage: <80%
-- Memory usage: <4GB
+- CPU usage: \<80%
+- Memory usage: \<4GB
 
 ### Stress Test (25 minutes)
 
@@ -172,6 +178,7 @@ locust -f tests/load/locustfile.py \
 ```
 
 **Expected Behavior**:
+
 - Response times will increase significantly
 - Error rate may increase to 2-5%
 - System should remain stable (no crashes)
@@ -181,33 +188,33 @@ locust -f tests/load/locustfile.py \
 
 ### Response Time Targets by Endpoint
 
-| Endpoint | p50 | p95 | p99 | Notes |
-|----------|-----|-----|-----|-------|
-| `/api/search` | <100ms | <250ms | <500ms | With cache |
-| `/api/graph` | <150ms | <400ms | <800ms | Depth 2 |
-| `/api/trends` | <200ms | <500ms | <1000ms | 20-year range |
-| `/api/heatmap` | <300ms | <800ms | <1500ms | Top 20 items |
-| `/api/cache/stats` | <50ms | <100ms | <200ms | Lightweight |
-| `/api/db/pool/stats` | <50ms | <100ms | <200ms | Lightweight |
-| `/metrics` | <100ms | <200ms | <400ms | Prometheus |
+| Endpoint             | p50     | p95     | p99      | Notes         |
+| -------------------- | ------- | ------- | -------- | ------------- |
+| `/api/search`        | \<100ms | \<250ms | \<500ms  | With cache    |
+| `/api/graph`         | \<150ms | \<400ms | \<800ms  | Depth 2       |
+| `/api/trends`        | \<200ms | \<500ms | \<1000ms | 20-year range |
+| `/api/heatmap`       | \<300ms | \<800ms | \<1500ms | Top 20 items  |
+| `/api/cache/stats`   | \<50ms  | \<100ms | \<200ms  | Lightweight   |
+| `/api/db/pool/stats` | \<50ms  | \<100ms | \<200ms  | Lightweight   |
+| `/metrics`           | \<100ms | \<200ms | \<400ms  | Prometheus    |
 
 ### Throughput Targets
 
-| Load Level | Concurrent Users | Target RPS | Notes |
-|------------|------------------|------------|-------|
-| Light | 25 | 50+ | Normal daytime |
-| Moderate | 100 | 100+ | Busy periods |
-| Heavy | 250 | 200+ | Peak traffic |
-| Stress | 500 | 300+ | Beyond capacity |
+| Load Level | Concurrent Users | Target RPS | Notes           |
+| ---------- | ---------------- | ---------- | --------------- |
+| Light      | 25               | 50+        | Normal daytime  |
+| Moderate   | 100              | 100+       | Busy periods    |
+| Heavy      | 250              | 200+       | Peak traffic    |
+| Stress     | 500              | 300+       | Beyond capacity |
 
 ### Resource Utilization Targets
 
-| Metric | Light | Moderate | Heavy | Stress |
-|--------|-------|----------|-------|--------|
-| CPU | <40% | <60% | <80% | 80-100% |
-| Memory | <2GB | <3GB | <4GB | <6GB |
-| Neo4j Connections | <20 | <40 | <60 | <80 |
-| PostgreSQL Connections | <10 | <20 | <30 | <40 |
+| Metric                 | Light | Moderate | Heavy | Stress  |
+| ---------------------- | ----- | -------- | ----- | ------- |
+| CPU                    | \<40% | \<60%    | \<80% | 80-100% |
+| Memory                 | \<2GB | \<3GB    | \<4GB | \<6GB   |
+| Neo4j Connections      | \<20  | \<40     | \<60  | \<80    |
+| PostgreSQL Connections | \<10  | \<20     | \<30  | \<40    |
 
 ## Monitoring During Benchmarks
 
@@ -277,16 +284,19 @@ LIMIT 10;
 Locust generates HTML reports with the following sections:
 
 1. **Statistics Table**:
+
    - Request counts and failure rates
    - Response time percentiles (50th, 66th, 75th, 80th, 90th, 95th, 98th, 99th, 100th)
    - Average request size and requests per second
 
-2. **Charts**:
+1. **Charts**:
+
    - Total requests per second over time
    - Response times over time
    - Number of users over time
 
-3. **Failures**:
+1. **Failures**:
+
    - Failed request details with error messages
    - Helps identify specific bottlenecks or errors
 
@@ -295,21 +305,25 @@ Locust generates HTML reports with the following sections:
 Monitor these KPIs for each test run:
 
 1. **Response Time**:
+
    - p50 (median): Typical user experience
    - p95: Worst experience for 95% of users
    - p99: Worst experience for 99% of users
    - Max: Absolute worst case
 
-2. **Throughput**:
+1. **Throughput**:
+
    - Requests per second (RPS)
    - Should scale linearly with users (up to a point)
 
-3. **Error Rate**:
+1. **Error Rate**:
+
    - Percentage of failed requests
-   - Should be <1% under normal load
+   - Should be \<1% under normal load
    - Investigate any errors >0.1%
 
-4. **Resource Usage**:
+1. **Resource Usage**:
+
    - CPU utilization
    - Memory consumption
    - Database connections
@@ -320,20 +334,24 @@ Monitor these KPIs for each test run:
 Watch for these warning signs:
 
 1. **Increasing Response Times**:
+
    - Response times increasing over time (not just with load)
    - Indicates memory leaks, connection pool exhaustion, or cache issues
 
-2. **Rising Error Rates**:
+1. **Rising Error Rates**:
+
    - Errors increasing beyond expected levels
    - Check logs for specific error messages
 
-3. **Resource Exhaustion**:
+1. **Resource Exhaustion**:
+
    - CPU consistently >80%
    - Memory approaching container limits
    - Database connections maxed out
 
-4. **Cache Inefficiency**:
-   - Low cache hit rates (<60%)
+1. **Cache Inefficiency**:
+
+   - Low cache hit rates (\<60%)
    - Check cache statistics endpoint
 
 ## Optimization Recommendations
@@ -343,21 +361,26 @@ Watch for these warning signs:
 If response times exceed targets:
 
 1. **Check Cache Hit Rates**:
+
    ```bash
    curl http://localhost:8005/api/cache/stats
    ```
+
    - Target: >80% hit rate for search endpoints
    - If low, increase cache TTL or implement cache warming
 
-2. **Review Neo4j Indexes**:
+1. **Review Neo4j Indexes**:
+
    - See `docs/neo4j-indexing.md`
    - Verify all indexes are created and used
 
-3. **Optimize Database Queries**:
+1. **Optimize Database Queries**:
+
    - Use `EXPLAIN` and `PROFILE` in Neo4j
    - Reduce query depth or limit results
 
-4. **Scale Horizontally**:
+1. **Scale Horizontally**:
+
    - Run multiple Discovery service instances
    - Use load balancer (nginx, HAProxy)
 
@@ -366,19 +389,23 @@ If response times exceed targets:
 If RPS is below targets:
 
 1. **Increase Worker Processes**:
+
    - Adjust `uvicorn` workers in docker-compose.yml
    - Rule of thumb: (2 × CPU cores) + 1
 
-2. **Optimize Connection Pools**:
+1. **Optimize Connection Pools**:
+
    - Check pool statistics endpoint
    - Increase pool sizes if exhausted
    - See `discovery/db_pool_metrics.py`
 
-3. **Enable Async Processing**:
+1. **Enable Async Processing**:
+
    - Ensure all I/O operations are async
    - Check for blocking operations in logs
 
-4. **Reduce Database Load**:
+1. **Reduce Database Load**:
+
    - Implement read replicas for Neo4j/PostgreSQL
    - Cache more aggressively
 
@@ -387,19 +414,23 @@ If RPS is below targets:
 If error rates exceed 1%:
 
 1. **Check Error Logs**:
+
    ```bash
    docker-compose logs -f discovery | grep ERROR
    ```
 
-2. **Database Connection Errors**:
+1. **Database Connection Errors**:
+
    - Increase connection pool sizes
    - Check database health and capacity
 
-3. **Timeout Errors**:
+1. **Timeout Errors**:
+
    - Increase timeout values
    - Optimize slow queries
 
-4. **Rate Limiting**:
+1. **Rate Limiting**:
+
    - Verify rate limits are appropriate
    - Adjust slowapi configuration if needed
 
@@ -480,11 +511,11 @@ jobs:
 
 Document performance metrics for each release:
 
-| Version | Date | Users | RPS | p50 | p95 | p99 | Notes |
-|---------|------|-------|-----|-----|-----|-----|-------|
-| 0.1.0 | 2026-01-04 | 100 | 120 | 150ms | 400ms | 800ms | Initial baseline |
-| 0.2.0 | TBD | TBD | TBD | TBD | TBD | TBD | After pagination optimization |
-| 0.3.0 | TBD | TBD | TBD | TBD | TBD | TBD | After indexing improvements |
+| Version | Date       | Users | RPS | p50   | p95   | p99   | Notes                         |
+| ------- | ---------- | ----- | --- | ----- | ----- | ----- | ----------------------------- |
+| 0.1.0   | 2026-01-04 | 100   | 120 | 150ms | 400ms | 800ms | Initial baseline              |
+| 0.2.0   | TBD        | TBD   | TBD | TBD   | TBD   | TBD   | After pagination optimization |
+| 0.3.0   | TBD        | TBD   | TBD | TBD   | TBD   | TBD   | After indexing improvements   |
 
 ## Troubleshooting Common Issues
 
@@ -493,11 +524,13 @@ Document performance metrics for each release:
 **Symptoms**: p95 >1000ms consistently
 
 **Investigation**:
+
 1. Check cache hit rates: `curl http://localhost:8005/api/cache/stats`
-2. Review slow queries in Neo4j Browser
-3. Check database connection pool usage
+1. Review slow queries in Neo4j Browser
+1. Check database connection pool usage
 
 **Solutions**:
+
 - Implement cache warming for common queries
 - Add missing Neo4j indexes
 - Increase database connection pool sizes
@@ -507,10 +540,12 @@ Document performance metrics for each release:
 **Symptoms**: "ConnectionPoolError" or "Too many connections"
 
 **Investigation**:
+
 1. Check pool stats: `curl http://localhost:8005/api/db/pool/stats`
-2. Review connection lifecycle in logs
+1. Review connection lifecycle in logs
 
 **Solutions**:
+
 - Increase pool sizes in configuration
 - Fix connection leaks in code
 - Implement connection timeout and retry logic
@@ -520,11 +555,13 @@ Document performance metrics for each release:
 **Symptoms**: Memory usage increasing over time
 
 **Investigation**:
+
 1. Monitor container memory: `docker stats discovery`
-2. Check Python object references
-3. Review cache eviction policies
+1. Check Python object references
+1. Review cache eviction policies
 
 **Solutions**:
+
 - Implement proper cache eviction (LRU)
 - Fix circular references in code
 - Set container memory limits
@@ -534,11 +571,13 @@ Document performance metrics for each release:
 **Symptoms**: CPU >90% constantly
 
 **Investigation**:
+
 1. Profile code with `py-spy` or `cProfile`
-2. Check for blocking operations
-3. Review worker configuration
+1. Check for blocking operations
+1. Review worker configuration
 
 **Solutions**:
+
 - Optimize hot code paths
 - Ensure all I/O is async
 - Scale horizontally (more workers/instances)
@@ -554,6 +593,7 @@ Document performance metrics for each release:
 ## Appendix: Sample Benchmark Report
 
 ### Test Configuration
+
 - **Date**: 2026-01-04
 - **Duration**: 10 minutes
 - **Users**: 100 concurrent
@@ -562,48 +602,48 @@ Document performance metrics for each release:
 
 ### Results Summary
 
-| Metric | Value |
-|--------|-------|
-| Total Requests | 72,450 |
-| Requests per Second | 120.75 |
-| Error Rate | 0.08% |
-| Median Response Time | 175ms |
-| 95th Percentile | 425ms |
-| 99th Percentile | 850ms |
-| Max Response Time | 1,250ms |
+| Metric               | Value   |
+| -------------------- | ------- |
+| Total Requests       | 72,450  |
+| Requests per Second  | 120.75  |
+| Error Rate           | 0.08%   |
+| Median Response Time | 175ms   |
+| 95th Percentile      | 425ms   |
+| 99th Percentile      | 850ms   |
+| Max Response Time    | 1,250ms |
 
 ### Endpoint Performance
 
-| Endpoint | Requests | Median | p95 | p99 | Errors |
-|----------|----------|--------|-----|-----|--------|
-| `/api/search` | 28,500 | 125ms | 300ms | 600ms | 0.05% |
-| `/api/graph` | 18,200 | 180ms | 450ms | 900ms | 0.10% |
-| `/api/trends` | 12,300 | 220ms | 550ms | 1,100ms | 0.12% |
-| `/api/heatmap` | 8,150 | 310ms | 780ms | 1,550ms | 0.15% |
-| `/api/cache/stats` | 5,300 | 45ms | 90ms | 180ms | 0% |
+| Endpoint           | Requests | Median | p95   | p99     | Errors |
+| ------------------ | -------- | ------ | ----- | ------- | ------ |
+| `/api/search`      | 28,500   | 125ms  | 300ms | 600ms   | 0.05%  |
+| `/api/graph`       | 18,200   | 180ms  | 450ms | 900ms   | 0.10%  |
+| `/api/trends`      | 12,300   | 220ms  | 550ms | 1,100ms | 0.12%  |
+| `/api/heatmap`     | 8,150    | 310ms  | 780ms | 1,550ms | 0.15%  |
+| `/api/cache/stats` | 5,300    | 45ms   | 90ms  | 180ms   | 0%     |
 
 ### Resource Utilization
 
-| Resource | Average | Peak |
-|----------|---------|------|
-| CPU | 52% | 68% |
-| Memory | 2.3GB | 2.8GB |
-| Neo4j Connections | 35 | 48 |
-| PostgreSQL Connections | 18 | 25 |
+| Resource               | Average | Peak  |
+| ---------------------- | ------- | ----- |
+| CPU                    | 52%     | 68%   |
+| Memory                 | 2.3GB   | 2.8GB |
+| Neo4j Connections      | 35      | 48    |
+| PostgreSQL Connections | 18      | 25    |
 
 ### Cache Performance
 
-| Metric | Value |
-|--------|-------|
-| L1 Hit Rate | 75.2% |
-| L2 Hit Rate | 18.5% |
+| Metric         | Value |
+| -------------- | ----- |
+| L1 Hit Rate    | 75.2% |
+| L2 Hit Rate    | 18.5% |
 | Total Hit Rate | 93.7% |
-| Miss Rate | 6.3% |
+| Miss Rate      | 6.3%  |
 
 ### Recommendations
 
 1. ✅ **Performance targets met**: All response times within acceptable ranges
-2. ⚠️ **Cache optimization**: L1 hit rate could be improved to 85%+
-3. ✅ **Resource usage**: Well within capacity, can handle more load
-4. ✅ **Error rate**: Excellent (<0.1% target)
-5. 💡 **Scaling**: System can likely handle 200-250 users before degradation
+1. ⚠️ **Cache optimization**: L1 hit rate could be improved to 85%+
+1. ✅ **Resource usage**: Well within capacity, can handle more load
+1. ✅ **Error rate**: Excellent (\<0.1% target)
+1. 💡 **Scaling**: System can likely handle 200-250 users before degradation
