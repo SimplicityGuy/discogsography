@@ -299,8 +299,13 @@ class HeatmapVisualization {
             // Could trigger a journey search between these artists
             if (this.data.type === 'collab' || this.data.type === 'genre') {
                 // Auto-fill journey builder
-                document.getElementById('startArtist').value = d.x;
-                document.getElementById('endArtist').value = d.y;
+                const startInput = document.getElementById('startArtist');
+                const endInput = document.getElementById('endArtist');
+                startInput.value = d.x;
+                endInput.value = d.y;
+                // Clear any existing artist IDs so auto-lookup will occur
+                delete startInput.dataset.artistId;
+                delete endInput.dataset.artistId;
             }
         }
     }

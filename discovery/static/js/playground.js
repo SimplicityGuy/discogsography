@@ -282,14 +282,40 @@ class DiscoveryPlayground {
         const startArtist = document.getElementById('startArtist');
         const endArtist = document.getElementById('endArtist');
 
-        if (!startArtist.dataset.artistId || !endArtist.dataset.artistId) {
-            this.showNotification('Please select both start and end artists', 'warning');
+        // Check if we have values
+        if (!startArtist.value || !endArtist.value) {
+            this.showNotification('Please enter both start and end artists', 'warning');
             return;
         }
 
         this.showLoading(true);
 
         try {
+            // If artist IDs are not set, search for them first
+            if (!startArtist.dataset.artistId) {
+                const results = await discoveryAPI.search(startArtist.value, 'artist', 1);
+                if (results.items?.artists?.length > 0) {
+                    startArtist.dataset.artistId = results.items.artists[0].id;
+                    startArtist.value = results.items.artists[0].name; // Use exact match
+                } else {
+                    this.showNotification(`Could not find artist: ${startArtist.value}`, 'warning');
+                    this.showLoading(false);
+                    return;
+                }
+            }
+
+            if (!endArtist.dataset.artistId) {
+                const results = await discoveryAPI.search(endArtist.value, 'artist', 1);
+                if (results.items?.artists?.length > 0) {
+                    endArtist.dataset.artistId = results.items.artists[0].id;
+                    endArtist.value = results.items.artists[0].name; // Use exact match
+                } else {
+                    this.showNotification(`Could not find artist: ${endArtist.value}`, 'warning');
+                    this.showLoading(false);
+                    return;
+                }
+            }
+
             const journey = await discoveryAPI.findJourney(
                 startArtist.dataset.artistId,
                 endArtist.dataset.artistId
