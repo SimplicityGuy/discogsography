@@ -23,7 +23,7 @@ from discovery.recommender_metrics import RecommendationMetrics, RecommenderMetr
 logger = structlog.get_logger(__name__)
 
 
-class TestStatus(str, Enum):
+class ABTestStatus(str, Enum):
     """Status of an A/B test."""
 
     DRAFT = "draft"  # Test is being configured
@@ -42,7 +42,7 @@ class AssignmentStrategy(str, Enum):
 
 
 @dataclass
-class TestVariant:
+class ABTestVariant:
     """Configuration for a test variant."""
 
     name: str
@@ -58,8 +58,8 @@ class ABTest:
     test_id: str
     name: str
     description: str
-    variants: list[TestVariant]
-    status: TestStatus = TestStatus.DRAFT
+    variants: list[ABTestVariant]
+    status: ABTestStatus = ABTestStatus.DRAFT
     assignment_strategy: AssignmentStrategy = AssignmentStrategy.HASH_BASED
     min_sample_size: int = 100  # Minimum samples per variant
     confidence_level: float = 0.95  # Statistical confidence level
@@ -88,7 +88,7 @@ class ABTestManager:
         test_id: str,
         name: str,
         description: str,
-        variants: list[TestVariant],
+        variants: list[ABTestVariant],
         assignment_strategy: AssignmentStrategy = AssignmentStrategy.HASH_BASED,
         min_sample_size: int = 100,
         confidence_level: float = 0.95,
@@ -146,7 +146,7 @@ class ABTestManager:
             raise ValueError(f"Test {test_id} not found")
 
         test = self.tests[test_id]
-        test.status = TestStatus.RUNNING
+        test.status = ABTestStatus.RUNNING
         test.started_at = datetime.now(UTC)
 
         logger.info("▶️ Started A/B test", test_id=test_id, name=test.name)
@@ -161,7 +161,7 @@ class ABTestManager:
             raise ValueError(f"Test {test_id} not found")
 
         test = self.tests[test_id]
-        test.status = TestStatus.PAUSED
+        test.status = ABTestStatus.PAUSED
 
         logger.info("⏸️ Paused A/B test", test_id=test_id, name=test.name)
 
@@ -175,7 +175,7 @@ class ABTestManager:
             raise ValueError(f"Test {test_id} not found")
 
         test = self.tests[test_id]
-        test.status = TestStatus.COMPLETED
+        test.status = ABTestStatus.COMPLETED
         test.completed_at = datetime.now(UTC)
 
         logger.info("✅ Completed A/B test", test_id=test_id, name=test.name)
