@@ -158,7 +158,7 @@ class SimilarityNetworkBuilder:
 
             if artist_list:
                 query = """
-                    MATCH (a1:Artist)-[:IS]->(g:Genre)<-[:IS]-(a2:Artist)
+                    MATCH (a1:Artist)<-[:BY]-(r1:Release)-[:IS]->(g:Genre)<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
                     WHERE a1.name IN $artist_list AND a2.name IN $artist_list
                           AND a1.name < a2.name
                     WITH a1, a2, collect(DISTINCT g.name) AS shared_genres
@@ -169,7 +169,7 @@ class SimilarityNetworkBuilder:
                 query_params["artist_list"] = artist_list
             else:
                 query = """
-                    MATCH (a1:Artist)-[:IS]->(g:Genre)<-[:IS]-(a2:Artist)
+                    MATCH (a1:Artist)<-[:BY]-(r1:Release)-[:IS]->(g:Genre)<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
                     WHERE a1.name < a2.name
                     WITH a1, a2, collect(DISTINCT g.name) AS shared_genres
                     WHERE size(shared_genres) >= $threshold
@@ -228,7 +228,7 @@ class SimilarityNetworkBuilder:
 
             if artist_list:
                 query = """
-                    MATCH (a1:Artist)-[:IS]->(s:Style)<-[:IS]-(a2:Artist)
+                    MATCH (a1:Artist)<-[:BY]-(r1:Release)-[:IS]->(s:Style)<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
                     WHERE a1.name IN $artist_list AND a2.name IN $artist_list
                           AND a1.name < a2.name
                     WITH a1, a2, collect(DISTINCT s.name) AS shared_styles
@@ -239,7 +239,7 @@ class SimilarityNetworkBuilder:
                 query_params["artist_list"] = artist_list
             else:
                 query = """
-                    MATCH (a1:Artist)-[:IS]->(s:Style)<-[:IS]-(a2:Artist)
+                    MATCH (a1:Artist)<-[:BY]-(r1:Release)-[:IS]->(s:Style)<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
                     WHERE a1.name < a2.name
                     WITH a1, a2, collect(DISTINCT s.name) AS shared_styles
                     WHERE size(shared_styles) >= $threshold

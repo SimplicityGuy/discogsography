@@ -313,7 +313,7 @@ class CommunityDetector:
             # Get artists with shared genres
             result = await session.run(
                 """
-                MATCH (a1:Artist)-[:IS]->(g:Genre)<-[:IS]-(a2:Artist)
+                MATCH (a1:Artist)<-[:BY]-(r1:Release)-[:IS]->(g:Genre)<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
                 WHERE a1.name < a2.name
                 WITH a1, a2, collect(DISTINCT g.name) AS shared_genres
                 WHERE size(shared_genres) >= $min_shared

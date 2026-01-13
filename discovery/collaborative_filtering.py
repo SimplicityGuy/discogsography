@@ -89,15 +89,15 @@ class CollaborativeFilter:
                 result = await session.run(
                     """
                     MATCH (a:Artist)
-                    OPTIONAL MATCH (a)-[:ON]->(label:Label)
-                    OPTIONAL MATCH (a)-[:IS]->(genre:Genre)
-                    OPTIONAL MATCH (a)-[:IS]->(style:Style)
-                    OPTIONAL MATCH (a)-[collab]->(other:Artist)
-                    WITH a,
-                         collect(DISTINCT label.name) AS labels,
-                         collect(DISTINCT genre.name) AS genres,
-                         collect(DISTINCT style.name) AS styles,
-                         collect(DISTINCT other.name) AS collaborators
+                    OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:ON]->(label:Label)
+                    WITH a, collect(DISTINCT label.name) AS labels
+                    OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:IS]->(genre:Genre)
+                    WITH a, labels, collect(DISTINCT genre.name) AS genres
+                    OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:IS]->(style:Style)
+                    WITH a, labels, genres, collect(DISTINCT style.name) AS styles
+                    OPTIONAL MATCH (a)<-[:BY]-(rel:Release)-[:BY]->(other:Artist)
+                    WHERE a.name <> other.name
+                    WITH a, labels, genres, styles, collect(DISTINCT other.name) AS collaborators
                     RETURN a.id AS artist_id, a.name AS artist_name,
                            labels, genres, styles, collaborators
                     SKIP $offset
@@ -366,15 +366,15 @@ class CollaborativeFilter:
             result = await session.run(
                 """
                 MATCH (a:Artist {name: $artist_name})
-                OPTIONAL MATCH (a)-[:ON]->(label:Label)
-                OPTIONAL MATCH (a)-[:IS]->(genre:Genre)
-                OPTIONAL MATCH (a)-[:IS]->(style:Style)
-                OPTIONAL MATCH (a)-[collab]->(other:Artist)
-                WITH a,
-                     collect(DISTINCT label.name) AS labels,
-                     collect(DISTINCT genre.name) AS genres,
-                     collect(DISTINCT style.name) AS styles,
-                     collect(DISTINCT other.name) AS collaborators
+                OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:ON]->(label:Label)
+                WITH a, collect(DISTINCT label.name) AS labels
+                OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:IS]->(genre:Genre)
+                WITH a, labels, collect(DISTINCT genre.name) AS genres
+                OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:IS]->(style:Style)
+                WITH a, labels, genres, collect(DISTINCT style.name) AS styles
+                OPTIONAL MATCH (a)<-[:BY]-(rel:Release)-[:BY]->(other:Artist)
+                WHERE a.name <> other.name
+                WITH a, labels, genres, styles, collect(DISTINCT other.name) AS collaborators
                 RETURN a.id AS artist_id, a.name AS artist_name,
                        labels, genres, styles, collaborators
                 """,

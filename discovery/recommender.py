@@ -106,7 +106,7 @@ class MusicRecommender:
         async with self.driver.session() as session:
             # Get artist collaborations through releases
             result = await session.run("""
-                MATCH (a1:Artist)-[:BY]->(r:Release)<-[:BY]-(a2:Artist)
+                MATCH (a1:Artist)<-[:BY]-(r:Release)-[:BY]->(a2:Artist)
                 WHERE a1.name <> a2.name
                 RETURN a1.name as artist1, a2.name as artist2, count(r) as collaborations
                 ORDER BY collaborations DESC
@@ -132,9 +132,9 @@ class MusicRecommender:
         async with self.driver.session() as session:
             result = await session.run("""
                 MATCH (a:Artist)
-                OPTIONAL MATCH (a)-[:BY]->(r:Release)-[:IS]->(g:Genre)
+                OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:IS]->(g:Genre)
                 WITH a, collect(DISTINCT g.name) as genres
-                OPTIONAL MATCH (a)-[:BY]->(r:Release)-[:IS]->(s:Style)
+                OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:IS]->(s:Style)
                 WITH a, genres, collect(DISTINCT s.name) as styles
                 RETURN a.name as name,
                        coalesce(a.profile, '') as profile,
@@ -258,11 +258,11 @@ class MusicRecommender:
 
             result = await session.run(
                 f"""
-                MATCH (a:Artist)-[:BY]->(r:Release)
+                MATCH (a:Artist)<-[:BY]-(r:Release)
                 OPTIONAL MATCH (r)-[:IS]->(g:Genre)
                 WITH a, collect(DISTINCT g.name) as genres, count(DISTINCT r) as release_count
                 WHERE release_count > 5 {genre_filter}
-                OPTIONAL MATCH (a)-[:BY]->(recent:Release)
+                OPTIONAL MATCH (a)<-[:BY]-(recent:Release)
                 WITH a, genres, release_count, recent
                 ORDER BY recent.year DESC
                 WITH a, genres, release_count, collect(recent)[0] as latest_release

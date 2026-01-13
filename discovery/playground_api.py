@@ -422,14 +422,14 @@ class PlaygroundAPI:
             async with self.neo4j_driver.session() as session:
                 # Get top artists by release count
                 query = """
-                MATCH (a:Artist)-[:BY]->(r:Release)
+                MATCH (a:Artist)<-[:BY]-(r:Release)
                 WITH a, COUNT(r) AS release_count
                 ORDER BY release_count DESC
                 LIMIT $top_n
                 WITH collect(a) AS artists
                 UNWIND artists AS a1
                 UNWIND artists AS a2
-                MATCH (a1)-[:BY]->(r1:Release)-[:HAS_GENRE]->(g:Genre)<-[:HAS_GENRE]-(r2:Release)<-[:BY]-(a2)
+                MATCH (a1)<-[:BY]-(r1:Release)-[:IS]->(g:Genre)<-[:IS]-(r2:Release)-[:BY]->(a2)
                 WHERE id(a1) < id(a2)
                 WITH a1.name AS artist1, a2.name AS artist2, COUNT(DISTINCT g) AS shared_genres
                 RETURN artist1, artist2, shared_genres

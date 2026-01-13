@@ -183,7 +183,7 @@ class MusicAnalytics:
             # Get artist's releases over time with genres
             result = await session.run(
                 """
-                MATCH (a:Artist {name: $artist})-[:BY]->(r:Release)
+                MATCH (a:Artist {name: $artist})<-[:BY]-(r:Release)
                 OPTIONAL MATCH (r)-[:IS]->(g:Genre)
                 OPTIONAL MATCH (r)-[:IS]->(s:Style)
                 WITH r, collect(DISTINCT g.name) as genres, collect(DISTINCT s.name) as styles
@@ -211,7 +211,7 @@ class MusicAnalytics:
             # Get collaboration network
             collab_result = await session.run(
                 """
-                MATCH (a:Artist {name: $artist})-[:BY]->(r:Release)<-[:BY]-(other:Artist)
+                MATCH (a:Artist {name: $artist})<-[:BY]-(r:Release)-[:BY]->(other:Artist)
                 WHERE other.name <> $artist
                 RETURN other.name as collaborator, count(r) as collaborations
                 ORDER BY collaborations DESC
