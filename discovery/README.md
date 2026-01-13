@@ -184,12 +184,12 @@ graph TB
 ### Data Flow
 
 1. **User Request** → FastAPI API Server
-2. **Query Processing** → Appropriate engine (Recommender/Analytics/Explorer)
-3. **Cache Check** → Redis for previously computed results
-4. **Database Query** → Neo4j (graph) or PostgreSQL (analytics) via asyncpg
-5. **ML Processing** → ONNX models for semantic search and recommendations
-6. **Result Caching** → Store in Redis for future requests
-7. **Response** → JSON API response to client
+1. **Query Processing** → Appropriate engine (Recommender/Analytics/Explorer)
+1. **Cache Check** → Redis for previously computed results
+1. **Database Query** → Neo4j (graph) or PostgreSQL (analytics) via asyncpg
+1. **ML Processing** → ONNX models for semantic search and recommendations
+1. **Result Caching** → Store in Redis for future requests
+1. **Response** → JSON API response to client
 
 ## 🔌 API Endpoints
 
@@ -263,25 +263,25 @@ Content-Type: application/json
 
 #### Database Configuration
 
-| Variable            | Description          | Default                 |
-| ------------------- | -------------------- | ----------------------- |
-| `NEO4J_ADDRESS`     | Neo4j connection URL | `bolt://localhost:7687` |
-| `NEO4J_USERNAME`    | Neo4j username       | `neo4j`                 |
-| `NEO4J_PASSWORD`    | Neo4j password       | Required                |
-| `POSTGRES_ADDRESS`  | PostgreSQL host:port | `localhost:5433`        |
-| `POSTGRES_USERNAME` | PostgreSQL username  | Required                |
-| `POSTGRES_PASSWORD` | PostgreSQL password  | Required                |
-| `POSTGRES_DATABASE` | PostgreSQL database  | `discogsography`        |
+| Variable            | Description          | Default                    |
+| ------------------- | -------------------- | -------------------------- |
+| `NEO4J_ADDRESS`     | Neo4j connection URL | `bolt://localhost:7687`    |
+| `NEO4J_USERNAME`    | Neo4j username       | `neo4j`                    |
+| `NEO4J_PASSWORD`    | Neo4j password       | Required                   |
+| `POSTGRES_ADDRESS`  | PostgreSQL host:port | `localhost:5433`           |
+| `POSTGRES_USERNAME` | PostgreSQL username  | Required                   |
+| `POSTGRES_PASSWORD` | PostgreSQL password  | Required                   |
+| `POSTGRES_DATABASE` | PostgreSQL database  | `discogsography`           |
 | `REDIS_URL`         | Redis connection URL | `redis://localhost:6379/0` |
 
 #### ML & Cache Configuration
 
-| Variable                       | Description                              | Default                          |
-| ------------------------------ | ---------------------------------------- | -------------------------------- |
-| `HF_HOME`                      | Hugging Face models cache directory      | `/models/huggingface`            |
-| `SENTENCE_TRANSFORMERS_HOME`   | Sentence transformers cache directory    | `/models/sentence-transformers`  |
-| `EMBEDDINGS_CACHE_DIR`         | Embeddings cache directory               | `/tmp/embeddings_cache`          |
-| `XDG_CACHE_HOME`               | General cache directory                  | `/tmp/.cache`                    |
+| Variable                     | Description                           | Default                         |
+| ---------------------------- | ------------------------------------- | ------------------------------- |
+| `HF_HOME`                    | Hugging Face models cache directory   | `/models/huggingface`           |
+| `SENTENCE_TRANSFORMERS_HOME` | Sentence transformers cache directory | `/models/sentence-transformers` |
+| `EMBEDDINGS_CACHE_DIR`       | Embeddings cache directory            | `/tmp/embeddings_cache`         |
+| `XDG_CACHE_HOME`             | General cache directory               | `/tmp/.cache`                   |
 
 ### ML Model Configuration
 

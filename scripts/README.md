@@ -69,14 +69,17 @@ The script provides:
 The script now includes comprehensive component verification and updates **all** project files:
 
 **Python Configuration (8 files)**:
+
 - ✅ Root `pyproject.toml`
 - ✅ All service `pyproject.toml` files including nested extractor subdirectories
 
 **Docker Configuration (7 files)**:
+
 - ✅ All service Dockerfiles including nested `extractor/pyextractor` and `extractor/rustextractor`
 - ✅ Documentation standards file
 
 **Rust Configuration (2 files)**:
+
 - ✅ `Cargo.toml` and `Cargo.lock` for rustextractor
 
 **Total: 15+ components verified and updated automatically**

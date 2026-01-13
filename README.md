@@ -296,10 +296,10 @@ cp .env.example .env
 
 #### Consumer Management Settings
 
-| Variable                | Description                                                      | Default       | Used By                  |
-| ----------------------- | ---------------------------------------------------------------- | ------------- | ------------------------ |
-| `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers after file completion    | `300` (5 min) | Graphinator, Tableinator |
-| `QUEUE_CHECK_INTERVAL`  | Seconds between queue checks when all consumers are idle         | `3600` (1 hr) | Graphinator, Tableinator |
+| Variable                | Description                                                   | Default       | Used By                  |
+| ----------------------- | ------------------------------------------------------------- | ------------- | ------------------------ |
+| `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers after file completion | `300` (5 min) | Graphinator, Tableinator |
+| `QUEUE_CHECK_INTERVAL`  | Seconds between queue checks when all consumers are idle      | `3600` (1 hr) | Graphinator, Tableinator |
 
 > **📝 Note**: The consumer management system implements smart connection lifecycle management:
 >
@@ -312,13 +312,13 @@ cp .env.example .env
 
 #### Discovery Service & ML Configuration
 
-| Variable                       | Description                              | Default                          | Used By   |
-| ------------------------------ | ---------------------------------------- | -------------------------------- | --------- |
-| `REDIS_URL`                    | Redis cache connection URL               | `redis://localhost:6379/0`       | Discovery, Dashboard |
-| `HF_HOME`                      | Hugging Face models cache directory      | `/models/huggingface`            | Discovery |
-| `SENTENCE_TRANSFORMERS_HOME`   | Sentence transformers cache directory    | `/models/sentence-transformers`  | Discovery |
-| `EMBEDDINGS_CACHE_DIR`         | Embeddings cache directory               | `/tmp/embeddings_cache`          | Discovery |
-| `XDG_CACHE_HOME`               | General cache directory                  | `/tmp/.cache`                    | Discovery |
+| Variable                     | Description                           | Default                         | Used By              |
+| ---------------------------- | ------------------------------------- | ------------------------------- | -------------------- |
+| `REDIS_URL`                  | Redis cache connection URL            | `redis://localhost:6379/0`      | Discovery, Dashboard |
+| `HF_HOME`                    | Hugging Face models cache directory   | `/models/huggingface`           | Discovery            |
+| `SENTENCE_TRANSFORMERS_HOME` | Sentence transformers cache directory | `/models/sentence-transformers` | Discovery            |
+| `EMBEDDINGS_CACHE_DIR`       | Embeddings cache directory            | `/tmp/embeddings_cache`         | Discovery            |
+| `XDG_CACHE_HOME`             | General cache directory               | `/tmp/.cache`                   | Discovery            |
 
 > **📝 Note**: The Discovery service uses several cache directories for ML models and embeddings:
 >

@@ -78,6 +78,7 @@ python -c "from tests.load.scenarios import print_all_scenarios; print_all_scena
 ## Predefined Scenarios
 
 ### SMOKE_TEST
+
 - **Users**: 1
 - **Duration**: 1 minute
 - **Purpose**: Verify basic functionality
@@ -90,6 +91,7 @@ locust -f tests/load/locustfile.py --host=http://localhost:8005 \
 ```
 
 ### LIGHT_LOAD
+
 - **Users**: 25
 - **Duration**: 5 minutes
 - **Purpose**: Simulate light daytime traffic
@@ -102,6 +104,7 @@ locust -f tests/load/locustfile.py --host=http://localhost:8005 \
 ```
 
 ### MODERATE_LOAD
+
 - **Users**: 100
 - **Duration**: 10 minutes
 - **Purpose**: Simulate moderate busy period traffic
@@ -114,6 +117,7 @@ locust -f tests/load/locustfile.py --host=http://localhost:8005 \
 ```
 
 ### HEAVY_LOAD
+
 - **Users**: 250
 - **Duration**: 15 minutes
 - **Purpose**: Simulate heavy peak traffic
@@ -126,6 +130,7 @@ locust -f tests/load/locustfile.py --host=http://localhost:8005 \
 ```
 
 ### STRESS_TEST
+
 - **Users**: 500
 - **Duration**: 20 minutes
 - **Purpose**: Find breaking point
@@ -138,6 +143,7 @@ locust -f tests/load/locustfile.py --host=http://localhost:8005 \
 ```
 
 ### SPIKE_TEST
+
 - **Users**: 200 (spawned quickly)
 - **Duration**: 5 minutes
 - **Purpose**: Simulate sudden traffic spike
@@ -150,6 +156,7 @@ locust -f tests/load/locustfile.py --host=http://localhost:8005 \
 ```
 
 ### ENDURANCE_TEST
+
 - **Users**: 100
 - **Duration**: 60 minutes
 - **Purpose**: Long-running stability test
@@ -162,6 +169,7 @@ locust -f tests/load/locustfile.py --host=http://localhost:8005 \
 ```
 
 ### BREAKPOINT_TEST
+
 - **Users**: 1000
 - **Duration**: 30 minutes
 - **Purpose**: Find maximum capacity
@@ -176,34 +184,44 @@ locust -f tests/load/locustfile.py --host=http://localhost:8005 \
 ## User Classes
 
 ### SearchUser (Weight: 3)
+
 Primary focus on searching for music:
+
 - Artist search (50%)
 - Release search (30%)
 - All types search (20%)
 - Paginated search (10%)
 
 ### GraphExplorerUser (Weight: 2)
+
 Explores the knowledge graph:
+
 - Graph exploration at depth 2 (50%)
 - Deep graph exploration at depth 3 (30%)
 - Graph pagination (20%)
 - Artist details (10%)
 
 ### AnalyticsUser (Weight: 1)
+
 Views analytics and trends:
+
 - Genre trends (50%)
 - Artist trends (30%)
 - Genre heatmap (20%)
 - Collaboration heatmap (10%)
 
 ### MonitoringUser (Weight: 0.5)
+
 Checks service health:
+
 - Cache statistics (50%)
 - Database pool statistics (30%)
 - Prometheus metrics (10%)
 
 ### RealisticUser (Weight: 5)
+
 Combines multiple behaviors with realistic workflows:
+
 - Complete search workflow (50%)
 - Graph browsing workflow (25%)
 - Analytics workflow (15%)
@@ -237,19 +255,23 @@ Results are saved to `tests/load/results/` with the following files:
 ### Key Performance Indicators
 
 1. **Response Time**:
-   - p50 (median): Should be <200ms for most endpoints
-   - p95: Should be <500ms
-   - p99: Should be <1000ms
 
-2. **Throughput**:
+   - p50 (median): Should be \<200ms for most endpoints
+   - p95: Should be \<500ms
+   - p99: Should be \<1000ms
+
+1. **Throughput**:
+
    - Requests per second (RPS)
    - Target: >100 RPS for moderate load
 
-3. **Error Rate**:
-   - Should be <1% under normal load
-   - Should be <5% under stress load
+1. **Error Rate**:
 
-4. **Resource Usage**:
+   - Should be \<1% under normal load
+   - Should be \<5% under stress load
+
+1. **Resource Usage**:
+
    - CPU: Monitor via `docker stats`
    - Memory: Should remain stable over time
    - Database connections: Monitor via `/api/db/pool/stats`
@@ -272,11 +294,11 @@ curl http://localhost:8005/metrics
 ## Best Practices
 
 1. **Start Small**: Begin with smoke tests before running stress tests
-2. **Warm Up**: Allow services to warm up caches and connection pools
-3. **Monitor Resources**: Watch CPU, memory, and database connections
-4. **Analyze Results**: Review HTML reports and identify bottlenecks
-5. **Iterate**: Optimize based on findings and re-test
-6. **Document Baselines**: Record baseline performance for comparison
+1. **Warm Up**: Allow services to warm up caches and connection pools
+1. **Monitor Resources**: Watch CPU, memory, and database connections
+1. **Analyze Results**: Review HTML reports and identify bottlenecks
+1. **Iterate**: Optimize based on findings and re-test
+1. **Document Baselines**: Record baseline performance for comparison
 
 ## Troubleshooting
 
@@ -300,8 +322,8 @@ docker-compose logs -f discovery | grep ERROR
 ### Slow Response Times
 
 1. Check cache hit rates: `curl http://localhost:8005/api/cache/stats`
-2. Check database pool: `curl http://localhost:8005/api/db/pool/stats`
-3. Review Neo4j indexes: See `docs/neo4j-indexing.md`
+1. Check database pool: `curl http://localhost:8005/api/db/pool/stats`
+1. Review Neo4j indexes: See `docs/neo4j-indexing.md`
 
 ## Advanced Usage
 
