@@ -429,7 +429,8 @@ update_precommit_hooks() {
             CHANGES_MADE=true
 
             # Update mdformat plugin versions in additional_dependencies
-            update_mdformat_plugins
+            # Sync dependencies after pre-commit autoupdate
+            sync_dependencies_after_precommit
 
             # Run pre-commit install to ensure hooks are installed
             # Use || true to prevent script exit if hooks are already installed
@@ -443,90 +444,28 @@ update_precommit_hooks() {
     fi
 }
 
-# Update mdformat plugin versions in .pre-commit-config.yaml
-update_mdformat_plugins() {
-    print_info "Checking for mdformat plugin updates..."
+# Sync pyproject.toml dependencies after pre-commit autoupdate
+# Note: pre-commit autoupdate handles updating plugin versions in .pre-commit-config.yaml
+# We just need to run uv sync --upgrade to update pyproject.toml and uv.lock
+sync_dependencies_after_precommit() {
+    print_info "Syncing dependencies after pre-commit hook updates..."
 
-    local config_file=".pre-commit-config.yaml"
-    local updated_plugins=()
-
-    # Define the plugins to update
-    local plugins=("mdformat-black" "mdformat-gfm" "mdformat-tables")
-
-    for plugin in "${plugins[@]}"; do
-        # Get current version from config file
-        local current_version
-        current_version=$(grep -E "^\s*-\s*${plugin}==" "$config_file" 2>/dev/null | sed -E "s/.*${plugin}==([0-9.]+).*/\1/")
-
-        if [[ -z "$current_version" ]]; then
-            print_info "$plugin not found in config, skipping"
-            continue
-        fi
-
-        # Get latest version from PyPI with timeout
-        print_info "Checking PyPI for $plugin latest version..."
-        local latest_version
-        latest_version=$(timeout 10 curl -s "https://pypi.org/pypi/${plugin}/json" 2>/dev/null | python3 -c "
-import json, sys
-try:
-    data = json.load(sys.stdin)
-    print(data['info']['version'])
-except Exception:
-    sys.exit(1)
-" 2>/dev/null || echo "")
-
-        if [[ -z "$latest_version" ]]; then
-            print_warning "Could not fetch latest version for $plugin (timeout or network issue)"
-            continue
-        fi
-
-        # Compare versions
-        if [[ "$current_version" != "$latest_version" ]]; then
-            print_info "Updating $plugin: $current_version → $latest_version"
-
-            # Update the version in the config file
-            if [[ "$OSTYPE" == "darwin"* ]]; then
-                sed -i '' "s/${plugin}==${current_version}/${plugin}==${latest_version}/g" "$config_file"
-            else
-                sed -i "s/${plugin}==${current_version}/${plugin}==${latest_version}/g" "$config_file"
-            fi
-
-            updated_plugins+=("$plugin: $current_version → $latest_version")
+    if [[ "$DRY_RUN" == false ]]; then
+        # uv sync --upgrade will upgrade all dependencies including those pinned in pre-commit
+        # This handles mdformat plugins and any other dependencies automatically
+        print_info "Running uv sync --upgrade to update all dependencies..."
+        if uv sync --all-extras --dev --upgrade; then
+            print_success "Dependencies synced successfully"
+            FILE_CHANGES+=("pyproject.toml and uv.lock: Synced with latest dependency versions")
             CHANGES_MADE=true
         else
-            print_success "$plugin is already up to date ($current_version)"
+            print_warning "Failed to sync dependencies after pre-commit updates"
         fi
-    done
-
-    print_success "Completed mdformat plugin checks"
-    echo ""  # Add blank line for visual separation
-
-    # Update pyproject.toml dev dependencies to match
-    if [[ ${#updated_plugins[@]} -gt 0 ]]; then
-        print_info "Synchronizing mdformat plugin versions in pyproject.toml..."
-
-        for plugin in "${plugins[@]}"; do
-            # Get the updated version from config file
-            local new_version
-            new_version=$(grep -E "^\s*-\s*${plugin}==" "$config_file" | sed -E "s/.*${plugin}==([0-9.]+).*/\1/")
-
-            if [[ -n "$new_version" ]]; then
-                # Update pyproject.toml
-                if [[ "$OSTYPE" == "darwin"* ]]; then
-                    sed -i '' "s/\"${plugin}>=[0-9.]*\"/\"${plugin}>=${new_version}\"/g" pyproject.toml
-                else
-                    sed -i "s/\"${plugin}>=[0-9.]*\"/\"${plugin}>=${new_version}\"/g" pyproject.toml
-                fi
-            fi
-        done
-
-        FILE_CHANGES+=("pyproject.toml: Updated mdformat plugin versions to match pre-commit")
-
-        # Add summary of plugin updates
-        for update in "${updated_plugins[@]}"; do
-            FILE_CHANGES+=(".pre-commit-config.yaml: $update")
-        done
+    else
+        print_info "[DRY RUN] Would run: uv sync --all-extras --dev --upgrade"
     fi
+
+    echo ""  # Add blank line for visual separation
 }
 
 # Verify all dependencies were updated
@@ -600,46 +539,23 @@ update_rust_crates() {
                 print_info "Updating to latest compatible versions (respecting semver)"
             fi
 
-            # Update main dependencies
-            print_info "Updating main dependencies..."
+            # Update all dependencies (main, dev, build, target-specific)
+            # Note: cargo upgrade updates all dependency types by default
+            print_info "Updating all dependencies (main, dev, build, target-specific)..."
             if $upgrade_cmd; then
-                print_success "Updated main dependency versions"
-                FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated main dependency versions")
+                print_success "Updated all dependency versions"
+                FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated all dependency versions")
                 CHANGES_MADE=true
-            fi
-
-            # Update dev dependencies
-            print_info "Updating dev dependencies..."
-            if $upgrade_cmd --dev-dependencies; then
-                print_success "Updated dev-dependency versions"
-                FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated dev-dependency versions")
-                CHANGES_MADE=true
-            fi
-
-            # Update build dependencies if they exist
-            if grep -q "\[build-dependencies\]" Cargo.toml; then
-                print_info "Updating build dependencies..."
-                if $upgrade_cmd --build-dependencies; then
-                    print_success "Updated build-dependency versions"
-                    FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated build-dependency versions")
-                    CHANGES_MADE=true
-                fi
             fi
         else
             print_info "Installing cargo-edit for comprehensive dependency updates..."
             if cargo install cargo-edit; then
-                # Try again after installation
+                # Try again after installation (updates all dependency types)
                 local upgrade_cmd="cargo upgrade"
 
                 if $upgrade_cmd; then
-                    print_success "Updated main dependency versions"
-                    FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated dependency versions")
-                    CHANGES_MADE=true
-                fi
-
-                if $upgrade_cmd --dev-dependencies; then
-                    print_success "Updated dev-dependency versions"
-                    FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated dev-dependency versions")
+                    print_success "Updated all dependency versions"
+                    FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated all dependency versions")
                     CHANGES_MADE=true
                 fi
             else
@@ -662,9 +578,7 @@ update_rust_crates() {
         print_success "Completed Rust dependency updates"
     else
         print_info "[DRY RUN] Would update ALL Rust dependency types:"
-        print_info "[DRY RUN] Would run: cargo upgrade (main dependencies)"
-        print_info "[DRY RUN] Would run: cargo upgrade --dev-dependencies"
-        print_info "[DRY RUN] Would run: cargo upgrade --build-dependencies (if present)"
+        print_info "[DRY RUN] Would run: cargo upgrade (all dependency types)"
         print_info "[DRY RUN] Would run: cargo update (update lock file)"
     fi
 }
