@@ -33,9 +33,15 @@ class TestBuildCooccurrenceMatrix:
         """Test building co-occurrence matrix with artist data."""
         mock_driver = MagicMock()
         mock_session = AsyncMock()
-        mock_result = AsyncMock()
 
-        # Mock artist data
+        # Mock count query result
+        mock_count_result = AsyncMock()
+        mock_count_single = AsyncMock()
+        mock_count_single.__getitem__ = MagicMock(return_value=2)  # total count
+        mock_count_result.single = AsyncMock(return_value=mock_count_single)
+
+        # Mock artist data query result
+        mock_data_result = AsyncMock()
         mock_records = [
             {
                 "artist_id": "1",
@@ -55,13 +61,15 @@ class TestBuildCooccurrenceMatrix:
             },
         ]
 
-        # Setup async iteration
+        # Setup async iteration for data query
         async def async_iter(self):
             for record in mock_records:
                 yield record
 
-        mock_result.__aiter__ = async_iter
-        mock_session.run.return_value = mock_result
+        mock_data_result.__aiter__ = async_iter
+
+        # Setup session.run to return different results for each call
+        mock_session.run.side_effect = [mock_count_result, mock_data_result]
         mock_driver.session.return_value.__aenter__.return_value = mock_session
         mock_driver.session.return_value.__aexit__.return_value = None
 
@@ -86,15 +94,25 @@ class TestBuildCooccurrenceMatrix:
         """Test building matrix with no artist data."""
         mock_driver = MagicMock()
         mock_session = AsyncMock()
-        mock_result = AsyncMock()
 
-        # Empty data
+        # Mock count query result with zero artists
+        mock_count_result = AsyncMock()
+        mock_count_single = AsyncMock()
+        mock_count_single.__getitem__ = MagicMock(return_value=0)  # zero total count
+        mock_count_result.single = AsyncMock(return_value=mock_count_single)
+
+        # Mock empty data query result
+        mock_data_result = AsyncMock()
+
+        # Empty data iterator
         async def async_iter(self):
             return
             yield  # Make it a generator
 
-        mock_result.__aiter__ = async_iter
-        mock_session.run.return_value = mock_result
+        mock_data_result.__aiter__ = async_iter
+
+        # Setup session.run to return different results for each call
+        mock_session.run.side_effect = [mock_count_result, mock_data_result]
         mock_driver.session.return_value.__aenter__.return_value = mock_session
         mock_driver.session.return_value.__aexit__.return_value = None
 
