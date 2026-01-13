@@ -24,6 +24,12 @@ class TestCollaborativeFilterInit:
         assert filter_engine.co_occurrence_matrix is None
         assert filter_engine.artist_features == {}
 
+        # Verify inverted indices initialized
+        assert filter_engine.label_to_artists == {}
+        assert filter_engine.genre_to_artists == {}
+        assert filter_engine.style_to_artists == {}
+        assert filter_engine.collaborator_to_artists == {}
+
 
 class TestBuildCooccurrenceMatrix:
     """Test co-occurrence matrix building."""
@@ -275,4 +281,123 @@ class TestMultiArtistRecommendations:
 
         results = await filter_engine.get_similar_artists_for_multiple(["Unknown1", "Unknown2"])
 
+        assert results == []
+
+
+class TestOnDemandRecommendations:
+    """Test on-demand recommendation functionality for artists not in pre-built matrix."""
+
+    @pytest.mark.asyncio
+    async def test_on_demand_recommendations_with_shared_features(self) -> None:
+        """Test on-demand recommendations when artist shares features with matrix artists."""
+        mock_driver = MagicMock()
+        mock_session = AsyncMock()
+
+        # Mock the query for the new artist
+        mock_result = AsyncMock()
+        mock_record = {
+            "artist_id": "999",
+            "artist_name": "New Artist",
+            "labels": ["Label1"],
+            "genres": ["Rock"],
+            "styles": ["Alternative"],
+            "collaborators": [],
+        }
+
+        mock_result.single = AsyncMock(return_value=mock_record)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session.return_value.__aenter__.return_value = mock_session
+        mock_driver.session.return_value.__aexit__.return_value = None
+
+        filter_engine = CollaborativeFilter(mock_driver)
+
+        # Setup existing matrix with artists that share features
+        filter_engine.artist_to_index = {"Artist A": 0, "Artist B": 1}
+        filter_engine.index_to_artist = {0: "Artist A", 1: "Artist B"}
+        filter_engine.artist_features = {
+            "Artist A": {"labels": ["Label1"], "genres": ["Rock"], "styles": ["Alternative"], "collaborators": []},
+            "Artist B": {"labels": ["Label2"], "genres": ["Jazz"], "styles": ["Smooth"], "collaborators": []},
+        }
+
+        # Setup inverted indices
+        filter_engine.label_to_artists["Label1"] = {0}
+        filter_engine.label_to_artists["Label2"] = {1}
+        filter_engine.genre_to_artists["Rock"] = {0}
+        filter_engine.genre_to_artists["Jazz"] = {1}
+        filter_engine.style_to_artists["Alternative"] = {0}
+        filter_engine.style_to_artists["Smooth"] = {1}
+
+        # Request recommendations for new artist (not in matrix)
+        results = await filter_engine.get_recommendations("New Artist", limit=2)
+
+        # Should return Artist A (shares label, genre, and style)
+        assert len(results) > 0
+        assert results[0]["artist_name"] == "Artist A"
+        assert results[0]["method"] == "collaborative_filtering_on_demand"
+        assert results[0]["similarity_score"] > 0
+
+    @pytest.mark.asyncio
+    async def test_on_demand_recommendations_artist_not_in_graph(self) -> None:
+        """Test on-demand recommendations when artist doesn't exist in graph."""
+        mock_driver = MagicMock()
+        mock_session = AsyncMock()
+
+        # Mock empty query result
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session.return_value.__aenter__.return_value = mock_session
+        mock_driver.session.return_value.__aexit__.return_value = None
+
+        filter_engine = CollaborativeFilter(mock_driver)
+
+        # Setup matrix
+        filter_engine.artist_to_index = {"Artist A": 0}
+        filter_engine.index_to_artist = {0: "Artist A"}
+
+        # Request recommendations for non-existent artist
+        results = await filter_engine.get_recommendations("Nonexistent Artist", limit=10)
+
+        assert results == []
+
+    @pytest.mark.asyncio
+    async def test_on_demand_recommendations_no_shared_features(self) -> None:
+        """Test on-demand recommendations when artist has no shared features."""
+        mock_driver = MagicMock()
+        mock_session = AsyncMock()
+
+        # Mock the query for the new artist with unique features
+        mock_result = AsyncMock()
+        mock_record = {
+            "artist_id": "999",
+            "artist_name": "Unique Artist",
+            "labels": ["UniqueLabel"],
+            "genres": ["UniqueGenre"],
+            "styles": ["UniqueStyle"],
+            "collaborators": [],
+        }
+
+        mock_result.single = AsyncMock(return_value=mock_record)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session.return_value.__aenter__.return_value = mock_session
+        mock_driver.session.return_value.__aexit__.return_value = None
+
+        filter_engine = CollaborativeFilter(mock_driver)
+
+        # Setup existing matrix with different features
+        filter_engine.artist_to_index = {"Artist A": 0}
+        filter_engine.index_to_artist = {0: "Artist A"}
+        filter_engine.artist_features = {
+            "Artist A": {"labels": ["Label1"], "genres": ["Rock"], "styles": ["Alternative"], "collaborators": []},
+        }
+
+        # Setup inverted indices (won't match unique artist)
+        filter_engine.label_to_artists["Label1"] = {0}
+        filter_engine.genre_to_artists["Rock"] = {0}
+        filter_engine.style_to_artists["Alternative"] = {0}
+
+        # Request recommendations
+        results = await filter_engine.get_recommendations("Unique Artist", limit=10)
+
+        # Should return empty list (no shared features)
         assert results == []
