@@ -117,7 +117,7 @@ class PlaygroundAPI:
                 SKIP $offset
                 LIMIT $limit
                 """
-                artist_result = await session.run(artist_query, query=query, offset=offset, limit=limit)
+                artist_result = await session.run(artist_query, {"query": query, "offset": offset, "limit": limit})
                 results["artists"] = [dict(record) async for record in artist_result]
 
             # Search releases
@@ -130,7 +130,7 @@ class PlaygroundAPI:
                 SKIP $offset
                 LIMIT $limit
                 """
-                release_result = await session.run(release_query, query=query, offset=offset, limit=limit)
+                release_result = await session.run(release_query, {"query": query, "offset": offset, "limit": limit})
                 results["releases"] = [dict(record) async for record in release_result]
 
             # Search labels
@@ -143,7 +143,7 @@ class PlaygroundAPI:
                 SKIP $offset
                 LIMIT $limit
                 """
-                label_result = await session.run(label_query, query=query, offset=offset, limit=limit)
+                label_result = await session.run(label_query, {"query": query, "offset": offset, "limit": limit})
                 results["labels"] = [dict(record) async for record in label_result]
 
         # Create paginated response
