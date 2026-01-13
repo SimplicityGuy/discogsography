@@ -40,40 +40,80 @@ class CollaborativeFilter:
         - Artists sharing genres/styles
         - Artists collaborating (via relationship edges)
         - Artists appearing in similar time periods
+
+        Uses batch processing to avoid Neo4j transaction memory limits.
         """
         logger.info("🔨 Building co-occurrence matrix for collaborative filtering...")
 
-        # Fetch all artists and their relationships
+        # Configuration for batch processing
+        BATCH_SIZE = 2000  # Process 2000 artists at a time to avoid memory issues
+        MAX_ARTISTS = 10000  # Maximum total artists to process
+
+        artists_data = []
+
         async with self.driver.session() as session:
-            # Get all artists with their properties
-            result = await session.run(
-                """
-                MATCH (a:Artist)
-                OPTIONAL MATCH (a)-[:ON]->(label:Label)
-                OPTIONAL MATCH (a)-[:IS]->(genre:Genre)
-                OPTIONAL MATCH (a)-[:IS]->(style:Style)
-                OPTIONAL MATCH (a)-[collab]->(other:Artist)
-                RETURN a.id AS artist_id, a.name AS artist_name,
-                       collect(DISTINCT label.name) AS labels,
-                       collect(DISTINCT genre.name) AS genres,
-                       collect(DISTINCT style.name) AS styles,
-                       collect(DISTINCT other.name) AS collaborators
-                LIMIT 10000
-                """
+            # First, get total artist count
+            count_result = await session.run("MATCH (a:Artist) RETURN count(a) AS total")
+            total_artists = await count_result.single()
+            total_count = total_artists["total"] if total_artists else 0
+
+            # Limit to MAX_ARTISTS for memory efficiency
+            artists_to_process = min(total_count, MAX_ARTISTS)
+
+            logger.info(
+                "📊 Processing artists in batches",
+                total_artists=total_count,
+                processing=artists_to_process,
+                batch_size=BATCH_SIZE,
             )
 
-            artists_data = []
-            async for record in result:
-                artists_data.append(
-                    {
-                        "id": record["artist_id"],
-                        "name": record["artist_name"],
-                        "labels": record["labels"] or [],
-                        "genres": record["genres"] or [],
-                        "styles": record["styles"] or [],
-                        "collaborators": record["collaborators"] or [],
-                    }
+            # Fetch artists in batches
+            for offset in range(0, artists_to_process, BATCH_SIZE):
+                batch_num = (offset // BATCH_SIZE) + 1
+                total_batches = (artists_to_process + BATCH_SIZE - 1) // BATCH_SIZE
+
+                logger.info(
+                    f"🔄 Processing batch {batch_num}/{total_batches}",
+                    offset=offset,
+                    batch_size=BATCH_SIZE,
                 )
+
+                result = await session.run(
+                    """
+                    MATCH (a:Artist)
+                    OPTIONAL MATCH (a)-[:ON]->(label:Label)
+                    OPTIONAL MATCH (a)-[:IS]->(genre:Genre)
+                    OPTIONAL MATCH (a)-[:IS]->(style:Style)
+                    OPTIONAL MATCH (a)-[collab]->(other:Artist)
+                    WITH a,
+                         collect(DISTINCT label.name) AS labels,
+                         collect(DISTINCT genre.name) AS genres,
+                         collect(DISTINCT style.name) AS styles,
+                         collect(DISTINCT other.name) AS collaborators
+                    RETURN a.id AS artist_id, a.name AS artist_name,
+                           labels, genres, styles, collaborators
+                    SKIP $offset
+                    LIMIT $batch_size
+                    """,
+                    offset=offset,
+                    batch_size=BATCH_SIZE,
+                )
+
+                batch_data = []
+                async for record in result:
+                    batch_data.append(
+                        {
+                            "id": record["artist_id"],
+                            "name": record["artist_name"],
+                            "labels": record["labels"] or [],
+                            "genres": record["genres"] or [],
+                            "styles": record["styles"] or [],
+                            "collaborators": record["collaborators"] or [],
+                        }
+                    )
+
+                artists_data.extend(batch_data)
+                logger.info(f"✅ Batch {batch_num}/{total_batches} complete", artists_in_batch=len(batch_data))
 
         if not artists_data:
             logger.warning("⚠️ No artist data found for collaborative filtering")

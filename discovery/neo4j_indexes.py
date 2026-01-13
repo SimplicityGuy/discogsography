@@ -155,17 +155,17 @@ async def create_index(driver: AsyncDriver, index_def: dict[str, Any]) -> bool:
         return False
 
 
-async def create_all_indexes(neo4j_uri: str, neo4j_user: str, neo4j_password: str) -> None:
+async def create_all_indexes(neo4j_address: str, neo4j_username: str, neo4j_password: str) -> None:
     """Create all defined indexes.
 
     Args:
-        neo4j_uri: Neo4j connection URI
-        neo4j_user: Neo4j username
+        neo4j_address: Neo4j connection address (bolt://host:port)
+        neo4j_username: Neo4j username
         neo4j_password: Neo4j password
     """
     logger.info("🚀 Starting Neo4j index creation...")
 
-    driver = AsyncGraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+    driver = AsyncGraphDatabase.driver(neo4j_address, auth=(neo4j_username, neo4j_password))
 
     try:
         success_count = 0
@@ -183,18 +183,18 @@ async def create_all_indexes(neo4j_uri: str, neo4j_user: str, neo4j_password: st
         await driver.close()
 
 
-async def list_indexes(neo4j_uri: str, neo4j_user: str, neo4j_password: str) -> list[dict[str, Any]]:
+async def list_indexes(neo4j_address: str, neo4j_username: str, neo4j_password: str) -> list[dict[str, Any]]:
     """List all existing indexes.
 
     Args:
-        neo4j_uri: Neo4j connection URI
-        neo4j_user: Neo4j username
+        neo4j_address: Neo4j connection address (bolt://host:port)
+        neo4j_username: Neo4j username
         neo4j_password: Neo4j password
 
     Returns:
         List of index information dictionaries
     """
-    driver = AsyncGraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+    driver = AsyncGraphDatabase.driver(neo4j_address, auth=(neo4j_username, neo4j_password))
 
     try:
         async with driver.session() as session:
@@ -207,19 +207,19 @@ async def list_indexes(neo4j_uri: str, neo4j_user: str, neo4j_password: str) -> 
         await driver.close()
 
 
-async def drop_index(neo4j_uri: str, neo4j_user: str, neo4j_password: str, index_name: str) -> bool:
+async def drop_index(neo4j_address: str, neo4j_username: str, neo4j_password: str, index_name: str) -> bool:
     """Drop a specific index.
 
     Args:
-        neo4j_uri: Neo4j connection URI
-        neo4j_user: Neo4j username
+        neo4j_address: Neo4j connection address (bolt://host:port)
+        neo4j_username: Neo4j username
         neo4j_password: Neo4j password
         index_name: Name of the index to drop
 
     Returns:
         True if successful, False otherwise
     """
-    driver = AsyncGraphDatabase.driver(neo4j_uri, auth=(neo4j_user, neo4j_password))
+    driver = AsyncGraphDatabase.driver(neo4j_address, auth=(neo4j_username, neo4j_password))
 
     try:
         async with driver.session() as session:
@@ -238,8 +238,8 @@ if __name__ == "__main__":
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-    neo4j_uri = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-    neo4j_user = os.getenv("NEO4J_USER", "neo4j")
+    neo4j_address = os.getenv("NEO4J_ADDRESS", "bolt://localhost:7687")
+    neo4j_username = os.getenv("NEO4J_USERNAME", "neo4j")
     neo4j_password = os.getenv("NEO4J_PASSWORD", "password")
 
-    asyncio.run(create_all_indexes(neo4j_uri, neo4j_user, neo4j_password))
+    asyncio.run(create_all_indexes(neo4j_address, neo4j_username, neo4j_password))

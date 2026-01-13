@@ -199,12 +199,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     from discovery.neo4j_indexes import create_all_indexes
 
     config = get_config()
-    if hasattr(config, "neo4j") and config.neo4j:
-        try:
-            await create_all_indexes(config.neo4j.uri, config.neo4j.user, config.neo4j.password)
-            logger.info("✅ Neo4j indexes created successfully")
-        except Exception as e:
-            logger.warning(f"⚠️  Failed to create Neo4j indexes (non-fatal): {e}")
+    try:
+        await create_all_indexes(config.neo4j_address, config.neo4j_username, config.neo4j_password)
+        logger.info("✅ Neo4j indexes created successfully")
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to create Neo4j indexes (non-fatal): {e}")
 
     # Initialize cache manager
     from discovery.cache import cache_manager

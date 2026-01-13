@@ -341,6 +341,13 @@ class DashboardConfig:
         )
 
 
+# Discovery service uses the same configuration as dashboard
+DiscoveryConfig = DashboardConfig
+
+
 def get_config() -> DashboardConfig:
-    """Get dashboard configuration from environment."""
+    """Get dashboard/discovery configuration from environment.
+
+    Both dashboard and discovery services share the same configuration structure.
+    """
     return DashboardConfig.from_env()
