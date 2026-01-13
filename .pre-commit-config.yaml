@@ -27,18 +27,14 @@ repos:
       - id: check-github-workflows
       - id: check-github-actions
 
-  # mdformat for consistent markdown formatting
-  # Line endings normalized via .gitattributes to prevent CI/local differences
-  # Note: Using ruff for Python code formatting, not mdformat-black
-  # Note: mdformat-tables disabled due to compatibility issues with mdformat 1.0+
-  - repo: https://github.com/executablebooks/mdformat
-    rev: 2d496dbc18e31b83a1596685347ffe0b6041daf0  # frozen: 1.0.0
-    hooks:
-      - id: mdformat
-        additional_dependencies:
-          - mdformat-gfm==1.0.0
-          # - mdformat-tables==1.0.0  # Disabled: requires mdformat<0.8.0
-        files: '^(README\.md|CLAUDE\.md|docs/.*\.md|[^/]+/README\.md|[^/]+/.*\.md)$'
+  # - repo: https://github.com/executablebooks/mdformat
+  #   rev: 2d496dbc18e31b83a1596685347ffe0b6041daf0  # frozen: 1.0.0
+  #   hooks:
+  #     - id: mdformat
+  #       additional_dependencies:
+  #         - mdformat-gfm==1.0.0
+  #         # - mdformat-tables==1.0.0  # Disabled: requires mdformat<0.8.0
+  #       files: '^(README\.md|CLAUDE\.md|docs/.*\.md|[^/]+/README\.md|[^/]+/.*\.md)$'
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: 6ce4b4fc349b8881cbce40207dac3bf78824a88e  # frozen: v0.14.11
