@@ -163,7 +163,7 @@ def orjson_serializer(msg: dict[str, Any], **kwargs: Any) -> str:  # noqa: ARG00
 
 def setup_logging(
     service_name: str,
-    level: str | None = "INFO",
+    level: str | None = None,
     log_file: Path | None = None,
 ) -> None:
     """Set up structured logging configuration with correlation IDs and service context.
@@ -173,11 +173,17 @@ def setup_logging(
     - Add service-specific context (name, version, environment)
     - Output structured JSON logs to console and optionally to file
     - Support distributed tracing via request IDs
+
+    Args:
+        service_name: Name of the service for logging context
+        level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+               If None, reads from LOG_LEVEL environment variable, defaults to INFO.
+        log_file: Optional file path for logging output
     """
 
-    # Default to INFO if level is None
+    # Read from environment variable if level not provided, default to INFO
     if level is None:
-        level = "INFO"
+        level = getenv("LOG_LEVEL", "INFO").upper()
 
     # Configure structlog processors
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)

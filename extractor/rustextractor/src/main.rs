@@ -28,22 +28,34 @@ struct Args {
     /// Force reprocess all files
     #[clap(short, long, env = "FORCE_REPROCESS")]
     force_reprocess: bool,
-
-    /// Enable verbose logging
-    #[clap(short, long)]
-    verbose: bool,
 }
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = Args::parse();
 
-    // Initialize tracing
-    let filter = if args.verbose {
-        "rust_extractor=debug,lapin=info"
-    } else {
-        "rust_extractor=info,lapin=warn"
+    // Initialize tracing with LOG_LEVEL environment variable
+    // Supports: DEBUG, INFO, WARNING, ERROR, CRITICAL (maps to Rust's trace, debug, info, warn, error)
+    let log_level = std::env::var("LOG_LEVEL")
+        .unwrap_or_else(|_| "INFO".to_string())
+        .to_uppercase();
+
+    // Map Python log levels to Rust tracing levels
+    let rust_level = match log_level.as_str() {
+        "DEBUG" => "debug",
+        "INFO" => "info",
+        "WARNING" | "WARN" => "warn",
+        "ERROR" => "error",
+        "CRITICAL" => "error", // Rust doesn't have critical, use error
+        _ => {
+            eprintln!("⚠️ Invalid LOG_LEVEL '{}', defaulting to INFO", log_level);
+            "info"
+        }
     };
+
+    // Set lapin (AMQP library) to warn to reduce noise
+    let lapin_level = if rust_level == "debug" { "info" } else { "warn" };
+    let filter = format!("rust_extractor={},lapin={}", rust_level, lapin_level);
 
     tracing_subscriber::fmt()
         .with_env_filter(filter)

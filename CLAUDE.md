@@ -176,7 +176,7 @@ http://localhost:8000/api/health
 - `NEO4J_URI`: Neo4j connection string
 - `POSTGRES_URL`: PostgreSQL connection string
 - `RABBITMQ_URL`: RabbitMQ connection string
-- `LOG_LEVEL`: Logging level (INFO, DEBUG, WARNING, ERROR)
+- `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) - defaults to INFO if not set
 
 ### Common Tasks
 

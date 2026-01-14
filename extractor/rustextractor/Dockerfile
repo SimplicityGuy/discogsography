@@ -53,7 +53,7 @@ COPY --from=builder /app/target/release/rust_extractor /usr/local/bin/rustextrac
 USER rustextractor
 
 # Set environment variables
-ENV RUST_LOG=rust_extractor=info,lapin=warn
+ENV LOG_LEVEL=INFO
 ENV RUST_EXTRACTOR_CONFIG=/config.toml
 
 # Health check

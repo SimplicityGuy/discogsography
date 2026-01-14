@@ -141,3 +141,64 @@ class TestSetupLogging:
 
         # Should not raise exception
         logger.info("🧪 Test message without file")
+
+    def test_setup_logging_reads_log_level_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that logging setup reads LOG_LEVEL environment variable."""
+        import logging
+
+        # Reset logging config before test
+        logging.root.handlers = []
+
+        # Set LOG_LEVEL environment variable
+        monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+
+        setup_logging("test_service")
+
+        logger = logging.getLogger()
+        assert logger.level == logging.DEBUG
+
+    def test_setup_logging_defaults_to_info(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that logging defaults to INFO when LOG_LEVEL is not set."""
+        import logging
+
+        # Reset logging config before test
+        logging.root.handlers = []
+
+        # Ensure LOG_LEVEL is not set
+        monkeypatch.delenv("LOG_LEVEL", raising=False)
+
+        setup_logging("test_service")
+
+        logger = logging.getLogger()
+        assert logger.level == logging.INFO
+
+    def test_setup_logging_explicit_level_overrides_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that explicit level parameter overrides LOG_LEVEL environment variable."""
+        import logging
+
+        # Reset logging config before test
+        logging.root.handlers = []
+
+        # Set LOG_LEVEL environment variable
+        monkeypatch.setenv("LOG_LEVEL", "DEBUG")
+
+        # Pass explicit level
+        setup_logging("test_service", level="WARNING")
+
+        logger = logging.getLogger()
+        assert logger.level == logging.WARNING
+
+    def test_setup_logging_handles_lowercase_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that logging handles lowercase LOG_LEVEL values."""
+        import logging
+
+        # Reset logging config before test
+        logging.root.handlers = []
+
+        # Set LOG_LEVEL environment variable with lowercase
+        monkeypatch.setenv("LOG_LEVEL", "error")
+
+        setup_logging("test_service")
+
+        logger = logging.getLogger()
+        assert logger.level == logging.ERROR

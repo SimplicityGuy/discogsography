@@ -154,7 +154,7 @@ services:
     environment:
       AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672//
       DISCOGS_ROOT: /discogs-data
-      RUST_LOG: rust_extractor=info,lapin=warn
+      LOG_LEVEL: INFO
       STARTUP_DELAY: "10"
     volumes:
       - discogs_data:/discogs-data

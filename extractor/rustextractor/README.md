@@ -44,6 +44,7 @@ Rust Extractor can be configured via environment variables or a TOML configurati
 - `AMQP_CONNECTION`: RabbitMQ connection URL (required)
 - `DISCOGS_ROOT`: Directory for Discogs data (default: `/discogs-data`)
 - `PERIODIC_CHECK_DAYS`: Days between checks for new data (default: 15)
+- `LOG_LEVEL`: Logging level - DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
 - `HEALTH_PORT`: Port for health server (default: 8000)
 - `MAX_WORKERS`: Number of worker threads (default: CPU count)
 - `BATCH_SIZE`: Message batch size for AMQP (default: 100)
@@ -80,8 +81,11 @@ cargo build --release
 # Run tests
 cargo test
 
-# Run with verbose logging
-RUST_LOG=rust_extractor=debug cargo run
+# Run with debug logging
+LOG_LEVEL=DEBUG cargo run
+
+# Run with default (INFO) logging
+cargo run
 ```
 
 ### Docker
@@ -128,6 +132,16 @@ Rust Extractor uses structured JSON logging with emoji indicators:
 - ❌ Errors
 - 🛑 Shutdown events
 - 🎉 Completion milestones
+
+### Log Levels
+
+Set the `LOG_LEVEL` environment variable to control logging verbosity:
+
+- `DEBUG`: Detailed diagnostic information
+- `INFO`: General informational messages (default)
+- `WARNING`: Warning messages for potential issues
+- `ERROR`: Error messages for failures
+- `CRITICAL`: Critical errors (mapped to ERROR in Rust)
 
 ## Health Endpoints
 
