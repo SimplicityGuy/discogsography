@@ -337,7 +337,7 @@ class PlaygroundAPI:
 
             async with self.neo4j_driver.session() as session:
                 query = """
-                MATCH (r:Release)-[:HAS_GENRE]->(g:Genre)
+                MATCH (r:Release)-[:IS]->(g:Genre)
                 WHERE r.year >= $start_year AND r.year <= $end_year
                 WITH g.name AS genre, r.year AS year, COUNT(r) AS count
                 ORDER BY year, count DESC
@@ -370,7 +370,7 @@ class PlaygroundAPI:
 
             async with self.neo4j_driver.session() as session:
                 query = """
-                MATCH (a:Artist)-[:BY]-(r:Release)
+                MATCH (a:Artist)<-[:BY]-(r:Release)
                 WHERE r.year >= $start_year AND r.year <= $end_year
                 WITH a.name AS artist, r.year AS year, COUNT(r) AS releases
                 ORDER BY year, releases DESC
@@ -481,17 +481,18 @@ class PlaygroundAPI:
 
             async with self.neo4j_driver.session() as session:
                 query = """
-                MATCH (a:Artist)
-                WITH a, size((a)-[:COLLABORATED_WITH]-()) AS collab_count
+                MATCH (a:Artist)<-[:BY]-(r:Release)-[:BY]->(other:Artist)
+                WHERE a <> other
+                WITH a, count(DISTINCT other) AS collab_count
                 ORDER BY collab_count DESC
                 LIMIT $top_n
                 WITH collect(a) AS artists
                 UNWIND artists AS a1
                 UNWIND artists AS a2
-                OPTIONAL MATCH (a1)-[c:COLLABORATED_WITH]-(a2)
                 WHERE id(a1) < id(a2)
+                OPTIONAL MATCH (a1)<-[:BY]-(r:Release)-[:BY]->(a2)
                 WITH a1.name AS artist1, a2.name AS artist2,
-                     CASE WHEN c IS NOT NULL THEN 1 ELSE 0 END AS collaborated
+                     CASE WHEN r IS NOT NULL THEN 1 ELSE 0 END AS collaborated
                 RETURN artist1, artist2, collaborated
                 ORDER BY collaborated DESC, artist1, artist2
                 SKIP $offset
@@ -547,10 +548,11 @@ class PlaygroundAPI:
         async with self.neo4j_driver.session() as session:
             query = """
             MATCH (a:Artist {id: $artist_id})
-            OPTIONAL MATCH (a)-[:BY]->(r:Release)
+            OPTIONAL MATCH (a)<-[:BY]-(r:Release)
             OPTIONAL MATCH (a)-[:MEMBER_OF]->(g:Artist)
-            OPTIONAL MATCH (a)-[:HAS_ALIAS]->(alias:Artist)
-            OPTIONAL MATCH (a)-[:COLLABORATED_WITH]-(collab:Artist)
+            OPTIONAL MATCH (a)<-[:ALIAS_OF]-(alias:Artist)
+            OPTIONAL MATCH (a)<-[:BY]-(rel:Release)-[:BY]->(collab:Artist)
+            WHERE a <> collab
             RETURN a,
                    COUNT(DISTINCT r) AS release_count,
                    collect(DISTINCT g.name) AS groups,

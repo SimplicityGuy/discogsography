@@ -53,16 +53,20 @@ class ContentBasedFilter:
             result = await session.run(
                 """
                 MATCH (a:Artist)
-                OPTIONAL MATCH (a)-[:ON]->(label:Label)
-                OPTIONAL MATCH (a)-[:IS]->(genre:Genre)
-                OPTIONAL MATCH (a)-[:IS]->(style:Style)
-                OPTIONAL MATCH (a)-[collab]->(other:Artist)
-                OPTIONAL MATCH (a)-[:RELEASED]->(r:Release)
+                OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:ON]->(label:Label)
+                WITH a, r, collect(DISTINCT label.name) AS labels
+                OPTIONAL MATCH (r)-[:IS]->(genre:Genre)
+                WITH a, r, labels, collect(DISTINCT genre.name) AS genres
+                OPTIONAL MATCH (r)-[:IS]->(style:Style)
+                WITH a, r, labels, genres, collect(DISTINCT style.name) AS styles
+                OPTIONAL MATCH (a)<-[:BY]-(rel:Release)-[:BY]->(other:Artist)
+                WHERE a <> other
+                WITH a, r, labels, genres, styles, collect(DISTINCT other.name) AS collaborators
                 RETURN a.id AS artist_id, a.name AS artist_name,
-                       collect(DISTINCT label.name) AS labels,
-                       collect(DISTINCT genre.name) AS genres,
-                       collect(DISTINCT style.name) AS styles,
-                       collect(DISTINCT other.name) AS collaborators,
+                       labels,
+                       genres,
+                       styles,
+                       collaborators,
                        min(r.year) AS earliest_year,
                        max(r.year) AS latest_year
                 LIMIT 10000

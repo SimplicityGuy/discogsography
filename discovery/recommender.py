@@ -342,9 +342,9 @@ class MusicRecommender:
         async with self.driver.session() as session:
             query = """
                 MATCH (a:Artist {name: $name})
-                OPTIONAL MATCH (a)-[:BY]->(r:Release)-[:IS]->(g:Genre)
+                OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:IS]->(g:Genre)
                 WITH a, collect(DISTINCT g.name) as genres
-                OPTIONAL MATCH (a)-[:BY]->(recent:Release)
+                OPTIONAL MATCH (a)<-[:BY]-(recent:Release)
                 WITH a, genres, recent
                 ORDER BY recent.year DESC
                 WITH a, genres, collect(recent)[0] as latest_release

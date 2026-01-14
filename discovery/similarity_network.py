@@ -288,10 +288,11 @@ class SimilarityNetworkBuilder:
                 """
                 MATCH (a:Artist)
                 WHERE a.name IN $artist_names
-                OPTIONAL MATCH (a)-[:IS]->(g:Genre)
-                OPTIONAL MATCH (a)-[:IS]->(s:Style)
+                OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:IS]->(g:Genre)
+                WITH a, collect(DISTINCT g.name) AS genres
+                OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:IS]->(s:Style)
                 RETURN a.name AS name,
-                       collect(DISTINCT g.name) AS genres,
+                       genres,
                        collect(DISTINCT s.name) AS styles
                 """,
                 artist_names=artist_names,

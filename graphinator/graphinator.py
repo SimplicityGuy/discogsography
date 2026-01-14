@@ -1027,7 +1027,7 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
                                 "UNWIND $artists AS artist "
                                 "MATCH (r:Release {id: $release_id}) "
                                 "MERGE (a_r:Artist {id: artist.id}) "
-                                "MERGE (r)-[:BY]-(a_r)",
+                                "MERGE (r)-[:BY]->(a_r)",
                                 artists=valid_artists,
                                 release_id=release["id"],
                             )
