@@ -105,13 +105,16 @@ class MusicRecommender:
 
         async with self.driver.session() as session:
             # Get artist collaborations through releases
-            result = await session.run("""
+            query = """
                 MATCH (a1:Artist)<-[:BY]-(r:Release)-[:BY]->(a2:Artist)
                 WHERE a1.name <> a2.name
                 RETURN a1.name as artist1, a2.name as artist2, count(r) as collaborations
                 ORDER BY collaborations DESC
                 LIMIT 10000
-            """)
+            """
+            logger.debug("🔍 Executing Neo4j query", query=query.strip())
+
+            result = await session.run(query)
 
             async for record in result:
                 artist1 = record["artist1"]
@@ -130,7 +133,7 @@ class MusicRecommender:
         artists_data = []
 
         async with self.driver.session() as session:
-            result = await session.run("""
+            query = """
                 MATCH (a:Artist)
                 OPTIONAL MATCH (a)<-[:BY]-(r:Release)-[:IS]->(g:Genre)
                 WITH a, collect(DISTINCT g.name) as genres
@@ -141,7 +144,10 @@ class MusicRecommender:
                        genres,
                        styles
                 LIMIT 5000
-            """)
+            """
+            logger.debug("🔍 Executing Neo4j query", query=query.strip())
+
+            result = await session.run(query)
 
             async for record in result:
                 artist_name = record["name"]
@@ -256,8 +262,7 @@ class MusicRecommender:
             if genres:
                 genre_filter = "AND any(g IN genres WHERE g IN $genres)"
 
-            result = await session.run(
-                f"""
+            query = f"""
                 MATCH (a:Artist)<-[:BY]-(r:Release)
                 OPTIONAL MATCH (r)-[:IS]->(g:Genre)
                 WITH a, collect(DISTINCT g.name) as genres, count(DISTINCT r) as release_count
@@ -274,10 +279,11 @@ class MusicRecommender:
                        latest_release.year as recent_year
                 ORDER BY release_count DESC
                 LIMIT $limit
-            """,
-                genres=genres or [],
-                limit=limit,
-            )
+            """
+            params: dict[str, Any] = {"genres": genres or [], "limit": limit}
+            logger.debug("🔍 Executing Neo4j query", query=query.strip(), params=params)
+
+            result = await session.run(query, **params)
 
             async for record in result:
                 trending.append(
@@ -334,8 +340,7 @@ class MusicRecommender:
         """Get detailed artist information from Neo4j."""
         assert self.driver is not None, "Driver must be initialized before getting artist info"  # nosec B101
         async with self.driver.session() as session:
-            result = await session.run(
-                """
+            query = """
                 MATCH (a:Artist {name: $name})
                 OPTIONAL MATCH (a)-[:BY]->(r:Release)-[:IS]->(g:Genre)
                 WITH a, collect(DISTINCT g.name) as genres
@@ -347,9 +352,11 @@ class MusicRecommender:
                        genres,
                        latest_release.title as recent_release,
                        latest_release.year as recent_year
-            """,
-                name=artist_name,
-            )
+            """
+            params: dict[str, Any] = {"name": artist_name}
+            logger.debug("🔍 Executing Neo4j query", query=query.strip(), params=params)
+
+            result = await session.run(query, **params)
 
             record = await result.single()
             if record:

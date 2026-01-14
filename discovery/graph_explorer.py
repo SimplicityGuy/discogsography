@@ -101,17 +101,17 @@ class MusicGraphExplorer:
 
         assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
-            result = await session.run(
-                f"""
+            query = f"""
                 MATCH (n)
                 {type_filter}
                 WHERE (n.name CONTAINS $search OR n.title CONTAINS $search)
                 RETURN n, labels(n) as node_labels
                 LIMIT $limit
-            """,
-                search=search_term,
-                limit=limit,
-            )
+            """
+            params: dict[str, Any] = {"search": search_term, "limit": limit}
+            logger.debug("🔍 Executing Neo4j query", query=query.strip(), params=params)
+
+            result = await session.run(query, **params)
 
             nodes = []
             async for record in result:
@@ -151,14 +151,15 @@ class MusicGraphExplorer:
         assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
             # Get the central node
-            central_result = await session.run(
-                """
+            query = """
                 MATCH (n)
                 WHERE elementId(n) = $node_id
                 RETURN n, labels(n) as node_labels
-            """,
-                node_id=node_id,
-            )
+            """
+            params: dict[str, Any] = {"node_id": node_id}
+            logger.debug("🔍 Executing Neo4j query", query=query.strip(), params=params)
+
+            central_result = await session.run(query, **params)
 
             central_record = await central_result.single()
             if not central_record:
@@ -171,16 +172,16 @@ class MusicGraphExplorer:
             central_name = central_props.get("name") or central_props.get("title", "Unknown")
 
             # Get connected nodes and relationships
-            expand_result = await session.run(
-                """
+            query = """
                 MATCH (center)-[r]-(connected)
                 WHERE elementId(center) = $node_id
                 RETURN center, r, connected, labels(connected) as connected_labels, type(r) as rel_type
                 LIMIT $limit
-            """,
-                node_id=node_id,
-                limit=limit,
-            )
+            """
+            expand_params: dict[str, Any] = {"node_id": node_id, "limit": limit}
+            logger.debug("🔍 Executing Neo4j query", query=query.strip(), params=expand_params)
+
+            expand_result = await session.run(query, **expand_params)
 
             nodes = [
                 GraphNode(
@@ -252,18 +253,18 @@ class MusicGraphExplorer:
         assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
             # Find shortest paths
-            result = await session.run(
-                """
+            query = """
                 MATCH (source), (target)
                 WHERE elementId(source) = $source_id AND elementId(target) = $target_id
                 MATCH path = shortestPath((source)-[*1..6]-(target))
                 RETURN path, length(path) as path_length
                 ORDER BY path_length
                 LIMIT 5
-            """,
-                source_id=source_node,
-                target_id=target_node,
-            )
+            """
+            params: dict[str, Any] = {"source_id": source_node, "target_id": target_node}
+            logger.debug("🔍 Executing Neo4j query", query=query.strip(), params=params)
+
+            result = await session.run(query, **params)
 
             paths = []
             all_nodes = {}
@@ -348,8 +349,7 @@ class MusicGraphExplorer:
         assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
             # Get neighborhood using variable-length paths
-            result = await session.run(
-                """
+            query = """
                 MATCH (center)-[*1..3]-(neighbor)
                 WHERE elementId(center) = $node_id
                 OPTIONAL MATCH (neighbor)-[r]-(connected)
@@ -357,11 +357,11 @@ class MusicGraphExplorer:
                 RETURN DISTINCT neighbor, labels(neighbor) as neighbor_labels,
                        r, connected, labels(connected) as connected_labels, type(r) as rel_type
                 LIMIT $limit
-            """,
-                node_id=node_id,
-                radius=radius,
-                limit=limit,
-            )
+            """
+            params: dict[str, Any] = {"node_id": node_id, "radius": radius, "limit": limit}
+            logger.debug("🔍 Executing Neo4j query", query=query.strip(), params=params)
+
+            result = await session.run(query, **params)
 
             nodes = {}
             edges = {}
@@ -443,8 +443,7 @@ class MusicGraphExplorer:
 
         assert self.driver is not None, "Driver must be initialized"  # nosec B101
         async with self.driver.session() as session:
-            result = await session.run(
-                """
+            cypher_query = """
                 // Search artists
                 MATCH (a:Artist)
                 WHERE a.name CONTAINS $query OR a.real_name CONTAINS $query OR a.profile CONTAINS $query
@@ -474,9 +473,11 @@ class MusicGraphExplorer:
                 WHERE g.name CONTAINS $query
                 RETURN g as node, labels(g) as node_labels, 'Genre' as search_type
                 LIMIT 5
-            """,
-                {"query": query},
-            )
+            """
+            params = {"query": query}
+            logger.debug("🔍 Executing Neo4j query", query=cypher_query.strip(), params=params)
+
+            result = await session.run(cypher_query, params)
 
             nodes = []
             async for record in result:
