@@ -226,6 +226,71 @@ docker-compose up -d discovery
 
 **Note**: The transformers library automatically uses `$HF_HOME/transformers` for cache storage.
 
+### Enable DEBUG Logging
+
+**When to use**: When you need detailed diagnostic information to troubleshoot issues.
+
+**What it shows**: All services support the `LOG_LEVEL` environment variable for detailed diagnostic output:
+
+```bash
+# Enable DEBUG logging for all services
+export LOG_LEVEL=DEBUG
+docker-compose up -d
+
+# Or for a specific service
+LOG_LEVEL=DEBUG docker-compose up discovery
+
+# Or run directly
+LOG_LEVEL=DEBUG uv run python discovery/discovery.py
+```
+
+**DEBUG logging includes:**
+
+- 🔍 **Database Queries**: All Neo4j and PostgreSQL queries with parameters
+  ```bash
+  # View Neo4j queries in real-time
+  docker-compose logs -f discovery | grep "🔍 Executing Neo4j query"
+  ```
+
+- 📊 **Detailed Operation Traces**: Step-by-step execution flow
+  ```bash
+  # Monitor processing operations
+  docker-compose logs -f graphinator | grep "🔄"
+  ```
+
+- 🧠 **ML Model Operations**: Model loading, inference, and caching
+  ```bash
+  # Track ML operations
+  docker-compose logs discovery | grep "🧠"
+  ```
+
+- 🔄 **Cache Performance**: Cache hits, misses, and performance metrics
+  ```bash
+  # Monitor cache effectiveness
+  docker-compose logs discovery | grep "cache"
+  ```
+
+- 📡 **Connection Events**: WebSocket, database, and RabbitMQ connections
+  ```bash
+  # Track connection lifecycle
+  docker-compose logs -f dashboard | grep -E "🔗|🐰|🐘"
+  ```
+
+**Example DEBUG output for Neo4j query:**
+```json
+{
+  "timestamp": "2026-01-13T20:00:00.123456Z",
+  "level": "debug",
+  "event": "🔍 Executing Neo4j query",
+  "query": "MATCH (a:Artist) WHERE a.name CONTAINS $search RETURN a LIMIT $limit",
+  "params": {"search": "Beatles", "limit": 20}
+}
+```
+
+**Performance impact**: DEBUG logging increases log volume significantly. Use it for troubleshooting, then switch back to `INFO` for production.
+
+For complete LOG_LEVEL documentation, see [Logging Configuration](logging-configuration.md).
+
 ## Getting Help
 
 If you encounter issues not covered here:

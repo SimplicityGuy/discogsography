@@ -261,6 +261,14 @@ Content-Type: application/json
 
 ### Environment Variables
 
+#### Core Configuration
+
+| Variable    | Description                           | Default | Values                                    |
+| ----------- | ------------------------------------- | ------- | ----------------------------------------- |
+| `LOG_LEVEL` | Logging verbosity and detail level    | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+
+> **📝 Note**: When `LOG_LEVEL=DEBUG`, all Neo4j queries are logged with their parameters for debugging and performance analysis. See [Adding Query Logging](../docs/adding-query-logging.md) for details.
+
 #### Database Configuration
 
 | Variable            | Description          | Default                    |
@@ -440,11 +448,31 @@ curl -u neo4j:discogsography http://localhost:7474/db/data/
 ### Debug Mode
 
 ```bash
-# Enable debug logging
-docker-compose -f docker-compose.yml -f docker-compose.debug.yml up discovery
+# Enable debug logging with LOG_LEVEL environment variable
+LOG_LEVEL=DEBUG docker-compose up discovery
 
-# Or set environment variable
+# Or run directly
 PYTHONUNBUFFERED=1 LOG_LEVEL=DEBUG uv run python discovery/discovery.py
+
+# View Neo4j query logs in real-time
+docker-compose logs -f discovery | grep "🔍 Executing Neo4j query"
+```
+
+**What DEBUG mode shows:**
+- 🔍 All Neo4j queries with full Cypher syntax and parameters
+- 📊 Detailed operation traces and timing information
+- 🧠 ML model loading and inference details
+- 🔄 Cache hits/misses and performance metrics
+- 📡 WebSocket connection events and data flow
+- 🎯 Recommendation algorithm decision points
+
+**Example DEBUG output:**
+```json
+{
+  "event": "🔍 Executing Neo4j query",
+  "query": "MATCH (a:Artist) WHERE a.name CONTAINS $search RETURN a LIMIT $limit",
+  "params": {"search": "Beatles", "limit": 20}
+}
 ```
 
 ## 🤝 Contributing

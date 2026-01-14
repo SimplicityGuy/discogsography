@@ -88,12 +88,12 @@ flowchart LR
 
 ### 📥 Data Operations
 
-| Emoji | Usage          | Example                                               |
-| ----- | -------------- | ----------------------------------------------------- |
-| 📥    | Download start | `logger.info("📥 Starting download of releases.xml")` |
-| ⬇️    | Downloading    | `logger.info("⬇️ Downloaded 50MB/200MB")`             |
-| 📄    | File operation | `logger.info("📄 Created output.json")`               |
-| 🔍    | Searching      | `logger.info("🔍 Checking for updates...")`           |
+| Emoji | Usage                     | Example                                                                             |
+| ----- | ------------------------- | ----------------------------------------------------------------------------------- |
+| 📥    | Download start            | `logger.info("📥 Starting download of releases.xml")`                               |
+| ⬇️    | Downloading               | `logger.info("⬇️ Downloaded 50MB/200MB")`                                           |
+| 📄    | File operation            | `logger.info("📄 Created output.json")`                                             |
+| 🔍    | Searching/Query execution | `logger.info("🔍 Checking for updates...")` or `logger.debug("🔍 Executing Neo4j query")` |
 
 ### 🔗 Service Connections
 
@@ -268,6 +268,29 @@ except Exception as e:
 
 ## 🔧 Configuration
 
+### LOG_LEVEL Environment Variable
+
+All Discogsography services use the `LOG_LEVEL` environment variable for consistent log level control:
+
+```bash
+# Set log level for all services
+export LOG_LEVEL=DEBUG    # Detailed diagnostic information
+export LOG_LEVEL=INFO     # General informational messages (default)
+export LOG_LEVEL=WARNING  # Warning conditions only
+export LOG_LEVEL=ERROR    # Error conditions only
+export LOG_LEVEL=CRITICAL # Critical conditions only
+
+# Run service with specific log level
+LOG_LEVEL=DEBUG docker-compose up discovery
+
+# Check what DEBUG logging shows
+docker-compose logs discovery | grep "🔍"  # Neo4j queries
+docker-compose logs discovery | grep "📊"  # Progress updates
+docker-compose logs discovery | grep "🔄"  # Processing operations
+```
+
+For complete details on log level configuration across all services, see [Logging Configuration](logging-configuration.md).
+
 ### Basic Setup
 
 ```python
@@ -286,6 +309,8 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 ```
+
+> **💡 Tip**: Use the `setup_logging()` function from `common.config` instead of manual configuration. It automatically reads `LOG_LEVEL` from the environment and provides structured JSON logging.
 
 ### JSON Logging (Production)
 
@@ -359,9 +384,11 @@ Lifecycle: 🚀 Start | 🛑 Stop | 🔧 Configure | 🏥 Health
 Success:   ✅ Complete | 💾 Saved | 📋 Loaded | 🆕 New
 Errors:    ❌ Error | ⚠️ Warning | 🚨 Critical | ⏩ Skip
 Progress:  🔄 Processing | ⏳ Waiting | 📊 Stats | ⏰ Scheduled
-Data:      📥 Download | ⬇️ Downloading | 📄 File | 🔍 Search
+Data:      📥 Download | ⬇️ Downloading | 📄 File | 🔍 Search/Query
 Services:  🐰 RabbitMQ | 🔗 Neo4j | 🐘 PostgreSQL | 🌐 Network
 ```
+
+> **💡 Tip**: Set `LOG_LEVEL=DEBUG` to see detailed diagnostic logs including database queries marked with 🔍
 
 ______________________________________________________________________
 

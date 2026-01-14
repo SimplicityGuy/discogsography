@@ -281,6 +281,9 @@ cp .env.example .env
 | `DISCOGS_ROOT`        | Data storage path         | `/discogs-data`                      | Python/Rust Extractors |
 | `PERIODIC_CHECK_DAYS` | Update check interval     | `15`                                 | Python/Rust Extractors |
 | `PYTHON_VERSION`      | Python version for builds | `3.13`                               | Docker, CI/CD          |
+| `LOG_LEVEL`           | Logging verbosity         | `INFO`                               | All services           |
+
+> **📝 Note**: `LOG_LEVEL` supports standard Python log levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. When set to `DEBUG`, services output detailed diagnostic information including database queries. See [Logging Configuration](docs/logging-configuration.md) for details.
 
 #### Database Connections
 
@@ -827,6 +830,23 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
    curl http://localhost:8004/health  # Discovery
    ```
 
+1. **🔍 Enable Debug Logging**
+
+   ```bash
+   # Set LOG_LEVEL environment variable for detailed output
+   export LOG_LEVEL=DEBUG
+   docker-compose up -d
+
+   # Or for a specific service
+   LOG_LEVEL=DEBUG uv run python discovery/discovery.py
+
+   # DEBUG level includes:
+   # - Database query logging with parameters
+   # - Detailed operation traces
+   # - Cache hits/misses
+   # - Internal state changes
+   ```
+
 1. **📊 Monitor Real-time Logs**
 
    ```bash
@@ -836,6 +856,12 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
    # Specific service
    docker-compose logs -f extractor-python  # For Python Extractor
    docker-compose logs -f extractor-rust    # For Rust Extractor
+
+   # Filter for errors only
+   docker-compose logs discovery | grep "❌"
+
+   # Filter for Neo4j queries (when LOG_LEVEL=DEBUG)
+   docker-compose logs discovery | grep "🔍 Executing Neo4j query"
    ```
 
 1. **🔍 Analyze Errors**
