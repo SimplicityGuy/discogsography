@@ -529,6 +529,105 @@ mod tests {
         assert_eq!(labels_arr[1]["#text"], json!("Columbia"));
     }
 
+    #[test]
+    fn test_element_context_new() {
+        let context = ElementContext::new();
+        assert!(context.attributes.is_empty());
+        assert!(context.children.is_empty());
+        assert!(context.text_content.is_empty());
+    }
+
+    #[test]
+    fn test_element_context_to_value_empty() {
+        let context = ElementContext::new();
+        let value = context.to_value();
+        assert_eq!(value, Value::Null);
+    }
+
+    #[test]
+    fn test_element_context_to_value_text_only() {
+        let mut context = ElementContext::new();
+        context.text_content = "  Test text  ".to_string();
+        let value = context.to_value();
+        assert_eq!(value, Value::String("Test text".to_string()));
+    }
+
+    #[test]
+    fn test_element_context_to_value_attributes_only() {
+        let mut context = ElementContext::new();
+        context.attributes.insert("id".to_string(), Value::String("123".to_string()));
+        let value = context.to_value();
+        assert!(value.is_object());
+        let obj = value.as_object().unwrap();
+        assert_eq!(obj.get("@id"), Some(&Value::String("123".to_string())));
+    }
+
+    #[test]
+    fn test_element_context_to_value_attributes_and_text() {
+        let mut context = ElementContext::new();
+        context.attributes.insert("id".to_string(), Value::String("123".to_string()));
+        context.text_content = "Text content".to_string();
+        let value = context.to_value();
+        assert!(value.is_object());
+        let obj = value.as_object().unwrap();
+        assert_eq!(obj.get("@id"), Some(&Value::String("123".to_string())));
+        assert_eq!(obj.get("#text"), Some(&Value::String("Text content".to_string())));
+    }
+
+    #[test]
+    fn test_element_context_add_child_single() {
+        let mut context = ElementContext::new();
+        context.add_child("name".to_string(), Value::String("Test".to_string()));
+        assert_eq!(context.children.get("name"), Some(&Value::String("Test".to_string())));
+    }
+
+    #[test]
+    fn test_element_context_add_child_multiple() {
+        let mut context = ElementContext::new();
+        context.add_child("name".to_string(), Value::String("First".to_string()));
+        context.add_child("name".to_string(), Value::String("Second".to_string()));
+
+        let value = context.children.get("name").unwrap();
+        assert!(value.is_array());
+        let arr = value.as_array().unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0], Value::String("First".to_string()));
+        assert_eq!(arr[1], Value::String("Second".to_string()));
+    }
+
+    #[test]
+    fn test_element_context_add_child_to_existing_array() {
+        let mut context = ElementContext::new();
+        context.add_child("name".to_string(), Value::String("First".to_string()));
+        context.add_child("name".to_string(), Value::String("Second".to_string()));
+        context.add_child("name".to_string(), Value::String("Third".to_string()));
+
+        let value = context.children.get("name").unwrap();
+        let arr = value.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+    }
+
+    #[test]
+    fn test_calculate_record_hash() {
+        let record = json!({"id": "123", "name": "Test"});
+        let hash1 = calculate_record_hash(&record);
+        let hash2 = calculate_record_hash(&record);
+
+        assert_eq!(hash1, hash2);
+        assert_eq!(hash1.len(), 64); // SHA256 hex string length
+    }
+
+    #[test]
+    fn test_calculate_record_hash_different_records() {
+        let record1 = json!({"id": "123"});
+        let record2 = json!({"id": "456"});
+
+        let hash1 = calculate_record_hash(&record1);
+        let hash2 = calculate_record_hash(&record2);
+
+        assert_ne!(hash1, hash2);
+    }
+
     #[tokio::test]
     async fn test_parse_master_with_artists() {
         let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>

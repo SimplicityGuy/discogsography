@@ -1968,3 +1968,452 @@ class TestConcurrentExtractorErrorHandling:
 
         # Connection should still be closed despite failure
         mock_connection.close.assert_called_once()
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
+    def test_exit_flushes_pending_messages_on_error(self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __exit__ attempts to flush messages even on error."""
+        mock_exists.return_value = True
+
+        mock_connection = Mock()
+        mock_channel = Mock()
+        mock_channel.is_closed = False
+        mock_channel.is_open = True
+        mock_channel.basic_publish = Mock(return_value=True)
+        mock_connection.channel.return_value = mock_channel
+        mock_rabbitmq.return_value = mock_connection
+
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+
+        # Enter context
+        extractor.__enter__()
+
+        # Add some pending messages
+        extractor.pending_messages = [{"id": "1", "name": "Test"}]
+
+        # Exit with exception
+        extractor.__exit__(RuntimeError, RuntimeError("Test error"), None)
+
+        # Should have attempted to publish the pending message
+        assert mock_channel.basic_publish.called
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
+    def test_exit_handles_flush_failure_gracefully(self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __exit__ handles flush failures gracefully."""
+        mock_exists.return_value = True
+
+        mock_connection = Mock()
+        mock_channel = Mock()
+        mock_channel.is_closed = False
+        mock_channel.is_open = True
+        mock_connection.channel.return_value = mock_channel
+        mock_rabbitmq.return_value = mock_connection
+
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+
+        # Enter context
+        extractor.__enter__()
+
+        # Add some pending messages
+        extractor.pending_messages = [{"id": "1", "name": "Test"}]
+
+        # Mock _flush_pending_messages to raise error
+        with patch.object(extractor, "_flush_pending_messages", side_effect=Exception("Flush error")):
+            # Should not raise exception
+            extractor.__exit__(None, None, None)
+
+        # Connection should still be closed
+        mock_connection.close.assert_called_once()
+
+
+class TestQueueRecordVariations:
+    """Test __queue_record with different data types and edge cases."""
+
+    @pytest.fixture
+    def mock_config(self, test_discogs_root: Path) -> Mock:
+        """Create a mock ExtractorConfig."""
+        config = Mock()
+        config.discogs_root = test_discogs_root
+        config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
+        config.batch_size = 100
+        config.progress_log_interval = 1000
+        return config
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_with_masters_id_extraction(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record extracts ID for masters from path."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_masters.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = asyncio.Queue()
+        extractor.event_loop = asyncio.new_event_loop()
+
+        path = [("masters", None), ("master", {"id": "999"})]
+        data = {"title": "Test Master"}
+
+        result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+        assert result is True
+        # ID should be extracted from path
+        assert data.get("id") == "999"
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_with_releases_id_extraction(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record extracts ID for releases from path."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_releases.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = asyncio.Queue()
+        extractor.event_loop = asyncio.new_event_loop()
+
+        path = [("releases", None), ("release", {"id": "888"})]
+        data = {"title": "Test Release"}
+
+        result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+        assert result is True
+        # ID should be extracted from path
+        assert data.get("id") == "888"
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_with_artists_name_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record logs artist name."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = asyncio.Queue()
+        extractor.event_loop = asyncio.new_event_loop()
+
+        path = [("artists", None), ("artist", {"id": "123"})]
+        data = {"id": "123", "name": "Test Artist Name"}
+
+        result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+        assert result is True
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_with_labels_name_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record logs label name."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_labels.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = asyncio.Queue()
+        extractor.event_loop = asyncio.new_event_loop()
+
+        path = [("labels", None), ("label", {"id": "456"})]
+        data = {"id": "456", "name": "Test Label Name"}
+
+        result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+        assert result is True
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_with_releases_title_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record logs release title."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_releases.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = asyncio.Queue()
+        extractor.event_loop = asyncio.new_event_loop()
+
+        path = [("releases", None), ("release", {"id": "789"})]
+        data = {"id": "789", "title": "Test Release Title"}
+
+        result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+        assert result is True
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_with_masters_title_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record logs master title."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_masters.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = asyncio.Queue()
+        extractor.event_loop = asyncio.new_event_loop()
+
+        path = [("masters", None), ("master", {"id": "999"})]
+        data = {"id": "999", "title": "Test Master Title"}
+
+        result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+        assert result is True
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_with_no_name_field(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record handles missing name field."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = asyncio.Queue()
+        extractor.event_loop = asyncio.new_event_loop()
+
+        path = [("artists", None), ("artist", {"id": "123"})]
+        data = {"id": "123"}  # No name field
+
+        result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+        assert result is True
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_with_backpressure_high(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record applies backpressure when queue is 80% full."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = Mock()
+        extractor.record_queue.qsize.return_value = 4100  # 82% of 5000
+        extractor.event_loop = Mock()
+
+        path = [("artists", None), ("artist", {"id": "123"})]
+        data = {"id": "123", "name": "Test"}
+
+        # Mock the asyncio.run_coroutine_threadsafe
+        with patch("extractor.pyextractor.extractor.asyncio.run_coroutine_threadsafe") as mock_run_coro:
+            mock_future = Mock()
+            mock_future.result.return_value = None
+            mock_run_coro.return_value = mock_future
+
+            with patch("extractor.pyextractor.extractor.time.sleep") as mock_sleep:
+                result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+                # Should have slept due to high queue size
+                mock_sleep.assert_called_once_with(0.01)
+                assert result is True
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_with_backpressure_medium(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record applies backpressure when queue is 60% full."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = Mock()
+        extractor.record_queue.qsize.return_value = 3100  # 62% of 5000
+        extractor.event_loop = Mock()
+
+        path = [("artists", None), ("artist", {"id": "123"})]
+        data = {"id": "123", "name": "Test"}
+
+        with patch("extractor.pyextractor.extractor.asyncio.run_coroutine_threadsafe") as mock_run_coro:
+            mock_future = Mock()
+            mock_future.result.return_value = None
+            mock_run_coro.return_value = mock_future
+
+            with patch("extractor.pyextractor.extractor.time.sleep") as mock_sleep:
+                result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+                # Should have slept due to medium queue size
+                mock_sleep.assert_called_once_with(0.005)
+                assert result is True
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_with_backpressure_low(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record applies backpressure when queue is 40% full."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = Mock()
+        extractor.record_queue.qsize.return_value = 2100  # 42% of 5000
+        extractor.event_loop = Mock()
+
+        path = [("artists", None), ("artist", {"id": "123"})]
+        data = {"id": "123", "name": "Test"}
+
+        with patch("extractor.pyextractor.extractor.asyncio.run_coroutine_threadsafe") as mock_run_coro:
+            mock_future = Mock()
+            mock_future.result.return_value = None
+            mock_run_coro.return_value = mock_future
+
+            with patch("extractor.pyextractor.extractor.time.sleep") as mock_sleep:
+                result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+                # Should have slept due to low queue size
+                mock_sleep.assert_called_once_with(0.001)
+                assert result is True
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_timeout_handling(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record handles timeout gracefully."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = Mock()
+        extractor.record_queue.qsize.return_value = 100
+        extractor.event_loop = Mock()
+
+        path = [("artists", None), ("artist", {"id": "123"})]
+        data = {"id": "123", "name": "Test"}
+
+        with patch("extractor.pyextractor.extractor.asyncio.run_coroutine_threadsafe") as mock_run_coro:
+            mock_future = Mock()
+            mock_future.result.side_effect = TimeoutError("Queue timeout")
+            mock_run_coro.return_value = mock_future
+
+            result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+            # Should handle timeout and drop record
+            assert result is True
+            assert extractor.error_count == 1
+
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    def test_queue_record_progress_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test __queue_record logs progress at intervals."""
+        mock_exists.return_value = True
+        mock_config.progress_log_interval = 100
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.record_queue = asyncio.Queue()
+        extractor.event_loop = asyncio.new_event_loop()
+        extractor.total_count = 99  # Next record will trigger logging
+
+        path = [("artists", None), ("artist", {"id": "123"})]
+        data = {"id": "123", "name": "Test"}
+
+        with patch("extractor.pyextractor.extractor.logger") as mock_logger:
+            result = extractor._ConcurrentExtractor__queue_record(path, data)
+
+            # Should have logged progress
+            assert result is True
+            assert extractor.total_count == 100
+            # Check that info was called for progress
+            info_calls = list(mock_logger.info.call_args_list)
+            assert len(info_calls) > 0
+
+
+class TestExtractAsyncEdgeCases:
+    """Test extract_async edge cases and error paths."""
+
+    @pytest.fixture
+    def mock_config(self, test_discogs_root: Path) -> Mock:
+        """Create a mock ExtractorConfig."""
+        config = Mock()
+        config.discogs_root = test_discogs_root
+        config.rabbitmq_url = "amqp://guest:guest@localhost:5672/"
+        config.batch_size = 100
+        config.progress_log_interval = 1000
+        return config
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    async def test_extract_async_flushes_on_keyboard_interrupt(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test that extract_async flushes messages on KeyboardInterrupt."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.pending_messages = [{"id": "1", "name": "Test"}]
+
+        # Set up mock to raise after some setup
+        async def mock_parse_interrupt():
+            await asyncio.sleep(0.01)
+            raise KeyboardInterrupt()
+
+        mock_flush = Mock()
+        with (
+            patch.object(extractor, "_parse_xml_async", new=mock_parse_interrupt),
+            patch.object(extractor, "_flush_pending_messages", new=mock_flush),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            await extractor.extract_async()
+
+        # Should have attempted to flush messages
+        assert mock_flush.called
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    async def test_extract_async_flushes_on_general_error(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test that extract_async flushes messages on general error."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor.pending_messages = [{"id": "1", "name": "Test"}]
+
+        async def mock_parse_error():
+            raise RuntimeError("Unexpected error")
+
+        with (
+            patch.object(extractor, "_parse_xml_async", mock_parse_error),
+            patch.object(extractor, "_flush_pending_messages") as mock_flush,
+            pytest.raises(RuntimeError),
+        ):
+            await extractor.extract_async()
+
+        # Should have attempted to flush messages
+        assert mock_flush.called
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    async def test_extract_async_handles_flush_error_on_interrupt(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test extract_async handles flush errors during interrupt."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+
+        async def mock_parse_interrupt():
+            await asyncio.sleep(0.01)
+            raise KeyboardInterrupt()
+
+        with (
+            patch.object(extractor, "_parse_xml_async", new=mock_parse_interrupt),
+            patch.object(extractor, "_flush_pending_messages", side_effect=Exception("Flush failed")),
+            patch("extractor.pyextractor.extractor.logger"),
+            pytest.raises(KeyboardInterrupt),
+        ):
+            await extractor.extract_async()
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    async def test_extract_async_handles_flush_error_on_exception(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test extract_async handles flush errors during exception handling."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+
+        async def mock_parse_error():
+            raise RuntimeError("Parse failed")
+
+        with (
+            patch.object(extractor, "_parse_xml_async", mock_parse_error),
+            patch.object(extractor, "_flush_pending_messages", side_effect=Exception("Flush failed")),
+            patch("extractor.pyextractor.extractor.logger"),
+            pytest.raises(RuntimeError),
+        ):
+            await extractor.extract_async()
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.Path.exists")
+    async def test_extract_async_final_flush_error(self, mock_exists: Mock, mock_config: Mock) -> None:
+        """Test extract_async handles final flush errors."""
+        mock_exists.return_value = True
+        input_file = "discogs_20230101_artists.xml.gz"
+
+        extractor = ConcurrentExtractor(input_file, mock_config)
+
+        async def mock_parse():
+            pass
+
+        with (
+            patch.object(extractor, "_parse_xml_async", mock_parse),
+            patch.object(extractor, "_flush_pending_messages", side_effect=Exception("Final flush failed")),
+            patch("extractor.pyextractor.extractor.logger") as mock_logger,
+        ):
+            await extractor.extract_async()
+
+        # Should have logged the error
+        assert mock_logger.error.called

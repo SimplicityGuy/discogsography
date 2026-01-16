@@ -7,3 +7,7 @@ pub mod health;
 pub mod message_queue;
 pub mod parser;
 pub mod types;
+
+// Additional test modules
+#[cfg(test)]
+mod message_queue_tests;

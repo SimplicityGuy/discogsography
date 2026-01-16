@@ -1339,3 +1339,466 @@ class TestOnDataMessageProgressLogging:
 
         assert progress_logged, "Progress should be logged at interval"
         mock_message.ack.assert_called_once()
+
+
+class TestOnDataMessageBatchMode:
+    """Test batch mode processing in on_data_message."""
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    @patch("tableinator.tableinator.BATCH_MODE", True)
+    async def test_delegates_to_batch_processor(self) -> None:
+        """Test that messages are delegated to batch processor when enabled."""
+        import tableinator.tableinator
+
+        mock_batch_processor = AsyncMock()
+        tableinator.tableinator.batch_processor = mock_batch_processor
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"id": "123", "name": "Test", "sha256": "abc"}).encode()
+        mock_message.routing_key = "artists"
+
+        tableinator.tableinator.message_counts = {"artists": 0}
+        tableinator.tableinator.last_message_time = {"artists": 0}
+
+        await on_data_message(mock_message)
+
+        # Should have called batch processor
+        mock_batch_processor.add_message.assert_called_once()
+        call_args = mock_batch_processor.add_message.call_args
+        assert call_args[1]["data_type"] == "artists"
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    @patch("tableinator.tableinator.BATCH_MODE", False)
+    async def test_processes_directly_when_batch_disabled(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
+        """Test direct processing when batch mode is disabled."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.batch_processor = None
+        tableinator.tableinator.message_counts = {"artists": 0}
+        tableinator.tableinator.last_message_time = {"artists": 0}
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+
+        mock_pool = MagicMock()
+        mock_pool.connection.return_value.__enter__.return_value = mock_postgres_connection
+
+        mock_cursor = mock_postgres_connection.cursor.return_value.__enter__.return_value
+        mock_cursor.fetchone.return_value = None
+
+        with patch("tableinator.tableinator.connection_pool", mock_pool):
+            await on_data_message(mock_message)
+
+        # Should have processed directly
+        assert mock_cursor.execute.call_count == 2  # SELECT and INSERT
+        mock_message.ack.assert_called_once()
+
+
+class TestOnDataMessageDatabaseOperations:
+    """Test database operations in on_data_message."""
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_updates_existing_record(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
+        """Test updating an existing record with different hash."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+
+        mock_pool = MagicMock()
+        mock_pool.connection.return_value.__enter__.return_value = mock_postgres_connection
+
+        mock_cursor = mock_postgres_connection.cursor.return_value.__enter__.return_value
+        # Return existing record with different hash
+        mock_cursor.fetchone.return_value = ("old_hash",)
+
+        with patch("tableinator.tableinator.connection_pool", mock_pool):
+            await on_data_message(mock_message)
+
+        # Should execute both SELECT and INSERT/UPDATE
+        assert mock_cursor.execute.call_count == 2
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_handles_database_interface_error(self, sample_artist_data: dict[str, Any]) -> None:
+        """Test handling InterfaceError from database."""
+        from psycopg.errors import InterfaceError
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+
+        mock_pool = MagicMock()
+        mock_pool.connection.side_effect = InterfaceError("Interface error")
+
+        with (
+            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.logger") as mock_logger,
+        ):
+            await on_data_message(mock_message)
+
+        # Should nack with requeue
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_logger.warning.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_handles_database_operational_error(self, sample_artist_data: dict[str, Any]) -> None:
+        """Test handling OperationalError from database."""
+        from psycopg.errors import OperationalError
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+
+        mock_pool = MagicMock()
+        mock_pool.connection.side_effect = OperationalError("Database unavailable")
+
+        with (
+            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.logger") as mock_logger,
+        ):
+            await on_data_message(mock_message)
+
+        # Should nack with requeue
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_logger.warning.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_handles_nack_failure(self, sample_artist_data: dict[str, Any]) -> None:
+        """Test handling failure during nack operation."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.routing_key = "artists"
+        mock_message.nack.side_effect = Exception("Nack failed")
+
+        mock_pool = MagicMock()
+        mock_pool.connection.side_effect = Exception("Connection failed")
+
+        with (
+            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.logger") as mock_logger,
+        ):
+            await on_data_message(mock_message)
+
+        # Should log warning about nack failure
+        assert any("Failed to nack message" in str(call) for call in mock_logger.warning.call_args_list)
+
+
+class TestOnDataMessageFileCompletion:
+    """Test file completion handling in on_data_message."""
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    @patch("tableinator.tableinator.CONSUMER_CANCEL_DELAY", 1)
+    async def test_schedules_consumer_cancellation_with_delay(self) -> None:
+        """Test that consumer cancellation is scheduled when enabled."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.queues = {"artists": AsyncMock()}
+        tableinator.tableinator.consumer_cancel_tasks = {}
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "file_complete",
+            "total_processed": 1000,
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+        mock_message.routing_key = "artists"
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.schedule_consumer_cancellation") as mock_schedule,
+        ):
+            await on_data_message(mock_message)
+
+        # Should have scheduled cancellation
+        mock_schedule.assert_called_once()
+        assert "artists" in tableinator.tableinator.completed_files
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    @patch("tableinator.tableinator.CONSUMER_CANCEL_DELAY", 0)
+    async def test_skips_consumer_cancellation_when_disabled(self) -> None:
+        """Test that consumer cancellation is skipped when delay is 0."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.queues = {"artists": AsyncMock()}
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "file_complete",
+            "total_processed": 1000,
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+        mock_message.routing_key = "artists"
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.schedule_consumer_cancellation") as mock_schedule,
+        ):
+            await on_data_message(mock_message)
+
+        # Should not schedule cancellation
+        mock_schedule.assert_not_called()
+        assert "artists" in tableinator.tableinator.completed_files
+
+
+class TestMainBatchProcessor:
+    """Test main() batch processor initialization."""
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.setup_logging")
+    @patch("tableinator.tableinator.HealthServer")
+    @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
+    @patch("tableinator.tableinator.ResilientPostgreSQLPool")
+    @patch("tableinator.tableinator.psycopg.connect")
+    @patch("tableinator.tableinator.BATCH_MODE", True)
+    @patch("tableinator.tableinator.BATCH_SIZE", 50)
+    @patch("tableinator.tableinator.BATCH_FLUSH_INTERVAL", 2.0)
+    async def test_main_initializes_batch_processor(
+        self,
+        mock_psycopg_connect: Mock,
+        mock_pool_class: Mock,
+        mock_rabbitmq_class: AsyncMock,
+        mock_health_server: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test that main initializes batch processor when enabled."""
+        # Mock health server
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        # Mock database existence check
+        mock_admin_conn = MagicMock()
+        mock_admin_cursor = MagicMock()
+        mock_admin_cursor.fetchone.return_value = ("discogsography",)
+        mock_admin_conn.cursor.return_value.__enter__.return_value = mock_admin_cursor
+        mock_admin_conn.__enter__.return_value = mock_admin_conn
+        mock_psycopg_connect.return_value = mock_admin_conn
+
+        # Setup pool
+        mock_pool = MagicMock()
+        mock_pool_class.return_value = mock_pool
+
+        mock_conn = MagicMock()
+        mock_cursor = MagicMock()
+        mock_pool.connection.return_value.__enter__.return_value = mock_conn
+        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+        # Mock RabbitMQ
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+        mock_connection = AsyncMock()
+        mock_rabbitmq_instance.connect.return_value = mock_connection
+        mock_channel = AsyncMock()
+        mock_rabbitmq_instance.channel.return_value = mock_channel
+        mock_queue = AsyncMock()
+        mock_channel.declare_queue.return_value = mock_queue
+
+        with (
+            patch("tableinator.tableinator.shutdown_requested", False),
+            patch("tableinator.tableinator.PostgreSQLBatchProcessor") as mock_batch_class,
+        ):
+            # Mock the batch processor instance with AsyncMock for periodic_flush
+            mock_batch_instance = MagicMock()
+            mock_batch_instance.periodic_flush = AsyncMock()
+            mock_batch_instance.flush_all = AsyncMock()
+            mock_batch_instance.shutdown = MagicMock()
+            mock_batch_class.return_value = mock_batch_instance
+
+            # Track created tasks
+            created_tasks = []
+            original_create_task = asyncio.create_task
+
+            def mock_create_task(coro: Any) -> asyncio.Task[Any]:
+                task = original_create_task(coro)
+                created_tasks.append(task)
+                return task
+
+            with patch("asyncio.create_task", side_effect=mock_create_task):
+                # Make the main loop exit after setup
+                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+                    import tableinator.tableinator
+
+                    tableinator.tableinator.shutdown_requested = True
+                    raise TimeoutError()
+
+                with patch("asyncio.wait_for", mock_wait_for):
+                    await main()
+
+            # Clean up tasks
+            for task in created_tasks:
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+
+        # Verify batch processor was initialized
+        mock_batch_class.assert_called_once()
+
+
+class TestMainEnvironmentVariables:
+    """Test main() environment variable handling."""
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.setup_logging")
+    @patch("tableinator.tableinator.HealthServer")
+    async def test_main_handles_startup_delay(
+        self,
+        mock_health_server: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test that main respects STARTUP_DELAY environment variable."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        with (
+            patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+            patch("asyncio.sleep") as mock_sleep,
+            patch("tableinator.tableinator.TableinatorConfig.from_env", side_effect=ValueError("Test error")),
+        ):
+            await main()
+
+        # Sleep should be called with 0 (or not at all if 0)
+        # In this case the code checks if startup_delay > 0, so sleep won't be called
+        mock_sleep.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.setup_logging")
+    @patch("tableinator.tableinator.HealthServer")
+    async def test_main_handles_config_error(
+        self,
+        mock_health_server: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test main handles configuration errors gracefully."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        with (
+            patch("tableinator.tableinator.TableinatorConfig.from_env", side_effect=ValueError("Invalid config")),
+            patch("tableinator.tableinator.logger") as mock_logger,
+        ):
+            await main()
+
+        # Should log error and return
+        mock_logger.error.assert_called()
+
+
+class TestMainDatabaseSetup:
+    """Test main() database setup logic."""
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.setup_logging")
+    @patch("tableinator.tableinator.HealthServer")
+    @patch("tableinator.tableinator.psycopg.connect")
+    async def test_main_handles_database_creation_error(
+        self,
+        mock_psycopg_connect: Mock,
+        mock_health_server: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test main handles database creation errors."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        # Make database check fail
+        mock_psycopg_connect.side_effect = Exception("Connection failed")
+
+        with patch("tableinator.tableinator.logger") as mock_logger:
+            await main()
+
+        # Should log error and return
+        mock_logger.error.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.setup_logging")
+    @patch("tableinator.tableinator.HealthServer")
+    @patch("tableinator.tableinator.ResilientPostgreSQLPool")
+    @patch("tableinator.tableinator.psycopg.connect")
+    async def test_main_closes_pool_on_table_creation_error(
+        self,
+        mock_psycopg_connect: Mock,
+        mock_pool_class: Mock,
+        mock_health_server: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test that pool is closed when table creation fails."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        # Mock database check success
+        mock_admin_conn = MagicMock()
+        mock_admin_cursor = MagicMock()
+        mock_admin_cursor.fetchone.return_value = ("discogsography",)
+        mock_admin_conn.cursor.return_value.__enter__.return_value = mock_admin_cursor
+        mock_admin_conn.__enter__.return_value = mock_admin_conn
+        mock_psycopg_connect.return_value = mock_admin_conn
+
+        # Setup pool
+        mock_pool = MagicMock()
+        mock_pool_class.return_value = mock_pool
+
+        # Make table creation fail
+        mock_pool.connection.side_effect = Exception("Table creation failed")
+
+        await main()
+
+        # Pool should be closed
+        mock_pool.close.assert_called_once()
+
+
+class TestScheduleConsumerCancellationDetailed:
+    """Detailed tests for schedule_consumer_cancellation."""
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.CONSUMER_CANCEL_DELAY", 0.1)
+    async def test_removes_consumer_tag_after_cancellation(self) -> None:
+        """Test that consumer tag is removed after cancellation."""
+        import tableinator.tableinator
+
+        mock_queue = AsyncMock()
+        tableinator.tableinator.consumer_tags = {"artists": "consumer-tag-123"}
+        tableinator.tableinator.consumer_cancel_tasks = {}
+        tableinator.tableinator.completed_files = {"artists", "labels", "masters", "releases"}
+        tableinator.tableinator.shutdown_requested = False
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.check_all_consumers_idle", return_value=True),
+            patch("tableinator.tableinator.close_rabbitmq_connection") as mock_close,
+        ):
+            await schedule_consumer_cancellation("artists", mock_queue)
+            await asyncio.sleep(0.15)
+
+        # Consumer tag should be removed
+        assert "artists" not in tableinator.tableinator.consumer_tags
+
+        # Should close connection when all idle
+        mock_close.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.CONSUMER_CANCEL_DELAY", 0.1)
+    async def test_cleans_up_task_reference(self) -> None:
+        """Test that task reference is cleaned up after completion."""
+        import tableinator.tableinator
+
+        mock_queue = AsyncMock()
+        tableinator.tableinator.consumer_tags = {"artists": "consumer-tag-123"}
+        tableinator.tableinator.consumer_cancel_tasks = {}
+        tableinator.tableinator.shutdown_requested = False
+
+        with patch("tableinator.tableinator.logger"):
+            await schedule_consumer_cancellation("artists", mock_queue)
+            await asyncio.sleep(0.15)
+
+        # Task reference should be cleaned up
+        assert "artists" not in tableinator.tableinator.consumer_cancel_tasks

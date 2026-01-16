@@ -168,6 +168,62 @@ mod tests {
     }
 
     #[test]
+    fn test_data_type_all_types() {
+        assert_eq!(DataType::from_str("artists"), Ok(DataType::Artists));
+        assert_eq!(DataType::from_str("labels"), Ok(DataType::Labels));
+        assert_eq!(DataType::from_str("masters"), Ok(DataType::Masters));
+        assert_eq!(DataType::from_str("releases"), Ok(DataType::Releases));
+    }
+
+    #[test]
+    fn test_data_type_case_insensitive() {
+        assert_eq!(DataType::from_str("ARTISTS"), Ok(DataType::Artists));
+        assert_eq!(DataType::from_str("Artists"), Ok(DataType::Artists));
+        assert_eq!(DataType::from_str("aRtIsTs"), Ok(DataType::Artists));
+    }
+
+    #[test]
+    fn test_data_type_invalid() {
+        assert!(DataType::from_str("invalid").is_err());
+        assert!(DataType::from_str("").is_err());
+        assert!(DataType::from_str("artist").is_err()); // singular
+    }
+
+    #[test]
+    fn test_data_type_as_str() {
+        assert_eq!(DataType::Artists.as_str(), "artists");
+        assert_eq!(DataType::Labels.as_str(), "labels");
+        assert_eq!(DataType::Masters.as_str(), "masters");
+        assert_eq!(DataType::Releases.as_str(), "releases");
+    }
+
+    #[test]
+    fn test_data_type_routing_key() {
+        assert_eq!(DataType::Artists.routing_key(), "artists");
+        assert_eq!(DataType::Labels.routing_key(), "labels");
+        assert_eq!(DataType::Masters.routing_key(), "masters");
+        assert_eq!(DataType::Releases.routing_key(), "releases");
+    }
+
+    #[test]
+    fn test_data_type_display() {
+        assert_eq!(format!("{}", DataType::Artists), "artists");
+        assert_eq!(format!("{}", DataType::Labels), "labels");
+        assert_eq!(format!("{}", DataType::Masters), "masters");
+        assert_eq!(format!("{}", DataType::Releases), "releases");
+    }
+
+    #[test]
+    fn test_data_type_all() {
+        let all = DataType::all();
+        assert_eq!(all.len(), 4);
+        assert!(all.contains(&DataType::Artists));
+        assert!(all.contains(&DataType::Labels));
+        assert!(all.contains(&DataType::Masters));
+        assert!(all.contains(&DataType::Releases));
+    }
+
+    #[test]
     fn test_extraction_progress() {
         let mut progress = ExtractionProgress::default();
         progress.increment(DataType::Artists);
@@ -180,6 +236,31 @@ mod tests {
     }
 
     #[test]
+    fn test_extraction_progress_all_types() {
+        let mut progress = ExtractionProgress::default();
+        progress.increment(DataType::Artists);
+        progress.increment(DataType::Labels);
+        progress.increment(DataType::Masters);
+        progress.increment(DataType::Releases);
+
+        assert_eq!(progress.get(DataType::Artists), 1);
+        assert_eq!(progress.get(DataType::Labels), 1);
+        assert_eq!(progress.get(DataType::Masters), 1);
+        assert_eq!(progress.get(DataType::Releases), 1);
+        assert_eq!(progress.total(), 4);
+    }
+
+    #[test]
+    fn test_extraction_progress_default() {
+        let progress = ExtractionProgress::default();
+        assert_eq!(progress.artists, 0);
+        assert_eq!(progress.labels, 0);
+        assert_eq!(progress.masters, 0);
+        assert_eq!(progress.releases, 0);
+        assert_eq!(progress.total(), 0);
+    }
+
+    #[test]
     fn test_processing_state() {
         let mut state = ProcessingState::default();
         assert!(!state.is_processed("file1.xml"));
@@ -189,5 +270,85 @@ mod tests {
 
         state.clear();
         assert!(!state.is_processed("file1.xml"));
+    }
+
+    #[test]
+    fn test_processing_state_multiple_files() {
+        let mut state = ProcessingState::default();
+        state.mark_processed("file1.xml");
+        state.mark_processed("file2.xml");
+        state.mark_processed("file3.xml");
+
+        assert!(state.is_processed("file1.xml"));
+        assert!(state.is_processed("file2.xml"));
+        assert!(state.is_processed("file3.xml"));
+        assert!(!state.is_processed("file4.xml"));
+        assert_eq!(state.files.len(), 3);
+    }
+
+    #[test]
+    fn test_processing_state_default() {
+        let state = ProcessingState::default();
+        assert!(state.files.is_empty());
+    }
+
+    #[test]
+    fn test_message_serialization() {
+        let data_msg = DataMessage {
+            id: "123".to_string(),
+            sha256: "abc".to_string(),
+            data: serde_json::json!({"test": "value"}),
+        };
+
+        let serialized = serde_json::to_string(&data_msg).unwrap();
+        let deserialized: DataMessage = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.id, "123");
+        assert_eq!(deserialized.sha256, "abc");
+    }
+
+    #[test]
+    fn test_file_complete_message() {
+        let msg = FileCompleteMessage {
+            data_type: "artists".to_string(),
+            timestamp: Utc::now(),
+            total_processed: 1000,
+            file: "test.xml".to_string(),
+        };
+
+        assert_eq!(msg.data_type, "artists");
+        assert_eq!(msg.total_processed, 1000);
+        assert_eq!(msg.file, "test.xml");
+    }
+
+    #[test]
+    fn test_message_enum_data() {
+        let data_msg = DataMessage {
+            id: "1".to_string(),
+            sha256: "hash".to_string(),
+            data: serde_json::json!({}),
+        };
+
+        let message = Message::Data(data_msg);
+        match message {
+            Message::Data(msg) => assert_eq!(msg.id, "1"),
+            _ => panic!("Expected Data variant"),
+        }
+    }
+
+    #[test]
+    fn test_message_enum_file_complete() {
+        let file_msg = FileCompleteMessage {
+            data_type: "labels".to_string(),
+            timestamp: Utc::now(),
+            total_processed: 500,
+            file: "test.xml".to_string(),
+        };
+
+        let message = Message::FileComplete(file_msg);
+        match message {
+            Message::FileComplete(msg) => assert_eq!(msg.total_processed, 500),
+            _ => panic!("Expected FileComplete variant"),
+        }
     }
 }

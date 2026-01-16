@@ -265,6 +265,19 @@ mod tests {
     }
 
     #[test]
+    fn test_queue_names_all_types() {
+        for data_type in [DataType::Artists, DataType::Labels, DataType::Masters, DataType::Releases] {
+            let graphinator = format!("{}-{}", AMQP_QUEUE_PREFIX_GRAPHINATOR, data_type);
+            let tableinator = format!("{}-{}", AMQP_QUEUE_PREFIX_TABLEINATOR, data_type);
+
+            assert!(graphinator.starts_with("discogsography-graphinator-"));
+            assert!(tableinator.starts_with("discogsography-tableinator-"));
+            assert!(graphinator.ends_with(data_type.as_str()));
+            assert!(tableinator.ends_with(data_type.as_str()));
+        }
+    }
+
+    #[test]
     fn test_normalize_amqp_url_with_trailing_slash() {
         // Trailing slash should be removed to use default vhost
         let url = "amqp://user:pass@host:5672/";
@@ -310,5 +323,91 @@ mod tests {
         let url = "not-a-valid-url";
         let result = MessageQueue::normalize_amqp_url(url);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_empty() {
+        let result = MessageQueue::normalize_amqp_url("");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_different_ports() {
+        let url1 = "amqp://host:5672/";
+        let url2 = "amqp://host:15672/";
+
+        let normalized1 = MessageQueue::normalize_amqp_url(url1).unwrap();
+        let normalized2 = MessageQueue::normalize_amqp_url(url2).unwrap();
+
+        assert_eq!(normalized1, "amqp://host:5672");
+        assert_eq!(normalized2, "amqp://host:15672");
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_with_query_params() {
+        let url = "amqp://host:5672/?heartbeat=30";
+        let normalized = MessageQueue::normalize_amqp_url(url).unwrap();
+        // Query params should be preserved
+        assert!(normalized.contains("heartbeat=30"));
+    }
+
+    #[test]
+    fn test_message_serialization_data() {
+        let data_msg = DataMessage {
+            id: "123".to_string(),
+            sha256: "abc".to_string(),
+            data: serde_json::json!({"key": "value"}),
+        };
+
+        let message = Message::Data(data_msg);
+        let serialized = serde_json::to_vec(&message).unwrap();
+        let deserialized: Message = serde_json::from_slice(&serialized).unwrap();
+
+        match deserialized {
+            Message::Data(msg) => {
+                assert_eq!(msg.id, "123");
+                assert_eq!(msg.sha256, "abc");
+            }
+            _ => panic!("Expected Data message"),
+        }
+    }
+
+    #[test]
+    fn test_message_serialization_file_complete() {
+        let file_complete_msg = FileCompleteMessage {
+            data_type: "artists".to_string(),
+            timestamp: chrono::Utc::now(),
+            total_processed: 100,
+            file: "test.xml".to_string(),
+        };
+
+        let message = Message::FileComplete(file_complete_msg.clone());
+        let serialized = serde_json::to_vec(&message).unwrap();
+        let deserialized: Message = serde_json::from_slice(&serialized).unwrap();
+
+        match deserialized {
+            Message::FileComplete(msg) => {
+                assert_eq!(msg.data_type, "artists");
+                assert_eq!(msg.total_processed, 100);
+                assert_eq!(msg.file, "test.xml");
+            }
+            _ => panic!("Expected FileComplete message"),
+        }
+    }
+
+    #[test]
+    fn test_routing_key_generation() {
+        assert_eq!(DataType::Artists.routing_key(), "artists");
+        assert_eq!(DataType::Labels.routing_key(), "labels");
+        assert_eq!(DataType::Masters.routing_key(), "masters");
+        assert_eq!(DataType::Releases.routing_key(), "releases");
+    }
+
+    #[test]
+    fn test_constants() {
+        assert_eq!(AMQP_EXCHANGE, "discogsography-exchange");
+        assert_eq!(AMQP_EXCHANGE_TYPE, ExchangeKind::Topic);
+        assert_eq!(AMQP_QUEUE_PREFIX_GRAPHINATOR, "discogsography-graphinator");
+        assert_eq!(AMQP_QUEUE_PREFIX_TABLEINATOR, "discogsography-tableinator");
     }
 }

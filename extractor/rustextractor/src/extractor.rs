@@ -422,11 +422,268 @@ pub async fn run_extraction_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
 
     #[test]
     fn test_extract_data_type() {
         assert_eq!(extract_data_type("discogs_20241201_artists.xml.gz"), Some(DataType::Artists));
         assert_eq!(extract_data_type("discogs_20241201_labels.xml.gz"), Some(DataType::Labels));
         assert_eq!(extract_data_type("invalid_format.xml"), None);
+    }
+
+    #[test]
+    fn test_extract_data_type_all_types() {
+        assert_eq!(extract_data_type("discogs_20241201_artists.xml.gz"), Some(DataType::Artists));
+        assert_eq!(extract_data_type("discogs_20241201_labels.xml.gz"), Some(DataType::Labels));
+        assert_eq!(extract_data_type("discogs_20241201_masters.xml.gz"), Some(DataType::Masters));
+        assert_eq!(extract_data_type("discogs_20241201_releases.xml.gz"), Some(DataType::Releases));
+    }
+
+    #[test]
+    fn test_extract_data_type_invalid_formats() {
+        assert_eq!(extract_data_type("invalid_format.xml"), None);
+        assert_eq!(extract_data_type("no_underscores.xml.gz"), None);
+        assert_eq!(extract_data_type("discogs_20241201.xml.gz"), None);
+        assert_eq!(extract_data_type("discogs_20241201_unknown.xml.gz"), None);
+    }
+
+    #[tokio::test]
+    async fn test_load_processing_state_nonexistent() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join(".processing_state.json");
+
+        let state = load_processing_state(&path).await.unwrap();
+        assert!(state.files.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_load_processing_state_valid() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join(".processing_state.json");
+
+        let mut state = ProcessingState::default();
+        state.mark_processed("test.xml");
+        save_processing_state(&path, &state).await.unwrap();
+
+        let loaded = load_processing_state(&path).await.unwrap();
+        assert!(loaded.is_processed("test.xml"));
+    }
+
+    #[tokio::test]
+    async fn test_save_processing_state() {
+        let temp_dir = TempDir::new().unwrap();
+        let path = temp_dir.path().join(".processing_state.json");
+
+        let mut state = ProcessingState::default();
+        state.mark_processed("file1.xml");
+        state.mark_processed("file2.xml");
+
+        save_processing_state(&path, &state).await.unwrap();
+
+        assert!(path.exists());
+
+        let loaded = load_processing_state(&path).await.unwrap();
+        assert_eq!(loaded.files.len(), 2);
+    }
+
+    #[tokio::test]
+    async fn test_processing_state_marks_files() {
+        let mut state = ProcessingState::default();
+
+        assert!(!state.is_processed("test.xml"));
+
+        state.mark_processed("test.xml");
+
+        assert!(state.is_processed("test.xml"));
+        assert!(!state.is_processed("other.xml"));
+    }
+
+    #[test]
+    fn test_extractor_state_default() {
+        let state = ExtractorState::default();
+
+        assert!(state.current_task.is_none());
+        assert_eq!(state.current_progress, 0.0);
+        assert_eq!(state.extraction_progress.total(), 0);
+        assert!(state.last_extraction_time.is_empty());
+        assert!(state.completed_files.is_empty());
+        assert!(state.active_connections.is_empty());
+        assert_eq!(state.error_count, 0);
+    }
+
+    #[tokio::test]
+    async fn test_message_batcher_basic() {
+        let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(10);
+        let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        // Send some test messages
+        for i in 0..5 {
+            let message = DataMessage {
+                sha256: format!("sha{}", i),
+                data: serde_json::json!({ "test": format!("test{}", i) }),
+                id: i.to_string(),
+            };
+            parse_sender.send(message).await.unwrap();
+        }
+        drop(parse_sender);
+
+        // Run batcher
+        let batcher = message_batcher(parse_receiver, batch_sender, 3, DataType::Artists, state.clone());
+
+        // Spawn batcher task
+        tokio::spawn(batcher);
+
+        // Collect batches
+        let mut total_messages = 0;
+        while let Some(batch) = batch_receiver.recv().await {
+            total_messages += batch.len();
+        }
+
+        assert_eq!(total_messages, 5);
+
+        // Verify state was updated
+        let s = state.read().await;
+        assert_eq!(s.extraction_progress.artists, 5);
+    }
+
+    #[tokio::test]
+    async fn test_message_batcher_respects_batch_size() {
+        let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(100);
+        let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        // Send exactly batch_size messages
+        let batch_size = 10;
+        for i in 0..batch_size {
+            let message = DataMessage {
+                sha256: format!("sha{}", i),
+                data: serde_json::json!({ "test": format!("test{}", i) }),
+                id: i.to_string(),
+            };
+            parse_sender.send(message).await.unwrap();
+        }
+        drop(parse_sender);
+
+        // Run batcher
+        let batcher = message_batcher(parse_receiver, batch_sender, batch_size, DataType::Labels, state.clone());
+        tokio::spawn(batcher);
+
+        // Get first batch
+        if let Some(batch) = batch_receiver.recv().await {
+            assert_eq!(batch.len(), batch_size);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_message_batcher_timeout_flush() {
+        let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(10);
+        let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        // Send fewer messages than batch size
+        for i in 0..3 {
+            let message = DataMessage {
+                sha256: format!("sha{}", i),
+                data: serde_json::json!({ "test": format!("test{}", i) }),
+                id: i.to_string(),
+            };
+            parse_sender.send(message).await.unwrap();
+        }
+
+        // Run batcher with large batch size
+        let batcher = message_batcher(parse_receiver, batch_sender, 100, DataType::Masters, state.clone());
+        let batcher_handle = tokio::spawn(batcher);
+
+        // Wait a bit for timeout flush
+        tokio::time::sleep(Duration::from_millis(1200)).await;
+
+        drop(parse_sender);
+
+        // Should eventually flush despite not reaching batch size
+        let batch = tokio::time::timeout(Duration::from_secs(5), batch_receiver.recv())
+            .await
+            .expect("Timeout waiting for batch")
+            .expect("Channel closed without receiving batch");
+
+        assert_eq!(batch.len(), 3);
+
+        batcher_handle.await.unwrap().unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_extractor_state_tracks_progress() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        {
+            let mut s = state.write().await;
+            s.extraction_progress.increment(DataType::Artists);
+            s.extraction_progress.increment(DataType::Artists);
+            s.extraction_progress.increment(DataType::Labels);
+        }
+
+        let s = state.read().await;
+        assert_eq!(s.extraction_progress.artists, 2);
+        assert_eq!(s.extraction_progress.labels, 1);
+        assert_eq!(s.extraction_progress.total(), 3);
+    }
+
+    #[tokio::test]
+    async fn test_extractor_state_tracks_completed_files() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        {
+            let mut s = state.write().await;
+            s.completed_files.insert("file1.xml".to_string());
+            s.completed_files.insert("file2.xml".to_string());
+        }
+
+        let s = state.read().await;
+        assert_eq!(s.completed_files.len(), 2);
+        assert!(s.completed_files.contains("file1.xml"));
+    }
+
+    #[tokio::test]
+    async fn test_extractor_state_tracks_active_connections() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        {
+            let mut s = state.write().await;
+            s.active_connections.insert(DataType::Artists, "processing_artists.xml".to_string());
+            s.active_connections.insert(DataType::Labels, "processing_labels.xml".to_string());
+        }
+
+        let s = state.read().await;
+        assert_eq!(s.active_connections.len(), 2);
+        assert_eq!(s.active_connections.get(&DataType::Artists), Some(&"processing_artists.xml".to_string()));
+    }
+
+    #[tokio::test]
+    async fn test_extractor_state_tracks_errors() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        {
+            let mut s = state.write().await;
+            s.error_count += 1;
+            s.error_count += 1;
+        }
+
+        let s = state.read().await;
+        assert_eq!(s.error_count, 2);
+    }
+
+    #[tokio::test]
+    async fn test_extractor_state_last_extraction_time() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        {
+            let mut s = state.write().await;
+            s.last_extraction_time.insert(DataType::Artists, 123.45);
+            s.last_extraction_time.insert(DataType::Labels, 678.90);
+        }
+
+        let s = state.read().await;
+        assert_eq!(s.last_extraction_time.get(&DataType::Artists), Some(&123.45));
+        assert_eq!(s.last_extraction_time.get(&DataType::Labels), Some(&678.90));
     }
 }

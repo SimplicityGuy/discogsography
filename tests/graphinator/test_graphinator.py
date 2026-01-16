@@ -1440,6 +1440,336 @@ class TestQueueRestartLogic:
         assert any(count > 0 for _, count in queues_with_messages)
 
 
+class TestBatchModeIntegration:
+    """Test batch mode integration in message handlers."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.BATCH_MODE", True)
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_artist_message_uses_batch_processor(self, sample_artist_data: dict[str, Any]) -> None:
+        """Test that artist messages use batch processor when enabled."""
+        from graphinator.graphinator import on_artist_message
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+
+        mock_batch_processor = AsyncMock()
+
+        with patch("graphinator.graphinator.batch_processor", mock_batch_processor):
+            await on_artist_message(mock_message)
+
+        # Should add message to batch processor
+        mock_batch_processor.add_message.assert_called_once()
+        args = mock_batch_processor.add_message.call_args[0]
+        assert args[0] == "artists"  # data_type
+        assert args[1]["id"] == sample_artist_data["id"]  # data
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.BATCH_MODE", True)
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_label_message_uses_batch_processor(self, sample_label_data: dict[str, Any]) -> None:
+        """Test that label messages use batch processor when enabled."""
+        from graphinator.graphinator import on_label_message
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_label_data).encode()
+
+        mock_batch_processor = AsyncMock()
+
+        with patch("graphinator.graphinator.batch_processor", mock_batch_processor):
+            await on_label_message(mock_message)
+
+        mock_batch_processor.add_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.BATCH_MODE", True)
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_master_message_uses_batch_processor(self, sample_master_data: dict[str, Any]) -> None:
+        """Test that master messages use batch processor when enabled."""
+        from graphinator.graphinator import on_master_message
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_master_data).encode()
+
+        mock_batch_processor = AsyncMock()
+
+        with patch("graphinator.graphinator.batch_processor", mock_batch_processor):
+            await on_master_message(mock_message)
+
+        mock_batch_processor.add_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.BATCH_MODE", True)
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_release_message_uses_batch_processor(self, sample_release_data: dict[str, Any]) -> None:
+        """Test that release messages use batch processor when enabled."""
+        from graphinator.graphinator import on_release_message
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_release_data).encode()
+
+        mock_batch_processor = AsyncMock()
+
+        with patch("graphinator.graphinator.batch_processor", mock_batch_processor):
+            await on_release_message(mock_message)
+
+        mock_batch_processor.add_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.BATCH_MODE", False)
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_artist_message_bypasses_batch_processor_when_disabled(
+        self, sample_artist_data: dict[str, Any], mock_neo4j_driver: MagicMock
+    ) -> None:
+        """Test that messages bypass batch processor when disabled."""
+        from graphinator.graphinator import on_artist_message
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+
+        mock_batch_processor = AsyncMock()
+
+        mock_session = MagicMock()
+        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
+        mock_session.execute_write.return_value = True
+
+        with (
+            patch("graphinator.graphinator.batch_processor", mock_batch_processor),
+            patch("graphinator.graphinator.graph", mock_neo4j_driver),
+        ):
+            await on_artist_message(mock_message)
+
+        # Should NOT use batch processor
+        mock_batch_processor.add_message.assert_not_called()
+        # Should use direct Neo4j session
+        mock_session.execute_write.assert_called_once()
+
+
+class TestArtistTransactionEdgeCases:
+    """Test edge cases in artist transaction processing."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_artist_with_members_without_ids(self, mock_neo4j_driver: MagicMock) -> None:
+        """Test handling artist members without IDs."""
+        from graphinator.graphinator import on_artist_message
+
+        artist_data = {
+            "id": "A123",
+            "name": "Test Artist",
+            "sha256": "test_hash",
+            "members": {"name": [{"@id": "M1"}, {"name": "No ID Member"}]},  # One without ID
+        }
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(artist_data).encode()
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        mock_session = MagicMock()
+        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
+
+        def execute_tx(tx_func: Any) -> Any:
+            return tx_func(mock_tx)
+
+        mock_session.execute_write.side_effect = execute_tx
+
+        with (
+            patch("graphinator.graphinator.graph", mock_neo4j_driver),
+            patch("graphinator.graphinator.logger") as mock_logger,
+        ):
+            await on_artist_message(mock_message)
+
+        # Should log warning about member without ID
+        assert any("Skipping member without ID" in str(call) for call in mock_logger.warning.call_args_list)
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_artist_with_groups_without_ids(self, mock_neo4j_driver: MagicMock) -> None:
+        """Test handling artist groups without IDs."""
+        from graphinator.graphinator import on_artist_message
+
+        artist_data = {
+            "id": "A123",
+            "name": "Test Artist",
+            "sha256": "test_hash",
+            "groups": {"name": [{"@id": "G1"}, {}]},  # One without ID
+        }
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(artist_data).encode()
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        mock_session = MagicMock()
+        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
+
+        def execute_tx(tx_func: Any) -> Any:
+            return tx_func(mock_tx)
+
+        mock_session.execute_write.side_effect = execute_tx
+
+        with (
+            patch("graphinator.graphinator.graph", mock_neo4j_driver),
+            patch("graphinator.graphinator.logger") as mock_logger,
+        ):
+            await on_artist_message(mock_message)
+
+        # Should log warning about group without ID
+        assert any("Skipping group without ID" in str(call) for call in mock_logger.warning.call_args_list)
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_artist_with_aliases_without_ids(self, mock_neo4j_driver: MagicMock) -> None:
+        """Test handling artist aliases without IDs."""
+        from graphinator.graphinator import on_artist_message
+
+        artist_data = {
+            "id": "A123",
+            "name": "Test Artist",
+            "sha256": "test_hash",
+            "aliases": {"name": [{"@id": "AL1"}, {"name": "No ID Alias"}]},
+        }
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(artist_data).encode()
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        mock_session = MagicMock()
+        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
+
+        def execute_tx(tx_func: Any) -> Any:
+            return tx_func(mock_tx)
+
+        mock_session.execute_write.side_effect = execute_tx
+
+        with (
+            patch("graphinator.graphinator.graph", mock_neo4j_driver),
+            patch("graphinator.graphinator.logger") as mock_logger,
+        ):
+            await on_artist_message(mock_message)
+
+        assert any("Skipping alias without ID" in str(call) for call in mock_logger.warning.call_args_list)
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_artist_neo4j_session_expired(self, sample_artist_data: dict[str, Any]) -> None:
+        """Test handling Neo4j session expired during processing."""
+        from neo4j.exceptions import SessionExpired
+
+        from graphinator.graphinator import on_artist_message
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+
+        mock_driver = MagicMock()
+        mock_session = MagicMock()
+        mock_session.__enter__ = MagicMock(side_effect=SessionExpired("Session expired"))
+        mock_session.__exit__ = MagicMock()
+        mock_driver.session.return_value = mock_session
+
+        with patch("graphinator.graphinator.graph", mock_driver):
+            await on_artist_message(mock_message)
+
+        # Should nack with requeue
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_artist_with_runtime_error_not_initialized(self, sample_artist_data: dict[str, Any]) -> None:
+        """Test handling when graph driver is not initialized."""
+        from graphinator.graphinator import on_artist_message
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+
+        with patch("graphinator.graphinator.graph", None):
+            await on_artist_message(mock_message)
+
+        # Should nack the message
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+
+class TestLabelTransactionEdgeCases:
+    """Test edge cases in label transaction processing."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_label_with_parent_without_id(self, mock_neo4j_driver: MagicMock) -> None:
+        """Test handling label with parent that has no ID."""
+        from graphinator.graphinator import on_label_message
+
+        label_data = {
+            "id": "L123",
+            "name": "Test Label",
+            "sha256": "test_hash",
+            "parentLabel": {"name": "No ID Parent"},  # No @id or id field
+        }
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(label_data).encode()
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        mock_session = MagicMock()
+        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
+
+        def execute_tx(tx_func: Any) -> Any:
+            return tx_func(mock_tx)
+
+        mock_session.execute_write.side_effect = execute_tx
+
+        with (
+            patch("graphinator.graphinator.graph", mock_neo4j_driver),
+            patch("graphinator.graphinator.logger") as mock_logger,
+        ):
+            await on_label_message(mock_message)
+
+        # Should log warning about parent without ID
+        assert any("Skipping parent label without ID" in str(call) for call in mock_logger.warning.call_args_list)
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_label_with_sublabels_without_ids(self, mock_neo4j_driver: MagicMock) -> None:
+        """Test handling sublabels without IDs."""
+        from graphinator.graphinator import on_label_message
+
+        label_data = {
+            "id": "L123",
+            "name": "Test Label",
+            "sha256": "test_hash",
+            "sublabels": {"label": [{"@id": "SL1"}, {"name": "No ID Sublabel"}]},
+        }
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(label_data).encode()
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        mock_session = MagicMock()
+        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
+
+        def execute_tx(tx_func: Any) -> Any:
+            return tx_func(mock_tx)
+
+        mock_session.execute_write.side_effect = execute_tx
+
+        with (
+            patch("graphinator.graphinator.graph", mock_neo4j_driver),
+            patch("graphinator.graphinator.logger") as mock_logger,
+        ):
+            await on_label_message(mock_message)
+
+        assert any("Skipping sublabel without ID" in str(call) for call in mock_logger.warning.call_args_list)
+
+
 class TestReleaseMessageErrorHandling:
     """Test error handling in release message processing."""
 

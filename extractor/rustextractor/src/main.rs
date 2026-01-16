@@ -37,25 +37,13 @@ async fn main() -> Result<()> {
     // Initialize tracing with LOG_LEVEL environment variable
     // Supports: DEBUG, INFO, WARNING, ERROR, CRITICAL (maps to Rust's trace, debug, info, warn, error)
     let log_level = std::env::var("LOG_LEVEL")
-        .unwrap_or_else(|_| "INFO".to_string())
-        .to_uppercase();
+        .unwrap_or_else(|_| "INFO".to_string());
 
     // Map Python log levels to Rust tracing levels
-    let rust_level = match log_level.as_str() {
-        "DEBUG" => "debug",
-        "INFO" => "info",
-        "WARNING" | "WARN" => "warn",
-        "ERROR" => "error",
-        "CRITICAL" => "error", // Rust doesn't have critical, use error
-        _ => {
-            eprintln!("⚠️ Invalid LOG_LEVEL '{}', defaulting to INFO", log_level);
-            "info"
-        }
-    };
+    let rust_level = map_log_level(&log_level);
 
-    // Set lapin (AMQP library) to warn to reduce noise
-    let lapin_level = if rust_level == "debug" { "info" } else { "warn" };
-    let filter = format!("rust_extractor={},lapin={}", rust_level, lapin_level);
+    // Build tracing filter
+    let filter = build_tracing_filter(rust_level);
 
     tracing_subscriber::fmt()
         .with_env_filter(filter)
@@ -144,4 +132,102 @@ fn setup_shutdown_handler() -> Arc<tokio::sync::Notify> {
     });
 
     shutdown
+}
+
+/// Map Python-style log level to Rust tracing level
+fn map_log_level(level: &str) -> &'static str {
+    match level.to_uppercase().as_str() {
+        "DEBUG" => "debug",
+        "INFO" => "info",
+        "WARNING" | "WARN" => "warn",
+        "ERROR" => "error",
+        "CRITICAL" => "error",
+        _ => "info",
+    }
+}
+
+/// Build tracing filter string
+fn build_tracing_filter(rust_level: &str) -> String {
+    let lapin_level = if rust_level == "debug" { "info" } else { "warn" };
+    format!("rust_extractor={},lapin={}", rust_level, lapin_level)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_map_log_level_debug() {
+        assert_eq!(map_log_level("DEBUG"), "debug");
+        assert_eq!(map_log_level("debug"), "debug");
+    }
+
+    #[test]
+    fn test_map_log_level_info() {
+        assert_eq!(map_log_level("INFO"), "info");
+        assert_eq!(map_log_level("info"), "info");
+    }
+
+    #[test]
+    fn test_map_log_level_warning() {
+        assert_eq!(map_log_level("WARNING"), "warn");
+        assert_eq!(map_log_level("WARN"), "warn");
+        assert_eq!(map_log_level("warn"), "warn");
+    }
+
+    #[test]
+    fn test_map_log_level_error() {
+        assert_eq!(map_log_level("ERROR"), "error");
+        assert_eq!(map_log_level("error"), "error");
+    }
+
+    #[test]
+    fn test_map_log_level_critical() {
+        assert_eq!(map_log_level("CRITICAL"), "error");
+        assert_eq!(map_log_level("critical"), "error");
+    }
+
+    #[test]
+    fn test_map_log_level_invalid() {
+        assert_eq!(map_log_level("INVALID"), "info");
+        assert_eq!(map_log_level(""), "info");
+        assert_eq!(map_log_level("xyz"), "info");
+    }
+
+    #[test]
+    fn test_build_tracing_filter_debug() {
+        let filter = build_tracing_filter("debug");
+        assert_eq!(filter, "rust_extractor=debug,lapin=info");
+    }
+
+    #[test]
+    fn test_build_tracing_filter_info() {
+        let filter = build_tracing_filter("info");
+        assert_eq!(filter, "rust_extractor=info,lapin=warn");
+    }
+
+    #[test]
+    fn test_build_tracing_filter_warn() {
+        let filter = build_tracing_filter("warn");
+        assert_eq!(filter, "rust_extractor=warn,lapin=warn");
+    }
+
+    #[test]
+    fn test_build_tracing_filter_error() {
+        let filter = build_tracing_filter("error");
+        assert_eq!(filter, "rust_extractor=error,lapin=warn");
+    }
+
+    #[test]
+    fn test_setup_shutdown_handler() {
+        let shutdown = setup_shutdown_handler();
+        // Just verify it creates a valid Notify instance
+        assert!(Arc::strong_count(&shutdown) >= 1);
+    }
+
+    #[test]
+    fn test_ascii_art_display() {
+        // Just verify the function doesn't panic
+        print_ascii_art();
+    }
 }
