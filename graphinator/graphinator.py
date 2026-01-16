@@ -74,11 +74,24 @@ shutdown_requested = False
 
 def get_health_data() -> dict[str, Any]:
     """Get current health data for monitoring."""
+    # Determine current task based on active consumers and recent activity
+    active_task = None
+    current_time = time.time()
+
+    # Check for recent message activity (within last 10 seconds)
+    for data_type, last_time in last_message_time.items():
+        if last_time > 0 and (current_time - last_time) < 10:
+            active_task = f"Processing {data_type}"
+            break
+
+    # If no recent activity but consumers exist, show as idle
+    if active_task is None and len(consumer_tags) > 0:
+        active_task = "Idle - waiting for messages"
 
     return {
         "status": "healthy" if graph else "unhealthy",
         "service": "graphinator",
-        "current_task": current_task,
+        "current_task": active_task,
         "progress": current_progress,
         "message_counts": message_counts.copy(),
         "last_message_time": last_message_time.copy(),
@@ -361,8 +374,6 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         # Increment counter and log progress
         message_counts["artists"] += 1
         last_message_time["artists"] = time.time()
-        global current_task
-        current_task = "Processing artists"
         if message_counts["artists"] % progress_interval == 0:
             logger.info(
                 "📊 Processed message_counts artists in Neo4j",
@@ -596,8 +607,6 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         # Increment counter and log progress
         message_counts["labels"] += 1
         last_message_time["labels"] = time.time()
-        global current_task
-        current_task = "Processing labels"
         if message_counts["labels"] % progress_interval == 0:
             logger.info(
                 "📊 Processed message_counts labels in Neo4j",
@@ -760,8 +769,6 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         # Increment counter and log progress
         message_counts["masters"] += 1
         last_message_time["masters"] = time.time()
-        global current_task
-        current_task = "Processing masters"
         if message_counts["masters"] % progress_interval == 0:
             logger.info(
                 "📊 Processed message_counts masters in Neo4j",
@@ -956,8 +963,6 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         # Increment counter and log progress
         message_counts["releases"] += 1
         last_message_time["releases"] = time.time()
-        global current_task
-        current_task = "Processing releases"
         if message_counts["releases"] % progress_interval == 0:
             logger.info(
                 "📊 Processed message_counts releases in Neo4j",

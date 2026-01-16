@@ -384,9 +384,11 @@ class TestGetHealthData:
 
     def test_health_data_with_graph(self) -> None:
         """Test health data when graph is connected."""
+        import time
+
+        current_time = time.time()
         with (
             patch("graphinator.graphinator.graph", MagicMock()),
-            patch("graphinator.graphinator.current_task", "Processing artists"),
             patch("graphinator.graphinator.current_progress", 0.75),
             patch(
                 "graphinator.graphinator.message_counts",
@@ -395,11 +397,15 @@ class TestGetHealthData:
             patch(
                 "graphinator.graphinator.last_message_time",
                 {
-                    "artists": 1234567890.0,
-                    "labels": 1234567891.0,
-                    "masters": 1234567892.0,
-                    "releases": 1234567893.0,
+                    "artists": current_time - 5,  # 5 seconds ago - recent activity
+                    "labels": current_time - 8,  # 8 seconds ago - recent activity
+                    "masters": current_time - 15,  # 15 seconds ago - old
+                    "releases": current_time - 20,  # 20 seconds ago - old
                 },
+            ),
+            patch(
+                "graphinator.graphinator.consumer_tags",
+                {"artists": "consumer-1", "labels": "consumer-2"},
             ),
         ):
             from graphinator.graphinator import get_health_data
@@ -408,10 +414,10 @@ class TestGetHealthData:
 
             assert result["status"] == "healthy"
             assert result["service"] == "graphinator"
+            # Should show "Processing artists" because it has recent activity (5 seconds ago)
             assert result["current_task"] == "Processing artists"
             assert result["progress"] == 0.75
             assert result["message_counts"]["artists"] == 100
-            assert result["last_message_time"]["artists"] == 1234567890.0
 
     def test_health_data_without_graph(self) -> None:
         """Test health data when graph is not connected."""
@@ -422,6 +428,69 @@ class TestGetHealthData:
 
             assert result["status"] == "unhealthy"
             assert result["service"] == "graphinator"
+
+    def test_idle_status_with_active_consumers(self) -> None:
+        """Test health data shows idle status when consumers active but no recent messages."""
+        import time
+
+        current_time = time.time()
+        with (
+            patch("graphinator.graphinator.graph", MagicMock()),
+            patch("graphinator.graphinator.current_progress", 0.0),
+            patch(
+                "graphinator.graphinator.message_counts",
+                {"artists": 100, "labels": 50, "masters": 0, "releases": 0},
+            ),
+            patch(
+                "graphinator.graphinator.last_message_time",
+                {
+                    "artists": current_time - 60,  # 60 seconds ago - old
+                    "labels": current_time - 120,  # 120 seconds ago - old
+                    "masters": 0.0,
+                    "releases": 0.0,
+                },
+            ),
+            patch(
+                "graphinator.graphinator.consumer_tags",
+                {"artists": "consumer-1", "labels": "consumer-2"},
+            ),
+        ):
+            from graphinator.graphinator import get_health_data
+
+            result = get_health_data()
+
+            assert result["status"] == "healthy"
+            assert result["current_task"] == "Idle - waiting for messages"
+
+    def test_no_status_when_no_consumers(self) -> None:
+        """Test health data shows None when no consumers are active."""
+        import time
+
+        current_time = time.time()
+        with (
+            patch("graphinator.graphinator.graph", MagicMock()),
+            patch("graphinator.graphinator.current_progress", 0.0),
+            patch(
+                "graphinator.graphinator.message_counts",
+                {"artists": 100, "labels": 50, "masters": 0, "releases": 0},
+            ),
+            patch(
+                "graphinator.graphinator.last_message_time",
+                {
+                    "artists": current_time - 60,
+                    "labels": current_time - 120,
+                    "masters": 0.0,
+                    "releases": 0.0,
+                },
+            ),
+            patch("graphinator.graphinator.consumer_tags", {}),
+        ):
+            from graphinator.graphinator import get_health_data
+
+            result = get_health_data()
+
+            assert result["status"] == "healthy"
+            assert result["current_task"] is None
 
 
 class TestSignalHandler:

@@ -175,6 +175,7 @@ def reset_global_state() -> Iterator[None]:
         }
         graphinator.graphinator.current_task = None
         graphinator.graphinator.current_progress = 0.0
+        graphinator.graphinator.consumer_tags = {}
     except (ImportError, AttributeError):
         pass
 
@@ -200,6 +201,7 @@ def reset_global_state() -> Iterator[None]:
             "masters": 0.0,
             "releases": 0.0,
         }
+        tableinator.tableinator.consumer_tags = {}
     except (ImportError, AttributeError):
         pass
 
@@ -233,6 +235,7 @@ def reset_global_state() -> Iterator[None]:
         }
         graphinator.graphinator.current_task = None
         graphinator.graphinator.current_progress = 0.0
+        graphinator.graphinator.consumer_tags = {}
     except (ImportError, AttributeError):
         pass
 
@@ -257,6 +260,7 @@ def reset_global_state() -> Iterator[None]:
             "masters": 0.0,
             "releases": 0.0,
         }
+        tableinator.tableinator.consumer_tags = {}
     except (ImportError, AttributeError):
         pass
 

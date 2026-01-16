@@ -70,11 +70,24 @@ connection_check_task: asyncio.Task[None] | None = (
 
 def get_health_data() -> dict[str, Any]:
     """Get current health data for monitoring."""
+    # Determine current task based on active consumers and recent activity
+    active_task = None
+    current_time = time.time()
+
+    # Check for recent message activity (within last 10 seconds)
+    for data_type, last_time in last_message_time.items():
+        if last_time > 0 and (current_time - last_time) < 10:
+            active_task = f"Processing {data_type}"
+            break
+
+    # If no recent activity but consumers exist, show as idle
+    if active_task is None and len(consumer_tags) > 0:
+        active_task = "Idle - waiting for messages"
 
     return {
         "status": "healthy",
         "service": "tableinator",
-        "current_task": current_task,
+        "current_task": active_task,
         "progress": current_progress,
         "message_counts": message_counts.copy(),
         "last_message_time": last_message_time.copy(),
@@ -345,8 +358,6 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
         if data_type in message_counts:
             message_counts[data_type] += 1
             last_message_time[data_type] = time.time()
-            global current_task
-            current_task = f"Processing {data_type}"
             if message_counts[data_type] % progress_interval == 0:
                 logger.info(
                     "📊 Processed records in PostgreSQL",

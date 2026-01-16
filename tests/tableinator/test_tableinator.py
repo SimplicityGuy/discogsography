@@ -1177,13 +1177,25 @@ class TestGetHealthData:
 
     def test_returns_health_status_dictionary(self) -> None:
         """Test that get_health_data returns a properly formatted dictionary."""
+        import time
+
         import tableinator.tableinator
 
         # Set some test values in global state
-        tableinator.tableinator.current_task = "test_task"
+        current_time = time.time()
         tableinator.tableinator.current_progress = 50
         tableinator.tableinator.message_counts = {"artists": 100, "labels": 50}
-        tableinator.tableinator.last_message_time = {"artists": 123.45, "labels": 678.90}
+        # Set recent message time (within last 10 seconds) to trigger "Processing" status
+        tableinator.tableinator.last_message_time = {
+            "artists": current_time - 5,  # 5 seconds ago
+            "labels": current_time - 8,  # 8 seconds ago
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+        tableinator.tableinator.consumer_tags = {
+            "artists": "consumer-1",
+            "labels": "consumer-2",
+        }
 
         result = get_health_data()
 
@@ -1199,10 +1211,60 @@ class TestGetHealthData:
         # Verify values
         assert result["status"] == "healthy"
         assert result["service"] == "tableinator"
-        assert result["current_task"] == "test_task"
+        # Should show "Processing artists" because it has recent activity (5 seconds ago)
+        assert result["current_task"] == "Processing artists"
         assert result["progress"] == 50
         assert result["message_counts"] == {"artists": 100, "labels": 50}
-        assert result["last_message_time"] == {"artists": 123.45, "labels": 678.90}
+
+    def test_idle_status_with_active_consumers(self) -> None:
+        """Test that get_health_data shows idle status when consumers active but no recent messages."""
+        import time
+
+        import tableinator.tableinator
+
+        current_time = time.time()
+        tableinator.tableinator.current_progress = 0
+        tableinator.tableinator.message_counts = {"artists": 100, "labels": 50}
+        # Set old message times (more than 10 seconds ago)
+        tableinator.tableinator.last_message_time = {
+            "artists": current_time - 60,  # 60 seconds ago
+            "labels": current_time - 120,  # 120 seconds ago
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+        # But consumers are still active
+        tableinator.tableinator.consumer_tags = {
+            "artists": "consumer-1",
+            "labels": "consumer-2",
+        }
+
+        result = get_health_data()
+
+        # Should show idle status because consumers active but no recent activity
+        assert result["current_task"] == "Idle - waiting for messages"
+
+    def test_no_status_when_no_consumers(self) -> None:
+        """Test that get_health_data shows None when no consumers are active."""
+        import time
+
+        import tableinator.tableinator
+
+        current_time = time.time()
+        tableinator.tableinator.current_progress = 0
+        tableinator.tableinator.message_counts = {"artists": 100, "labels": 50}
+        tableinator.tableinator.last_message_time = {
+            "artists": current_time - 60,
+            "labels": current_time - 120,
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+        # No active consumers
+        tableinator.tableinator.consumer_tags = {}
+
+        result = get_health_data()
+
+        # Should show None when no consumers are active
+        assert result["current_task"] is None
 
 
 class TestCloseRabbitMQConnectionOuterException:
