@@ -1605,12 +1605,18 @@ async def main() -> None:
                     await connection_check_task
                 logger.info("✅ Queue checker task stopped")
 
-            # Cancel batch flush task
+            # Cancel batch flush task and flush remaining messages
             if batch_flush_task:
                 batch_flush_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await batch_flush_task
-                logger.info("✅ Batch flush task stopped")
+            if batch_processor:
+                batch_processor.shutdown()
+                try:
+                    await batch_processor.flush_all()
+                    logger.info("✅ Batch processor flushed and stopped")
+                except Exception as e:
+                    logger.error("❌ Error flushing batch processor", error=str(e))
 
             # Cancel any pending consumer cancellation tasks
             for task in consumer_cancel_tasks.values():
