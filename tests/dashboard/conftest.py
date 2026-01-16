@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -19,9 +20,14 @@ def test_server() -> Any:
 
     This fixture is only used when running E2E tests.
     """
+    # Get project root directory
+    project_root = str(Path(__file__).parent.parent.parent)
+
     # Start server as subprocess
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
+    # Ensure Python can find the project modules
+    env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
 
     server_process = subprocess.Popen(  # noqa: S603
         [
@@ -35,20 +41,23 @@ def test_server() -> Any:
             "--port",
             "8003",
             "--log-level",
-            "warning",
+            "info",  # Changed from warning to info for better debugging
         ],
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        cwd=project_root,  # Set working directory to project root
     )
 
     # Wait for server to be ready
     max_retries = 40  # 20 seconds total
-    for _i in range(max_retries):
+    server_started = False
+    for retry in range(max_retries):
         try:
             response = httpx.get("http://127.0.0.1:8003/api/metrics", timeout=1.0)
             if response.status_code == 200:
+                server_started = True
                 break
         except Exception:  # noqa: S110
             pass  # Server might not be ready yet
@@ -56,12 +65,41 @@ def test_server() -> Any:
         # Check if process died
         if server_process.poll() is not None:
             stdout, stderr = server_process.communicate()
-            raise RuntimeError(f"Server process died. stdout: {stdout}, stderr: {stderr}")
+            error_msg = f"Server process died after {retry} retries.\n"
+            error_msg += f"Working directory: {project_root}\n"
+            error_msg += f"Python executable: {sys.executable}\n"
+            if stdout:
+                error_msg += f"STDOUT:\n{stdout}\n"
+            else:
+                error_msg += "STDOUT: (empty)\n"
+            if stderr:
+                error_msg += f"STDERR:\n{stderr}\n"
+            else:
+                error_msg += "STDERR: (empty)\n"
+            raise RuntimeError(error_msg)
 
         time.sleep(0.5)
-    else:
+
+    # If we reach here, server didn't start successfully
+    if not server_started:
         server_process.terminate()
-        raise RuntimeError("Test server failed to start after 20 seconds")
+        try:
+            stdout, stderr = server_process.communicate(timeout=2)
+            error_msg = "Test server failed to start after 20 seconds.\n"
+            error_msg += f"Working directory: {project_root}\n"
+            error_msg += f"Python executable: {sys.executable}\n"
+            if stdout:
+                error_msg += f"STDOUT:\n{stdout}\n"
+            else:
+                error_msg += "STDOUT: (empty)\n"
+            if stderr:
+                error_msg += f"STDERR:\n{stderr}\n"
+            else:
+                error_msg += "STDERR: (empty)\n"
+            raise RuntimeError(error_msg)
+        except subprocess.TimeoutExpired as e:
+            server_process.kill()
+            raise RuntimeError("Test server failed to start and didn't terminate cleanly") from e
 
     yield
 
