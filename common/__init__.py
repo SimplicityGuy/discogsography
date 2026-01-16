@@ -41,6 +41,16 @@ from common.rabbitmq_resilient import (
     ResilientRabbitMQConnection,
     process_message_with_retry,
 )
+from common.data_normalizer import (
+    normalize_record,
+    normalize_artist,
+    normalize_label,
+    normalize_master,
+    normalize_release,
+    normalize_id,
+    normalize_nested_list,
+    normalize_item_with_id,
+)
 
 
 __all__ = [
@@ -73,4 +83,12 @@ __all__ = [
     "setup_logging",
     "with_async_neo4j_retry",
     "with_neo4j_retry",
+    "normalize_record",
+    "normalize_artist",
+    "normalize_label",
+    "normalize_master",
+    "normalize_release",
+    "normalize_id",
+    "normalize_nested_list",
+    "normalize_item_with_id",
 ]
