@@ -2271,12 +2271,12 @@ class TestQueueRecordVariations:
     def test_queue_record_progress_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
         """Test __queue_record logs progress at intervals."""
         mock_exists.return_value = True
-        mock_config.progress_log_interval = 100
         input_file = "discogs_20230101_artists.xml.gz"
 
         extractor = ConcurrentExtractor(input_file, mock_config)
         extractor.record_queue = asyncio.Queue()
         extractor.event_loop = asyncio.new_event_loop()
+        extractor.progress_log_interval = 100  # Set directly on extractor, not config
         extractor.total_count = 99  # Next record will trigger logging
 
         path = [("artists", None), ("artist", {"id": "123"})]
