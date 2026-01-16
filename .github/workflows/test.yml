@@ -102,14 +102,8 @@ jobs:
       - name: 🧪 Run unit tests with coverage (excluding E2E)
         if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
         run: |
-          # Run tests with coverage using just
+          # Run tests with coverage - generates XML, JSON, and terminal reports
           just test-cov
-
-          # Generate XML coverage report for upload
-          uv run coverage xml
-
-          # Generate JSON coverage report for PR comments
-          uv run coverage json
 
       - name: 📋 Process coverage reports
         id: coverage-setup
@@ -131,10 +125,16 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
-          files: coverage.xml
+          files: ./coverage.xml
           flags: python
           name: python-coverage
           fail_ci_if_error: false
+          disable_search: true  # Don't auto-search for coverage files
+          verbose: false  # Reduce output noise
+        env:
+          # Disable unnecessary coverage tool detection
+          CODECOV_GCOV_DISABLE: 1
+          CODECOV_XCODE_DISABLE: 1
 
       - name: 📊 Coverage Report
         if: github.event_name == 'pull_request' && steps.coverage-setup.outputs.coverage-exists == 'true'
@@ -208,7 +208,14 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
-          files: extractor/rustextractor/lcov.info
+          files: ./extractor/rustextractor/lcov.info
           flags: rust
           name: rust-coverage
           fail_ci_if_error: false
+          disable_search: true  # Don't auto-search for coverage files
+          verbose: false  # Reduce output noise
+        env:
+          # Disable unnecessary coverage tool detection
+          CODECOV_GCOV_DISABLE: 1
+          CODECOV_XCODE_DISABLE: 1
+          CODECOV_PYTHON_DISABLE: 1  # Only lcov.info for Rust

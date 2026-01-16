@@ -93,7 +93,7 @@ test:
 # Run tests with coverage report
 [group('test')]
 test-cov:
-    uv run pytest --cov -m 'not e2e'
+    uv run pytest --cov --cov-report=xml --cov-report=json --cov-report=term -m 'not e2e'
 
 # Run end-to-end browser tests
 [group('test')]

@@ -1,0 +1,137 @@
+---
+# Codecov Configuration
+# https://docs.codecov.com/docs/codecovyml-reference
+
+# Coverage settings
+coverage:
+  precision: 2
+  round: down
+  range: "70...100"
+
+  # Status checks on pull requests
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 1%  # Allow 1% drop
+        informational: false
+    patch:
+      default:
+        target: 80%
+        threshold: 5%
+        informational: false
+
+# PR comment configuration
+comment:
+  layout: "header, diff, flags, components, files, footer"
+  behavior: default
+  require_changes: true
+  require_base: false
+  require_head: true
+
+# Flag configuration for different coverage types
+flags:
+  python:
+    paths:
+      - "**/*.py"
+    carryforward: true
+  rust:
+    paths:
+      - "extractor/rustextractor/**/*.rs"
+    carryforward: true
+  e2e:
+    paths:
+      - "dashboard/**/*.py"
+      - "common/**/*.py"
+    carryforward: true
+  e2e-chromium:
+    paths:
+      - "dashboard/**/*.py"
+      - "common/**/*.py"
+    carryforward: true
+  e2e-firefox:
+    paths:
+      - "dashboard/**/*.py"
+      - "common/**/*.py"
+    carryforward: true
+  e2e-webkit:
+    paths:
+      - "dashboard/**/*.py"
+      - "common/**/*.py"
+    carryforward: true
+  e2e-desktop:
+    paths:
+      - "dashboard/**/*.py"
+      - "common/**/*.py"
+    carryforward: true
+  e2e-iPhone 15:
+    paths:
+      - "dashboard/**/*.py"
+      - "common/**/*.py"
+    carryforward: true
+  e2e-iPad Pro 11:
+    paths:
+      - "dashboard/**/*.py"
+      - "common/**/*.py"
+    carryforward: true
+
+# Component configuration
+component_management:
+  default_rules:
+    statuses:
+      - type: project
+        target: auto
+  individual_components:
+    - component_id: dashboard
+      name: Dashboard
+      paths:
+        - "dashboard/**"
+    - component_id: discovery
+      name: Discovery
+      paths:
+        - "discovery/**"
+    - component_id: extractor
+      name: Extractor
+      paths:
+        - "extractor/**"
+    - component_id: graphinator
+      name: Graphinator
+      paths:
+        - "graphinator/**"
+    - component_id: tableinator
+      name: Tableinator
+      paths:
+        - "tableinator/**"
+    - component_id: common
+      name: Common
+      paths:
+        - "common/**"
+
+# Ignore patterns
+ignore:
+  - "tests/**"
+  - "**/__pycache__/**"
+  - "**/node_modules/**"
+  - "**/.venv/**"
+  - "**/venv/**"
+  - "**/*.pyc"
+
+# Parsers configuration - disable unused parsers to prevent warnings
+parsers:
+  gcov:
+    branch_detection:
+      conditional: true
+      loop: true
+      method: false
+      macro: false
+  v1:
+    include_full_missed_files: false
+
+# CLI behavior configuration
+cli:
+  # Disable automatic search for coverage.py to prevent warnings
+  # We explicitly provide coverage files in the GitHub Actions workflow
+  runners:
+    use:
+      - python
+      - rust
