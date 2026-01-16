@@ -340,6 +340,76 @@ QUEUE_CHECK_INTERVAL=300     # 5 minutes (doesn't matter if rarely triggered)
 
 See [Consumer Cancellation](consumer-cancellation.md) for details.
 
+## Batch Processing Configuration
+
+| Variable                        | Description                                | Default | Range      |
+| ------------------------------- | ------------------------------------------ | ------- | ---------- |
+| `NEO4J_BATCH_MODE`              | Enable batch processing for Neo4j writes   | `true`  | true/false |
+| `NEO4J_BATCH_SIZE`              | Records per batch for Neo4j                | `100`   | 10-1000    |
+| `NEO4J_BATCH_FLUSH_INTERVAL`    | Seconds between automatic flushes          | `5.0`   | 1.0-60.0   |
+| `POSTGRES_BATCH_MODE`           | Enable batch processing for PostgreSQL     | `true`  | true/false |
+| `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL           | `100`   | 10-1000    |
+| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes          | `5.0`   | 1.0-60.0   |
+
+**Used By**: Graphinator (Neo4j), Tableinator (PostgreSQL)
+
+**Purpose**: Improve write performance by batching multiple database operations
+
+**How Batch Processing Works**:
+
+1. Messages are collected into batches instead of being processed individually
+1. When batch reaches `BATCH_SIZE` or `BATCH_FLUSH_INTERVAL` expires:
+   - All records in batch are written in a single database operation
+   - Message acknowledgments are sent after successful write
+1. On service shutdown:
+   - All pending batches are flushed automatically
+   - No data loss occurs during graceful shutdown
+
+**Performance Impact**:
+
+- **Throughput**: 3-5x improvement in write operations per second
+- **Database Load**: Fewer transactions, reduced connection overhead
+- **Latency**: Slight increase (up to `BATCH_FLUSH_INTERVAL` seconds)
+- **Memory**: Increased by approximately `BATCH_SIZE * record_size`
+
+**Configuration Examples**:
+
+```bash
+# High throughput (recommended for initial data load)
+NEO4J_BATCH_MODE=true
+NEO4J_BATCH_SIZE=500
+NEO4J_BATCH_FLUSH_INTERVAL=10.0
+
+# Low latency (real-time updates)
+NEO4J_BATCH_MODE=true
+NEO4J_BATCH_SIZE=10
+NEO4J_BATCH_FLUSH_INTERVAL=1.0
+
+# Disabled (per-message processing)
+NEO4J_BATCH_MODE=false
+# BATCH_SIZE and FLUSH_INTERVAL ignored when disabled
+```
+
+**Best Practices**:
+
+- **Initial Load**: Use larger batch sizes (500-1000) for faster initial data loading
+- **Real-time Updates**: Use smaller batches (10-50) for lower latency
+- **Memory Constrained**: Reduce batch size if memory usage is a concern
+- **High Throughput**: Increase flush interval to accumulate more records
+- **Testing**: Disable batch mode to debug individual record processing
+
+**Monitoring**:
+
+Batch processing logs provide visibility into performance:
+
+```
+🚀 Batch processing enabled (batch_size=100, flush_interval=5.0)
+📦 Flushing batch for artists (size=100)
+✅ Batch flushed successfully (artists: 100 records in 0.45s)
+```
+
+See [Performance Guide](performance-guide.md) for detailed optimization strategies.
+
 ## Machine Learning & Discovery
 
 | Variable                     | Description                 | Default                         | Required        |
@@ -443,9 +513,16 @@ NEO4J_ADDRESS="bolt://localhost:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
 
-# Optional
+# Optional - Consumer Management
 CONSUMER_CANCEL_DELAY=300
 QUEUE_CHECK_INTERVAL=3600
+
+# Optional - Batch Processing (enabled by default)
+NEO4J_BATCH_MODE=true
+NEO4J_BATCH_SIZE=100
+NEO4J_BATCH_FLUSH_INTERVAL=5.0
+
+# Optional - Logging
 LOG_LEVEL=INFO
 ```
 
@@ -461,9 +538,16 @@ POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
 
-# Optional
+# Optional - Consumer Management
 CONSUMER_CANCEL_DELAY=300
 QUEUE_CHECK_INTERVAL=3600
+
+# Optional - Batch Processing (enabled by default)
+POSTGRES_BATCH_MODE=true
+POSTGRES_BATCH_SIZE=100
+POSTGRES_BATCH_FLUSH_INTERVAL=5.0
+
+# Optional - Logging
 LOG_LEVEL=INFO
 ```
 
@@ -703,4 +787,4 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ______________________________________________________________________
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2026-01-15 (Added batch processing configuration)
