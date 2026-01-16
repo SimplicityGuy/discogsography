@@ -4,7 +4,7 @@
 
 **The comprehensive guide for AI-assisted development with Claude Code (claude.ai/code)**
 
-[📚 Quick Reference](#-quick-reference) | [🎯 Architecture](#-architecture-components) | [🛠️ Development](#-development-commands) | [📋 Guidelines](#-development-guidelines) | [📋 Emoji Guide](docs/emoji-guide.md)
+[🐍 uv Package Manager](#-python-package-management-with-uv) | [📚 Quick Reference](#-quick-reference) | [🎯 Architecture](#-architecture-components) | [🛠️ Development](#-development-commands) | [📋 Guidelines](#-development-guidelines) | [📋 Emoji Guide](docs/emoji-guide.md)
 
 </div>
 
@@ -13,6 +13,8 @@
 ## 🎯 Project Overview
 
 **Discogsography** is a production-grade Python 3.13+ microservices platform that transforms Discogs music database exports into powerful, queryable knowledge graphs and analytics engines.
+
+> **⚠️ CRITICAL**: This project uses **[uv](https://github.com/astral-sh/uv)** exclusively for all Python operations. **ALWAYS use `uv run` for Python commands.** Never use pip, python, pytest, or mypy directly. See the [uv Package Manager](#-python-package-management-with-uv) section below for details.
 
 ### Core Design Principles
 
@@ -24,6 +26,7 @@
 
 ## 🤖 AI Development Memories
 
+- ✅ **ALWAYS use `uv` for Python package management and running Python tools** - Never use pip, pipenv, or poetry.
 - ✅ Create Mermaid style diagrams when diagrams are added to Markdown files.
 - ✅ New markdown files should have a lowercase filename preferring - instead \_, unless the document is a README. Do not rename any existing markdown files.
 - ✅ All pyproject.toml files should follow the standard structure and ordering (see pyproject.toml Standards section).
@@ -31,6 +34,144 @@
 - ✅ Use single quotes in GitHub Actions expressions (`${{ }}`) and double quotes for YAML strings.
 - ✅ Composite actions are preferred for reusable workflow steps (see `.github/actions/`).
 - ✅ Run tests and E2E tests in parallel for optimal performance.
+
+## 🐍 Python Package Management with uv
+
+**CRITICAL**: This project uses [uv](https://github.com/astral-sh/uv) exclusively for all Python operations. **Never use pip, pipenv, poetry, or virtualenv directly.**
+
+### Why uv?
+
+- **⚡ 10-100x faster** than pip for package installation
+- **🔒 Better dependency resolution** - deterministic lockfiles
+- **🎯 Drop-in replacement** for pip, but much faster
+- **🔄 Consistent environments** across all developers
+- **📦 Unified tool** for package management and running scripts
+
+### Always Use uv Commands
+
+**❌ NEVER DO THIS:**
+```bash
+pip install package-name
+python script.py
+pytest
+mypy .
+```
+
+**✅ ALWAYS DO THIS:**
+```bash
+uv add package-name           # Add dependency
+uv run python script.py       # Run Python scripts
+uv run pytest                 # Run tests
+uv run mypy .                # Run type checking
+```
+
+### Common uv Commands
+
+```bash
+# Install/sync all dependencies from pyproject.toml
+uv sync --all-extras
+
+# Add a new dependency
+uv add package-name
+
+# Add a development dependency
+uv add --dev package-name
+
+# Remove a dependency
+uv remove package-name
+
+# Run any Python command
+uv run python script.py
+uv run pytest
+uv run mypy .
+uv run ruff check .
+
+# Update dependencies
+uv lock --upgrade-package package-name
+
+# Install specific package version
+uv add "package-name>=1.2.3"
+```
+
+### Using just Task Runner
+
+For convenience, the project includes a `justfile` with pre-configured tasks that use uv:
+
+```bash
+# These all use uv internally
+just install      # uv sync --all-extras
+just test         # uv run pytest
+just lint         # uv run ruff check .
+just format       # uv run ruff format .
+just typecheck    # uv run mypy .
+```
+
+### Package Installation Pattern
+
+When adding new dependencies:
+
+1. **Add to pyproject.toml** using uv:
+   ```bash
+   uv add package-name
+   ```
+
+2. **This automatically**:
+   - Updates `pyproject.toml`
+   - Updates `uv.lock` lockfile
+   - Installs the package in the environment
+
+3. **Commit both files**:
+   ```bash
+   git add pyproject.toml uv.lock
+   git commit -m "chore: add package-name dependency"
+   ```
+
+### Development Workflow
+
+```bash
+# 1. Initial setup
+uv sync --all-extras
+
+# 2. Install pre-commit hooks
+uv run pre-commit install
+
+# 3. Make changes and test
+uv run pytest
+uv run mypy .
+uv run ruff check .
+
+# 4. Run the service
+uv run python dashboard/dashboard.py
+```
+
+### Docker and uv
+
+In Docker environments, uv is pre-installed and used in all Dockerfiles:
+
+```dockerfile
+# Install uv
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Install dependencies
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev
+```
+
+### Migration from pip/poetry
+
+If you see old commands in documentation or scripts:
+
+| Old Command | New Command |
+|-------------|-------------|
+| `pip install -r requirements.txt` | `uv sync` |
+| `pip install package` | `uv add package` |
+| `pip install -e .` | `uv sync` |
+| `python script.py` | `uv run python script.py` |
+| `pytest` | `uv run pytest` |
+| `poetry install` | `uv sync` |
+| `poetry add package` | `uv add package` |
+
+**Update them to use uv!**
 
 ## 📋 Development Guidelines
 
@@ -122,7 +263,43 @@ All `pyproject.toml` files in the project follow a consistent structure and orde
 
 ## 🛠️ Development Commands
 
-### Service Management
+### Local Development (Always use uv)
+
+```bash
+# Install dependencies
+uv sync --all-extras
+
+# Run tests
+uv run pytest
+uv run pytest -v                 # Verbose
+uv run pytest tests/dashboard/   # Specific directory
+
+# Run type checking
+uv run mypy .
+
+# Run linting
+uv run ruff check .
+
+# Format code
+uv run ruff format .
+
+# Run a service locally
+uv run python dashboard/dashboard.py
+uv run python discovery/discovery.py
+
+# Run pre-commit hooks
+uv run pre-commit run --all-files
+
+# Or use just commands (which use uv internally)
+just test
+just typecheck
+just lint
+just format
+just dashboard
+just discovery
+```
+
+### Service Management (Docker)
 
 ```bash
 # Start all services
@@ -131,7 +308,7 @@ docker-compose up -d
 # View logs
 docker-compose logs -f [service_name]
 
-# Run tests
+# Run tests in container
 docker-compose exec [service_name] pytest
 
 # Check service health
@@ -191,11 +368,33 @@ See main [README.md](README.md) for detailed architecture information.
 
 ## 📐 Best Practices for Claude Code
 
-1. **Always read existing code** before making changes
-1. **Follow established patterns** in the codebase
-1. **Use the emoji guide** for consistent visual communication
-1. **Test changes** before marking tasks complete
-1. **Document significant changes** in code comments
-1. **Check logs** when debugging issues
-1. **Validate data** at service boundaries
-1. **Handle errors gracefully** with proper logging
+1. **ALWAYS use `uv` for Python commands** - Never use pip, python, pytest, mypy directly
+2. **Always read existing code** before making changes
+3. **Follow established patterns** in the codebase
+4. **Use the emoji guide** for consistent visual communication
+5. **Test changes** before marking tasks complete
+6. **Document significant changes** in code comments
+7. **Check logs** when debugging issues
+8. **Validate data** at service boundaries
+9. **Handle errors gracefully** with proper logging
+
+### Running Python Tools - ALWAYS Use uv
+
+**Correct way to run tools:**
+```bash
+uv run pytest                    # Run tests
+uv run pytest -v                 # Run tests with verbose output
+uv run mypy .                   # Type checking
+uv run ruff check .             # Linting
+uv run ruff format .            # Formatting
+uv run python script.py         # Run any Python script
+uv run pre-commit run --all-files  # Run pre-commit hooks
+```
+
+**Or use the just task runner:**
+```bash
+just test         # Runs: uv run pytest
+just typecheck    # Runs: uv run mypy .
+just lint         # Runs: uv run ruff check .
+just format       # Runs: uv run ruff format .
+```
