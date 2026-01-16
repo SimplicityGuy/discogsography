@@ -43,9 +43,9 @@ async with self.driver.session() as session:
 ## Steps to Add Logging
 
 1. **Extract the query string** to a variable named `query`
-2. **Extract parameters** to a dictionary named `params`
-3. **Add logger.debug()** statement with query and params
-4. **Update session.run()** to use the query variable and **params
+1. **Extract parameters** to a dictionary named `params`
+1. **Add logger.debug()** statement with query and params
+1. **Update session.run()** to use the query variable and \*\*params
 
 ## Files Completed
 
@@ -56,17 +56,17 @@ async with self.driver.session() as session:
 
 The following files need query logging added:
 
-| File | Query Count | Priority |
-|------|-------------|----------|
-| `playground_api.py` | 10 | High (main API) |
-| `analytics.py` | 7 | High (analytics engine) |
-| `genre_evolution.py` | 6 | Medium |
-| `similarity_network.py` | 5 | Medium |
-| `collaborative_filtering.py` | 3 | Medium |
-| `trend_tracking.py` | 3 | Low |
-| `community_detection.py` | 2 | Low |
-| `content_based.py` | 1 | Low |
-| `centrality_metrics.py` | 1 | Low |
+| File                         | Query Count | Priority                |
+| ---------------------------- | ----------- | ----------------------- |
+| `playground_api.py`          | 10          | High (main API)         |
+| `analytics.py`               | 7           | High (analytics engine) |
+| `genre_evolution.py`         | 6           | Medium                  |
+| `similarity_network.py`      | 5           | Medium                  |
+| `collaborative_filtering.py` | 3           | Medium                  |
+| `trend_tracking.py`          | 3           | Low                     |
+| `community_detection.py`     | 2           | Low                     |
+| `content_based.py`           | 1           | Low                     |
+| `centrality_metrics.py`      | 1           | Low                     |
 
 Total: 38 queries remaining
 
@@ -170,10 +170,10 @@ docker logs -f discogsography-discovery | grep "Executing Neo4j query"
 ## Guidelines
 
 1. **Always use the 🔍 emoji** for consistency with logging standards
-2. **Strip whitespace** from queries with `.strip()` for cleaner logs
-3. **Include all parameters** in the params dict for complete context
-4. **Don't log query results** - only the query and parameters
-5. **Use DEBUG level** - these logs should only appear when explicitly enabled
+1. **Strip whitespace** from queries with `.strip()` for cleaner logs
+1. **Include all parameters** in the params dict for complete context
+1. **Don't log query results** - only the query and parameters
+1. **Use DEBUG level** - these logs should only appear when explicitly enabled
 
 ## See Also
 

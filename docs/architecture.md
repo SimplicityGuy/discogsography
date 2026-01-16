@@ -16,23 +16,23 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### ⚙️ Service Components
 
-| Service                                                            | Purpose                                          | Key Technologies                              | Port(s)        |
-| ------------------------------------------------------------------ | ------------------------------------------------ | --------------------------------------------- | -------------- |
-| **[📥](emoji-guide.md#service-identifiers) Python Extractor**      | Downloads & processes Discogs XML dumps (Python) | `asyncio`, `orjson`, `aio-pika`               | 8000 (health)  |
-| **[⚡](emoji-guide.md#service-identifiers) Rust Extractor**        | High-performance Rust-based extractor            | `tokio`, `quick-xml`, `lapin`                 | 8000 (health)  |
-| **[🔗](emoji-guide.md#service-identifiers) Graphinator**           | Builds Neo4j knowledge graphs                    | `neo4j-driver`, graph algorithms              | 8001 (health)  |
-| **[🐘](emoji-guide.md#service-identifiers) Tableinator**           | Creates PostgreSQL analytics tables              | `psycopg3`, JSONB, full-text search           | 8002 (health)  |
-| **[🎵](emoji-guide.md#service-identifiers) Discovery**             | AI-powered music intelligence                    | `sentence-transformers`, `plotly`, `networkx` | 8005, 8004     |
-| **[📊](emoji-guide.md#service-identifiers) Dashboard**             | Real-time system monitoring                      | `FastAPI`, WebSocket, reactive UI             | 8003           |
+| Service                                                       | Purpose                                          | Key Technologies                              | Port(s)       |
+| ------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------- | ------------- |
+| **[📥](emoji-guide.md#service-identifiers) Python Extractor** | Downloads & processes Discogs XML dumps (Python) | `asyncio`, `orjson`, `aio-pika`               | 8000 (health) |
+| **[⚡](emoji-guide.md#service-identifiers) Rust Extractor**   | High-performance Rust-based extractor            | `tokio`, `quick-xml`, `lapin`                 | 8000 (health) |
+| **[🔗](emoji-guide.md#service-identifiers) Graphinator**      | Builds Neo4j knowledge graphs                    | `neo4j-driver`, graph algorithms              | 8001 (health) |
+| **[🐘](emoji-guide.md#service-identifiers) Tableinator**      | Creates PostgreSQL analytics tables              | `psycopg3`, JSONB, full-text search           | 8002 (health) |
+| **[🎵](emoji-guide.md#service-identifiers) Discovery**        | AI-powered music intelligence                    | `sentence-transformers`, `plotly`, `networkx` | 8005, 8004    |
+| **[📊](emoji-guide.md#service-identifiers) Dashboard**        | Real-time system monitoring                      | `FastAPI`, WebSocket, reactive UI             | 8003          |
 
 ### Infrastructure Components
 
-| Component                                                    | Purpose                                | Port(s)         |
-| ------------------------------------------------------------ | -------------------------------------- | --------------- |
-| **[🐰](emoji-guide.md#service-identifiers) RabbitMQ**        | Message broker and queue management    | 5672, 15672     |
-| **[🔗](emoji-guide.md#service-identifiers) Neo4j**           | Graph database for relationships       | 7474, 7687      |
-| **[🐘](emoji-guide.md#service-identifiers) PostgreSQL**      | Relational database for analytics      | 5433 (mapped)   |
-| **[🔴](emoji-guide.md#service-identifiers) Redis**           | Cache layer for queries and ML models  | 6379            |
+| Component                                               | Purpose                               | Port(s)       |
+| ------------------------------------------------------- | ------------------------------------- | ------------- |
+| **[🐰](emoji-guide.md#service-identifiers) RabbitMQ**   | Message broker and queue management   | 5672, 15672   |
+| **[🔗](emoji-guide.md#service-identifiers) Neo4j**      | Graph database for relationships      | 7474, 7687    |
+| **[🐘](emoji-guide.md#service-identifiers) PostgreSQL** | Relational database for analytics     | 5433 (mapped) |
+| **[🔴](emoji-guide.md#service-identifiers) Redis**      | Cache layer for queries and ML models | 6379          |
 
 ## System Architecture Diagram
 
@@ -90,12 +90,14 @@ graph TD
 ### 1. Data Extraction Phase
 
 **Python Extractor** (Default):
+
 - Downloads XML dumps from Discogs S3 bucket
 - Parses XML using streaming parser (5,000-10,000 records/sec)
 - SHA256 hash-based deduplication
 - Publishes JSON messages to RabbitMQ queues
 
 **Rust Extractor** (High-Performance Option):
+
 - High-performance alternative to Python Extractor
 - Processes 20,000-400,000+ records/sec
 - Same deduplication and messaging logic
@@ -104,12 +106,14 @@ graph TD
 ### 2. Message Distribution Phase
 
 **RabbitMQ Queues**:
+
 - `artists_queue`: Artist and band data
 - `labels_queue`: Record label information
 - `releases_queue`: Release records
 - `masters_queue`: Master recording data
 
 **Message Format**:
+
 ```json
 {
   "type": "artist|label|release|master",
@@ -121,12 +125,14 @@ graph TD
 ### 3. Data Persistence Phase
 
 **Graphinator** (Neo4j):
+
 - Consumes messages from all 4 queues
 - Creates nodes: Artist, Label, Release, Master, Genre, Style
 - Builds relationships: BY, ON, MEMBER_OF, DERIVED_FROM, etc.
 - Batch processing: 1,000-2,000 records/sec
 
 **Tableinator** (PostgreSQL):
+
 - Consumes messages from all 4 queues
 - Stores JSONB documents in relational tables
 - Creates indexes for fast queries
@@ -135,12 +141,14 @@ graph TD
 ### 4. Query and Analytics Phase
 
 **Discovery Service**:
+
 - AI-powered music recommendations
 - Semantic search using sentence transformers
 - Graph algorithms: PageRank, community detection
 - Results cached in Redis for performance
 
 **Dashboard Service**:
+
 - Real-time WebSocket updates
 - System health monitoring
 - Queue metrics and processing rates
@@ -151,6 +159,7 @@ graph TD
 ### Python Extractor
 
 **Responsibilities**:
+
 - Download Discogs XML dumps from S3
 - Validate checksums and metadata
 - Parse XML using streaming parser
@@ -158,12 +167,14 @@ graph TD
 - Publish to RabbitMQ queues
 
 **Key Features**:
+
 - Async I/O for optimal performance
 - Periodic update checks (configurable interval)
 - Smart file completion tracking
 - Automatic retry with exponential backoff
 
 **Configuration**:
+
 - `DISCOGS_ROOT`: Data storage directory
 - `PERIODIC_CHECK_DAYS`: Update check interval
 - `AMQP_CONNECTION`: RabbitMQ connection string
@@ -173,17 +184,20 @@ See [Extractor README](../extractor/pyextractor/README.md) for details.
 ### Rust Extractor
 
 **Responsibilities**:
+
 - High-performance alternative to Python Extractor
 - Same functionality with dramatically improved throughput
 - Optimized for large-scale data processing
 
 **Key Features**:
+
 - Async Rust with Tokio runtime
 - 20,000-400,000+ records/sec processing
 - Memory-efficient streaming parser
 - Compatible with existing infrastructure
 
 **Switching Extractors**:
+
 ```bash
 # Switch to Rust Extractor
 ./scripts/switch-extractor.sh rust
@@ -197,18 +211,21 @@ See [Rust Extractor README](../extractor/rustextractor/README.md) for details.
 ### Graphinator
 
 **Responsibilities**:
+
 - Build Neo4j knowledge graph
 - Create nodes and relationships
 - Maintain graph indexes
 - Handle schema evolution
 
 **Key Features**:
+
 - Automatic relationship detection
 - Batch transaction processing
 - Connection resilience with retry logic
 - Smart consumer lifecycle management
 
 **Configuration**:
+
 - `NEO4J_ADDRESS`: Neo4j bolt URL
 - `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Auth credentials
 - `CONSUMER_CANCEL_DELAY`: Idle timeout before shutdown
@@ -218,18 +235,21 @@ See [Graphinator README](../graphinator/README.md) for details.
 ### Tableinator
 
 **Responsibilities**:
+
 - Store data in PostgreSQL
 - Create and maintain indexes
 - Handle JSONB documents
 - Enable full-text search
 
 **Key Features**:
+
 - JSONB for flexible schema
 - GIN indexes for fast queries
 - Batch insert optimization
 - Connection pool management
 
 **Configuration**:
+
 - `POSTGRES_ADDRESS`: PostgreSQL host:port
 - `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`: Auth credentials
 - `POSTGRES_DATABASE`: Database name
@@ -239,18 +259,21 @@ See [Tableinator README](../tableinator/README.md) for details.
 ### Discovery Service
 
 **Responsibilities**:
+
 - AI-powered music discovery and recommendations
 - Semantic search using ML models
 - Graph analysis and visualization
 - Industry analytics and insights
 
 **Key Features**:
+
 - Sentence transformers for embeddings
 - Redis caching for query performance
 - Interactive Plotly visualizations
 - Network graph rendering with vis.js
 
 **Configuration**:
+
 - `REDIS_URL`: Redis cache connection
 - `HF_HOME`: Hugging Face model cache
 - `SENTENCE_TRANSFORMERS_HOME`: Transformer cache
@@ -261,18 +284,21 @@ See [Discovery README](../discovery/README.md) for details.
 ### Dashboard
 
 **Responsibilities**:
+
 - Real-time system monitoring
 - WebSocket-based live updates
 - Service health checks
 - Queue metrics visualization
 
 **Key Features**:
+
 - FastAPI backend
 - WebSocket for real-time data
 - Responsive HTML/CSS/JS frontend
 - Activity log and event tracking
 
 **Configuration**:
+
 - Service health endpoint URLs
 - Database connection strings
 - RabbitMQ management API access
@@ -338,10 +364,10 @@ graph LR
 ### Consumer Lifecycle
 
 1. **Active Processing**: Consuming and processing messages
-2. **Idle Detection**: All queues empty, no messages for 5 minutes
-3. **Connection Cleanup**: Close RabbitMQ connections
-4. **Periodic Checking**: Check queues every hour for new messages
-5. **Auto-Reconnection**: Restart consumers when new data arrives
+1. **Idle Detection**: All queues empty, no messages for 5 minutes
+1. **Connection Cleanup**: Close RabbitMQ connections
+1. **Periodic Checking**: Check queues every hour for new messages
+1. **Auto-Reconnection**: Restart consumers when new data arrives
 
 See [Consumer Cancellation](consumer-cancellation.md) for details.
 
@@ -352,6 +378,7 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 **Purpose**: Store and query complex music relationships
 
 **Node Types**:
+
 - Artist (musicians, bands, producers)
 - Label (record labels, imprints)
 - Master (master recordings)
@@ -360,6 +387,7 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 - Style (sub-genres, styles)
 
 **Relationship Types**:
+
 - BY (release → artist)
 - ON (release → label)
 - MEMBER_OF (artist → band)
@@ -374,12 +402,14 @@ See [Database Schema](database-schema.md) for details.
 **Purpose**: Fast structured queries and analytics
 
 **Tables**:
+
 - `artists`: Artist data in JSONB format
 - `labels`: Label data in JSONB format
 - `masters`: Master recording data
 - `releases`: Release data with full-text indexes
 
 **Indexes**:
+
 - B-tree indexes on common query fields
 - GIN indexes on JSONB columns
 - Full-text search indexes
@@ -391,12 +421,14 @@ See [Database Schema](database-schema.md) for details.
 **Purpose**: Cache query results and ML model outputs
 
 **Cache Types**:
+
 - Query result caching
 - Embedding vectors
 - Graph algorithm results
 - Dashboard metrics
 
 **Configuration**:
+
 - Default TTL: 1 hour
 - Max memory: Configurable
 - Eviction policy: LRU
@@ -465,6 +497,7 @@ See [Monitoring](monitoring.md) for details.
 ### Horizontal Scaling
 
 **Stateless Services** (can scale horizontally):
+
 - Python Extractor (one instance per data type)
 - Rust Extractor (one instance per data type)
 - Graphinator (multiple consumers per queue)
@@ -473,6 +506,7 @@ See [Monitoring](monitoring.md) for details.
 - Dashboard (load balanced)
 
 **Stateful Services** (scale vertically):
+
 - Neo4j (clustering available in enterprise)
 - PostgreSQL (replication supported)
 - RabbitMQ (clustering supported)
@@ -497,23 +531,27 @@ docker-compose up -d
 ```
 
 **Pros**:
+
 - Easy setup
 - All services on one machine
 - Good for development and testing
 
 **Cons**:
+
 - Limited scalability
 - Single point of failure
 
 ### Kubernetes (Production)
 
 **Recommended for**:
+
 - Production deployments
 - High availability requirements
 - Auto-scaling needs
 - Multi-node clusters
 
 **Components**:
+
 - Deployments for stateless services
 - StatefulSets for databases
 - Services for load balancing
@@ -528,6 +566,6 @@ docker-compose up -d
 - [Performance Guide](performance-guide.md) - Optimization strategies
 - [Monitoring Guide](monitoring.md) - Observability and debugging
 
----
+______________________________________________________________________
 
 **Last Updated**: 2025-01-15

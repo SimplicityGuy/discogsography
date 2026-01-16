@@ -52,15 +52,16 @@ services:
 
 ### RabbitMQ Configuration
 
-| Variable          | Description              | Default                              | Required |
-| ----------------- | ------------------------ | ------------------------------------ | -------- |
-| `AMQP_CONNECTION` | RabbitMQ connection URL  | `amqp://guest:guest@localhost:5672/` | Yes      |
+| Variable          | Description             | Default                              | Required |
+| ----------------- | ----------------------- | ------------------------------------ | -------- |
+| `AMQP_CONNECTION` | RabbitMQ connection URL | `amqp://guest:guest@localhost:5672/` | Yes      |
 
 **Used By**: All services
 
 **Format**: `amqp://username:password@host:port/vhost`
 
 **Examples**:
+
 ```bash
 # Local development
 AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
@@ -73,6 +74,7 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 ```
 
 **Connection Properties**:
+
 - Automatic reconnection on failure
 - Heartbeat: 60 seconds
 - Connection timeout: 30 seconds
@@ -88,11 +90,13 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 **Used By**: Python Extractor, Rust Extractor
 
 **DISCOGS_ROOT Details**:
+
 - Must be writable by service user (UID 1000 in Docker)
 - Requires ~200GB free space for full dataset
 - Contains downloaded XML files and metadata cache
 
 **Directory Structure**:
+
 ```
 /discogs-data/
 ├── artists/
@@ -110,6 +114,7 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 ```
 
 **PERIODIC_CHECK_DAYS**:
+
 - How often to check for new data dumps
 - Set to `0` to disable automatic checks
 - Recommended: `15` (checks twice per month)
@@ -118,15 +123,16 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 
 ### Neo4j Configuration
 
-| Variable         | Description       | Default                 | Required |
-| ---------------- | ----------------- | ----------------------- | -------- |
-| `NEO4J_ADDRESS`  | Neo4j bolt URL    | `bolt://localhost:7687` | Yes      |
-| `NEO4J_USERNAME` | Neo4j username    | `neo4j`                 | Yes      |
-| `NEO4J_PASSWORD` | Neo4j password    | (none)                  | Yes      |
+| Variable         | Description    | Default                 | Required |
+| ---------------- | -------------- | ----------------------- | -------- |
+| `NEO4J_ADDRESS`  | Neo4j bolt URL | `bolt://localhost:7687` | Yes      |
+| `NEO4J_USERNAME` | Neo4j username | `neo4j`                 | Yes      |
+| `NEO4J_PASSWORD` | Neo4j password | (none)                  | Yes      |
 
 **Used By**: Graphinator, Dashboard, Discovery
 
 **Connection Details**:
+
 - Protocol: Bolt (binary protocol)
 - Default port: 7687
 - Connection pool: 50 connections (max)
@@ -134,6 +140,7 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 - Transaction timeout: 60 seconds
 
 **Examples**:
+
 ```bash
 # Local development
 NEO4J_ADDRESS="bolt://localhost:7687"
@@ -152,6 +159,7 @@ NEO4J_PASSWORD="your-secure-password"
 ```
 
 **Security Notes**:
+
 - Use strong passwords in production
 - Enable encryption with `bolt+s://` or `bolt+ssc://`
 - Consider certificate validation for production
@@ -159,16 +167,17 @@ NEO4J_PASSWORD="your-secure-password"
 
 ### PostgreSQL Configuration
 
-| Variable            | Description          | Default              | Required |
-| ------------------- | -------------------- | -------------------- | -------- |
-| `POSTGRES_ADDRESS`  | PostgreSQL host:port | `localhost:5432`     | Yes      |
-| `POSTGRES_USERNAME` | PostgreSQL username  | `postgres`           | Yes      |
-| `POSTGRES_PASSWORD` | PostgreSQL password  | (none)               | Yes      |
-| `POSTGRES_DATABASE` | Database name        | `discogsography`     | Yes      |
+| Variable            | Description          | Default          | Required |
+| ------------------- | -------------------- | ---------------- | -------- |
+| `POSTGRES_ADDRESS`  | PostgreSQL host:port | `localhost:5432` | Yes      |
+| `POSTGRES_USERNAME` | PostgreSQL username  | `postgres`       | Yes      |
+| `POSTGRES_PASSWORD` | PostgreSQL password  | (none)           | Yes      |
+| `POSTGRES_DATABASE` | Database name        | `discogsography` | Yes      |
 
 **Used By**: Tableinator, Dashboard, Discovery
 
 **Connection Details**:
+
 - Protocol: PostgreSQL wire protocol
 - Default port: 5432 (mapped to 5433 in Docker)
 - Connection pool: 20 connections (max)
@@ -176,6 +185,7 @@ NEO4J_PASSWORD="your-secure-password"
 - Query timeout: 30 seconds
 
 **Examples**:
+
 ```bash
 # Local development
 POSTGRES_ADDRESS="localhost:5433"
@@ -197,6 +207,7 @@ POSTGRES_DATABASE="discogsography_prod"
 ```
 
 **Performance Tuning**:
+
 ```bash
 # For services using asyncpg (Discovery)
 POSTGRES_POOL_MIN=10
@@ -206,13 +217,14 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ### Redis Configuration
 
-| Variable    | Description             | Default                 | Required |
-| ----------- | ----------------------- | ----------------------- | -------- |
-| `REDIS_URL` | Redis connection URL    | `redis://localhost:6379/0` | Yes (Discovery, Dashboard) |
+| Variable    | Description          | Default                    | Required                   |
+| ----------- | -------------------- | -------------------------- | -------------------------- |
+| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` | Yes (Discovery, Dashboard) |
 
 **Used By**: Discovery, Dashboard
 
 **Connection Details**:
+
 - Protocol: Redis protocol
 - Default port: 6379
 - Database: 0 (default)
@@ -220,6 +232,7 @@ POSTGRES_COMMAND_TIMEOUT=30
 - Retry logic: Exponential backoff
 
 **Examples**:
+
 ```bash
 # Local development
 REDIS_URL="redis://localhost:6379/0"
@@ -235,6 +248,7 @@ REDIS_URL="redis+sentinel://sentinel1:26379,sentinel2:26379/myservice"
 ```
 
 **Cache Configuration**:
+
 - Default TTL: 3600 seconds (1 hour)
 - Max memory: 256MB (configurable in docker-compose.yml)
 - Eviction policy: allkeys-lru
@@ -242,23 +256,24 @@ REDIS_URL="redis+sentinel://sentinel1:26379,sentinel2:26379/myservice"
 
 ## Logging Configuration
 
-| Variable    | Description       | Default | Valid Values                              |
-| ----------- | ----------------- | ------- | ----------------------------------------- |
+| Variable    | Description       | Default | Valid Values                                    |
+| ----------- | ----------------- | ------- | ----------------------------------------------- |
 | `LOG_LEVEL` | Logging verbosity | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 
 **Used By**: All services
 
 **Log Level Behavior**:
 
-| Level      | Output                                      | Use Case                |
-| ---------- | ------------------------------------------- | ----------------------- |
-| `DEBUG`    | All logs + query details + internal state   | Development, debugging  |
-| `INFO`     | Normal operation logs                       | Production (default)    |
-| `WARNING`  | Warnings and errors                         | Production (minimal)    |
-| `ERROR`    | Errors only                                 | Production (alerts)     |
-| `CRITICAL` | Critical errors only                        | Production (severe)     |
+| Level      | Output                                    | Use Case               |
+| ---------- | ----------------------------------------- | ---------------------- |
+| `DEBUG`    | All logs + query details + internal state | Development, debugging |
+| `INFO`     | Normal operation logs                     | Production (default)   |
+| `WARNING`  | Warnings and errors                       | Production (minimal)   |
+| `ERROR`    | Errors only                               | Production (alerts)    |
+| `CRITICAL` | Critical errors only                      | Production (severe)    |
 
 **Examples**:
+
 ```bash
 # Development - see everything
 LOG_LEVEL=DEBUG
@@ -271,6 +286,7 @@ LOG_LEVEL=WARNING
 ```
 
 **Debug Level Features**:
+
 - Neo4j query logging with parameters
 - PostgreSQL query logging
 - RabbitMQ message details
@@ -281,26 +297,27 @@ See [Logging Guide](logging-guide.md) for detailed logging information.
 
 ## Consumer Management
 
-| Variable                | Description                                | Default       | Range          |
-| ----------------------- | ------------------------------------------ | ------------- | -------------- |
-| `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers    | `300` (5 min) | 60-3600        |
-| `QUEUE_CHECK_INTERVAL`  | Seconds between queue checks when idle     | `3600` (1 hr) | 300-86400      |
+| Variable                | Description                             | Default       | Range     |
+| ----------------------- | --------------------------------------- | ------------- | --------- |
+| `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers | `300` (5 min) | 60-3600   |
+| `QUEUE_CHECK_INTERVAL`  | Seconds between queue checks when idle  | `3600` (1 hr) | 300-86400 |
 
 **Used By**: Graphinator, Tableinator
 
 **Purpose**: Smart resource management for RabbitMQ connections
 
 **How It Works**:
+
 1. Service processes messages from all queues
-2. When all queues are empty for `CONSUMER_CANCEL_DELAY` seconds:
+1. When all queues are empty for `CONSUMER_CANCEL_DELAY` seconds:
    - Close RabbitMQ connections
    - Stop progress logging
    - Enter "waiting" mode
-3. Every `QUEUE_CHECK_INTERVAL` seconds:
+1. Every `QUEUE_CHECK_INTERVAL` seconds:
    - Briefly connect to RabbitMQ
    - Check all queues for new messages
    - If messages found, restart consumers
-4. When new messages detected:
+1. When new messages detected:
    - Reconnect to RabbitMQ
    - Resume all consumers
    - Resume progress logging
@@ -325,18 +342,19 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 
 ## Machine Learning & Discovery
 
-| Variable                     | Description                         | Default                         | Required          |
-| ---------------------------- | ----------------------------------- | ------------------------------- | ----------------- |
-| `HF_HOME`                    | Hugging Face models cache           | `/models/huggingface`           | Yes (Discovery)   |
-| `SENTENCE_TRANSFORMERS_HOME` | Sentence transformers cache         | `/models/sentence-transformers` | Yes (Discovery)   |
-| `EMBEDDINGS_CACHE_DIR`       | Embeddings cache directory          | `/tmp/embeddings_cache`         | Yes (Discovery)   |
-| `XDG_CACHE_HOME`             | General cache directory             | `/tmp/.cache`                   | No                |
+| Variable                     | Description                 | Default                         | Required        |
+| ---------------------------- | --------------------------- | ------------------------------- | --------------- |
+| `HF_HOME`                    | Hugging Face models cache   | `/models/huggingface`           | Yes (Discovery) |
+| `SENTENCE_TRANSFORMERS_HOME` | Sentence transformers cache | `/models/sentence-transformers` | Yes (Discovery) |
+| `EMBEDDINGS_CACHE_DIR`       | Embeddings cache directory  | `/tmp/embeddings_cache`         | Yes (Discovery) |
+| `XDG_CACHE_HOME`             | General cache directory     | `/tmp/.cache`                   | No              |
 
 **Used By**: Discovery service
 
 **Purpose**: Cache ML models and embeddings to avoid re-downloading
 
 **Cache Directory Requirements**:
+
 - Must be writable by service user (UID 1000)
 - Recommended: Mount as Docker volume for persistence
 - Size requirements:
@@ -345,6 +363,7 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
   - EMBEDDINGS_CACHE_DIR: ~100MB per processed genre/artist
 
 **Examples**:
+
 ```bash
 # Development (local paths)
 HF_HOME="/Users/username/.cache/huggingface"
@@ -362,21 +381,23 @@ SENTENCE_TRANSFORMERS_HOME="/mnt/shared/ml_models/transformers"
 ```
 
 **Performance Impact**:
+
 - First run: Downloads models (~2GB, one-time)
 - Subsequent runs: Loads from cache (instant)
 - Embeddings cached per query for fast retrieval
 
 ## Python Version
 
-| Variable         | Description                | Default | Used By           |
-| ---------------- | -------------------------- | ------- | ----------------- |
-| `PYTHON_VERSION` | Python version for builds  | `3.13`  | Docker, CI/CD     |
+| Variable         | Description               | Default | Used By       |
+| ---------------- | ------------------------- | ------- | ------------- |
+| `PYTHON_VERSION` | Python version for builds | `3.13`  | Docker, CI/CD |
 
 **Used By**: Build systems, CI/CD pipelines
 
 **Purpose**: Ensure consistent Python version across environments
 
 **Notes**:
+
 - Minimum supported version: 3.13
 - All services tested on Python 3.13+
 - Older versions not supported
@@ -563,6 +584,7 @@ QUEUE_CHECK_INTERVAL=3600
 ### Password Management
 
 **Never commit passwords**:
+
 ```bash
 # ❌ BAD - hardcoded password
 NEO4J_PASSWORD=supersecret
@@ -572,6 +594,7 @@ NEO4J_PASSWORD=${NEO4J_PASSWORD}
 ```
 
 Use secret management systems:
+
 - Docker Secrets
 - Kubernetes Secrets
 - HashiCorp Vault
@@ -633,6 +656,7 @@ curl http://localhost:8004/health  # Discovery
 ```
 
 Expected response for all:
+
 ```json
 {"status": "healthy"}
 ```
@@ -642,22 +666,26 @@ Expected response for all:
 ### Common Configuration Issues
 
 **Connection Refused Errors**:
+
 - Check host and port are correct
 - Verify service is running
 - Check firewall rules
 - Wait for service startup (databases can take 30-60s)
 
 **Authentication Failures**:
+
 - Verify username and password
 - Check password special characters are properly escaped
 - Ensure credentials match database configuration
 
 **Cache Directory Errors**:
+
 - Verify directory exists
 - Check write permissions (UID 1000 for Docker)
 - Ensure sufficient disk space
 
 **Environment Variables Not Loading**:
+
 - Check `.env` file is in correct location
 - Verify no syntax errors in `.env`
 - Restart services after changes
@@ -673,6 +701,6 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 - [Logging Guide](logging-guide.md) - Logging configuration details
 - [Performance Guide](performance-guide.md) - Performance tuning settings
 
----
+______________________________________________________________________
 
 **Last Updated**: 2025-01-15

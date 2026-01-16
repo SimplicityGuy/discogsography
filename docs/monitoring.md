@@ -36,6 +36,7 @@ open http://localhost:8003
 - **Auto-refresh** via WebSocket updates
 
 **Services Monitored**:
+
 - Python/Rust Extractor (http://localhost:8000/health)
 - Graphinator (http://localhost:8001/health)
 - Tableinator (http://localhost:8002/health)
@@ -52,12 +53,14 @@ open http://localhost:8003
 #### Database Statistics Panel
 
 **Neo4j Metrics**:
+
 - Node counts by type (Artist, Label, Release, Master, Genre, Style)
 - Relationship counts
 - Database size
 - Connection pool status
 
 **PostgreSQL Metrics**:
+
 - Record counts per table
 - Table sizes and index sizes
 - Connection pool status
@@ -87,6 +90,7 @@ ws.onmessage = (event) => {
 ```
 
 **Update Types**:
+
 - `service_health`: Service status changes
 - `queue_metrics`: Queue depth and consumer updates
 - `database_stats`: Database record counts
@@ -107,6 +111,7 @@ uv run python utilities/check_errors.py
 ```
 
 **Output**:
+
 - Counts errors by service
 - Shows recent error messages
 - Groups similar errors
@@ -123,6 +128,7 @@ uv run python utilities/monitor_queues.py
 ```
 
 **Output**:
+
 ```
 ╔════════════════════════════════════════════════════════════╗
 ║           RabbitMQ Queue Monitor                           ║
@@ -154,6 +160,7 @@ uv run python utilities/system_monitor.py
 ```
 
 **Features**:
+
 - CPU and memory usage per service
 - Disk I/O statistics
 - Network throughput
@@ -214,6 +221,7 @@ Each service tracks and logs processing statistics:
 ```
 
 **Key Metrics**:
+
 - Records/second processing rate
 - Total records processed
 - Skipped records (duplicates)
@@ -232,6 +240,7 @@ Each service tracks and logs processing statistics:
 ```
 
 **Key Metrics**:
+
 - Nodes created/updated per second
 - Relationships created per second
 - Transaction batch sizes
@@ -250,6 +259,7 @@ Each service tracks and logs processing statistics:
 ```
 
 **Key Metrics**:
+
 - Records inserted/second
 - Duplicate records skipped
 - Batch insert sizes
@@ -301,6 +311,7 @@ WHERE datname = 'discogsography';
 ### RabbitMQ Metrics
 
 Access RabbitMQ Management UI:
+
 ```bash
 open http://localhost:15672
 ```
@@ -308,6 +319,7 @@ open http://localhost:15672
 Login: `discogsography` / `discogsography`
 
 **Available Metrics**:
+
 - Queue depth (messages ready)
 - Consumer count per queue
 - Message rates (publish/deliver)
@@ -316,6 +328,7 @@ Login: `discogsography` / `discogsography`
 - Memory usage
 
 **API Access**:
+
 ```bash
 # Queue overview
 curl -u discogsography:discogsography \
@@ -406,6 +419,7 @@ done
 ### Database Health Checks
 
 **Neo4j**:
+
 ```bash
 # Check connectivity
 curl http://localhost:7474
@@ -416,6 +430,7 @@ echo "RETURN 1 as test;" | \
 ```
 
 **PostgreSQL**:
+
 ```bash
 # Check connectivity
 PGPASSWORD=discogsography psql \
@@ -424,6 +439,7 @@ PGPASSWORD=discogsography psql \
 ```
 
 **RabbitMQ**:
+
 ```bash
 # Check management API
 curl -u discogsography:discogsography \
@@ -437,11 +453,13 @@ curl -u discogsography:discogsography \
 The dashboard automatically detects when processing stalls:
 
 **Conditions**:
+
 - Queue has messages but no consumption for 5+ minutes
 - Consumer count is 0 but messages exist
 - Message rate drops to 0 unexpectedly
 
 **Actions**:
+
 - Alert displayed on dashboard
 - Log entry with ⚠️ emoji
 - Optional webhook notification (configure in dashboard code)
@@ -509,6 +527,7 @@ LOG_LEVEL=DEBUG uv run python discovery/discovery.py
 ```
 
 **Debug Level Includes**:
+
 - Database query logging with parameters
 - Internal state transitions
 - Cache hits/misses
@@ -539,6 +558,7 @@ uv run task monitor
 ```
 
 **Look for**:
+
 - Messages accumulating (consumers not keeping up)
 - Zero consumers (service not connected)
 - High unacked count (processing errors)
@@ -575,13 +595,13 @@ SELECT data FROM artists WHERE data->>'name' = 'Pink Floyd';
 
 Set `LOG_LEVEL` environment variable:
 
-| Level      | Use Case          | Output                        |
-| ---------- | ----------------- | ----------------------------- |
-| `DEBUG`    | Development       | All logs + query details      |
-| `INFO`     | Production        | Normal operations (default)   |
-| `WARNING`  | Production alerts | Warnings and errors only      |
-| `ERROR`    | Critical only     | Errors only                   |
-| `CRITICAL` | Emergencies       | Critical errors only          |
+| Level      | Use Case          | Output                      |
+| ---------- | ----------------- | --------------------------- |
+| `DEBUG`    | Development       | All logs + query details    |
+| `INFO`     | Production        | Normal operations (default) |
+| `WARNING`  | Production alerts | Warnings and errors only    |
+| `ERROR`    | Critical only     | Errors only                 |
+| `CRITICAL` | Emergencies       | Critical errors only        |
 
 ### Log Format
 
@@ -592,6 +612,7 @@ All services use consistent logging:
 ```
 
 Example:
+
 ```
 2025-01-15 10:30:45 - Graphinator - graphinator - INFO - 🚀 Starting service
 2025-01-15 10:30:46 - Graphinator - graphinator - INFO - 🔗 Connected to Neo4j
@@ -633,6 +654,7 @@ uv run task system-monitor
 ### Database Performance
 
 **Neo4j**:
+
 ```cypher
 -- Query performance profiling
 PROFILE MATCH (a:Artist)-[:BY]-(r:Release)
@@ -644,6 +666,7 @@ docker-compose logs neo4j | grep "slow query"
 ```
 
 **PostgreSQL**:
+
 ```sql
 -- Active queries
 SELECT pid, query, state, query_start
@@ -666,6 +689,6 @@ LIMIT 10;
 - [Architecture Overview](architecture.md) - System architecture
 - [Database Resilience](database-resilience.md) - Connection patterns
 
----
+______________________________________________________________________
 
 **Last Updated**: 2025-01-15

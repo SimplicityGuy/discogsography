@@ -263,9 +263,9 @@ Content-Type: application/json
 
 #### Core Configuration
 
-| Variable    | Description                           | Default | Values                                    |
-| ----------- | ------------------------------------- | ------- | ----------------------------------------- |
-| `LOG_LEVEL` | Logging verbosity and detail level    | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
+| Variable    | Description                        | Default | Values                                          |
+| ----------- | ---------------------------------- | ------- | ----------------------------------------------- |
+| `LOG_LEVEL` | Logging verbosity and detail level | `INFO`  | `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL` |
 
 > **📝 Note**: When `LOG_LEVEL=DEBUG`, all Neo4j queries are logged with their parameters for debugging and performance analysis. See [Adding Query Logging](../docs/adding-query-logging.md) for details.
 
@@ -459,6 +459,7 @@ docker-compose logs -f discovery | grep "🔍 Executing Neo4j query"
 ```
 
 **What DEBUG mode shows:**
+
 - 🔍 All Neo4j queries with full Cypher syntax and parameters
 - 📊 Detailed operation traces and timing information
 - 🧠 ML model loading and inference details
@@ -467,6 +468,7 @@ docker-compose logs -f discovery | grep "🔍 Executing Neo4j query"
 - 🎯 Recommendation algorithm decision points
 
 **Example DEBUG output:**
+
 ```json
 {
   "event": "🔍 Executing Neo4j query",

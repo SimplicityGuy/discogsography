@@ -50,6 +50,7 @@
 ### Always Use uv Commands
 
 **❌ NEVER DO THIS:**
+
 ```bash
 pip install package-name
 python script.py
@@ -58,6 +59,7 @@ mypy .
 ```
 
 **✅ ALWAYS DO THIS:**
+
 ```bash
 uv add package-name           # Add dependency
 uv run python script.py       # Run Python scripts
@@ -111,16 +113,19 @@ just typecheck    # uv run mypy .
 When adding new dependencies:
 
 1. **Add to pyproject.toml** using uv:
+
    ```bash
    uv add package-name
    ```
 
-2. **This automatically**:
+1. **This automatically**:
+
    - Updates `pyproject.toml`
    - Updates `uv.lock` lockfile
    - Installs the package in the environment
 
-3. **Commit both files**:
+1. **Commit both files**:
+
    ```bash
    git add pyproject.toml uv.lock
    git commit -m "chore: add package-name dependency"
@@ -161,15 +166,15 @@ RUN uv sync --frozen --no-dev
 
 If you see old commands in documentation or scripts:
 
-| Old Command | New Command |
-|-------------|-------------|
-| `pip install -r requirements.txt` | `uv sync` |
-| `pip install package` | `uv add package` |
-| `pip install -e .` | `uv sync` |
-| `python script.py` | `uv run python script.py` |
-| `pytest` | `uv run pytest` |
-| `poetry install` | `uv sync` |
-| `poetry add package` | `uv add package` |
+| Old Command                       | New Command               |
+| --------------------------------- | ------------------------- |
+| `pip install -r requirements.txt` | `uv sync`                 |
+| `pip install package`             | `uv add package`          |
+| `pip install -e .`                | `uv sync`                 |
+| `python script.py`                | `uv run python script.py` |
+| `pytest`                          | `uv run pytest`           |
+| `poetry install`                  | `uv sync`                 |
+| `poetry add package`              | `uv add package`          |
 
 **Update them to use uv!**
 
@@ -369,18 +374,19 @@ See main [README.md](README.md) for detailed architecture information.
 ## 📐 Best Practices for Claude Code
 
 1. **ALWAYS use `uv` for Python commands** - Never use pip, python, pytest, mypy directly
-2. **Always read existing code** before making changes
-3. **Follow established patterns** in the codebase
-4. **Use the emoji guide** for consistent visual communication
-5. **Test changes** before marking tasks complete
-6. **Document significant changes** in code comments
-7. **Check logs** when debugging issues
-8. **Validate data** at service boundaries
-9. **Handle errors gracefully** with proper logging
+1. **Always read existing code** before making changes
+1. **Follow established patterns** in the codebase
+1. **Use the emoji guide** for consistent visual communication
+1. **Test changes** before marking tasks complete
+1. **Document significant changes** in code comments
+1. **Check logs** when debugging issues
+1. **Validate data** at service boundaries
+1. **Handle errors gracefully** with proper logging
 
 ### Running Python Tools - ALWAYS Use uv
 
 **Correct way to run tools:**
+
 ```bash
 uv run pytest                    # Run tests
 uv run pytest -v                 # Run tests with verbose output
@@ -392,6 +398,7 @@ uv run pre-commit run --all-files  # Run pre-commit hooks
 ```
 
 **Or use the just task runner:**
+
 ```bash
 just test         # Runs: uv run pytest
 just typecheck    # Runs: uv run mypy .

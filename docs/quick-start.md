@@ -27,10 +27,12 @@ This guide will help you get Discogsography running quickly, whether you're usin
 ### Required Software
 
 **For Docker Compose Setup**:
+
 - Docker Engine 20.10+
 - Docker Compose v2
 
 **For Local Development**:
+
 - Python 3.13+
 - [uv](https://github.com/astral-sh/uv) package manager
 - [just](https://just.systems/) task runner (optional but recommended)
@@ -253,6 +255,7 @@ curl http://localhost:8004/health  # Discovery
 ```
 
 Expected response:
+
 ```json
 {"status": "healthy"}
 ```
@@ -272,6 +275,7 @@ docker-compose logs -f tableinator
 ```
 
 Look for log messages like:
+
 - 🚀 Service starting messages
 - 📥 Download progress
 - 🔄 Processing progress
@@ -280,6 +284,7 @@ Look for log messages like:
 ### 3. Check RabbitMQ Queues
 
 Visit http://localhost:15672 and verify:
+
 - All 4 queues are created (artists, labels, releases, masters)
 - Messages are being published and consumed
 - Consumer counts are appropriate
@@ -287,6 +292,7 @@ Visit http://localhost:15672 and verify:
 ### 4. Verify Data in Databases
 
 **Neo4j**:
+
 ```bash
 # Open Neo4j Browser
 open http://localhost:7474
@@ -296,6 +302,7 @@ MATCH (n) RETURN labels(n)[0] as type, count(n) as count
 ```
 
 **PostgreSQL**:
+
 ```bash
 # Connect to database
 PGPASSWORD=discogsography psql -h localhost -p 5433 -U discogsography -d discogsography
@@ -363,26 +370,31 @@ For more detailed troubleshooting, see the [Troubleshooting Guide](troubleshooti
 Now that you have Discogsography running:
 
 1. **Explore the Dashboard**: http://localhost:8003
+
    - Monitor system health
    - View processing metrics
    - Track queue depths
 
-2. **Try Some Queries**: See [Usage Examples](usage-examples.md)
+1. **Try Some Queries**: See [Usage Examples](usage-examples.md)
+
    - Neo4j graph queries
    - PostgreSQL analytics
    - Full-text search
 
-3. **Use Discovery Service**: http://localhost:8005
+1. **Use Discovery Service**: http://localhost:8005
+
    - AI-powered music recommendations
    - Semantic search
    - Industry analytics
 
-4. **Learn the Architecture**: Read [Architecture Guide](architecture.md)
+1. **Learn the Architecture**: Read [Architecture Guide](architecture.md)
+
    - Understand component interactions
    - Learn about data flow
    - Explore scalability options
 
-5. **Configure for Your Needs**: See [Configuration Guide](configuration.md)
+1. **Configure for Your Needs**: See [Configuration Guide](configuration.md)
+
    - Tune performance settings
    - Adjust logging levels
    - Customize data paths
@@ -412,6 +424,6 @@ See [Development Guide](development.md) and [Contributing Guide](contributing.md
 - [Monitoring Guide](monitoring.md) - Observability and debugging
 - [Performance Guide](performance-guide.md) - Optimization strategies
 
----
+______________________________________________________________________
 
 **Last Updated**: 2025-01-15

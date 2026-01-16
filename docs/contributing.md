@@ -17,6 +17,7 @@ We're thrilled that you're interested in contributing to Discogsography! This do
 There are many ways to contribute to Discogsography:
 
 ### Code Contributions
+
 - 🐛 **Fix bugs** - Help resolve issues
 - ✨ **Add features** - Implement new functionality
 - ⚡ **Improve performance** - Optimize existing code
@@ -24,12 +25,14 @@ There are many ways to contribute to Discogsography:
 - 🧪 **Write tests** - Increase code coverage
 
 ### Documentation
+
 - 📝 **Improve docs** - Fix typos, clarify explanations
 - 📚 **Write tutorials** - Help others learn the system
 - 🎨 **Create diagrams** - Visualize architecture
 - 🌐 **Translate** - Make docs accessible in other languages
 
 ### Community
+
 - 💬 **Answer questions** - Help others in discussions
 - 🐛 **Report bugs** - File detailed bug reports
 - 💡 **Suggest features** - Share your ideas
@@ -40,12 +43,14 @@ There are many ways to contribute to Discogsography:
 ### 1. Find or Create an Issue
 
 **Before starting work:**
+
 - Check [existing issues](https://github.com/SimplicityGuy/discogsography/issues)
 - Comment on the issue you want to work on
 - Wait for maintainer approval (for large changes)
 - Create a new issue if needed
 
 **Good first issues:**
+
 - Look for `good first issue` label
 - Look for `help wanted` label
 - Start small to learn the codebase
@@ -100,6 +105,7 @@ git checkout -b fix/bug-description
 ```
 
 **Branch naming conventions:**
+
 - `feature/` - New features
 - `fix/` - Bug fixes
 - `docs/` - Documentation changes
@@ -112,6 +118,7 @@ git checkout -b fix/bug-description
 **Follow these guidelines:**
 
 #### Code Style
+
 - Use **type hints** for all function parameters and returns
 - Write **docstrings** for public functions and classes
 - Follow **PEP 8** style guide (enforced by ruff)
@@ -119,18 +126,21 @@ git checkout -b fix/bug-description
 - Add **emoji-prefixed logging** (see [Emoji Guide](emoji-guide.md))
 
 #### Testing
+
 - Add **unit tests** for new code
 - Maintain **>80% code coverage**
 - Update **integration tests** if needed
 - Add **E2E tests** for new UI features
 
 #### Documentation
+
 - Update **README.md** if needed
 - Add/update **docstrings**
 - Update relevant **docs/** files
 - Include **code examples** where helpful
 
 #### Security
+
 - Never **log sensitive data** (passwords, tokens, PII)
 - Use **parameterized queries** (prevent SQL injection)
 - **Scan for vulnerabilities** (`just security`)
@@ -187,6 +197,7 @@ git commit -m "feat: add amazing feature"
 ```
 
 **Types:**
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
@@ -196,6 +207,7 @@ git commit -m "feat: add amazing feature"
 - `chore`: Maintenance tasks
 
 **Examples:**
+
 ```bash
 git commit -m "feat: add artist similarity search"
 git commit -m "fix: correct Neo4j connection retry logic"
@@ -213,22 +225,24 @@ git push origin feature/your-feature-name
 ### 9. Create Pull Request
 
 1. Go to your fork on GitHub
-2. Click "New pull request"
-3. Select your feature branch
-4. Fill out the PR template:
+1. Click "New pull request"
+1. Select your feature branch
+1. Fill out the PR template:
    - Clear title
    - Description of changes
    - Related issue number
    - Screenshots (if UI changes)
    - Testing performed
-5. Submit the pull request
+1. Submit the pull request
 
 **PR Title Format:**
+
 ```
 <type>: <short description>
 ```
 
 Examples:
+
 - `feat: add artist similarity search`
 - `fix: correct database connection retry logic`
 - `docs: update configuration guide`
@@ -255,9 +269,9 @@ Before submitting, ensure:
 ### What to Expect
 
 1. **Initial Review**: Maintainer will review within 1-3 days
-2. **Feedback**: You may receive requests for changes
-3. **Discussion**: We may discuss implementation approaches
-4. **Approval**: Once approved, PR will be merged
+1. **Feedback**: You may receive requests for changes
+1. **Discussion**: We may discuss implementation approaches
+1. **Approval**: Once approved, PR will be merged
 
 ### Making Changes
 
@@ -287,6 +301,7 @@ git push origin feature/your-feature-name
 ### Python Code Quality
 
 **Tools we use:**
+
 - **ruff**: Fast linting and formatting
 - **mypy**: Static type checking
 - **bandit**: Security vulnerability scanning
@@ -294,6 +309,7 @@ git push origin feature/your-feature-name
 - **pre-commit**: Git hooks for quality
 
 **Run quality checks:**
+
 ```bash
 # All checks
 just lint
@@ -309,11 +325,13 @@ uv run pre-commit run --all-files
 ### Testing Standards
 
 **Coverage requirements:**
+
 - Minimum **80% code coverage**
 - All new code **must have tests**
 - Update tests for **modified code**
 
 **Test types:**
+
 - **Unit tests**: Test individual functions
 - **Integration tests**: Test service interactions
 - **E2E tests**: Test user workflows (Playwright)
@@ -323,17 +341,20 @@ See [Testing Guide](testing-guide.md) for details.
 ### Documentation Standards
 
 **File naming:**
+
 - Use **lowercase with hyphens**: `new-feature-guide.md`
 - Add to `docs/` directory
 - Update `docs/README.md` index
 
 **Structure:**
+
 - **Header** with title and navigation
 - **Overview** section
 - **Clear examples** with code blocks
 - **Last Updated** date
 
 **Diagrams:**
+
 - Use **Mermaid** for diagrams
 - Follow existing diagram style
 - Include alt text for accessibility
@@ -343,9 +364,9 @@ See [Testing Guide](testing-guide.md) for details.
 ### Before Reporting
 
 1. **Search existing issues** - bug may already be reported
-2. **Try latest version** - bug may be fixed
-3. **Reproduce the bug** - ensure it's consistent
-4. **Gather information** - logs, environment, steps
+1. **Try latest version** - bug may be fixed
+1. **Reproduce the bug** - ensure it's consistent
+1. **Gather information** - logs, environment, steps
 
 ### Creating a Bug Report
 
@@ -374,7 +395,9 @@ If applicable, add screenshots.
 
 **Logs**
 ```
+
 Paste relevant logs here
+
 ```
 
 **Additional context**
@@ -386,8 +409,8 @@ Any other information about the problem.
 ### Before Requesting
 
 1. **Search existing issues** - feature may be planned
-2. **Check roadmap** - might be on the roadmap
-3. **Consider alternatives** - maybe there's another way
+1. **Check roadmap** - might be on the roadmap
+1. **Consider alternatives** - maybe there's another way
 
 ### Creating a Feature Request
 
@@ -420,6 +443,7 @@ Have a question? Use [GitHub Discussions](https://github.com/SimplicityGuy/disco
 - **General**: Other discussions
 
 **Please don't:**
+
 - Open issues for questions
 - Email maintainers directly
 - Use PR comments for discussions
@@ -439,6 +463,7 @@ We recognize our contributors!
 We are committed to providing a welcoming and inclusive environment:
 
 **Positive behaviors:**
+
 - Using welcoming and inclusive language
 - Being respectful of differing viewpoints
 - Gracefully accepting constructive criticism
@@ -446,6 +471,7 @@ We are committed to providing a welcoming and inclusive environment:
 - Showing empathy towards other community members
 
 **Unacceptable behaviors:**
+
 - Trolling, insulting/derogatory comments, and personal or political attacks
 - Public or private harassment
 - Publishing others' private information without explicit permission
@@ -454,13 +480,15 @@ We are committed to providing a welcoming and inclusive environment:
 ### Enforcement
 
 Violations of the code of conduct may result in:
+
 1. **Warning**: First offense
-2. **Temporary ban**: Repeated offenses
-3. **Permanent ban**: Serious or continued violations
+1. **Temporary ban**: Repeated offenses
+1. **Permanent ban**: Serious or continued violations
 
 ## 📚 Resources
 
 ### Documentation
+
 - [Development Guide](development.md) - Complete dev setup
 - [Testing Guide](testing-guide.md) - Testing strategies
 - [Logging Guide](logging-guide.md) - Logging standards
@@ -468,12 +496,14 @@ Violations of the code of conduct may result in:
 - [GitHub Actions Guide](github-actions-guide.md) - CI/CD
 
 ### Tools
+
 - [uv Documentation](https://github.com/astral-sh/uv)
 - [ruff Documentation](https://github.com/astral-sh/ruff)
 - [pytest Documentation](https://docs.pytest.org/)
 - [Playwright Documentation](https://playwright.dev/python/)
 
 ### Community
+
 - [GitHub Issues](https://github.com/SimplicityGuy/discogsography/issues)
 - [GitHub Discussions](https://github.com/SimplicityGuy/discogsography/discussions)
 - [Pull Requests](https://github.com/SimplicityGuy/discogsography/pulls)
@@ -483,9 +513,9 @@ Violations of the code of conduct may result in:
 Need help contributing?
 
 1. **Read the docs** - Start with [Development Guide](development.md)
-2. **Check discussions** - Someone may have asked already
-3. **Ask in discussions** - We're happy to help!
-4. **Join our community** - Connect with other contributors
+1. **Check discussions** - Someone may have asked already
+1. **Ask in discussions** - We're happy to help!
+1. **Join our community** - Connect with other contributors
 
 ## 🙏 Thank You!
 
@@ -493,6 +523,6 @@ Thank you for contributing to Discogsography! Every contribution, no matter how 
 
 We appreciate your time and effort! 🎉
 
----
+______________________________________________________________________
 
 **Last Updated**: 2025-01-15

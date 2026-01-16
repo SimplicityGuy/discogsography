@@ -201,23 +201,27 @@ uv run pre-commit run --all-files
 ### Making Changes
 
 1. **Create a branch**:
+
    ```bash
    git checkout -b feature/my-feature
    ```
 
-2. **Make your changes**:
+1. **Make your changes**:
+
    - Follow coding standards (see below)
    - Add type hints
    - Write docstrings
    - Update tests
 
-3. **Test your changes**:
+1. **Test your changes**:
+
    ```bash
    just test       # Run tests
    just test-cov   # With coverage
    ```
 
-4. **Check code quality**:
+1. **Check code quality**:
+
    ```bash
    just lint
    just format
@@ -225,14 +229,16 @@ uv run pre-commit run --all-files
    just security
    ```
 
-5. **Commit changes**:
+1. **Commit changes**:
+
    ```bash
    git add .
    git commit -m "feat: add amazing feature"
    # Pre-commit hooks will run automatically
    ```
 
-6. **Push and create PR**:
+1. **Push and create PR**:
+
    ```bash
    git push origin feature/my-feature
    # Create pull request on GitHub
@@ -302,6 +308,7 @@ See [Testing Guide](testing-guide.md) for comprehensive testing documentation.
 ### Python Code Style
 
 **Follow PEP 8** with these tools:
+
 - **ruff**: Linting and formatting (replaces flake8, isort, pyupgrade)
 - **black**: Code formatting (88 character line length)
 - **mypy**: Static type checking
@@ -550,13 +557,13 @@ uv run pip-audit
 ### General Guidelines
 
 1. **Write tests first** (TDD when possible)
-2. **Keep functions small** and focused
-3. **Use descriptive variable names**
-4. **Avoid magic numbers** - use constants
-5. **Handle errors explicitly**
-6. **Log important events**
-7. **Document complex logic**
-8. **Optimize only when needed** (measure first)
+1. **Keep functions small** and focused
+1. **Use descriptive variable names**
+1. **Avoid magic numbers** - use constants
+1. **Handle errors explicitly**
+1. **Log important events**
+1. **Document complex logic**
+1. **Optimize only when needed** (measure first)
 
 ### Git Commit Messages
 
@@ -659,6 +666,6 @@ uv run pytest --pdb
 - [Logging Guide](logging-guide.md) - Logging standards
 - [Emoji Guide](emoji-guide.md) - Emoji conventions
 
----
+______________________________________________________________________
 
 **Last Updated**: 2025-01-15

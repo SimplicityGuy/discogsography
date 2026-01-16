@@ -88,11 +88,11 @@ flowchart LR
 
 ### 📥 Data Operations
 
-| Emoji | Usage                     | Example                                                                             |
-| ----- | ------------------------- | ----------------------------------------------------------------------------------- |
-| 📥    | Download start            | `logger.info("📥 Starting download of releases.xml")`                               |
-| ⬇️    | Downloading               | `logger.info("⬇️ Downloaded 50MB/200MB")`                                           |
-| 📄    | File operation            | `logger.info("📄 Created output.json")`                                             |
+| Emoji | Usage                     | Example                                                                                   |
+| ----- | ------------------------- | ----------------------------------------------------------------------------------------- |
+| 📥    | Download start            | `logger.info("📥 Starting download of releases.xml")`                                     |
+| ⬇️    | Downloading               | `logger.info("⬇️ Downloaded 50MB/200MB")`                                                 |
+| 📄    | File operation            | `logger.info("📄 Created output.json")`                                                   |
 | 🔍    | Searching/Query execution | `logger.info("🔍 Checking for updates...")` or `logger.debug("🔍 Executing Neo4j query")` |
 
 ### 🔗 Service Connections

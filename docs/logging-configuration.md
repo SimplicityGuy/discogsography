@@ -10,13 +10,13 @@ All services in the Discogsography platform use a consistent logging pattern con
 
 The following log levels are supported across all services:
 
-| Level | Description | Use Case |
-|-------|-------------|----------|
-| `DEBUG` | Detailed diagnostic information | Development and troubleshooting |
-| `INFO` | General informational messages | Production (default) |
-| `WARNING` | Warning messages for potential issues | Production monitoring |
-| `ERROR` | Error messages for failures | Production alerts |
-| `CRITICAL` | Critical errors requiring immediate attention | Production alerts |
+| Level      | Description                                   | Use Case                        |
+| ---------- | --------------------------------------------- | ------------------------------- |
+| `DEBUG`    | Detailed diagnostic information               | Development and troubleshooting |
+| `INFO`     | General informational messages                | Production (default)            |
+| `WARNING`  | Warning messages for potential issues         | Production monitoring           |
+| `ERROR`    | Error messages for failures                   | Production alerts               |
+| `CRITICAL` | Critical errors requiring immediate attention | Production alerts               |
 
 **Default**: If `LOG_LEVEL` is not set, all services default to `INFO`.
 
@@ -66,6 +66,7 @@ setup_logging("service_name", log_file=Path("/logs/service.log"))
 ```
 
 **Features**:
+
 - Structured JSON logging with emoji indicators
 - Correlation IDs from contextvars
 - Service-specific context (name, environment)
@@ -76,13 +77,13 @@ setup_logging("service_name", log_file=Path("/logs/service.log"))
 
 The Rust extractor uses Rust's `tracing` framework and maps Python log levels to Rust equivalents:
 
-| Python Level | Rust Level | Notes |
-|--------------|------------|-------|
-| DEBUG | debug | Detailed diagnostic info |
-| INFO | info | General messages (default) |
-| WARNING | warn | Warning messages |
-| ERROR | error | Error messages |
-| CRITICAL | error | Mapped to error (Rust has no critical) |
+| Python Level | Rust Level | Notes                                  |
+| ------------ | ---------- | -------------------------------------- |
+| DEBUG        | debug      | Detailed diagnostic info               |
+| INFO         | info       | General messages (default)             |
+| WARNING      | warn       | Warning messages                       |
+| ERROR        | error      | Error messages                         |
+| CRITICAL     | error      | Mapped to error (Rust has no critical) |
 
 **Configuration**:
 
@@ -191,16 +192,19 @@ fn test_log_level_from_env() {
 ### Service not respecting LOG_LEVEL
 
 1. **Check environment variable is set**:
+
    ```bash
    docker exec <container> printenv LOG_LEVEL
    ```
 
-2. **Verify service startup logs**:
+1. **Verify service startup logs**:
+
    ```bash
    docker logs <container> | head -20
    ```
 
-3. **Check for explicit level parameter** (Python):
+1. **Check for explicit level parameter** (Python):
+
    ```python
    # This overrides LOG_LEVEL
    setup_logging("service", level="WARNING")
@@ -209,35 +213,37 @@ fn test_log_level_from_env() {
 ### Too much logging in production
 
 1. Set `LOG_LEVEL=WARNING` or `LOG_LEVEL=ERROR`
-2. Check third-party library log levels are suppressed (handled automatically)
+1. Check third-party library log levels are suppressed (handled automatically)
 
 ### Not enough logging for debugging
 
 1. Set `LOG_LEVEL=DEBUG`
-2. Restart the service
-3. Monitor logs: `docker logs -f <container>`
+1. Restart the service
+1. Monitor logs: `docker logs -f <container>`
 
 ## Best Practices
 
 1. **Development**: Use `DEBUG` for detailed diagnostic information
-2. **Staging**: Use `INFO` to match production behavior
-3. **Production**: Use `INFO` or `WARNING` depending on volume
-4. **Incident Response**: Temporarily set to `DEBUG` for affected services
-5. **Case Insensitive**: LOG_LEVEL values are case-insensitive (`debug` == `DEBUG`)
-6. **Container Logs**: All logs go to stdout/stderr for container orchestration
-7. **File Logs**: Python services also write to `/logs/<service>.log` inside containers
+1. **Staging**: Use `INFO` to match production behavior
+1. **Production**: Use `INFO` or `WARNING` depending on volume
+1. **Incident Response**: Temporarily set to `DEBUG` for affected services
+1. **Case Insensitive**: LOG_LEVEL values are case-insensitive (`debug` == `DEBUG`)
+1. **Container Logs**: All logs go to stdout/stderr for container orchestration
+1. **File Logs**: Python services also write to `/logs/<service>.log` inside containers
 
 ## Migration Notes
 
 ### From RUST_LOG (Rust Extractor)
 
 **Old**:
+
 ```yaml
 environment:
   RUST_LOG: rust_extractor=info,lapin=warn
 ```
 
 **New**:
+
 ```yaml
 environment:
   LOG_LEVEL: INFO
@@ -246,11 +252,13 @@ environment:
 ### From Verbose Flag (Rust Extractor)
 
 **Old**:
+
 ```bash
 cargo run --verbose
 ```
 
 **New**:
+
 ```bash
 LOG_LEVEL=DEBUG cargo run
 ```

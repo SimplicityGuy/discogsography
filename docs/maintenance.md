@@ -34,6 +34,7 @@ Keep dependencies up-to-date with the provided upgrade script:
 The `upgrade-packages.sh` script provides:
 
 #### Safety Features
+
 - 🔒 **Automatic backups** before upgrades
 - ✅ **Git safety checks** (requires clean working directory)
 - 🧪 **Automatic testing** after upgrades
@@ -43,36 +44,42 @@ The `upgrade-packages.sh` script provides:
 #### What Gets Upgraded
 
 **Python Packages**:
+
 - Root `pyproject.toml` dependencies
 - Service-specific dependencies
 - Development dependencies
 - Optional dependencies
 
 **Rust Packages** (if Rust Extractor is used):
+
 - `Cargo.toml` dependencies
 - Cargo.lock updates
 
 **Docker Images**:
+
 - Base images in Dockerfiles
 - Service images in docker-compose.yml
 
 #### Upgrade Process
 
 1. **Pre-flight checks**:
+
    ```bash
    # Check git status
    # Verify no uncommitted changes
    # Ensure on main branch (recommended)
    ```
 
-2. **Backup current state**:
+1. **Backup current state**:
+
    ```bash
    # Create backup of pyproject.toml files
    # Create backup of Cargo.toml files
    # Create git tag for rollback
    ```
 
-3. **Upgrade packages**:
+1. **Upgrade packages**:
+
    ```bash
    # Update Python dependencies
    uv lock --upgrade-package <package>
@@ -81,7 +88,8 @@ The `upgrade-packages.sh` script provides:
    cargo update
    ```
 
-4. **Test upgrades**:
+1. **Test upgrades**:
+
    ```bash
    # Run full test suite
    uv run pytest
@@ -93,7 +101,8 @@ The `upgrade-packages.sh` script provides:
    uv run mypy .
    ```
 
-5. **Commit changes** (if tests pass):
+1. **Commit changes** (if tests pass):
+
    ```bash
    git add pyproject.toml uv.lock
    git commit -m "chore: upgrade dependencies"
@@ -660,12 +669,12 @@ curl -u discogsography:discogsography \
 When upgrading to a new major version:
 
 1. **Review changelog** for breaking changes
-2. **Backup all databases**
-3. **Test in development** environment first
-4. **Update documentation**
-5. **Notify users** of changes
-6. **Deploy to production**
-7. **Monitor for issues**
+1. **Backup all databases**
+1. **Test in development** environment first
+1. **Update documentation**
+1. **Notify users** of changes
+1. **Deploy to production**
+1. **Monitor for issues**
 
 ### Python Version Upgrades
 
@@ -691,6 +700,6 @@ just test-e2e
 - [Database Resilience](database-resilience.md) - Connection patterns
 - [Troubleshooting Guide](troubleshooting.md) - Common issues
 
----
+______________________________________________________________________
 
 **Last Updated**: 2025-01-15

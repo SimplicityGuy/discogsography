@@ -11,6 +11,7 @@
 ## Overview
 
 Discogsography uses two complementary database systems:
+
 - **Neo4j**: Graph database for complex relationship queries
 - **PostgreSQL**: Relational database for fast analytics and full-text search
 
@@ -19,6 +20,7 @@ Discogsography uses two complementary database systems:
 ### Purpose
 
 Neo4j stores music industry relationships as a graph, making it ideal for:
+
 - Navigation of complex music relationships
 - Discovery of connections between artists
 - Analysis of label ecosystems
@@ -46,6 +48,7 @@ Represents musicians, bands, producers, and other music industry individuals.
 ```
 
 **Indexes**:
+
 ```cypher
 CREATE INDEX artist_id IF NOT EXISTS FOR (a:Artist) ON (a.id);
 CREATE INDEX artist_name IF NOT EXISTS FOR (a:Artist) ON (a.name);
@@ -68,6 +71,7 @@ Represents record labels and their imprints.
 ```
 
 **Indexes**:
+
 ```cypher
 CREATE INDEX label_id IF NOT EXISTS FOR (l:Label) ON (l.id);
 CREATE INDEX label_name IF NOT EXISTS FOR (l:Label) ON (l.name);
@@ -91,6 +95,7 @@ Represents master recordings (the original recordings from which releases are de
 ```
 
 **Indexes**:
+
 ```cypher
 CREATE INDEX master_id IF NOT EXISTS FOR (m:Master) ON (m.id);
 CREATE INDEX master_title IF NOT EXISTS FOR (m:Master) ON (m.title);
@@ -119,6 +124,7 @@ Represents physical or digital releases (albums, singles, etc.).
 ```
 
 **Indexes**:
+
 ```cypher
 CREATE INDEX release_id IF NOT EXISTS FOR (r:Release) ON (r.id);
 CREATE INDEX release_title IF NOT EXISTS FOR (r:Release) ON (r.title);
@@ -137,6 +143,7 @@ Represents musical genres.
 ```
 
 **Indexes**:
+
 ```cypher
 CREATE INDEX genre_name IF NOT EXISTS FOR (g:Genre) ON (g.name);
 ```
@@ -152,6 +159,7 @@ Represents musical styles (sub-genres).
 ```
 
 **Indexes**:
+
 ```cypher
 CREATE INDEX style_name IF NOT EXISTS FOR (s:Style) ON (s.name);
 ```
@@ -175,33 +183,41 @@ graph LR
 ```
 
 **MEMBER_OF**:
+
 ```cypher
 (artist:Artist)-[:MEMBER_OF]->(band:Artist)
 ```
+
 - Direction: Individual → Band
 - Properties: None
 - Example: (John Lennon)-[:MEMBER_OF]->(The Beatles)
 
 **ALIAS_OF**:
+
 ```cypher
 (alias:Artist)-[:ALIAS_OF]->(primary:Artist)
 ```
+
 - Direction: Alias → Primary
 - Properties: None
 - Example: (The Artist Formerly Known as Prince)-[:ALIAS_OF]->(Prince)
 
 **COLLABORATED_WITH**:
+
 ```cypher
 (artist1:Artist)-[:COLLABORATED_WITH]-(artist2:Artist)
 ```
+
 - Direction: Bidirectional
 - Properties: None
 - Example: (David Bowie)-[:COLLABORATED_WITH]-(Queen)
 
 **PERFORMED_ON**:
+
 ```cypher
 (artist:Artist)-[:PERFORMED_ON {role: String}]->(release:Release)
 ```
+
 - Direction: Artist → Release
 - Properties: `role` (e.g., "Vocals", "Guitar")
 - Example: (Miles Davis)-[:PERFORMED_ON {role: "Trumpet"}]->(Kind of Blue)
@@ -225,41 +241,51 @@ graph LR
 ```
 
 **BY**:
+
 ```cypher
 (release:Release)-[:BY]->(artist:Artist)
 ```
+
 - Direction: Release → Artist
 - Properties: None
 - Example: (Dark Side of the Moon)-[:BY]->(Pink Floyd)
 
 **ON**:
+
 ```cypher
 (release:Release)-[:ON]->(label:Label)
 ```
+
 - Direction: Release → Label
 - Properties: `catalog_number: String?`
 - Example: (Dark Side of the Moon)-[:ON {catalog_number: "SHVL 804"}]->(Harvest Records)
 
 **DERIVED_FROM**:
+
 ```cypher
 (release:Release)-[:DERIVED_FROM]->(master:Master)
 ```
+
 - Direction: Release → Master
 - Properties: None
 - Example: (Dark Side of the Moon [UK pressing])-[:DERIVED_FROM]->(Dark Side of the Moon [master])
 
 **IS** (Genre):
+
 ```cypher
 (release:Release)-[:IS]->(genre:Genre)
 ```
+
 - Direction: Release → Genre
 - Properties: None
 - Example: (Dark Side of the Moon)-[:IS]->(Progressive Rock)
 
 **IS** (Style):
+
 ```cypher
 (release:Release)-[:IS]->(style:Style)
 ```
+
 - Direction: Release → Style
 - Properties: None
 - Example: (Dark Side of the Moon)-[:IS]->(Psychedelic Rock)
@@ -277,9 +303,11 @@ graph TD
 ```
 
 **SUBLABEL_OF**:
+
 ```cypher
 (sublabel:Label)-[:SUBLABEL_OF]->(parent:Label)
 ```
+
 - Direction: Sublabel → Parent
 - Properties: None
 - Example: (Harvest Records)-[:SUBLABEL_OF]->(EMI)
@@ -295,9 +323,11 @@ graph TD
 ```
 
 **PART_OF**:
+
 ```cypher
 (style:Style)-[:PART_OF]->(genre:Genre)
 ```
+
 - Direction: Style → Genre
 - Properties: None
 - Example: (Progressive Rock)-[:PART_OF]->(Rock)
@@ -351,6 +381,7 @@ LIMIT 20;
 ### Purpose
 
 PostgreSQL stores denormalized data for:
+
 - Fast structured queries
 - Full-text search
 - Analytics and reporting
@@ -376,6 +407,7 @@ CREATE INDEX idx_artists_real_name ON artists ((data->>'real_name'));
 ```
 
 **Data Structure**:
+
 ```json
 {
   "id": "123",
@@ -405,6 +437,7 @@ CREATE INDEX idx_labels_parent ON labels ((data->>'parent_label'));
 ```
 
 **Data Structure**:
+
 ```json
 {
   "id": "456",
@@ -433,6 +466,7 @@ CREATE INDEX idx_masters_genres ON masters USING GIN ((data->'genres'));
 ```
 
 **Data Structure**:
+
 ```json
 {
   "id": "789",
@@ -470,6 +504,7 @@ CREATE INDEX idx_releases_title_fts ON releases
 ```
 
 **Data Structure**:
+
 ```json
 {
   "id": "1000",
@@ -588,27 +623,30 @@ graph TD
 ### Data Flow
 
 1. Extractor parses XML and computes SHA256 hash
-2. Message published to RabbitMQ with data + hash
-3. Graphinator checks hash in Neo4j, skips if exists
-4. Tableinator checks hash in PostgreSQL, skips if exists
-5. New/changed records inserted/updated in both databases
+1. Message published to RabbitMQ with data + hash
+1. Graphinator checks hash in Neo4j, skips if exists
+1. Tableinator checks hash in PostgreSQL, skips if exists
+1. New/changed records inserted/updated in both databases
 
 ## 📊 Performance Considerations
 
 ### Neo4j Optimization
 
 **Index Strategy**:
+
 - Create indexes on frequently queried properties
 - Use composite indexes for complex queries
 - Monitor query performance with `PROFILE` command
 
 **Query Optimization**:
+
 - Use `LIMIT` to restrict result size
 - Avoid Cartesian products
 - Use parameters for repeated queries
 - Consider query caching
 
 **Batch Operations**:
+
 - Use `UNWIND` for batch inserts
 - Transaction size: 1000-5000 operations
 - Periodic `COMMIT` for long-running operations
@@ -616,17 +654,20 @@ graph TD
 ### PostgreSQL Optimization
 
 **Index Strategy**:
+
 - B-tree indexes for equality/range queries
 - GIN indexes for JSONB and full-text search
 - Analyze query plans with `EXPLAIN ANALYZE`
 
 **Query Optimization**:
+
 - Use `->` for key access, `->>` for text values
 - Cast types explicitly: `(data->>'year')::int`
 - Utilize GIN indexes for `@>` containment queries
 - Consider materialized views for complex analytics
 
 **Vacuum and Analyze**:
+
 ```sql
 -- Regular maintenance
 VACUUM ANALYZE artists;
@@ -684,6 +725,6 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 - [Performance Guide](performance-guide.md) - Database tuning
 - [Neo4j Indexing](neo4j-indexing.md) - Advanced indexing strategies
 
----
+______________________________________________________________________
 
 **Last Updated**: 2025-01-15

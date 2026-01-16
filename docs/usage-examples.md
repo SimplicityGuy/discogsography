@@ -563,6 +563,7 @@ For best results, use both databases together:
 ### Example Workflow
 
 1. **PostgreSQL**: Find releases by year and genre
+
 ```sql
 SELECT data->>'title', data->'artists'
 FROM releases
@@ -571,12 +572,14 @@ AND (data->>'year')::int = 1959;
 ```
 
 2. **Neo4j**: Explore collaborations on those releases
+
 ```cypher
 MATCH (a:Artist)-[:PERFORMED_ON]->(r:Release {title: "Kind of Blue"})
 RETURN a.name, r.title;
 ```
 
 3. **PostgreSQL**: Get detailed release information
+
 ```sql
 SELECT data
 FROM releases
@@ -609,6 +612,6 @@ AND (data->>'year')::int = 1959;
 - [Quick Start Guide](quick-start.md) - Getting started
 - [Performance Guide](performance-guide.md) - Query optimization
 
----
+______________________________________________________________________
 
 **Last Updated**: 2025-01-15
