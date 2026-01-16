@@ -60,11 +60,11 @@ INDEXES = [
         "description": "Fast lookup by label ID",
     },
     {
-        "name": "genre_id_index",
+        "name": "master_id_index",
         "type": "range",
-        "label": "Genre",
+        "label": "Master",
         "properties": ["id"],
-        "description": "Fast lookup by genre ID",
+        "description": "Fast lookup by master ID",
     },
     {
         "name": "release_year_index",
@@ -101,6 +101,34 @@ INDEXES = [
         "label": "Genre",
         "properties": ["name"],
         "description": "Sorting by genre name (used in trends endpoint)",
+    },
+    {
+        "name": "style_name_index",
+        "type": "range",
+        "label": "Style",
+        "properties": ["name"],
+        "description": "Sorting by style name (used in trends endpoint)",
+    },
+    {
+        "name": "master_year_index",
+        "type": "range",
+        "label": "Master",
+        "properties": ["year"],
+        "description": "Range queries on master release year",
+    },
+    {
+        "name": "master_title_index",
+        "type": "range",
+        "label": "Master",
+        "properties": ["title"],
+        "description": "Sorting by master title",
+    },
+    {
+        "name": "release_country_index",
+        "type": "range",
+        "label": "Release",
+        "properties": ["country"],
+        "description": "Filtering by release country",
     },
 ]
 
