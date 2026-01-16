@@ -1308,7 +1308,46 @@ async def main() -> None:
             logger.info("✅ Neo4j connectivity verified")
 
             # Create indexes for better performance
-            logger.info("🔧 Creating Neo4j indexes...")
+            logger.info("🔧 Creating Neo4j constraints and indexes...")
+
+            # First, drop any existing indexes that would conflict with constraints
+            # Constraints create their own indexes, so we need to remove plain indexes first
+            indexes_to_check = [
+                ("Artist", "id"),
+                ("Label", "id"),
+                ("Master", "id"),
+                ("Release", "id"),
+                ("Genre", "name"),
+                ("Style", "name"),
+            ]
+
+            for label, prop in indexes_to_check:
+                try:
+                    # Get all indexes for this label and property
+                    result = session.run(
+                        "SHOW INDEXES YIELD name, labelsOrTypes, properties, type "
+                        "WHERE $label IN labelsOrTypes AND $prop IN properties AND type = 'RANGE' "
+                        "RETURN name",
+                        label=label,
+                        prop=prop,
+                    )
+                    for record in result:
+                        index_name = record["name"]
+                        try:
+                            session.run(f"DROP INDEX {index_name} IF EXISTS")
+                            logger.info(f"🗑️ Dropped existing index: {index_name}")
+                        except Exception as drop_error:
+                            logger.debug(
+                                f"Could not drop index {index_name}",
+                                error=str(drop_error),
+                            )
+                except Exception as e:
+                    # SHOW INDEXES might not be supported in older Neo4j versions, continue anyway
+                    logger.debug(
+                        f"Could not check indexes for {label}.{prop}", error=str(e)
+                    )
+
+            # Now create constraints (which will create their own indexes)
             constraints_to_create = [
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (a:Artist) REQUIRE a.id IS UNIQUE",
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (l:Label) REQUIRE l.id IS UNIQUE",
@@ -1326,8 +1365,8 @@ async def main() -> None:
                     )
                 except Exception as constraint_error:
                     logger.warning(
-                        "⚠️ Constraint creation note: constraint_error",
-                        constraint_error=constraint_error,
+                        "⚠️ Constraint creation note",
+                        constraint_error=str(constraint_error),
                     )
 
             # Create indexes on sha256 for faster hash lookups during batch processing
