@@ -43,6 +43,10 @@ jobs:
     needs: [run-code-quality]
     uses: ./.github/workflows/e2e-test.yml
     secrets: inherit
+    permissions:
+      contents: read
+      pull-requests: write  # Required for coverage report comments
+      statuses: write  # Required for coverage status creation (only used on PRs)
 
   build-discogsography:
     needs: [list-sub-projects, run-tests, run-e2e-tests]
