@@ -21,11 +21,14 @@ from common import (
     setup_logging,
     ResilientPostgreSQLPool,
     AsyncResilientRabbitMQ,
+    normalize_record,
 )
 from orjson import loads
 from psycopg import sql
 from psycopg.errors import DatabaseError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
+
+from tableinator.batch_processor import PostgreSQLBatchProcessor, BatchConfig
 
 
 logger = structlog.get_logger(__name__)
@@ -97,6 +100,12 @@ def get_health_data() -> dict[str, Any]:
 
 # Create connection pool for concurrent access
 connection_pool: ResilientPostgreSQLPool | None = None
+
+# Batch processor (optional, enabled via BATCH_MODE env var)
+batch_processor: PostgreSQLBatchProcessor | None = None
+BATCH_MODE = os.environ.get("POSTGRES_BATCH_MODE", "true").lower() == "true"
+BATCH_SIZE = int(os.environ.get("POSTGRES_BATCH_SIZE", "100"))
+BATCH_FLUSH_INTERVAL = float(os.environ.get("POSTGRES_BATCH_FLUSH_INTERVAL", "5.0"))
 
 # Global shutdown flag
 shutdown_requested = False
@@ -352,7 +361,27 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             await message.nack(requeue=False)
             return
 
+        # If batch mode is enabled, delegate to batch processor
+        if BATCH_MODE and batch_processor is not None:
+            # Update progress tracking
+            if data_type in message_counts:
+                message_counts[data_type] += 1
+                last_message_time[data_type] = time.time()
+
+            await batch_processor.add_message(
+                data_type=data_type,
+                data=data,
+                ack_callback=message.ack,
+                nack_callback=lambda: message.nack(requeue=True),
+            )
+            return
+
+        # Non-batch mode: process individual messages
         data_id: str = data["id"]
+
+        # Normalize data to ensure consistent format (handles @id -> id, #text -> name, etc.)
+        # This matches the normalization done in graphinator for consistency
+        data = normalize_record(data_type, data)
 
         # Increment counter and log progress
         if data_type in message_counts:
@@ -458,7 +487,8 @@ async def main() -> None:
         rabbitmq_manager, \
         active_connection, \
         active_channel, \
-        connection_check_task
+        connection_check_task, \
+        batch_processor
 
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
@@ -557,13 +587,14 @@ async def main() -> None:
         logger.error("❌ Failed to initialize connection pool", error=str(e))
         return
 
-    # Initialize database tables
+    # Initialize database tables and indexes
     try:
         with (
             get_connection() as conn,
             conn.cursor() as cursor,
         ):
             for table_name in ["artists", "labels", "masters", "releases"]:
+                # Create table
                 cursor.execute(
                     sql.SQL(
                         """
@@ -575,13 +606,81 @@ async def main() -> None:
                         """
                     ).format(table=sql.Identifier(table_name))
                 )
+                # Create index on hash for faster hash lookups (used in batch processing)
+                cursor.execute(
+                    sql.SQL(
+                        "CREATE INDEX IF NOT EXISTS {index} ON {table} (hash)"
+                    ).format(
+                        index=sql.Identifier(f"idx_{table_name}_hash"),
+                        table=sql.Identifier(table_name),
+                    )
+                )
+                # Create GIN index on JSONB data for containment queries
+                cursor.execute(
+                    sql.SQL(
+                        "CREATE INDEX IF NOT EXISTS {index} ON {table} USING GIN (data)"
+                    ).format(
+                        index=sql.Identifier(f"idx_{table_name}_gin"),
+                        table=sql.Identifier(table_name),
+                    )
+                )
+
+            # Create table-specific indexes for common query patterns
+            # Artists: name lookup
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_artists_name ON artists ((data->>'name'))"
+            )
+            # Labels: name lookup
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_labels_name ON labels ((data->>'name'))"
+            )
+            # Masters: title and year lookups
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_masters_title ON masters ((data->>'title'))"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_masters_year ON masters ((data->>'year'))"
+            )
+            # Releases: title, year, and artist lookups
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_releases_title ON releases ((data->>'title'))"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_releases_year ON releases ((data->>'year'))"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_releases_country ON releases ((data->>'country'))"
+            )
+            # GIN indexes on array fields for releases
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases USING GIN ((data->'genres'))"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_releases_labels ON releases USING GIN ((data->'labels'))"
+            )
+
             # Autocommit is enabled, so tables are created immediately
-        logger.info("✅ Database tables created/verified")
+        logger.info("✅ Database tables and indexes created/verified")
     except Exception as e:
         logger.error("❌ Failed to initialize database", error=str(e))
         if connection_pool:
             connection_pool.close()
         return
+
+    # Initialize batch processor if enabled
+    if BATCH_MODE:
+        batch_config = BatchConfig(
+            batch_size=BATCH_SIZE,
+            flush_interval=BATCH_FLUSH_INTERVAL,
+        )
+        batch_processor = PostgreSQLBatchProcessor(get_connection, batch_config)
+        logger.info(
+            "🚀 Batch processing enabled",
+            batch_size=BATCH_SIZE,
+            flush_interval=BATCH_FLUSH_INTERVAL,
+        )
+    else:
+        logger.info("📝 Using per-message processing (batch mode disabled)")
     # fmt: off
     print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗                                   ")
     print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝                                   ")
@@ -784,6 +883,12 @@ async def main() -> None:
             QUEUE_CHECK_INTERVAL=QUEUE_CHECK_INTERVAL,
         )
 
+        # Start batch processor periodic flush task if enabled
+        batch_flush_task = None
+        if BATCH_MODE and batch_processor is not None:
+            batch_flush_task = asyncio.create_task(batch_processor.periodic_flush())
+            logger.info("🔄 Started batch processor periodic flush task")
+
         try:
             # Create a shutdown event that can be triggered by signal handler
             shutdown_event = asyncio.Event()
@@ -810,6 +915,19 @@ async def main() -> None:
                 with contextlib.suppress(asyncio.CancelledError):
                     await connection_check_task
                 logger.info("✅ Queue checker task stopped")
+
+            # Cancel batch flush task and flush remaining messages
+            if batch_flush_task:
+                batch_flush_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await batch_flush_task
+            if batch_processor:
+                batch_processor.shutdown()
+                try:
+                    await batch_processor.flush_all()
+                    logger.info("✅ Batch processor flushed and stopped")
+                except Exception as e:
+                    logger.warning("⚠️ Error flushing batch processor", error=str(e))
 
             # Cancel any pending consumer cancellation tasks
             for task in consumer_cancel_tasks.values():
