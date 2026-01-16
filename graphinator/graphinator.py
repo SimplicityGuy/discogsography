@@ -21,9 +21,12 @@ from common import (
     setup_logging,
     ResilientNeo4jDriver,
     AsyncResilientRabbitMQ,
+    normalize_record,
 )
 from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
 from orjson import loads
+
+from graphinator.batch_processor import Neo4jBatchProcessor, BatchConfig
 
 
 logger = structlog.get_logger(__name__)
@@ -59,6 +62,12 @@ QUEUE_CHECK_INTERVAL = int(
 
 # Driver will be initialized in main
 graph: ResilientNeo4jDriver | None = None
+
+# Batch processor (optional, enabled via BATCH_MODE env var)
+batch_processor: Neo4jBatchProcessor | None = None
+BATCH_MODE = os.environ.get("NEO4J_BATCH_MODE", "true").lower() == "true"
+BATCH_SIZE = int(os.environ.get("NEO4J_BATCH_SIZE", "100"))
+BATCH_FLUSH_INTERVAL = float(os.environ.get("NEO4J_BATCH_FLUSH_INTERVAL", "5.0"))
 
 # Connection state tracking
 rabbitmq_manager: Any = None  # Will hold AsyncResilientRabbitMQ instance
@@ -368,6 +377,18 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
         if await check_file_completion(artist, "artists", message):
             return
 
+        # Use batch processor if enabled
+        if BATCH_MODE and batch_processor is not None:
+            await batch_processor.add_message(
+                "artists",
+                artist,
+                message.ack,
+                lambda: message.nack(requeue=True),
+            )
+            message_counts["artists"] += 1
+            last_message_time["artists"] = time.time()
+            return
+
         artist_id = artist.get("id", "unknown")
         artist_name = artist.get("name", "Unknown Artist")
 
@@ -601,6 +622,18 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         if await check_file_completion(label, "labels", message):
             return
 
+        # Use batch processor if enabled
+        if BATCH_MODE and batch_processor is not None:
+            await batch_processor.add_message(
+                "labels",
+                label,
+                message.ack,
+                lambda: message.nack(requeue=True),
+            )
+            message_counts["labels"] += 1
+            last_message_time["labels"] = time.time()
+            return
+
         label_id = label.get("id", "unknown")
         label_name = label.get("name", "Unknown Label")
 
@@ -761,6 +794,18 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
 
         # Check if this is a file completion message
         if await check_file_completion(master, "masters", message):
+            return
+
+        # Use batch processor if enabled
+        if BATCH_MODE and batch_processor is not None:
+            await batch_processor.add_message(
+                "masters",
+                master,
+                message.ack,
+                lambda: message.nack(requeue=True),
+            )
+            message_counts["masters"] += 1
+            last_message_time["masters"] = time.time()
             return
 
         master_id = master.get("id", "unknown")
@@ -955,6 +1000,18 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
 
         # Check if this is a file completion message
         if await check_file_completion(release, "releases", message):
+            return
+
+        # Use batch processor if enabled
+        if BATCH_MODE and batch_processor is not None:
+            await batch_processor.add_message(
+                "releases",
+                release,
+                message.ack,
+                lambda: message.nack(requeue=True),
+            )
+            message_counts["releases"] += 1
+            last_message_time["releases"] = time.time()
             return
 
         release_id = release.get("id", "unknown")
@@ -1206,7 +1263,8 @@ async def main() -> None:
         rabbitmq_manager, \
         active_connection, \
         active_channel, \
-        connection_check_task
+        connection_check_task, \
+        batch_processor
 
     # Set up signal handlers for graceful shutdown
     signal.signal(signal.SIGINT, signal_handler)
@@ -1257,6 +1315,8 @@ async def main() -> None:
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (l:Label) REQUIRE l.id IS UNIQUE",
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (m:Master) REQUIRE m.id IS UNIQUE",
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (r:Release) REQUIRE r.id IS UNIQUE",
+                "CREATE CONSTRAINT IF NOT EXISTS FOR (g:Genre) REQUIRE g.name IS UNIQUE",
+                "CREATE CONSTRAINT IF NOT EXISTS FOR (s:Style) REQUIRE s.name IS UNIQUE",
             ]
 
             for constraint in constraints_to_create:
@@ -1271,7 +1331,39 @@ async def main() -> None:
                         constraint_error=constraint_error,
                     )
 
+            # Create indexes on sha256 for faster hash lookups during batch processing
+            indexes_to_create = [
+                "CREATE INDEX artist_sha256 IF NOT EXISTS FOR (a:Artist) ON (a.sha256)",
+                "CREATE INDEX label_sha256 IF NOT EXISTS FOR (l:Label) ON (l.sha256)",
+                "CREATE INDEX master_sha256 IF NOT EXISTS FOR (m:Master) ON (m.sha256)",
+                "CREATE INDEX release_sha256 IF NOT EXISTS FOR (r:Release) ON (r.sha256)",
+            ]
+
+            for index in indexes_to_create:
+                try:
+                    session.run(index)
+                except Exception as index_error:
+                    logger.warning(
+                        "⚠️ Index creation note",
+                        error=str(index_error),
+                    )
+
             logger.info("✅ Neo4j indexes setup complete")
+
+            # Initialize batch processor if enabled
+            if BATCH_MODE:
+                batch_config = BatchConfig(
+                    batch_size=BATCH_SIZE,
+                    flush_interval=BATCH_FLUSH_INTERVAL,
+                )
+                batch_processor = Neo4jBatchProcessor(graph, batch_config)
+                logger.info(
+                    "🚀 Batch processing enabled",
+                    batch_size=BATCH_SIZE,
+                    flush_interval=BATCH_FLUSH_INTERVAL,
+                )
+            else:
+                logger.info("📝 Using per-message processing (batch mode disabled)")
 
     except Exception as e:
         logger.error("❌ Failed to connect to Neo4j: e", e=e)
@@ -1474,6 +1566,12 @@ async def main() -> None:
                     )
 
         progress_task = asyncio.create_task(progress_reporter())
+
+        # Start batch flush task if using batch mode
+        batch_flush_task = None
+        if BATCH_MODE and batch_processor is not None:
+            batch_flush_task = asyncio.create_task(batch_processor.periodic_flush())
+            logger.info("🔄 Started batch periodic flush task")
 
         # Start periodic queue checker task
         connection_check_task = asyncio.create_task(periodic_queue_checker())
