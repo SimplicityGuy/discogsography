@@ -41,13 +41,13 @@ flowchart TD
 
 ## 🎯 Performance Goals
 
-| Metric                 | Target       | Current      | Optimization     |
-| ---------------------- | ------------ | ------------ | ---------------- |
-| **XML Parsing**        | 10,000 rec/s | 5,000-10,000 | I/O, Memory      |
-| **Message Processing** | 5,000 msg/s  | 3,000-5,000  | Network          |
+| Metric                 | Target       | Current      | Optimization        |
+| ---------------------- | ------------ | ------------ | ------------------- |
+| **XML Parsing**        | 10,000 rec/s | 5,000-10,000 | I/O, Memory         |
+| **Message Processing** | 5,000 msg/s  | 3,000-5,000  | Network             |
 | **Neo4j Writes**       | 5,000 rec/s  | 3,000-5,000  | Batch processing ✅ |
 | **PostgreSQL Writes**  | 10,000 rec/s | 8,000-10,000 | Batch processing ✅ |
-| **API Response Time**  | \<100ms      | \<200ms      | Query complexity |
+| **API Response Time**  | \<100ms      | \<200ms      | Query complexity    |
 
 > **Note**: ✅ indicates optimizations that are implemented and enabled by default.
 
@@ -260,10 +260,10 @@ POSTGRES_BATCH_FLUSH_INTERVAL=5.0  # Seconds between flushes
 **How it works:**
 
 1. Messages are accumulated into batches
-2. When batch reaches size limit OR time interval expires:
+1. When batch reaches size limit OR time interval expires:
    - All records written in single database operation
    - Message acknowledgments sent after successful write
-3. On shutdown, all pending batches are flushed
+1. On shutdown, all pending batches are flushed
 
 **Performance gains:**
 

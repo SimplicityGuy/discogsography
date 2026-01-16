@@ -342,14 +342,14 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 
 ## Batch Processing Configuration
 
-| Variable                        | Description                                | Default | Range      |
-| ------------------------------- | ------------------------------------------ | ------- | ---------- |
-| `NEO4J_BATCH_MODE`              | Enable batch processing for Neo4j writes   | `true`  | true/false |
-| `NEO4J_BATCH_SIZE`              | Records per batch for Neo4j                | `100`   | 10-1000    |
-| `NEO4J_BATCH_FLUSH_INTERVAL`    | Seconds between automatic flushes          | `5.0`   | 1.0-60.0   |
-| `POSTGRES_BATCH_MODE`           | Enable batch processing for PostgreSQL     | `true`  | true/false |
-| `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL           | `100`   | 10-1000    |
-| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes          | `5.0`   | 1.0-60.0   |
+| Variable                        | Description                              | Default | Range      |
+| ------------------------------- | ---------------------------------------- | ------- | ---------- |
+| `NEO4J_BATCH_MODE`              | Enable batch processing for Neo4j writes | `true`  | true/false |
+| `NEO4J_BATCH_SIZE`              | Records per batch for Neo4j              | `100`   | 10-1000    |
+| `NEO4J_BATCH_FLUSH_INTERVAL`    | Seconds between automatic flushes        | `5.0`   | 1.0-60.0   |
+| `POSTGRES_BATCH_MODE`           | Enable batch processing for PostgreSQL   | `true`  | true/false |
+| `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL         | `100`   | 10-1000    |
+| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes        | `5.0`   | 1.0-60.0   |
 
 **Used By**: Graphinator (Neo4j), Tableinator (PostgreSQL)
 

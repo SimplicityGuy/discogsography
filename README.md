@@ -315,14 +315,14 @@ cp .env.example .env
 
 #### Batch Processing Settings
 
-| Variable                      | Description                                              | Default        | Used By                  |
-| ----------------------------- | -------------------------------------------------------- | -------------- | ------------------------ |
-| `NEO4J_BATCH_MODE`            | Enable batch processing for Neo4j writes                 | `true`         | Graphinator              |
-| `NEO4J_BATCH_SIZE`            | Number of records to batch before writing to Neo4j       | `100`          | Graphinator              |
-| `NEO4J_BATCH_FLUSH_INTERVAL`  | Seconds between automatic batch flushes                  | `5.0`          | Graphinator              |
-| `POSTGRES_BATCH_MODE`         | Enable batch processing for PostgreSQL writes            | `true`         | Tableinator              |
-| `POSTGRES_BATCH_SIZE`         | Number of records to batch before writing to PostgreSQL  | `100`          | Tableinator              |
-| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic batch flushes                | `5.0`          | Tableinator              |
+| Variable                        | Description                                             | Default | Used By     |
+| ------------------------------- | ------------------------------------------------------- | ------- | ----------- |
+| `NEO4J_BATCH_MODE`              | Enable batch processing for Neo4j writes                | `true`  | Graphinator |
+| `NEO4J_BATCH_SIZE`              | Number of records to batch before writing to Neo4j      | `100`   | Graphinator |
+| `NEO4J_BATCH_FLUSH_INTERVAL`    | Seconds between automatic batch flushes                 | `5.0`   | Graphinator |
+| `POSTGRES_BATCH_MODE`           | Enable batch processing for PostgreSQL writes           | `true`  | Tableinator |
+| `POSTGRES_BATCH_SIZE`           | Number of records to batch before writing to PostgreSQL | `100`   | Tableinator |
+| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic batch flushes                 | `5.0`   | Tableinator |
 
 > **📝 Note**: Batch processing significantly improves write performance by grouping multiple operations:
 >
