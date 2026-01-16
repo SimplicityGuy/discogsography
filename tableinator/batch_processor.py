@@ -13,7 +13,7 @@ from typing import Any, Callable
 
 import structlog
 from psycopg import sql
-from psycopg.errors import DatabaseError, InterfaceError, OperationalError
+from psycopg.errors import InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
 from common import normalize_record
@@ -51,7 +51,9 @@ class PostgreSQLBatchProcessor:
     reducing the overhead of database transactions.
     """
 
-    def __init__(self, get_connection: Callable[[], Any], config: BatchConfig | None = None):
+    def __init__(
+        self, get_connection: Callable[[], Any], config: BatchConfig | None = None
+    ):
         """Initialize the batch processor.
 
         Args:
@@ -230,7 +232,9 @@ class PostgreSQLBatchProcessor:
                 data_type=data_type,
                 batch_size=len(messages),
                 duration_ms=round(batch_duration * 1000),
-                records_per_sec=round(len(messages) / batch_duration) if batch_duration > 0 else 0,
+                records_per_sec=round(len(messages) / batch_duration)
+                if batch_duration > 0
+                else 0,
                 total_processed=self.processed_counts[data_type],
             )
         else:
@@ -241,7 +245,9 @@ class PostgreSQLBatchProcessor:
                 except Exception as e:
                     logger.warning("⚠️ Failed to nack message", error=str(e))
 
-    async def _process_batch(self, data_type: str, messages: list[PendingMessage]) -> None:
+    async def _process_batch(
+        self, data_type: str, messages: list[PendingMessage]
+    ) -> None:
         """Process a batch of records using efficient bulk operations.
 
         Uses a single transaction with:
@@ -314,7 +320,11 @@ class PostgreSQLBatchProcessor:
             await asyncio.sleep(self.config.flush_interval)
 
             for data_type, queue in self.queues.items():
-                if queue and time.time() - self.last_flush[data_type] >= self.config.flush_interval:
+                if (
+                    queue
+                    and time.time() - self.last_flush[data_type]
+                    >= self.config.flush_interval
+                ):
                     await self._flush_queue(data_type)
 
     def shutdown(self) -> None:

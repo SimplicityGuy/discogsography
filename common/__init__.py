@@ -13,6 +13,16 @@ from common.config import (
     get_config,
     setup_logging,
 )
+from common.data_normalizer import (
+    normalize_artist,
+    normalize_id,
+    normalize_item_with_id,
+    normalize_label,
+    normalize_master,
+    normalize_nested_list,
+    normalize_record,
+    normalize_release,
+)
 
 # Database resilience utilities
 from common.db_resilience import (
@@ -41,16 +51,6 @@ from common.rabbitmq_resilient import (
     ResilientRabbitMQConnection,
     process_message_with_retry,
 )
-from common.data_normalizer import (
-    normalize_record,
-    normalize_artist,
-    normalize_label,
-    normalize_master,
-    normalize_release,
-    normalize_id,
-    normalize_nested_list,
-    normalize_item_with_id,
-)
 
 
 __all__ = [
@@ -78,17 +78,17 @@ __all__ = [
     "TableinatorConfig",
     "async_resilient_connection",
     "get_config",
+    "normalize_artist",
+    "normalize_id",
+    "normalize_item_with_id",
+    "normalize_label",
+    "normalize_master",
+    "normalize_nested_list",
+    "normalize_record",
+    "normalize_release",
     "process_message_with_retry",
     "resilient_connection",
     "setup_logging",
     "with_async_neo4j_retry",
     "with_neo4j_retry",
-    "normalize_record",
-    "normalize_artist",
-    "normalize_label",
-    "normalize_master",
-    "normalize_release",
-    "normalize_id",
-    "normalize_nested_list",
-    "normalize_item_with_id",
 ]

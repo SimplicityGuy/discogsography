@@ -21,7 +21,6 @@ from common import (
     setup_logging,
     ResilientNeo4jDriver,
     AsyncResilientRabbitMQ,
-    normalize_record,
 )
 from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
 from orjson import loads
@@ -1605,6 +1604,13 @@ async def main() -> None:
                 with contextlib.suppress(asyncio.CancelledError):
                     await connection_check_task
                 logger.info("✅ Queue checker task stopped")
+
+            # Cancel batch flush task
+            if batch_flush_task:
+                batch_flush_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await batch_flush_task
+                logger.info("✅ Batch flush task stopped")
 
             # Cancel any pending consumer cancellation tasks
             for task in consumer_cancel_tasks.values():

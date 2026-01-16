@@ -1,18 +1,16 @@
 """Tests for data normalization utilities."""
 
-import pytest
-
 from common.data_normalizer import (
-    normalize_id,
-    normalize_text,
     ensure_list,
-    normalize_nested_list,
-    normalize_item_with_id,
     normalize_artist,
+    normalize_id,
+    normalize_item_with_id,
     normalize_label,
     normalize_master,
-    normalize_release,
+    normalize_nested_list,
     normalize_record,
+    normalize_release,
+    normalize_text,
 )
 
 
@@ -184,9 +182,7 @@ class TestNormalizeArtist:
             "id": "10",
             "name": "John Lennon",
             "sha256": "def456",
-            "groups": {
-                "name": [{"id": "123"}]
-            },
+            "groups": {"name": [{"id": "123"}]},
         }
         result = normalize_artist(artist_data)
         assert result["groups"] == [{"id": "123"}]
@@ -197,9 +193,7 @@ class TestNormalizeArtist:
             "id": "123",
             "name": "The Beatles",
             "sha256": "abc123",
-            "aliases": {
-                "name": {"id": "456", "#text": "Beatles, The"}
-            },
+            "aliases": {"name": {"id": "456", "#text": "Beatles, The"}},
         }
         result = normalize_artist(artist_data)
         assert result["aliases"] == [{"id": "456", "name": "Beatles, The"}]
@@ -270,9 +264,7 @@ class TestNormalizeMaster:
             "id": "1000",
             "title": "Abbey Road",
             "sha256": "abc123",
-            "artists": {
-                "artist": {"id": "123", "name": "The Beatles"}
-            },
+            "artists": {"artist": {"id": "123", "name": "The Beatles"}},
         }
         result = normalize_master(master_data)
         assert result["artists"] == [{"id": "123", "name": "The Beatles"}]
@@ -316,9 +308,7 @@ class TestNormalizeRelease:
                     {"id": "123", "name": "The Beatles"},
                 ]
             },
-            "labels": {
-                "label": {"id": "100", "@name": "EMI", "@catno": "PCS 7067"}
-            },
+            "labels": {"label": {"id": "100", "@name": "EMI", "@catno": "PCS 7067"}},
         }
         result = normalize_release(release_data)
         assert result["artists"] == [{"id": "123", "name": "The Beatles"}]

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import structlog
-from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
 from common import normalize_record
 
@@ -224,7 +224,9 @@ class Neo4jBatchProcessor:
                 data_type=data_type,
                 batch_size=len(messages),
                 duration_ms=round(batch_duration * 1000),
-                records_per_sec=round(len(messages) / batch_duration) if batch_duration > 0 else 0,
+                records_per_sec=round(len(messages) / batch_duration)
+                if batch_duration > 0
+                else 0,
                 total_processed=self.processed_counts[data_type],
             )
         else:
@@ -293,10 +295,12 @@ class Neo4jBatchProcessor:
                     if artist.get("members"):
                         for member in artist["members"]:
                             if member.get("id"):
-                                members_data.append({
-                                    "artist_id": artist["id"],
-                                    "member_id": member["id"],
-                                })
+                                members_data.append(
+                                    {
+                                        "artist_id": artist["id"],
+                                        "member_id": member["id"],
+                                    }
+                                )
                 if members_data:
                     tx.run(
                         """
@@ -314,10 +318,12 @@ class Neo4jBatchProcessor:
                     if artist.get("groups"):
                         for group in artist["groups"]:
                             if group.get("id"):
-                                groups_data.append({
-                                    "artist_id": artist["id"],
-                                    "group_id": group["id"],
-                                })
+                                groups_data.append(
+                                    {
+                                        "artist_id": artist["id"],
+                                        "group_id": group["id"],
+                                    }
+                                )
                 if groups_data:
                     tx.run(
                         """
@@ -335,10 +341,12 @@ class Neo4jBatchProcessor:
                     if artist.get("aliases"):
                         for alias in artist["aliases"]:
                             if alias.get("id"):
-                                aliases_data.append({
-                                    "artist_id": artist["id"],
-                                    "alias_id": alias["id"],
-                                })
+                                aliases_data.append(
+                                    {
+                                        "artist_id": artist["id"],
+                                        "alias_id": alias["id"],
+                                    }
+                                )
                 if aliases_data:
                     tx.run(
                         """
@@ -399,10 +407,12 @@ class Neo4jBatchProcessor:
                 for label in labels_to_process:
                     parent = label.get("parentLabel")
                     if parent and parent.get("id"):
-                        parent_data.append({
-                            "label_id": label["id"],
-                            "parent_id": parent["id"],
-                        })
+                        parent_data.append(
+                            {
+                                "label_id": label["id"],
+                                "parent_id": parent["id"],
+                            }
+                        )
                 if parent_data:
                     tx.run(
                         """
@@ -420,10 +430,12 @@ class Neo4jBatchProcessor:
                     if label.get("sublabels"):
                         for sublabel in label["sublabels"]:
                             if sublabel.get("id"):
-                                sublabel_data.append({
-                                    "label_id": label["id"],
-                                    "sublabel_id": sublabel["id"],
-                                })
+                                sublabel_data.append(
+                                    {
+                                        "label_id": label["id"],
+                                        "sublabel_id": sublabel["id"],
+                                    }
+                                )
                 if sublabel_data:
                     tx.run(
                         """
@@ -486,10 +498,12 @@ class Neo4jBatchProcessor:
                     if master.get("artists"):
                         for artist in master["artists"]:
                             if artist.get("id"):
-                                artist_data.append({
-                                    "master_id": master["id"],
-                                    "artist_id": artist["id"],
-                                })
+                                artist_data.append(
+                                    {
+                                        "master_id": master["id"],
+                                        "artist_id": artist["id"],
+                                    }
+                                )
                 if artist_data:
                     tx.run(
                         """
@@ -507,10 +521,12 @@ class Neo4jBatchProcessor:
                     if master.get("genres"):
                         for genre in master["genres"]:
                             if genre:
-                                genre_data.append({
-                                    "master_id": master["id"],
-                                    "genre": genre,
-                                })
+                                genre_data.append(
+                                    {
+                                        "master_id": master["id"],
+                                        "genre": genre,
+                                    }
+                                )
                 if genre_data:
                     tx.run(
                         """
@@ -528,10 +544,12 @@ class Neo4jBatchProcessor:
                     if master.get("styles"):
                         for style in master["styles"]:
                             if style:
-                                style_data.append({
-                                    "master_id": master["id"],
-                                    "style": style,
-                                })
+                                style_data.append(
+                                    {
+                                        "master_id": master["id"],
+                                        "style": style,
+                                    }
+                                )
                 if style_data:
                     tx.run(
                         """
@@ -551,10 +569,12 @@ class Neo4jBatchProcessor:
                     for genre in genres:
                         for style in styles:
                             if genre and style:
-                                genre_style_data.append({
-                                    "genre": genre,
-                                    "style": style,
-                                })
+                                genre_style_data.append(
+                                    {
+                                        "genre": genre,
+                                        "style": style,
+                                    }
+                                )
                 if genre_style_data:
                     tx.run(
                         """
@@ -616,10 +636,12 @@ class Neo4jBatchProcessor:
                     if release.get("artists"):
                         for artist in release["artists"]:
                             if artist.get("id"):
-                                artist_data.append({
-                                    "release_id": release["id"],
-                                    "artist_id": artist["id"],
-                                })
+                                artist_data.append(
+                                    {
+                                        "release_id": release["id"],
+                                        "artist_id": artist["id"],
+                                    }
+                                )
                 if artist_data:
                     tx.run(
                         """
@@ -637,10 +659,12 @@ class Neo4jBatchProcessor:
                     if release.get("labels"):
                         for label in release["labels"]:
                             if label.get("id"):
-                                label_data.append({
-                                    "release_id": release["id"],
-                                    "label_id": label["id"],
-                                })
+                                label_data.append(
+                                    {
+                                        "release_id": release["id"],
+                                        "label_id": label["id"],
+                                    }
+                                )
                 if label_data:
                     tx.run(
                         """
@@ -657,10 +681,12 @@ class Neo4jBatchProcessor:
                 for release in releases_to_process:
                     master_id = release.get("master_id")
                     if master_id:
-                        master_data.append({
-                            "release_id": release["id"],
-                            "master_id": str(master_id),
-                        })
+                        master_data.append(
+                            {
+                                "release_id": release["id"],
+                                "master_id": str(master_id),
+                            }
+                        )
                 if master_data:
                     tx.run(
                         """
@@ -678,10 +704,12 @@ class Neo4jBatchProcessor:
                     if release.get("genres"):
                         for genre in release["genres"]:
                             if genre:
-                                genre_data.append({
-                                    "release_id": release["id"],
-                                    "genre": genre,
-                                })
+                                genre_data.append(
+                                    {
+                                        "release_id": release["id"],
+                                        "genre": genre,
+                                    }
+                                )
                 if genre_data:
                     tx.run(
                         """
@@ -699,10 +727,12 @@ class Neo4jBatchProcessor:
                     if release.get("styles"):
                         for style in release["styles"]:
                             if style:
-                                style_data.append({
-                                    "release_id": release["id"],
-                                    "style": style,
-                                })
+                                style_data.append(
+                                    {
+                                        "release_id": release["id"],
+                                        "style": style,
+                                    }
+                                )
                 if style_data:
                     tx.run(
                         """
@@ -722,10 +752,12 @@ class Neo4jBatchProcessor:
                     for genre in genres:
                         for style in styles:
                             if genre and style:
-                                genre_style_data.append({
-                                    "genre": genre,
-                                    "style": style,
-                                })
+                                genre_style_data.append(
+                                    {
+                                        "genre": genre,
+                                        "style": style,
+                                    }
+                                )
                 if genre_style_data:
                     tx.run(
                         """
@@ -754,7 +786,11 @@ class Neo4jBatchProcessor:
             await asyncio.sleep(self.config.flush_interval)
 
             for data_type, queue in self.queues.items():
-                if queue and time.time() - self.last_flush[data_type] >= self.config.flush_interval:
+                if (
+                    queue
+                    and time.time() - self.last_flush[data_type]
+                    >= self.config.flush_interval
+                ):
                     await self._flush_queue(data_type)
 
     def shutdown(self) -> None:
