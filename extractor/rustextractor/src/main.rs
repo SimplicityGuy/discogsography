@@ -218,8 +218,8 @@ mod tests {
         assert_eq!(filter, "rust_extractor=error,lapin=warn");
     }
 
-    #[test]
-    fn test_setup_shutdown_handler() {
+    #[tokio::test]
+    async fn test_setup_shutdown_handler() {
         let shutdown = setup_shutdown_handler();
         // Just verify it creates a valid Notify instance
         assert!(Arc::strong_count(&shutdown) >= 1);

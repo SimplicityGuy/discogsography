@@ -91,6 +91,7 @@ impl ExtractorConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::env;
 
     #[test]
@@ -115,6 +116,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_from_env_with_amqp() {
         unsafe {
             env::set_var("AMQP_CONNECTION", "amqp://test:5672");
@@ -129,6 +131,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_from_env_missing_amqp() {
         unsafe {
             env::remove_var("AMQP_CONNECTION");
@@ -139,6 +142,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_from_env_with_all_settings() {
         // Lock to prevent concurrent env var access
         unsafe {
@@ -175,6 +179,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_from_env_default_discogs_root() {
         unsafe {
             env::set_var("AMQP_CONNECTION", "amqp://test:5672");
@@ -190,6 +195,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_from_env_invalid_periodic_check_days() {
         unsafe {
             env::set_var("AMQP_CONNECTION", "amqp://test:5672");
@@ -222,6 +228,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_from_env_fixed_values() {
         unsafe {
             env::set_var("AMQP_CONNECTION", "amqp://test:5672");
