@@ -129,6 +129,8 @@ jobs:
         if: github.event_name != 'pull_request' || steps.check-tests.outputs.needed == 'true'
         uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
           files: coverage.xml
           flags: python
           name: python-coverage
@@ -204,6 +206,8 @@ jobs:
         if: steps.check-rust.outputs.exists == 'true'
         uses: codecov/codecov-action@v5
         with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
           files: extractor/rustextractor/lcov.info
           flags: rust
           name: rust-coverage
