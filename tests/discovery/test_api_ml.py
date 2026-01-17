@@ -250,3 +250,368 @@ class TestMLAPIIntegration:
         # CORS headers should be present for configured origins
         # Note: Actual behavior depends on CORS middleware configuration
         assert response.status_code == 200
+
+
+class TestMLAPIInitialization:
+    """Test ML API initialization and lifecycle."""
+
+    @pytest.mark.asyncio
+    async def test_close_ml_api(self) -> None:
+        """Test ML API cleanup."""
+        from discovery.api_ml import close_ml_api
+
+        # Close should work even if not initialized
+        await close_ml_api()
+
+        from discovery import api_ml
+
+        assert api_ml.ml_api_initialized is False
+
+
+class TestMLAPIErrorHandling:
+    """Test error handling in ML API endpoints."""
+
+    @pytest.fixture
+    def client(self) -> TestClient:
+        """Create a test client for the Discovery service."""
+        from discovery.discovery import app
+
+        return TestClient(app)
+
+    def test_collaborative_recommend_not_initialized(self, client: TestClient) -> None:
+        """Test collaborative filtering when ML API not initialized."""
+        from discovery import api_ml
+
+        # Temporarily disable ML API
+        original_state = api_ml.ml_api_initialized
+        api_ml.ml_api_initialized = False
+        api_ml.collaborative_filter = None
+
+        request_data = {
+            "artist_id": "artist_12345",
+            "limit": 10,
+            "min_similarity": 0.3,
+        }
+
+        try:
+            response = client.post("/api/ml/recommend/collaborative", json=request_data)
+            assert response.status_code == 503
+            assert "not initialized" in response.json()["detail"].lower()
+        finally:
+            # Restore state
+            api_ml.ml_api_initialized = original_state
+
+    def test_hybrid_recommend_not_initialized(self, client: TestClient) -> None:
+        """Test hybrid recommendations when ML API not initialized."""
+        from discovery import api_ml
+
+        original_state = api_ml.ml_api_initialized
+        api_ml.ml_api_initialized = False
+        api_ml.hybrid_recommender = None
+
+        request_data = {
+            "artist_name": "The Beatles",
+            "limit": 10,
+            "strategy": "weighted",
+        }
+
+        try:
+            response = client.post("/api/ml/recommend/hybrid", json=request_data)
+            assert response.status_code == 503
+            assert "not initialized" in response.json()["detail"].lower()
+        finally:
+            api_ml.ml_api_initialized = original_state
+
+    def test_explain_recommendation_not_initialized(self, client: TestClient) -> None:
+        """Test explanation when ML API not initialized."""
+        from discovery import api_ml
+
+        original_state = api_ml.ml_api_initialized
+        api_ml.ml_api_initialized = False
+        api_ml.explainer = None
+
+        request_data = {
+            "artist_id": "artist_12345",
+            "recommended_id": "artist_67890",
+        }
+
+        try:
+            response = client.post("/api/ml/recommend/explain", json=request_data)
+            assert response.status_code == 503
+            assert "not initialized" in response.json()["detail"].lower()
+        finally:
+            api_ml.ml_api_initialized = original_state
+
+    def test_collaborative_recommend_with_exception(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test collaborative filtering error handling."""
+        from unittest.mock import AsyncMock
+
+        from discovery import api_ml
+
+        # Mock collaborative_filter to raise exception
+        if api_ml.collaborative_filter is not None:
+            mock_get_recommendations = AsyncMock(side_effect=Exception("Database error"))
+            monkeypatch.setattr(api_ml.collaborative_filter, "get_recommendations", mock_get_recommendations)
+
+            request_data = {
+                "artist_id": "artist_12345",
+                "limit": 10,
+                "min_similarity": 0.3,
+            }
+
+            response = client.post("/api/ml/recommend/collaborative", json=request_data)
+            assert response.status_code == 500
+            assert "error" in response.json()["detail"].lower()
+
+    def test_hybrid_recommend_with_exception(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test hybrid recommendations error handling."""
+        from unittest.mock import AsyncMock
+
+        from discovery import api_ml
+
+        if api_ml.hybrid_recommender is not None:
+            mock_get_recommendations = AsyncMock(side_effect=Exception("Processing error"))
+            monkeypatch.setattr(api_ml.hybrid_recommender, "get_recommendations", mock_get_recommendations)
+
+            request_data = {
+                "artist_name": "The Beatles",
+                "limit": 10,
+                "strategy": "weighted",
+            }
+
+            response = client.post("/api/ml/recommend/hybrid", json=request_data)
+            assert response.status_code == 500
+            assert "error" in response.json()["detail"].lower()
+
+    def test_explain_recommendation_with_exception(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test explanation error handling."""
+        from unittest.mock import AsyncMock
+
+        from discovery import api_ml
+
+        if api_ml.explainer is not None:
+            mock_explain = AsyncMock(side_effect=Exception("Explanation failed"))
+            monkeypatch.setattr(api_ml.explainer, "explain_recommendation", mock_explain)
+
+            request_data = {
+                "artist_id": "artist_12345",
+                "recommended_id": "artist_67890",
+            }
+
+            response = client.post("/api/ml/recommend/explain", json=request_data)
+            assert response.status_code == 500
+            assert "error" in response.json()["detail"].lower()
+
+
+class TestMLAPIEdgeCases:
+    """Test edge cases and boundary conditions."""
+
+    @pytest.fixture
+    def client(self) -> TestClient:
+        """Create a test client for the Discovery service."""
+        from discovery.discovery import app
+
+        return TestClient(app)
+
+    def test_collaborative_recommend_min_similarity_zero(self, client: TestClient) -> None:
+        """Test collaborative filtering with zero minimum similarity."""
+        request_data = {
+            "artist_id": "artist_12345",
+            "limit": 10,
+            "min_similarity": 0.0,
+        }
+
+        response = client.post("/api/ml/recommend/collaborative", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["min_similarity"] == 0.0
+
+    def test_collaborative_recommend_min_similarity_one(self, client: TestClient) -> None:
+        """Test collaborative filtering with maximum minimum similarity."""
+        request_data = {
+            "artist_id": "artist_12345",
+            "limit": 10,
+            "min_similarity": 1.0,
+        }
+
+        response = client.post("/api/ml/recommend/collaborative", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["min_similarity"] == 1.0
+
+    def test_collaborative_recommend_invalid_similarity(self, client: TestClient) -> None:
+        """Test collaborative filtering with invalid similarity value."""
+        request_data = {
+            "artist_id": "artist_12345",
+            "limit": 10,
+            "min_similarity": 1.5,  # > 1.0
+        }
+
+        response = client.post("/api/ml/recommend/collaborative", json=request_data)
+        assert response.status_code == 422  # Validation error
+
+    def test_hybrid_recommend_invalid_strategy(self, client: TestClient) -> None:
+        """Test hybrid recommendations with unknown strategy."""
+        request_data = {
+            "artist_name": "The Beatles",
+            "limit": 10,
+            "strategy": "unknown_strategy",
+        }
+
+        # Strategy validation is not enforced in model, so this will succeed
+        # but might return different results
+        response = client.post("/api/ml/recommend/hybrid", json=request_data)
+        assert response.status_code == 200
+
+    def test_collaborative_recommend_limit_one(self, client: TestClient) -> None:
+        """Test collaborative filtering with minimum limit."""
+        request_data = {
+            "artist_id": "artist_12345",
+            "limit": 1,
+            "min_similarity": 0.3,
+        }
+
+        response = client.post("/api/ml/recommend/collaborative", json=request_data)
+        assert response.status_code == 200
+
+    def test_collaborative_recommend_limit_hundred(self, client: TestClient) -> None:
+        """Test collaborative filtering with maximum limit."""
+        request_data = {
+            "artist_id": "artist_12345",
+            "limit": 100,
+            "min_similarity": 0.3,
+        }
+
+        response = client.post("/api/ml/recommend/collaborative", json=request_data)
+        assert response.status_code == 200
+
+    def test_collaborative_recommend_special_characters_in_id(self, client: TestClient) -> None:
+        """Test collaborative filtering with special characters in artist ID."""
+        request_data = {
+            "artist_id": "artist-123_456!@#",
+            "limit": 10,
+            "min_similarity": 0.3,
+        }
+
+        response = client.post("/api/ml/recommend/collaborative", json=request_data)
+        assert response.status_code == 200
+
+    def test_hybrid_recommend_unicode_artist_name(self, client: TestClient) -> None:
+        """Test hybrid recommendations with Unicode artist name."""
+        request_data = {
+            "artist_name": "The Bëatles 音楽家",
+            "limit": 10,
+            "strategy": "weighted",
+        }
+
+        response = client.post("/api/ml/recommend/hybrid", json=request_data)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["artist_name"] == "The Bëatles 音楽家"
+
+    def test_ml_status_response_structure(self, client: TestClient) -> None:
+        """Test ML API status response has all required fields."""
+        response = client.get("/api/ml/status")
+        assert response.status_code == 200
+
+        data = response.json()
+        # Required top-level fields
+        assert "status" in data
+        assert "features" in data
+        assert "components" in data
+        assert "phase" in data
+        assert "timestamp" in data
+
+        # Required feature fields
+        assert "collaborative_filtering" in data["features"]
+        assert "hybrid_recommendations" in data["features"]
+        assert "explanations" in data["features"]
+        assert "ab_testing" in data["features"]
+        assert "metrics" in data["features"]
+
+        # Required component fields
+        assert "collaborative_filter" in data["components"]
+        assert "hybrid_recommender" in data["components"]
+        assert "explainer" in data["components"]
+
+
+class TestMLAPIResponseFormat:
+    """Test response format consistency."""
+
+    @pytest.fixture
+    def client(self) -> TestClient:
+        """Create a test client for the Discovery service."""
+        from discovery.discovery import app
+
+        return TestClient(app)
+
+    def test_collaborative_recommend_response_fields(self, client: TestClient) -> None:
+        """Test collaborative filtering response has all required fields."""
+        request_data = {
+            "artist_id": "artist_12345",
+            "limit": 10,
+            "min_similarity": 0.3,
+        }
+
+        response = client.post("/api/ml/recommend/collaborative", json=request_data)
+        assert response.status_code == 200
+
+        data = response.json()
+        # All required fields
+        assert "artist_id" in data
+        assert "recommendations" in data
+        assert "algorithm" in data
+        assert "total" in data
+        assert "min_similarity" in data
+        assert "status" in data
+        assert "timestamp" in data
+
+        # Verify types
+        assert isinstance(data["recommendations"], list)
+        assert isinstance(data["total"], int)
+        assert isinstance(data["min_similarity"], float)
+
+    def test_hybrid_recommend_response_fields(self, client: TestClient) -> None:
+        """Test hybrid recommendations response has all required fields."""
+        request_data = {
+            "artist_name": "The Beatles",
+            "limit": 10,
+            "strategy": "weighted",
+        }
+
+        response = client.post("/api/ml/recommend/hybrid", json=request_data)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "artist_name" in data
+        assert "recommendations" in data
+        assert "algorithm" in data
+        assert "strategy" in data
+        assert "total" in data
+        assert "status" in data
+        assert "timestamp" in data
+
+    def test_explain_recommendation_response_fields(self, client: TestClient) -> None:
+        """Test explanation response has all required fields."""
+        request_data = {
+            "artist_id": "artist_12345",
+            "recommended_id": "artist_67890",
+        }
+
+        response = client.post("/api/ml/recommend/explain", json=request_data)
+        assert response.status_code == 200
+
+        data = response.json()
+        assert "artist_id" in data
+        assert "recommended_id" in data
+        assert "explanation" in data
+        assert "reasons" in data
+        assert "confidence" in data
+        assert "evidence" in data
+        assert "status" in data
+        assert "timestamp" in data
+
+        # Verify types
+        assert isinstance(data["reasons"], list)
+        assert isinstance(data["confidence"], float)
+        assert isinstance(data["evidence"], dict)
