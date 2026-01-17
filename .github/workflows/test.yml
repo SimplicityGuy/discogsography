@@ -96,6 +96,11 @@ jobs:
       - name: 📦 Install dependencies
         run: just install
 
+      - name: 🎭 Install Playwright browsers
+        run: |
+          uv run playwright install chromium
+          uv run playwright install-deps chromium
+
       - name: 🧪 Run dashboard tests
         run: just test-dashboard
 
