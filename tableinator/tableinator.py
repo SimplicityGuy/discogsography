@@ -573,16 +573,17 @@ async def main() -> None:
         return
 
     # Initialize resilient connection pool for concurrent access
+    # Increased from max=20 to max=50 to match prefetch_count for better throughput
     try:
         connection_pool = ResilientPostgreSQLPool(
             connection_params=connection_params,
-            max_connections=20,
-            min_connections=2,
+            max_connections=50,
+            min_connections=5,
             max_retries=5,
             health_check_interval=30,
         )
         logger.info("🐘 Connected to PostgreSQL with resilient connection pool")
-        logger.info("✅ Connection pool initialized (min: 2, max: 20 connections)")
+        logger.info("✅ Connection pool initialized (min: 5, max: 50 connections)")
     except Exception as e:
         logger.error("❌ Failed to initialize connection pool", error=str(e))
         return

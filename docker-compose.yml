@@ -243,6 +243,10 @@ services:
       # Consumer management settings
       CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
       QUEUE_CHECK_INTERVAL: "3600"      # 1 hour between queue checks when idle
+      # Performance tuning - increased batch sizes for better throughput
+      NEO4J_BATCH_MODE: "true"
+      NEO4J_BATCH_SIZE: "500"          # Increased from 100 to 500
+      NEO4J_BATCH_FLUSH_INTERVAL: "2.0"  # Reduced from 5.0 for faster flushing
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -290,6 +294,10 @@ services:
       # Consumer management settings
       CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
       QUEUE_CHECK_INTERVAL: "3600"      # 1 hour between queue checks when idle
+      # Performance tuning - increased batch sizes for better throughput
+      POSTGRES_BATCH_MODE: "true"
+      POSTGRES_BATCH_SIZE: "500"          # Increased from 100 to 500
+      POSTGRES_BATCH_FLUSH_INTERVAL: "2.0"  # Reduced from 5.0 for faster flushing
     depends_on:
       rabbitmq:
         condition: service_healthy
