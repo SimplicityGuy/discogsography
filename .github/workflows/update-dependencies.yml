@@ -64,7 +64,7 @@ jobs:
 
           # Run the update script and capture output
           set +e
-          OUTPUT=$("$UPDATE_CMD" 2>&1)
+          OUTPUT=$(eval "$UPDATE_CMD" 2>&1)
           EXIT_CODE=$?
           set -e
 
