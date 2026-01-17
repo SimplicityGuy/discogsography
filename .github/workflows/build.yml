@@ -30,6 +30,8 @@ jobs:
     uses: ./.github/workflows/code-quality.yml
     secrets: inherit
 
+  # Test workflow runs all service tests in parallel
+  # Each service has its own job that runs independently
   run-tests:
     needs: [run-code-quality]
     uses: ./.github/workflows/test.yml
@@ -49,6 +51,7 @@ jobs:
       statuses: write  # Required for coverage status creation (only used on PRs)
 
   build-discogsography:
+    # Wait for both test workflows to complete before building
     needs: [list-sub-projects, run-tests, run-e2e-tests]
 
     runs-on: ubuntu-latest

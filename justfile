@@ -105,6 +105,101 @@ test-e2e:
 test-all:
     uv run pytest
 
+# Run all service tests in parallel for maximum speed
+[group('test')]
+test-parallel:
+    #!/usr/bin/env bash
+    set -e
+    echo "🚀 Running all service tests in parallel..."
+
+    # Run each service test in background
+    uv run pytest tests/common/ -v > /tmp/test-common.log 2>&1 &
+    pid_common=$!
+
+    uv run pytest tests/dashboard/ -v > /tmp/test-dashboard.log 2>&1 &
+    pid_dashboard=$!
+
+    uv run pytest tests/discovery/ -m 'not e2e' -v > /tmp/test-discovery.log 2>&1 &
+    pid_discovery=$!
+
+    uv run pytest tests/extractor/ -v > /tmp/test-pyextractor.log 2>&1 &
+    pid_pyextractor=$!
+
+    uv run pytest tests/graphinator/ -v > /tmp/test-graphinator.log 2>&1 &
+    pid_graphinator=$!
+
+    uv run pytest tests/tableinator/ -v > /tmp/test-tableinator.log 2>&1 &
+    pid_tableinator=$!
+
+    if [ -d "extractor/rustextractor" ]; then
+        (cd extractor/rustextractor && cargo test) > /tmp/test-rustextractor.log 2>&1 &
+        pid_rustextractor=$!
+    fi
+
+    # Wait for all tests and track results
+    failed=0
+
+    wait $pid_common || { echo "❌ Common tests failed"; cat /tmp/test-common.log; failed=1; }
+    wait $pid_dashboard || { echo "❌ Dashboard tests failed"; cat /tmp/test-dashboard.log; failed=1; }
+    wait $pid_discovery || { echo "❌ Discovery tests failed"; cat /tmp/test-discovery.log; failed=1; }
+    wait $pid_pyextractor || { echo "❌ PyExtractor tests failed"; cat /tmp/test-pyextractor.log; failed=1; }
+    wait $pid_graphinator || { echo "❌ Graphinator tests failed"; cat /tmp/test-graphinator.log; failed=1; }
+    wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
+
+    if [ -n "$pid_rustextractor" ]; then
+        wait $pid_rustextractor || { echo "❌ RustExtractor tests failed"; cat /tmp/test-rustextractor.log; failed=1; }
+    fi
+
+    if [ $failed -eq 0 ]; then
+        echo "✅ All service tests passed!"
+        # Show summary
+        echo ""
+        echo "📊 Test Summary:"
+        grep -h "passed" /tmp/test-*.log | tail -7
+    else
+        echo "❌ Some tests failed. Check logs above for details."
+        exit 1
+    fi
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Service-Specific Tests
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Run common/shared library tests
+[group('test')]
+test-common:
+    uv run pytest tests/common/ -v
+
+# Run dashboard service tests (including E2E if --e2e flag used)
+[group('test')]
+test-dashboard:
+    uv run pytest tests/dashboard/ -v
+
+# Run discovery service tests
+[group('test')]
+test-discovery:
+    uv run pytest tests/discovery/ -m 'not e2e' -v
+
+# Run Python extractor tests
+[group('test')]
+test-pyextractor:
+    uv run pytest tests/extractor/ -v
+
+# Run Rust extractor tests (same as rustextractor-test)
+[group('test')]
+test-rustextractor:
+    cd extractor/rustextractor && cargo test
+
+# Run graphinator service tests
+[group('test')]
+test-graphinator:
+    uv run pytest tests/graphinator/ -v
+
+# Run tableinator service tests
+[group('test')]
+test-tableinator:
+    uv run pytest tests/tableinator/ -v
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Python Services
 # ──────────────────────────────────────────────────────────────────────────────
