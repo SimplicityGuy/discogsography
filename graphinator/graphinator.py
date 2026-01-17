@@ -1323,10 +1323,10 @@ async def main() -> None:
 
             for label, prop in indexes_to_check:
                 try:
-                    # Get all indexes for this label and property
+                    # Get all indexes for this label and property (any type)
                     result = session.run(
-                        "SHOW INDEXES YIELD name, labelsOrTypes, properties, type "
-                        "WHERE $label IN labelsOrTypes AND $prop IN properties AND type = 'RANGE' "
+                        "SHOW INDEXES YIELD name, labelsOrTypes, properties "
+                        "WHERE $label IN labelsOrTypes AND $prop IN properties "
                         "RETURN name",
                         label=label,
                         prop=prop,
