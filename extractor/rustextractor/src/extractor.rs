@@ -215,7 +215,7 @@ async fn process_single_file(
 }
 
 /// Batch messages for efficient publishing
-async fn message_batcher(
+pub async fn message_batcher(
     mut receiver: mpsc::Receiver<DataMessage>,
     sender: mpsc::Sender<Vec<DataMessage>>,
     batch_size: usize,
@@ -352,7 +352,7 @@ fn extract_data_type(filename: &str) -> Option<DataType> {
 }
 
 /// Load processing state from file
-async fn load_processing_state(path: &PathBuf) -> Result<ProcessingState> {
+pub async fn load_processing_state(path: &PathBuf) -> Result<ProcessingState> {
     if !path.exists() {
         return Ok(ProcessingState::default());
     }
@@ -362,7 +362,7 @@ async fn load_processing_state(path: &PathBuf) -> Result<ProcessingState> {
 }
 
 /// Save processing state to file
-async fn save_processing_state(path: &PathBuf, state: &ProcessingState) -> Result<()> {
+pub async fn save_processing_state(path: &PathBuf, state: &ProcessingState) -> Result<()> {
     let json = serde_json::to_string_pretty(state)?;
     tokio::fs::write(path, json).await?;
     Ok(())

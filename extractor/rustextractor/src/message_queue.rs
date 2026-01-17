@@ -38,7 +38,7 @@ impl MessageQueue {
     /// Handles the case where a trailing slash in the URL (e.g., amqp://host:5672/)
     /// should be interpreted as the default vhost "/" rather than an empty vhost.
     /// This matches the behavior of Python's aio-pika library.
-    fn normalize_amqp_url(url: &str) -> Result<String> {
+    pub(crate) fn normalize_amqp_url(url: &str) -> Result<String> {
         let mut parsed_url = Url::parse(url).context("Failed to parse AMQP URL")?;
 
         // Get the path (which represents the vhost)
