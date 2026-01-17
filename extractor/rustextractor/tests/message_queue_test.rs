@@ -176,3 +176,214 @@ fn test_data_message_flattened_data() {
     // There should NOT be a nested "data" field
     assert!(json_value.get("data").is_none());
 }
+
+// Additional tests for DataType
+
+#[test]
+fn test_data_type_display() {
+    assert_eq!(DataType::Artists.to_string(), "artists");
+    assert_eq!(DataType::Labels.to_string(), "labels");
+    assert_eq!(DataType::Masters.to_string(), "masters");
+    assert_eq!(DataType::Releases.to_string(), "releases");
+}
+
+#[test]
+fn test_data_type_as_str() {
+    assert_eq!(DataType::Artists.as_str(), "artists");
+    assert_eq!(DataType::Labels.as_str(), "labels");
+    assert_eq!(DataType::Masters.as_str(), "masters");
+    assert_eq!(DataType::Releases.as_str(), "releases");
+}
+
+#[test]
+fn test_data_type_from_str() {
+    use std::str::FromStr;
+
+    assert_eq!(DataType::from_str("artists").unwrap(), DataType::Artists);
+    assert_eq!(DataType::from_str("labels").unwrap(), DataType::Labels);
+    assert_eq!(DataType::from_str("masters").unwrap(), DataType::Masters);
+    assert_eq!(DataType::from_str("releases").unwrap(), DataType::Releases);
+
+    // Test invalid data type
+    assert!(DataType::from_str("invalid").is_err());
+    assert!(DataType::from_str("").is_err());
+}
+
+#[test]
+fn test_message_enum_tagged() {
+    // Test that Message enum uses tagged format
+    let data_msg = DataMessage {
+        id: "123".to_string(),
+        sha256: "abc".to_string(),
+        data: json!({}),
+    };
+    let message = Message::Data(data_msg);
+    let json_str = serde_json::to_string(&message).unwrap();
+    assert!(json_str.contains("\"type\":\"data\""));
+
+    let fc_msg = FileCompleteMessage {
+        data_type: "test".to_string(),
+        timestamp: chrono::Utc::now(),
+        total_processed: 1,
+        file: "test.xml".to_string(),
+    };
+    let message = Message::FileComplete(fc_msg);
+    let json_str = serde_json::to_string(&message).unwrap();
+    assert!(json_str.contains("\"type\":\"file_complete\""));
+}
+
+#[test]
+fn test_data_message_with_empty_data() {
+    let message = DataMessage {
+        id: "123".to_string(),
+        sha256: "abc".to_string(),
+        data: json!({}),
+    };
+
+    let serialized = serde_json::to_string(&message).unwrap();
+    let deserialized: DataMessage = serde_json::from_str(&serialized).unwrap();
+
+    assert_eq!(deserialized.id, "123");
+    assert_eq!(deserialized.sha256, "abc");
+    assert!(deserialized.data.is_object());
+}
+
+#[test]
+fn test_file_complete_message_serialization_fields() {
+    let msg = FileCompleteMessage {
+        data_type: "artists".to_string(),
+        timestamp: chrono::Utc::now(),
+        total_processed: 999,
+        file: "test_file.xml.gz".to_string(),
+    };
+
+    let json_value = serde_json::to_value(&msg).unwrap();
+
+    assert_eq!(json_value["data_type"], "artists");
+    assert_eq!(json_value["total_processed"], 999);
+    assert_eq!(json_value["file"], "test_file.xml.gz");
+    assert!(json_value.get("timestamp").is_some());
+}
+
+#[test]
+fn test_data_message_large_data() {
+    // Test with large nested JSON data
+    let large_data = json!({
+        "artists": (0..100).map(|i| format!("artist_{}", i)).collect::<Vec<_>>(),
+        "labels": (0..100).map(|i| format!("label_{}", i)).collect::<Vec<_>>(),
+        "nested": {
+            "deep": {
+                "values": (0..100).collect::<Vec<_>>()
+            }
+        }
+    });
+
+    let message = DataMessage {
+        id: "large_test".to_string(),
+        sha256: "hash123".to_string(),
+        data: large_data.clone(),
+    };
+
+    let serialized = serde_json::to_string(&message).unwrap();
+    let deserialized: DataMessage = serde_json::from_str(&serialized).unwrap();
+
+    assert_eq!(deserialized.id, "large_test");
+    assert!(deserialized.data.get("artists").is_some());
+    assert!(deserialized.data.get("labels").is_some());
+    assert!(deserialized.data.get("nested").is_some());
+}
+
+// Note: normalize_amqp_url tests are in the module unit tests (src/message_queue.rs)
+// since it's a private function
+
+#[test]
+fn test_message_batch_serialization() {
+    let messages = vec![
+        DataMessage {
+            id: "1".to_string(),
+            sha256: "hash1".to_string(),
+            data: json!({"field": "value1"}),
+        },
+        DataMessage {
+            id: "2".to_string(),
+            sha256: "hash2".to_string(),
+            data: json!({"field": "value2"}),
+        },
+        DataMessage {
+            id: "3".to_string(),
+            sha256: "hash3".to_string(),
+            data: json!({"field": "value3"}),
+        },
+    ];
+
+    // Serialize batch
+    let serialized: Vec<String> = messages
+        .iter()
+        .map(|m| serde_json::to_string(&Message::Data(m.clone())).unwrap())
+        .collect();
+
+    assert_eq!(serialized.len(), 3);
+    for json_str in &serialized {
+        assert!(json_str.contains("\"type\":\"data\""));
+    }
+}
+
+#[test]
+fn test_data_type_equality() {
+    assert_eq!(DataType::Artists, DataType::Artists);
+    assert_ne!(DataType::Artists, DataType::Labels);
+    assert_ne!(DataType::Masters, DataType::Releases);
+}
+
+#[test]
+fn test_data_type_clone() {
+    let dt1 = DataType::Artists;
+    let dt2 = dt1;
+    assert_eq!(dt1, dt2);
+}
+
+#[test]
+fn test_message_size_estimation() {
+    let message = DataMessage {
+        id: "test_id".to_string(),
+        sha256: "a".repeat(64),
+        data: json!({
+            "name": "Test Artist",
+            "members": vec!["member1", "member2", "member3"],
+        }),
+    };
+
+    let serialized = serde_json::to_vec(&Message::Data(message)).unwrap();
+    // Verify reasonable message size (not too large)
+    assert!(serialized.len() < 1024); // Less than 1KB for typical message
+}
+
+#[test]
+fn test_file_complete_message_with_zero_processed() {
+    let msg = FileCompleteMessage {
+        data_type: "artists".to_string(),
+        timestamp: chrono::Utc::now(),
+        total_processed: 0,
+        file: "empty.xml".to_string(),
+    };
+
+    let serialized = serde_json::to_string(&msg).unwrap();
+    let deserialized: FileCompleteMessage = serde_json::from_str(&serialized).unwrap();
+
+    assert_eq!(deserialized.total_processed, 0);
+}
+
+#[test]
+fn test_file_complete_message_with_large_count() {
+    let msg = FileCompleteMessage {
+        data_type: "releases".to_string(),
+        timestamp: chrono::Utc::now(),
+        total_processed: 1_000_000_000, // 1 billion
+        file: "large.xml.gz".to_string(),
+    };
+
+    let serialized = serde_json::to_string(&msg).unwrap();
+    let deserialized: FileCompleteMessage = serde_json::from_str(&serialized).unwrap();
+
+    assert_eq!(deserialized.total_processed, 1_000_000_000);
+}
