@@ -47,8 +47,9 @@ runs:
       uses: actions/cache@v4
       with:
         path: ${{ runner.temp }}/.buildx-cache
-        key: ${{ runner.os }}-buildx-${{ inputs.service-name }}-${{ hashFiles(inputs.dockerfile-path) }}-${{ hashFiles('**/uv.lock') }}-${{ github.sha }}
+        # Primary key based on dependencies only (no github.sha)
+        # This allows cache reuse across commits when dependencies haven't changed
+        key: ${{ runner.os }}-buildx-${{ inputs.service-name }}-${{ hashFiles(inputs.dockerfile-path) }}-${{ hashFiles('**/uv.lock') }}
         restore-keys: |
-          ${{ runner.os }}-buildx-${{ inputs.service-name }}-${{ hashFiles(inputs.dockerfile-path) }}-${{ hashFiles('**/uv.lock') }}-
           ${{ runner.os }}-buildx-${{ inputs.service-name }}-${{ hashFiles(inputs.dockerfile-path) }}-
           ${{ runner.os }}-buildx-${{ inputs.service-name }}-
