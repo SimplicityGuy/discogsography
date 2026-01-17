@@ -3,7 +3,7 @@
 
 use rust_extractor::config::ExtractorConfig;
 use rust_extractor::extractor::{ExtractorState, process_discogs_data};
-use rust_extractor::types::{DataType, ProcessingState};
+use rust_extractor::types::{DataType, DataMessage, ProcessingState};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tempfile::TempDir;
@@ -364,4 +364,259 @@ async fn test_state_progress_tracking_accuracy() {
         };
         assert_eq!(actual_count, expected_count);
     }
+}
+
+// Additional tests for code paths
+
+#[test]
+fn test_data_type_all_conversions() {
+    use std::str::FromStr;
+
+    let all_types = [
+        DataType::Artists,
+        DataType::Labels,
+        DataType::Masters,
+        DataType::Releases,
+    ];
+
+    for data_type in all_types {
+        let as_str = data_type.to_string();
+        let routing_key = data_type.routing_key();
+        let from_str = DataType::from_str(&as_str).unwrap();
+
+        assert_eq!(routing_key, as_str);
+        assert_eq!(from_str, data_type);
+    }
+}
+
+#[test]
+fn test_extraction_progress_default() {
+    use rust_extractor::types::ExtractionProgress;
+
+    let progress = ExtractionProgress::default();
+    assert_eq!(progress.artists, 0);
+    assert_eq!(progress.labels, 0);
+    assert_eq!(progress.masters, 0);
+    assert_eq!(progress.releases, 0);
+    assert_eq!(progress.total(), 0);
+}
+
+#[test]
+fn test_extraction_progress_increment_all_types() {
+    use rust_extractor::types::ExtractionProgress;
+
+    let mut progress = ExtractionProgress::default();
+
+    // Increment all types different amounts
+    for _ in 0..10 {
+        progress.increment(DataType::Artists);
+    }
+    for _ in 0..20 {
+        progress.increment(DataType::Labels);
+    }
+    for _ in 0..30 {
+        progress.increment(DataType::Masters);
+    }
+    for _ in 0..40 {
+        progress.increment(DataType::Releases);
+    }
+
+    assert_eq!(progress.artists, 10);
+    assert_eq!(progress.labels, 20);
+    assert_eq!(progress.masters, 30);
+    assert_eq!(progress.releases, 40);
+    assert_eq!(progress.total(), 100);
+}
+
+#[tokio::test]
+async fn test_extractor_state_concurrent_file_tracking() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    let mut handles = vec![];
+
+    // Spawn multiple tasks adding files concurrently
+    for i in 0..10 {
+        let state_clone = state.clone();
+        let handle = tokio::spawn(async move {
+            let mut s = state_clone.write().await;
+            s.completed_files.insert(format!("file_{}.xml", i));
+        });
+        handles.push(handle);
+    }
+
+    for handle in handles {
+        handle.await.unwrap();
+    }
+
+    let s = state.read().await;
+    assert_eq!(s.completed_files.len(), 10);
+}
+
+#[tokio::test]
+async fn test_extractor_state_error_tracking() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    {
+        let mut s = state.write().await;
+        for _ in 0..5 {
+            s.error_count += 1;
+        }
+    }
+
+    let s = state.read().await;
+    assert_eq!(s.error_count, 5);
+}
+
+#[tokio::test]
+async fn test_message_batcher_empty_batch() {
+    use tokio::sync::mpsc;
+
+    let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(10);
+    let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    // Close sender immediately without sending messages
+    drop(parse_sender);
+
+    let batcher_handle = tokio::spawn(async move {
+        use rust_extractor::extractor::message_batcher;
+        message_batcher(parse_receiver, batch_sender, 10, DataType::Artists, state).await
+    });
+
+    // Should not receive any batches
+    let result = tokio::time::timeout(
+        tokio::time::Duration::from_millis(100),
+        batch_receiver.recv()
+    ).await;
+
+    assert!(result.is_err() || result.unwrap().is_none());
+
+    batcher_handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn test_message_batcher_single_message() {
+    use tokio::sync::mpsc;
+
+    let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(10);
+    let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    // Send one message
+    let msg = DataMessage {
+        id: "1".to_string(),
+        sha256: "hash1".to_string(),
+        data: serde_json::json!({"test": "value"}),
+    };
+    parse_sender.send(msg).await.unwrap();
+    drop(parse_sender);
+
+    let batcher_handle = tokio::spawn(async move {
+        use rust_extractor::extractor::message_batcher;
+        message_batcher(parse_receiver, batch_sender, 10, DataType::Labels, state).await
+    });
+
+    // Should receive one batch with one message
+    let batch = batch_receiver.recv().await.unwrap();
+    assert_eq!(batch.len(), 1);
+    assert_eq!(batch[0].id, "1");
+
+    batcher_handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn test_message_batcher_multiple_batches() {
+    use tokio::sync::mpsc;
+
+    let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(100);
+    let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    let batch_size = 5;
+
+    // Send exactly 2 full batches worth of messages
+    for i in 0..(batch_size * 2) {
+        let msg = DataMessage {
+            id: format!("{}", i),
+            sha256: format!("hash{}", i),
+            data: serde_json::json!({"test": format!("value{}", i)}),
+        };
+        parse_sender.send(msg).await.unwrap();
+    }
+    drop(parse_sender);
+
+    let batcher_handle = tokio::spawn(async move {
+        use rust_extractor::extractor::message_batcher;
+        message_batcher(parse_receiver, batch_sender, batch_size, DataType::Masters, state).await
+    });
+
+    // Should receive two batches
+    let batch1 = batch_receiver.recv().await.unwrap();
+    assert_eq!(batch1.len(), batch_size);
+
+    let batch2 = batch_receiver.recv().await.unwrap();
+    assert_eq!(batch2.len(), batch_size);
+
+    batcher_handle.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn test_extractor_state_current_task_tracking() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    {
+        let mut s = state.write().await;
+        s.current_task = Some("Processing artists file".to_string());
+        s.current_progress = 0.33;
+    }
+
+    let s = state.read().await;
+    assert_eq!(s.current_task, Some("Processing artists file".to_string()));
+    assert!((s.current_progress - 0.33).abs() < 0.001);
+}
+
+#[tokio::test]
+async fn test_processing_state_persistence_roundtrip() {
+    use tempfile::TempDir;
+    use rust_extractor::extractor::{load_processing_state, save_processing_state};
+
+    let temp_dir = TempDir::new().unwrap();
+    let path = temp_dir.path().join("state.json");
+
+    let mut state = ProcessingState::default();
+    state.mark_processed("file1.xml");
+    state.mark_processed("file2.xml");
+    state.mark_processed("file3.xml");
+
+    // Save
+    save_processing_state(&path, &state).await.unwrap();
+
+    // Load
+    let loaded = load_processing_state(&path).await.unwrap();
+
+    assert_eq!(loaded.files.len(), 3);
+    assert!(loaded.is_processed("file1.xml"));
+    assert!(loaded.is_processed("file2.xml"));
+    assert!(loaded.is_processed("file3.xml"));
+}
+
+#[tokio::test]
+async fn test_extractor_state_active_connections_removal() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    {
+        let mut s = state.write().await;
+        s.active_connections.insert(DataType::Artists, "file1.xml".to_string());
+        s.active_connections.insert(DataType::Labels, "file2.xml".to_string());
+    }
+
+    {
+        let mut s = state.write().await;
+        s.active_connections.remove(&DataType::Artists);
+    }
+
+    let s = state.read().await;
+    assert_eq!(s.active_connections.len(), 1);
+    assert!(s.active_connections.get(&DataType::Labels).is_some());
+    assert!(s.active_connections.get(&DataType::Artists).is_none());
 }
