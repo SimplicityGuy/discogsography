@@ -270,9 +270,10 @@ class TestMain:
 
         # Verify setup was performed
         assert mock_pool_class.call_count == 1
-        # Check that it was called with correct parameters
+        # Check that it was called with correct parameters (updated for performance optimization)
         call_args = mock_pool_class.call_args
-        assert call_args[1]["max_connections"] == 20
+        assert call_args[1]["max_connections"] == 50
+        assert call_args[1]["min_connections"] == 5
         mock_rabbitmq_class.assert_called_once()
 
         # The test exits early due to our mock, so some operations might not complete
