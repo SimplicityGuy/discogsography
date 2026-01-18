@@ -242,534 +242,558 @@ class Neo4jBatchProcessor:
 
         Uses a single transaction for all artists in the batch.
         """
-        # Separate artists that need updates from those that don't
-        artists_to_process = []
-        existing_hashes: dict[str, str] = {}
 
-        # First, check which artists need updates (by hash)
-        with self.driver.session(database="neo4j") as session:
-            # Get all IDs and their hashes
-            ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
-            if ids:
-                result = session.run(
-                    "UNWIND $ids AS id "
-                    "OPTIONAL MATCH (a:Artist {id: id}) "
-                    "RETURN id, a.sha256 AS hash",
-                    ids=ids,
-                )
-                for record in result:
-                    if record["hash"]:
-                        existing_hashes[record["id"]] = record["hash"]
+        def _process_sync() -> None:
+            """Synchronous processing logic to run in thread pool."""
+            # Separate artists that need updates from those that don't
+            artists_to_process = []
+            existing_hashes: dict[str, str] = {}
 
-        # Filter artists that need processing
-        for msg in messages:
-            artist_id = msg.data.get("id")
-            artist_hash = msg.data.get("sha256")
-            if artist_id and existing_hashes.get(artist_id) != artist_hash:
-                artists_to_process.append(msg.data)
+            # First, check which artists need updates (by hash)
+            with self.driver.session(database="neo4j") as session:
+                # Get all IDs and their hashes
+                ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
+                if ids:
+                    result = session.run(
+                        "UNWIND $ids AS id "
+                        "OPTIONAL MATCH (a:Artist {id: id}) "
+                        "RETURN id, a.sha256 AS hash",
+                        ids=ids,
+                    )
+                    for record in result:
+                        if record["hash"]:
+                            existing_hashes[record["id"]] = record["hash"]
 
-        if not artists_to_process:
-            logger.debug("⏩ All artists in batch already up to date")
-            return
+            # Filter artists that need processing
+            for msg in messages:
+                artist_id = msg.data.get("id")
+                artist_hash = msg.data.get("sha256")
+                if artist_id and existing_hashes.get(artist_id) != artist_hash:
+                    artists_to_process.append(msg.data)
 
-        # Process artists in a single transaction
-        with self.driver.session(database="neo4j") as session:
+            if not artists_to_process:
+                logger.debug("⏩ All artists in batch already up to date")
+                return
 
-            def batch_write(tx: Any) -> None:
-                # Create/update all artist nodes
-                tx.run(
-                    """
-                    UNWIND $artists AS artist
-                    MERGE (a:Artist {id: artist.id})
-                    SET a.name = artist.name,
-                        a.sha256 = artist.sha256,
-                        a.resource_url = 'https://api.discogs.com/artists/' + artist.id,
-                        a.releases_url = 'https://api.discogs.com/artists/' + artist.id + '/releases'
-                    """,
-                    artists=artists_to_process,
-                )
+            # Process artists in a single transaction
+            with self.driver.session(database="neo4j") as session:
 
-                # Process all member relationships
-                members_data = []
-                for artist in artists_to_process:
-                    if artist.get("members"):
-                        for member in artist["members"]:
-                            if member.get("id"):
-                                members_data.append(
-                                    {
-                                        "artist_id": artist["id"],
-                                        "member_id": member["id"],
-                                    }
-                                )
-                if members_data:
+                def batch_write(tx: Any) -> None:
+                    # Create/update all artist nodes
                     tx.run(
                         """
-                        UNWIND $members AS rel
-                        MATCH (a:Artist {id: rel.artist_id})
-                        MERGE (m:Artist {id: rel.member_id})
-                        MERGE (m)-[:MEMBER_OF]->(a)
+                        UNWIND $artists AS artist
+                        MERGE (a:Artist {id: artist.id})
+                        SET a.name = artist.name,
+                            a.sha256 = artist.sha256,
+                            a.resource_url = 'https://api.discogs.com/artists/' + artist.id,
+                            a.releases_url = 'https://api.discogs.com/artists/' + artist.id + '/releases'
                         """,
-                        members=members_data,
+                        artists=artists_to_process,
                     )
 
-                # Process all group relationships
-                groups_data = []
-                for artist in artists_to_process:
-                    if artist.get("groups"):
-                        for group in artist["groups"]:
-                            if group.get("id"):
-                                groups_data.append(
-                                    {
-                                        "artist_id": artist["id"],
-                                        "group_id": group["id"],
-                                    }
-                                )
-                if groups_data:
-                    tx.run(
-                        """
-                        UNWIND $groups AS rel
-                        MATCH (a:Artist {id: rel.artist_id})
-                        MERGE (g:Artist {id: rel.group_id})
-                        MERGE (a)-[:MEMBER_OF]->(g)
-                        """,
-                        groups=groups_data,
-                    )
+                    # Process all member relationships
+                    members_data = []
+                    for artist in artists_to_process:
+                        if artist.get("members"):
+                            for member in artist["members"]:
+                                if member.get("id"):
+                                    members_data.append(
+                                        {
+                                            "artist_id": artist["id"],
+                                            "member_id": member["id"],
+                                        }
+                                    )
+                    if members_data:
+                        tx.run(
+                            """
+                            UNWIND $members AS rel
+                            MATCH (a:Artist {id: rel.artist_id})
+                            MERGE (m:Artist {id: rel.member_id})
+                            MERGE (m)-[:MEMBER_OF]->(a)
+                            """,
+                            members=members_data,
+                        )
 
-                # Process all alias relationships
-                aliases_data = []
-                for artist in artists_to_process:
-                    if artist.get("aliases"):
-                        for alias in artist["aliases"]:
-                            if alias.get("id"):
-                                aliases_data.append(
-                                    {
-                                        "artist_id": artist["id"],
-                                        "alias_id": alias["id"],
-                                    }
-                                )
-                if aliases_data:
-                    tx.run(
-                        """
-                        UNWIND $aliases AS rel
-                        MATCH (a:Artist {id: rel.artist_id})
-                        MERGE (al:Artist {id: rel.alias_id})
-                        MERGE (al)-[:ALIAS_OF]->(a)
-                        """,
-                        aliases=aliases_data,
-                    )
+                    # Process all group relationships
+                    groups_data = []
+                    for artist in artists_to_process:
+                        if artist.get("groups"):
+                            for group in artist["groups"]:
+                                if group.get("id"):
+                                    groups_data.append(
+                                        {
+                                            "artist_id": artist["id"],
+                                            "group_id": group["id"],
+                                        }
+                                    )
+                    if groups_data:
+                        tx.run(
+                            """
+                            UNWIND $groups AS rel
+                            MATCH (a:Artist {id: rel.artist_id})
+                            MERGE (g:Artist {id: rel.group_id})
+                            MERGE (a)-[:MEMBER_OF]->(g)
+                            """,
+                            groups=groups_data,
+                        )
 
-            session.execute_write(batch_write)
+                    # Process all alias relationships
+                    aliases_data = []
+                    for artist in artists_to_process:
+                        if artist.get("aliases"):
+                            for alias in artist["aliases"]:
+                                if alias.get("id"):
+                                    aliases_data.append(
+                                        {
+                                            "artist_id": artist["id"],
+                                            "alias_id": alias["id"],
+                                        }
+                                    )
+                    if aliases_data:
+                        tx.run(
+                            """
+                            UNWIND $aliases AS rel
+                            MATCH (a:Artist {id: rel.artist_id})
+                            MERGE (al:Artist {id: rel.alias_id})
+                            MERGE (al)-[:ALIAS_OF]->(a)
+                            """,
+                            aliases=aliases_data,
+                        )
+
+                session.execute_write(batch_write)
+
+        # Run the synchronous processing in a thread pool
+        await asyncio.to_thread(_process_sync)
 
     async def _process_labels_batch(self, messages: list[PendingMessage]) -> None:
         """Process a batch of label records."""
-        labels_to_process = []
-        existing_hashes: dict[str, str] = {}
 
-        with self.driver.session(database="neo4j") as session:
-            ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
-            if ids:
-                result = session.run(
-                    "UNWIND $ids AS id "
-                    "OPTIONAL MATCH (l:Label {id: id}) "
-                    "RETURN id, l.sha256 AS hash",
-                    ids=ids,
-                )
-                for record in result:
-                    if record["hash"]:
-                        existing_hashes[record["id"]] = record["hash"]
+        def _process_sync() -> None:
+            """Synchronous processing logic to run in thread pool."""
+            labels_to_process = []
+            existing_hashes: dict[str, str] = {}
 
-        for msg in messages:
-            label_id = msg.data.get("id")
-            label_hash = msg.data.get("sha256")
-            if label_id and existing_hashes.get(label_id) != label_hash:
-                labels_to_process.append(msg.data)
+            with self.driver.session(database="neo4j") as session:
+                ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
+                if ids:
+                    result = session.run(
+                        "UNWIND $ids AS id "
+                        "OPTIONAL MATCH (l:Label {id: id}) "
+                        "RETURN id, l.sha256 AS hash",
+                        ids=ids,
+                    )
+                    for record in result:
+                        if record["hash"]:
+                            existing_hashes[record["id"]] = record["hash"]
 
-        if not labels_to_process:
-            logger.debug("⏩ All labels in batch already up to date")
-            return
+            for msg in messages:
+                label_id = msg.data.get("id")
+                label_hash = msg.data.get("sha256")
+                if label_id and existing_hashes.get(label_id) != label_hash:
+                    labels_to_process.append(msg.data)
 
-        with self.driver.session(database="neo4j") as session:
+            if not labels_to_process:
+                logger.debug("⏩ All labels in batch already up to date")
+                return
 
-            def batch_write(tx: Any) -> None:
-                # Create/update all label nodes
-                tx.run(
-                    """
-                    UNWIND $labels AS label
-                    MERGE (l:Label {id: label.id})
-                    SET l.name = label.name,
-                        l.sha256 = label.sha256
-                    """,
-                    labels=labels_to_process,
-                )
+            with self.driver.session(database="neo4j") as session:
 
-                # Process parent label relationships
-                parent_data = []
-                for label in labels_to_process:
-                    parent = label.get("parentLabel")
-                    if parent and parent.get("id"):
-                        parent_data.append(
-                            {
-                                "label_id": label["id"],
-                                "parent_id": parent["id"],
-                            }
+                def batch_write(tx: Any) -> None:
+                    # Create/update all label nodes
+                    tx.run(
+                        """
+                        UNWIND $labels AS label
+                        MERGE (l:Label {id: label.id})
+                        SET l.name = label.name,
+                            l.sha256 = label.sha256
+                        """,
+                        labels=labels_to_process,
+                    )
+
+                    # Process parent label relationships
+                    parent_data = []
+                    for label in labels_to_process:
+                        parent = label.get("parentLabel")
+                        if parent and parent.get("id"):
+                            parent_data.append(
+                                {
+                                    "label_id": label["id"],
+                                    "parent_id": parent["id"],
+                                }
+                            )
+                    if parent_data:
+                        tx.run(
+                            """
+                            UNWIND $parents AS rel
+                            MATCH (l:Label {id: rel.label_id})
+                            MERGE (p:Label {id: rel.parent_id})
+                            MERGE (l)-[:SUBLABEL_OF]->(p)
+                            """,
+                            parents=parent_data,
                         )
-                if parent_data:
-                    tx.run(
-                        """
-                        UNWIND $parents AS rel
-                        MATCH (l:Label {id: rel.label_id})
-                        MERGE (p:Label {id: rel.parent_id})
-                        MERGE (l)-[:SUBLABEL_OF]->(p)
-                        """,
-                        parents=parent_data,
-                    )
 
-                # Process sublabel relationships
-                sublabel_data = []
-                for label in labels_to_process:
-                    if label.get("sublabels"):
-                        for sublabel in label["sublabels"]:
-                            if sublabel.get("id"):
-                                sublabel_data.append(
-                                    {
-                                        "label_id": label["id"],
-                                        "sublabel_id": sublabel["id"],
-                                    }
-                                )
-                if sublabel_data:
-                    tx.run(
-                        """
-                        UNWIND $sublabels AS rel
-                        MATCH (l:Label {id: rel.label_id})
-                        MERGE (s:Label {id: rel.sublabel_id})
-                        MERGE (s)-[:SUBLABEL_OF]->(l)
-                        """,
-                        sublabels=sublabel_data,
-                    )
+                    # Process sublabel relationships
+                    sublabel_data = []
+                    for label in labels_to_process:
+                        if label.get("sublabels"):
+                            for sublabel in label["sublabels"]:
+                                if sublabel.get("id"):
+                                    sublabel_data.append(
+                                        {
+                                            "label_id": label["id"],
+                                            "sublabel_id": sublabel["id"],
+                                        }
+                                    )
+                    if sublabel_data:
+                        tx.run(
+                            """
+                            UNWIND $sublabels AS rel
+                            MATCH (l:Label {id: rel.label_id})
+                            MERGE (s:Label {id: rel.sublabel_id})
+                            MERGE (s)-[:SUBLABEL_OF]->(l)
+                            """,
+                            sublabels=sublabel_data,
+                        )
 
-            session.execute_write(batch_write)
+                session.execute_write(batch_write)
+
+        # Run the synchronous processing in a thread pool
+        await asyncio.to_thread(_process_sync)
 
     async def _process_masters_batch(self, messages: list[PendingMessage]) -> None:
         """Process a batch of master records."""
-        masters_to_process = []
-        existing_hashes: dict[str, str] = {}
 
-        with self.driver.session(database="neo4j") as session:
-            ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
-            if ids:
-                result = session.run(
-                    "UNWIND $ids AS id "
-                    "OPTIONAL MATCH (m:Master {id: id}) "
-                    "RETURN id, m.sha256 AS hash",
-                    ids=ids,
-                )
-                for record in result:
-                    if record["hash"]:
-                        existing_hashes[record["id"]] = record["hash"]
+        def _process_sync() -> None:
+            """Synchronous processing logic to run in thread pool."""
+            masters_to_process = []
+            existing_hashes: dict[str, str] = {}
 
-        for msg in messages:
-            master_id = msg.data.get("id")
-            master_hash = msg.data.get("sha256")
-            if master_id and existing_hashes.get(master_id) != master_hash:
-                masters_to_process.append(msg.data)
+            with self.driver.session(database="neo4j") as session:
+                ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
+                if ids:
+                    result = session.run(
+                        "UNWIND $ids AS id "
+                        "OPTIONAL MATCH (m:Master {id: id}) "
+                        "RETURN id, m.sha256 AS hash",
+                        ids=ids,
+                    )
+                    for record in result:
+                        if record["hash"]:
+                            existing_hashes[record["id"]] = record["hash"]
 
-        if not masters_to_process:
-            logger.debug("⏩ All masters in batch already up to date")
-            return
+            for msg in messages:
+                master_id = msg.data.get("id")
+                master_hash = msg.data.get("sha256")
+                if master_id and existing_hashes.get(master_id) != master_hash:
+                    masters_to_process.append(msg.data)
 
-        with self.driver.session(database="neo4j") as session:
+            if not masters_to_process:
+                logger.debug("⏩ All masters in batch already up to date")
+                return
 
-            def batch_write(tx: Any) -> None:
-                # Create/update all master nodes
-                tx.run(
-                    """
-                    UNWIND $masters AS master
-                    MERGE (m:Master {id: master.id})
-                    SET m.title = master.title,
-                        m.year = master.year,
-                        m.sha256 = master.sha256
-                    """,
-                    masters=masters_to_process,
-                )
+            with self.driver.session(database="neo4j") as session:
 
-                # Process artist relationships
-                artist_data = []
-                for master in masters_to_process:
-                    if master.get("artists"):
-                        for artist in master["artists"]:
-                            if artist.get("id"):
-                                artist_data.append(
-                                    {
-                                        "master_id": master["id"],
-                                        "artist_id": artist["id"],
-                                    }
-                                )
-                if artist_data:
+                def batch_write(tx: Any) -> None:
+                    # Create/update all master nodes
                     tx.run(
                         """
-                        UNWIND $artists AS rel
-                        MATCH (m:Master {id: rel.master_id})
-                        MERGE (a:Artist {id: rel.artist_id})
-                        MERGE (m)-[:BY]->(a)
+                        UNWIND $masters AS master
+                        MERGE (m:Master {id: master.id})
+                        SET m.title = master.title,
+                            m.year = master.year,
+                            m.sha256 = master.sha256
                         """,
-                        artists=artist_data,
+                        masters=masters_to_process,
                     )
 
-                # Process genre relationships
-                genre_data = []
-                for master in masters_to_process:
-                    if master.get("genres"):
-                        for genre in master["genres"]:
-                            if genre:
-                                genre_data.append(
-                                    {
-                                        "master_id": master["id"],
-                                        "genre": genre,
-                                    }
-                                )
-                if genre_data:
-                    tx.run(
-                        """
-                        UNWIND $genres AS rel
-                        MATCH (m:Master {id: rel.master_id})
-                        MERGE (g:Genre {name: rel.genre})
-                        MERGE (m)-[:IS]->(g)
-                        """,
-                        genres=genre_data,
-                    )
+                    # Process artist relationships
+                    artist_data = []
+                    for master in masters_to_process:
+                        if master.get("artists"):
+                            for artist in master["artists"]:
+                                if artist.get("id"):
+                                    artist_data.append(
+                                        {
+                                            "master_id": master["id"],
+                                            "artist_id": artist["id"],
+                                        }
+                                    )
+                    if artist_data:
+                        tx.run(
+                            """
+                            UNWIND $artists AS rel
+                            MATCH (m:Master {id: rel.master_id})
+                            MERGE (a:Artist {id: rel.artist_id})
+                            MERGE (m)-[:BY]->(a)
+                            """,
+                            artists=artist_data,
+                        )
 
-                # Process style relationships
-                style_data = []
-                for master in masters_to_process:
-                    if master.get("styles"):
-                        for style in master["styles"]:
-                            if style:
-                                style_data.append(
-                                    {
-                                        "master_id": master["id"],
-                                        "style": style,
-                                    }
-                                )
-                if style_data:
-                    tx.run(
-                        """
-                        UNWIND $styles AS rel
-                        MATCH (m:Master {id: rel.master_id})
-                        MERGE (s:Style {name: rel.style})
-                        MERGE (m)-[:IS]->(s)
-                        """,
-                        styles=style_data,
-                    )
+                    # Process genre relationships
+                    genre_data = []
+                    for master in masters_to_process:
+                        if master.get("genres"):
+                            for genre in master["genres"]:
+                                if genre:
+                                    genre_data.append(
+                                        {
+                                            "master_id": master["id"],
+                                            "genre": genre,
+                                        }
+                                    )
+                    if genre_data:
+                        tx.run(
+                            """
+                            UNWIND $genres AS rel
+                            MATCH (m:Master {id: rel.master_id})
+                            MERGE (g:Genre {name: rel.genre})
+                            MERGE (m)-[:IS]->(g)
+                            """,
+                            genres=genre_data,
+                        )
 
-                # Connect styles to genres
-                genre_style_data = []
-                for master in masters_to_process:
-                    genres = master.get("genres", [])
-                    styles = master.get("styles", [])
-                    for genre in genres:
-                        for style in styles:
-                            if genre and style:
-                                genre_style_data.append(
-                                    {
-                                        "genre": genre,
-                                        "style": style,
-                                    }
-                                )
-                if genre_style_data:
-                    tx.run(
-                        """
-                        UNWIND $pairs AS pair
-                        MERGE (g:Genre {name: pair.genre})
-                        MERGE (s:Style {name: pair.style})
-                        MERGE (s)-[:PART_OF]->(g)
-                        """,
-                        pairs=genre_style_data,
-                    )
+                    # Process style relationships
+                    style_data = []
+                    for master in masters_to_process:
+                        if master.get("styles"):
+                            for style in master["styles"]:
+                                if style:
+                                    style_data.append(
+                                        {
+                                            "master_id": master["id"],
+                                            "style": style,
+                                        }
+                                    )
+                    if style_data:
+                        tx.run(
+                            """
+                            UNWIND $styles AS rel
+                            MATCH (m:Master {id: rel.master_id})
+                            MERGE (s:Style {name: rel.style})
+                            MERGE (m)-[:IS]->(s)
+                            """,
+                            styles=style_data,
+                        )
 
-            session.execute_write(batch_write)
+                    # Connect styles to genres
+                    genre_style_data = []
+                    for master in masters_to_process:
+                        genres = master.get("genres", [])
+                        styles = master.get("styles", [])
+                        for genre in genres:
+                            for style in styles:
+                                if genre and style:
+                                    genre_style_data.append(
+                                        {
+                                            "genre": genre,
+                                            "style": style,
+                                        }
+                                    )
+                    if genre_style_data:
+                        tx.run(
+                            """
+                            UNWIND $pairs AS pair
+                            MERGE (g:Genre {name: pair.genre})
+                            MERGE (s:Style {name: pair.style})
+                            MERGE (s)-[:PART_OF]->(g)
+                            """,
+                            pairs=genre_style_data,
+                        )
+
+                session.execute_write(batch_write)
+
+        # Run the synchronous processing in a thread pool
+        await asyncio.to_thread(_process_sync)
 
     async def _process_releases_batch(self, messages: list[PendingMessage]) -> None:
         """Process a batch of release records."""
-        releases_to_process = []
-        existing_hashes: dict[str, str] = {}
 
-        with self.driver.session(database="neo4j") as session:
-            ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
-            if ids:
-                result = session.run(
-                    "UNWIND $ids AS id "
-                    "OPTIONAL MATCH (r:Release {id: id}) "
-                    "RETURN id, r.sha256 AS hash",
-                    ids=ids,
-                )
-                for record in result:
-                    if record["hash"]:
-                        existing_hashes[record["id"]] = record["hash"]
+        def _process_sync() -> None:
+            """Synchronous processing logic to run in thread pool."""
+            releases_to_process = []
+            existing_hashes: dict[str, str] = {}
 
-        for msg in messages:
-            release_id = msg.data.get("id")
-            release_hash = msg.data.get("sha256")
-            if release_id and existing_hashes.get(release_id) != release_hash:
-                releases_to_process.append(msg.data)
+            with self.driver.session(database="neo4j") as session:
+                ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
+                if ids:
+                    result = session.run(
+                        "UNWIND $ids AS id "
+                        "OPTIONAL MATCH (r:Release {id: id}) "
+                        "RETURN id, r.sha256 AS hash",
+                        ids=ids,
+                    )
+                    for record in result:
+                        if record["hash"]:
+                            existing_hashes[record["id"]] = record["hash"]
 
-        if not releases_to_process:
-            logger.debug("⏩ All releases in batch already up to date")
-            return
+            for msg in messages:
+                release_id = msg.data.get("id")
+                release_hash = msg.data.get("sha256")
+                if release_id and existing_hashes.get(release_id) != release_hash:
+                    releases_to_process.append(msg.data)
 
-        with self.driver.session(database="neo4j") as session:
+            if not releases_to_process:
+                logger.debug("⏩ All releases in batch already up to date")
+                return
 
-            def batch_write(tx: Any) -> None:
-                # Create/update all release nodes
-                tx.run(
-                    """
-                    UNWIND $releases AS release
-                    MERGE (r:Release {id: release.id})
-                    SET r.title = release.title,
-                        r.sha256 = release.sha256
-                    """,
-                    releases=releases_to_process,
-                )
+            with self.driver.session(database="neo4j") as session:
 
-                # Process artist relationships (Release)-[:BY]->(Artist)
-                artist_data = []
-                for release in releases_to_process:
-                    if release.get("artists"):
-                        for artist in release["artists"]:
-                            if artist.get("id"):
-                                artist_data.append(
-                                    {
-                                        "release_id": release["id"],
-                                        "artist_id": artist["id"],
-                                    }
-                                )
-                if artist_data:
+                def batch_write(tx: Any) -> None:
+                    # Create/update all release nodes
                     tx.run(
                         """
-                        UNWIND $artists AS rel
-                        MATCH (r:Release {id: rel.release_id})
-                        MERGE (a:Artist {id: rel.artist_id})
-                        MERGE (r)-[:BY]->(a)
+                        UNWIND $releases AS release
+                        MERGE (r:Release {id: release.id})
+                        SET r.title = release.title,
+                            r.sha256 = release.sha256
                         """,
-                        artists=artist_data,
+                        releases=releases_to_process,
                     )
 
-                # Process label relationships (Release)-[:ON]->(Label)
-                label_data = []
-                for release in releases_to_process:
-                    if release.get("labels"):
-                        for label in release["labels"]:
-                            if label.get("id"):
-                                label_data.append(
-                                    {
-                                        "release_id": release["id"],
-                                        "label_id": label["id"],
-                                    }
-                                )
-                if label_data:
-                    tx.run(
-                        """
-                        UNWIND $labels AS rel
-                        MATCH (r:Release {id: rel.release_id})
-                        MERGE (l:Label {id: rel.label_id})
-                        MERGE (r)-[:ON]->(l)
-                        """,
-                        labels=label_data,
-                    )
-
-                # Process master relationships (Release)-[:DERIVED_FROM]->(Master)
-                master_data = []
-                for release in releases_to_process:
-                    master_id = release.get("master_id")
-                    if master_id:
-                        master_data.append(
-                            {
-                                "release_id": release["id"],
-                                "master_id": str(master_id),
-                            }
+                    # Process artist relationships (Release)-[:BY]->(Artist)
+                    artist_data = []
+                    for release in releases_to_process:
+                        if release.get("artists"):
+                            for artist in release["artists"]:
+                                if artist.get("id"):
+                                    artist_data.append(
+                                        {
+                                            "release_id": release["id"],
+                                            "artist_id": artist["id"],
+                                        }
+                                    )
+                    if artist_data:
+                        tx.run(
+                            """
+                            UNWIND $artists AS rel
+                            MATCH (r:Release {id: rel.release_id})
+                            MERGE (a:Artist {id: rel.artist_id})
+                            MERGE (r)-[:BY]->(a)
+                            """,
+                            artists=artist_data,
                         )
-                if master_data:
-                    tx.run(
-                        """
-                        UNWIND $masters AS rel
-                        MATCH (r:Release {id: rel.release_id})
-                        MERGE (m:Master {id: rel.master_id})
-                        MERGE (r)-[:DERIVED_FROM]->(m)
-                        """,
-                        masters=master_data,
-                    )
 
-                # Process genre relationships
-                genre_data = []
-                for release in releases_to_process:
-                    if release.get("genres"):
-                        for genre in release["genres"]:
-                            if genre:
-                                genre_data.append(
-                                    {
-                                        "release_id": release["id"],
-                                        "genre": genre,
-                                    }
-                                )
-                if genre_data:
-                    tx.run(
-                        """
-                        UNWIND $genres AS rel
-                        MATCH (r:Release {id: rel.release_id})
-                        MERGE (g:Genre {name: rel.genre})
-                        MERGE (r)-[:IS]->(g)
-                        """,
-                        genres=genre_data,
-                    )
+                    # Process label relationships (Release)-[:ON]->(Label)
+                    label_data = []
+                    for release in releases_to_process:
+                        if release.get("labels"):
+                            for label in release["labels"]:
+                                if label.get("id"):
+                                    label_data.append(
+                                        {
+                                            "release_id": release["id"],
+                                            "label_id": label["id"],
+                                        }
+                                    )
+                    if label_data:
+                        tx.run(
+                            """
+                            UNWIND $labels AS rel
+                            MATCH (r:Release {id: rel.release_id})
+                            MERGE (l:Label {id: rel.label_id})
+                            MERGE (r)-[:ON]->(l)
+                            """,
+                            labels=label_data,
+                        )
 
-                # Process style relationships
-                style_data = []
-                for release in releases_to_process:
-                    if release.get("styles"):
-                        for style in release["styles"]:
-                            if style:
-                                style_data.append(
-                                    {
-                                        "release_id": release["id"],
-                                        "style": style,
-                                    }
-                                )
-                if style_data:
-                    tx.run(
-                        """
-                        UNWIND $styles AS rel
-                        MATCH (r:Release {id: rel.release_id})
-                        MERGE (s:Style {name: rel.style})
-                        MERGE (r)-[:IS]->(s)
-                        """,
-                        styles=style_data,
-                    )
+                    # Process master relationships (Release)-[:DERIVED_FROM]->(Master)
+                    master_data = []
+                    for release in releases_to_process:
+                        master_id = release.get("master_id")
+                        if master_id:
+                            master_data.append(
+                                {
+                                    "release_id": release["id"],
+                                    "master_id": str(master_id),
+                                }
+                            )
+                    if master_data:
+                        tx.run(
+                            """
+                            UNWIND $masters AS rel
+                            MATCH (r:Release {id: rel.release_id})
+                            MERGE (m:Master {id: rel.master_id})
+                            MERGE (r)-[:DERIVED_FROM]->(m)
+                            """,
+                            masters=master_data,
+                        )
 
-                # Connect styles to genres
-                genre_style_data = []
-                for release in releases_to_process:
-                    genres = release.get("genres", [])
-                    styles = release.get("styles", [])
-                    for genre in genres:
-                        for style in styles:
-                            if genre and style:
-                                genre_style_data.append(
-                                    {
-                                        "genre": genre,
-                                        "style": style,
-                                    }
-                                )
-                if genre_style_data:
-                    tx.run(
-                        """
-                        UNWIND $pairs AS pair
-                        MERGE (g:Genre {name: pair.genre})
-                        MERGE (s:Style {name: pair.style})
-                        MERGE (s)-[:PART_OF]->(g)
-                        """,
-                        pairs=genre_style_data,
-                    )
+                    # Process genre relationships
+                    genre_data = []
+                    for release in releases_to_process:
+                        if release.get("genres"):
+                            for genre in release["genres"]:
+                                if genre:
+                                    genre_data.append(
+                                        {
+                                            "release_id": release["id"],
+                                            "genre": genre,
+                                        }
+                                    )
+                    if genre_data:
+                        tx.run(
+                            """
+                            UNWIND $genres AS rel
+                            MATCH (r:Release {id: rel.release_id})
+                            MERGE (g:Genre {name: rel.genre})
+                            MERGE (r)-[:IS]->(g)
+                            """,
+                            genres=genre_data,
+                        )
 
-            session.execute_write(batch_write)
+                    # Process style relationships
+                    style_data = []
+                    for release in releases_to_process:
+                        if release.get("styles"):
+                            for style in release["styles"]:
+                                if style:
+                                    style_data.append(
+                                        {
+                                            "release_id": release["id"],
+                                            "style": style,
+                                        }
+                                    )
+                    if style_data:
+                        tx.run(
+                            """
+                            UNWIND $styles AS rel
+                            MATCH (r:Release {id: rel.release_id})
+                            MERGE (s:Style {name: rel.style})
+                            MERGE (r)-[:IS]->(s)
+                            """,
+                            styles=style_data,
+                        )
+
+                    # Connect styles to genres
+                    genre_style_data = []
+                    for release in releases_to_process:
+                        genres = release.get("genres", [])
+                        styles = release.get("styles", [])
+                        for genre in genres:
+                            for style in styles:
+                                if genre and style:
+                                    genre_style_data.append(
+                                        {
+                                            "genre": genre,
+                                            "style": style,
+                                        }
+                                    )
+                    if genre_style_data:
+                        tx.run(
+                            """
+                            UNWIND $pairs AS pair
+                            MERGE (g:Genre {name: pair.genre})
+                            MERGE (s:Style {name: pair.style})
+                            MERGE (s)-[:PART_OF]->(g)
+                            """,
+                            pairs=genre_style_data,
+                        )
+
+                session.execute_write(batch_write)
+
+        # Run the synchronous processing in a thread pool
+        await asyncio.to_thread(_process_sync)
 
     async def flush_all(self) -> None:
         """Flush all pending queues."""
