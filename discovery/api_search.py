@@ -73,7 +73,7 @@ async def initialize_search_api(neo4j_driver: Any, postgres_conn: Any) -> None: 
 
     Args:
         neo4j_driver: Neo4j async driver instance
-        postgres_conn: PostgreSQL async connection
+        postgres_conn: PostgreSQL async engine (SQLAlchemy AsyncEngine)
     """
     global search_api_initialized, fulltext_search, semantic_search, faceted_search, search_ranker
 

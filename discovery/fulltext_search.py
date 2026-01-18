@@ -8,8 +8,8 @@ from enum import Enum
 from typing import Any
 
 import structlog
-from psycopg import AsyncConnection
-from psycopg.rows import dict_row
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 
 logger = structlog.get_logger(__name__)
@@ -37,13 +37,13 @@ class SearchOperator(str, Enum):
 class FullTextSearch:
     """Full-text search engine using PostgreSQL."""
 
-    def __init__(self, db_conn: AsyncConnection) -> None:
+    def __init__(self, db_engine: AsyncEngine) -> None:
         """Initialize full-text search.
 
         Args:
-            db_conn: PostgreSQL async connection
+            db_engine: PostgreSQL async engine (SQLAlchemy)
         """
-        self.db_conn = db_conn
+        self.db_engine = db_engine
 
     async def search(
         self,
@@ -140,27 +140,34 @@ class FullTextSearch:
         Returns:
             List of matching artists with scores
         """
-        query = """
+        query = text("""
             SELECT
                 id,
                 name,
-                ts_rank(to_tsvector('english', name), to_tsquery('english', %s)) AS rank,
+                ts_rank(to_tsvector('english', name), to_tsquery('english', :tsquery1)) AS rank,
                 'artist' AS entity_type
             FROM artists
-            WHERE to_tsvector('english', name) @@ to_tsquery('english', %s)
-                AND ts_rank(to_tsvector('english', name), to_tsquery('english', %s)) > %s
+            WHERE to_tsvector('english', name) @@ to_tsquery('english', :tsquery2)
+                AND ts_rank(to_tsvector('english', name), to_tsquery('english', :tsquery3)) > :rank_threshold
             ORDER BY rank DESC, name
-            LIMIT %s OFFSET %s
-        """
+            LIMIT :limit OFFSET :offset
+        """)
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(
                 query,
-                (tsquery, tsquery, tsquery, rank_threshold, limit, offset),
+                {
+                    "tsquery1": tsquery,
+                    "tsquery2": tsquery,
+                    "tsquery3": tsquery,
+                    "rank_threshold": rank_threshold,
+                    "limit": limit,
+                    "offset": offset,
+                },
             )
-            results = await cursor.fetchall()
+            rows = result.mappings().all()
 
-        return [dict(row) for row in results]
+        return [dict(row) for row in rows]
 
     async def _search_releases(
         self,
@@ -180,28 +187,35 @@ class FullTextSearch:
         Returns:
             List of matching releases with scores
         """
-        query = """
+        query = text("""
             SELECT
                 id,
                 title,
                 year,
-                ts_rank(to_tsvector('english', title), to_tsquery('english', %s)) AS rank,
+                ts_rank(to_tsvector('english', title), to_tsquery('english', :tsquery1)) AS rank,
                 'release' AS entity_type
             FROM releases
-            WHERE to_tsvector('english', title) @@ to_tsquery('english', %s)
-                AND ts_rank(to_tsvector('english', title), to_tsquery('english', %s)) > %s
+            WHERE to_tsvector('english', title) @@ to_tsquery('english', :tsquery2)
+                AND ts_rank(to_tsvector('english', title), to_tsquery('english', :tsquery3)) > :rank_threshold
             ORDER BY rank DESC, title
-            LIMIT %s OFFSET %s
-        """
+            LIMIT :limit OFFSET :offset
+        """)
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(
                 query,
-                (tsquery, tsquery, tsquery, rank_threshold, limit, offset),
+                {
+                    "tsquery1": tsquery,
+                    "tsquery2": tsquery,
+                    "tsquery3": tsquery,
+                    "rank_threshold": rank_threshold,
+                    "limit": limit,
+                    "offset": offset,
+                },
             )
-            results = await cursor.fetchall()
+            rows = result.mappings().all()
 
-        return [dict(row) for row in results]
+        return [dict(row) for row in rows]
 
     async def _search_labels(
         self,
@@ -221,27 +235,34 @@ class FullTextSearch:
         Returns:
             List of matching labels with scores
         """
-        query = """
+        query = text("""
             SELECT
                 id,
                 name,
-                ts_rank(to_tsvector('english', name), to_tsquery('english', %s)) AS rank,
+                ts_rank(to_tsvector('english', name), to_tsquery('english', :tsquery1)) AS rank,
                 'label' AS entity_type
             FROM labels
-            WHERE to_tsvector('english', name) @@ to_tsquery('english', %s)
-                AND ts_rank(to_tsvector('english', name), to_tsquery('english', %s)) > %s
+            WHERE to_tsvector('english', name) @@ to_tsquery('english', :tsquery2)
+                AND ts_rank(to_tsvector('english', name), to_tsquery('english', :tsquery3)) > :rank_threshold
             ORDER BY rank DESC, name
-            LIMIT %s OFFSET %s
-        """
+            LIMIT :limit OFFSET :offset
+        """)
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(
                 query,
-                (tsquery, tsquery, tsquery, rank_threshold, limit, offset),
+                {
+                    "tsquery1": tsquery,
+                    "tsquery2": tsquery,
+                    "tsquery3": tsquery,
+                    "rank_threshold": rank_threshold,
+                    "limit": limit,
+                    "offset": offset,
+                },
             )
-            results = await cursor.fetchall()
+            rows = result.mappings().all()
 
-        return [dict(row) for row in results]
+        return [dict(row) for row in rows]
 
     async def _search_masters(
         self,
@@ -261,28 +282,35 @@ class FullTextSearch:
         Returns:
             List of matching masters with scores
         """
-        query = """
+        query = text("""
             SELECT
                 id,
                 title,
                 year,
-                ts_rank(to_tsvector('english', title), to_tsquery('english', %s)) AS rank,
+                ts_rank(to_tsvector('english', title), to_tsquery('english', :tsquery1)) AS rank,
                 'master' AS entity_type
             FROM masters
-            WHERE to_tsvector('english', title) @@ to_tsquery('english', %s)
-                AND ts_rank(to_tsvector('english', title), to_tsquery('english', %s)) > %s
+            WHERE to_tsvector('english', title) @@ to_tsquery('english', :tsquery2)
+                AND ts_rank(to_tsvector('english', title), to_tsquery('english', :tsquery3)) > :rank_threshold
             ORDER BY rank DESC, title
-            LIMIT %s OFFSET %s
-        """
+            LIMIT :limit OFFSET :offset
+        """)
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(
                 query,
-                (tsquery, tsquery, tsquery, rank_threshold, limit, offset),
+                {
+                    "tsquery1": tsquery,
+                    "tsquery2": tsquery,
+                    "tsquery3": tsquery,
+                    "rank_threshold": rank_threshold,
+                    "limit": limit,
+                    "offset": offset,
+                },
             )
-            results = await cursor.fetchall()
+            rows = result.mappings().all()
 
-        return [dict(row) for row in results]
+        return [dict(row) for row in rows]
 
     async def _search_all_entities(
         self,
@@ -351,24 +379,24 @@ class FullTextSearch:
             column = "name"
 
         # Safe: table and column names are from enum mapping, values are parameterized
-        query = f"""
+        query = text(f"""
             SELECT
                 id,
                 {column} AS name,
                 '{entity.value}' AS entity_type
             FROM {table}
-            WHERE LOWER({column}) LIKE LOWER(%s)
+            WHERE LOWER({column}) LIKE LOWER(:search_pattern)
             ORDER BY {column}
-            LIMIT %s
-        """  # noqa: S608  # nosec: B608
+            LIMIT :limit
+        """)  # noqa: S608  # nosec: B608
 
         search_pattern = f"{prefix}%"
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, (search_pattern, limit))
-            results = await cursor.fetchall()
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(query, {"search_pattern": search_pattern, "limit": limit})
+            rows = result.mappings().all()
 
-        return [dict(row) for row in results]
+        return [dict(row) for row in rows]
 
     async def search_with_filters(
         self,
@@ -430,30 +458,43 @@ class FullTextSearch:
             conditions.append("year <= %s")
             params.append(filters["year_max"])
 
-        where_clause = " AND ".join(conditions)
+        # Build WHERE clause with named parameters
+        conditions_named = ["to_tsvector('english', title) @@ to_tsquery('english', :tsquery)"]
+        params_dict: dict[str, Any] = {"tsquery": tsquery, "tsquery_rank": tsquery}
+
+        # Year range filter
+        if "year_min" in filters:
+            conditions_named.append("year >= :year_min")
+            params_dict["year_min"] = filters["year_min"]
+
+        if "year_max" in filters:
+            conditions_named.append("year <= :year_max")
+            params_dict["year_max"] = filters["year_max"]
+
+        where_clause = " AND ".join(conditions_named)
 
         # Safe: where_clause built from validated conditions, values are parameterized
-        query = f"""
+        query = text(f"""
             SELECT
                 id,
                 title,
                 year,
-                ts_rank(to_tsvector('english', title), to_tsquery('english', %s)) AS rank,
+                ts_rank(to_tsvector('english', title), to_tsquery('english', :tsquery_rank)) AS rank,
                 'release' AS entity_type
             FROM releases
             WHERE {where_clause}
             ORDER BY rank DESC, title
-            LIMIT %s OFFSET %s
-        """  # noqa: S608  # nosec: B608
+            LIMIT :limit OFFSET :offset
+        """)  # noqa: S608  # nosec: B608
 
-        # Add tsquery for rank calculation
-        params = [tsquery, *params, limit, offset]
+        params_dict["limit"] = limit
+        params_dict["offset"] = offset
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, params)
-            results = await cursor.fetchall()
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(query, params_dict)
+            rows = result.mappings().all()
 
-        return [dict(row) for row in results]
+        return [dict(row) for row in rows]
 
     async def _search_artists_with_filters(
         self,
@@ -475,23 +516,26 @@ class FullTextSearch:
         """
         # For now, just basic artist search
         # Could be extended with filters for genre, active years, etc.
-        query = """
+        query = text("""
             SELECT
                 id,
                 name,
-                ts_rank(to_tsvector('english', name), to_tsquery('english', %s)) AS rank,
+                ts_rank(to_tsvector('english', name), to_tsquery('english', :tsquery1)) AS rank,
                 'artist' AS entity_type
             FROM artists
-            WHERE to_tsvector('english', name) @@ to_tsquery('english', %s)
+            WHERE to_tsvector('english', name) @@ to_tsquery('english', :tsquery2)
             ORDER BY rank DESC, name
-            LIMIT %s OFFSET %s
-        """
+            LIMIT :limit OFFSET :offset
+        """)
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, (tsquery, tsquery, limit, offset))
-            results = await cursor.fetchall()
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(
+                query,
+                {"tsquery1": tsquery, "tsquery2": tsquery, "limit": limit, "offset": offset},
+            )
+            rows = result.mappings().all()
 
-        return [dict(row) for row in results]
+        return [dict(row) for row in rows]
 
     async def get_search_statistics(self) -> dict[str, Any]:
         """Get statistics about searchable content.
@@ -515,12 +559,12 @@ class FullTextSearch:
                 continue
 
             # Safe: table name from enum mapping
-            query = f"SELECT COUNT(*) as count FROM {table}"  # noqa: S608  # nosec B608
+            query = text(f"SELECT COUNT(*) as count FROM {table}")  # noqa: S608  # nosec B608
 
-            async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute(query)
-                result = await cursor.fetchone()
-                stats[entity.value] = result["count"] if result else 0
+            async with self.db_engine.connect() as conn:
+                result = await conn.execute(query)
+                row = result.mappings().fetchone()
+                stats[entity.value] = row["count"] if row else 0
 
         stats["total_searchable"] = sum(stats.values())
 

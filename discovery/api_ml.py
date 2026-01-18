@@ -133,7 +133,7 @@ async def initialize_ml_api(neo4j_driver: Any, postgres_conn: Any) -> None:  # n
 
     Args:
         neo4j_driver: Neo4j async driver instance
-        postgres_conn: PostgreSQL async connection
+        postgres_conn: PostgreSQL async engine (SQLAlchemy AsyncEngine)
     """
     global ml_api_initialized, collaborative_filter, content_based_filter, hybrid_recommender, explainer
 

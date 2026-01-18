@@ -9,8 +9,8 @@ from collections import Counter
 from typing import Any
 
 import structlog
-from psycopg import AsyncConnection
-from psycopg.rows import dict_row
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 
 logger = structlog.get_logger(__name__)
@@ -31,13 +31,13 @@ class FacetType:
 class FacetedSearchEngine:
     """Faceted search engine with dynamic filters."""
 
-    def __init__(self, db_conn: AsyncConnection) -> None:
+    def __init__(self, db_engine: AsyncEngine) -> None:
         """Initialize faceted search engine.
 
         Args:
-            db_conn: PostgreSQL async connection
+            db_engine: PostgreSQL async engine (SQLAlchemy)
         """
-        self.db_conn = db_conn
+        self.db_engine = db_engine
         self.facet_cache: dict[str, dict[str, Any]] = {}
 
     async def search_with_facets(
@@ -171,9 +171,9 @@ class FacetedSearchEngine:
         params.extend([limit, offset])
 
         # Execute search
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query_sql, params)
-            results = [dict(row) for row in await cursor.fetchall()]
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(text(query_sql), params)
+            results = [dict(row) for row in result.mappings().all()]
 
         # Compute facets for the results
         facets = await self._compute_facets_for_artists(
@@ -261,9 +261,9 @@ class FacetedSearchEngine:
         params.extend([limit, offset])
 
         # Execute search
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query_sql, params)
-            results = [dict(row) for row in await cursor.fetchall()]
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(text(query_sql), params)
+            results = [dict(row) for row in result.mappings().all()]
 
         # Compute facets
         facets = await self._compute_facets_for_releases(
@@ -379,11 +379,11 @@ class FacetedSearchEngine:
             GROUP BY g.name
         """  # noqa: S608  # nosec: B608
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, artist_ids)
-            results = await cursor.fetchall()
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(text(query), artist_ids)
+            rows = result.mappings().all()
 
-        return Counter({row["name"]: row["count"] for row in results})
+        return Counter({row["name"]: row["count"] for row in rows})
 
     async def _get_style_counts_for_artists(self, artist_ids: list[int]) -> Counter[str]:
         """Get style counts for artists.
@@ -407,11 +407,11 @@ class FacetedSearchEngine:
             GROUP BY s.name
         """  # noqa: S608  # nosec: B608
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, artist_ids)
-            results = await cursor.fetchall()
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(text(query), artist_ids)
+            rows = result.mappings().all()
 
-        return Counter({row["name"]: row["count"] for row in results})
+        return Counter({row["name"]: row["count"] for row in rows})
 
     async def _get_label_counts_for_artists(self, artist_ids: list[int]) -> Counter[str]:
         """Get label counts for artists.
@@ -435,11 +435,11 @@ class FacetedSearchEngine:
             GROUP BY l.name
         """  # noqa: S608  # nosec: B608
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, artist_ids)
-            results = await cursor.fetchall()
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(text(query), artist_ids)
+            rows = result.mappings().all()
 
-        return Counter({row["name"]: row["count"] for row in results})
+        return Counter({row["name"]: row["count"] for row in rows})
 
     async def _get_genre_counts_for_releases(self, release_ids: list[int]) -> Counter[str]:
         """Get genre counts for releases.
@@ -463,11 +463,11 @@ class FacetedSearchEngine:
             GROUP BY g.name
         """  # noqa: S608  # nosec: B608
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, release_ids)
-            results = await cursor.fetchall()
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(text(query), release_ids)
+            rows = result.mappings().all()
 
-        return Counter({row["name"]: row["count"] for row in results})
+        return Counter({row["name"]: row["count"] for row in rows})
 
     async def _get_style_counts_for_releases(self, release_ids: list[int]) -> Counter[str]:
         """Get style counts for releases.
@@ -491,11 +491,11 @@ class FacetedSearchEngine:
             GROUP BY s.name
         """  # noqa: S608  # nosec: B608
 
-        async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-            await cursor.execute(query, release_ids)
-            results = await cursor.fetchall()
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(text(query), release_ids)
+            rows = result.mappings().all()
 
-        return Counter({row["name"]: row["count"] for row in results})
+        return Counter({row["name"]: row["count"] for row in rows})
 
     async def get_available_facets(self, entity_type: str = "artist") -> dict[str, list[str]]:
         """Get all available facet values for an entity type.
@@ -510,20 +510,20 @@ class FacetedSearchEngine:
 
         if entity_type == "artist":
             # Get all genres
-            async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute("SELECT DISTINCT name FROM genres ORDER BY name")
-                facets[FacetType.GENRE] = [row["name"] for row in await cursor.fetchall()]
+            async with self.db_engine.connect() as conn:
+                result = await conn.execute(text("SELECT DISTINCT name FROM genres ORDER BY name"))
+                facets[FacetType.GENRE] = [row["name"] for row in result.mappings().all()]
 
-                await cursor.execute("SELECT DISTINCT name FROM styles ORDER BY name")
-                facets[FacetType.STYLE] = [row["name"] for row in await cursor.fetchall()]
+                result = await conn.execute(text("SELECT DISTINCT name FROM styles ORDER BY name"))
+                facets[FacetType.STYLE] = [row["name"] for row in result.mappings().all()]
 
-                await cursor.execute("SELECT DISTINCT name FROM labels ORDER BY name LIMIT 100")
-                facets[FacetType.LABEL] = [row["name"] for row in await cursor.fetchall()]
+                result = await conn.execute(text("SELECT DISTINCT name FROM labels ORDER BY name LIMIT 100"))
+                facets[FacetType.LABEL] = [row["name"] for row in result.mappings().all()]
 
         elif entity_type == "release":
-            async with self.db_conn.cursor(row_factory=dict_row) as cursor:
-                await cursor.execute("SELECT DISTINCT year FROM releases WHERE year IS NOT NULL ORDER BY year DESC")
-                facets[FacetType.YEAR] = [str(row["year"]) for row in await cursor.fetchall()]
+            async with self.db_engine.connect() as conn:
+                result = await conn.execute(text("SELECT DISTINCT year FROM releases WHERE year IS NOT NULL ORDER BY year DESC"))
+                facets[FacetType.YEAR] = [str(row["year"]) for row in result.mappings().all()]
 
         logger.info("📊 Retrieved available facets", entity=entity_type, facets=list(facets.keys()))
 

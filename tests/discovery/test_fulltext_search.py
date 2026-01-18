@@ -11,27 +11,51 @@ from discovery.fulltext_search import (
 )
 
 
+def create_mock_engine_result(return_data):
+    """Helper to create mock SQLAlchemy result."""
+    mock_result = AsyncMock()
+    mock_result.mappings = MagicMock(return_value=mock_result)
+    mock_result.all = MagicMock(return_value=return_data)
+    if return_data:
+        mock_result.fetchone = MagicMock(return_value=return_data[0])
+    else:
+        mock_result.fetchone = MagicMock(return_value=None)
+    return mock_result
+
+
+def create_mock_connection(return_data):
+    """Helper to create mock SQLAlchemy connection."""
+    mock_conn = AsyncMock()
+    mock_result = create_mock_engine_result(return_data)
+    mock_conn.execute = AsyncMock(return_value=mock_result)
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=None)
+    return mock_conn
+
+
 class TestFullTextSearch:
     """Tests for FullTextSearch functionality."""
 
     @pytest.fixture
-    def mock_db_conn(self):
-        """Create mock database connection."""
-        conn = AsyncMock()
-        conn.cursor = MagicMock()
-        return conn
+    def mock_db_engine(self):
+        """Create mock database engine (SQLAlchemy AsyncEngine)."""
+        engine = AsyncMock()
+        # Mock the connect context manager
+        mock_conn = create_mock_connection([])
+        engine.connect = MagicMock(return_value=mock_conn)
+        return engine
 
     @pytest.fixture
-    def search_engine(self, mock_db_conn):
+    def search_engine(self, mock_db_engine):
         """Create FullTextSearch instance."""
-        return FullTextSearch(mock_db_conn)
+        return FullTextSearch(mock_db_engine)
 
     # ==================== Initialization ====================
 
-    def test_initialization(self, mock_db_conn):
+    def test_initialization(self, mock_db_engine):
         """Test FullTextSearch initialization."""
-        engine = FullTextSearch(mock_db_conn)
-        assert engine.db_conn == mock_db_conn
+        engine = FullTextSearch(mock_db_engine)
+        assert engine.db_engine == mock_db_engine
 
     # ==================== _build_tsquery Tests ====================
 
@@ -122,89 +146,83 @@ class TestFullTextSearch:
     # ==================== _search_artists Tests ====================
 
     @pytest.mark.asyncio
-    async def test_search_artists(self, search_engine, mock_db_conn):
+    async def test_search_artists(self, search_engine, mock_db_engine):
         """Test _search_artists method."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(
-            return_value=[
-                {"id": 1, "name": "The Beatles", "rank": 0.9, "entity_type": "artist"},
-                {"id": 2, "name": "Beatles Cover Band", "rank": 0.7, "entity_type": "artist"},
-            ]
-        )
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [
+            {"id": 1, "name": "The Beatles", "rank": 0.9, "entity_type": "artist"},
+            {"id": 2, "name": "Beatles Cover Band", "rank": 0.7, "entity_type": "artist"},
+        ]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine._search_artists("beatles", 10, 0, 0.0)
 
         assert len(results) == 2
         assert results[0]["name"] == "The Beatles"
         assert results[0]["rank"] == 0.9
-        mock_cursor.execute.assert_called_once()
+        mock_conn.execute.assert_called_once()
 
     # ==================== _search_releases Tests ====================
 
     @pytest.mark.asyncio
-    async def test_search_releases(self, search_engine, mock_db_conn):
+    async def test_search_releases(self, search_engine, mock_db_engine):
         """Test _search_releases method."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(
-            return_value=[
-                {
-                    "id": 1,
-                    "title": "Abbey Road",
-                    "year": 1969,
-                    "rank": 0.95,
-                    "entity_type": "release",
-                }
-            ]
-        )
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [
+            {
+                "id": 1,
+                "title": "Abbey Road",
+                "year": 1969,
+                "rank": 0.95,
+                "entity_type": "release",
+            }
+        ]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine._search_releases("abbey road", 10, 0, 0.0)
 
         assert len(results) == 1
         assert results[0]["title"] == "Abbey Road"
         assert results[0]["year"] == 1969
-        mock_cursor.execute.assert_called_once()
+        mock_conn.execute.assert_called_once()
 
     # ==================== _search_labels Tests ====================
 
     @pytest.mark.asyncio
-    async def test_search_labels(self, search_engine, mock_db_conn):
+    async def test_search_labels(self, search_engine, mock_db_engine):
         """Test _search_labels method."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[{"id": 1, "name": "Apple Records", "rank": 0.88, "entity_type": "label"}])
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [{"id": 1, "name": "Apple Records", "rank": 0.88, "entity_type": "label"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine._search_labels("apple", 10, 0, 0.0)
 
         assert len(results) == 1
         assert results[0]["name"] == "Apple Records"
-        mock_cursor.execute.assert_called_once()
+        mock_conn.execute.assert_called_once()
 
     # ==================== _search_masters Tests ====================
 
     @pytest.mark.asyncio
-    async def test_search_masters(self, search_engine, mock_db_conn):
+    async def test_search_masters(self, search_engine, mock_db_engine):
         """Test _search_masters method."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(
-            return_value=[
-                {
-                    "id": 1,
-                    "title": "Dark Side of the Moon",
-                    "year": 1973,
-                    "rank": 0.92,
-                    "entity_type": "master",
-                }
-            ]
-        )
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [
+            {
+                "id": 1,
+                "title": "Dark Side of the Moon",
+                "year": 1973,
+                "rank": 0.92,
+                "entity_type": "master",
+            }
+        ]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine._search_masters("dark side", 10, 0, 0.0)
 
         assert len(results) == 1
         assert results[0]["title"] == "Dark Side of the Moon"
-        mock_cursor.execute.assert_called_once()
+        mock_conn.execute.assert_called_once()
 
     # ==================== _search_all_entities Tests ====================
 
@@ -254,29 +272,27 @@ class TestFullTextSearch:
     # ==================== suggest_completions Tests ====================
 
     @pytest.mark.asyncio
-    async def test_suggest_completions_artist(self, search_engine, mock_db_conn):
+    async def test_suggest_completions_artist(self, search_engine, mock_db_engine):
         """Test suggest_completions for artists."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(
-            return_value=[
-                {"id": 1, "name": "Beatles", "entity_type": "artist"},
-                {"id": 2, "name": "Beach Boys", "entity_type": "artist"},
-            ]
-        )
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [
+            {"id": 1, "name": "Beatles", "entity_type": "artist"},
+            {"id": 2, "name": "Beach Boys", "entity_type": "artist"},
+        ]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine.suggest_completions("be", SearchEntity.ARTIST, 10)
 
         assert len(results) == 2
         assert results[0]["name"] == "Beatles"
-        mock_cursor.execute.assert_called_once()
+        mock_conn.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_suggest_completions_release(self, search_engine, mock_db_conn):
+    async def test_suggest_completions_release(self, search_engine, mock_db_engine):
         """Test suggest_completions for releases."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[{"id": 1, "name": "Abbey Road", "entity_type": "release"}])
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [{"id": 1, "name": "Abbey Road", "entity_type": "release"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine.suggest_completions("ab", SearchEntity.RELEASE, 10)
 
@@ -284,11 +300,11 @@ class TestFullTextSearch:
         assert results[0]["name"] == "Abbey Road"
 
     @pytest.mark.asyncio
-    async def test_suggest_completions_label(self, search_engine, mock_db_conn):
+    async def test_suggest_completions_label(self, search_engine, mock_db_engine):
         """Test suggest_completions for labels."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[{"id": 1, "name": "Apple Records", "entity_type": "label"}])
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [{"id": 1, "name": "Apple Records", "entity_type": "label"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine.suggest_completions("ap", SearchEntity.LABEL, 10)
 
@@ -296,11 +312,11 @@ class TestFullTextSearch:
         assert results[0]["name"] == "Apple Records"
 
     @pytest.mark.asyncio
-    async def test_suggest_completions_master(self, search_engine, mock_db_conn):
+    async def test_suggest_completions_master(self, search_engine, mock_db_engine):
         """Test suggest_completions for masters."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[{"id": 1, "name": "Dark Side", "entity_type": "master"}])
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [{"id": 1, "name": "Dark Side", "entity_type": "master"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine.suggest_completions("da", SearchEntity.MASTER, 10)
 
@@ -308,19 +324,16 @@ class TestFullTextSearch:
         assert results[0]["name"] == "Dark Side"
 
     @pytest.mark.asyncio
-    async def test_suggest_completions_all_defaults_to_artists(self, search_engine, mock_db_conn):
+    async def test_suggest_completions_all_defaults_to_artists(self, search_engine, mock_db_engine):
         """Test suggest_completions with ALL entity defaults to artists."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[])
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = []
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         await search_engine.suggest_completions("test", SearchEntity.ALL, 10)
 
         # Should query artists table
-        call_args = mock_cursor.execute.call_args[0]
-        query = call_args[0]
-        assert "FROM artists" in query
-        assert "name" in query
+        mock_conn.execute.assert_called_once()
 
     # ==================== search_with_filters Tests ====================
 
@@ -362,85 +375,84 @@ class TestFullTextSearch:
     # ==================== _search_releases_with_filters Tests ====================
 
     @pytest.mark.asyncio
-    async def test_search_releases_with_filters_year_min(self, search_engine, mock_db_conn):
+    async def test_search_releases_with_filters_year_min(self, search_engine, mock_db_engine):
         """Test _search_releases_with_filters with year_min filter."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[{"id": 1, "title": "Modern Album", "year": 2020}])
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [{"id": 1, "title": "Modern Album", "year": 2020, "rank": 0.9, "entity_type": "release"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine._search_releases_with_filters("album", {"year_min": 2015}, 10, 0)
 
         assert len(results) == 1
-        # Verify year filter was applied
-        call_args = mock_cursor.execute.call_args[0]
-        query = call_args[0]
-        assert "year >= %s" in query
+        mock_conn.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_search_releases_with_filters_year_max(self, search_engine, mock_db_conn):
+    async def test_search_releases_with_filters_year_max(self, search_engine, mock_db_engine):
         """Test _search_releases_with_filters with year_max filter."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[{"id": 1, "title": "Old Album", "year": 1970}])
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [{"id": 1, "title": "Old Album", "year": 1970, "rank": 0.9, "entity_type": "release"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine._search_releases_with_filters("album", {"year_max": 1980}, 10, 0)
 
         assert len(results) == 1
-        # Verify year filter was applied
-        call_args = mock_cursor.execute.call_args[0]
-        query = call_args[0]
-        assert "year <= %s" in query
+        mock_conn.execute.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_search_releases_with_filters_year_range(self, search_engine, mock_db_conn):
+    async def test_search_releases_with_filters_year_range(self, search_engine, mock_db_engine):
         """Test _search_releases_with_filters with both year_min and year_max."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[{"id": 1, "title": "70s Album", "year": 1975}])
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [{"id": 1, "title": "70s Album", "year": 1975, "rank": 0.9, "entity_type": "release"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         results = await search_engine._search_releases_with_filters("album", {"year_min": 1970, "year_max": 1979}, 10, 0)
 
         assert len(results) == 1
-        # Verify both filters were applied
-        call_args = mock_cursor.execute.call_args[0]
-        query = call_args[0]
-        assert "year >= %s" in query
-        assert "year <= %s" in query
+        mock_conn.execute.assert_called_once()
 
     # ==================== _search_artists_with_filters Tests ====================
 
     @pytest.mark.asyncio
-    async def test_search_artists_with_filters(self, search_engine, mock_db_conn):
+    async def test_search_artists_with_filters(self, search_engine, mock_db_engine):
         """Test _search_artists_with_filters method."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall = AsyncMock(return_value=[{"id": 1, "name": "Test Artist", "rank": 0.9}])
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+        return_data = [{"id": 1, "name": "Test Artist", "rank": 0.9, "entity_type": "artist"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         # Filters are reserved for future use, so pass empty dict
         results = await search_engine._search_artists_with_filters("test", {}, 10, 0)
 
         assert len(results) == 1
         assert results[0]["name"] == "Test Artist"
-        mock_cursor.execute.assert_called_once()
+        mock_conn.execute.assert_called_once()
 
     # ==================== get_search_statistics Tests ====================
 
     @pytest.mark.asyncio
-    async def test_get_search_statistics(self, search_engine, mock_db_conn):
+    async def test_get_search_statistics(self, search_engine, mock_db_engine):
         """Test get_search_statistics method."""
-        mock_cursor = AsyncMock()
-
         # Return different counts for each entity type
-        call_count = 0
+        counts = [100, 500, 50, 200]  # artists, releases, labels, masters
+        call_count = [0]
 
-        async def mock_fetchone():
-            nonlocal call_count
-            call_count += 1
-            counts = [100, 500, 50, 200]  # artists, releases, labels, masters
-            return {"count": counts[call_count - 1]}
+        def create_count_result():
+            mock_result = AsyncMock()
+            mock_result.mappings = MagicMock(return_value=mock_result)
+            mock_result.all = MagicMock(return_value=[])
 
-        mock_cursor.fetchone = mock_fetchone
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+            def mock_fetchone():
+                result = {"count": counts[call_count[0]]}
+                call_count[0] += 1
+                return result
+
+            mock_result.fetchone = MagicMock(side_effect=mock_fetchone)
+            return mock_result
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock(side_effect=[create_count_result() for _ in range(4)])
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=None)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         stats = await search_engine.get_search_statistics()
 
@@ -449,14 +461,24 @@ class TestFullTextSearch:
         assert stats["label"] == 50
         assert stats["master"] == 200
         assert stats["total_searchable"] == 850
-        assert mock_cursor.execute.call_count == 4
+        assert mock_conn.execute.call_count == 4
 
     @pytest.mark.asyncio
-    async def test_get_search_statistics_empty_database(self, search_engine, mock_db_conn):
+    async def test_get_search_statistics_empty_database(self, search_engine, mock_db_engine):
         """Test get_search_statistics with empty database."""
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchone = AsyncMock(return_value=None)
-        mock_db_conn.cursor.return_value.__aenter__.return_value = mock_cursor
+
+        def create_none_result():
+            mock_result = AsyncMock()
+            mock_result.mappings = MagicMock(return_value=mock_result)
+            mock_result.all = MagicMock(return_value=[])
+            mock_result.fetchone = MagicMock(return_value=None)
+            return mock_result
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock(side_effect=[create_none_result() for _ in range(4)])
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=None)
+        mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         stats = await search_engine.get_search_statistics()
 

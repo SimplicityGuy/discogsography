@@ -8,15 +8,33 @@ import pytest
 from discovery.faceted_search import FacetedSearchEngine, FacetType
 
 
+def create_mock_engine_result(return_data):
+    """Helper to create mock SQLAlchemy result."""
+    mock_result = AsyncMock()
+    mock_result.mappings = MagicMock(return_value=mock_result)
+    mock_result.all = MagicMock(return_value=return_data)
+    return mock_result
+
+
+def create_mock_connection(return_data):
+    """Helper to create mock SQLAlchemy connection."""
+    mock_conn = AsyncMock()
+    mock_result = create_mock_engine_result(return_data)
+    mock_conn.execute = AsyncMock(return_value=mock_result)
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=None)
+    return mock_conn
+
+
 class TestFacetedSearchEngineInit:
     """Test FacetedSearchEngine initialization."""
 
     def test_initialization(self) -> None:
         """Test engine initializes with correct default values."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
-        assert engine.db_conn == mock_conn
+        assert engine.db_engine == mock_engine
         assert engine.facet_cache == {}
 
 
@@ -26,8 +44,8 @@ class TestSearchWithFacets:
     @pytest.mark.asyncio
     async def test_search_artists_basic(self) -> None:
         """Test basic artist search without facets."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         # Mock the artist search method
         engine._search_artists_with_facets = AsyncMock(
@@ -48,8 +66,8 @@ class TestSearchWithFacets:
     @pytest.mark.asyncio
     async def test_search_releases_basic(self) -> None:
         """Test basic release search."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         engine._search_releases_with_facets = AsyncMock(
             return_value=(
@@ -67,8 +85,8 @@ class TestSearchWithFacets:
     @pytest.mark.asyncio
     async def test_search_unknown_entity_type(self) -> None:
         """Test search with unknown entity type returns empty results."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         result = await engine.search_with_facets("test", entity_type="unknown")
 
@@ -79,8 +97,8 @@ class TestSearchWithFacets:
     @pytest.mark.asyncio
     async def test_search_with_selected_facets(self) -> None:
         """Test search with selected facets."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         selected_facets = {FacetType.GENRE: ["Rock", "Jazz"]}
         engine._search_artists_with_facets = AsyncMock(return_value=([], {}))
@@ -101,17 +119,12 @@ class TestSearchArtistsWithFacets:
     @pytest.mark.asyncio
     async def test_search_artists_no_facets(self) -> None:
         """Test artist search without facet filters."""
-        mock_conn = MagicMock()
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall.return_value = [{"id": 1, "name": "Artist A"}]
+        mock_engine = MagicMock()
+        return_data = [{"id": 1, "name": "Artist A"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
 
-        # Mock cursor context manager
-        cursor_context = MagicMock()
-        cursor_context.__aenter__ = AsyncMock(return_value=mock_cursor)
-        cursor_context.__aexit__ = AsyncMock(return_value=None)
-        mock_conn.cursor.return_value = cursor_context
-
-        engine = FacetedSearchEngine(mock_conn)
+        engine = FacetedSearchEngine(mock_engine)
         engine._compute_facets_for_artists = AsyncMock(return_value={})
 
         results, _facets = await engine._search_artists_with_facets(
@@ -124,21 +137,17 @@ class TestSearchArtistsWithFacets:
 
         assert len(results) == 1
         assert results[0]["name"] == "Artist A"
-        mock_cursor.execute.assert_called_once()
+        mock_conn.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_search_artists_with_genre_filter(self) -> None:
         """Test artist search with genre facet filter."""
-        mock_conn = MagicMock()
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall.return_value = [{"id": 1, "name": "Rock Artist"}]
+        mock_engine = MagicMock()
+        return_data = [{"id": 1, "name": "Rock Artist"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
 
-        cursor_context = MagicMock()
-        cursor_context.__aenter__ = AsyncMock(return_value=mock_cursor)
-        cursor_context.__aexit__ = AsyncMock(return_value=None)
-        mock_conn.cursor.return_value = cursor_context
-
-        engine = FacetedSearchEngine(mock_conn)
+        engine = FacetedSearchEngine(mock_engine)
         engine._compute_facets_for_artists = AsyncMock(return_value={})
 
         selected_facets = {FacetType.GENRE: ["Rock"]}
@@ -152,22 +161,18 @@ class TestSearchArtistsWithFacets:
 
         assert len(results) == 1
         # Verify SQL includes genre filter
-        call_args = mock_cursor.execute.call_args
-        assert "g.name IN" in call_args[0][0]
+        call_args = mock_conn.execute.call_args
+        assert "g.name IN" in call_args.args[0].text
 
     @pytest.mark.asyncio
     async def test_search_artists_with_multiple_facets(self) -> None:
         """Test artist search with multiple facet filters."""
-        mock_conn = MagicMock()
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall.return_value = []
+        mock_engine = MagicMock()
+        return_data = []
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
 
-        cursor_context = MagicMock()
-        cursor_context.__aenter__ = AsyncMock(return_value=mock_cursor)
-        cursor_context.__aexit__ = AsyncMock(return_value=None)
-        mock_conn.cursor.return_value = cursor_context
-
-        engine = FacetedSearchEngine(mock_conn)
+        engine = FacetedSearchEngine(mock_engine)
         engine._compute_facets_for_artists = AsyncMock(return_value={})
 
         selected_facets = {
@@ -184,8 +189,8 @@ class TestSearchArtistsWithFacets:
         )
 
         # Verify multiple joins and filters
-        call_args = mock_cursor.execute.call_args
-        sql = call_args[0][0]
+        call_args = mock_conn.execute.call_args
+        sql = call_args.args[0].text
         assert "LEFT JOIN artist_genres" in sql
         assert "LEFT JOIN artist_styles" in sql
 
@@ -196,16 +201,12 @@ class TestSearchReleasesWithFacets:
     @pytest.mark.asyncio
     async def test_search_releases_basic(self) -> None:
         """Test basic release search."""
-        mock_conn = MagicMock()
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall.return_value = [{"id": 1, "title": "Album", "year": 2020}]
+        mock_engine = MagicMock()
+        return_data = [{"id": 1, "title": "Album", "year": 2020}]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
 
-        cursor_context = MagicMock()
-        cursor_context.__aenter__ = AsyncMock(return_value=mock_cursor)
-        cursor_context.__aexit__ = AsyncMock(return_value=None)
-        mock_conn.cursor.return_value = cursor_context
-
-        engine = FacetedSearchEngine(mock_conn)
+        engine = FacetedSearchEngine(mock_engine)
         engine._compute_facets_for_releases = AsyncMock(return_value={})
 
         results, _facets = await engine._search_releases_with_facets(
@@ -222,16 +223,12 @@ class TestSearchReleasesWithFacets:
     @pytest.mark.asyncio
     async def test_search_releases_with_year_filter(self) -> None:
         """Test release search with year filter."""
-        mock_conn = MagicMock()
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall.return_value = []
+        mock_engine = MagicMock()
+        return_data = []
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
 
-        cursor_context = MagicMock()
-        cursor_context.__aenter__ = AsyncMock(return_value=mock_cursor)
-        cursor_context.__aexit__ = AsyncMock(return_value=None)
-        mock_conn.cursor.return_value = cursor_context
-
-        engine = FacetedSearchEngine(mock_conn)
+        engine = FacetedSearchEngine(mock_engine)
         engine._compute_facets_for_releases = AsyncMock(return_value={})
 
         selected_facets = {FacetType.YEAR: ["2020", "2021"]}
@@ -244,22 +241,18 @@ class TestSearchReleasesWithFacets:
         )
 
         # Verify year filter in SQL
-        call_args = mock_cursor.execute.call_args
-        assert "r.year IN" in call_args[0][0]
+        call_args = mock_conn.execute.call_args
+        assert "r.year IN" in call_args.args[0].text
 
     @pytest.mark.asyncio
     async def test_search_releases_with_decade_filter(self) -> None:
         """Test release search with decade filter."""
-        mock_conn = MagicMock()
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall.return_value = []
+        mock_engine = MagicMock()
+        return_data = []
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
 
-        cursor_context = MagicMock()
-        cursor_context.__aenter__ = AsyncMock(return_value=mock_cursor)
-        cursor_context.__aexit__ = AsyncMock(return_value=None)
-        mock_conn.cursor.return_value = cursor_context
-
-        engine = FacetedSearchEngine(mock_conn)
+        engine = FacetedSearchEngine(mock_engine)
         engine._compute_facets_for_releases = AsyncMock(return_value={})
 
         selected_facets = {FacetType.DECADE: ["1990"]}
@@ -272,8 +265,8 @@ class TestSearchReleasesWithFacets:
         )
 
         # Verify decade range filter
-        call_args = mock_cursor.execute.call_args
-        sql = call_args[0][0]
+        call_args = mock_conn.execute.call_args
+        sql = call_args.args[0].text
         assert "r.year >=" in sql
         assert "r.year <" in sql
 
@@ -284,8 +277,8 @@ class TestComputeFacetsForArtists:
     @pytest.mark.asyncio
     async def test_compute_facets_empty_results(self) -> None:
         """Test facet computation with empty results."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         facets = await engine._compute_facets_for_artists([], [FacetType.GENRE])
 
@@ -294,8 +287,8 @@ class TestComputeFacetsForArtists:
     @pytest.mark.asyncio
     async def test_compute_genre_facets(self) -> None:
         """Test computing genre facets for artists."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         artists = [{"id": 1, "name": "Artist A"}, {"id": 2, "name": "Artist B"}]
         engine._get_genre_counts_for_artists = AsyncMock(return_value=Counter({"Rock": 5, "Jazz": 3}))
@@ -313,8 +306,8 @@ class TestComputeFacetsForArtists:
     @pytest.mark.asyncio
     async def test_compute_multiple_artist_facets(self) -> None:
         """Test computing multiple facet types for artists."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         artists = [{"id": 1, "name": "Artist"}]
         engine._get_genre_counts_for_artists = AsyncMock(return_value=Counter({"Rock": 1}))
@@ -338,8 +331,8 @@ class TestComputeFacetsForReleases:
     @pytest.mark.asyncio
     async def test_compute_facets_empty_results(self) -> None:
         """Test facet computation with empty results."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         facets = await engine._compute_facets_for_releases([], [FacetType.YEAR])
 
@@ -348,8 +341,8 @@ class TestComputeFacetsForReleases:
     @pytest.mark.asyncio
     async def test_compute_year_facets(self) -> None:
         """Test computing year facets for releases."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         releases = [
             {"id": 1, "title": "Album 1", "year": 2020},
@@ -371,8 +364,8 @@ class TestComputeFacetsForReleases:
     @pytest.mark.asyncio
     async def test_compute_decade_facets(self) -> None:
         """Test computing decade facets for releases."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         releases = [
             {"id": 1, "year": 1995},
@@ -399,8 +392,8 @@ class TestGetFacetCounts:
     @pytest.mark.asyncio
     async def test_get_genre_counts_empty_ids(self) -> None:
         """Test genre counts with empty artist IDs."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         counts = await engine._get_genre_counts_for_artists([])
 
@@ -409,19 +402,15 @@ class TestGetFacetCounts:
     @pytest.mark.asyncio
     async def test_get_genre_counts_for_artists(self) -> None:
         """Test getting genre counts for artists."""
-        mock_conn = MagicMock()
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall.return_value = [
+        mock_engine = MagicMock()
+        return_data = [
             {"name": "Rock", "count": 5},
             {"name": "Jazz", "count": 3},
         ]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
 
-        cursor_context = MagicMock()
-        cursor_context.__aenter__ = AsyncMock(return_value=mock_cursor)
-        cursor_context.__aexit__ = AsyncMock(return_value=None)
-        mock_conn.cursor.return_value = cursor_context
-
-        engine = FacetedSearchEngine(mock_conn)
+        engine = FacetedSearchEngine(mock_engine)
         counts = await engine._get_genre_counts_for_artists([1, 2, 3])
 
         assert counts["Rock"] == 5
@@ -430,8 +419,8 @@ class TestGetFacetCounts:
     @pytest.mark.asyncio
     async def test_get_style_counts_empty_ids(self) -> None:
         """Test style counts with empty artist IDs."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         counts = await engine._get_style_counts_for_artists([])
 
@@ -440,8 +429,8 @@ class TestGetFacetCounts:
     @pytest.mark.asyncio
     async def test_get_label_counts_empty_ids(self) -> None:
         """Test label counts with empty artist IDs."""
-        mock_conn = MagicMock()
-        engine = FacetedSearchEngine(mock_conn)
+        mock_engine = MagicMock()
+        engine = FacetedSearchEngine(mock_engine)
 
         counts = await engine._get_label_counts_for_artists([])
 
@@ -454,22 +443,21 @@ class TestGetAvailableFacets:
     @pytest.mark.asyncio
     async def test_get_available_artist_facets(self) -> None:
         """Test getting available facets for artists."""
-        mock_conn = MagicMock()
-        mock_cursor = AsyncMock()
+        mock_engine = MagicMock()
 
-        # Mock three separate query results
-        mock_cursor.fetchall.side_effect = [
-            [{"name": "Rock"}, {"name": "Jazz"}],  # Genres
-            [{"name": "Alternative"}],  # Styles
-            [{"name": "Label A"}],  # Labels
-        ]
+        # Create separate connections for each query
+        genres_data = [{"name": "Rock"}, {"name": "Jazz"}]
+        styles_data = [{"name": "Alternative"}]
+        labels_data = [{"name": "Label A"}]
 
-        cursor_context = MagicMock()
-        cursor_context.__aenter__ = AsyncMock(return_value=mock_cursor)
-        cursor_context.__aexit__ = AsyncMock(return_value=None)
-        mock_conn.cursor.return_value = cursor_context
+        mock_conn1 = create_mock_connection(genres_data)
+        mock_conn2 = create_mock_connection(styles_data)
+        mock_conn3 = create_mock_connection(labels_data)
 
-        engine = FacetedSearchEngine(mock_conn)
+        # Mock connect to return different connections for each call
+        mock_engine.connect = MagicMock(side_effect=[mock_conn1, mock_conn2, mock_conn3])
+
+        engine = FacetedSearchEngine(mock_engine)
         facets = await engine.get_available_facets(entity_type="artist")
 
         assert FacetType.GENRE in facets
@@ -481,16 +469,12 @@ class TestGetAvailableFacets:
     @pytest.mark.asyncio
     async def test_get_available_release_facets(self) -> None:
         """Test getting available facets for releases."""
-        mock_conn = MagicMock()
-        mock_cursor = AsyncMock()
-        mock_cursor.fetchall.return_value = [{"year": 2020}, {"year": 2019}]
+        mock_engine = MagicMock()
+        return_data = [{"year": 2020}, {"year": 2019}]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
 
-        cursor_context = MagicMock()
-        cursor_context.__aenter__ = AsyncMock(return_value=mock_cursor)
-        cursor_context.__aexit__ = AsyncMock(return_value=None)
-        mock_conn.cursor.return_value = cursor_context
-
-        engine = FacetedSearchEngine(mock_conn)
+        engine = FacetedSearchEngine(mock_engine)
         facets = await engine.get_available_facets(entity_type="release")
 
         assert FacetType.YEAR in facets
