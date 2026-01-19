@@ -117,7 +117,9 @@ docstring-code-line-length = "dynamic"
 lines-after-imports = 2
 combine-as-imports = true
 split-on-trailing-comma = true
-known-first-party = ["config"]
+known-first-party = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
+section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
+force-sort-within-sections = true
 
 [tool.ruff]
 line-length = 150
@@ -222,7 +224,7 @@ exclude_lines = [
 
 [tool.pytest.ini_options]
 minversion = "6.0"
-addopts = "-ra -q --strict-markers --tb=short"
+addopts = "-ra -q --strict-markers --tb=short -n auto --dist loadfile"
 testpaths = ["tests"]
 python_files = ["*_test.py", "test_*.py"]
 python_classes = ["Test*"]
@@ -234,6 +236,7 @@ timeout = 60
 timeout_method = "thread"
 markers = [
     "e2e: End-to-end tests requiring external services (deselect with '-m \"not e2e\"')",
+    "benchmark: Performance benchmark tests (deselect with '-m \"not benchmark\"')",
 ]
 
 # Package discovery for multi-service setup
@@ -259,6 +262,7 @@ dev = [
     "mdformat>=0.7.22",
     "mdformat-gfm>=1.0.0",
     # "mdformat-tables>=1.0.0",  # Disabled: requires mdformat<0.8.0
+    "pytest-xdist>=3.8.0",
 ]
 
 [tool.mdformat]
