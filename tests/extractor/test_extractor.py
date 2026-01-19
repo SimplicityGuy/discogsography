@@ -943,7 +943,11 @@ class TestHealthMonitoring:
 
     def test_get_health_data(self) -> None:
         """Test getting health data."""
+        import extractor.pyextractor.extractor
         from extractor.pyextractor.extractor import get_health_data
+
+        # Clear any residual state from parallel tests
+        extractor.pyextractor.extractor.active_connections.clear()
 
         health = get_health_data()
 
