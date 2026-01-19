@@ -95,8 +95,22 @@ def get_health_data() -> dict[str, Any]:
     if active_task is None and len(consumer_tags) > 0:
         active_task = "Idle - waiting for messages"
 
+    # Determine health status:
+    # - "starting" if graph driver not yet initialized (startup in progress)
+    # - "unhealthy" if graph was initialized but is now None (connection lost)
+    # - "healthy" if graph is initialized and ready
+    if graph is None:
+        # Check if we're still in startup (no consumers registered yet)
+        if len(consumer_tags) == 0 and all(c == 0 for c in message_counts.values()):
+            status = "starting"
+            active_task = "Initializing Neo4j connection"
+        else:
+            status = "unhealthy"
+    else:
+        status = "healthy"
+
     return {
-        "status": "healthy" if graph else "unhealthy",
+        "status": status,
         "service": "graphinator",
         "current_task": active_task,
         "progress": current_progress,
@@ -277,8 +291,8 @@ async def periodic_queue_checker() -> None:
                         auto_delete=False,
                     )
 
-                    # Set QoS
-                    await active_channel.set_qos(prefetch_count=1, global_=True)
+                    # Set QoS - must match batch_size for efficient batch processing
+                    await active_channel.set_qos(prefetch_count=200, global_=True)
 
                     # Declare and bind all queues
                     queues = {}
@@ -1467,9 +1481,9 @@ async def main() -> None:
         active_channel = channel
 
         # Set QoS to allow concurrent batch processing for better throughput
-        # With batch mode enabled, this allows multiple batches to be processed in parallel
-        # Increased from 1 to 10 for 10-20x performance improvement
-        await channel.set_qos(prefetch_count=10, global_=True)
+        # prefetch_count must be >= batch_size to allow batches to fill before flushing
+        # With batch_size=100 (default), we use 200 to allow 2 batches in parallel
+        await channel.set_qos(prefetch_count=200, global_=True)
 
         # Declare the shared exchange (must match extractor)
         exchange = await channel.declare_exchange(

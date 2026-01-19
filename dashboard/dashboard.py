@@ -52,7 +52,7 @@ class ServiceStatus(BaseModel):
     """Model for service status information."""
 
     name: str
-    status: str  # healthy, unhealthy, unknown
+    status: str  # healthy, unhealthy, unknown, starting, extracting
     last_seen: datetime | None
     current_task: str | None
     progress: float | None  # 0.0 to 1.0
@@ -224,10 +224,13 @@ class DashboardApp:
                     response = await client.get(url)
                     if response.status_code == 200:
                         data = response.json()
+                        # Use actual status from service health response
+                        # Valid statuses: healthy, unhealthy, starting
+                        service_status = data.get("status", "healthy")
                         services.append(
                             ServiceStatus(
                                 name=name,
-                                status="healthy",
+                                status=service_status,
                                 last_seen=datetime.now(UTC),
                                 current_task=data.get("current_task"),
                                 progress=data.get("progress"),

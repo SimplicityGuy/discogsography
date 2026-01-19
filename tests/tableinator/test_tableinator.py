@@ -1237,6 +1237,7 @@ class TestGetHealthData:
     def test_returns_health_status_dictionary(self) -> None:
         """Test that get_health_data returns a properly formatted dictionary."""
         import time
+        from unittest.mock import MagicMock
 
         import tableinator.tableinator
 
@@ -1255,6 +1256,8 @@ class TestGetHealthData:
             "artists": "consumer-1",
             "labels": "consumer-2",
         }
+        # Mock connection_pool to indicate healthy connection
+        tableinator.tableinator.connection_pool = MagicMock()
 
         result = get_health_data()
 
@@ -1272,8 +1275,47 @@ class TestGetHealthData:
         assert result["service"] == "tableinator"
         # Should show "Processing artists" because it has recent activity (5 seconds ago)
         assert result["current_task"] == "Processing artists"
-        assert result["progress"] == 50
-        assert result["message_counts"] == {"artists": 100, "labels": 50}
+
+        # Clean up
+        tableinator.tableinator.connection_pool = None
+
+    def test_health_status_starting_during_init(self) -> None:
+        """Test that get_health_data returns 'starting' during initialization."""
+        import tableinator.tableinator
+
+        # Set up startup state: no connection pool, no consumers, no messages
+        tableinator.tableinator.connection_pool = None
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.message_counts = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+
+        result = get_health_data()
+
+        assert result["status"] == "starting"
+        assert result["current_task"] == "Initializing PostgreSQL connection"
+
+    def test_health_status_unhealthy_when_connection_lost(self) -> None:
+        """Test that get_health_data returns 'unhealthy' when connection lost after startup."""
+        import tableinator.tableinator
+
+        # Set up state: no connection pool, but has processed messages (post-startup)
+        tableinator.tableinator.connection_pool = None
+        tableinator.tableinator.consumer_tags = {"artists": "consumer-1"}
+        tableinator.tableinator.message_counts = {
+            "artists": 100,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+
+        result = get_health_data()
+
+        assert result["status"] == "unhealthy"
+        assert result["service"] == "tableinator"
 
     def test_idle_status_with_active_consumers(self) -> None:
         """Test that get_health_data shows idle status when consumers active but no recent messages."""

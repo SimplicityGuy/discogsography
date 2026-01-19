@@ -781,6 +781,8 @@ def get_health_data() -> dict[str, Any]:
     return {
         "status": "healthy",
         "service": "discovery",
+        "current_task": None,  # Discovery is a stateless API, no ongoing task
+        "progress": None,  # No progress tracking for API service
         "ai_features": "active",
         "semantic_search": "ready",
         "visualization_engine": "online",

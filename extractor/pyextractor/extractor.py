@@ -57,13 +57,22 @@ active_connections = {}  # Track active AMQP connections by data type
 
 def get_health_data() -> dict[str, Any]:
     """Get current health data for monitoring."""
+    # Determine status based on current state
+    # - "extracting" when actively processing files (has active AMQP connections)
+    # - "healthy" when idle and ready for next scheduled run
+    if active_connections:
+        status = "extracting"
+    else:
+        status = "healthy"
+
     return {
-        "status": "healthy",
+        "status": status,
         "service": "extractor",
         "current_task": current_task,
         "progress": current_progress,
         "extraction_progress": extraction_progress.copy(),
         "last_extraction_time": last_extraction_time.copy(),
+        "active_extractions": list(active_connections.keys()),
         "timestamp": datetime.now().isoformat(),
     }
 

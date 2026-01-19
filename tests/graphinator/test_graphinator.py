@@ -450,9 +450,34 @@ class TestGetHealthData:
             assert result["progress"] == 0.75
             assert result["message_counts"]["artists"] == 100
 
-    def test_health_data_without_graph(self) -> None:
-        """Test health data when graph is not connected."""
-        with patch("graphinator.graphinator.graph", None):
+    def test_health_data_starting_status(self) -> None:
+        """Test health data shows 'starting' during initialization (no graph, no consumers, no messages)."""
+        with (
+            patch("graphinator.graphinator.graph", None),
+            patch("graphinator.graphinator.consumer_tags", {}),
+            patch(
+                "graphinator.graphinator.message_counts",
+                {"artists": 0, "labels": 0, "masters": 0, "releases": 0},
+            ),
+        ):
+            from graphinator.graphinator import get_health_data
+
+            result = get_health_data()
+
+            assert result["status"] == "starting"
+            assert result["service"] == "graphinator"
+            assert result["current_task"] == "Initializing Neo4j connection"
+
+    def test_health_data_unhealthy_when_graph_lost(self) -> None:
+        """Test health data shows 'unhealthy' when graph connection lost after processing started."""
+        with (
+            patch("graphinator.graphinator.graph", None),
+            patch("graphinator.graphinator.consumer_tags", {"artists": "consumer-1"}),
+            patch(
+                "graphinator.graphinator.message_counts",
+                {"artists": 100, "labels": 0, "masters": 0, "releases": 0},
+            ),
+        ):
             from graphinator.graphinator import get_health_data
 
             result = get_health_data()

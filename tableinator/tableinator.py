@@ -86,8 +86,22 @@ def get_health_data() -> dict[str, Any]:
     if active_task is None and len(consumer_tags) > 0:
         active_task = "Idle - waiting for messages"
 
+    # Determine health status:
+    # - "starting" if connection pool not yet initialized (startup in progress)
+    # - "unhealthy" if connection pool was initialized but is now None (connection lost)
+    # - "healthy" if connection pool is initialized and ready
+    if connection_pool is None:
+        # Check if we're still in startup (no consumers registered yet)
+        if len(consumer_tags) == 0 and all(c == 0 for c in message_counts.values()):
+            status = "starting"
+            active_task = "Initializing PostgreSQL connection"
+        else:
+            status = "unhealthy"
+    else:
+        status = "healthy"
+
     return {
-        "status": "healthy",
+        "status": status,
         "service": "tableinator",
         "current_task": active_task,
         "progress": current_progress,
@@ -274,8 +288,8 @@ async def periodic_queue_checker() -> None:
                         auto_delete=False,
                     )
 
-                    # Set QoS
-                    await active_channel.set_qos(prefetch_count=50)
+                    # Set QoS - must match batch_size for efficient batch processing
+                    await active_channel.set_qos(prefetch_count=200)
 
                     # Declare and bind all queues
                     queues = {}
@@ -753,8 +767,10 @@ async def main() -> None:
         channel = await amqp_connection.channel()
         active_channel = channel
 
-        # Set QoS to allow more concurrent message processing with connection pooling
-        await channel.set_qos(prefetch_count=50)
+        # Set QoS to allow concurrent batch processing for better throughput
+        # prefetch_count must be >= batch_size to allow batches to fill before flushing
+        # With batch_size=100 (default), we use 200 to allow 2 batches in parallel
+        await channel.set_qos(prefetch_count=200)
 
         # Declare the shared exchange (must match extractor)
         exchange = await channel.declare_exchange(
