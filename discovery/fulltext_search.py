@@ -7,9 +7,9 @@ tsvector and tsquery for efficient text searching across artists, releases, and 
 from enum import Enum
 from typing import Any
 
-import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+import structlog
 
 
 logger = structlog.get_logger(__name__)

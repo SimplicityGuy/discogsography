@@ -2,21 +2,21 @@
 """Dashboard service for monitoring discogsography components."""
 
 import asyncio
-import contextlib
-import logging
 from collections.abc import AsyncGenerator
+import contextlib
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+import logging
 from pathlib import Path
 
-import httpx
-import orjson
-import psycopg
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
+import httpx
+import orjson
 from prometheus_client import Counter, Gauge, generate_latest
+import psycopg
 from pydantic import BaseModel
 
 from common import (

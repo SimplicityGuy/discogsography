@@ -1,11 +1,11 @@
 """Tests for structured logging with correlation IDs."""
 
-import json
 from io import StringIO
+import json
 
+from fastapi.testclient import TestClient
 import pytest
 import structlog
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture

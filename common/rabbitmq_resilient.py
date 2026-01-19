@@ -1,8 +1,8 @@
 """Resilient RabbitMQ connection management with circuit breaker and retry logic."""
 
 import asyncio
-import logging
 from collections.abc import Callable
+import logging
 from typing import Any
 
 import aio_pika

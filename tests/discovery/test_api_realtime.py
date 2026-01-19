@@ -5,8 +5,8 @@ Tests API endpoints, initialization, WebSocket connections, and real-time featur
 
 from unittest.mock import AsyncMock, MagicMock
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 from discovery.api_realtime import (
     CacheInvalidateRequest,

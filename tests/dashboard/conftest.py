@@ -1,10 +1,10 @@
 """Pytest configuration for dashboard tests."""
 
 import os
+from pathlib import Path
 import subprocess
 import sys
 import time
-from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 

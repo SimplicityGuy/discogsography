@@ -7,9 +7,9 @@ genre evolution analysis, and similarity networks.
 from datetime import datetime
 from typing import Any, Literal
 
-import structlog
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+import structlog
 
 
 logger = structlog.get_logger(__name__)

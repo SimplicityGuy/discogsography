@@ -3,15 +3,16 @@
 from datetime import datetime
 from typing import Any
 
+from neo4j import AsyncDriver, AsyncGraphDatabase
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import structlog
-from common import get_config
-from neo4j import AsyncDriver, AsyncGraphDatabase
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import create_async_engine
+import structlog
+
+from common import get_config
 
 
 logger = structlog.get_logger(__name__)

@@ -1,11 +1,11 @@
 """Tests for file completion message handling."""
 
-import json
 from datetime import datetime
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from aio_pika.abc import AbstractIncomingMessage
+import pytest
 
 from graphinator.graphinator import check_file_completion, on_artist_message
 from tableinator.tableinator import on_data_message

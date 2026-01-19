@@ -3,8 +3,8 @@
 import time
 from unittest.mock import AsyncMock, Mock, patch
 
-import pytest
 from psycopg.errors import InterfaceError, OperationalError
+import pytest
 
 from common.postgres_resilient import AsyncResilientPostgreSQL, ResilientPostgreSQLPool
 

@@ -1,8 +1,8 @@
 """Tests for request tracking middleware."""
 
-import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+import pytest
 
 from discovery.middleware import RequestIDMiddleware, get_request_id
 

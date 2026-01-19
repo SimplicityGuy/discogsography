@@ -1,10 +1,10 @@
 """Simple health check server for monitoring services."""
 
-import json
-import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+import logging
 from threading import Thread
 from typing import Any
 

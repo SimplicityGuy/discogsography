@@ -8,8 +8,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any
 
-import structlog
 from neo4j import AsyncDriver
+import structlog
 
 
 logger = structlog.get_logger(__name__)

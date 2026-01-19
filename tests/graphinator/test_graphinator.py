@@ -7,9 +7,9 @@ import signal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from aio_pika.abc import AbstractIncomingMessage
 from orjson import dumps
+import pytest
 
 from graphinator.graphinator import (
     get_existing_hash,
@@ -296,7 +296,7 @@ class TestMain:
         mock_context_manager.__aexit__ = AsyncMock(return_value=None)
 
         # session() returns an awaitable that returns the context manager
-        async def mock_session_factory(*args, **kwargs):
+        async def mock_session_factory(*_args, **_kwargs):
             return mock_context_manager
 
         mock_neo4j_instance.session = MagicMock(side_effect=mock_session_factory)
@@ -397,7 +397,7 @@ class TestMain:
         mock_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
         mock_context_manager.__aexit__ = AsyncMock(return_value=None)
 
-        async def mock_session_factory(*args, **kwargs):
+        async def mock_session_factory(*_args, **_kwargs):
             return mock_context_manager
 
         mock_neo4j_instance.session = MagicMock(side_effect=mock_session_factory)

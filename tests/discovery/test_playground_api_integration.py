@@ -6,9 +6,9 @@ Tests API endpoints, database integration, caching, and error handling.
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi import HTTPException
 import pytest
 import pytest_asyncio
-from fastapi import HTTPException
 
 from discovery.playground_api import (
     HeatmapRequest,

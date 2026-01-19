@@ -5,9 +5,9 @@ from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
+from fastapi.testclient import TestClient
 import httpx
 import pytest
-from fastapi.testclient import TestClient
 
 from dashboard.dashboard import DashboardApp, DatabaseInfo, QueueInfo, ServiceStatus, SystemMetrics
 

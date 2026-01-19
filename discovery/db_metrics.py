@@ -1,8 +1,8 @@
 """Database query performance metrics tracking."""
 
-import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+import time
 from typing import Any
 
 import structlog

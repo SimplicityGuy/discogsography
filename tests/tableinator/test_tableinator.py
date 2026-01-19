@@ -8,9 +8,9 @@ import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import pytest
 from aio_pika.abc import AbstractIncomingMessage
 from psycopg import DatabaseError
+import pytest
 
 from tableinator.tableinator import (
     check_all_consumers_idle,
@@ -422,7 +422,7 @@ class TestMain:
         mock_pool.close = AsyncMock()
 
         # Make table creation fail by raising exception in async connection factory
-        async def mock_connection_factory_fail(*args: Any, **kwargs: Any) -> Any:
+        async def mock_connection_factory_fail(*_args: Any, **_kwargs: Any) -> Any:
             raise Exception("Cannot create tables")
 
         mock_pool.connection = MagicMock(side_effect=mock_connection_factory_fail)
@@ -1839,7 +1839,7 @@ class TestMainDatabaseSetup:
         mock_pool.close = AsyncMock()
 
         # Make table creation fail by raising exception in async connection factory
-        async def mock_connection_factory_fail(*args: Any, **kwargs: Any) -> Any:
+        async def mock_connection_factory_fail(*_args: Any, **_kwargs: Any) -> Any:
             raise Exception("Table creation failed")
 
         mock_pool.connection = MagicMock(side_effect=mock_connection_factory_fail)

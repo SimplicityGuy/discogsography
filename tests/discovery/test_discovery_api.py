@@ -3,8 +3,8 @@
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 
 class TestDiscoveryAPI:

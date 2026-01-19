@@ -2,8 +2,8 @@
 
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
-import pytest
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
+import pytest
 
 from common.db_resilience import ExponentialBackoff
 from common.neo4j_resilient import (

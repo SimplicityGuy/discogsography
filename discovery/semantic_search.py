@@ -9,9 +9,9 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-import structlog
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
+import structlog
 
 
 logger = structlog.get_logger(__name__)

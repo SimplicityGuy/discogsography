@@ -4,13 +4,13 @@ This module provides endpoints for full-text search, semantic search, faceted se
 autocomplete, and search ranking.
 """
 
-import os
 from datetime import datetime
+import os
 from typing import Any, Literal
 
-import structlog
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+import structlog
 
 
 logger = structlog.get_logger(__name__)

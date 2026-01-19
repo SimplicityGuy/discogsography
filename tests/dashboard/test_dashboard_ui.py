@@ -3,8 +3,8 @@
 
 import re
 
-import pytest
 from playwright.sync_api import Page, expect
+import pytest
 
 
 @pytest.mark.e2e

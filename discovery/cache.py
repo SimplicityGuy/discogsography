@@ -1,18 +1,18 @@
 """Two-level caching module for Discovery service (L1: in-memory, L2: Redis)."""
 
+from collections import OrderedDict
+from collections.abc import Callable
 import hashlib
 import json
 import logging
 import time
-from collections import OrderedDict
-from collections.abc import Callable
 from typing import Any, TypedDict
 
 import orjson
-from common import get_config
 from redis import asyncio as aioredis
 from redis.exceptions import RedisError
 
+from common import get_config
 from discovery.metrics import cache_hits, cache_misses, cache_size
 
 

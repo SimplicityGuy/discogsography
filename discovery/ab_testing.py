@@ -4,18 +4,18 @@ This module provides infrastructure for running A/B tests on recommendation
 algorithms, including test configuration, user assignment, and statistical analysis.
 """
 
-import hashlib
-import json
-import random
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+import hashlib
+import json
 from pathlib import Path
+import random
 from typing import Any
 
 import numpy as np
-import structlog
 from scipy import stats
+import structlog
 
 from discovery.recommender_metrics import RecommendationMetrics, RecommenderMetricsTracker
 

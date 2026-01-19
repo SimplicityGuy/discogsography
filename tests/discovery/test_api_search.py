@@ -1,7 +1,7 @@
 """E2E tests for Advanced Search API endpoints (Phase 4.2.2)."""
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 
 class TestSearchAPI:

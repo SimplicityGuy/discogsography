@@ -1,13 +1,13 @@
 """Discovery service test configuration and fixtures."""
 
+from collections.abc import Generator
 import os
 import tempfile
-from collections.abc import Generator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 
 # Set environment variables before any imports

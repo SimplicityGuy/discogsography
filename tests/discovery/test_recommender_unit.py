@@ -5,8 +5,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import networkx as nx
 import numpy as np
-import pytest
 from pydantic import ValidationError
+import pytest
 
 from discovery.recommender import (
     MusicRecommender,

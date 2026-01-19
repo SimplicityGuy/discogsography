@@ -1,10 +1,10 @@
 """Test application factory for dashboard E2E tests."""
 
 import asyncio
-import contextlib
-import logging
 from collections.abc import AsyncGenerator
+import contextlib
 from contextlib import asynccontextmanager
+import logging
 from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock

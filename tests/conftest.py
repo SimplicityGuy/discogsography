@@ -5,9 +5,9 @@ from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+from aio_pika.abc import AbstractChannel, AbstractConnection, AbstractQueue
 import pytest
 import pytest_asyncio
-from aio_pika.abc import AbstractChannel, AbstractConnection, AbstractQueue
 
 
 # Let pytest-asyncio handle the event loop automatically

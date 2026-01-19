@@ -2,8 +2,8 @@
 
 import typing
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 from tests.dashboard.dashboard_test_app import create_test_app
 

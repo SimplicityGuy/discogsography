@@ -4,12 +4,12 @@ This module enables multiple users to collaborate in real-time,
 sharing discoveries, exploring together, and building collaborative playlists.
 """
 
-import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
+import uuid
 
 import structlog
 

@@ -7,11 +7,11 @@ recommendations.
 
 from typing import Any
 
-import numpy as np
-import structlog
 from neo4j import AsyncDriver
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
+import structlog
 
 
 logger = structlog.get_logger(__name__)

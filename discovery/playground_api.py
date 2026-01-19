@@ -3,13 +3,13 @@
 import logging
 from typing import Any
 
-from common import get_config
 from fastapi import HTTPException, Query
 from neo4j import AsyncGraphDatabase
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 
+from common import get_config
 from discovery.cache import CACHE_TTL, cache_manager, cached
 
 

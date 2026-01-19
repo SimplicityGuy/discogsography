@@ -8,8 +8,6 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import structlog
-from common import get_config, setup_logging
 from fastapi import FastAPI, HTTPException, Request, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
@@ -18,7 +16,9 @@ from pydantic import BaseModel, Field
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
+import structlog
 
+from common import get_config, setup_logging
 from discovery.analytics import (
     AnalyticsRequest,
     AnalyticsResult,
@@ -195,7 +195,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     # Create Neo4j indexes for optimal query performance
     from common import get_config
-
     from discovery.neo4j_indexes import create_all_indexes
 
     config = get_config()

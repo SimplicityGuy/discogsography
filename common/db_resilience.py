@@ -1,14 +1,14 @@
 """Database resilience utilities for handling connection failures and recovery."""
 
 import asyncio
-import logging
-import time
 from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
+import logging
 from threading import Lock
+import time
 from typing import Any, TypeVar, cast
 
 

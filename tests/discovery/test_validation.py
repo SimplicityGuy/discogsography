@@ -1,7 +1,7 @@
 """Tests for input validation and sanitization."""
 
-import pytest
 from fastapi import HTTPException
+import pytest
 
 from discovery.validation import (
     ALLOWED_HEATMAP_TYPES,

@@ -1,7 +1,7 @@
 """Tests for CacheInvalidationManager class."""
 
-import re
 from datetime import UTC, datetime
+import re
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

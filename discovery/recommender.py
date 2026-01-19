@@ -2,12 +2,13 @@
 
 from typing import TYPE_CHECKING, Any
 
+from neo4j import AsyncDriver, AsyncGraphDatabase
 import networkx as nx
 import numpy as np
-import structlog
-from common import get_config
-from neo4j import AsyncDriver, AsyncGraphDatabase
 from pydantic import BaseModel
+import structlog
+
+from common import get_config
 
 
 # Import ONNX sentence transformer if available, fallback to regular

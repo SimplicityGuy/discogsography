@@ -8,9 +8,9 @@ dynamic filter updates based on current results.
 from collections import Counter
 from typing import Any
 
-import structlog
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine
+import structlog
 
 
 logger = structlog.get_logger(__name__)

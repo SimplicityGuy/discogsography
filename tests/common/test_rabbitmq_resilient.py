@@ -2,9 +2,9 @@
 
 from unittest.mock import AsyncMock, Mock, patch
 
-import pytest
 from aio_pika.exceptions import AMQPConnectionError
 from pika.exceptions import AMQPConnectionError as PikaConnectionError
+import pytest
 
 from common.db_resilience import ExponentialBackoff
 from common.rabbitmq_resilient import (

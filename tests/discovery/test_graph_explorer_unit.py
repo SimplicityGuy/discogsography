@@ -3,8 +3,8 @@
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 from pydantic import ValidationError
+import pytest
 
 from discovery.graph_explorer import (
     GraphData,

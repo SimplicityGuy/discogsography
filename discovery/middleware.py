@@ -1,12 +1,12 @@
 """Middleware for request tracking and correlation."""
 
+from collections.abc import Callable
 import time
 import uuid
-from collections.abc import Callable
 
-import structlog
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
+import structlog
 
 from discovery.metrics import active_requests, error_count, request_count, request_duration
 

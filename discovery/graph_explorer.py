@@ -2,10 +2,11 @@
 
 from typing import Any
 
-import structlog
-from common import get_config
 from neo4j import AsyncDriver, AsyncGraphDatabase
 from pydantic import BaseModel
+import structlog
+
+from common import get_config
 
 
 logger = structlog.get_logger(__name__)

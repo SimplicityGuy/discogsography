@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-import structlog
 from neo4j import AsyncDriver
+import structlog
 
 from discovery.websocket_manager import Channel, WebSocketManager
 

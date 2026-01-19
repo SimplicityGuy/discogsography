@@ -1,7 +1,7 @@
 """Tests for SemanticSearchEngine class."""
 
-import tempfile
 from pathlib import Path
+import tempfile
 from unittest.mock import MagicMock, Mock, patch
 
 import numpy as np

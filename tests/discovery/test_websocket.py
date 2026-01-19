@@ -3,8 +3,8 @@
 Tests WebSocket connection, disconnection, broadcasting, and error handling.
 """
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 
 @pytest.fixture

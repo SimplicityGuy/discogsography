@@ -4,15 +4,15 @@ This module implements item-item collaborative filtering based on co-occurrence
 patterns in the music graph (collaborations, shared labels, shared genres).
 """
 
-import os
 from collections import defaultdict
+import os
 from typing import Any
 
-import numpy as np
-import structlog
 from neo4j import AsyncDriver
+import numpy as np
 from scipy.sparse import csr_matrix, lil_matrix
 from sklearn.metrics.pairwise import cosine_similarity
+import structlog
 
 
 logger = structlog.get_logger(__name__)

@@ -1,12 +1,12 @@
 """Configuration management for discogsography services."""
 
-import logging
-import sys
-import warnings
 from dataclasses import dataclass
+import logging
 from os import getenv
 from pathlib import Path
+import sys
 from typing import Any
+import warnings
 
 import orjson
 import structlog

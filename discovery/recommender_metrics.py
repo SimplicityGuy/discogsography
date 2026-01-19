@@ -4,17 +4,17 @@ This module provides comprehensive metrics tracking for recommendation systems,
 including quality metrics, performance metrics, and A/B testing support.
 """
 
-import json
-import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+import json
 from pathlib import Path
+import time
 from typing import Any
 
 import numpy as np
-import structlog
 from prometheus_client import Counter, Gauge, Histogram
+import structlog
 
 
 logger = structlog.get_logger(__name__)

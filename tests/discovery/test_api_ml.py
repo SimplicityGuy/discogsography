@@ -1,7 +1,7 @@
 """E2E tests for ML & Recommendations API endpoints (Phase 4.2.1)."""
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 
 class TestMLAPI:

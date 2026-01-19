@@ -1,7 +1,7 @@
 """E2E tests for Graph Analytics API endpoints (Phase 4.2.3)."""
 
-import pytest
 from fastapi.testclient import TestClient
+import pytest
 
 
 class TestGraphAPI:

@@ -6,9 +6,9 @@ clusters of artists who frequently collaborate or share similar attributes.
 
 from typing import Any
 
+from neo4j import AsyncDriver
 import networkx as nx
 import structlog
-from neo4j import AsyncDriver
 
 
 logger = structlog.get_logger(__name__)

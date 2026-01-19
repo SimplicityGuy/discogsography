@@ -4,8 +4,8 @@
 import base64
 import json
 import os
-import urllib.request
 from urllib.error import URLError
+import urllib.request
 
 
 def check_rabbitmq_queues() -> None:

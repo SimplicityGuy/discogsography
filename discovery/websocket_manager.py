@@ -9,8 +9,8 @@ from datetime import UTC, datetime
 from enum import Enum
 from typing import Any
 
-import structlog
 from fastapi import WebSocket, WebSocketDisconnect
+import structlog
 
 
 logger = structlog.get_logger(__name__)

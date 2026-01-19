@@ -1,7 +1,7 @@
 """Tests for SimilarityNetworkBuilder export and analysis methods."""
 
-import tempfile
 from pathlib import Path
+import tempfile
 from unittest.mock import AsyncMock, MagicMock
 
 import networkx as nx
