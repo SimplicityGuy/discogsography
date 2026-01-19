@@ -50,7 +50,9 @@ last_extraction_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases
 completed_files = set()  # Track which files have been completed
 current_task = None
 current_progress = 0.0
-active_connections = {}  # Track active AMQP connections by data type
+active_connections: dict[
+    str, ResilientRabbitMQConnection
+] = {}  # Track active AMQP connections by data type
 
 # Periodic check configuration will be loaded from config
 
