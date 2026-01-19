@@ -12,9 +12,8 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import structlog
-from neo4j.exceptions import ServiceUnavailable, SessionExpired
-
 from common import normalize_record
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
 logger = structlog.get_logger(__name__)
 
@@ -54,7 +53,7 @@ class Neo4jBatchProcessor:
             driver: Neo4j driver instance
             config: Batch processing configuration
         """
-        self.driver = driver
+        self.driver = driver  # AsyncResilientNeo4jDriver
         self.config = config or BatchConfig()
 
         # Separate queues for each data type

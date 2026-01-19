@@ -109,14 +109,14 @@ class TestOnArtistMessage:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_artist_data).encode()
 
-        # Setup Neo4j mock
-        mock_session = MagicMock()
-        mock_tx = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-        mock_session.execute_write.return_value = True
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
 
         # Mock transaction to indicate new artist
-        def mock_tx_func(func: Any) -> Any:
+        mock_tx = MagicMock()
+
+        async def mock_tx_func(func: Any) -> Any:
             mock_tx.run.return_value.single.return_value = None  # No existing artist
             return func(mock_tx)
 
@@ -129,7 +129,7 @@ class TestOnArtistMessage:
         mock_message.ack.assert_called_once()
 
         # Verify session was used
-        mock_session.execute_write.assert_called_once()
+        mock_session.execute_write.assert_called()
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
@@ -139,12 +139,14 @@ class TestOnArtistMessage:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_artist_data).encode()
 
-        # Setup Neo4j mock to return existing hash
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
 
-        def mock_tx_func(func: Any) -> Any:
-            mock_tx = MagicMock()
+        # Mock transaction to return existing hash
+        mock_tx = MagicMock()
+
+        async def mock_tx_func(func: Any) -> Any:
             # Return existing artist with same hash
             mock_tx.run.return_value.single.return_value = {"hash": sample_artist_data["sha256"]}
             return func(mock_tx)
@@ -195,15 +197,16 @@ class TestOnLabelMessage:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_label_data).encode()
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-        mock_session.execute_write.return_value = True
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+        mock_session.execute_write = AsyncMock(return_value=True)
 
         with patch("graphinator.graphinator.graph", mock_neo4j_driver):
             await on_label_message(mock_message)
 
         mock_message.ack.assert_called_once()
-        mock_session.execute_write.assert_called_once()
+        mock_session.execute_write.assert_called()
 
 
 class TestOnMasterMessage:
@@ -216,15 +219,16 @@ class TestOnMasterMessage:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_master_data).encode()
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-        mock_session.execute_write.return_value = True
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+        mock_session.execute_write = AsyncMock(return_value=True)
 
         with patch("graphinator.graphinator.graph", mock_neo4j_driver):
             await on_master_message(mock_message)
 
         mock_message.ack.assert_called_once()
-        mock_session.execute_write.assert_called_once()
+        mock_session.execute_write.assert_called()
 
 
 class TestOnReleaseMessage:
@@ -237,15 +241,16 @@ class TestOnReleaseMessage:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_release_data).encode()
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-        mock_session.execute_write.return_value = True
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+        mock_session.execute_write = AsyncMock(return_value=True)
 
         with patch("graphinator.graphinator.graph", mock_neo4j_driver):
             await on_release_message(mock_message)
 
         mock_message.ack.assert_called_once()
-        mock_session.execute_write.assert_called_once()
+        mock_session.execute_write.assert_called()
 
 
 class TestMain:
@@ -255,7 +260,7 @@ class TestMain:
     @patch("graphinator.graphinator.setup_logging")
     @patch("graphinator.graphinator.HealthServer")
     @patch("graphinator.graphinator.AsyncResilientRabbitMQ")
-    @patch("graphinator.graphinator.ResilientNeo4jDriver")
+    @patch("graphinator.graphinator.AsyncResilientNeo4jDriver")
     async def test_main_execution(
         self,
         mock_neo4j_class: MagicMock,
@@ -283,9 +288,24 @@ class TestMain:
         # Mock Neo4j driver and connectivity test
         mock_neo4j_instance = MagicMock()
         mock_neo4j_class.return_value = mock_neo4j_instance
-        mock_session = MagicMock()
-        mock_neo4j_instance.session.return_value.__enter__.return_value = mock_session
-        mock_session.run.return_value.single.return_value = {"test": 1}
+
+        # Setup async session context manager
+        mock_session = AsyncMock()
+        mock_context_manager = AsyncMock()
+        mock_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        # session() returns an awaitable that returns the context manager
+        async def mock_session_factory(*args, **kwargs):
+            return mock_context_manager
+
+        mock_neo4j_instance.session = MagicMock(side_effect=mock_session_factory)
+
+        # Mock the connectivity test
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"test": 1})
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_neo4j_instance.close = AsyncMock()
 
         # Simulate shutdown by setting shutdown_requested
         with patch("graphinator.graphinator.shutdown_requested", False):
@@ -328,7 +348,7 @@ class TestMain:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.setup_logging")
     @patch("graphinator.graphinator.HealthServer")
-    @patch("graphinator.graphinator.ResilientNeo4jDriver")
+    @patch("graphinator.graphinator.AsyncResilientNeo4jDriver")
     async def test_main_neo4j_connection_failure(
         self,
         mock_neo4j_class: MagicMock,
@@ -351,7 +371,7 @@ class TestMain:
     @patch("graphinator.graphinator.setup_logging")
     @patch("graphinator.graphinator.HealthServer")
     @patch("graphinator.graphinator.AsyncResilientRabbitMQ")
-    @patch("graphinator.graphinator.ResilientNeo4jDriver")
+    @patch("graphinator.graphinator.AsyncResilientNeo4jDriver")
     async def test_main_amqp_connection_failure(
         self,
         mock_neo4j_class: MagicMock,
@@ -364,12 +384,23 @@ class TestMain:
         mock_health_instance = MagicMock()
         mock_health_server.return_value = mock_health_instance
 
-        # Setup Neo4j success
+        # Setup Neo4j success with async session support
         mock_neo4j_instance = MagicMock()
         mock_neo4j_class.return_value = mock_neo4j_instance
-        mock_session = MagicMock()
-        mock_neo4j_instance.session.return_value.__enter__.return_value = mock_session
+
+        # Create async session mock
+        mock_session = AsyncMock()
         mock_session.run.return_value.single.return_value = {"test": 1}
+
+        # Setup async context manager for session
+        mock_context_manager = AsyncMock()
+        mock_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_context_manager.__aexit__ = AsyncMock(return_value=None)
+
+        async def mock_session_factory(*args, **kwargs):
+            return mock_context_manager
+
+        mock_neo4j_instance.session = MagicMock(side_effect=mock_session_factory)
 
         # Make AMQP connection fail
         mock_rabbitmq_class.side_effect = Exception("Cannot connect to AMQP")
@@ -844,16 +875,17 @@ class TestLabelTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_label_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         # Create a mock transaction function that will be called
         mock_tx = MagicMock()
         # Return existing hash that matches
         mock_tx.run.return_value.single.return_value = {"hash": sample_label_data["sha256"]}
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
         # When execute_write is called, execute the transaction function
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -884,14 +916,15 @@ class TestLabelTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(label_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         # No existing label
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -925,13 +958,14 @@ class TestLabelTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(label_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -962,13 +996,14 @@ class TestLabelTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(label_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -993,13 +1028,14 @@ class TestMasterTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_master_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = {"hash": sample_master_data["sha256"]}
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1032,13 +1068,14 @@ class TestMasterTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(master_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1074,13 +1111,14 @@ class TestMasterTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(master_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1105,13 +1143,14 @@ class TestReleaseTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_release_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = {"hash": sample_release_data["sha256"]}
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1145,13 +1184,14 @@ class TestReleaseTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(release_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1189,13 +1229,14 @@ class TestReleaseTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(release_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1224,13 +1265,14 @@ class TestReleaseTransactionLogic:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(release_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1529,8 +1571,9 @@ class TestBatchModeIntegration:
 
         mock_batch_processor = AsyncMock()
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
         mock_session.execute_write.return_value = True
 
         with (
@@ -1564,13 +1607,14 @@ class TestArtistTransactionEdgeCases:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(artist_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1601,13 +1645,14 @@ class TestArtistTransactionEdgeCases:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(artist_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1637,13 +1682,14 @@ class TestArtistTransactionEdgeCases:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(artist_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1714,13 +1760,14 @@ class TestLabelTransactionEdgeCases:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(label_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx
@@ -1750,13 +1797,14 @@ class TestLabelTransactionEdgeCases:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(label_data).encode()
 
+        # Get the mock session from the fixture's async context manager
+        mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
         mock_tx = MagicMock()
         mock_tx.run.return_value.single.return_value = None
 
-        mock_session = MagicMock()
-        mock_neo4j_driver.session.return_value.__enter__.return_value = mock_session
-
-        def execute_tx(tx_func: Any) -> Any:
+        async def execute_tx(tx_func: Any) -> Any:
             return tx_func(mock_tx)
 
         mock_session.execute_write.side_effect = execute_tx

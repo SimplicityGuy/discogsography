@@ -25,7 +25,7 @@ from tableinator.tableinator import (
 )
 
 
-# SimpleConnectionPool tests removed as we now use ResilientPostgreSQLPool
+# SimpleConnectionPool tests removed as we now use AsyncPostgreSQLPool
 
 
 class TestGetConnection:
@@ -91,21 +91,27 @@ class TestOnDataMessage:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
-    async def test_process_new_record(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
+    async def test_process_new_record(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock, mock_async_pool: Any) -> None:
         """Test processing a new record."""
         # Create mock message
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_artist_data).encode()
         mock_message.routing_key = "artists"
 
-        # Setup connection pool mock
-        mock_pool = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_postgres_connection
+        # Setup async cursor mock
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchone = AsyncMock(return_value=None)  # No existing record
 
-        mock_cursor = mock_postgres_connection.cursor.return_value.__enter__.return_value
-        mock_cursor.fetchone.return_value = None  # No existing record
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("tableinator.tableinator.connection_pool", mock_pool):
+        mock_postgres_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection pool mock
+        pool = mock_async_pool(mock_postgres_connection)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
             await on_data_message(mock_message)
 
         # Verify message was acknowledged
@@ -116,20 +122,27 @@ class TestOnDataMessage:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
-    async def test_skip_unchanged_record(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
+    async def test_skip_unchanged_record(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock, mock_async_pool: Any) -> None:
         """Test skipping record with unchanged hash."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_artist_data).encode()
         mock_message.routing_key = "artists"
 
-        mock_pool = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_postgres_connection
-
-        mock_cursor = mock_postgres_connection.cursor.return_value.__enter__.return_value
+        # Setup async cursor mock
+        mock_cursor = AsyncMock()
         # Return existing record with same hash
-        mock_cursor.fetchone.return_value = (sample_artist_data["sha256"],)
+        mock_cursor.fetchone = AsyncMock(return_value=(sample_artist_data["sha256"],))
 
-        with patch("tableinator.tableinator.connection_pool", mock_pool):
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_postgres_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection pool mock
+        pool = mock_async_pool(mock_postgres_connection)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
             await on_data_message(mock_message)
 
         # Verify message was acknowledged
@@ -187,7 +200,7 @@ class TestMain:
     @patch("tableinator.tableinator.setup_logging")
     @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
-    @patch("tableinator.tableinator.ResilientPostgreSQLPool")
+    @patch("tableinator.tableinator.AsyncPostgreSQLPool")
     @patch("tableinator.tableinator.psycopg.connect")
     @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_main_execution(
@@ -211,14 +224,22 @@ class TestMain:
         mock_admin_conn.__enter__.return_value = mock_admin_conn
         mock_psycopg_connect.return_value = mock_admin_conn
 
-        # Setup mocks
+        # Setup mocks with async connection support
         mock_pool = MagicMock()
         mock_pool_class.return_value = mock_pool
+        mock_pool.initialize = AsyncMock()  # Mock async initialize method
+        mock_pool.close = AsyncMock()
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_conn
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+        # Create async context manager for connection
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_pool.connection = MagicMock(return_value=mock_connection_cm)
 
         # Mock resilient RabbitMQ connection
         mock_rabbitmq_instance = AsyncMock()
@@ -283,7 +304,7 @@ class TestMain:
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.setup_logging")
     @patch("tableinator.tableinator.HealthServer")
-    @patch("tableinator.tableinator.ResilientPostgreSQLPool")
+    @patch("tableinator.tableinator.AsyncPostgreSQLPool")
     @patch("tableinator.tableinator.psycopg.connect")
     async def test_main_pool_initialization_failure(
         self,
@@ -315,7 +336,7 @@ class TestMain:
     @patch("tableinator.tableinator.setup_logging")
     @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
-    @patch("tableinator.tableinator.ResilientPostgreSQLPool")
+    @patch("tableinator.tableinator.AsyncPostgreSQLPool")
     @patch("tableinator.tableinator.psycopg.connect")
     async def test_main_amqp_connection_failure(
         self,
@@ -338,14 +359,22 @@ class TestMain:
         mock_admin_conn.__enter__.return_value = mock_admin_conn
         mock_psycopg_connect.return_value = mock_admin_conn
 
-        # Setup pool success
+        # Setup pool success with async connection support
         mock_pool = MagicMock()
         mock_pool_class.return_value = mock_pool
+        mock_pool.initialize = AsyncMock()  # Mock async initialize method
+        mock_pool.close = AsyncMock()
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_conn
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+        # Create async context manager for connection
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_pool.connection = MagicMock(return_value=mock_connection_cm)
 
         # Make AMQP connection fail
         from aio_pika.exceptions import AMQPConnectionError
@@ -363,7 +392,7 @@ class TestMain:
     @patch("tableinator.tableinator.setup_logging")
     @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
-    @patch("tableinator.tableinator.ResilientPostgreSQLPool")
+    @patch("tableinator.tableinator.AsyncPostgreSQLPool")
     @patch("tableinator.tableinator.psycopg.connect")
     async def test_main_table_creation_failure(
         self,
@@ -386,12 +415,17 @@ class TestMain:
         mock_admin_conn.__enter__.return_value = mock_admin_conn
         mock_psycopg_connect.return_value = mock_admin_conn
 
-        # Setup pool
+        # Setup pool with async connection that fails
         mock_pool = MagicMock()
         mock_pool_class.return_value = mock_pool
+        mock_pool.initialize = AsyncMock()  # Mock async initialize method
+        mock_pool.close = AsyncMock()
 
-        # Make table creation fail
-        mock_pool.connection.side_effect = Exception("Cannot create tables")
+        # Make table creation fail by raising exception in async connection factory
+        async def mock_connection_factory_fail(*args: Any, **kwargs: Any) -> Any:
+            raise Exception("Cannot create tables")
+
+        mock_pool.connection = MagicMock(side_effect=mock_connection_factory_fail)
 
         # Should complete without raising
         await main()
@@ -403,7 +437,7 @@ class TestMain:
     @patch("tableinator.tableinator.setup_logging")
     @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
-    @patch("tableinator.tableinator.ResilientPostgreSQLPool")
+    @patch("tableinator.tableinator.AsyncPostgreSQLPool")
     @patch("tableinator.tableinator.psycopg.connect")
     @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_main_database_creation(
@@ -713,7 +747,9 @@ class TestOnDataMessageExtended:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
-    async def test_processes_label_record_name(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
+    async def test_processes_label_record_name(
+        self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock, mock_async_pool: Any
+    ) -> None:
         """Test processing label record with name extraction."""
         import tableinator.tableinator
 
@@ -729,15 +765,21 @@ class TestOnDataMessageExtended:
         mock_message.body = json.dumps(label_data).encode()
         mock_message.routing_key = "labels"
 
-        # Setup connection pool mock
-        mock_pool = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_postgres_connection
+        # Setup async cursor mock
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchone = AsyncMock(return_value=None)
 
-        mock_cursor = mock_postgres_connection.cursor.return_value.__enter__.return_value
-        mock_cursor.fetchone.return_value = None
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_postgres_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection pool mock
+        pool = mock_async_pool(mock_postgres_connection)
 
         with (
-            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.connection_pool", pool),
             patch("tableinator.tableinator.logger"),
         ):
             await on_data_message(mock_message)
@@ -747,7 +789,9 @@ class TestOnDataMessageExtended:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
-    async def test_processes_release_record_name(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
+    async def test_processes_release_record_name(
+        self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock, mock_async_pool: Any
+    ) -> None:
         """Test processing release record with title extraction."""
         import tableinator.tableinator
 
@@ -763,15 +807,21 @@ class TestOnDataMessageExtended:
         mock_message.body = json.dumps(release_data).encode()
         mock_message.routing_key = "releases"
 
-        # Setup connection pool mock
-        mock_pool = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_postgres_connection
+        # Setup async cursor mock
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchone = AsyncMock(return_value=None)
 
-        mock_cursor = mock_postgres_connection.cursor.return_value.__enter__.return_value
-        mock_cursor.fetchone.return_value = None
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_postgres_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection pool mock
+        pool = mock_async_pool(mock_postgres_connection)
 
         with (
-            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.connection_pool", pool),
             patch("tableinator.tableinator.logger"),
         ):
             await on_data_message(mock_message)
@@ -781,7 +831,9 @@ class TestOnDataMessageExtended:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
-    async def test_processes_master_record_name(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
+    async def test_processes_master_record_name(
+        self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock, mock_async_pool: Any
+    ) -> None:
         """Test processing master record with title extraction."""
         import tableinator.tableinator
 
@@ -797,15 +849,21 @@ class TestOnDataMessageExtended:
         mock_message.body = json.dumps(master_data).encode()
         mock_message.routing_key = "masters"
 
-        # Setup connection pool mock
-        mock_pool = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_postgres_connection
+        # Setup async cursor mock
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchone = AsyncMock(return_value=None)
 
-        mock_cursor = mock_postgres_connection.cursor.return_value.__enter__.return_value
-        mock_cursor.fetchone.return_value = None
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_postgres_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection pool mock
+        pool = mock_async_pool(mock_postgres_connection)
 
         with (
-            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.connection_pool", pool),
             patch("tableinator.tableinator.logger"),
         ):
             await on_data_message(mock_message)
@@ -1300,7 +1358,7 @@ class TestOnDataMessageProgressLogging:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.progress_interval", 10)
-    async def test_logs_progress_at_interval(self) -> None:
+    async def test_logs_progress_at_interval(self, mock_async_pool: Any) -> None:
         """Test that progress is logged at the correct interval."""
         import tableinator.tableinator
 
@@ -1309,17 +1367,21 @@ class TestOnDataMessageProgressLogging:
         mock_message.body = json.dumps({"id": "123", "name": "Test Artist", "sha256": "abc123"}).encode()
         mock_message.routing_key = "artists"  # Set routing_key for data_type
 
-        mock_pool = MagicMock()
         mock_connection = MagicMock()
-        mock_cursor = MagicMock()
+        mock_cursor = AsyncMock()
 
         # Mock cursor.fetchone to return a hash
-        mock_cursor.fetchone.return_value = ("abc123",)  # Same hash so it will ack and return
+        mock_cursor.fetchone = AsyncMock(return_value=("abc123",))  # Same hash so it will ack and return
 
-        mock_pool.connection.return_value.__enter__ = MagicMock(return_value=mock_connection)
-        mock_pool.connection.return_value.__exit__ = MagicMock(return_value=None)
-        mock_connection.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
-        mock_connection.cursor.return_value.__exit__ = MagicMock(return_value=None)
+        # Setup async cursor context manager
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection pool mock
+        mock_pool = mock_async_pool(mock_connection)
 
         tableinator.tableinator.connection_pool = mock_pool
         tableinator.tableinator.shutdown_requested = False
@@ -1372,7 +1434,9 @@ class TestOnDataMessageBatchMode:
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
     @patch("tableinator.tableinator.BATCH_MODE", False)
-    async def test_processes_directly_when_batch_disabled(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
+    async def test_processes_directly_when_batch_disabled(
+        self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock, mock_async_pool: Any
+    ) -> None:
         """Test direct processing when batch mode is disabled."""
         import tableinator.tableinator
 
@@ -1384,13 +1448,20 @@ class TestOnDataMessageBatchMode:
         mock_message.body = json.dumps(sample_artist_data).encode()
         mock_message.routing_key = "artists"
 
-        mock_pool = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_postgres_connection
+        # Setup async cursor mock
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchone = AsyncMock(return_value=None)
 
-        mock_cursor = mock_postgres_connection.cursor.return_value.__enter__.return_value
-        mock_cursor.fetchone.return_value = None
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
 
-        with patch("tableinator.tableinator.connection_pool", mock_pool):
+        mock_postgres_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection pool mock
+        pool = mock_async_pool(mock_postgres_connection)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
             await on_data_message(mock_message)
 
         # Should have processed directly
@@ -1403,20 +1474,29 @@ class TestOnDataMessageDatabaseOperations:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
-    async def test_updates_existing_record(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock) -> None:
+    async def test_updates_existing_record(
+        self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock, mock_async_pool: Any
+    ) -> None:
         """Test updating an existing record with different hash."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_artist_data).encode()
         mock_message.routing_key = "artists"
 
-        mock_pool = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_postgres_connection
-
-        mock_cursor = mock_postgres_connection.cursor.return_value.__enter__.return_value
+        # Setup async cursor mock
+        mock_cursor = AsyncMock()
         # Return existing record with different hash
-        mock_cursor.fetchone.return_value = ("old_hash",)
+        mock_cursor.fetchone = AsyncMock(return_value=("old_hash",))
 
-        with patch("tableinator.tableinator.connection_pool", mock_pool):
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_postgres_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection pool mock
+        pool = mock_async_pool(mock_postgres_connection)
+
+        with patch("tableinator.tableinator.connection_pool", pool):
             await on_data_message(mock_message)
 
         # Should execute both SELECT and INSERT/UPDATE
@@ -1559,7 +1639,7 @@ class TestMainBatchProcessor:
     @patch("tableinator.tableinator.setup_logging")
     @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
-    @patch("tableinator.tableinator.ResilientPostgreSQLPool")
+    @patch("tableinator.tableinator.AsyncPostgreSQLPool")
     @patch("tableinator.tableinator.psycopg.connect")
     @patch("tableinator.tableinator.BATCH_MODE", True)
     @patch("tableinator.tableinator.BATCH_SIZE", 50)
@@ -1585,14 +1665,22 @@ class TestMainBatchProcessor:
         mock_admin_conn.__enter__.return_value = mock_admin_conn
         mock_psycopg_connect.return_value = mock_admin_conn
 
-        # Setup pool
+        # Setup pool with async support
         mock_pool = MagicMock()
         mock_pool_class.return_value = mock_pool
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
 
         mock_conn = MagicMock()
         mock_cursor = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_conn
         mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
+
+        # Create async context manager for connection
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_pool.connection = MagicMock(return_value=mock_connection_cm)
 
         # Mock RabbitMQ
         mock_rabbitmq_instance = AsyncMock()
@@ -1723,7 +1811,7 @@ class TestMainDatabaseSetup:
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.setup_logging")
     @patch("tableinator.tableinator.HealthServer")
-    @patch("tableinator.tableinator.ResilientPostgreSQLPool")
+    @patch("tableinator.tableinator.AsyncPostgreSQLPool")
     @patch("tableinator.tableinator.psycopg.connect")
     async def test_main_closes_pool_on_table_creation_error(
         self,
@@ -1744,12 +1832,17 @@ class TestMainDatabaseSetup:
         mock_admin_conn.__enter__.return_value = mock_admin_conn
         mock_psycopg_connect.return_value = mock_admin_conn
 
-        # Setup pool
+        # Setup pool with async support
         mock_pool = MagicMock()
         mock_pool_class.return_value = mock_pool
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
 
-        # Make table creation fail
-        mock_pool.connection.side_effect = Exception("Table creation failed")
+        # Make table creation fail by raising exception in async connection factory
+        async def mock_connection_factory_fail(*args: Any, **kwargs: Any) -> Any:
+            raise Exception("Table creation failed")
+
+        mock_pool.connection = MagicMock(side_effect=mock_connection_factory_fail)
 
         await main()
 

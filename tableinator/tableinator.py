@@ -6,7 +6,7 @@ import time
 from asyncio import run
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import psycopg
 import structlog
@@ -16,20 +16,19 @@ from common import (
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_TABLEINATOR,
     DATA_TYPES,
+    AsyncPostgreSQLPool,
+    AsyncResilientRabbitMQ,
     HealthServer,
     TableinatorConfig,
-    setup_logging,
-    ResilientPostgreSQLPool,
-    AsyncResilientRabbitMQ,
     normalize_record,
+    setup_logging,
 )
 from orjson import loads
 from psycopg import sql
 from psycopg.errors import DatabaseError, InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
-from tableinator.batch_processor import PostgreSQLBatchProcessor, BatchConfig
-
+from tableinator.batch_processor import BatchConfig, PostgreSQLBatchProcessor
 
 logger = structlog.get_logger(__name__)
 
@@ -98,8 +97,8 @@ def get_health_data() -> dict[str, Any]:
     }
 
 
-# Create connection pool for concurrent access
-connection_pool: ResilientPostgreSQLPool | None = None
+# Create async connection pool for concurrent access
+connection_pool: AsyncPostgreSQLPool | None = None
 
 # Batch processor (optional, enabled via BATCH_MODE env var)
 batch_processor: PostgreSQLBatchProcessor | None = None
@@ -423,47 +422,48 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
         await message.nack(requeue=False)
         return
 
-    # Process record using connection pool for concurrent access
+    # Process record using async connection pool for concurrent access
     try:
-        with (
-            get_connection() as conn,
-            conn.cursor() as cursor,
-        ):
-            # Check existing hash and update in a single transaction
-            cursor.execute(
-                sql.SQL("SELECT hash FROM {table} WHERE data_id = %s;").format(
-                    table=sql.Identifier(data_type)
-                ),
-                (data_id,),
-            )
+        if connection_pool is None:
+            raise RuntimeError("Connection pool not initialized")
 
-            result = cursor.fetchone()
-            old_hash: str = "-1" if result is None else result[0]
-            new_hash: str = data["sha256"]
+        async with connection_pool.connection() as conn:
+            async with conn.cursor() as cursor:
+                # Check existing hash and update in a single transaction
+                await cursor.execute(
+                    sql.SQL("SELECT hash FROM {table} WHERE data_id = %s;").format(
+                        table=sql.Identifier(data_type)
+                    ),
+                    (data_id,),
+                )
 
-            if old_hash == new_hash:
-                await message.ack()
-                return
+                result = await cursor.fetchone()
+                old_hash: str = "-1" if result is None else result[0]
+                new_hash: str = data["sha256"]
 
-            # Insert or update record in same transaction
-            cursor.execute(
-                sql.SQL(
-                    "INSERT INTO {table} (hash, data_id, data) VALUES (%s, %s, %s) "
-                    "ON CONFLICT (data_id) DO UPDATE SET (hash, data_id, data) = (EXCLUDED.hash, EXCLUDED.data_id, EXCLUDED.data);"
-                ).format(table=sql.Identifier(data_type)),
-                (
-                    new_hash,
-                    data_id,
-                    Jsonb(data),
-                ),
-            )
+                if old_hash == new_hash:
+                    await message.ack()
+                    return
 
-            # Commit is automatic when exiting the connection context
-            logger.debug(
-                "🐘 Updated record in PostgreSQL",
-                data_type=data_type[:-1],
-                data_id=data_id,
-            )
+                # Insert or update record in same transaction
+                await cursor.execute(
+                    sql.SQL(
+                        "INSERT INTO {table} (hash, data_id, data) VALUES (%s, %s, %s) "
+                        "ON CONFLICT (data_id) DO UPDATE SET (hash, data_id, data) = (EXCLUDED.hash, EXCLUDED.data_id, EXCLUDED.data);"
+                    ).format(table=sql.Identifier(data_type)),
+                    (
+                        new_hash,
+                        data_id,
+                        Jsonb(data),
+                    ),
+                )
+
+                # Commit is automatic when exiting the connection context
+                logger.debug(
+                    "🐘 Updated record in PostgreSQL",
+                    data_type=data_type[:-1],
+                    data_id=data_id,
+                )
 
         await message.ack()
 
@@ -572,111 +572,115 @@ async def main() -> None:
         logger.error("❌ Failed to ensure database exists", error=str(e))
         return
 
-    # Initialize resilient connection pool for concurrent access
+    # Initialize async resilient connection pool for concurrent access
     # Increased from max=20 to max=50 to match prefetch_count for better throughput
     try:
-        connection_pool = ResilientPostgreSQLPool(
+        connection_pool = AsyncPostgreSQLPool(
             connection_params=connection_params,
             max_connections=50,
             min_connections=5,
             max_retries=5,
             health_check_interval=30,
         )
-        logger.info("🐘 Connected to PostgreSQL with resilient connection pool")
-        logger.info("✅ Connection pool initialized (min: 5, max: 50 connections)")
+        await connection_pool.initialize()
+        logger.info("🐘 Connected to PostgreSQL with async resilient connection pool")
+        logger.info(
+            "✅ Async connection pool initialized (min: 5, max: 50 connections)"
+        )
     except Exception as e:
         logger.error("❌ Failed to initialize connection pool", error=str(e))
         return
 
-    # Initialize database tables and indexes
+    # Initialize database tables and indexes using async operations
     try:
-        with (
-            get_connection() as conn,
-            conn.cursor() as cursor,
-        ):
-            for table_name in ["artists", "labels", "masters", "releases"]:
-                # Create table
-                cursor.execute(
-                    sql.SQL(
-                        """
-                            CREATE TABLE IF NOT EXISTS {table} (
-                                data_id VARCHAR PRIMARY KEY,
-                                hash VARCHAR NOT NULL,
-                                data JSONB NOT NULL
-                            )
-                        """
-                    ).format(table=sql.Identifier(table_name))
-                )
-                # Create index on hash for faster hash lookups (used in batch processing)
-                cursor.execute(
-                    sql.SQL(
-                        "CREATE INDEX IF NOT EXISTS {index} ON {table} (hash)"
-                    ).format(
-                        index=sql.Identifier(f"idx_{table_name}_hash"),
-                        table=sql.Identifier(table_name),
+        async with connection_pool.connection() as conn:
+            # psycopg async cursor types are not fully inferred by mypy
+            async with conn.cursor() as cursor_cm:
+                # Cast to Any to work around mypy's limited psycopg async type inference
+                cursor = cast(Any, cursor_cm)
+                for table_name in ["artists", "labels", "masters", "releases"]:
+                    # Create table
+                    await cursor.execute(
+                        sql.SQL(
+                            """
+                                CREATE TABLE IF NOT EXISTS {table} (
+                                    data_id VARCHAR PRIMARY KEY,
+                                    hash VARCHAR NOT NULL,
+                                    data JSONB NOT NULL
+                                )
+                            """
+                        ).format(table=sql.Identifier(table_name))
                     )
-                )
-                # Create GIN index on JSONB data for containment queries
-                cursor.execute(
-                    sql.SQL(
-                        "CREATE INDEX IF NOT EXISTS {index} ON {table} USING GIN (data)"
-                    ).format(
-                        index=sql.Identifier(f"idx_{table_name}_gin"),
-                        table=sql.Identifier(table_name),
+                    # Create index on hash for faster hash lookups (used in batch processing)
+                    await cursor.execute(
+                        sql.SQL(
+                            "CREATE INDEX IF NOT EXISTS {index} ON {table} (hash)"
+                        ).format(
+                            index=sql.Identifier(f"idx_{table_name}_hash"),
+                            table=sql.Identifier(table_name),
+                        )
                     )
+                    # Create GIN index on JSONB data for containment queries
+                    await cursor.execute(
+                        sql.SQL(
+                            "CREATE INDEX IF NOT EXISTS {index} ON {table} USING GIN (data)"
+                        ).format(
+                            index=sql.Identifier(f"idx_{table_name}_gin"),
+                            table=sql.Identifier(table_name),
+                        )
+                    )
+
+                # Create table-specific indexes for common query patterns
+                # Artists: name lookup
+                await cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_artists_name ON artists ((data->>'name'))"
+                )
+                # Labels: name lookup
+                await cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_labels_name ON labels ((data->>'name'))"
+                )
+                # Masters: title and year lookups
+                await cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_masters_title ON masters ((data->>'title'))"
+                )
+                await cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_masters_year ON masters ((data->>'year'))"
+                )
+                # Releases: title, year, and artist lookups
+                await cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_releases_title ON releases ((data->>'title'))"
+                )
+                await cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_releases_year ON releases ((data->>'year'))"
+                )
+                await cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_releases_country ON releases ((data->>'country'))"
+                )
+                # GIN indexes on array fields for releases
+                await cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases USING GIN ((data->'genres'))"
+                )
+                await cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_releases_labels ON releases USING GIN ((data->'labels'))"
                 )
 
-            # Create table-specific indexes for common query patterns
-            # Artists: name lookup
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_artists_name ON artists ((data->>'name'))"
-            )
-            # Labels: name lookup
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_labels_name ON labels ((data->>'name'))"
-            )
-            # Masters: title and year lookups
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_masters_title ON masters ((data->>'title'))"
-            )
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_masters_year ON masters ((data->>'year'))"
-            )
-            # Releases: title, year, and artist lookups
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_releases_title ON releases ((data->>'title'))"
-            )
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_releases_year ON releases ((data->>'year'))"
-            )
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_releases_country ON releases ((data->>'country'))"
-            )
-            # GIN indexes on array fields for releases
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases USING GIN ((data->'genres'))"
-            )
-            cursor.execute(
-                "CREATE INDEX IF NOT EXISTS idx_releases_labels ON releases USING GIN ((data->'labels'))"
-            )
-
-            # Autocommit is enabled, so tables are created immediately
+                # Autocommit is enabled, so tables are created immediately
         logger.info("✅ Database tables and indexes created/verified")
     except Exception as e:
         logger.error("❌ Failed to initialize database", error=str(e))
         if connection_pool:
-            connection_pool.close()
+            await connection_pool.close()
         return
 
-    # Initialize batch processor if enabled
+    # Initialize async batch processor if enabled
     if BATCH_MODE:
         batch_config = BatchConfig(
             batch_size=BATCH_SIZE,
             flush_interval=BATCH_FLUSH_INTERVAL,
         )
-        batch_processor = PostgreSQLBatchProcessor(get_connection, batch_config)
+        batch_processor = PostgreSQLBatchProcessor(connection_pool, batch_config)
         logger.info(
-            "🚀 Batch processing enabled",
+            "🚀 Async batch processing enabled",
             batch_size=BATCH_SIZE,
             flush_interval=BATCH_FLUSH_INTERVAL,
         )
@@ -937,11 +941,11 @@ async def main() -> None:
             # Close RabbitMQ connection if still active
             await close_rabbitmq_connection()
 
-            # Close connection pool
+            # Close async connection pool
             try:
                 if connection_pool:
-                    connection_pool.close()
-                    logger.info("✅ Connection pool closed")
+                    await connection_pool.close()
+                    logger.info("✅ Async connection pool closed")
             except Exception as e:
                 logger.warning("⚠️ Error closing connection pool", error=str(e))
 

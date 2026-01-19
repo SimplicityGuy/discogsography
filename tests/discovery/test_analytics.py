@@ -4,7 +4,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 
 from discovery.analytics import AnalyticsRequest, AnalyticsResult, MusicAnalytics, get_analytics
 
@@ -12,8 +11,8 @@ from discovery.analytics import AnalyticsRequest, AnalyticsResult, MusicAnalytic
 class TestMusicAnalytics:
     """Test the MusicAnalytics class."""
 
-    @pytest_asyncio.fixture
-    async def analytics(self, mock_neo4j_driver: Any, mock_postgres_engine: Any) -> Any:
+    @pytest.fixture
+    def analytics(self, mock_neo4j_driver: Any, mock_postgres_engine: Any) -> Any:
         """Create a MusicAnalytics instance with mocked dependencies."""
         with patch("discovery.analytics.get_config") as mock_config:
             mock_config.return_value = MagicMock(

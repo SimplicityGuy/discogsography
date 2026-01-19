@@ -174,21 +174,28 @@ class TestTableinatorBatchPerformance:
     @pytest.fixture
     def mock_connection_pool(self):
         """Create mock PostgreSQL connection pool."""
+        pool = MagicMock()
 
-        def get_connection():
-            conn = MagicMock()
-            cursor = MagicMock()
-            conn.cursor.return_value.__enter__.return_value = cursor
-            conn.cursor.return_value.__exit__.return_value = None
-            conn.__enter__.return_value = conn
-            conn.__exit__.return_value = None
+        # Create async context manager for connection
+        mock_conn = AsyncMock()
+        mock_cursor = AsyncMock()
 
-            # Mock fetchall to return empty results (no existing records)
-            cursor.fetchall.return_value = []
+        # Mock cursor methods
+        mock_cursor.execute = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=None)
 
-            return conn
+        # Mock connection methods
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.commit = AsyncMock()
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=None)
 
-        return get_connection
+        # Mock pool.connection() as async context manager
+        pool.connection = MagicMock(return_value=mock_conn)
+
+        return pool
 
     @pytest.fixture
     def batch_config(self):
@@ -247,16 +254,6 @@ class TestTableinatorBatchPerformance:
         """Test that connection pool is properly utilized."""
         processor = PostgreSQLBatchProcessor(mock_connection_pool, batch_config)
 
-        # Track connection acquisitions
-        connection_count = 0
-
-        def counting_get_connection():
-            nonlocal connection_count
-            connection_count += 1
-            return mock_connection_pool()
-
-        processor.get_connection = counting_get_connection
-
         # Process multiple batches concurrently
         async def process_batch(data_type: str, count: int):
             for i in range(count):
@@ -281,9 +278,11 @@ class TestTableinatorBatchPerformance:
 
         await processor.flush_all()
 
-        # Should have used multiple connections (one per batch)
-        # With batch_size=500 and 2000 records total, expect 4 batches
-        assert connection_count >= 4, f"Expected at least 4 connection uses, got {connection_count}"
+        # Verify connection pool was used (connection() method was called)
+        # With batch_size=500 and 2000 records total across 4 types, expect 4 batches
+        assert mock_connection_pool.connection.call_count >= 4, (
+            f"Expected at least 4 connection uses, got {mock_connection_pool.connection.call_count}"
+        )
 
         # Verify all records processed
         total_processed = sum(processor.processed_counts.values())

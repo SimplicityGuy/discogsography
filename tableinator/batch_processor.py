@@ -12,11 +12,10 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 import structlog
+from common import normalize_record
 from psycopg import sql
 from psycopg.errors import InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
-
-from common import normalize_record
 
 logger = structlog.get_logger(__name__)
 
@@ -49,18 +48,18 @@ class PostgreSQLBatchProcessor:
     Instead of processing each message individually, this class accumulates
     messages and processes them in batches using executemany, significantly
     reducing the overhead of database transactions.
+
+    Uses async PostgreSQL operations to prevent event loop blocking.
     """
 
-    def __init__(
-        self, get_connection: Callable[[], Any], config: BatchConfig | None = None
-    ):
+    def __init__(self, connection_pool: Any, config: BatchConfig | None = None):
         """Initialize the batch processor.
 
         Args:
-            get_connection: Function that returns a database connection
+            connection_pool: Async PostgreSQL connection pool
             config: Batch processing configuration
         """
-        self.get_connection = get_connection
+        self.connection_pool = connection_pool
         self.config = config or BatchConfig()
 
         # Separate queues for each data type
@@ -250,23 +249,23 @@ class PostgreSQLBatchProcessor:
     ) -> None:
         """Process a batch of records using efficient bulk operations.
 
-        Uses a single transaction with:
+        Uses async PostgreSQL operations with a single transaction:
         1. Bulk fetch existing hashes using ANY()
         2. Filter to only records that need updating
         3. Bulk upsert using executemany with ON CONFLICT
         """
-        # Get connection from pool
-        with self.get_connection() as conn:
-            with conn.cursor() as cursor:
+        # Get async connection from pool
+        async with self.connection_pool.connection() as conn:
+            async with conn.cursor() as cursor:
                 # Step 1: Fetch all existing hashes in one query
                 data_ids = [msg.data_id for msg in messages]
-                cursor.execute(
+                await cursor.execute(
                     sql.SQL(
                         "SELECT data_id, hash FROM {table} WHERE data_id = ANY(%s)"
                     ).format(table=sql.Identifier(data_type)),
                     (data_ids,),
                 )
-                existing_hashes = {row[0]: row[1] for row in cursor.fetchall()}
+                existing_hashes = {row[0]: row[1] for row in await cursor.fetchall()}
 
                 # Step 2: Filter to only records that need updating
                 records_to_upsert = []
@@ -290,7 +289,7 @@ class PostgreSQLBatchProcessor:
                     return
 
                 # Step 3: Bulk upsert using executemany
-                cursor.executemany(
+                await cursor.executemany(
                     sql.SQL(
                         "INSERT INTO {table} (hash, data_id, data) VALUES (%s, %s, %s) "
                         "ON CONFLICT (data_id) DO UPDATE SET hash = EXCLUDED.hash, data = EXCLUDED.data"

@@ -80,10 +80,10 @@ class TestPostgreSQLBatchProcessor:
 
     def test_initialization_with_defaults(self) -> None:
         """Test processor initialization with default config."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
-        assert processor.get_connection == mock_get_connection
+        assert processor.connection_pool == mock_connection_pool
         assert processor.config.batch_size == 100
         assert processor.config.flush_interval == 5.0
         assert len(processor.queues) == 4
@@ -91,31 +91,31 @@ class TestPostgreSQLBatchProcessor:
 
     def test_initialization_with_custom_config(self) -> None:
         """Test processor initialization with custom config."""
-        mock_get_connection = MagicMock()
+        mock_connection_pool = MagicMock()
         config = BatchConfig(batch_size=50, flush_interval=2.5)
-        processor = PostgreSQLBatchProcessor(mock_get_connection, config)
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, config)
 
         assert processor.config.batch_size == 50
         assert processor.config.flush_interval == 2.5
 
     def test_initialization_reads_env_batch_size(self) -> None:
         """Test that processor reads POSTGRES_BATCH_SIZE from environment."""
-        mock_get_connection = MagicMock()
+        mock_connection_pool = MagicMock()
 
         with patch.dict("os.environ", {"POSTGRES_BATCH_SIZE": "75"}):
-            processor = PostgreSQLBatchProcessor(mock_get_connection)
+            processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         assert processor.config.batch_size == 75
 
     def test_initialization_handles_invalid_env_batch_size(self) -> None:
         """Test handling of invalid POSTGRES_BATCH_SIZE."""
-        mock_get_connection = MagicMock()
+        mock_connection_pool = MagicMock()
 
         with (
             patch.dict("os.environ", {"POSTGRES_BATCH_SIZE": "invalid"}),
             patch("tableinator.batch_processor.logger") as mock_logger,
         ):
-            processor = PostgreSQLBatchProcessor(mock_get_connection)
+            processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         # Should use default and log warning
         assert processor.config.batch_size == 100
@@ -124,8 +124,8 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_add_message_success(self) -> None:
         """Test adding a message to the queue."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection, BatchConfig(batch_size=10))
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, BatchConfig(batch_size=10))
 
         ack_callback = AsyncMock()
         nack_callback = AsyncMock()
@@ -156,8 +156,8 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_add_message_unknown_data_type(self) -> None:
         """Test adding message with unknown data type."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         ack_callback = AsyncMock()
         nack_callback = AsyncMock()
@@ -177,8 +177,8 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_add_message_missing_id(self) -> None:
         """Test adding message without id field."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         ack_callback = AsyncMock()
         nack_callback = AsyncMock()
@@ -198,8 +198,8 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_add_message_normalization_error(self) -> None:
         """Test handling of normalization errors."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         ack_callback = AsyncMock()
         nack_callback = AsyncMock()
@@ -227,8 +227,8 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_add_message_triggers_flush_on_batch_size(self) -> None:
         """Test that adding messages triggers flush at batch size."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection, BatchConfig(batch_size=2))
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, BatchConfig(batch_size=2))
 
         # Mock _flush_queue
         processor._flush_queue = AsyncMock()  # type: ignore[method-assign]
@@ -260,8 +260,8 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_add_message_triggers_flush_on_time_interval(self) -> None:
         """Test that messages are flushed after time interval."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection, BatchConfig(batch_size=100, flush_interval=0.1))
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, BatchConfig(batch_size=100, flush_interval=0.1))
 
         # Set last flush to past
         processor.last_flush["artists"] = time.time() - 1.0
@@ -284,26 +284,37 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_flush_queue_empty(self) -> None:
         """Test flushing an empty queue."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         # Should complete without error
         await processor._flush_queue("artists")
 
-        # Nothing should happen
-        mock_get_connection.assert_not_called()
+        # Nothing should happen - connection pool should not be accessed
+        mock_connection_pool.connection.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_flush_queue_success(self) -> None:
         """Test successful queue flush."""
         mock_connection = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
-        mock_connection.__enter__.return_value = mock_connection
-        mock_connection.__exit__.return_value = None
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[("1", "abc")])  # ID 1 unchanged
 
-        mock_get_connection = MagicMock(return_value=mock_connection)
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        # Setup async cursor context manager
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection context manager
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         # Add messages to queue
         ack1 = AsyncMock()
@@ -329,9 +340,6 @@ class TestPostgreSQLBatchProcessor:
             )
         )
 
-        # Mock cursor.fetchall to return existing hashes
-        mock_cursor.fetchall.return_value = [("1", "abc")]  # ID 1 unchanged
-
         with patch("tableinator.batch_processor.logger"):
             await processor._flush_queue("artists")
 
@@ -346,10 +354,15 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_flush_queue_connection_error(self) -> None:
         """Test handling connection errors during flush."""
-        mock_get_connection = MagicMock()
-        mock_get_connection.side_effect = InterfaceError("Connection lost")
+        # Setup connection pool that raises error when getting connection
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(side_effect=InterfaceError("Connection lost"))
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
 
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         # Add messages to queue
         nack1 = AsyncMock()
@@ -387,11 +400,15 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_flush_queue_operational_error(self) -> None:
         """Test handling operational errors during flush."""
-        mock_connection = MagicMock()
-        mock_connection.__enter__.side_effect = OperationalError("Database unavailable")
+        # Setup connection that raises OperationalError on entry
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(side_effect=OperationalError("Database unavailable"))
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
 
-        mock_get_connection = MagicMock(return_value=mock_connection)
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         # Add message
         processor.queues["artists"].append(
@@ -418,14 +435,24 @@ class TestPostgreSQLBatchProcessor:
     async def test_flush_queue_general_exception(self) -> None:
         """Test handling general exceptions during flush."""
         mock_connection = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.execute.side_effect = Exception("Unexpected error")
-        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
-        mock_connection.__enter__.return_value = mock_connection
-        mock_connection.__exit__.return_value = None
+        mock_cursor = AsyncMock()
+        mock_cursor.execute = AsyncMock(side_effect=Exception("Unexpected error"))
 
-        mock_get_connection = MagicMock(return_value=mock_connection)
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        # Setup async cursor context manager
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection context manager
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         # Add message
         nack = AsyncMock()
@@ -451,14 +478,24 @@ class TestPostgreSQLBatchProcessor:
     async def test_flush_queue_ack_callback_error(self) -> None:
         """Test handling errors in ack callback."""
         mock_connection = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = []
-        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
-        mock_connection.__enter__.return_value = mock_connection
-        mock_connection.__exit__.return_value = None
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
 
-        mock_get_connection = MagicMock(return_value=mock_connection)
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        # Setup async cursor context manager
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection context manager
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         # Add message with failing ack callback
         failing_ack = AsyncMock(side_effect=Exception("Ack failed"))
@@ -485,10 +522,15 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_flush_queue_nack_callback_error(self) -> None:
         """Test handling errors in nack callback."""
-        mock_get_connection = MagicMock()
-        mock_get_connection.side_effect = Exception("Connection failed")
+        # Setup connection pool that raises error when getting connection
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(side_effect=Exception("Connection failed"))
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
 
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         # Add message with failing nack callback
         failing_nack = AsyncMock(side_effect=Exception("Nack failed"))
@@ -513,13 +555,24 @@ class TestPostgreSQLBatchProcessor:
     async def test_process_batch_with_unchanged_records(self) -> None:
         """Test batch processing skips unchanged records."""
         mock_connection = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
-        mock_connection.__enter__.return_value = mock_connection
-        mock_connection.__exit__.return_value = None
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[("1", "abc"), ("2", "def")])
 
-        mock_get_connection = MagicMock(return_value=mock_connection)
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        # Setup async cursor context manager
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection context manager
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         messages = [
             PendingMessage(
@@ -540,9 +593,6 @@ class TestPostgreSQLBatchProcessor:
             ),
         ]
 
-        # Mock both records as unchanged
-        mock_cursor.fetchall.return_value = [("1", "abc"), ("2", "def")]
-
         with patch("tableinator.batch_processor.logger") as mock_logger:
             await processor._process_batch("artists", messages)
 
@@ -556,13 +606,24 @@ class TestPostgreSQLBatchProcessor:
     async def test_process_batch_with_mixed_records(self) -> None:
         """Test batch processing with mix of changed and unchanged records."""
         mock_connection = MagicMock()
-        mock_cursor = MagicMock()
-        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
-        mock_connection.__enter__.return_value = mock_connection
-        mock_connection.__exit__.return_value = None
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[("1", "abc"), ("2", "def_old")])
 
-        mock_get_connection = MagicMock(return_value=mock_connection)
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        # Setup async cursor context manager
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection context manager
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         messages = [
             PendingMessage(
@@ -583,9 +644,6 @@ class TestPostgreSQLBatchProcessor:
             ),
         ]
 
-        # Mock first record unchanged, second changed
-        mock_cursor.fetchall.return_value = [("1", "abc"), ("2", "def_old")]
-
         with patch("tableinator.batch_processor.logger"):
             await processor._process_batch("artists", messages)
 
@@ -597,8 +655,8 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_flush_all(self) -> None:
         """Test flushing all queues."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         # Mock _flush_queue
         processor._flush_queue = AsyncMock()  # type: ignore[method-assign]
@@ -618,8 +676,8 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_periodic_flush(self) -> None:
         """Test periodic flush background task."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection, BatchConfig(flush_interval=0.1))
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, BatchConfig(flush_interval=0.1))
 
         # Set last flush to past for one queue
         processor.last_flush["artists"] = time.time() - 1.0
@@ -659,8 +717,8 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_periodic_flush_respects_shutdown(self) -> None:
         """Test that periodic flush stops on shutdown."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection, BatchConfig(flush_interval=0.1))
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, BatchConfig(flush_interval=0.1))
 
         # Start periodic flush task
         task = asyncio.create_task(processor.periodic_flush())
@@ -678,8 +736,8 @@ class TestPostgreSQLBatchProcessor:
 
     def test_shutdown(self) -> None:
         """Test shutdown flag is set."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         assert processor._shutdown is False
 
@@ -689,8 +747,8 @@ class TestPostgreSQLBatchProcessor:
 
     def test_get_stats(self) -> None:
         """Test getting processing statistics."""
-        mock_get_connection = MagicMock()
-        processor = PostgreSQLBatchProcessor(mock_get_connection)
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
         # Set some stats
         processor.processed_counts["artists"] = 100
@@ -719,14 +777,24 @@ class TestPostgreSQLBatchProcessor:
     async def test_batch_respects_max_size(self) -> None:
         """Test that flush only processes up to batch_size messages."""
         mock_connection = MagicMock()
-        mock_cursor = MagicMock()
-        mock_cursor.fetchall.return_value = []
-        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
-        mock_connection.__enter__.return_value = mock_connection
-        mock_connection.__exit__.return_value = None
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
 
-        mock_get_connection = MagicMock(return_value=mock_connection)
-        processor = PostgreSQLBatchProcessor(mock_get_connection, BatchConfig(batch_size=2))
+        # Setup async cursor context manager
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async connection context manager
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, BatchConfig(batch_size=2))
 
         # Add 4 messages to queue
         for i in range(4):

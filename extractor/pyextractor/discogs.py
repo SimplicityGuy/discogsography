@@ -10,7 +10,6 @@ from botocore.config import Config
 from orjson import OPT_INDENT_2, dumps, loads
 from tqdm import tqdm
 
-
 logger = logging.getLogger(__name__)
 
 

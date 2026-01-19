@@ -19,17 +19,15 @@ from common import (
     AMQP_QUEUE_PREFIX_TABLEINATOR,
     ExtractorConfig,
     HealthServer,
-    setup_logging,
     ResilientRabbitMQConnection,
+    setup_logging,
 )
 from dict_hash import sha256
+from extractor.pyextractor.discogs import download_discogs_data
 from orjson import OPT_INDENT_2, OPT_SORT_KEYS, dumps, loads
 from pika import DeliveryMode
 from pika.spec import BasicProperties
 from xmltodict import parse
-
-from extractor.pyextractor.discogs import download_discogs_data
-
 
 if TYPE_CHECKING:
     from pika.adapters.blocking_connection import BlockingChannel

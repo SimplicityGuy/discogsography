@@ -16,17 +16,16 @@ from common import (
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_GRAPHINATOR,
     DATA_TYPES,
+    AsyncResilientNeo4jDriver,
+    AsyncResilientRabbitMQ,
     GraphinatorConfig,
     HealthServer,
     setup_logging,
-    ResilientNeo4jDriver,
-    AsyncResilientRabbitMQ,
 )
 from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
 from orjson import loads
 
-from graphinator.batch_processor import Neo4jBatchProcessor, BatchConfig
-
+from graphinator.batch_processor import BatchConfig, Neo4jBatchProcessor
 
 logger = structlog.get_logger(__name__)
 
@@ -60,7 +59,7 @@ QUEUE_CHECK_INTERVAL = int(
 )  # Default 1 hour - how often to check for new messages when connection is closed
 
 # Driver will be initialized in main
-graph: ResilientNeo4jDriver | None = None
+graph: AsyncResilientNeo4jDriver | None = None
 
 # Batch processor (optional, enabled via BATCH_MODE env var)
 batch_processor: Neo4jBatchProcessor | None = None
@@ -411,10 +410,10 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
             logger.debug(
                 "🔄 Starting transaction for artist ID=artist_id", artist_id=artist_id
             )
-            # Get session from resilient driver
+            # Get async session from resilient driver
             if graph is None:
                 raise RuntimeError("Neo4j driver not initialized")
-            with graph.session(database="neo4j") as session:
+            async with await graph.session(database="neo4j") as session:
 
                 def process_artist_tx(tx: Any) -> bool:
                     """Process artist within a single transaction for atomicity."""
@@ -559,9 +558,9 @@ async def on_artist_message(message: AbstractIncomingMessage) -> None:
                     artist_id=artist_id,
                 )
                 # Session configuration is done at creation time
-                updated = session.execute_write(process_artist_tx)
+                updated = await session.execute_write(process_artist_tx)
                 logger.debug(
-                    "✅ Transaction completed for artist ID=artist_id",
+                    "✅ Async transaction completed for artist ID=artist_id",
                     artist_id=artist_id,
                 )
 
@@ -654,7 +653,7 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
         # Process entire label in a single session with proper transaction handling
         if graph is None:
             raise RuntimeError("Neo4j driver not initialized")
-        with graph.session(database="neo4j") as session:
+        async with await graph.session(database="neo4j") as session:
 
             def process_label_tx(tx: Any) -> bool:
                 """Process label within a single transaction for atomicity."""
@@ -750,9 +749,9 @@ async def on_label_message(message: AbstractIncomingMessage) -> None:
 
                 return True  # Updated successfully
 
-            # Execute the transaction with timeout
+            # Execute the async transaction with timeout
             # Session configuration is done at creation time
-            updated = session.execute_write(process_label_tx)
+            updated = await session.execute_write(process_label_tx)
 
             if updated:
                 logger.debug("💾 Updated label ID=label_id in Neo4j", label_id=label_id)
@@ -828,7 +827,7 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
         # Process entire master in a single session with proper transaction handling
         if graph is None:
             raise RuntimeError("Neo4j driver not initialized")
-        with graph.session(database="neo4j") as session:
+        async with await graph.session(database="neo4j") as session:
 
             def process_master_tx(tx: Any) -> bool:
                 """Process master within a single transaction for atomicity."""
@@ -940,9 +939,9 @@ async def on_master_message(message: AbstractIncomingMessage) -> None:
 
                 return True  # Updated successfully
 
-            # Execute the transaction with timeout
+            # Execute the async transaction with timeout
             # Session configuration is done at creation time
-            updated = session.execute_write(process_master_tx)
+            updated = await session.execute_write(process_master_tx)
 
             if updated:
                 logger.debug(
@@ -1034,7 +1033,7 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
         # Process entire release in a single session with proper transaction handling
         if graph is None:
             raise RuntimeError("Neo4j driver not initialized")
-        with graph.session(database="neo4j") as session:
+        async with await graph.session(database="neo4j") as session:
 
             def process_release_tx(tx: Any) -> bool:
                 """Process release within a single transaction for atomicity."""
@@ -1206,9 +1205,9 @@ async def on_release_message(message: AbstractIncomingMessage) -> None:
 
                 return True  # Updated successfully
 
-            # Execute the transaction with timeout
+            # Execute the async transaction with timeout
             # Session configuration is done at creation time
-            updated = session.execute_write(process_release_tx)
+            updated = await session.execute_write(process_release_tx)
 
             if updated:
                 logger.debug(
@@ -1292,20 +1291,20 @@ async def main() -> None:
         logger.error("❌ Configuration error: e", e=e)
         return
 
-    # Initialize resilient Neo4j driver
-    graph = ResilientNeo4jDriver(
+    # Initialize async resilient Neo4j driver
+    graph = AsyncResilientNeo4jDriver(
         uri=config.neo4j_address,
         auth=(config.neo4j_username, config.neo4j_password),
         max_retries=5,
         encrypted=False,
     )
 
-    # Test Neo4j connectivity
+    # Test Neo4j connectivity using async operations
     try:
-        with graph.session(database="neo4j") as session:
-            result = session.run("RETURN 1 as test")
-            result.single()
-            logger.info("✅ Neo4j connectivity verified")
+        async with await graph.session(database="neo4j") as session:
+            result = await session.run("RETURN 1 as test")
+            await result.single()
+            logger.info("✅ Neo4j connectivity verified (async)")
 
             # Create indexes for better performance
             logger.info("🔧 Creating Neo4j constraints and indexes...")
@@ -1665,10 +1664,10 @@ async def main() -> None:
             # Close RabbitMQ connection if still active
             await close_rabbitmq_connection()
 
-            # Close Neo4j driver
+            # Close async Neo4j driver
             try:
-                graph.close()
-                logger.info("✅ Neo4j driver closed")
+                await graph.close()
+                logger.info("✅ Async Neo4j driver closed")
             except Exception as e:
                 logger.warning("⚠️ Error closing Neo4j driver: e", e=e)
 

@@ -129,19 +129,30 @@ class TestFileCompletionHandling:
         mock_message.ack = AsyncMock()
         mock_message.nack = AsyncMock()
 
+        # Mock async connection pool
+        mock_pool = MagicMock()
+        mock_conn = AsyncMock()
+        mock_cursor = AsyncMock()
+
+        # Setup async context managers
+        mock_cursor.execute = AsyncMock()
+        mock_cursor.fetchone = AsyncMock(return_value=None)  # No existing record
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=None)
+
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.commit = AsyncMock()
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=None)
+
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
         # Mock database operations
         with (
-            patch("tableinator.tableinator.get_connection") as mock_get_conn,
+            patch("tableinator.tableinator.connection_pool", mock_pool),
             patch("tableinator.tableinator.message_counts", {"labels": 0}),
             patch("tableinator.tableinator.last_message_time", {"labels": 0}),
         ):
-            # Setup connection mock
-            mock_conn = MagicMock()
-            mock_cursor = MagicMock()
-            mock_get_conn.return_value.__enter__.return_value = mock_conn
-            mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-            mock_cursor.fetchone.return_value = None  # No existing record
-
             await on_data_message(mock_message)
 
             # Verify normal processing occurred

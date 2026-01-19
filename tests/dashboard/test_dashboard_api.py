@@ -14,22 +14,22 @@ class TestDashboardAPI:
     def test_client(
         self,
         mock_dashboard_config: Any,
-        mock_amqp_connection: Any,
-        mock_neo4j_driver: Any,
-        mock_httpx_client: Any,
-        mock_psycopg_connect: Any,
+        dashboard_mock_amqp_connection: Any,
+        dashboard_mock_neo4j_driver: Any,
+        dashboard_mock_httpx_client: Any,
+        dashboard_mock_psycopg_connect: Any,
     ) -> TestClient:
         """Create a test client with mocked dependencies."""
         with (
             patch("dashboard.dashboard.get_config", return_value=mock_dashboard_config),
-            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_amqp_connection),
-            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j_driver),
-            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_psycopg_connect),
+            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=dashboard_mock_amqp_connection),
+            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=dashboard_mock_neo4j_driver),
+            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=dashboard_mock_psycopg_connect),
             patch("httpx.AsyncClient") as mock_httpx_class,
-            patch("psycopg.AsyncConnection.connect", return_value=mock_psycopg_connect),
+            patch("psycopg.AsyncConnection.connect", return_value=dashboard_mock_psycopg_connect),
         ):
             # Configure httpx.AsyncClient to return our mock instance
-            mock_httpx_class.return_value = mock_httpx_client
+            mock_httpx_class.return_value = dashboard_mock_httpx_client
 
             # Import the app after patching
             from dashboard.dashboard import app
@@ -87,16 +87,16 @@ class TestDashboardAPI:
     def test_services_endpoint_without_dashboard(
         self,
         mock_dashboard_config: Any,
-        mock_amqp_connection: Any,
-        mock_neo4j_driver: Any,
-        mock_psycopg_connect: Any,
+        dashboard_mock_amqp_connection: Any,
+        dashboard_mock_neo4j_driver: Any,
+        dashboard_mock_psycopg_connect: Any,
     ) -> None:
         """Test /api/services endpoint when dashboard is not initialized."""
         with (
             patch("dashboard.dashboard.get_config", return_value=mock_dashboard_config),
-            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_amqp_connection),
-            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j_driver),
-            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_psycopg_connect),
+            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=dashboard_mock_amqp_connection),
+            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=dashboard_mock_neo4j_driver),
+            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=dashboard_mock_psycopg_connect),
             patch("dashboard.dashboard.dashboard", None),  # Force dashboard to None
         ):
             from dashboard.dashboard import app
@@ -110,16 +110,16 @@ class TestDashboardAPI:
     def test_queues_endpoint_without_dashboard(
         self,
         mock_dashboard_config: Any,
-        mock_amqp_connection: Any,
-        mock_neo4j_driver: Any,
-        mock_psycopg_connect: Any,
+        dashboard_mock_amqp_connection: Any,
+        dashboard_mock_neo4j_driver: Any,
+        dashboard_mock_psycopg_connect: Any,
     ) -> None:
         """Test /api/queues endpoint when dashboard is not initialized."""
         with (
             patch("dashboard.dashboard.get_config", return_value=mock_dashboard_config),
-            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_amqp_connection),
-            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j_driver),
-            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_psycopg_connect),
+            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=dashboard_mock_amqp_connection),
+            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=dashboard_mock_neo4j_driver),
+            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=dashboard_mock_psycopg_connect),
             patch("dashboard.dashboard.dashboard", None),  # Force dashboard to None
         ):
             from dashboard.dashboard import app
@@ -133,16 +133,16 @@ class TestDashboardAPI:
     def test_databases_endpoint_without_dashboard(
         self,
         mock_dashboard_config: Any,
-        mock_amqp_connection: Any,
-        mock_neo4j_driver: Any,
-        mock_psycopg_connect: Any,
+        dashboard_mock_amqp_connection: Any,
+        dashboard_mock_neo4j_driver: Any,
+        dashboard_mock_psycopg_connect: Any,
     ) -> None:
         """Test /api/databases endpoint when dashboard is not initialized."""
         with (
             patch("dashboard.dashboard.get_config", return_value=mock_dashboard_config),
-            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_amqp_connection),
-            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j_driver),
-            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_psycopg_connect),
+            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=dashboard_mock_amqp_connection),
+            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=dashboard_mock_neo4j_driver),
+            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=dashboard_mock_psycopg_connect),
             patch("dashboard.dashboard.dashboard", None),  # Force dashboard to None
         ):
             from dashboard.dashboard import app
