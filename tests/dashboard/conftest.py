@@ -142,7 +142,7 @@ def browser_type_launch_args(browser_type_launch_args: dict[str, Any]) -> dict[s
     }
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 def mock_dashboard_config() -> DashboardConfig:
     """Create a mock dashboard configuration for testing."""
     return DashboardConfig(
@@ -159,9 +159,9 @@ def mock_dashboard_config() -> DashboardConfig:
     )
 
 
-@pytest.fixture(scope="session")
-def mock_amqp_connection() -> AsyncMock:
-    """Create a mock AMQP connection."""
+@pytest.fixture
+def dashboard_mock_amqp_connection() -> AsyncMock:
+    """Create a mock AMQP connection for dashboard tests."""
     mock = AsyncMock()
     mock.close = AsyncMock()
 
@@ -172,9 +172,9 @@ def mock_amqp_connection() -> AsyncMock:
     return mock
 
 
-@pytest.fixture(scope="session")
-def mock_neo4j_driver() -> MagicMock:
-    """Create a mock Neo4j driver."""
+@pytest.fixture
+def dashboard_mock_neo4j_driver() -> MagicMock:
+    """Create a mock Neo4j driver for dashboard tests."""
     mock = MagicMock()
     mock.close = AsyncMock()
 
@@ -190,8 +190,8 @@ def mock_neo4j_driver() -> MagicMock:
     return mock
 
 
-@pytest.fixture(scope="session")
-def mock_httpx_client() -> MagicMock:
+@pytest.fixture
+def dashboard_mock_httpx_client() -> MagicMock:
     """Create a mock httpx client."""
     mock = MagicMock()
 
@@ -236,9 +236,9 @@ def mock_httpx_client() -> MagicMock:
     return mock
 
 
-@pytest.fixture(scope="session")
-def mock_psycopg_connect() -> AsyncMock:
-    """Create a mock PostgreSQL connection."""
+@pytest.fixture
+def dashboard_mock_psycopg_connect() -> AsyncMock:
+    """Create a mock PostgreSQL connection for dashboard tests."""
     mock_conn = AsyncMock()
 
     # Mock cursor

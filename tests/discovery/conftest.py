@@ -1,6 +1,5 @@
 """Discovery service test configuration and fixtures."""
 
-import contextlib
 import os
 import tempfile
 from collections.abc import Generator
@@ -8,34 +7,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-import pytest_asyncio
 from fastapi.testclient import TestClient
-from prometheus_client import REGISTRY
-
-
-def clear_registry():
-    """Clear all collectors from Prometheus registry."""
-    collectors = list(REGISTRY._collector_to_names.keys())
-    for collector in collectors:
-        with contextlib.suppress(Exception):
-            REGISTRY.unregister(collector)
-
-
-@pytest.fixture(scope="session", autouse=True)
-def clear_prometheus_registry_session():
-    """Clear Prometheus registry at the start of the test session."""
-    clear_registry()
-    yield
-
-
-@pytest.fixture(scope="function", autouse=True)
-def clear_prometheus_registry():
-    """Clear Prometheus registry before and after each test to avoid duplicate metrics errors."""
-    # Clear before test
-    clear_registry()
-    yield
-    # Clear after test
-    clear_registry()
 
 
 # Set environment variables before any imports
@@ -176,8 +148,8 @@ def discovery_client() -> TestClient:
     return TestClient(app)
 
 
-@pytest_asyncio.fixture
-async def mock_neo4j_driver() -> MagicMock:
+@pytest.fixture
+def mock_neo4j_driver() -> MagicMock:
     """Mock Neo4j driver for testing."""
     mock_driver = MagicMock()
     mock_session = AsyncMock()
@@ -200,8 +172,8 @@ async def mock_neo4j_driver() -> MagicMock:
     return mock_driver
 
 
-@pytest_asyncio.fixture
-async def mock_postgres_engine() -> AsyncMock:
+@pytest.fixture
+def mock_postgres_engine() -> AsyncMock:
     """Mock PostgreSQL engine for testing."""
     mock_engine = AsyncMock()
     return mock_engine

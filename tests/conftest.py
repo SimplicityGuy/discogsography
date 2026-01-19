@@ -39,11 +39,15 @@ def mock_neo4j_driver() -> MagicMock:
     mock_context_manager.__aenter__ = AsyncMock(return_value=mock_session)
     mock_context_manager.__aexit__ = AsyncMock(return_value=None)
 
-    # Important: Make session() return the context manager, not a coroutine
-    mock_driver.session.return_value = mock_context_manager
+    # For async with await graph.session() pattern:
+    # session() should return an awaitable that returns the context manager
+    async def mock_session_factory(*_args: Any, **_kwargs: Any) -> Any:
+        return mock_context_manager
+
+    mock_driver.session = MagicMock(side_effect=mock_session_factory)
 
     # Setup mock returns
-    mock_session.execute_write.return_value = True
+    mock_session.execute_write = AsyncMock(return_value=True)
     mock_session.run.return_value.single.return_value = None
     mock_session.close = AsyncMock()
     mock_driver.close = AsyncMock()
