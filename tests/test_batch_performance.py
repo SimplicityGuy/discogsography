@@ -22,18 +22,35 @@ class TestGraphinatorBatchPerformance:
     def mock_neo4j_driver(self):
         """Create mock Neo4j driver."""
         driver = MagicMock()
-        session = MagicMock()
-        driver.session.return_value.__enter__.return_value = session
-        driver.session.return_value.__exit__.return_value = None
+        session = AsyncMock()
+        session_context = AsyncMock()
+        session_context.__aenter__.return_value = session
+        session_context.__aexit__.return_value = None
+
+        driver.session = AsyncMock(return_value=session_context)
 
         # Mock transaction execution
-        def mock_execute_write(func):
-            tx = MagicMock()
+        async def mock_execute_write(func):
+            tx = AsyncMock()
             # Mock run method to return results
             tx.run.return_value.single.return_value = None
-            return func(tx)
+            await func(tx)
 
-        session.execute_write.side_effect = mock_execute_write
+        session.execute_write = AsyncMock(side_effect=mock_execute_write)
+
+        # Mock session.run for hash checks
+        async def mock_empty_results():
+            """Return empty async iterator for hash checks."""
+            return iter([])  # Empty results mean no existing hashes
+
+        class EmptyAsyncIterator:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+        session.run = AsyncMock(return_value=EmptyAsyncIterator())
 
         return driver
 
@@ -370,16 +387,29 @@ class TestPerformanceRegression:
         # This is a simplified test - real benchmark would use actual database
 
         mock_driver = MagicMock()
-        session = MagicMock()
-        mock_driver.session.return_value.__enter__.return_value = session
-        mock_driver.session.return_value.__exit__.return_value = None
+        session = AsyncMock()
+        session_context = AsyncMock()
+        session_context.__aenter__.return_value = session
+        session_context.__aexit__.return_value = None
 
-        def mock_execute_write(func):
-            tx = MagicMock()
+        mock_driver.session = AsyncMock(return_value=session_context)
+
+        async def mock_execute_write(func):
+            tx = AsyncMock()
             tx.run.return_value.single.return_value = None
-            return func(tx)
+            await func(tx)
 
-        session.execute_write.side_effect = mock_execute_write
+        session.execute_write = AsyncMock(side_effect=mock_execute_write)
+
+        # Mock session.run for hash checks
+        class EmptyAsyncIterator:
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                raise StopAsyncIteration
+
+        session.run = AsyncMock(return_value=EmptyAsyncIterator())
 
         config = Neo4jBatchConfig(batch_size=500, flush_interval=2.0)
         processor = Neo4jBatchProcessor(mock_driver, config)

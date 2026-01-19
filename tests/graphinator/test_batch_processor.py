@@ -20,8 +20,9 @@ def create_async_session_mock() -> tuple[MagicMock, AsyncMock]:
     Returns:
         Tuple of (mock_driver, mock_session)
     """
-    mock_session = MagicMock()
+    mock_session = AsyncMock()
     mock_session_context = AsyncMock()
+    mock_session_context.__aenter__.return_value = mock_session
     mock_session_context.__aexit__.return_value = None
 
     mock_driver = MagicMock()
@@ -31,13 +32,28 @@ def create_async_session_mock() -> tuple[MagicMock, AsyncMock]:
     return mock_driver, mock_session
 
 
-async def async_iterator(items: list[Any]) -> Any:
-    """Create an async iterator from a list of items."""
-    for item in items:
-        yield item
+class AsyncIteratorMock:
+    """Mock async iterator that yields items from a list."""
+
+    def __init__(self, items: list[Any]):
+        """Initialize with items to yield."""
+        self.items = items
+        self.index = 0
+
+    def __aiter__(self) -> "AsyncIteratorMock":
+        """Return self as the async iterator."""
+        return self
+
+    async def __anext__(self) -> Any:
+        """Return the next item or raise StopAsyncIteration."""
+        if self.index >= len(self.items):
+            raise StopAsyncIteration
+        item = self.items[self.index]
+        self.index += 1
+        return item
 
 
-def create_async_result_mock(records: list[dict[str, Any]]) -> MagicMock:
+def create_async_result_mock(records: list[dict[str, Any]]) -> AsyncIteratorMock:
     """Create a mock result that can be used with async for.
 
     Args:
@@ -46,9 +62,7 @@ def create_async_result_mock(records: list[dict[str, Any]]) -> MagicMock:
     Returns:
         Mock result object
     """
-    mock_result = MagicMock()
-    mock_result.__aiter__.return_value = async_iterator(records)
-    return mock_result
+    return AsyncIteratorMock(records)
 
 
 class TestBatchConfig:
@@ -740,22 +754,20 @@ class TestBatchTransactionLogic:
         # Track cypher queries executed
         executed_queries: list[str] = []
 
-        def track_query(query: str, **_params: Any) -> None:
+        async def track_query(query: str, **_params: Any) -> None:
             executed_queries.append(query)
 
-        mock_tx = MagicMock()
+        mock_tx = AsyncMock()
         mock_tx.run.side_effect = track_query
 
-        def execute_write_mock(tx_func: Any) -> None:
-            return tx_func(mock_tx)
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
 
-        mock_session.execute_write.side_effect = execute_write_mock
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
 
         # Mock hash check to return no hashes
         mock_result = create_async_result_mock([{"id": "1", "hash": None}])
         mock_session.run = AsyncMock(return_value=mock_result)
-
-        mock_driver.session.return_value.__aenter__.return_value = mock_session
 
         processor = Neo4jBatchProcessor(mock_driver)
 
