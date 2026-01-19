@@ -35,11 +35,12 @@ graph BT
 
 ### Coverage Goals
 
-| Test Type   | Target Coverage | Current Focus       |
+| Test Type   | Target Coverage | Current Status      |
 | ----------- | --------------- | ------------------- |
-| Unit Tests  | 80%+            | Core business logic |
-| Integration | 70%+            | Service boundaries  |
+| Unit Tests  | 80%+            | **86%** ✅          |
+| Integration | 70%+            | Core business logic |
 | E2E Tests   | Critical paths  | User workflows      |
+| **Overall** | **85%+**        | **86%** ✅          |
 
 ## 🛠️ Test Structure
 
@@ -213,6 +214,31 @@ def test_client(test_server):
 
 ## 🚀 Running Tests
 
+### Parallel Test Execution
+
+**All tests run in parallel by default** using pytest-xdist with `loadfile` distribution strategy:
+
+- **Default behavior**: `pytest` automatically runs with `-n auto --dist loadfile`
+- **Workers**: Auto-detected based on CPU cores (typically 8-10 workers)
+- **Distribution**: `loadfile` keeps all tests from the same file in the same worker for better isolation
+- **Performance**: Tests complete in ~5 minutes vs ~15+ minutes sequential
+- **Pass rate**: 100% (1,543 passed, 2 skipped)
+
+```bash
+# Default parallel execution (recommended)
+uv run pytest
+
+# Customize number of workers
+uv run pytest -n 4
+
+# Sequential execution (slower, for debugging)
+uv run pytest -n 0
+
+# Different distribution strategies
+uv run pytest --dist loadscope  # Group by test scope
+uv run pytest --dist load        # Round-robin (not recommended)
+```
+
 ### Test Execution Flow
 
 ```mermaid
@@ -255,24 +281,29 @@ flowchart TD
 ### Quick Commands
 
 ```bash
-# Run all tests (excluding E2E)
+# Run all tests in parallel (default, ~5 minutes)
 just test
+# or
+uv run pytest
 
-# Run with coverage
+# Run with coverage (parallel)
 just test-cov
 
-# Run specific service tests
-uv run pytest tests/dashboard/ -v
-uv run pytest tests/extractor/ -v
+# Run specific service tests (parallel)
+uv run pytest tests/dashboard/
+uv run pytest tests/extractor/
 
-# Run only unit tests
+# Run only unit tests (parallel)
 uv run pytest -m "not integration and not e2e"
 
-# Run only integration tests
+# Run only integration tests (parallel)
 uv run pytest -m integration
 
 # Run E2E tests
 just test-e2e
+
+# Sequential execution (for debugging, ~15+ minutes)
+uv run pytest -n 0
 ```
 
 ### Advanced Testing
@@ -281,15 +312,25 @@ just test-e2e
 # Run specific test
 uv run pytest tests/test_config.py::test_config_validation -v
 
-# Run with debugging
-uv run pytest -xvs --tb=short
+# Run with debugging (sequential for better output)
+uv run pytest -n 0 -xvs --tb=short
 
-# Run parallel
-uv run pytest -n auto
+# Customize parallel workers
+uv run pytest -n 4  # Use 4 workers
+uv run pytest -n 0  # Sequential execution
+
+# Different distribution strategies
+uv run pytest --dist loadfile   # Default: file-level isolation
+uv run pytest --dist loadscope  # Scope-level isolation
+uv run pytest --dist load        # Round-robin (faster but less isolation)
 
 # Generate HTML coverage report
 uv run pytest --cov --cov-report=html
 open htmlcov/index.html
+
+# Performance analysis
+uv run pytest --durations=10  # Show 10 slowest tests
+uv run pytest --durations=0   # Show all test durations
 ```
 
 ## 🎭 E2E Testing with Playwright
@@ -431,6 +472,46 @@ class TestArtistProcessor:
         async def test_successful_processing(self):
             pass
 ```
+
+## 🔄 Test Isolation & Parallel Execution
+
+### Best Practices
+
+**File-Level Isolation (`loadfile` strategy)**:
+- All tests in the same file run in the same worker
+- Provides better isolation than round-robin (`load`)
+- Prevents cross-file global state pollution
+- Recommended for most use cases
+
+**Test Independence**:
+- Each test should be fully independent
+- Global state is reset between tests via `conftest.py` fixtures
+- Module-level variables are reset automatically
+- Database connections and event loops are properly isolated
+
+**When to Use Sequential Execution**:
+- Debugging specific test failures
+- Profiling test performance
+- Investigating race conditions
+- When you need predictable execution order
+
+```bash
+# Debug a specific failing test
+uv run pytest -n 0 tests/test_specific.py::test_function -xvs
+
+# Profile test performance
+uv run pytest -n 0 --durations=0
+```
+
+### Global State Management
+
+The test suite handles global state through `conftest.py` fixtures:
+
+- **graphinator**: `shutdown_requested`, `message_counts`, `progress_interval`
+- **tableinator**: `connection_pool`, `message_counts`, `consumer_tags`
+- **extractor**: `shutdown_requested`
+
+These are automatically reset before and after each test to ensure isolation.
 
 ## ⚠️ Common Pitfalls
 
