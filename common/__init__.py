@@ -43,6 +43,7 @@ from common.neo4j_resilient import (
     with_neo4j_retry,
 )
 from common.postgres_resilient import (
+    AsyncPostgreSQLPool,
     AsyncResilientPostgreSQL,
     ResilientPostgreSQLPool,
 )
@@ -59,6 +60,7 @@ __all__ = [
     "AMQP_QUEUE_PREFIX_GRAPHINATOR",
     "AMQP_QUEUE_PREFIX_TABLEINATOR",
     "DATA_TYPES",
+    "AsyncPostgreSQLPool",
     "AsyncResilientConnection",
     "AsyncResilientNeo4jDriver",
     "AsyncResilientPostgreSQL",

@@ -1,10 +1,11 @@
 """Resilient PostgreSQL connection management with circuit breaker and retry logic."""
 
+import asyncio
 import contextlib
 import logging
 import threading
-from collections.abc import Generator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Generator
+from contextlib import asynccontextmanager, contextmanager
 from queue import Empty, Full, Queue
 from typing import Any
 
@@ -276,3 +277,227 @@ class AsyncResilientPostgreSQL(AsyncResilientConnection[Any]):
                 return result is not None and result[0] == 1
         except Exception:
             return False
+
+
+class AsyncPostgreSQLPool:
+    """Async PostgreSQL connection pool with circuit breaker and health checks.
+
+    Manages a pool of async PostgreSQL connections for concurrent operations.
+    """
+
+    def __init__(
+        self,
+        connection_params: dict[str, Any],
+        max_connections: int = 20,
+        min_connections: int = 2,
+        max_retries: int = 5,
+        health_check_interval: int = 30,
+    ):
+        self.connection_params = connection_params
+        self.max_connections = max_connections
+        self.min_connections = min_connections
+        self.max_retries = max_retries
+        self.health_check_interval = health_check_interval
+
+        # Connection pool using asyncio.Queue
+        self.connections: asyncio.Queue[psycopg.AsyncConnection[Any]] = asyncio.Queue(maxsize=max_connections)
+        self.active_connections = 0
+        self._lock = asyncio.Lock()
+        self._closed = False
+
+        # Circuit breaker for database failures
+        self.circuit_breaker = CircuitBreaker(
+            CircuitBreakerConfig(
+                name="AsyncPostgreSQL",
+                failure_threshold=3,
+                recovery_timeout=30,
+                expected_exception=(DatabaseError, InterfaceError, OperationalError),
+            )
+        )
+
+        # Exponential backoff for retries
+        self.backoff = ExponentialBackoff(initial_delay=0.5, max_delay=30.0, exponential_base=2.0)
+
+        # Health check task
+        self._health_check_task: asyncio.Task[None] | None = None
+        self._initialized = False
+
+    async def initialize(self) -> None:
+        """Initialize the connection pool with minimum connections."""
+        if self._initialized:
+            return
+
+        logger.info(f"🔗 Initializing async PostgreSQL connection pool (min: {self.min_connections}, max: {self.max_connections})")
+
+        # Create initial connections
+        for _ in range(self.min_connections):
+            try:
+                conn = await self._create_connection()
+                if conn:
+                    await self.connections.put(conn)
+            except asyncio.QueueFull:
+                break
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to create initial connection: {e}")
+
+        # Start health check task
+        self._health_check_task = asyncio.create_task(self._health_check_loop())
+        self._initialized = True
+
+    async def _create_connection(self) -> psycopg.AsyncConnection[Any]:
+        """Create a new async PostgreSQL connection with retry logic."""
+        logger.info("🔗 Creating new async PostgreSQL connection")
+        conn = await psycopg.AsyncConnection.connect(**self.connection_params)
+        await conn.set_autocommit(True)
+        # Test the connection
+        async with conn.cursor() as cursor:
+            await cursor.execute("SELECT 1")
+        return conn
+
+    async def _test_connection(self, conn: psycopg.AsyncConnection[Any]) -> bool:
+        """Test if a connection is healthy."""
+        try:
+            if conn.closed:
+                return False
+            async with conn.cursor() as cursor:
+                await cursor.execute("SELECT 1")
+                result = await cursor.fetchone()
+                return result is not None and result[0] == 1
+        except Exception:
+            return False
+
+    async def _health_check_loop(self) -> None:
+        """Background task to check connection health periodically."""
+        while not self._closed:
+            await asyncio.sleep(self.health_check_interval)
+
+            # Check and remove unhealthy connections
+            healthy_connections = []
+            check_count = min(self.connections.qsize(), self.max_connections)
+
+            for _ in range(check_count):
+                try:
+                    conn = self.connections.get_nowait()
+                    if await self._test_connection(conn):
+                        healthy_connections.append(conn)
+                    else:
+                        logger.warning("⚠️ Removing unhealthy connection from pool")
+                        with contextlib.suppress(Exception):
+                            await conn.close()
+                except asyncio.QueueEmpty:
+                    break
+
+            # Put healthy connections back
+            for conn in healthy_connections:
+                try:
+                    self.connections.put_nowait(conn)
+                except asyncio.QueueFull:
+                    await conn.close()
+
+            # Ensure minimum connections
+            current_size = self.connections.qsize()
+            if current_size < self.min_connections:
+                logger.info(f"🔄 Replenishing connection pool ({current_size}/{self.min_connections} connections)")
+                for _ in range(self.min_connections - current_size):
+                    try:
+                        conn = await self._create_connection()
+                        if conn:
+                            await self.connections.put(conn)
+                    except Exception as e:
+                        logger.warning(f"⚠️ Failed to replenish connection: {e}")
+                        break
+
+    @asynccontextmanager
+    async def connection(self) -> AsyncIterator[psycopg.AsyncConnection[Any]]:
+        """Get a connection from the pool with retry logic."""
+        if self._closed:
+            raise RuntimeError("Connection pool is closed")
+
+        if not self._initialized:
+            await self.initialize()
+
+        conn = None
+        retry_count = 0
+        last_error = None
+
+        while retry_count < self.max_retries:
+            try:
+                # Try to get existing connection
+                try:
+                    conn = self.connections.get_nowait()
+                except asyncio.QueueEmpty:
+                    # Create new connection if pool is not at max
+                    async with self._lock:
+                        if self.active_connections < self.max_connections:
+                            self.active_connections += 1
+                            try:
+                                conn = await self._create_connection()
+                            except Exception:
+                                self.active_connections -= 1
+                                raise
+
+                # Test connection health
+                if conn and not await self._test_connection(conn):
+                    logger.warning("⚠️ Got unhealthy connection from pool, creating new one")
+                    with contextlib.suppress(Exception):
+                        await conn.close()
+                    conn = await self._create_connection()
+
+                if conn:
+                    break
+
+            except Exception as e:
+                last_error = e
+                retry_count += 1
+
+                if retry_count < self.max_retries:
+                    delay = self.backoff.get_delay(retry_count - 1)
+                    logger.warning(f"⚠️ PostgreSQL connection attempt {retry_count} failed: {e}. Retrying in {delay:.1f} seconds...")
+                    await asyncio.sleep(delay)
+
+        if not conn:
+            raise Exception(f"Failed to get PostgreSQL connection after {self.max_retries} attempts") from last_error
+
+        try:
+            yield conn
+        except (InterfaceError, OperationalError) as e:
+            # Connection error during use - don't return to pool
+            logger.warning(f"⚠️ Connection error during operation: {e}")
+            with contextlib.suppress(Exception):
+                await conn.close()
+            conn = None
+            raise
+        finally:
+            # Return connection to pool if it's still good
+            if conn and not conn.closed and not self._closed:
+                try:
+                    self.connections.put_nowait(conn)
+                except asyncio.QueueFull:
+                    # Pool is full, close connection
+                    with contextlib.suppress(Exception):
+                        await conn.close()
+            elif conn:
+                # Close bad connections
+                with contextlib.suppress(Exception):
+                    await conn.close()
+                async with self._lock:
+                    self.active_connections = max(0, self.active_connections - 1)
+
+    async def close(self) -> None:
+        """Close all connections in the pool."""
+        logger.info("🔌 Closing async PostgreSQL connection pool")
+        self._closed = True
+
+        # Cancel health check task
+        if self._health_check_task:
+            self._health_check_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._health_check_task
+
+        # Close all connections
+        while not self.connections.empty():
+            with contextlib.suppress(Exception):
+                conn = self.connections.get_nowait()
+                await conn.close()
+
+        logger.info("✅ Async PostgreSQL connection pool closed")
