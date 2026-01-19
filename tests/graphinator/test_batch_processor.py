@@ -14,6 +14,43 @@ from graphinator.batch_processor import (
 )
 
 
+def create_async_session_mock() -> tuple[MagicMock, AsyncMock]:
+    """Create mock driver and session for async context manager testing.
+
+    Returns:
+        Tuple of (mock_driver, mock_session)
+    """
+    mock_session = MagicMock()
+    mock_session_context = AsyncMock()
+    mock_session_context.__aexit__.return_value = None
+
+    mock_driver = MagicMock()
+    # driver.session() is an async method that returns an async context manager
+    mock_driver.session = AsyncMock(return_value=mock_session_context)
+
+    return mock_driver, mock_session
+
+
+async def async_iterator(items: list[Any]) -> Any:
+    """Create an async iterator from a list of items."""
+    for item in items:
+        yield item
+
+
+def create_async_result_mock(records: list[dict[str, Any]]) -> MagicMock:
+    """Create a mock result that can be used with async for.
+
+    Args:
+        records: List of record dicts to return
+
+    Returns:
+        Mock result object
+    """
+    mock_result = MagicMock()
+    mock_result.__aiter__.return_value = async_iterator(records)
+    return mock_result
+
+
 class TestBatchConfig:
     """Test BatchConfig dataclass."""
 
@@ -208,9 +245,7 @@ class TestFlushQueue:
     @pytest.mark.asyncio
     async def test_flush_artists_batch_success(self) -> None:
         """Test successfully flushing artists batch."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_driver, _mock_session = create_async_session_mock()
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -239,9 +274,7 @@ class TestFlushQueue:
     @pytest.mark.asyncio
     async def test_flush_labels_batch_success(self) -> None:
         """Test successfully flushing labels batch."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_driver, _mock_session = create_async_session_mock()
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -258,9 +291,7 @@ class TestFlushQueue:
     @pytest.mark.asyncio
     async def test_flush_masters_batch_success(self) -> None:
         """Test successfully flushing masters batch."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_driver, _mock_session = create_async_session_mock()
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -277,9 +308,7 @@ class TestFlushQueue:
     @pytest.mark.asyncio
     async def test_flush_releases_batch_success(self) -> None:
         """Test successfully flushing releases batch."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_driver, _mock_session = create_async_session_mock()
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -298,10 +327,8 @@ class TestFlushQueue:
         """Test handling Neo4j unavailable during flush."""
         from neo4j.exceptions import ServiceUnavailable
 
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
+        mock_driver, mock_session = create_async_session_mock()
         mock_session.execute_write.side_effect = ServiceUnavailable("Neo4j down")
-        mock_driver.session.return_value.__enter__.return_value = mock_session
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -320,10 +347,8 @@ class TestFlushQueue:
     @pytest.mark.asyncio
     async def test_flush_handles_general_error(self) -> None:
         """Test handling general errors during flush."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
+        mock_driver, mock_session = create_async_session_mock()
         mock_session.execute_write.side_effect = RuntimeError("Database error")
-        mock_driver.session.return_value.__enter__.return_value = mock_session
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -340,9 +365,7 @@ class TestFlushQueue:
     @pytest.mark.asyncio
     async def test_flush_handles_ack_failure(self) -> None:
         """Test handling ack callback failures."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_driver, _mock_session = create_async_session_mock()
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -357,10 +380,8 @@ class TestFlushQueue:
     @pytest.mark.asyncio
     async def test_flush_handles_nack_failure(self) -> None:
         """Test handling nack callback failures."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
+        mock_driver, mock_session = create_async_session_mock()
         mock_session.execute_write.side_effect = RuntimeError("Error")
-        mock_driver.session.return_value.__enter__.return_value = mock_session
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -375,9 +396,7 @@ class TestFlushQueue:
     @pytest.mark.asyncio
     async def test_flush_respects_batch_size_limit(self) -> None:
         """Test that flush respects batch size limit."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_driver, _mock_session = create_async_session_mock()
 
         config = BatchConfig(batch_size=2)
         processor = Neo4jBatchProcessor(mock_driver, config)
@@ -400,15 +419,11 @@ class TestProcessArtistsBatch:
     @pytest.mark.asyncio
     async def test_process_artists_with_no_updates_needed(self) -> None:
         """Test skipping artists that are already up to date."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
+        mock_driver, mock_session = create_async_session_mock()
 
         # Mock hash check to return matching hashes
-        mock_result = MagicMock()
-        mock_result.__iter__ = lambda _: iter([{"id": "1", "hash": "hash1"}])
-        mock_session.run.return_value = mock_result
-
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
+        mock_session.run = AsyncMock(return_value=mock_result)
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -422,15 +437,11 @@ class TestProcessArtistsBatch:
     @pytest.mark.asyncio
     async def test_process_artists_with_updates(self) -> None:
         """Test processing artists that need updates."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
+        mock_driver, mock_session = create_async_session_mock()
 
         # Mock hash check to return no existing hash
-        mock_result = MagicMock()
-        mock_result.__iter__ = lambda _: iter([{"id": "1", "hash": None}])
-        mock_session.run.return_value = mock_result
-
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -451,15 +462,11 @@ class TestProcessArtistsBatch:
     @pytest.mark.asyncio
     async def test_process_artists_with_relationships(self) -> None:
         """Test processing artists with members, groups, and aliases."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
+        mock_driver, mock_session = create_async_session_mock()
 
         # Mock hash check
-        mock_result = MagicMock()
-        mock_result.__iter__ = lambda _: iter([{"id": "1", "hash": None}])
-        mock_session.run.return_value = mock_result
-
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -490,15 +497,11 @@ class TestProcessLabelsBatch:
     @pytest.mark.asyncio
     async def test_process_labels_with_parent_and_sublabels(self) -> None:
         """Test processing labels with parent and sublabel relationships."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
+        mock_driver, mock_session = create_async_session_mock()
 
         # Mock hash check
-        mock_result = MagicMock()
-        mock_result.__iter__ = lambda _: iter([{"id": "1", "hash": None}])
-        mock_session.run.return_value = mock_result
-
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -528,15 +531,11 @@ class TestProcessMastersBatch:
     @pytest.mark.asyncio
     async def test_process_masters_with_genres_and_styles(self) -> None:
         """Test processing masters with genres and styles."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
+        mock_driver, mock_session = create_async_session_mock()
 
         # Mock hash check
-        mock_result = MagicMock()
-        mock_result.__iter__ = lambda _: iter([{"id": "1", "hash": None}])
-        mock_session.run.return_value = mock_result
-
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -568,15 +567,11 @@ class TestProcessReleasesBatch:
     @pytest.mark.asyncio
     async def test_process_releases_with_all_relationships(self) -> None:
         """Test processing releases with all relationship types."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
+        mock_driver, mock_session = create_async_session_mock()
 
         # Mock hash check
-        mock_result = MagicMock()
-        mock_result.__iter__ = lambda _: iter([{"id": "1", "hash": None}])
-        mock_session.run.return_value = mock_result
-
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
 
         processor = Neo4jBatchProcessor(mock_driver)
 
@@ -740,8 +735,7 @@ class TestBatchTransactionLogic:
     @pytest.mark.asyncio
     async def test_artists_batch_transaction_creates_all_relationships(self) -> None:
         """Test artist batch transaction creates all relationship types."""
-        mock_driver = MagicMock()
-        mock_session = MagicMock()
+        mock_driver, mock_session = create_async_session_mock()
 
         # Track cypher queries executed
         executed_queries: list[str] = []
@@ -758,11 +752,10 @@ class TestBatchTransactionLogic:
         mock_session.execute_write.side_effect = execute_write_mock
 
         # Mock hash check to return no hashes
-        mock_result = MagicMock()
-        mock_result.__iter__ = lambda _: iter([{"id": "1", "hash": None}])
-        mock_session.run.return_value = mock_result
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
 
-        mock_driver.session.return_value.__enter__.return_value = mock_session
+        mock_driver.session.return_value.__aenter__.return_value = mock_session
 
         processor = Neo4jBatchProcessor(mock_driver)
 
