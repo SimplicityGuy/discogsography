@@ -480,3 +480,170 @@ class TestGetAvailableFacets:
         assert FacetType.YEAR in facets
         assert "2020" in facets[FacetType.YEAR]
         assert "2019" in facets[FacetType.YEAR]
+
+
+class TestAdditionalCountMethods:
+    """Test additional count methods for improved coverage."""
+
+    @pytest.mark.asyncio
+    async def test_get_style_counts_for_artists_with_data(self) -> None:
+        """Test getting style counts for artists with actual data."""
+        mock_engine = MagicMock()
+        return_data = [
+            {"name": "Electronic", "count": 8},
+            {"name": "Ambient", "count": 4},
+        ]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
+
+        engine = FacetedSearchEngine(mock_engine)
+        counts = await engine._get_style_counts_for_artists([1, 2, 3])
+
+        assert counts["Electronic"] == 8
+        assert counts["Ambient"] == 4
+        assert len(counts) == 2
+
+    @pytest.mark.asyncio
+    async def test_get_label_counts_for_artists_with_data(self) -> None:
+        """Test getting label counts for artists with actual data."""
+        mock_engine = MagicMock()
+        return_data = [
+            {"name": "Blue Note", "count": 12},
+            {"name": "Columbia", "count": 7},
+        ]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
+
+        engine = FacetedSearchEngine(mock_engine)
+        counts = await engine._get_label_counts_for_artists([1, 2, 3])
+
+        assert counts["Blue Note"] == 12
+        assert counts["Columbia"] == 7
+        assert len(counts) == 2
+
+    @pytest.mark.asyncio
+    async def test_get_genre_counts_for_releases_with_data(self) -> None:
+        """Test getting genre counts for releases with actual data."""
+        mock_engine = MagicMock()
+        return_data = [
+            {"name": "Rock", "count": 15},
+            {"name": "Pop", "count": 10},
+        ]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
+
+        engine = FacetedSearchEngine(mock_engine)
+        counts = await engine._get_genre_counts_for_releases([1, 2, 3])
+
+        assert counts["Rock"] == 15
+        assert counts["Pop"] == 10
+        assert len(counts) == 2
+
+    @pytest.mark.asyncio
+    async def test_get_style_counts_for_releases_with_data(self) -> None:
+        """Test getting style counts for releases with actual data."""
+        mock_engine = MagicMock()
+        return_data = [
+            {"name": "Psychedelic", "count": 6},
+            {"name": "Progressive", "count": 4},
+        ]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
+
+        engine = FacetedSearchEngine(mock_engine)
+        counts = await engine._get_style_counts_for_releases([1, 2, 3])
+
+        assert counts["Psychedelic"] == 6
+        assert counts["Progressive"] == 4
+        assert len(counts) == 2
+
+
+class TestSearchWithAdditionalFilters:
+    """Test search methods with additional filter combinations."""
+
+    @pytest.mark.asyncio
+    async def test_search_artists_with_label_filter(self) -> None:
+        """Test searching artists with label filter."""
+        mock_engine = MagicMock()
+        return_data = [{"id": 1, "name": "Miles Davis"}, {"id": 2, "name": "John Coltrane"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
+
+        engine = FacetedSearchEngine(mock_engine)
+        engine._compute_facets_for_artists = AsyncMock(return_value={})
+        results, _facets = await engine._search_artists_with_facets(
+            "jazz",
+            {FacetType.LABEL: ["Blue Note"]},
+            [FacetType.LABEL],
+            limit=50,
+            offset=0,
+        )
+
+        assert len(results) == 2
+        assert results[0]["name"] == "Miles Davis"
+
+    @pytest.mark.asyncio
+    async def test_search_releases_with_genre_filter(self) -> None:
+        """Test searching releases with genre filter."""
+        mock_engine = MagicMock()
+        return_data = [{"id": 1, "title": "Kind of Blue"}, {"id": 2, "title": "A Love Supreme"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
+
+        engine = FacetedSearchEngine(mock_engine)
+        engine._compute_facets_for_releases = AsyncMock(return_value={})
+        results, _facets = await engine._search_releases_with_facets(
+            "jazz",
+            {FacetType.GENRE: ["Jazz"]},
+            [FacetType.GENRE],
+            limit=50,
+            offset=0,
+        )
+
+        assert len(results) == 2
+        assert results[0]["title"] == "Kind of Blue"
+
+    @pytest.mark.asyncio
+    async def test_search_releases_with_style_filter(self) -> None:
+        """Test searching releases with style filter."""
+        mock_engine = MagicMock()
+        return_data = [{"id": 1, "title": "Bitches Brew"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
+
+        engine = FacetedSearchEngine(mock_engine)
+        engine._compute_facets_for_releases = AsyncMock(return_value={})
+        results, _facets = await engine._search_releases_with_facets(
+            "fusion",
+            {FacetType.STYLE: ["Jazz-Funk"]},
+            [FacetType.STYLE],
+            limit=50,
+            offset=0,
+        )
+
+        assert len(results) == 1
+        assert results[0]["title"] == "Bitches Brew"
+
+    @pytest.mark.asyncio
+    async def test_search_releases_with_multiple_genre_and_style_filters(self) -> None:
+        """Test searching releases with both genre and style filters."""
+        mock_engine = MagicMock()
+        return_data = [{"id": 1, "title": "Dark Side of the Moon"}]
+        mock_conn = create_mock_connection(return_data)
+        mock_engine.connect = MagicMock(return_value=mock_conn)
+
+        engine = FacetedSearchEngine(mock_engine)
+        engine._compute_facets_for_releases = AsyncMock(return_value={})
+        results, _facets = await engine._search_releases_with_facets(
+            "progressive",
+            {
+                FacetType.GENRE: ["Rock"],
+                FacetType.STYLE: ["Progressive Rock", "Psychedelic"],
+            },
+            [FacetType.GENRE, FacetType.STYLE],
+            limit=50,
+            offset=0,
+        )
+
+        assert len(results) == 1
+        assert results[0]["title"] == "Dark Side of the Moon"
