@@ -1,0 +1,724 @@
+
+[1;36m🚀  Starting Project Update[0m
+[1;36m============================================================[0m
+
+[1;36m🔍  Verifying Project Components[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Checking Python configuration files...
+[0;34mℹ️  [INFO][0m Checking Dockerfiles...
+[0;34mℹ️  [INFO][0m Found Rust extractor (Cargo.toml)
+[0;32m✅  [SUCCESS][0m Found 15/15 expected components
+[0;32m✅  [SUCCESS][0m All expected components found!
+
+
+[1;36m🐳  Updating UV Version[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Latest UV version: 0.9.26
+[0;34mℹ️  [INFO][0m Latest setup-uv action: v7.2.0 (commit: 61cb8a9)
+[0;32m✅  [SUCCESS][0m UV version in Dockerfiles is already up to date (0.9.26)
+[0;34mℹ️  [INFO][0m Checking GitHub workflows for setup-uv updates...
+[0;32m✅  [SUCCESS][0m GitHub workflows are already up to date
+
+[1;36m🪝  Updating Pre-commit Hooks[0m
+[1;36m============================================================[0m
+[1;33m⚠️  [WARNING][0m pre-commit not installed, skipping hook updates
+
+[1;36m📦  Updating ALL Python Dependencies[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Checking for uv updates...
+error: Self-update is only available for uv binaries installed via the standalone installation scripts.
+
+If you installed uv with pip, brew, or another package manager, update uv with `pip install --upgrade`, `brew upgrade`, or similar.
+[1;33m⚠️  [WARNING][0m Could not update uv (may already be latest)
+[0;34mℹ️  [INFO][0m Updating ALL dependency types:
+[0;34mℹ️  [INFO][0m   • Core dependencies ([project] dependencies)
+[0;34mℹ️  [INFO][0m   • Optional dependencies ([project.optional-dependencies])
+[0;34mℹ️  [INFO][0m   • Dev dependencies ([dependency-groups])
+[0;34mℹ️  [INFO][0m   • Build dependencies ([build-system])
+[0;34mℹ️  [INFO][0m Upgrading ALL dependencies to latest minor/patch versions
+Resolved 186 packages in 2.07s
+Updated bandit v1.9.2 -> v1.9.3
+Updated black v25.12.0 -> v26.1.0
+Updated boto3 v1.42.29 -> v1.42.34
+Updated botocore v1.42.29 -> v1.42.34
+Updated coverage v7.13.1 -> v7.13.2
+Added cuda-bindings v12.9.4
+Added cuda-pathfinder v1.3.3
+Updated greenlet v3.3.0 -> v3.3.1
+Updated jmespath v1.0.1 -> v1.1.0
+Updated multidict v6.7.0 -> v6.7.1
+Updated nvidia-nvshmem-cu12 v3.3.20 -> v3.4.5
+Updated packaging v25.0 -> v26.0
+Updated pandas v2.3.3 -> v3.0.0
+Updated pycparser v2.23 -> v3.0
+Updated python-multipart v0.0.21 -> v0.0.22
+Updated pytokens v0.3.0 -> v0.4.0
+Updated rich v14.2.0 -> v14.3.1
+Updated ruff v0.14.13 -> v0.14.14
+Updated setuptools v80.9.0 -> v80.10.2
+Updated sqlalchemy v2.0.45 -> v2.0.46
+Updated torch v2.9.1 -> v2.10.0
+Updated transformers v4.57.5 -> v4.57.6
+Updated triton v3.5.1 -> v3.6.0
+Removed tzdata v2025.3
+Updated wcwidth v0.2.14 -> v0.4.0
+[0;32m✅  [SUCCESS][0m ALL dependencies compiled successfully
+[0;34mℹ️  [INFO][0m Syncing ALL upgraded dependencies (including optional and dev)...
+Resolved 186 packages in 4ms
+   Building discogsography @ file:///home/runner/work/discogsography/discogsography
+Downloading ruff (10.7MiB)
+Downloading botocore (13.9MiB)
+Downloading setuptools (1.0MiB)
+Downloading transformers (11.4MiB)
+Downloading black (1.7MiB)
+Downloading pandas (10.4MiB)
+Downloading sqlalchemy (3.1MiB)
+Downloading cuda-bindings (11.4MiB)
+Downloading triton (179.6MiB)
+Downloading torch (873.3MiB)
+Downloading nvidia-nvshmem-cu12 (132.7MiB)
+ Downloaded black
+ Downloaded sqlalchemy
+ Downloaded setuptools
+      Built discogsography @ file:///home/runner/work/discogsography/discogsography
+ Downloaded ruff
+ Downloaded cuda-bindings
+ Downloaded botocore
+ Downloaded pandas
+ Downloaded transformers
+ Downloaded nvidia-nvshmem-cu12
+ Downloaded triton
+ Downloaded torch
+Prepared 24 packages in 11.88s
+Uninstalled 23 packages in 1.18s
+Installed 24 packages in 284ms
+ - bandit==1.9.2
+ + bandit==1.9.3
+ - black==25.12.0
+ + black==26.1.0
+ - boto3==1.42.29
+ + boto3==1.42.34
+ - botocore==1.42.29
+ + botocore==1.42.34
+ - coverage==7.13.1
+ + coverage==7.13.2
+ + cuda-bindings==12.9.4
+ + cuda-pathfinder==1.3.3
+ ~ discogsography==0.1.0 (from file:///home/runner/work/discogsography/discogsography)
+ - greenlet==3.3.0
+ + greenlet==3.3.1
+ - jmespath==1.0.1
+ + jmespath==1.1.0
+ - multidict==6.7.0
+ + multidict==6.7.1
+ - nvidia-nvshmem-cu12==3.3.20
+ + nvidia-nvshmem-cu12==3.4.5
+ - packaging==25.0
+ + packaging==26.0
+ - pandas==2.3.3
+ + pandas==3.0.0
+ - python-multipart==0.0.21
+ + python-multipart==0.0.22
+ - pytokens==0.3.0
+ + pytokens==0.4.0
+ - rich==14.2.0
+ + rich==14.3.1
+ - ruff==0.14.13
+ + ruff==0.14.14
+ - setuptools==80.9.0
+ + setuptools==80.10.2
+ - sqlalchemy==2.0.45
+ + sqlalchemy==2.0.46
+ - torch==2.9.1
+ + torch==2.10.0
+ - transformers==4.57.5
+ + transformers==4.57.6
+ - triton==3.5.1
+ + triton==3.6.0
+ - tzdata==2025.3
+ - wcwidth==0.2.14
+ + wcwidth==0.4.0
+[0;32m✅  [SUCCESS][0m ALL dependencies synced successfully
+[0;32m✅  [SUCCESS][0m Completed Python dependency updates
+
+[1;36m🦀  Updating ALL Rust Dependencies[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Updating ALL Rust dependency types:
+[0;34mℹ️  [INFO][0m   • Main dependencies ([dependencies])
+[0;34mℹ️  [INFO][0m   • Dev dependencies ([dev-dependencies])
+[0;34mℹ️  [INFO][0m   • Build dependencies ([build-dependencies])
+[0;34mℹ️  [INFO][0m   • Target-specific dependencies
+[0;34mℹ️  [INFO][0m Installing cargo-edit for comprehensive dependency updates...
+info: syncing channel updates for '1.89-x86_64-unknown-linux-gnu'
+info: latest update on 2025-08-07, rust version 1.89.0 (29483883e 2025-08-04)
+info: downloading component 'cargo'
+info: downloading component 'clippy'
+info: downloading component 'rust-std'
+info: downloading component 'rustc'
+info: downloading component 'rustfmt'
+info: installing component 'cargo'
+info: installing component 'clippy'
+info: installing component 'rust-std'
+info: installing component 'rustc'
+info: installing component 'rustfmt'
+    Updating crates.io index
+ Downloading crates ...
+  Downloaded cargo-edit v0.13.8
+  Installing cargo-edit v0.13.8
+    Updating crates.io index
+     Locking 258 packages to latest compatible versions
+      Adding cargo_metadata v0.21.0 (available: v0.23.1)
+      Adding clap-cargo v0.16.0 (available: v0.18.3)
+      Adding generic-array v0.14.7 (available: v0.14.9)
+      Adding tame-index v0.22.0 (available: v0.26.0)
+      Adding toml_edit v0.23.10+spec-1.0.0 (available: v0.24.0+spec-1.1.0)
+ Downloading crates ...
+  Downloaded anstyle-parse v0.2.7
+  Downloaded anstream v0.6.21
+  Downloaded cargo-util-schemas v0.8.2
+  Downloaded openssl-probe v0.2.1
+  Downloaded clap_builder v4.5.54
+  Downloaded form_urlencoded v1.2.2
+  Downloaded pin-project-lite v0.2.16
+  Downloaded toml-span v0.5.2
+  Downloaded tokio-util v0.7.18
+  Downloaded toml_parser v1.0.6+spec-1.1.0
+  Downloaded want v0.3.1
+  Downloaded zerofrom v0.1.6
+  Downloaded tower-service v0.3.3
+  Downloaded tower-layer v0.3.3
+  Downloaded zerofrom-derive v0.1.6
+  Downloaded zeroize v1.8.2
+  Downloaded version_check v0.9.5
+  Downloaded typenum v1.19.0
+  Downloaded url v2.5.8
+  Downloaded twox-hash v2.1.2
+  Downloaded serde_json v1.0.149
+  Downloaded zerotrie v0.2.3
+  Downloaded icu_normalizer v2.1.1
+  Downloaded winnow v0.7.14
+  Downloaded rustls v0.23.36
+  Downloaded iri-string v0.7.10
+  Downloaded idna v1.1.0
+  Downloaded icu_properties_data v2.1.2
+  Downloaded quinn-proto v0.11.13
+  Downloaded syn v2.0.114
+  Downloaded aho-corasick v1.1.4
+  Downloaded hashbrown v0.16.1
+  Downloaded rustix v1.1.3
+  Downloaded zerocopy v0.8.34
+  Downloaded h2 v0.4.13
+  Downloaded futures-util v0.3.31
+  Downloaded hyper v1.8.1
+  Downloaded tracing v0.1.44
+  Downloaded tower-http v0.6.8
+  Downloaded mio v1.1.1
+  Downloaded memchr v2.7.6
+  Downloaded indexmap v2.13.0
+  Downloaded icu_collections v2.1.1
+  Downloaded flate2 v1.1.8
+  Downloaded webpki-roots v1.0.5
+  Downloaded icu_normalizer_data v2.1.1
+  Downloaded icu_locale_core v2.1.1
+  Downloaded getrandom v0.2.17
+  Downloaded icu_properties v2.1.2
+  Downloaded http v1.4.0
+  Downloaded clap v4.5.54
+  Downloaded toml_edit v0.23.10+spec-1.0.0
+  Downloaded regex-automata v0.4.13
+  Downloaded reqwest v0.12.28
+  Downloaded rand v0.9.2
+  Downloaded num-traits v0.2.19
+  Downloaded miniz_oxide v0.8.9
+  Downloaded tokio v1.49.0
+  Downloaded libc v0.2.180
+  Downloaded jiff v0.2.18
+  Downloaded log v0.4.29
+  Downloaded hyper-rustls v0.27.7
+  Downloaded getrandom v0.3.4
+  Downloaded toml_datetime v0.7.5+spec-1.1.0
+  Downloaded regex v1.12.2
+  Downloaded quinn-udp v0.5.14
+  Downloaded proc-macro2 v1.0.106
+  Downloaded once_cell v1.21.3
+  Downloaded litemap v0.8.1
+  Downloaded icu_provider v2.1.1
+  Downloaded hyper-util v0.1.19
+  Downloaded httparse v1.10.1
+  Downloaded digest v0.10.7
+  Downloaded tower v0.5.3
+  Downloaded toml_edit v0.22.27
+  Downloaded synstructure v0.13.2
+  Downloaded smallvec v1.15.1
+  Downloaded serde_derive v1.0.228
+  Downloaded serde_core v1.0.228
+  Downloaded quinn v0.11.9
+  Downloaded either v1.15.0
+  Downloaded try-lock v0.2.5
+  Downloaded toml v0.8.23
+  Downloaded tinyvec v1.10.0
+  Downloaded tinystr v0.8.2
+  Downloaded rustls-pki-types v1.14.0
+  Downloaded rand_chacha v0.9.0
+  Downloaded quote v1.0.44
+  Downloaded yoke v0.8.1
+  Downloaded writeable v0.6.2
+  Downloaded thiserror-impl v2.0.18
+  Downloaded thiserror v2.0.18
+  Downloaded shlex v1.3.0
+  Downloaded ring v0.17.14
+  Downloaded home v0.5.12
+  Downloaded anstyle-query v1.1.5
+  Downloaded utf8_iter v1.0.4
+  Downloaded typeid v1.0.3
+  Downloaded toml_writer v1.0.6+spec-1.1.0
+  Downloaded toml_write v0.1.2
+  Downloaded tokio-rustls v0.26.4
+  Downloaded strsim v0.11.1
+  Downloaded lru-slab v0.1.2
+  Downloaded itoa v1.0.17
+  Downloaded http-body-util v0.1.3
+  Downloaded displaydoc v0.2.5
+  Downloaded clap-verbosity-flag v3.0.4
+  Downloaded rustls-webpki v0.103.9
+  Downloaded idna_adapter v1.2.1
+  Downloaded generic-array v0.14.7
+  Downloaded serde_spanned v1.0.4
+  Downloaded rustc-hash v2.1.1
+  Downloaded ipnet v2.11.0
+  Downloaded concolor-control v0.0.7
+  Downloaded cfg-if v1.0.4
+  Downloaded yoke-derive v0.8.1
+  Downloaded unicode-xid v0.2.6
+  Downloaded toml_datetime v0.6.11
+  Downloaded terminal_size v0.4.3
+  Downloaded serde_spanned v0.6.9
+  Downloaded semver v1.0.27
+  Downloaded potential_utf v0.1.4
+  Downloaded pin-utils v0.1.0
+  Downloaded is_terminal_polyfill v1.70.2
+  Downloaded heck v0.5.0
+  Downloaded futures-io v0.3.31
+  Downloaded equivalent v1.0.2
+  Downloaded concolor-query v0.0.4
+  Downloaded colorchoice v1.0.4
+  Downloaded bitflags v1.3.2
+  Downloaded utf8parse v0.2.2
+  Downloaded untrusted v0.9.0
+  Downloaded unicode-ident v1.0.22
+  Downloaded tracing-core v0.1.36
+  Downloaded toml v0.9.11+spec-1.1.0
+  Downloaded tinyvec_macros v0.1.1
+  Downloaded tame-index v0.22.0
+  Downloaded serde_urlencoded v0.7.1
+  Downloaded serde-value v0.7.0
+  Downloaded serde-untagged v0.1.9
+  Downloaded ryu v1.0.22
+  Downloaded regex-syntax v0.8.8
+  Downloaded http-body v1.0.1
+  Downloaded futures-task v0.3.31
+  Downloaded futures-sink v0.3.31
+  Downloaded compression-codecs v0.4.36
+  Downloaded bitflags v2.10.0
+  Downloaded sync_wrapper v1.0.2
+  Downloaded subtle v2.6.1
+  Downloaded socket2 v0.6.2
+  Downloaded smol_str v0.3.5
+  Downloaded simd-adler32 v0.3.8
+  Downloaded sha2 v0.10.9
+  Downloaded serde v1.0.228
+  Downloaded rustls-native-certs v0.8.3
+  Downloaded ppv-lite86 v0.2.21
+  Downloaded camino v1.2.2
+  Downloaded base64 v0.22.1
+  Downloaded slab v0.4.11
+  Downloaded rayon-core v1.13.0
+  Downloaded rayon v1.11.0
+  Downloaded percent-encoding v2.3.2
+  Downloaded pathdiff v0.2.3
+  Downloaded ordered-float v2.10.1
+  Downloaded zerovec v0.11.5
+  Downloaded futures-core v0.3.31
+  Downloaded errno v0.3.14
+  Downloaded env_logger v0.11.8
+  Downloaded crossbeam-channel v0.5.15
+  Downloaded cfg_aliases v0.2.1
+  Downloaded cargo_metadata v0.21.0
+  Downloaded linux-raw-sys v0.11.0
+  Downloaded anyhow v1.0.100
+  Downloaded termcolor v1.4.1
+  Downloaded stable_deref_trait v1.2.1
+  Downloaded rustc-stable-hash v0.1.2
+  Downloaded rand_core v0.9.5
+  Downloaded fnv v1.0.7
+  Downloaded cpufeatures v0.2.17
+  Downloaded clap-cargo v0.16.0
+  Downloaded cc v1.2.54
+  Downloaded bytes v1.11.0
+  Downloaded zmij v1.0.17
+  Downloaded zerovec-derive v0.11.2
+  Downloaded env_filter v0.1.4
+  Downloaded crossbeam-epoch v0.9.18
+  Downloaded clap_lex v0.7.7
+  Downloaded crypto-common v0.1.7
+  Downloaded crossbeam-utils v0.8.21
+  Downloaded compression-core v0.4.31
+  Downloaded block-buffer v0.10.4
+  Downloaded atty v0.2.14
+  Downloaded anstyle v1.0.13
+  Downloaded futures-channel v0.3.31
+  Downloaded find-msvc-tools v0.1.8
+  Downloaded erased-serde v0.4.9
+  Downloaded dunce v1.0.5
+  Downloaded crossbeam-deque v0.8.6
+  Downloaded crc32fast v1.5.0
+  Downloaded clap_derive v4.5.49
+  Downloaded borsh v1.6.0
+  Downloaded async-compression v0.4.37
+  Downloaded cargo-platform v0.2.0
+  Downloaded autocfg v1.5.0
+  Downloaded atomic-waker v1.1.2
+  Downloaded adler2 v2.0.1
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.22
+   Compiling quote v1.0.44
+   Compiling serde_core v1.0.228
+   Compiling libc v0.2.180
+   Compiling stable_deref_trait v1.2.1
+   Compiling memchr v2.7.6
+   Compiling syn v2.0.114
+   Compiling bytes v1.11.0
+   Compiling pin-project-lite v0.2.16
+   Compiling cfg-if v1.0.4
+   Compiling itoa v1.0.17
+   Compiling futures-core v0.3.31
+   Compiling serde v1.0.228
+   Compiling mio v1.1.1
+   Compiling socket2 v0.6.2
+   Compiling hashbrown v0.16.1
+   Compiling smallvec v1.15.1
+   Compiling equivalent v1.0.2
+   Compiling tokio v1.49.0
+   Compiling writeable v0.6.2
+   Compiling find-msvc-tools v0.1.8
+   Compiling indexmap v2.13.0
+   Compiling litemap v0.8.1
+   Compiling shlex v1.3.0
+   Compiling futures-sink v0.3.31
+   Compiling cc v1.2.54
+   Compiling icu_properties_data v2.1.2
+   Compiling once_cell v1.21.3
+   Compiling icu_normalizer_data v2.1.1
+   Compiling http v1.4.0
+   Compiling synstructure v0.13.2
+   Compiling ring v0.17.14
+   Compiling bitflags v2.10.0
+   Compiling slab v0.4.11
+   Compiling percent-encoding v2.3.2
+   Compiling zeroize v1.8.2
+   Compiling rustls-pki-types v1.14.0
+   Compiling zerofrom-derive v0.1.6
+   Compiling yoke-derive v0.8.1
+   Compiling zerofrom v0.1.6
+   Compiling zerovec-derive v0.11.2
+   Compiling yoke v0.8.1
+   Compiling displaydoc v0.2.5
+   Compiling serde_derive v1.0.228
+   Compiling zerovec v0.11.5
+   Compiling zerotrie v0.2.3
+   Compiling tinystr v0.8.2
+   Compiling potential_utf v0.1.4
+   Compiling icu_locale_core v2.1.1
+   Compiling icu_collections v2.1.1
+   Compiling crc32fast v1.5.0
+   Compiling icu_provider v2.1.1
+   Compiling version_check v0.9.5
+   Compiling typenum v1.19.0
+   Compiling crossbeam-utils v0.8.21
+   Compiling pin-utils v0.1.0
+   Compiling generic-array v0.14.7
+   Compiling icu_properties v2.1.2
+   Compiling icu_normalizer v2.1.1
+   Compiling tokio-util v0.7.18
+   Compiling http-body v1.0.1
+   Compiling tracing-core v0.1.36
+   Compiling getrandom v0.2.17
+   Compiling autocfg v1.5.0
+   Compiling winnow v0.7.14
+   Compiling rustix v1.1.3
+   Compiling adler2 v2.0.1
+   Compiling futures-task v0.3.31
+   Compiling futures-io v0.3.31
+   Compiling utf8parse v0.2.2
+   Compiling simd-adler32 v0.3.8
+   Compiling httparse v1.10.1
+   Compiling untrusted v0.9.0
+   Compiling miniz_oxide v0.8.9
+   Compiling anstyle-parse v0.2.7
+   Compiling futures-util v0.3.31
+   Compiling num-traits v0.2.19
+   Compiling tracing v0.1.44
+   Compiling idna_adapter v1.2.1
+   Compiling form_urlencoded v1.2.2
+   Compiling rustls v0.23.36
+   Compiling typeid v1.0.3
+   Compiling tower-service v0.3.3
+   Compiling anstyle v1.0.13
+   Compiling utf8_iter v1.0.4
+   Compiling anstyle-query v1.1.5
+   Compiling linux-raw-sys v0.11.0
+   Compiling try-lock v0.2.5
+   Compiling atomic-waker v1.1.2
+   Compiling fnv v1.0.7
+   Compiling colorchoice v1.0.4
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling anstream v0.6.21
+   Compiling h2 v0.4.13
+   Compiling want v0.3.1
+   Compiling idna v1.1.0
+   Compiling flate2 v1.1.8
+   Compiling futures-channel v0.3.31
+   Compiling compression-core v0.4.31
+   Compiling zmij v1.0.17
+   Compiling erased-serde v0.4.9
+   Compiling thiserror v2.0.18
+   Compiling subtle v2.6.1
+   Compiling log v0.4.29
+   Compiling hyper v1.8.1
+   Compiling compression-codecs v0.4.36
+   Compiling url v2.5.8
+   Compiling terminal_size v0.4.3
+   Compiling crossbeam-epoch v0.9.18
+   Compiling toml_datetime v0.6.11
+   Compiling serde_spanned v0.6.9
+   Compiling thiserror-impl v2.0.18
+   Compiling sync_wrapper v1.0.2
+   Compiling aho-corasick v1.1.4
+   Compiling openssl-probe v0.2.1
+   Compiling clap_lex v0.7.7
+   Compiling rayon-core v1.13.0
+   Compiling toml_write v0.1.2
+   Compiling tower-layer v0.3.3
+   Compiling base64 v0.22.1
+   Compiling strsim v0.11.1
+   Compiling heck v0.5.0
+   Compiling ipnet v2.11.0
+   Compiling serde_json v1.0.149
+   Compiling camino v1.2.2
+   Compiling regex-syntax v0.8.8
+   Compiling hyper-util v0.1.19
+   Compiling clap_derive v4.5.49
+   Compiling regex-automata v0.4.13
+   Compiling rustls-webpki v0.103.9
+   Compiling clap_builder v4.5.54
+   Compiling tower v0.5.3
+   Compiling toml_edit v0.22.27
+   Compiling tokio-rustls v0.26.4
+   Compiling rustls-native-certs v0.8.3
+   Compiling crossbeam-deque v0.8.6
+   Compiling ordered-float v2.10.1
+   Compiling async-compression v0.4.37
+   Compiling crypto-common v0.1.7
+   Compiling block-buffer v0.10.4
+   Compiling http-body-util v0.1.3
+   Compiling webpki-roots v1.0.5
+   Compiling semver v1.0.27
+   Compiling iri-string v0.7.10
+   Compiling ryu v1.0.22
+   Compiling serde_urlencoded v0.7.1
+   Compiling hyper-rustls v0.27.7
+   Compiling digest v0.10.7
+   Compiling serde-value v0.7.0
+   Compiling tower-http v0.6.8
+   Compiling serde-untagged v0.1.9
+   Compiling toml v0.8.23
+   Compiling clap v4.5.54
+   Compiling regex v1.12.2
+   Compiling toml_parser v1.0.6+spec-1.1.0
+   Compiling toml_datetime v0.7.5+spec-1.1.0
+   Compiling anyhow v1.0.100
+   Compiling unicode-xid v0.2.6
+   Compiling cpufeatures v0.2.17
+   Compiling toml_writer v1.0.6+spec-1.1.0
+   Compiling either v1.15.0
+   Compiling rayon v1.11.0
+   Compiling sha2 v0.10.9
+   Compiling cargo-util-schemas v0.8.2
+   Compiling env_filter v0.1.4
+   Compiling reqwest v0.12.28
+   Compiling crossbeam-channel v0.5.15
+   Compiling cargo-platform v0.2.0
+   Compiling serde_spanned v1.0.4
+   Compiling smol_str v0.3.5
+   Compiling toml-span v0.5.2
+   Compiling atty v0.2.14
+   Compiling rustc-stable-hash v0.1.2
+   Compiling concolor-query v0.0.4
+   Compiling twox-hash v2.1.2
+   Compiling home v0.5.12
+   Compiling jiff v0.2.18
+   Compiling bitflags v1.3.2
+   Compiling concolor-control v0.0.7
+   Compiling tame-index v0.22.0
+   Compiling toml v0.9.11+spec-1.1.0
+   Compiling cargo_metadata v0.21.0
+   Compiling env_logger v0.11.8
+   Compiling toml_edit v0.23.10+spec-1.0.0
+   Compiling clap-cargo v0.16.0
+   Compiling clap-verbosity-flag v3.0.4
+   Compiling pathdiff v0.2.3
+   Compiling dunce v1.0.5
+   Compiling termcolor v1.4.1
+   Compiling cargo-edit v0.13.8
+    Finished `release` profile [optimized] target(s) in 1m 34s
+  Installing /home/runner/.cargo/bin/cargo-add
+  Installing /home/runner/.cargo/bin/cargo-rm
+  Installing /home/runner/.cargo/bin/cargo-set-version
+  Installing /home/runner/.cargo/bin/cargo-upgrade
+   Installed package `cargo-edit v0.13.8` (executables `cargo-add`, `cargo-rm`, `cargo-set-version`, `cargo-upgrade`)
+    Checking rust_extractor's dependencies
+note: Re-run with `--incompatible` to upgrade incompatible version requirements
+note: Re-run with `--verbose` to show more dependencies
+  incompatible: 6 packages
+  latest: 28 packages
+[0;32m✅  [SUCCESS][0m Updated all dependency versions
+[0;34mℹ️  [INFO][0m Updating Cargo.lock with ALL dependency changes...
+    Updating crates.io index
+     Locking 21 packages to latest Rust 1.89.0 compatible versions
+    Updating aws-lc-rs v1.15.3 -> v1.15.4
+    Updating aws-lc-sys v0.36.0 -> v0.37.0
+    Updating cc v1.2.52 -> v1.2.54
+    Updating colored v3.0.0 -> v3.1.1
+    Updating find-msvc-tools v0.1.7 -> v0.1.8
+    Updating num-conv v0.1.0 -> v0.2.0
+    Updating openssl-probe v0.2.0 -> v0.2.1
+    Updating proc-macro2 v1.0.105 -> v1.0.106
+    Updating quote v1.0.43 -> v1.0.44
+    Updating rustls-pki-types v1.13.2 -> v1.14.0
+    Updating rustls-webpki v0.103.8 -> v0.103.9
+    Updating socket2 v0.6.1 -> v0.6.2
+    Updating thiserror v2.0.17 -> v2.0.18
+    Updating thiserror-impl v2.0.17 -> v2.0.18
+    Updating time v0.3.45 -> v0.3.46
+    Updating time-core v0.1.7 -> v0.1.8
+    Updating time-macros v0.2.25 -> v0.2.26
+    Updating uuid v1.19.0 -> v1.20.0
+    Updating zerocopy v0.8.33 -> v0.8.34
+    Updating zerocopy-derive v0.8.33 -> v0.8.34
+    Updating zmij v1.0.14 -> v1.0.17
+note: pass `--verbose` to see 10 unchanged dependencies behind latest
+[0;32m✅  [SUCCESS][0m ALL Rust dependencies in lock file updated successfully
+[0;32m✅  [SUCCESS][0m Completed Rust dependency updates
+
+[1;36m✅  Verifying Dependency Updates[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m All dependency types have been updated:
+[0;32m✅  [SUCCESS][0m ✓ Python core dependencies ([project] dependencies)
+[0;32m✅  [SUCCESS][0m ✓ Python optional dependencies ([project.optional-dependencies])
+[0;32m✅  [SUCCESS][0m ✓ Python dev dependencies ([dependency-groups])
+[0;32m✅  [SUCCESS][0m ✓ Python build dependencies ([build-system])
+[0;32m✅  [SUCCESS][0m ✓ Rust main dependencies ([dependencies])
+[0;32m✅  [SUCCESS][0m ✓ Rust dev dependencies ([dev-dependencies])
+[0;32m✅  [SUCCESS][0m ✓ Rust build dependencies ([build-dependencies])
+[0;32m✅  [SUCCESS][0m ✓ Pre-commit hooks and their dependencies
+[0;32m✅  [SUCCESS][0m ✓ UV package manager in Dockerfiles
+[0;32m✅  [SUCCESS][0m ✓ GitHub Actions dependencies
+[0;34mℹ️  [INFO][0m Run 'uv tree --outdated' to verify all Python packages are up to date
+[0;34mℹ️  [INFO][0m Run 'cargo outdated' in extractor/rustextractor to verify Rust crates
+
+[1;36m🧪  Running Tests[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Running linters...
+./scripts/update-project.sh: line 693: just: command not found
+[1;33m⚠️  [WARNING][0m Linting failed - review the changes
+[0;34mℹ️  [INFO][0m Running tests...
+./scripts/update-project.sh: line 701: just: command not found
+[1;33m⚠️  [WARNING][0m Tests failed - review the changes
+
+[1;36m📝  Update Summary[0m
+[1;36m============================================================[0m
+
+📄 File Updates:
+  • extractor/rustextractor/Cargo.lock: Updated ALL Rust dependencies
+  • extractor/rustextractor/Cargo.toml: Updated all dependency versions
+
+
+[1;36m🔀  Next Steps[0m
+[1;36m============================================================[0m
+1. Review the changes:
+   git diff --stat
+   git diff uv.lock
+
+2. Stage the changes:
+   git add */Dockerfile extractor/*/Dockerfile docs/dockerfile-standards.md
+
+3. Commit the changes:
+   git commit -m "chore: update dependencies
+   "
+
+[1;36m📋  File Update Report[0m
+[1;36m============================================================[0m
+The following files were checked and updated:
+
+🐍 Python Configuration:
+  ✓ pyproject.toml (root)
+  ✓ common/pyproject.toml
+  ✓ dashboard/pyproject.toml
+  ✓ discovery/pyproject.toml
+  ✓ extractor/pyextractor/pyproject.toml
+  ✓ extractor/rustextractor/pyproject.toml (tools only - Rust project)
+  ✓ graphinator/pyproject.toml
+  ✓ tableinator/pyproject.toml
+  ✓ uv.lock (root)
+  ✓ pyrightconfig.json
+
+🐳 Docker Configuration:
+  ✓ dashboard/Dockerfile
+  ✓ discovery/Dockerfile
+  ✓ extractor/pyextractor/Dockerfile
+  ✓ extractor/rustextractor/Dockerfile
+  ✓ graphinator/Dockerfile
+  ✓ tableinator/Dockerfile
+  ✓ docs/dockerfile-standards.md
+  ✓ docker-compose.yml
+  ✓ docker-compose.prod.yml
+
+🦀 Rust Configuration:
+  ✓ extractor/rustextractor/Cargo.toml
+  ✓ extractor/rustextractor/Cargo.lock
+
+🔄 GitHub Workflows:
+  ✓ .github/workflows/*.yml (setup-uv action)
+  ✓ Python version references
+
+📊 Summary:
+  • Total files updated: 2
+  • Python packages updated: 0
+  • Dockerfiles updated: 0
+0
+  • Workflows updated: 0
+
+[1;36m🔍  Manual Verification Steps[0m
+[1;36m============================================================[0m
+Please verify the following before merging:
+
+1. 🐳 Docker builds:
+   docker-compose build --no-cache
+
+2. 🧪 Service health checks:
+   docker-compose up -d
+   docker-compose ps  # All services should be 'healthy'
+
+3. 🔍 Smoke tests:
+   # Check dashboard
+   curl -f http://localhost:8000/health
+   # Check discovery service
+   curl -f http://localhost:8001/health
+
+4. 📊 Review dependency changes:
+   # Check for security advisories
+   uv pip audit
+   # Review major version changes
+   git diff uv.lock | grep -E "^[+-]version"
+
+5. 📝 Update CHANGELOG.md if needed
