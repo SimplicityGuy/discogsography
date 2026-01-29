@@ -43,7 +43,7 @@ thiserror = "1.0"
 
 # AWS S3 SDK (equivalent to Python boto3) - latest
 aws-config = "1.8.12"
-aws-sdk-s3 = "1.120.0"
+aws-sdk-s3 = "1.121.0"
 
 # HTTP client for progress tracking during downloads
 reqwest = { version = "0.12", features = ["stream", "rustls-tls"] }
