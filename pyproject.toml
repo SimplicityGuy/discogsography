@@ -44,8 +44,8 @@ dashboard = [
     "websockets>=14.2",
 ]
 pyextractor = [
-    "boto3>=1.34.0",
     "pika>=1.3.0",
+    "requests>=2.31.0",
     "xmltodict>=0.13.0",
 ]
 graphinator = [

@@ -1,12 +1,11 @@
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
-from boto3 import client
-from botocore import UNSIGNED
-from botocore.config import Config
+import requests
 from orjson import OPT_INDENT_2, dumps, loads
 from tqdm import tqdm
 
@@ -96,6 +95,116 @@ def _validate_existing_file(file_path: Path, expected_checksum: str) -> bool:
     return actual_checksum == expected_checksum
 
 
+def _download_file_from_discogs(
+    s3_key: str,
+    output_path: Path,
+    progress_callback: Callable[[int], None] | None = None,
+) -> None:
+    """
+    Download a file from Discogs website proxy.
+
+    Args:
+        s3_key: The S3 key (e.g., "data/2026/discogs_20260101_artists.xml.gz")
+        output_path: Local path to save the file
+        progress_callback: Optional callback function called with bytes downloaded
+    """
+    from urllib.parse import quote
+
+    # Construct Discogs download URL
+    download_url = f"https://data.discogs.com/?download={quote(s3_key, safe='')}"
+
+    # Download with streaming to handle large files
+    response = requests.get(download_url, stream=True, timeout=300)
+    response.raise_for_status()
+
+    # Write to file with progress tracking
+    with output_path.open("wb") as f:
+        downloaded = 0
+        for chunk in response.iter_content(chunk_size=8192):
+            if chunk:
+                f.write(chunk)
+                downloaded += len(chunk)
+                if progress_callback:
+                    progress_callback(len(chunk))
+
+
+def _scrape_file_list_from_discogs() -> dict[str, list[S3FileInfo]]:
+    """
+    Scrape the file list from Discogs website instead of using S3 listing.
+
+    Returns a dictionary mapping version IDs to lists of S3FileInfo objects.
+    """
+    logger.info("🌐 Fetching file list from Discogs website...")
+
+    try:
+        # Step 1: Fetch the main page to get available years
+        response = requests.get("https://data.discogs.com/", timeout=30)
+        response.raise_for_status()
+        html = response.text
+
+        # Extract year directories (e.g., 2026/, 2025/, etc.)
+        year_pattern = r'href="\?prefix=data%2F(\d{4})%2F"'
+        years = re.findall(year_pattern, html)
+
+        if not years:
+            logger.error("❌ No year directories found on Discogs website")
+            raise ValueError("Failed to parse year directories from Discogs website")
+
+        # Sort years in descending order (most recent first)
+        years = sorted(years, reverse=True)
+        logger.info(f"📅 Found {len(years)} year directories, checking recent years...")
+
+        # Step 2: Fetch files from recent years (check last 2 years)
+        ids: dict[str, list[S3FileInfo]] = {}
+
+        for year in years[:2]:  # Only check last 2 years for efficiency
+            try:
+                year_url = f"https://data.discogs.com/?prefix=data%2F{year}%2F"
+                year_response = requests.get(year_url, timeout=30)
+                year_response.raise_for_status()
+                year_html = year_response.text
+
+                # Extract file links from year directory
+                # Pattern matches: ?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz
+                file_pattern = r'\?download=data%2F\d{4}%2F(discogs_(\d{8})_[^"]+)'
+                file_matches = re.findall(file_pattern, year_html)
+
+                for filename, version_id in file_matches:
+                    # URL decode the filename
+                    from urllib.parse import unquote
+
+                    filename = unquote(filename)
+
+                    # Construct full S3 key
+                    s3_key = f"data/{year}/{filename}"
+
+                    if version_id not in ids:
+                        ids[version_id] = []
+                    # We don't have exact size from HTML, use 0 as placeholder
+                    ids[version_id].append(S3FileInfo(s3_key, 0))
+
+                if file_matches:
+                    logger.info(
+                        f"📋 Found {len(file_matches)} files in year {year} directory"
+                    )
+
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to fetch year {year} directory: {e}")
+                continue
+
+        if not ids:
+            logger.error("❌ No files found on Discogs website")
+            raise ValueError("Failed to parse file list from Discogs website")
+
+        logger.info(f"📊 Found {len(ids)} unique versions from website")
+
+        return ids
+
+    except Exception as e:
+        logger.error(f"❌ Failed to scrape file list from Discogs: {e}")
+        raise
+
+
 def download_discogs_data(output_directory: str) -> list[str]:
     logger.info("📥 Starting download of most recent Discogs data")
     output_path = Path(output_directory)
@@ -105,28 +214,16 @@ def download_discogs_data(output_directory: str) -> list[str]:
     metadata = _load_metadata(output_path)
     logger.info(f"📋 Loaded metadata for {len(metadata)} previously downloaded files")
 
-    bucket = "discogs-data-dumps"
+    # Note: We no longer use S3 client directly since the bucket denies public GetObject access
+    # Instead, we download files through the Discogs website proxy at https://data.discogs.com/
+
+    # Scrape file list from Discogs website instead of S3 listing
+    # This avoids the AccessDenied error from S3's ListBucket restriction
     try:
-        s3 = client(
-            "s3", region_name="us-west-2", config=Config(signature_version=UNSIGNED)
-        )
-        response = s3.list_objects_v2(Bucket=bucket, Prefix="data/")
-        contents = response.get("Contents")
-        if not contents:
-            raise ValueError("No contents found in S3 bucket")
+        ids = _scrape_file_list_from_discogs()
     except Exception as e:
-        logger.error(f"❌ Failed to connect to S3 or fetch data: {e}")
+        logger.error(f"❌ Failed to fetch file list: {e}")
         raise
-
-    ids: dict[str, list[S3FileInfo]] = {}
-
-    for content in contents:
-        key = content["Key"]
-        size = content["Size"]
-        id = key.split("_")[1]
-        if id not in ids:
-            ids[id] = []
-        ids[id].append(S3FileInfo(key, size))
 
     # Always try to use the most recent Discogs export first.
     for id in sorted(ids.keys(), reverse=True):
@@ -198,8 +295,7 @@ def download_discogs_data(output_directory: str) -> list[str]:
         logger.info(f"⬇️ Downloading checksum file: {Path(checksum_file.name).name}")
 
         try:
-            with checksum_path.open("wb") as download_file:
-                s3.download_fileobj(bucket, checksum_file.name, download_file)
+            _download_file_from_discogs(checksum_file.name, checksum_path)
         except Exception as e:
             logger.error(f"❌ Failed to download checksum file: {e}")
             continue
@@ -261,20 +357,19 @@ def download_discogs_data(output_directory: str) -> list[str]:
             desc = f"{filename:33}"
             bar_format = "{desc}{percentage:3.0f}%|{bar:80}{r_bar}"
 
-            with (
-                path.open("wb") as download_file,
-                tqdm(
-                    desc=desc,
-                    bar_format=bar_format,
-                    ncols=155,
-                    total=s3file.size,
-                    unit="B",
-                    unit_scale=True,
-                ) as t,
-            ):
+            # Note: size from scraping is 0, so we don't know total size upfront
+            # The progress bar will show bytes downloaded without percentage
+            with tqdm(
+                desc=desc,
+                bar_format=bar_format,
+                ncols=155,
+                total=None,  # Unknown total size
+                unit="B",
+                unit_scale=True,
+            ) as t:
                 try:
-                    s3.download_fileobj(
-                        bucket, s3file.name, download_file, Callback=progress(t)
+                    _download_file_from_discogs(
+                        s3file.name, path, progress_callback=progress(t)
                     )
                 except Exception as e:
                     logger.error(f"❌ Failed to download {s3file.name}: {e}")

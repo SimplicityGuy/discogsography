@@ -41,13 +41,11 @@ dotenvy = "0.15"
 anyhow = "1.0"
 thiserror = "1.0"
 
-# AWS S3 SDK (equivalent to Python boto3) - latest
-aws-config = "1.8.12"
-aws-sdk-s3 = "1.121.0"
-
-# HTTP client for progress tracking during downloads
+# HTTP client for downloads (replaces AWS S3 SDK)
 reqwest = { version = "0.12", features = ["stream", "rustls-tls"] }
 bytes = "1.11"
+regex = "1.11"
+urlencoding = "2.1"
 
 # Progress tracking
 indicatif = "0.17"

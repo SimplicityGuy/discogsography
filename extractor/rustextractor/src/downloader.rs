@@ -1,8 +1,7 @@
 use anyhow::{Context, Result};
-use aws_config::BehaviorVersion;
-use aws_sdk_s3::Client as S3Client;
 use chrono::Utc;
 use indicatif::{ProgressBar, ProgressStyle};
+use regex::Regex;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -12,29 +11,19 @@ use tracing::{debug, error, info, warn};
 
 use crate::types::{LocalFileInfo, S3FileInfo};
 
-const S3_BUCKET: &str = "discogs-data-dumps";
 const S3_PREFIX: &str = "data/";
+const DISCOGS_DATA_URL: &str = "https://data.discogs.com/";
 
 pub struct Downloader {
-    s3_client: S3Client,
     pub output_directory: PathBuf,
     pub metadata: HashMap<String, LocalFileInfo>,
 }
 
 impl Downloader {
     pub async fn new(output_directory: PathBuf) -> Result<Self> {
-        // Initialize AWS SDK with default configuration (similar to boto3 default)
-        let config = aws_config::defaults(BehaviorVersion::latest())
-            .region("us-west-2")
-            .no_credentials() // Public bucket, no credentials needed
-            .load()
-            .await;
-
-        let s3_client = S3Client::new(&config);
-
         let metadata = load_metadata(&output_directory)?;
 
-        Ok(Self { s3_client, output_directory, metadata })
+        Ok(Self { output_directory, metadata })
     }
 
     pub async fn download_discogs_data(&mut self) -> Result<Vec<String>> {
@@ -85,31 +74,104 @@ impl Downloader {
         Ok(downloaded_files)
     }
 
-    async fn list_s3_files(&self) -> Result<Vec<S3FileInfo>> {
-        info!("🔍 Listing available files from S3...");
+    async fn scrape_file_list_from_discogs(&self) -> Result<HashMap<String, Vec<S3FileInfo>>> {
+        info!("🌐 Fetching file list from Discogs website...");
 
-        // Use AWS SDK list_objects_v2 (equivalent to Python's boto3 list_objects_v2)
-        let response = self.s3_client.list_objects_v2().bucket(S3_BUCKET).prefix(S3_PREFIX).send().await.context("Failed to list S3 objects")?;
+        // Step 1: Fetch the main page to get available years
+        let response = reqwest::get(DISCOGS_DATA_URL)
+            .await
+            .context("Failed to fetch Discogs website")?;
 
-        let objects = response.contents();
+        let html = response.text().await.context("Failed to read HTML response")?;
 
-        let files: Vec<S3FileInfo> = objects
-            .iter()
-            .filter_map(|obj| {
-                let key = obj.key()?;
-                let size = obj.size()? as u64;
+        // Extract year directories (e.g., 2026/, 2025/, etc.)
+        let year_pattern = Regex::new(r#"href="\?prefix=data%2F(\d{4})%2F""#)
+            .context("Failed to compile year regex")?;
 
-                // Filter for XML files and CHECKSUM files (matching Python logic)
-                if key.ends_with(".xml.gz") || key.contains("CHECKSUM") {
-                    // Store full key like Python does - this is crucial for version grouping
-                    Some(S3FileInfo { name: key.to_string(), size })
-                } else {
-                    None
-                }
-            })
+        let mut years: Vec<String> = year_pattern
+            .captures_iter(&html)
+            .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
             .collect();
 
-        info!("Found {} relevant files in S3 bucket after filtering", files.len());
+        if years.is_empty() {
+            return Err(anyhow::anyhow!("No year directories found on Discogs website"));
+        }
+
+        // Sort years in descending order (most recent first)
+        years.sort_by(|a, b| b.cmp(a));
+        info!("📅 Found {} year directories, checking recent years...", years.len());
+
+        // Step 2: Fetch files from recent years (check last 2 years)
+        let mut ids: HashMap<String, Vec<S3FileInfo>> = HashMap::new();
+
+        for year in years.iter().take(2) {
+            let year_url = format!("https://data.discogs.com/?prefix=data%2F{}%2F", year);
+
+            match reqwest::get(&year_url).await {
+                Ok(year_response) => {
+                    if let Ok(year_html) = year_response.text().await {
+                        // Extract file links from year directory
+                        // Pattern matches: ?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz
+                        let file_pattern = Regex::new(r#"\?download=data%2F\d{4}%2F(discogs_(\d{8})_[^"]+)"#)
+                            .context("Failed to compile file regex")?;
+
+                        let mut file_count = 0;
+                        for cap in file_pattern.captures_iter(&year_html) {
+                            if let (Some(filename_match), Some(version_match)) = (cap.get(1), cap.get(2)) {
+                                let filename = filename_match.as_str();
+                                let version_id = version_match.as_str();
+
+                                // URL decode the filename
+                                let decoded_filename = urlencoding::decode(filename)
+                                    .context("Failed to URL decode filename")?
+                                    .to_string();
+
+                                // Construct full S3 key
+                                let s3_key = format!("data/{}/{}", year, decoded_filename);
+
+                                ids.entry(version_id.to_string())
+                                    .or_default()
+                                    .push(S3FileInfo { name: s3_key, size: 0 });
+
+                                file_count += 1;
+                            }
+                        }
+
+                        if file_count > 0 {
+                            info!("📋 Found {} files in year {} directory", file_count, year);
+                        }
+                    }
+                }
+                Err(e) => {
+                    warn!("⚠️ Failed to fetch year {} directory: {}", year, e);
+                    continue;
+                }
+            }
+        }
+
+        if ids.is_empty() {
+            return Err(anyhow::anyhow!("No files found on Discogs website"));
+        }
+
+        info!("📊 Found {} unique versions from website", ids.len());
+
+        Ok(ids)
+    }
+
+    async fn list_s3_files(&self) -> Result<Vec<S3FileInfo>> {
+        info!("🔍 Listing available files from Discogs website...");
+
+        // Scrape file list from Discogs website instead of S3 listing
+        // This avoids the AccessDenied error from S3's ListBucket restriction
+        let ids_map = self.scrape_file_list_from_discogs().await?;
+
+        // Flatten the map into a single list of files for compatibility
+        let files: Vec<S3FileInfo> = ids_map
+            .into_values()
+            .flat_map(|files| files.into_iter())
+            .collect();
+
+        info!("Found {} relevant files from website", files.len());
         Ok(files)
     }
 
@@ -175,13 +237,8 @@ impl Downloader {
 
         // Check metadata
         if let Some(local_info) = self.metadata.get(filename) {
-            // Compare sizes
-            if local_info.size != file_info.size {
-                info!("📊 File size changed for {}: {} -> {}", file_info.name, local_info.size, file_info.size);
-                return Ok(true);
-            }
-
-            // Validate checksum if file exists
+            // Note: file_info.size is 0 from scraping, so we can't compare sizes
+            // Instead, just validate checksum if file exists
             if local_path.exists() {
                 let checksum = calculate_file_checksum(&local_path).await?;
                 if checksum != local_info.checksum {
@@ -190,7 +247,7 @@ impl Downloader {
                 }
             }
 
-            // File is up to date
+            // File exists with correct checksum
             return Ok(false);
         }
 
@@ -199,58 +256,68 @@ impl Downloader {
     }
 
     async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<()> {
+        use futures::StreamExt;
+
         // Reconstruct the full S3 key by prepending the prefix
         let s3_key = format!("{}{}", S3_PREFIX, &file_info.name);
         // Extract just the base filename for local storage (remove path components)
         let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
         let local_path = self.output_directory.join(filename);
 
-        info!("⬇️ Downloading {} ({:.2} MB)...", filename, file_info.size as f64 / 1_048_576.0);
+        info!("⬇️ Downloading {}...", filename);
 
-        // Create progress bar
-        let pb = ProgressBar::new(file_info.size);
+        // Construct Discogs download URL (URL encode the S3 key)
+        let download_url = format!("{}?download={}", DISCOGS_DATA_URL, urlencoding::encode(&s3_key));
+
+        // Create progress bar (unknown size from scraping)
+        let pb = ProgressBar::new_spinner();
         pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({eta})")
-                .unwrap()
-                .progress_chars("=>-"),
+            ProgressStyle::default_spinner()
+                .template("{spinner:.green} [{elapsed_precise}] {bytes} ({bytes_per_sec})")
+                .unwrap(),
         );
 
-        // Download using AWS SDK (equivalent to boto3 download_fileobj)
-        let response = self
-            .s3_client
-            .get_object()
-            .bucket(S3_BUCKET)
-            .key(&s3_key)
-            .send()
+        // Download using reqwest with streaming
+        let response = reqwest::get(&download_url)
             .await
-            .with_context(|| format!("Failed to start S3 download for key: {}", s3_key))?;
+            .with_context(|| format!("Failed to start HTTP download from: {}", download_url))?;
 
-        let body = response.body.collect().await.context("Failed to read S3 response")?;
-        let data = body.into_bytes();
+        if !response.status().is_success() {
+            return Err(anyhow::anyhow!("HTTP error: {}", response.status()));
+        }
 
         let mut file = File::create(&local_path).await.context("Failed to create local file")?;
-
         let mut hasher = Sha256::new();
-        hasher.update(&data);
+        let mut downloaded: u64 = 0;
 
-        file.write_all(&data).await.context("Failed to write file")?;
+        // Stream the response body
+        let mut stream = response.bytes_stream();
 
-        pb.set_position(data.len() as u64);
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.context("Failed to read HTTP response chunk")?;
+
+            hasher.update(&chunk);
+            file.write_all(&chunk).await.context("Failed to write chunk to file")?;
+
+            downloaded += chunk.len() as u64;
+            pb.set_position(downloaded);
+        }
 
         pb.finish_with_message("Download complete");
+
+        info!("✅ Downloaded {} ({:.2} MB)", filename, downloaded as f64 / 1_048_576.0);
 
         // Calculate checksum
         let checksum = format!("{:x}", hasher.finalize());
 
-        // Update metadata
+        // Update metadata with actual downloaded size
         self.metadata.insert(
             filename.to_string(),
             LocalFileInfo {
                 path: local_path.to_string_lossy().to_string(),
                 checksum,
                 version: extract_month_from_filename(filename),
-                size: file_info.size,
+                size: downloaded,
             },
         );
 
@@ -427,8 +494,7 @@ mod tests {
     async fn test_downloader_new() {
         let temp_dir = TempDir::new().unwrap();
 
-        // This will attempt to connect to AWS (in no-credentials mode for public bucket)
-        // It should succeed in creating the downloader
+        // Create a new downloader (no AWS connection needed anymore)
         let result = Downloader::new(temp_dir.path().to_path_buf()).await;
 
         // We expect this to succeed since it's just initialization
@@ -519,9 +585,7 @@ mod tests {
         let content = b"test content";
         fs::write(&local_path, content).await.unwrap();
 
-        let actual_checksum = calculate_file_checksum(&local_path).await.unwrap();
-
-        // Add metadata with wrong checksum
+        // Add metadata with wrong checksum (intentionally not using actual checksum)
         downloader.metadata.insert(
             filename.to_string(),
             LocalFileInfo {

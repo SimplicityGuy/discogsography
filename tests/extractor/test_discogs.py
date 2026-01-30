@@ -2,12 +2,13 @@
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, Mock, mock_open, patch
+from unittest.mock import Mock, mock_open, patch
 
 import pytest
 
 from extractor.pyextractor.discogs import (
     LocalFileInfo,
+    S3FileInfo,
     _calculate_file_checksum,
     _load_metadata,
     _save_metadata,
@@ -19,152 +20,109 @@ from extractor.pyextractor.discogs import (
 class TestDownloadDiscogsData:
     """Test download_discogs_data function."""
 
-    @patch("extractor.pyextractor.discogs.client")
-    def test_successful_download(self, mock_boto_client: Mock, tmp_path: Path) -> None:
+    @patch("extractor.pyextractor.discogs._download_file_from_discogs")
+    @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
+    def test_successful_download(self, mock_scrape: Mock, mock_download: Mock, tmp_path: Path) -> None:
         """Test successful download of Discogs data."""
-        # Setup mock S3 client
-        mock_s3 = MagicMock()
-        mock_boto_client.return_value = mock_s3
-
-        # Mock list_objects_v2 response - keys must have "data/" prefix
-        mock_s3.list_objects_v2.return_value = {
-            "Contents": [
-                {
-                    "Key": "data/discogs_20240201_artists.xml.gz",
-                    "ETag": '"abc123"',
-                    "Size": 1000000,
-                },
-                {"Key": "data/discogs_20240201_labels.xml.gz", "ETag": '"def456"', "Size": 2000000},
-                {
-                    "Key": "data/discogs_20240201_masters.xml.gz",
-                    "ETag": '"ghi789"',
-                    "Size": 3000000,
-                },
-                {
-                    "Key": "data/discogs_20240201_releases.xml.gz",
-                    "ETag": '"jkl012"',
-                    "Size": 4000000,
-                },
-                {"Key": "data/discogs_20240201_CHECKSUM.txt", "ETag": '"mno345"', "Size": 100},
+        # Mock scraping to return file list
+        mock_scrape.return_value = {
+            "20240201": [
+                S3FileInfo("data/2024/discogs_20240201_artists.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_labels.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_masters.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_releases.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_CHECKSUM.txt", 0),
             ]
         }
 
-        # Mock checksum file content - empty file has sha256 hash
+        # Mock checksum file content
         empty_file_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        # Use single space between checksum and filename as the parsing code splits on single space
-        checksum_content = f"{empty_file_sha256} discogs_20240201_artists.xml.gz\n{empty_file_sha256} discogs_20240201_labels.xml.gz\n{empty_file_sha256} discogs_20240201_masters.xml.gz\n{empty_file_sha256} discogs_20240201_releases.xml.gz\n".encode()
+        checksum_content = f"{empty_file_sha256} discogs_20240201_artists.xml.gz\n{empty_file_sha256} discogs_20240201_labels.xml.gz\n{empty_file_sha256} discogs_20240201_masters.xml.gz\n{empty_file_sha256} discogs_20240201_releases.xml.gz\n"
 
-        # Mock download_fileobj (not download_file)
-        def mock_download_fileobj(_bucket: str, key: str, fileobj: Any, **_kwargs: Any) -> None:
-            if "CHECKSUM.txt" in key:
-                fileobj.write(checksum_content)
+        # Mock download function to create files
+        def mock_download_impl(s3_key: str, output_path: Path, **_: Any) -> None:
+            if "CHECKSUM.txt" in s3_key:
+                output_path.write_text(checksum_content)
             else:
-                # Create empty file - checksums won't match but that's OK for this test
-                fileobj.write(b"")
+                output_path.write_bytes(b"")
 
-        mock_s3.download_fileobj.side_effect = mock_download_fileobj
+        mock_download.side_effect = mock_download_impl
 
         # Call function
         result = download_discogs_data(str(tmp_path))
 
-        # Verify results - the function returns a list of expected filenames, not paths
-        assert len(result) == 5  # artists, labels, masters, releases, checksum
+        # Verify results
+        assert len(result) == 5
         assert "discogs_20240201_CHECKSUM.txt" in result
         assert "discogs_20240201_artists.xml.gz" in result
         assert "discogs_20240201_labels.xml.gz" in result
         assert "discogs_20240201_masters.xml.gz" in result
         assert "discogs_20240201_releases.xml.gz" in result
 
-        # Verify S3 calls
-        assert mock_s3.list_objects_v2.call_count == 1
-        # download_fileobj is called once for CHECKSUM file, then for each data file that needs downloading
-        assert mock_s3.download_fileobj.call_count >= 1  # At least checksum file
+        # Verify scraping was called
+        assert mock_scrape.call_count == 1
+        # Download should be called for checksum + data files
+        assert mock_download.call_count >= 1
 
-    @patch("extractor.pyextractor.discogs.client")
-    def test_empty_bucket(self, mock_boto_client: Mock, tmp_path: Path) -> None:
-        """Test handling of empty S3 bucket."""
-        mock_s3 = MagicMock()
-        mock_boto_client.return_value = mock_s3
-
-        # Mock empty response
-        mock_s3.list_objects_v2.return_value = {}
+    @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
+    def test_empty_bucket(self, mock_scrape: Mock, tmp_path: Path) -> None:
+        """Test handling of empty file list from Discogs website."""
+        # Mock scraping to return empty dict
+        mock_scrape.return_value = {}
 
         # Call function - should raise ValueError
-        with pytest.raises(ValueError, match="No contents found in S3 bucket"):
+        with pytest.raises(ValueError, match="No complete Discogs export found"):
             download_discogs_data(str(tmp_path))
 
-    @patch("extractor.pyextractor.discogs.client")
-    def test_skip_non_xml_files(self, mock_boto_client: Mock, tmp_path: Path) -> None:
-        """Test that non-XML files are skipped."""
-        mock_s3 = MagicMock()
-        mock_boto_client.return_value = mock_s3
-
-        # Mock response with mixed file types
-        mock_s3.list_objects_v2.return_value = {
-            "Contents": [
-                {
-                    "Key": "data/discogs_20240201_artists.xml.gz",
-                    "ETag": '"abc123"',
-                    "Size": 1000000,
-                },
-                {"Key": "data/discogs_20240201_labels.xml.gz", "ETag": '"def456"', "Size": 2000000},
-                {
-                    "Key": "data/discogs_20240201_masters.xml.gz",
-                    "ETag": '"ghi789"',
-                    "Size": 3000000,
-                },
-                {
-                    "Key": "data/discogs_20240201_releases.xml.gz",
-                    "ETag": '"jkl012"',
-                    "Size": 4000000,
-                },
-                {"Key": "data/discogs_20240201_CHECKSUM.txt", "ETag": '"mno345"', "Size": 100},
-                {
-                    "Key": "data/readme.txt",  # Non-discogs file - will cause IndexError on split
-                    "ETag": '"xyz789"',
-                    "Size": 1000,
-                },
+    @patch("extractor.pyextractor.discogs._download_file_from_discogs")
+    @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
+    def test_skip_non_xml_files(self, mock_scrape: Mock, mock_download: Mock, tmp_path: Path) -> None:
+        """Test that only expected file types are processed from scraping."""
+        # Mock scraping to return only valid discogs files
+        # Web scraping filters for discogs pattern, so non-discogs files won't appear
+        mock_scrape.return_value = {
+            "20240201": [
+                S3FileInfo("data/2024/discogs_20240201_artists.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_labels.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_masters.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_releases.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_CHECKSUM.txt", 0),
             ]
         }
 
-        # Mock checksum for all data files - using sha256 of empty file
+        # Mock checksum content
         empty_file_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        # Use single space between checksum and filename
-        checksum_content = f"{empty_file_sha256} discogs_20240201_artists.xml.gz\n{empty_file_sha256} discogs_20240201_labels.xml.gz\n{empty_file_sha256} discogs_20240201_masters.xml.gz\n{empty_file_sha256} discogs_20240201_releases.xml.gz\n".encode()
+        checksum_content = f"{empty_file_sha256} discogs_20240201_artists.xml.gz\n{empty_file_sha256} discogs_20240201_labels.xml.gz\n{empty_file_sha256} discogs_20240201_masters.xml.gz\n{empty_file_sha256} discogs_20240201_releases.xml.gz\n"
 
-        # Mock download_fileobj
-        def mock_download_fileobj(_bucket: str, key: str, fileobj: Any, **_kwargs: Any) -> None:
-            if "CHECKSUM.txt" in key:
-                fileobj.write(checksum_content)
+        # Mock download
+        def mock_download_impl(s3_key: str, output_path: Path, **_: Any) -> None:
+            if "CHECKSUM.txt" in s3_key:
+                output_path.write_text(checksum_content)
             else:
-                fileobj.write(b"")
+                output_path.write_bytes(b"")
 
-        mock_s3.download_fileobj.side_effect = mock_download_fileobj
+        mock_download.side_effect = mock_download_impl
 
-        # The function will fail due to IndexError when encountering non-standard files
-        # This is expected behavior - the function expects files in specific format
-        with pytest.raises(IndexError):
-            download_discogs_data(str(tmp_path))
+        # Function should succeed - web scraping only returns valid files
+        result = download_discogs_data(str(tmp_path))
+        assert len(result) == 5
 
-    @patch("extractor.pyextractor.discogs.client")
-    def test_s3_connection_failure(self, mock_boto_client: Mock, tmp_path: Path) -> None:
-        """Test handling of S3 connection failure."""
-        mock_boto_client.side_effect = Exception("Connection failed")
+    @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
+    def test_s3_connection_failure(self, mock_scrape: Mock, tmp_path: Path) -> None:
+        """Test handling of website scraping failure."""
+        mock_scrape.side_effect = Exception("Connection failed")
 
         with pytest.raises(Exception, match="Connection failed"):
             download_discogs_data(str(tmp_path))
 
-    @patch("extractor.pyextractor.discogs.client")
-    def test_incomplete_export_skipped(self, mock_boto_client: Mock, tmp_path: Path) -> None:
+    @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
+    def test_incomplete_export_skipped(self, mock_scrape: Mock, tmp_path: Path) -> None:
         """Test that incomplete exports are skipped."""
-        mock_s3 = MagicMock()
-        mock_boto_client.return_value = mock_s3
-
-        # Mock response with incomplete export (missing files)
-        mock_s3.list_objects_v2.return_value = {
-            "Contents": [
-                {"Key": "data/discogs_20240201_artists.xml.gz", "Size": 1000000},
-                {"Key": "data/discogs_20240201_labels.xml.gz", "Size": 2000000},
+        # Mock scraping to return incomplete export (missing files)
+        mock_scrape.return_value = {
+            "20240201": [
+                S3FileInfo("data/2024/discogs_20240201_artists.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_labels.xml.gz", 0),
                 # Missing masters and releases - incomplete export
             ]
         }
@@ -172,19 +130,16 @@ class TestDownloadDiscogsData:
         with pytest.raises(ValueError, match="No complete Discogs export found"):
             download_discogs_data(str(tmp_path))
 
-    @patch("extractor.pyextractor.discogs.client")
-    def test_missing_checksum_file(self, mock_boto_client: Mock, tmp_path: Path) -> None:
+    @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
+    def test_missing_checksum_file(self, mock_scrape: Mock, tmp_path: Path) -> None:
         """Test handling of missing checksum file."""
-        mock_s3 = MagicMock()
-        mock_boto_client.return_value = mock_s3
-
-        # Mock response without checksum file
-        mock_s3.list_objects_v2.return_value = {
-            "Contents": [
-                {"Key": "data/discogs_20240201_artists.xml.gz", "Size": 1000000},
-                {"Key": "data/discogs_20240201_labels.xml.gz", "Size": 2000000},
-                {"Key": "data/discogs_20240201_masters.xml.gz", "Size": 3000000},
-                {"Key": "data/discogs_20240201_releases.xml.gz", "Size": 4000000},
+        # Mock scraping to return files without checksum
+        mock_scrape.return_value = {
+            "20240201": [
+                S3FileInfo("data/2024/discogs_20240201_artists.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_labels.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_masters.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_releases.xml.gz", 0),
                 # No CHECKSUM.txt file
             ]
         }
@@ -192,113 +147,105 @@ class TestDownloadDiscogsData:
         with pytest.raises(ValueError, match="No complete Discogs export found"):
             download_discogs_data(str(tmp_path))
 
-    @patch("extractor.pyextractor.discogs.client")
-    def test_checksum_download_failure(self, mock_boto_client: Mock, tmp_path: Path) -> None:
+    @patch("extractor.pyextractor.discogs._download_file_from_discogs")
+    @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
+    def test_checksum_download_failure(self, mock_scrape: Mock, mock_download: Mock, tmp_path: Path) -> None:
         """Test handling of checksum file download failure."""
-        mock_s3 = MagicMock()
-        mock_boto_client.return_value = mock_s3
-
-        mock_s3.list_objects_v2.return_value = {
-            "Contents": [
-                {"Key": "data/discogs_20240201_artists.xml.gz", "Size": 1000000},
-                {"Key": "data/discogs_20240201_labels.xml.gz", "Size": 2000000},
-                {"Key": "data/discogs_20240201_masters.xml.gz", "Size": 3000000},
-                {"Key": "data/discogs_20240201_releases.xml.gz", "Size": 4000000},
-                {"Key": "data/discogs_20240201_CHECKSUM.txt", "Size": 100},
+        mock_scrape.return_value = {
+            "20240201": [
+                S3FileInfo("data/2024/discogs_20240201_artists.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_labels.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_masters.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_releases.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_CHECKSUM.txt", 0),
             ]
         }
 
         # Make checksum download fail
-        mock_s3.download_fileobj.side_effect = Exception("Download failed")
+        mock_download.side_effect = Exception("Download failed")
 
         with pytest.raises(ValueError, match="No complete Discogs export found"):
             download_discogs_data(str(tmp_path))
 
-    @patch("extractor.pyextractor.discogs.client")
-    def test_malformed_checksum_file(self, mock_boto_client: Mock, tmp_path: Path) -> None:
+    @patch("extractor.pyextractor.discogs._download_file_from_discogs")
+    @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
+    def test_malformed_checksum_file(self, mock_scrape: Mock, mock_download: Mock, tmp_path: Path) -> None:
         """Test handling of malformed checksum file."""
-        mock_s3 = MagicMock()
-        mock_boto_client.return_value = mock_s3
-
-        mock_s3.list_objects_v2.return_value = {
-            "Contents": [
-                {"Key": "data/discogs_20240201_artists.xml.gz", "Size": 1000000},
-                {"Key": "data/discogs_20240201_labels.xml.gz", "Size": 2000000},
-                {"Key": "data/discogs_20240201_masters.xml.gz", "Size": 3000000},
-                {"Key": "data/discogs_20240201_releases.xml.gz", "Size": 4000000},
-                {"Key": "data/discogs_20240201_CHECKSUM.txt", "Size": 100},
+        mock_scrape.return_value = {
+            "20240201": [
+                S3FileInfo("data/2024/discogs_20240201_artists.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_labels.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_masters.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_releases.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_CHECKSUM.txt", 0),
             ]
         }
 
-        # Mock malformed checksum content that will cause parsing error
-        def mock_download_fileobj(_bucket: str, key: str, fileobj: Any, **_kwargs: Any) -> None:
-            if "CHECKSUM.txt" in key:
+        # Mock download to create malformed checksum file
+        def mock_download_impl(s3_key: str, output_path: Path, **_: Any) -> None:
+            if "CHECKSUM.txt" in s3_key:
                 # Write content that will cause exception when parsed
-                fileobj.write(b"\xff\xfe")  # Invalid UTF-8
+                output_path.write_bytes(b"\xff\xfe")  # Invalid UTF-8
 
-        mock_s3.download_fileobj.side_effect = mock_download_fileobj
+        mock_download.side_effect = mock_download_impl
 
         with pytest.raises(ValueError, match="No complete Discogs export found"):
             download_discogs_data(str(tmp_path))
 
-    @patch("extractor.pyextractor.discogs.client")
-    def test_data_file_download_failure(self, mock_boto_client: Mock, tmp_path: Path) -> None:
+    @patch("extractor.pyextractor.discogs._download_file_from_discogs")
+    @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
+    def test_data_file_download_failure(self, mock_scrape: Mock, mock_download: Mock, tmp_path: Path) -> None:
         """Test handling of data file download failure."""
-        mock_s3 = MagicMock()
-        mock_boto_client.return_value = mock_s3
-
-        mock_s3.list_objects_v2.return_value = {
-            "Contents": [
-                {"Key": "data/discogs_20240201_artists.xml.gz", "Size": 1000000},
-                {"Key": "data/discogs_20240201_labels.xml.gz", "Size": 2000000},
-                {"Key": "data/discogs_20240201_masters.xml.gz", "Size": 3000000},
-                {"Key": "data/discogs_20240201_releases.xml.gz", "Size": 4000000},
-                {"Key": "data/discogs_20240201_CHECKSUM.txt", "Size": 100},
+        mock_scrape.return_value = {
+            "20240201": [
+                S3FileInfo("data/2024/discogs_20240201_artists.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_labels.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_masters.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_releases.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_CHECKSUM.txt", 0),
             ]
         }
 
         empty_file_sha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        checksum_content = f"{empty_file_sha256} discogs_20240201_artists.xml.gz\n".encode()
+        checksum_content = f"{empty_file_sha256} discogs_20240201_artists.xml.gz\n"
 
         # First call succeeds (checksum), subsequent calls fail (data files)
-        def mock_download_fileobj(_bucket: str, key: str, fileobj: Any, **_kwargs: Any) -> None:
-            if "CHECKSUM.txt" in key:
-                fileobj.write(checksum_content)
+        def mock_download_impl(s3_key: str, output_path: Path, **_: Any) -> None:
+            if "CHECKSUM.txt" in s3_key:
+                output_path.write_text(checksum_content)
             else:
                 raise Exception("Download failed")
 
-        mock_s3.download_fileobj.side_effect = mock_download_fileobj
+        mock_download.side_effect = mock_download_impl
 
         with pytest.raises(Exception, match="Download failed"):
             download_discogs_data(str(tmp_path))
 
-    @patch("extractor.pyextractor.discogs.client")
-    def test_checksum_mismatch(self, mock_boto_client: Mock, tmp_path: Path) -> None:
+    @patch("extractor.pyextractor.discogs._download_file_from_discogs")
+    @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
+    def test_checksum_mismatch(self, mock_scrape: Mock, mock_download: Mock, tmp_path: Path) -> None:
         """Test handling of checksum mismatch."""
-        mock_s3 = MagicMock()
-        mock_boto_client.return_value = mock_s3
-
-        mock_s3.list_objects_v2.return_value = {
-            "Contents": [
-                {"Key": "data/discogs_20240201_artists.xml.gz", "Size": 1000000},
-                {"Key": "data/discogs_20240201_labels.xml.gz", "Size": 2000000},
-                {"Key": "data/discogs_20240201_masters.xml.gz", "Size": 3000000},
-                {"Key": "data/discogs_20240201_releases.xml.gz", "Size": 4000000},
-                {"Key": "data/discogs_20240201_CHECKSUM.txt", "Size": 100},
+        mock_scrape.return_value = {
+            "20240201": [
+                S3FileInfo("data/2024/discogs_20240201_artists.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_labels.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_masters.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_releases.xml.gz", 0),
+                S3FileInfo("data/2024/discogs_20240201_CHECKSUM.txt", 0),
             ]
         }
 
         # Use wrong checksum that won't match actual file content
         wrong_checksum = "0000000000000000000000000000000000000000000000000000000000000000"
-        checksum_content = f"{wrong_checksum} discogs_20240201_artists.xml.gz\n{wrong_checksum} discogs_20240201_labels.xml.gz\n{wrong_checksum} discogs_20240201_masters.xml.gz\n{wrong_checksum} discogs_20240201_releases.xml.gz\n".encode()
+        checksum_content = f"{wrong_checksum} discogs_20240201_artists.xml.gz\n{wrong_checksum} discogs_20240201_labels.xml.gz\n{wrong_checksum} discogs_20240201_masters.xml.gz\n{wrong_checksum} discogs_20240201_releases.xml.gz\n"
 
-        def mock_download_fileobj(_bucket: str, key: str, fileobj: Any, **_kwargs: Any) -> None:
-            if "CHECKSUM.txt" in key:
-                fileobj.write(checksum_content)
+        def mock_download_impl(s3_key: str, output_path: Path, **_: Any) -> None:
+            if "CHECKSUM.txt" in s3_key:
+                output_path.write_text(checksum_content)
             else:
-                fileobj.write(b"test data")  # Different content = different checksum
+                output_path.write_bytes(b"test data")  # Different content = different checksum
 
-        mock_s3.download_fileobj.side_effect = mock_download_fileobj
+        mock_download.side_effect = mock_download_impl
 
         with pytest.raises(ValueError, match="Checksum validation failed"):
             download_discogs_data(str(tmp_path))
