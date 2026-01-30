@@ -17,13 +17,24 @@ const DISCOGS_DATA_URL: &str = "https://data.discogs.com/";
 pub struct Downloader {
     pub output_directory: PathBuf,
     pub metadata: HashMap<String, LocalFileInfo>,
+    base_url: String,
 }
 
 impl Downloader {
     pub async fn new(output_directory: PathBuf) -> Result<Self> {
+        Self::new_with_base_url(output_directory, DISCOGS_DATA_URL.to_string()).await
+    }
+
+    /// Create a new downloader with a custom base URL (primarily for testing)
+    #[doc(hidden)]
+    pub async fn new_with_base_url(output_directory: PathBuf, base_url: String) -> Result<Self> {
         let metadata = load_metadata(&output_directory)?;
 
-        Ok(Self { output_directory, metadata })
+        Ok(Self {
+            output_directory,
+            metadata,
+            base_url,
+        })
     }
 
     pub async fn download_discogs_data(&mut self) -> Result<Vec<String>> {
@@ -78,7 +89,7 @@ impl Downloader {
         info!("🌐 Fetching file list from Discogs website...");
 
         // Step 1: Fetch the main page to get available years
-        let response = reqwest::get(DISCOGS_DATA_URL)
+        let response = reqwest::get(&self.base_url)
             .await
             .context("Failed to fetch Discogs website")?;
 
@@ -105,7 +116,7 @@ impl Downloader {
         let mut ids: HashMap<String, Vec<S3FileInfo>> = HashMap::new();
 
         for year in years.iter().take(2) {
-            let year_url = format!("https://data.discogs.com/?prefix=data%2F{}%2F", year);
+            let year_url = format!("{}?prefix=data%2F{}%2F", self.base_url, year);
 
             match reqwest::get(&year_url).await {
                 Ok(year_response) => {
@@ -255,7 +266,9 @@ impl Downloader {
         Ok(true)
     }
 
-    async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<()> {
+    /// Download a single file (exposed for testing)
+    #[doc(hidden)]
+    pub async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<()> {
         use futures::StreamExt;
 
         // Reconstruct the full S3 key by prepending the prefix
@@ -267,7 +280,7 @@ impl Downloader {
         info!("⬇️ Downloading {}...", filename);
 
         // Construct Discogs download URL (URL encode the S3 key)
-        let download_url = format!("{}?download={}", DISCOGS_DATA_URL, urlencoding::encode(&s3_key));
+        let download_url = format!("{}?download={}", self.base_url, urlencoding::encode(&s3_key));
 
         // Create progress bar (unknown size from scraping)
         let pb = ProgressBar::new_spinner();
