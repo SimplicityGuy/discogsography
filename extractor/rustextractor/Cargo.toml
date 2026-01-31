@@ -44,7 +44,7 @@ thiserror = "1.0"
 # HTTP client for downloads (replaces AWS S3 SDK)
 reqwest = { version = "0.12", features = ["stream", "rustls-tls"] }
 bytes = "1.11"
-regex = "1.11"
+regex = "1.12"
 urlencoding = "2.1"
 
 # Progress tracking
