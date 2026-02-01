@@ -27,6 +27,7 @@
 ## 🤖 AI Development Memories
 
 - ✅ **ALWAYS use `uv` for Python package management and running Python tools** - Never use pip, pipenv, or poetry.
+- ✅ **State Marker System** - Both extractors use version-specific state markers (`.extraction_status_<version>.json`) to track progress and enable safe restarts. See `docs/state-marker-system.md`.
 - ✅ Create Mermaid style diagrams when diagrams are added to Markdown files.
 - ✅ New markdown files should have a lowercase filename preferring - instead \_, unless the document is a README. Do not rename any existing markdown files.
 - ✅ All pyproject.toml files should follow the standard structure and ordering (see pyproject.toml Standards section).

@@ -115,6 +115,7 @@ graph TD
 - **💾 Message Durability**: RabbitMQ persistence with dead letter queues
 - **🏥 Health Monitoring**: HTTP health checks for all services
 - **📊 Real-time Metrics**: WebSocket dashboard with live updates
+- **📋 State Tracking**: Version-specific progress markers for safe restarts (no duplicate processing)
 
 ### 🔒 Security & Quality
 
@@ -163,6 +164,7 @@ graph TD
 
 | Document                                                   | Purpose                                   |
 | ---------------------------------------------------------- | ----------------------------------------- |
+| **[State Marker System](docs/state-marker-system.md)**     | 📋 Extraction progress tracking & recovery |
 | **[Consumer Cancellation](docs/consumer-cancellation.md)** | 🔄 File completion and consumer lifecycle |
 | **[Platform Targeting](docs/platform-targeting.md)**       | 🎯 Cross-platform compatibility           |
 | **[Emoji Guide](docs/emoji-guide.md)**                     | 📋 Standardized emoji usage               |
