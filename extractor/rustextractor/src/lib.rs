@@ -6,6 +6,7 @@ pub mod extractor;
 pub mod health;
 pub mod message_queue;
 pub mod parser;
+pub mod state_marker;
 pub mod types;
 
 // Additional test modules
