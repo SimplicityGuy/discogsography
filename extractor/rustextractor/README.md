@@ -17,6 +17,7 @@ RabbitMQ for consumption by downstream services.
 - **Health Monitoring**: HTTP health endpoints for container orchestration
 - **Progress Tracking**: Real-time extraction metrics and progress reporting
 - **Periodic Checks**: Automatic checking for new Discogs data dumps
+- **State Marker System**: Version-specific progress tracking for safe restarts (no duplicate processing)
 
 ## Credits
 
@@ -111,6 +112,60 @@ cargo tarpaulin --out Html
 cargo bench
 ```
 
+## State Marker System
+
+Rust Extractor uses a version-specific state marker system to track extraction progress and enable safe restarts:
+
+### Features
+
+- **Version-Specific Tracking**: Each Discogs version (e.g., `20260101`) gets its own state marker file
+- **Multi-Phase Monitoring**: Tracks download, processing, publishing, and overall status
+- **Smart Resume Logic**: Automatically decides whether to reprocess, continue, or skip on restart
+- **Per-File Progress**: Detailed tracking of individual file processing status
+- **Error Recovery**: Records errors at each phase for debugging and recovery
+
+### State Marker File
+
+Location: `/discogs-data/.extraction_status_<version>.json`
+
+Example:
+```json
+{
+  "current_version": "20260101",
+  "download_phase": {
+    "status": "completed",
+    "files_downloaded": 4,
+    "bytes_downloaded": 5234567890
+  },
+  "processing_phase": {
+    "status": "in_progress",
+    "files_processed": 2,
+    "records_extracted": 1234567,
+    "progress_by_file": {
+      "discogs_20260101_artists.xml.gz": {
+        "status": "completed",
+        "records_extracted": 500000
+      }
+    }
+  },
+  "summary": {
+    "overall_status": "in_progress"
+  }
+}
+```
+
+### Processing Decisions
+
+When the extractor restarts, it checks the state marker and decides:
+
+| Scenario | Decision | Action |
+|----------|----------|--------|
+| Download failed | **Reprocess** | Re-download everything |
+| Processing in progress | **Continue** | Resume unfinished files |
+| All completed | **Skip** | Wait for next check |
+
+See **[State Marker System](../../docs/state-marker-system.md)** for complete documentation.
+
 ## Architecture
 
 Rust Extractor uses a streaming pipeline architecture:
@@ -119,6 +174,7 @@ Rust Extractor uses a streaming pipeline architecture:
 1. **Parser**: Streams XML using quick-xml, extracting records
 1. **Batcher**: Groups records for efficient AMQP publishing
 1. **Publisher**: Sends batched messages to RabbitMQ exchanges
+1. **State Tracker**: Updates progress markers at each phase
 
 ## Logging
 

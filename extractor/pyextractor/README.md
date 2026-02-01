@@ -15,6 +15,7 @@ The extractor service:
 - **NEW**: Manages AMQP connections per file, closing after completion
 - **NEW**: Sends file completion notifications to downstream services
 - **NEW**: Re-establishes connections when checking for new files
+- **NEW**: Version-specific state markers for safe restarts (no duplicate processing)
 
 ## Architecture
 
@@ -23,6 +24,60 @@ The extractor service:
 - **Message Broker**: RabbitMQ (AMQP)
 - **Health Port**: 8000
 - **Check Interval**: 15 days (configurable)
+
+## State Marker System
+
+The Python Extractor uses a version-specific state marker system to track extraction progress and enable safe restarts:
+
+### Features
+
+- **Version-Specific Tracking**: Each Discogs version (e.g., `20260101`) gets its own state marker file
+- **Multi-Phase Monitoring**: Tracks download, processing, publishing, and overall status
+- **Smart Resume Logic**: Automatically decides whether to reprocess, continue, or skip on restart
+- **Per-File Progress**: Detailed tracking of individual file processing status
+- **Error Recovery**: Records errors at each phase for debugging and recovery
+
+### State Marker File
+
+Location: `/discogs-data/.extraction_status_<version>.json`
+
+Example:
+```json
+{
+  "current_version": "20260101",
+  "download_phase": {
+    "status": "completed",
+    "files_downloaded": 4,
+    "bytes_downloaded": 5234567890
+  },
+  "processing_phase": {
+    "status": "in_progress",
+    "files_processed": 2,
+    "records_extracted": 1234567,
+    "progress_by_file": {
+      "discogs_20260101_artists.xml.gz": {
+        "status": "completed",
+        "records_extracted": 500000
+      }
+    }
+  },
+  "summary": {
+    "overall_status": "in_progress"
+  }
+}
+```
+
+### Processing Decisions
+
+When the extractor restarts, it checks the state marker and decides:
+
+| Scenario | Decision | Action |
+|----------|----------|--------|
+| Download failed | **Reprocess** | Re-download everything |
+| Processing in progress | **Continue** | Resume unfinished files |
+| All completed | **Skip** | Wait for next check |
+
+See **[State Marker System](../../docs/state-marker-system.md)** for complete documentation.
 
 ## Configuration
 
