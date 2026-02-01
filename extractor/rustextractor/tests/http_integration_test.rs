@@ -373,8 +373,8 @@ async fn test_large_file_streaming() {
     let mut server = Server::new_async().await;
     let temp_dir = TempDir::new().unwrap();
 
-    // Create a larger test content (1MB)
-    let test_content = vec![b'x'; 1024 * 1024];
+    // Create a larger test content (256KB - large enough to test streaming, small enough for mockito)
+    let test_content = vec![b'x'; 256 * 1024];
 
     let _m = server
         .mock("GET", "/?download=data%2Flarge_file.xml.gz")
