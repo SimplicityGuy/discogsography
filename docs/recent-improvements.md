@@ -4,7 +4,7 @@
 
 **Summary of recent enhancements to the Discogsography platform**
 
-Last Updated: January 2025
+Last Updated: February 2026
 
 </div>
 
@@ -12,6 +12,59 @@ Last Updated: January 2025
 
 This document tracks recent improvements made to the Discogsography platform, focusing on CI/CD, automation, and
 development experience enhancements.
+
+## 🆕 Latest Improvements (February 2026)
+
+### 📋 State Marker System
+
+**Problem**: When the extractor service restarted, it couldn't determine whether to continue processing, re-process, or skip already-processed Discogs data versions, potentially leading to duplicate processing or missed updates.
+
+**Solution**: Implemented a comprehensive state marker system that tracks extraction progress across all phases.
+
+#### Key Features
+
+- **Version-Specific Tracking**: Each Discogs version (e.g., `20260101`) gets its own state marker file
+- **Multi-Phase Monitoring**: Tracks download, processing, publishing, and overall status
+- **Smart Resume Logic**: Automatically decides whether to reprocess, continue, or skip on restart
+- **Per-File Progress**: Detailed tracking of individual file processing status
+- **Error Recovery**: Records errors at each phase for debugging and recovery
+
+#### Implementation
+
+- ✅ **Rust Implementation**: `extractor/rustextractor/src/state_marker.rs` with 11 unit tests
+- ✅ **Python Implementation**: `common/state_marker.py` with 22 unit tests
+- ✅ **Documentation**: Complete usage guide in `docs/state-marker-system.md`
+- ✅ **Cross-Platform**: Identical functionality in both Rust and Python extractors
+
+#### Benefits
+
+- **Restart Safety**: No duplicate processing after service restarts
+- **Progress Visibility**: Clear view of extraction status at any time
+- **Idempotency**: Safe to restart at any point without data corruption
+- **Efficiency**: Skip already-completed work automatically
+- **Observability**: Detailed metrics for monitoring and debugging
+
+#### File Structure
+
+```json
+{
+  "current_version": "20260101",
+  "download_phase": { "status": "completed", "files_downloaded": 4, ... },
+  "processing_phase": { "status": "in_progress", "files_processed": 2, ... },
+  "publishing_phase": { "status": "in_progress", "messages_published": 1234567, ... },
+  "summary": { "overall_status": "in_progress", ... }
+}
+```
+
+#### Processing Decisions
+
+| Scenario | Decision | Action |
+|----------|----------|--------|
+| Download failed | **Reprocess** | Re-download everything |
+| Processing in progress | **Continue** | Resume unfinished files |
+| All completed | **Skip** | Wait for next check |
+
+See **[State Marker System](state-marker-system.md)** for complete documentation.
 
 ## 🎯 GitHub Actions Improvements
 

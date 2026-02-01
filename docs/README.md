@@ -59,6 +59,7 @@
 
 | Document                                                    | Description                                              |
 | ----------------------------------------------------------- | -------------------------------------------------------- |
+| **[State Marker System](state-marker-system.md)**           | 📋 Extraction progress tracking and recovery system      |
 | **[Emoji Guide](emoji-guide.md)**                           | 📋 Standardized emoji usage across the project           |
 | **[Consumer Cancellation](consumer-cancellation.md)**       | 🔄 File completion and consumer lifecycle management     |
 | **[File Completion Tracking](file-completion-tracking.md)** | 📊 Intelligent completion tracking and stalled detection |
@@ -270,7 +271,7 @@ ______________________________________________________________________
 
 <div align="center">
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2026-02-01
 
 Made with ❤️ by the Discogsography community
 
