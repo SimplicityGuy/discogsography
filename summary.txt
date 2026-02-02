@@ -1,0 +1,6 @@
+[1;36m📝  Update Summary[0m
+[1;36m============================================================[0m
+
+📄 File Updates:
+  • extractor/rustextractor/Cargo.lock: Updated ALL Rust dependencies
+  • extractor/rustextractor/Cargo.toml: Updated all dependency versions
