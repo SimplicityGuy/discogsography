@@ -14,7 +14,8 @@ use crate::config::ExtractorConfig;
 use crate::downloader::Downloader;
 use crate::message_queue::MessageQueue;
 use crate::parser::XmlParser;
-use crate::types::{DataMessage, DataType, ExtractionProgress, ProcessingState};
+use crate::state_marker::{PhaseStatus, ProcessingDecision, StateMarker};
+use crate::types::{DataMessage, DataType, ExtractionProgress};
 
 /// State shared across the extractor
 #[derive(Debug, Default)]
@@ -57,35 +58,90 @@ pub async fn process_discogs_data(
         return Ok(true);
     }
 
-    // Check processing state
-    let processing_state_path = config.discogs_root.join(".processing_state.json");
-    let processing_state = load_processing_state(&processing_state_path).await?;
+    // Extract version from filenames
+    let version = data_files
+        .first()
+        .and_then(|f| extract_version_from_filename(f))
+        .ok_or_else(|| anyhow::anyhow!("Could not extract version from filenames"))?;
 
-    let mut files_to_process = Vec::new();
-    for file in &data_files {
-        if force_reprocess || !processing_state.is_processed(file) {
-            files_to_process.push(file.clone());
-            info!("📋 Will process: {}", file);
-        } else {
-            info!("✅ Already processed: {}", file);
+    info!("📋 Detected Discogs data version: {}", version);
+
+    // Load or create state marker
+    let marker_path = StateMarker::file_path(&config.discogs_root, &version);
+    let mut state_marker = if force_reprocess {
+        info!("🔄 Force reprocess requested, creating new state marker");
+        StateMarker::new(version.clone())
+    } else {
+        StateMarker::load(&marker_path)
+            .await?
+            .unwrap_or_else(|| StateMarker::new(version.clone()))
+    };
+
+    // Check what to do based on state marker
+    let decision = state_marker.should_process();
+
+    match decision {
+        ProcessingDecision::Skip => {
+            info!("✅ Version {} already processed, skipping", version);
+            return Ok(true);
+        }
+        ProcessingDecision::Reprocess => {
+            warn!("⚠️ Will re-download and re-process version {}", version);
+            state_marker = StateMarker::new(version.clone());
+        }
+        ProcessingDecision::Continue => {
+            info!("🔄 Will continue processing version {}", version);
         }
     }
 
-    if files_to_process.is_empty() && !force_reprocess {
-        info!("✅ All files have been processed previously");
+    // Track download phase
+    if state_marker.download_phase.status == PhaseStatus::Pending {
+        state_marker.start_download(data_files.len());
+        for _ in &data_files {
+            state_marker.file_downloaded(0); // We don't track actual file sizes in Rust yet
+        }
+        state_marker.complete_download();
+        state_marker.save(&marker_path).await?;
+        info!("✅ Download phase marked complete: {} files", data_files.len());
+    }
+
+    // Start processing phase
+    if state_marker.processing_phase.status != PhaseStatus::Completed {
+        state_marker.start_processing(data_files.len());
+        state_marker.save(&marker_path).await?;
+        info!("🚀 Starting processing phase: {} total files", data_files.len());
+    }
+
+    // Get list of files that still need processing
+    let pending_files = state_marker.pending_files(&data_files);
+
+    if pending_files.is_empty() {
+        info!("✅ All files already processed");
+        state_marker.complete_processing();
+        state_marker.complete_extraction();
+        state_marker.save(&marker_path).await?;
         return Ok(true);
     }
+
+    info!(
+        "📋 Files to process: total={}, pending={}, completed={}",
+        data_files.len(),
+        pending_files.len(),
+        data_files.len() - pending_files.len()
+    );
 
     // Process files concurrently
     let semaphore = Arc::new(tokio::sync::Semaphore::new(3)); // Limit concurrent files
     let mut tasks = Vec::new();
+    let state_marker_arc = Arc::new(tokio::sync::Mutex::new(state_marker));
 
-    for file in files_to_process {
+    for file in pending_files {
         let config = config.clone();
         let state = state.clone();
         let shutdown = shutdown.clone();
         let semaphore = semaphore.clone();
-        let processing_state_path = processing_state_path.clone();
+        let marker_path = marker_path.clone();
+        let state_marker_arc = state_marker_arc.clone();
 
         let task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
@@ -94,14 +150,9 @@ pub async fn process_discogs_data(
             // For now, we'll skip the shutdown check here since tokio::sync::Notify
             // doesn't have a non-consuming check method
 
-            process_single_file(&file, config, state, shutdown).await?;
+            process_single_file(&file, config, state, shutdown, state_marker_arc.clone(), marker_path.clone()).await?;
 
-            // Mark as processed
-            let mut ps = load_processing_state(&processing_state_path).await?;
-            ps.mark_processed(&file);
-            save_processing_state(&processing_state_path, &ps).await?;
-
-            info!("✅ Marked {} as processed", file);
+            info!("✅ Completed processing: {}", file);
             Ok(())
         });
 
@@ -133,6 +184,13 @@ pub async fn process_discogs_data(
 
     reporter.abort();
 
+    // Mark processing as complete
+    let mut state_marker = state_marker_arc.lock().await;
+    state_marker.complete_processing();
+    state_marker.complete_extraction();
+    state_marker.save(&marker_path).await?;
+    info!("✅ Processing phase completed: version {}", state_marker.current_version);
+
     // Log completion
     let s = state.read().await;
     if !s.completed_files.is_empty() {
@@ -149,11 +207,21 @@ async fn process_single_file(
     config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
     _shutdown: Arc<tokio::sync::Notify>,
+    state_marker: Arc<tokio::sync::Mutex<StateMarker>>,
+    marker_path: PathBuf,
 ) -> Result<()> {
     // Extract data type from filename
     let data_type = extract_data_type(file_name).ok_or_else(|| anyhow::anyhow!("Invalid file format: {}", file_name))?;
 
     info!("🚀 Starting extraction of {} from {}", data_type, file_name);
+
+    // Mark file processing as started in state marker
+    {
+        let mut marker = state_marker.lock().await;
+        marker.start_file_processing(file_name);
+        marker.save(&marker_path).await?;
+        info!("📋 Started file processing in state marker: {}", file_name);
+    }
 
     // Connect to message queue
     let mq = Arc::new(MessageQueue::new(&config.amqp_connection, 3).await.context("Failed to connect to message queue")?);
@@ -208,6 +276,14 @@ async fn process_single_file(
         let mut s = state.write().await;
         s.completed_files.insert(file_name.to_string());
         s.active_connections.remove(&data_type);
+    }
+
+    // Mark file as completed in state marker
+    {
+        let mut marker = state_marker.lock().await;
+        marker.complete_file_processing(file_name, total_count);
+        marker.save(&marker_path).await?;
+        info!("✅ Completed file processing in state marker: {} ({} records)", file_name, total_count);
     }
 
     info!("✅ Completed processing {} with {} records", file_name, total_count);
@@ -351,22 +427,16 @@ fn extract_data_type(filename: &str) -> Option<DataType> {
     }
 }
 
-/// Load processing state from file
-pub async fn load_processing_state(path: &PathBuf) -> Result<ProcessingState> {
-    if !path.exists() {
-        return Ok(ProcessingState::default());
+/// Extract version from filename (e.g., "discogs_20260101_artists.xml.gz" -> "20260101")
+fn extract_version_from_filename(filename: &str) -> Option<String> {
+    let parts: Vec<&str> = filename.split('_').collect();
+    if parts.len() >= 2 {
+        Some(parts[1].to_string())
+    } else {
+        None
     }
-
-    let json = tokio::fs::read_to_string(path).await?;
-    Ok(serde_json::from_str(&json)?)
 }
 
-/// Save processing state to file
-pub async fn save_processing_state(path: &PathBuf, state: &ProcessingState) -> Result<()> {
-    let json = serde_json::to_string_pretty(state)?;
-    tokio::fs::write(path, json).await?;
-    Ok(())
-}
 
 /// Main extraction loop with periodic checks
 pub async fn run_extraction_loop(
@@ -447,55 +517,80 @@ mod tests {
         assert_eq!(extract_data_type("discogs_20241201_unknown.xml.gz"), None);
     }
 
-    #[tokio::test]
-    async fn test_load_processing_state_nonexistent() {
-        let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join(".processing_state.json");
+    // Deprecated ProcessingState tests removed - replaced by StateMarker integration tests below
 
-        let state = load_processing_state(&path).await.unwrap();
-        assert!(state.files.is_empty());
+    #[tokio::test]
+    async fn test_state_marker_file_tracking() {
+        use crate::state_marker::{StateMarker, PhaseStatus};
+        use tempfile::TempDir;
+
+        let _temp_dir = TempDir::new().unwrap();
+        let mut marker = StateMarker::new("20230101".to_string());
+
+        // Test file start tracking
+        marker.start_file_processing("discogs_20230101_artists.xml.gz");
+        assert_eq!(
+            marker.processing_phase.current_file,
+            Some("discogs_20230101_artists.xml.gz".to_string())
+        );
+
+        // Test file completion
+        marker.complete_file_processing("discogs_20230101_artists.xml.gz", 1000);
+        let file_progress = marker
+            .processing_phase
+            .progress_by_file
+            .get("discogs_20230101_artists.xml.gz");
+        assert!(file_progress.is_some());
+        let progress = file_progress.unwrap();
+        assert_eq!(progress.status, PhaseStatus::Completed);
+        assert_eq!(progress.records_extracted, 1000);
     }
 
     #[tokio::test]
-    async fn test_load_processing_state_valid() {
-        let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join(".processing_state.json");
+    async fn test_state_marker_periodic_updates() {
+        use crate::state_marker::StateMarker;
 
-        let mut state = ProcessingState::default();
-        state.mark_processed("test.xml");
-        save_processing_state(&path, &state).await.unwrap();
+        let mut marker = StateMarker::new("20230101".to_string());
+        marker.start_file_processing("discogs_20230101_artists.xml.gz");
 
-        let loaded = load_processing_state(&path).await.unwrap();
-        assert!(loaded.is_processed("test.xml"));
+        // Simulate periodic record updates (records, messages)
+        for i in 1..=3 {
+            marker.update_file_progress("discogs_20230101_artists.xml.gz", i * 1000, i * 1000);
+        }
+
+        let file_progress = marker
+            .processing_phase
+            .progress_by_file
+            .get("discogs_20230101_artists.xml.gz");
+        assert!(file_progress.is_some());
+        assert_eq!(file_progress.unwrap().records_extracted, 3000);
     }
 
     #[tokio::test]
-    async fn test_save_processing_state() {
+    async fn test_state_marker_save_load() {
+        use crate::state_marker::StateMarker;
+        use tempfile::TempDir;
+
         let temp_dir = TempDir::new().unwrap();
-        let path = temp_dir.path().join(".processing_state.json");
+        let marker_path = temp_dir.path().join(".extraction_status_20230101.json");
 
-        let mut state = ProcessingState::default();
-        state.mark_processed("file1.xml");
-        state.mark_processed("file2.xml");
+        // Create and save marker
+        let mut marker = StateMarker::new("20230101".to_string());
+        marker.start_file_processing("discogs_20230101_artists.xml.gz");
+        marker.complete_file_processing("discogs_20230101_artists.xml.gz", 1500);
+        marker.save(&marker_path).await.expect("Failed to save marker");
 
-        save_processing_state(&path, &state).await.unwrap();
-
-        assert!(path.exists());
-
-        let loaded = load_processing_state(&path).await.unwrap();
-        assert_eq!(loaded.files.len(), 2);
-    }
-
-    #[tokio::test]
-    async fn test_processing_state_marks_files() {
-        let mut state = ProcessingState::default();
-
-        assert!(!state.is_processed("test.xml"));
-
-        state.mark_processed("test.xml");
-
-        assert!(state.is_processed("test.xml"));
-        assert!(!state.is_processed("other.xml"));
+        // Load marker
+        let loaded = StateMarker::load(&marker_path).await.expect("Failed to load marker");
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.current_version, "20230101");
+        let file_progress = loaded
+            .processing_phase
+            .progress_by_file
+            .get("discogs_20230101_artists.xml.gz");
+        assert!(file_progress.is_some());
+        assert_eq!(file_progress.unwrap().records_extracted, 1500);
     }
 
     #[test]

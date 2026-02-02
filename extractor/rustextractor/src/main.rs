@@ -12,6 +12,7 @@ mod extractor;
 mod health;
 mod message_queue;
 mod parser;
+mod state_marker;
 mod types;
 
 use config::ExtractorConfig;

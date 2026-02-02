@@ -6,7 +6,6 @@ use rust_extractor::types::{LocalFileInfo, S3FileInfo};
 use std::collections::HashMap;
 use tempfile::TempDir;
 use tokio::fs;
-use tokio::io::AsyncWriteExt;
 
 #[tokio::test]
 async fn test_downloader_initialization() {

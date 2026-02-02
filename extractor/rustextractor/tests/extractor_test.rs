@@ -1,13 +1,10 @@
 // Integration tests for extractor module
 // Focus on testing the extraction workflow with mocked dependencies
 
-use rust_extractor::config::ExtractorConfig;
-use rust_extractor::extractor::{ExtractorState, process_discogs_data};
-use rust_extractor::types::{DataType, DataMessage, ProcessingState};
+use rust_extractor::extractor::ExtractorState;
+use rust_extractor::types::{DataType, DataMessage};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tempfile::TempDir;
-use std::path::PathBuf;
 
 #[tokio::test]
 async fn test_extractor_state_initialization() {
@@ -160,54 +157,10 @@ async fn test_extractor_state_reset() {
     assert_eq!(s.error_count, 0);
 }
 
-#[tokio::test]
-async fn test_processing_state_mark_processed() {
-    let mut state = ProcessingState::default();
-
-    assert!(!state.is_processed("file1.xml"));
-
-    state.mark_processed("file1.xml");
-    assert!(state.is_processed("file1.xml"));
-
-    state.mark_processed("file2.xml");
-    assert!(state.is_processed("file1.xml"));
-    assert!(state.is_processed("file2.xml"));
-}
-
-#[tokio::test]
-async fn test_processing_state_multiple_files() {
-    let mut state = ProcessingState::default();
-
-    let files = vec!["file1.xml", "file2.xml", "file3.xml", "file4.xml"];
-
-    for file in &files {
-        state.mark_processed(file);
-    }
-
-    for file in &files {
-        assert!(state.is_processed(file));
-    }
-
-    assert!(!state.is_processed("file5.xml"));
-}
-
-#[tokio::test]
-async fn test_processing_state_duplicate_marking() {
-    let mut state = ProcessingState::default();
-
-    state.mark_processed("file.xml");
-    let count1 = state.files.len();
-
-    state.mark_processed("file.xml"); // Mark again
-    let count2 = state.files.len();
-
-    // Should not add duplicates
-    assert_eq!(count1, count2);
-}
+// Deprecated ProcessingState tests removed - replaced by StateMarker integration tests in extractor.rs
 
 #[test]
 fn test_extract_data_type_from_filename() {
-    use rust_extractor::extractor;
     use std::str::FromStr;
 
     // Test valid filenames
@@ -575,30 +528,7 @@ async fn test_extractor_state_current_task_tracking() {
     assert!((s.current_progress - 0.33).abs() < 0.001);
 }
 
-#[tokio::test]
-async fn test_processing_state_persistence_roundtrip() {
-    use tempfile::TempDir;
-    use rust_extractor::extractor::{load_processing_state, save_processing_state};
-
-    let temp_dir = TempDir::new().unwrap();
-    let path = temp_dir.path().join("state.json");
-
-    let mut state = ProcessingState::default();
-    state.mark_processed("file1.xml");
-    state.mark_processed("file2.xml");
-    state.mark_processed("file3.xml");
-
-    // Save
-    save_processing_state(&path, &state).await.unwrap();
-
-    // Load
-    let loaded = load_processing_state(&path).await.unwrap();
-
-    assert_eq!(loaded.files.len(), 3);
-    assert!(loaded.is_processed("file1.xml"));
-    assert!(loaded.is_processed("file2.xml"));
-    assert!(loaded.is_processed("file3.xml"));
-}
+// Deprecated test removed - StateMarker integration tests are in extractor.rs
 
 #[tokio::test]
 async fn test_extractor_state_active_connections_removal() {

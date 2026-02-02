@@ -19,7 +19,10 @@ from common import (
     AMQP_QUEUE_PREFIX_TABLEINATOR,
     ExtractorConfig,
     HealthServer,
+    PhaseStatus,
+    ProcessingDecision,
     ResilientRabbitMQConnection,
+    StateMarker,
     setup_logging,
 )
 from dict_hash import sha256
@@ -87,7 +90,13 @@ def signal_handler(signum: int, _frame: Any) -> None:
 
 
 class ConcurrentExtractor:
-    def __init__(self, input_file: str, config: ExtractorConfig, max_workers: int = 4):
+    def __init__(
+        self,
+        input_file: str,
+        config: ExtractorConfig,
+        state_marker: StateMarker,
+        max_workers: int = 4,
+    ):
         # `input_file` is in the format of: discogs_YYYYMMDD_datatype.xml.gz
         try:
             self.data_type = input_file.split("_")[2].split(".")[0]
@@ -103,13 +112,16 @@ class ConcurrentExtractor:
             raise FileNotFoundError(f"Input file not found: {self.input_path}")
 
         self.config = config
+        self.state_marker = state_marker
         self.max_workers = max_workers
         self.total_count: int = 0
         self.error_count: int = 0
         self.start_time = datetime.now()
         self.end_time = datetime.now()
         self.last_progress_log = datetime.now()
+        self.last_state_save = datetime.now()
         self.progress_log_interval = 1000  # Log progress every 1000 records
+        self.state_save_interval = 5000  # Save state every 5000 records
         self.batch_size = 100  # Batch AMQP messages for better performance
         self.pending_messages: list[dict[str, Any]] = []
         self.pending_messages_lock = (
@@ -206,6 +218,16 @@ class ConcurrentExtractor:
             global active_connections
             active_connections[self.data_type] = self.amqp_connection
 
+            # Mark file processing as started in state marker
+            self.state_marker.start_file_processing(self.input_file)
+            marker_path = StateMarker.file_path(
+                Path(self.config.discogs_root), self.state_marker.current_version
+            )
+            self.state_marker.save(marker_path)
+            logger.info(
+                "📋 Started file processing in state marker", file=self.input_file
+            )
+
             return self
 
         except Exception as e:
@@ -223,6 +245,25 @@ class ConcurrentExtractor:
         except Exception as e:
             logger.warning(
                 "⚠️ Failed to flush pending messages during cleanup", error=str(e)
+            )
+
+        # Mark file as completed in state marker
+        try:
+            self.state_marker.complete_file_processing(
+                self.input_file, self.total_count
+            )
+            marker_path = StateMarker.file_path(
+                Path(self.config.discogs_root), self.state_marker.current_version
+            )
+            self.state_marker.save(marker_path)
+            logger.info(
+                "✅ Completed file processing in state marker",
+                file=self.input_file,
+                records=self.total_count,
+            )
+        except Exception as e:
+            logger.warning(
+                "⚠️ Failed to update state marker on file completion", error=str(e)
             )
 
         # Send file completion message before closing connection
@@ -651,6 +692,29 @@ class ConcurrentExtractor:
             )
             self.last_progress_log = current_time
 
+        # Save state marker periodically
+        if self.total_count % self.state_save_interval == 0:
+            try:
+                # Update progress in state marker
+                self.state_marker.update_file_progress(
+                    self.input_file,
+                    self.total_count,
+                    self.total_count
+                    // self.batch_size,  # Approximate messages published
+                )
+                marker_path = StateMarker.file_path(
+                    Path(self.config.discogs_root), self.state_marker.current_version
+                )
+                self.state_marker.save(marker_path)
+                logger.debug(
+                    "💾 Saved state marker progress",
+                    file=self.input_file,
+                    records=self.total_count,
+                )
+                self.last_state_save = datetime.now()
+            except Exception as e:
+                logger.warning("⚠️ Failed to save state marker progress", error=str(e))
+
         return True
 
     def _ensure_amqp_connection(self) -> bool:
@@ -748,37 +812,23 @@ class ConcurrentExtractor:
             logger.warning("⚠️ Messages will be retried on next flush")
 
 
-def _load_processing_state(discogs_root: Path) -> dict[str, bool]:
-    """Load processing state from file."""
-    state_file = Path(discogs_root) / ".processing_state.json"
-    if not state_file.exists():
-        return {}
-
+def _extract_version_from_filename(filename: str) -> str | None:
+    """Extract version from Discogs filename (e.g., 'discogs_20260101_artists.xml.gz' -> '20260101')."""
     try:
-        with state_file.open("rb") as f:
-            data = loads(f.read())
-            # Ensure we return the correct type
-            return {k: bool(v) for k, v in data.items()}
-    except Exception as e:
-        logger.warning("⚠️ Failed to load processing state", error=str(e))
-        return {}
+        parts = filename.split("_")
+        if len(parts) >= 2:
+            return parts[1]
+    except (IndexError, AttributeError):
+        pass
+    return None
 
 
-def _save_processing_state(discogs_root: Path, state: dict[str, bool]) -> None:
-    """Save processing state to file."""
-    state_file = Path(discogs_root) / ".processing_state.json"
-
-    try:
-        with state_file.open("wb") as f:
-            f.write(dumps(state, option=OPT_INDENT_2))
-    except Exception as e:
-        logger.warning("⚠️ Failed to save processing state", error=str(e))
-
-
-async def process_file_async(discogs_data_file: str, config: ExtractorConfig) -> None:
+async def process_file_async(
+    discogs_data_file: str, config: ExtractorConfig, state_marker: StateMarker
+) -> None:
     """Process a single file asynchronously."""
     try:
-        extractor = ConcurrentExtractor(discogs_data_file, config)
+        extractor = ConcurrentExtractor(discogs_data_file, config, state_marker)
         with extractor:
             await extractor.extract_async()
             # Note: File completion is handled in __exit__ method where:
@@ -790,8 +840,10 @@ async def process_file_async(discogs_data_file: str, config: ExtractorConfig) ->
         raise
 
 
-async def process_discogs_data(config: ExtractorConfig) -> bool:
-    """Process Discogs data files. Returns True if successful."""
+async def process_discogs_data(
+    config: ExtractorConfig, force_reprocess: bool = False
+) -> bool:
+    """Process Discogs data files with state marker support. Returns True if successful."""
     global \
         extraction_progress, \
         last_extraction_time, \
@@ -822,26 +874,67 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
         logger.warning("⚠️ No data files to process")
         return True
 
-    # Check processing state to handle restarts
-    processing_state = _load_processing_state(config.discogs_root)
-    files_to_process = []
+    # Extract version from filenames
+    version = _extract_version_from_filename(data_files[0]) if data_files else None
+    if not version:
+        logger.error("❌ Could not extract version from filenames")
+        return False
 
-    for data_file in data_files:
-        if data_file not in processing_state or not processing_state[data_file]:
-            files_to_process.append(data_file)
-            logger.info("📋 Will process", file=data_file)
-        else:
-            logger.info("✅ Already processed", file=data_file)
+    logger.info("📋 Detected Discogs data version", version=version)
 
-    if not files_to_process:
-        logger.info("✅ All files have been processed previously")
-        # Force reprocessing if explicitly requested via environment variable
-        if os.environ.get("FORCE_REPROCESS", "").lower() == "true":
-            logger.info("🔄 FORCE_REPROCESS=true, will reprocess all files")
-            files_to_process = data_files
-            processing_state = {}  # Clear processing state
-        else:
-            return True
+    # Load or create state marker
+    marker_path = StateMarker.file_path(Path(config.discogs_root), version)
+    state_marker = StateMarker.load(marker_path) or StateMarker(current_version=version)
+
+    # Check if we should force reprocess
+    if force_reprocess or os.environ.get("FORCE_REPROCESS", "").lower() == "true":
+        logger.info("🔄 Force reprocess requested, creating new state marker")
+        state_marker = StateMarker(current_version=version)
+
+    # Check what to do based on state marker
+    decision = state_marker.should_process()
+
+    if decision == ProcessingDecision.SKIP:
+        logger.info("✅ Version already processed, skipping", version=version)
+        return True
+    elif decision == ProcessingDecision.REPROCESS:
+        logger.warning("⚠️ Will re-download and re-process", version=version)
+        state_marker = StateMarker(current_version=version)
+    elif decision == ProcessingDecision.CONTINUE:
+        logger.info("🔄 Will continue processing", version=version)
+
+    # Mark download phase (Python extractor uses pre-downloaded files)
+    # but we track it for consistency
+    if state_marker.download_phase.status == PhaseStatus.PENDING:
+        state_marker.start_download(len(data_files))
+        for file_size in [0] * len(data_files):  # We don't track actual sizes
+            state_marker.file_downloaded(file_size)
+        state_marker.complete_download()
+        state_marker.save(marker_path)
+        logger.info("✅ Download phase marked complete", files=len(data_files))
+
+    # Start processing phase
+    if state_marker.processing_phase.status != PhaseStatus.COMPLETED:
+        state_marker.start_processing(len(data_files))
+        state_marker.save(marker_path)
+        logger.info("🚀 Starting processing phase", total_files=len(data_files))
+
+    # Get list of files that still need processing
+    pending_files = state_marker.pending_files(data_files)
+
+    if not pending_files:
+        logger.info("✅ All files already processed")
+        state_marker.complete_processing()
+        state_marker.complete_extraction()
+        state_marker.save(marker_path)
+        return True
+
+    logger.info(
+        "📋 Files to process",
+        total=len(data_files),
+        pending=len(pending_files),
+        completed=len(data_files) - len(pending_files),
+    )
 
     # Process files concurrently with a semaphore to limit concurrent files
     semaphore = asyncio.Semaphore(3)  # Limit to 3 concurrent files
@@ -851,13 +944,10 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
         async with semaphore:
             if shutdown_requested:
                 return
-            await process_file_async(file, config)
-            # Mark file as processed
-            processing_state[file] = True
-            _save_processing_state(config.discogs_root, processing_state)
-            logger.info("✅ Marked as processed", file=file)
+            await process_file_async(file, config, state_marker)
+            logger.info("✅ Completed processing", file=file)
 
-    for data_file in files_to_process:
+    for data_file in pending_files:
         if shutdown_requested:
             break
         tasks.append(asyncio.create_task(process_with_semaphore(data_file)))
@@ -975,6 +1065,12 @@ async def process_discogs_data(config: ExtractorConfig) -> bool:
             progress_task.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await progress_task
+
+    # Mark processing as complete
+    state_marker.complete_processing()
+    state_marker.complete_extraction()
+    state_marker.save(marker_path)
+    logger.info("✅ Processing phase completed", version=version)
 
     # Log final completion status
     if completed_files:

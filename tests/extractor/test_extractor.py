@@ -10,7 +10,17 @@ from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 import pytest
 
+from common import StateMarker
 from extractor.pyextractor.extractor import ConcurrentExtractor
+
+
+@pytest.fixture
+def mock_state_marker() -> StateMarker:
+    """Create a mock StateMarker for all tests."""
+    marker = StateMarker(current_version="20230101")
+    # Mock the save method to avoid file I/O in tests
+    marker.save = Mock()
+    return marker
 
 
 class TestConcurrentExtractorInitialization:
@@ -27,12 +37,12 @@ class TestConcurrentExtractorInitialization:
         return config
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_init_artists(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_init_artists(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test initialization with artists file."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=4)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=4)
 
         assert extractor.data_type == "artists"
         assert extractor.input_file == input_file
@@ -44,42 +54,42 @@ class TestConcurrentExtractorInitialization:
         assert extractor.error_count == 0
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_init_labels(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_init_labels(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test initialization with labels file."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_labels.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
 
         assert extractor.data_type == "labels"
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_init_masters(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_init_masters(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test initialization with masters file."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_masters.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
 
         assert extractor.data_type == "masters"
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_init_releases(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_init_releases(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test initialization with releases file."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_releases.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
 
         assert extractor.data_type == "releases"
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_init_sets_amqp_properties(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_init_sets_amqp_properties(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that AMQP properties are initialized."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
 
         assert extractor.amqp_properties is not None
         assert extractor.amqp_properties.delivery_mode == 2  # Persistent
@@ -122,15 +132,22 @@ class TestConcurrentExtractorContextManager:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
+    @patch("extractor.pyextractor.extractor.StateMarker.save")
     def test_enter_creates_amqp_connection(
-        self, mock_rabbitmq_class: Mock, mock_exists: Mock, mock_config: Mock, mock_rabbitmq_connection: Mock
+        self,
+        _mock_save: Mock,
+        mock_rabbitmq_class: Mock,
+        mock_exists: Mock,
+        mock_config: Mock,
+        mock_rabbitmq_connection: Mock,
+        mock_state_marker: StateMarker,
     ) -> None:
         """Test that __enter__ creates AMQP connection."""
         mock_exists.return_value = True
         mock_rabbitmq_class.return_value = mock_rabbitmq_connection
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         result = extractor.__enter__()
 
         assert result == extractor
@@ -138,14 +155,23 @@ class TestConcurrentExtractorContextManager:
         mock_rabbitmq_connection.channel.assert_called_once()
 
     @patch("extractor.pyextractor.extractor.Path.exists")
+    @patch("extractor.pyextractor.extractor.StateMarker.save")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
-    def test_enter_configures_channel(self, mock_rabbitmq_class: Mock, mock_exists: Mock, mock_config: Mock, mock_rabbitmq_connection: Mock) -> None:
+    def test_enter_configures_channel(
+        self,
+        mock_rabbitmq_class: Mock,
+        _mock_save: Mock,
+        mock_exists: Mock,
+        mock_config: Mock,
+        mock_state_marker: StateMarker,
+        mock_rabbitmq_connection: Mock,
+    ) -> None:
         """Test that __enter__ configures channel correctly."""
         mock_exists.return_value = True
         mock_rabbitmq_class.return_value = mock_rabbitmq_connection
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.__enter__()
 
         channel = extractor.amqp_channel
@@ -154,14 +180,23 @@ class TestConcurrentExtractorContextManager:
         channel.exchange_declare.assert_called_once()
 
     @patch("extractor.pyextractor.extractor.Path.exists")
+    @patch("extractor.pyextractor.extractor.StateMarker.save")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
-    def test_enter_declares_queues(self, mock_rabbitmq_class: Mock, mock_exists: Mock, mock_config: Mock, mock_rabbitmq_connection: Mock) -> None:
+    def test_enter_declares_queues(
+        self,
+        mock_rabbitmq_class: Mock,
+        _mock_save: Mock,
+        mock_exists: Mock,
+        mock_config: Mock,
+        mock_state_marker: StateMarker,
+        mock_rabbitmq_connection: Mock,
+    ) -> None:
         """Test that __enter__ declares and binds queues."""
         mock_exists.return_value = True
         mock_rabbitmq_class.return_value = mock_rabbitmq_connection
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.__enter__()
 
         channel = extractor.amqp_channel
@@ -170,14 +205,17 @@ class TestConcurrentExtractorContextManager:
         assert channel.queue_bind.call_count == 2
 
     @patch("extractor.pyextractor.extractor.Path.exists")
+    @patch("extractor.pyextractor.extractor.StateMarker.save")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
-    def test_enter_handles_connection_error(self, mock_rabbitmq_class: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_enter_handles_connection_error(
+        self, mock_rabbitmq_class: Mock, _mock_save: Mock, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test that __enter__ handles connection errors."""
         mock_exists.return_value = True
         mock_rabbitmq_class.side_effect = Exception("Connection failed")
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
 
         with pytest.raises(Exception, match="Connection failed"):
             extractor.__enter__()
@@ -185,14 +223,14 @@ class TestConcurrentExtractorContextManager:
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
     def test_exit_sends_completion_message(
-        self, mock_rabbitmq_class: Mock, mock_exists: Mock, mock_config: Mock, mock_rabbitmq_connection: Mock
+        self, mock_rabbitmq_class: Mock, mock_exists: Mock, mock_config: Mock, mock_rabbitmq_connection: Mock, mock_state_marker: StateMarker
     ) -> None:
         """Test that __exit__ sends file completion message."""
         mock_exists.return_value = True
         mock_rabbitmq_class.return_value = mock_rabbitmq_connection
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.__enter__()
         extractor.total_count = 1000
         extractor.__exit__(None, None, None)
@@ -206,29 +244,47 @@ class TestConcurrentExtractorContextManager:
         assert last_call is not None
 
     @patch("extractor.pyextractor.extractor.Path.exists")
+    @patch("extractor.pyextractor.extractor.StateMarker.save")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
-    def test_exit_closes_connection(self, mock_rabbitmq_class: Mock, mock_exists: Mock, mock_config: Mock, mock_rabbitmq_connection: Mock) -> None:
+    def test_exit_closes_connection(
+        self,
+        mock_rabbitmq_class: Mock,
+        _mock_save: Mock,
+        mock_exists: Mock,
+        mock_config: Mock,
+        mock_state_marker: StateMarker,
+        mock_rabbitmq_connection: Mock,
+    ) -> None:
         """Test that __exit__ closes AMQP connection."""
         mock_exists.return_value = True
         mock_rabbitmq_class.return_value = mock_rabbitmq_connection
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.__enter__()
         extractor.__exit__(None, None, None)
 
         mock_rabbitmq_connection.close.assert_called_once()
 
     @patch("extractor.pyextractor.extractor.Path.exists")
+    @patch("extractor.pyextractor.extractor.StateMarker.save")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
-    def test_exit_handles_close_error(self, mock_rabbitmq_class: Mock, mock_exists: Mock, mock_config: Mock, mock_rabbitmq_connection: Mock) -> None:
+    def test_exit_handles_close_error(
+        self,
+        mock_rabbitmq_class: Mock,
+        _mock_save: Mock,
+        mock_exists: Mock,
+        mock_config: Mock,
+        mock_state_marker: StateMarker,
+        mock_rabbitmq_connection: Mock,
+    ) -> None:
         """Test that __exit__ handles close errors gracefully."""
         mock_exists.return_value = True
         mock_rabbitmq_class.return_value = mock_rabbitmq_connection
         mock_rabbitmq_connection.close.side_effect = Exception("Close failed")
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.__enter__()
 
         # Should not raise exception
@@ -260,24 +316,24 @@ class TestConcurrentExtractorFlushMessages:
         return channel
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_flush_pending_messages_empty(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_flush_pending_messages_empty(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test flushing with no pending messages."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.pending_messages = []
 
         # Should return without doing anything
         extractor._flush_pending_messages()
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_flush_pending_messages_success(self, mock_exists: Mock, mock_config: Mock, mock_channel: Mock) -> None:
+    def test_flush_pending_messages_success(self, mock_exists: Mock, mock_config: Mock, mock_channel: Mock, mock_state_marker: StateMarker) -> None:
         """Test successful message flushing."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.amqp_channel = mock_channel
 
         # Add some test messages
@@ -294,12 +350,14 @@ class TestConcurrentExtractorFlushMessages:
         assert len(extractor.pending_messages) == 0
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_flush_pending_messages_publish_error(self, mock_exists: Mock, mock_config: Mock, mock_channel: Mock) -> None:
+    def test_flush_pending_messages_publish_error(
+        self, mock_exists: Mock, mock_config: Mock, mock_channel: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test flush handles publish errors."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.amqp_channel = mock_channel
         mock_channel.basic_publish.side_effect = Exception("Publish failed")
 
@@ -314,12 +372,14 @@ class TestConcurrentExtractorFlushMessages:
         assert extractor.pending_messages[0] == test_message
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_ensure_amqp_connection_channel_open(self, mock_exists: Mock, mock_config: Mock, mock_channel: Mock) -> None:
+    def test_ensure_amqp_connection_channel_open(
+        self, mock_exists: Mock, mock_config: Mock, mock_channel: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test _ensure_amqp_connection when channel is open."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.amqp_channel = mock_channel
 
         result = extractor._ensure_amqp_connection()
@@ -327,12 +387,12 @@ class TestConcurrentExtractorFlushMessages:
         assert result is True
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_ensure_amqp_connection_channel_closed(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_ensure_amqp_connection_channel_closed(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test _ensure_amqp_connection reconnects when channel is closed."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
 
         # Create closed channel
         closed_channel = Mock()
@@ -361,12 +421,12 @@ class TestConcurrentExtractorFlushMessages:
         new_channel.exchange_declare.assert_called_once()
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_ensure_amqp_connection_no_connection(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_ensure_amqp_connection_no_connection(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test _ensure_amqp_connection handles missing connection."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.amqp_connection = None
         extractor.amqp_channel = None
 
@@ -390,12 +450,12 @@ class TestConcurrentExtractorRecordProcessing:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @pytest.mark.asyncio
-    async def test_process_record_async_normalizes_data(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_process_record_async_normalizes_data(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that _process_record_async normalizes and hashes data."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.flush_queue = asyncio.Queue()
 
         test_data = {"id": "1", "name": "Test Artist"}
@@ -408,12 +468,14 @@ class TestConcurrentExtractorRecordProcessing:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @pytest.mark.asyncio
-    async def test_process_record_async_triggers_flush_on_batch_size(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_process_record_async_triggers_flush_on_batch_size(
+        self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test that batch flush is triggered when batch size is reached."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.flush_queue = asyncio.Queue()
 
         # Add records up to batch size
@@ -431,14 +493,16 @@ class TestConcurrentExtractorRecordProcessing:
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.dumps")
     @pytest.mark.asyncio
-    async def test_process_record_async_handles_error(self, mock_dumps: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_process_record_async_handles_error(
+        self, mock_dumps: Mock, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test that _process_record_async handles errors gracefully."""
         mock_exists.return_value = True
         # Make dumps raise an error to simulate processing failure
         mock_dumps.side_effect = Exception("Processing error")
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.flush_queue = asyncio.Queue()
 
         test_data = {"id": "1", "name": "Test Artist"}
@@ -449,12 +513,12 @@ class TestConcurrentExtractorRecordProcessing:
         assert extractor.error_count == 1
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_data_type_mismatch(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_data_type_mismatch(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record with mismatched data type."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
 
         # Wrong data type in path
         path = [("labels", None), ("label", {"id": "1"})]
@@ -466,12 +530,12 @@ class TestConcurrentExtractorRecordProcessing:
         assert extractor.total_count == 0
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_increments_count(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_increments_count(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record increments total count."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = asyncio.Queue()
         extractor.event_loop = asyncio.new_event_loop()
 
@@ -499,12 +563,12 @@ class TestConcurrentExtractorAsyncWorkers:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @pytest.mark.asyncio
-    async def test_amqp_flush_worker_processes_flush_requests(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_amqp_flush_worker_processes_flush_requests(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that AMQP flush worker processes flush requests."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.flush_queue = asyncio.Queue()
         extractor.amqp_channel = Mock()
         extractor.amqp_channel.is_closed = False
@@ -530,12 +594,12 @@ class TestConcurrentExtractorAsyncWorkers:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @pytest.mark.asyncio
-    async def test_amqp_flush_worker_handles_errors(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_amqp_flush_worker_handles_errors(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that AMQP flush worker handles errors gracefully."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.flush_queue = asyncio.Queue()
 
         # No channel configured - will cause error
@@ -555,12 +619,12 @@ class TestConcurrentExtractorAsyncWorkers:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @pytest.mark.asyncio
-    async def test_try_queue_flush_success(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_try_queue_flush_success(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test successful flush queueing."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.flush_queue = asyncio.Queue(maxsize=100)
 
         await extractor._try_queue_flush()
@@ -570,12 +634,12 @@ class TestConcurrentExtractorAsyncWorkers:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @pytest.mark.asyncio
-    async def test_try_queue_flush_queue_full(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_try_queue_flush_queue_full(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test flush queueing when queue is full."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.flush_queue = asyncio.Queue(maxsize=1)
 
         # Fill the queue
@@ -603,12 +667,12 @@ class TestExtractAsync:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_extract_async_basic_flow(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_extract_async_basic_flow(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test basic async extraction flow."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=2)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=2)
 
         # Mock the XML parsing to avoid actual file I/O
         async def mock_parse():
@@ -630,12 +694,12 @@ class TestExtractAsync:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_extract_async_handles_shutdown_before_start(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_extract_async_handles_shutdown_before_start(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that extraction stops if shutdown requested before starting."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=2)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=2)
 
         with patch("extractor.pyextractor.extractor.shutdown_requested", True):
             await extractor.extract_async()
@@ -648,12 +712,12 @@ class TestExtractAsync:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_extract_async_handles_extraction_error(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_extract_async_handles_extraction_error(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test handling of errors during extraction."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=2)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=2)
 
         # Mock parse to raise exception
         async def mock_parse_error():
@@ -683,12 +747,12 @@ class TestProcessRecordsAsync:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_processes_records_until_none_signal(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_processes_records_until_none_signal(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that worker processes records until None signal."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
         extractor.record_queue = asyncio.Queue()
 
         # Add test records and end signal
@@ -705,12 +769,12 @@ class TestProcessRecordsAsync:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_handles_timeout_and_shutdown(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_handles_timeout_and_shutdown(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that worker handles timeout and checks shutdown flag."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
         extractor.record_queue = asyncio.Queue()  # Empty queue will timeout
 
         import extractor.pyextractor.extractor as ext_module
@@ -732,12 +796,12 @@ class TestProcessRecordsAsync:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_handles_processing_errors(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_handles_processing_errors(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that worker handles record processing errors gracefully."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
         extractor.record_queue = asyncio.Queue()
 
         # Add a record that will cause error, then end signal
@@ -767,12 +831,12 @@ class TestAmqpFlushWorker:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_processes_flush_requests(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_processes_flush_requests(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that flush worker processes flush requests."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
         extractor.flush_queue = asyncio.Queue()
 
         # Add flush requests and shutdown signal
@@ -789,12 +853,12 @@ class TestAmqpFlushWorker:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_handles_flush_errors(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_handles_flush_errors(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that flush worker handles errors and continues."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
         extractor.flush_queue = asyncio.Queue()
 
         # Add flush request, then shutdown
@@ -827,12 +891,12 @@ class TestTryQueueFlush:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_queues_flush_request_successfully(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_queues_flush_request_successfully(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test successfully queueing a flush request."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
         extractor.flush_queue = asyncio.Queue(maxsize=10)
 
         await extractor._try_queue_flush()
@@ -843,12 +907,12 @@ class TestTryQueueFlush:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_handles_full_queue_with_backoff(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_handles_full_queue_with_backoff(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test handling of full flush queue schedules retry task."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
         extractor.flush_queue = asyncio.Queue(maxsize=1)
 
         # Fill the queue
@@ -883,12 +947,12 @@ class TestParseXmlAsync:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_parse_xml_async_executes_in_executor(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_parse_xml_async_executes_in_executor(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that XML parsing runs in thread executor."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
 
         with patch.object(extractor, "_parse_xml_sync") as mock_parse_sync:
             await extractor._parse_xml_async()
@@ -900,12 +964,14 @@ class TestParseXmlAsync:
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.GzipFile")
     @patch("extractor.pyextractor.extractor.parse")
-    async def test_parse_xml_sync_parses_gzip_file(self, mock_parse: Mock, mock_gzipfile: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_parse_xml_sync_parses_gzip_file(
+        self, mock_parse: Mock, mock_gzipfile: Mock, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test that sync parser opens and parses gzip XML file."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
 
         mock_gz = MagicMock()
         mock_gzipfile.return_value.__enter__.return_value = mock_gz
@@ -919,12 +985,14 @@ class TestParseXmlAsync:
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.GzipFile")
-    async def test_parse_xml_sync_handles_errors(self, mock_gzipfile: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_parse_xml_sync_handles_errors(
+        self, mock_gzipfile: Mock, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test that sync parser handles parsing errors."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
 
         mock_gzipfile.side_effect = Exception("File not found")
 
@@ -986,7 +1054,7 @@ class TestInitErrorCases:
     """Test ConcurrentExtractor initialization error cases."""
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_init_invalid_filename_format(self, mock_exists: Mock, test_discogs_root: Path) -> None:
+    def test_init_invalid_filename_format(self, mock_exists: Mock, test_discogs_root: Path, mock_state_marker: StateMarker) -> None:
         """Test initialization with invalid filename format."""
         mock_exists.return_value = True
         config = Mock()
@@ -994,10 +1062,10 @@ class TestInitErrorCases:
         config.rabbitmq_url = "amqp://test"
 
         with pytest.raises(ValueError, match="Invalid input file format"):
-            ConcurrentExtractor("invalid_filename.xml.gz", config)
+            ConcurrentExtractor("invalid_filename.xml.gz", config, mock_state_marker)
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_init_file_not_found(self, mock_exists: Mock, test_discogs_root: Path) -> None:
+    def test_init_file_not_found(self, mock_exists: Mock, test_discogs_root: Path, mock_state_marker: StateMarker) -> None:
         """Test initialization with non-existent file."""
         mock_exists.return_value = False
         config = Mock()
@@ -1005,7 +1073,7 @@ class TestInitErrorCases:
         config.rabbitmq_url = "amqp://test"
 
         with pytest.raises(FileNotFoundError, match="Input file not found"):
-            ConcurrentExtractor("discogs_20230101_artists.xml.gz", config)
+            ConcurrentExtractor("discogs_20230101_artists.xml.gz", config, mock_state_marker)
 
 
 class TestFlushErrorHandling:
@@ -1022,12 +1090,12 @@ class TestFlushErrorHandling:
         return config
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_flush_with_no_connection(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_flush_with_no_connection(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test flush when AMQP connection is unavailable."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.amqp_connection = None
         extractor.amqp_channel = None
 
@@ -1054,12 +1122,12 @@ class TestFlushErrorHandling:
         return channel
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_flush_with_none_channel_after_connection_check(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_flush_with_none_channel_after_connection_check(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test flush when channel is None after connection check."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
 
         # Mock connection but channel is None
         extractor.amqp_connection = Mock()
@@ -1080,79 +1148,84 @@ class TestFlushErrorHandling:
             assert len(extractor.pending_messages) == 1
 
 
-class TestProcessingState:
-    """Test _load_processing_state and _save_processing_state functions."""
+class TestStateMarkerIntegration:
+    """Test StateMarker integration in ConcurrentExtractor."""
 
-    def test_load_processing_state_no_file(self, temp_dir: Path) -> None:
-        """Test loading processing state when file doesn't exist."""
-        from extractor.pyextractor.extractor import _load_processing_state
+    def test_state_marker_file_start_tracking(self, _temp_dir: Path) -> None:
+        """Test that state marker tracks file processing start."""
+        from common import StateMarker
 
-        result = _load_processing_state(temp_dir)
+        marker = StateMarker(current_version="20230101")
+        marker.start_file_processing("discogs_20230101_artists.xml.gz")
 
-        assert result == {}
+        # Check that file is marked as in_progress
+        assert marker.processing_phase.current_file == "discogs_20230101_artists.xml.gz"
+        file_progress = marker.processing_phase.progress_by_file.get("discogs_20230101_artists.xml.gz")
+        assert file_progress is not None
+        assert file_progress.status == "in_progress"
 
-    def test_load_processing_state_with_data(self, temp_dir: Path) -> None:
-        """Test loading processing state with existing data."""
-        from extractor.pyextractor.extractor import _load_processing_state, _save_processing_state
+    def test_state_marker_file_completion_tracking(self, _temp_dir: Path) -> None:
+        """Test that state marker tracks file processing completion."""
+        from common import StateMarker
 
-        # First save some state
-        state = {"file1.xml.gz": True, "file2.xml.gz": False}
-        _save_processing_state(temp_dir, state)
+        marker = StateMarker(current_version="20230101")
+        marker.start_file_processing("discogs_20230101_artists.xml.gz")
+        marker.complete_file_processing("discogs_20230101_artists.xml.gz", 1000)
 
-        # Now load it
-        result = _load_processing_state(temp_dir)
+        # Check that file is marked as completed
+        file_progress = marker.processing_phase.progress_by_file.get("discogs_20230101_artists.xml.gz")
+        assert file_progress is not None
+        assert file_progress.status == "completed"
+        assert file_progress.records_extracted == 1000
 
-        assert result == {"file1.xml.gz": True, "file2.xml.gz": False}
+    def test_state_marker_periodic_progress_update(self, _temp_dir: Path) -> None:
+        """Test that state marker updates progress periodically."""
+        from common import StateMarker
 
-    def test_load_processing_state_corrupted_file(self, temp_dir: Path) -> None:
-        """Test loading processing state with corrupted file."""
-        from extractor.pyextractor.extractor import _load_processing_state
+        marker = StateMarker(current_version="20230101")
+        marker.start_file_processing("discogs_20230101_artists.xml.gz")
+        marker.update_file_progress("discogs_20230101_artists.xml.gz", 5000, 50)
+
+        # Check that progress was updated
+        file_progress = marker.processing_phase.progress_by_file.get("discogs_20230101_artists.xml.gz")
+        assert file_progress is not None
+        assert file_progress.records_extracted == 5000
+        assert file_progress.messages_published == 50
+
+    def test_state_marker_save_and_load(self, temp_dir: Path) -> None:
+        """Test saving and loading state marker."""
+        from common import StateMarker
+
+        # Create and save marker
+        marker = StateMarker(current_version="20230101")
+        marker.start_file_processing("discogs_20230101_artists.xml.gz")
+        marker.complete_file_processing("discogs_20230101_artists.xml.gz", 1000)
+
+        marker_path = StateMarker.file_path(temp_dir, "20230101")
+        marker.save(marker_path)
+
+        # Load marker
+        loaded_marker = StateMarker.load(marker_path)
+        assert loaded_marker is not None
+        assert loaded_marker.current_version == "20230101"
+
+        file_progress = loaded_marker.processing_phase.progress_by_file.get("discogs_20230101_artists.xml.gz")
+        assert file_progress is not None
+        assert file_progress.status == "completed"
+        assert file_progress.records_extracted == 1000
+
+    def test_state_marker_corrupted_file_handling(self, temp_dir: Path) -> None:
+        """Test loading corrupted state marker file."""
+        from common import StateMarker
 
         # Create a corrupted file
-        state_file = temp_dir / ".processing_state.json"
-        state_file.write_text("not valid json{]")
+        marker_path = StateMarker.file_path(temp_dir, "20230101")
+        marker_path.parent.mkdir(parents=True, exist_ok=True)
+        marker_path.write_text("not valid json{]")
 
-        with patch("extractor.pyextractor.extractor.logger") as mock_logger:
-            result = _load_processing_state(temp_dir)
-
-            assert result == {}
-            mock_logger.warning.assert_called()
-
-    def test_save_processing_state(self, temp_dir: Path) -> None:
-        """Test saving processing state."""
-        from extractor.pyextractor.extractor import _save_processing_state
-
-        state = {"file1.xml.gz": True, "file2.xml.gz": False}
-        _save_processing_state(temp_dir, state)
-
-        state_file = temp_dir / ".processing_state.json"
-        assert state_file.exists()
-
-        # Verify content
-        import orjson
-
-        content = orjson.loads(state_file.read_bytes())
-        assert content == {"file1.xml.gz": True, "file2.xml.gz": False}
-
-    def test_save_processing_state_error(self, temp_dir: Path) -> None:
-        """Test saving processing state with write error."""
-        from extractor.pyextractor.extractor import _save_processing_state
-
-        # Make directory read-only to cause write error
-        state_file = temp_dir / ".processing_state.json"
-        state_file.touch()
-        state_file.chmod(0o000)
-
-        try:
-            with patch("extractor.pyextractor.extractor.logger") as mock_logger:
-                state = {"file1.xml.gz": True}
-                _save_processing_state(temp_dir, state)
-
-                # Should log warning on error
-                mock_logger.warning.assert_called()
-        finally:
-            # Restore permissions for cleanup
-            state_file.chmod(0o644)
+        # Should return None for corrupted file
+        loaded_marker = StateMarker.load(marker_path)
+        assert loaded_marker is None
 
 
 class TestProcessFileAsync:
@@ -1170,7 +1243,7 @@ class TestProcessFileAsync:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_process_file_async_success(self, mock_exists: Mock, mock_config: Mock, temp_dir: Path) -> None:
+    async def test_process_file_async_success(self, mock_exists: Mock, mock_config: Mock, temp_dir: Path, mock_state_marker: StateMarker) -> None:
         """Test successful file processing."""
         from extractor.pyextractor.extractor import process_file_async
 
@@ -1188,15 +1261,15 @@ class TestProcessFileAsync:
             mock_extractor.__exit__ = Mock(return_value=None)
             mock_extractor_class.return_value = mock_extractor
 
-            await process_file_async("discogs_20230101_artists.xml.gz", mock_config)
+            await process_file_async("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
 
-            # Verify extractor was created and extract was called
-            mock_extractor_class.assert_called_once()
+            # Verify extractor was created with state_marker and extract was called
+            mock_extractor_class.assert_called_once_with("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
             mock_extractor.extract_async.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_process_file_async_error(self, mock_exists: Mock, mock_config: Mock, temp_dir: Path) -> None:
+    async def test_process_file_async_error(self, mock_exists: Mock, mock_config: Mock, temp_dir: Path, mock_state_marker: StateMarker) -> None:
         """Test file processing with error."""
         from extractor.pyextractor.extractor import process_file_async
 
@@ -1214,14 +1287,14 @@ class TestProcessFileAsync:
             mock_extractor_class.return_value = mock_extractor
 
             with pytest.raises(Exception, match="Extraction failed"):
-                await process_file_async("discogs_20230101_artists.xml.gz", mock_config)
+                await process_file_async("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
 
             # Verify error was logged
             mock_logger.error.assert_called()
 
 
 class TestProcessDiscogsData:
-    """Test process_discogs_data function."""
+    """Test process_discogs_data function with StateMarker."""
 
     @pytest.fixture
     def mock_config(self, test_discogs_root: Path) -> Mock:
@@ -1233,18 +1306,17 @@ class TestProcessDiscogsData:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.download_discogs_data")
-    @patch("extractor.pyextractor.extractor._load_processing_state")
-    @patch("extractor.pyextractor.extractor._save_processing_state")
+    @patch("extractor.pyextractor.extractor.StateMarker")
     @patch("extractor.pyextractor.extractor.process_file_async")
     async def test_process_discogs_data_success(
         self,
         mock_process_file: AsyncMock,
-        mock_save_state: Mock,
-        mock_load_state: Mock,
+        mock_state_marker_class: Mock,
         mock_download: Mock,
         mock_config: Mock,
     ) -> None:
         """Test successful processing of Discogs data."""
+        from common import ProcessingDecision
         from extractor.pyextractor.extractor import process_discogs_data
 
         # Setup mocks
@@ -1253,7 +1325,16 @@ class TestProcessDiscogsData:
             "discogs_20240101_labels.xml.gz",
             "discogs_20240101_CHECKSUM.txt",
         ]
-        mock_load_state.return_value = {}
+
+        # Mock StateMarker to indicate processing should continue
+        mock_marker = Mock()
+        mock_marker.should_process.return_value = ProcessingDecision.CONTINUE
+        mock_marker.pending_files.return_value = [
+            "discogs_20240101_artists.xml.gz",
+            "discogs_20240101_labels.xml.gz",
+        ]
+        mock_state_marker_class.load.return_value = None  # No existing marker
+        mock_state_marker_class.return_value = mock_marker
         mock_process_file.return_value = None
 
         result = await process_discogs_data(mock_config)
@@ -1262,7 +1343,6 @@ class TestProcessDiscogsData:
         mock_download.assert_called_once()
         # Should process 2 files (not the CHECKSUM)
         assert mock_process_file.call_count == 2
-        mock_save_state.assert_called()
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.download_discogs_data")
@@ -1278,13 +1358,20 @@ class TestProcessDiscogsData:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.download_discogs_data")
-    @patch("extractor.pyextractor.extractor._load_processing_state")
-    async def test_process_discogs_data_no_files(self, mock_load_state: Mock, mock_download: Mock, mock_config: Mock) -> None:
+    @patch("extractor.pyextractor.extractor.StateMarker")
+    async def test_process_discogs_data_no_files(self, mock_state_marker_class: Mock, mock_download: Mock, mock_config: Mock) -> None:
         """Test when no data files are available."""
+        from common import ProcessingDecision
         from extractor.pyextractor.extractor import process_discogs_data
 
         mock_download.return_value = ["discogs_20240101_CHECKSUM.txt"]
-        mock_load_state.return_value = {}
+
+        # Mock StateMarker
+        mock_marker = Mock()
+        mock_marker.should_process.return_value = ProcessingDecision.CONTINUE
+        mock_marker.pending_files.return_value = []
+        mock_state_marker_class.load.return_value = None
+        mock_state_marker_class.return_value = mock_marker
 
         result = await process_discogs_data(mock_config)
 
@@ -1292,69 +1379,76 @@ class TestProcessDiscogsData:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.download_discogs_data")
-    @patch("extractor.pyextractor.extractor._load_processing_state")
-    @patch("extractor.pyextractor.extractor._save_processing_state")
-    @patch("extractor.pyextractor.extractor.process_file_async")
+    @patch("extractor.pyextractor.extractor.StateMarker")
     async def test_process_discogs_data_skip_processed(
         self,
-        mock_process_file: AsyncMock,
-        _mock_save_state: Mock,
-        mock_load_state: Mock,
+        mock_state_marker_class: Mock,
         mock_download: Mock,
         mock_config: Mock,
     ) -> None:
-        """Test skipping already processed files."""
+        """Test skipping already completed version."""
+        from common import ProcessingDecision
         from extractor.pyextractor.extractor import process_discogs_data
 
         mock_download.return_value = [
             "discogs_20240101_artists.xml.gz",
             "discogs_20240101_labels.xml.gz",
         ]
-        # Mark artists as already processed
-        mock_load_state.return_value = {"discogs_20240101_artists.xml.gz": True}
+
+        # Mock StateMarker to indicate version is already completed
+        mock_marker = Mock()
+        mock_marker.should_process.return_value = ProcessingDecision.SKIP
+        mock_state_marker_class.load.return_value = mock_marker
 
         result = await process_discogs_data(mock_config)
 
         assert result is True
-        # Should only process 1 file (labels)
+
+    @pytest.mark.asyncio
+    @patch("extractor.pyextractor.extractor.download_discogs_data")
+    @patch("extractor.pyextractor.extractor.StateMarker")
+    @patch("extractor.pyextractor.extractor.process_file_async")
+    async def test_process_discogs_data_force_reprocess(
+        self, mock_process_file: AsyncMock, mock_state_marker_class: Mock, mock_download: Mock, mock_config: Mock
+    ) -> None:
+        """Test force reprocessing creates new state marker."""
+        from common import ProcessingDecision
+        from extractor.pyextractor.extractor import process_discogs_data
+
+        mock_download.return_value = ["discogs_20240101_artists.xml.gz"]
+
+        # Mock StateMarker - force_reprocess should create new marker
+        mock_marker = Mock()
+        mock_marker.should_process.return_value = ProcessingDecision.CONTINUE
+        mock_marker.pending_files.return_value = ["discogs_20240101_artists.xml.gz"]
+        mock_state_marker_class.load.return_value = None
+        mock_state_marker_class.return_value = mock_marker
+
+        result = await process_discogs_data(mock_config, force_reprocess=True)
+
+        assert result is True
+        # Should process the file
         assert mock_process_file.call_count == 1
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.download_discogs_data")
-    @patch("extractor.pyextractor.extractor._load_processing_state")
-    @patch("extractor.pyextractor.extractor.os.environ.get")
-    async def test_process_discogs_data_force_reprocess(
-        self, mock_env_get: Mock, mock_load_state: Mock, mock_download: Mock, mock_config: Mock
-    ) -> None:
-        """Test force reprocessing with FORCE_REPROCESS=true."""
-        from extractor.pyextractor.extractor import process_discogs_data
-
-        mock_download.return_value = ["discogs_20240101_artists.xml.gz"]
-        # All files marked as processed
-        mock_load_state.return_value = {"discogs_20240101_artists.xml.gz": True}
-        # Force reprocess enabled
-        mock_env_get.return_value = "true"
-
-        with (
-            patch("extractor.pyextractor.extractor.process_file_async", new_callable=AsyncMock) as mock_process,
-            patch("extractor.pyextractor.extractor._save_processing_state"),
-        ):
-            result = await process_discogs_data(mock_config)
-
-        assert result is True
-        # Should process despite being marked as complete
-        assert mock_process.call_count == 1
-
-    @pytest.mark.asyncio
-    @patch("extractor.pyextractor.extractor.download_discogs_data")
-    @patch("extractor.pyextractor.extractor._load_processing_state")
+    @patch("extractor.pyextractor.extractor.StateMarker")
     @patch("extractor.pyextractor.extractor.shutdown_requested", True)
-    async def test_process_discogs_data_shutdown_during_processing(self, mock_load_state: Mock, mock_download: Mock, mock_config: Mock) -> None:
+    async def test_process_discogs_data_shutdown_during_processing(
+        self, mock_state_marker_class: Mock, mock_download: Mock, mock_config: Mock
+    ) -> None:
         """Test shutdown during processing."""
+        from common import ProcessingDecision
         from extractor.pyextractor.extractor import process_discogs_data
 
         mock_download.return_value = ["discogs_20240101_artists.xml.gz"]
-        mock_load_state.return_value = {}
+
+        # Mock StateMarker
+        mock_marker = Mock()
+        mock_marker.should_process.return_value = ProcessingDecision.CONTINUE
+        mock_marker.pending_files.return_value = ["discogs_20240101_artists.xml.gz"]
+        mock_state_marker_class.load.return_value = None
+        mock_state_marker_class.return_value = mock_marker
 
         result = await process_discogs_data(mock_config)
 
@@ -1656,7 +1750,7 @@ class TestProgressMonitoring:
         return config
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_progress_monitoring_with_stalled_extractors(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_progress_monitoring_with_stalled_extractors(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test progress monitoring detects stalled extractors."""
         import extractor.pyextractor.extractor as extractor_module
 
@@ -1678,7 +1772,7 @@ class TestProgressMonitoring:
         extractor_module.completed_files = set()
         extractor_module.active_connections = {"artists": Mock(), "releases": Mock()}
 
-        ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
 
         # Trigger progress reporting by logging
         with patch("extractor.pyextractor.extractor.logger"):
@@ -1696,12 +1790,12 @@ class TestProgressMonitoring:
             assert "releases" not in stalled_extractors
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_progress_logging_interval(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_progress_logging_interval(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test periodic progress logging."""
         mock_exists.return_value = True
         mock_config.progress_log_interval = 10  # Log every 10 records
 
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
         extractor.total_count = 10  # Trigger logging at next record
 
         # Progress logging happens when total_count % progress_log_interval == 0
@@ -1724,7 +1818,9 @@ class TestQueueErrorHandling:
     @patch("extractor.pyextractor.extractor.asyncio.run_coroutine_threadsafe")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_handles_queue_error(self, mock_exists: Mock, mock_rabbitmq: Mock, mock_run_coro: Mock, mock_config: Mock) -> None:
+    def test_queue_record_handles_queue_error(
+        self, mock_exists: Mock, mock_rabbitmq: Mock, mock_run_coro: Mock, mock_config: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test queue_record handles queue errors gracefully."""
         # Reset shutdown flag
         import extractor.pyextractor.extractor
@@ -1740,7 +1836,7 @@ class TestQueueErrorHandling:
         mock_connection.channel.return_value = mock_channel
         mock_rabbitmq.return_value = mock_connection
 
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
 
         # Set up the event loop and queue
         extractor.event_loop = Mock()
@@ -1778,7 +1874,9 @@ class TestFlushQueueBackoff:
     @patch("extractor.pyextractor.extractor.asyncio.sleep")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_flush_queue_backoff_increases(self, mock_exists: Mock, mock_rabbitmq: Mock, mock_sleep: AsyncMock, mock_config: Mock) -> None:
+    async def test_flush_queue_backoff_increases(
+        self, mock_exists: Mock, mock_rabbitmq: Mock, mock_sleep: AsyncMock, mock_config: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test that flush queue backoff increases exponentially."""
         from extractor.pyextractor.extractor import FLUSH_QUEUE_INITIAL_BACKOFF
 
@@ -1792,7 +1890,7 @@ class TestFlushQueueBackoff:
         mock_connection.channel.return_value = mock_channel
         mock_rabbitmq.return_value = mock_connection
 
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
         extractor.amqp_channel = mock_channel
 
         # Set up flush queue
@@ -1817,7 +1915,9 @@ class TestFlushQueueBackoff:
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_flush_queue_retry_after_failure(self, mock_exists: Mock, mock_rabbitmq: Mock, mock_config: Mock) -> None:
+    async def test_flush_queue_retry_after_failure(
+        self, mock_exists: Mock, mock_rabbitmq: Mock, mock_config: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test that flush queue retries after failure if still needed."""
         mock_exists.return_value = True
 
@@ -1828,7 +1928,7 @@ class TestFlushQueueBackoff:
         mock_connection.channel.return_value = mock_channel
         mock_rabbitmq.return_value = mock_connection
 
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
         extractor.amqp_channel = mock_channel
 
         # Add messages beyond batch size to trigger flush
@@ -1862,10 +1962,10 @@ class TestConcurrentExtractorProperties:
         return config
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_elapsed_time_property(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_elapsed_time_property(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test elapsed_time property calculation."""
         mock_exists.return_value = True
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
 
         # Set start and end times
         extractor.start_time = datetime(2023, 1, 1, 10, 0, 0)
@@ -1877,7 +1977,7 @@ class TestConcurrentExtractorProperties:
 
     @patch("extractor.pyextractor.extractor.datetime")
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_tps_property_with_zero_elapsed(self, mock_exists: Mock, mock_datetime: Mock, mock_config: Mock) -> None:
+    def test_tps_property_with_zero_elapsed(self, mock_exists: Mock, mock_datetime: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test tps property when elapsed time is zero."""
         mock_exists.return_value = True
 
@@ -1885,7 +1985,7 @@ class TestConcurrentExtractorProperties:
         now = datetime(2023, 1, 1, 10, 0, 0)
         mock_datetime.now.return_value = now
 
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
         extractor.start_time = now
         extractor.total_count = 100
 
@@ -1894,7 +1994,7 @@ class TestConcurrentExtractorProperties:
 
     @patch("extractor.pyextractor.extractor.datetime")
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_tps_property_with_elapsed_time(self, mock_exists: Mock, mock_datetime: Mock, mock_config: Mock) -> None:
+    def test_tps_property_with_elapsed_time(self, mock_exists: Mock, mock_datetime: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test tps property calculation with elapsed time."""
         mock_exists.return_value = True
 
@@ -1903,7 +2003,7 @@ class TestConcurrentExtractorProperties:
         end_time = datetime(2023, 1, 1, 10, 1, 0)  # 60 seconds later
         mock_datetime.now.return_value = end_time
 
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
         extractor.start_time = start_time
         extractor.total_count = 600
 
@@ -1927,7 +2027,7 @@ class TestConcurrentExtractorErrorHandling:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
-    def test_enter_channel_setup_failure(self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_enter_channel_setup_failure(self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __enter__ handles channel setup failures."""
         mock_exists.return_value = True
 
@@ -1936,7 +2036,7 @@ class TestConcurrentExtractorErrorHandling:
         mock_connection.channel.side_effect = Exception("Channel creation failed")
         mock_rabbitmq.return_value = mock_connection
 
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
 
         # Should raise exception and close connection
         with pytest.raises(Exception, match="Channel creation failed"), extractor:
@@ -1947,7 +2047,7 @@ class TestConcurrentExtractorErrorHandling:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
-    def test_exit_completion_message_failure(self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_exit_completion_message_failure(self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __exit__ handles completion message send failure."""
         mock_exists.return_value = True
 
@@ -1958,7 +2058,7 @@ class TestConcurrentExtractorErrorHandling:
         mock_connection.channel.return_value = mock_channel
         mock_rabbitmq.return_value = mock_connection
 
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
 
         # Enter context
         extractor.__enter__()
@@ -1975,7 +2075,9 @@ class TestConcurrentExtractorErrorHandling:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
-    def test_exit_flushes_pending_messages_on_error(self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_exit_flushes_pending_messages_on_error(
+        self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test __exit__ attempts to flush messages even on error."""
         mock_exists.return_value = True
 
@@ -1987,7 +2089,7 @@ class TestConcurrentExtractorErrorHandling:
         mock_connection.channel.return_value = mock_channel
         mock_rabbitmq.return_value = mock_connection
 
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
 
         # Enter context
         extractor.__enter__()
@@ -2003,7 +2105,9 @@ class TestConcurrentExtractorErrorHandling:
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.ResilientRabbitMQConnection")
-    def test_exit_handles_flush_failure_gracefully(self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_exit_handles_flush_failure_gracefully(
+        self, mock_rabbitmq: Mock, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker
+    ) -> None:
         """Test __exit__ handles flush failures gracefully."""
         mock_exists.return_value = True
 
@@ -2014,7 +2118,7 @@ class TestConcurrentExtractorErrorHandling:
         mock_connection.channel.return_value = mock_channel
         mock_rabbitmq.return_value = mock_connection
 
-        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config)
+        extractor = ConcurrentExtractor("discogs_20230101_artists.xml.gz", mock_config, mock_state_marker)
 
         # Enter context
         extractor.__enter__()
@@ -2045,12 +2149,12 @@ class TestQueueRecordVariations:
         return config
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_with_masters_id_extraction(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_with_masters_id_extraction(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record extracts ID for masters from path."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_masters.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = asyncio.Queue()
         extractor.event_loop = asyncio.new_event_loop()
 
@@ -2064,12 +2168,12 @@ class TestQueueRecordVariations:
         assert data.get("id") == "999"
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_with_releases_id_extraction(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_with_releases_id_extraction(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record extracts ID for releases from path."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_releases.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = asyncio.Queue()
         extractor.event_loop = asyncio.new_event_loop()
 
@@ -2083,12 +2187,12 @@ class TestQueueRecordVariations:
         assert data.get("id") == "888"
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_with_artists_name_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_with_artists_name_logging(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record logs artist name."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = asyncio.Queue()
         extractor.event_loop = asyncio.new_event_loop()
 
@@ -2100,12 +2204,12 @@ class TestQueueRecordVariations:
         assert result is True
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_with_labels_name_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_with_labels_name_logging(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record logs label name."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_labels.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = asyncio.Queue()
         extractor.event_loop = asyncio.new_event_loop()
 
@@ -2117,12 +2221,12 @@ class TestQueueRecordVariations:
         assert result is True
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_with_releases_title_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_with_releases_title_logging(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record logs release title."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_releases.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = asyncio.Queue()
         extractor.event_loop = asyncio.new_event_loop()
 
@@ -2134,12 +2238,12 @@ class TestQueueRecordVariations:
         assert result is True
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_with_masters_title_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_with_masters_title_logging(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record logs master title."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_masters.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = asyncio.Queue()
         extractor.event_loop = asyncio.new_event_loop()
 
@@ -2151,12 +2255,12 @@ class TestQueueRecordVariations:
         assert result is True
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_with_no_name_field(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_with_no_name_field(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record handles missing name field."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = asyncio.Queue()
         extractor.event_loop = asyncio.new_event_loop()
 
@@ -2168,12 +2272,12 @@ class TestQueueRecordVariations:
         assert result is True
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_with_backpressure_high(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_with_backpressure_high(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record applies backpressure when queue is 80% full."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = Mock()
         extractor.record_queue.qsize.return_value = 4100  # 82% of 5000
         extractor.event_loop = Mock()
@@ -2195,12 +2299,12 @@ class TestQueueRecordVariations:
                 assert result is True
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_with_backpressure_medium(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_with_backpressure_medium(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record applies backpressure when queue is 60% full."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = Mock()
         extractor.record_queue.qsize.return_value = 3100  # 62% of 5000
         extractor.event_loop = Mock()
@@ -2221,12 +2325,12 @@ class TestQueueRecordVariations:
                 assert result is True
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_with_backpressure_low(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_with_backpressure_low(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record applies backpressure when queue is 40% full."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = Mock()
         extractor.record_queue.qsize.return_value = 2100  # 42% of 5000
         extractor.event_loop = Mock()
@@ -2247,12 +2351,12 @@ class TestQueueRecordVariations:
                 assert result is True
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_timeout_handling(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_timeout_handling(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record handles timeout gracefully."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = Mock()
         extractor.record_queue.qsize.return_value = 100
         extractor.event_loop = Mock()
@@ -2272,12 +2376,12 @@ class TestQueueRecordVariations:
             assert extractor.error_count == 1
 
     @patch("extractor.pyextractor.extractor.Path.exists")
-    def test_queue_record_progress_logging(self, mock_exists: Mock, mock_config: Mock) -> None:
+    def test_queue_record_progress_logging(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test __queue_record logs progress at intervals."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.record_queue = asyncio.Queue()
         extractor.event_loop = asyncio.new_event_loop()
         extractor.progress_log_interval = 100  # Set directly on extractor, not config
@@ -2317,12 +2421,12 @@ class TestExtractAsyncEdgeCases:
     @pytest.mark.skip(reason="KeyboardInterrupt in async context interferes with test runner")
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_extract_async_flushes_on_keyboard_interrupt(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_extract_async_flushes_on_keyboard_interrupt(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that extract_async flushes messages on KeyboardInterrupt."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.pending_messages = [{"id": "1", "name": "Test"}]
 
         # Set up mock to raise after some setup
@@ -2343,12 +2447,12 @@ class TestExtractAsyncEdgeCases:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_extract_async_flushes_on_general_error(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_extract_async_flushes_on_general_error(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test that extract_async flushes messages on general error."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
         extractor.pending_messages = [{"id": "1", "name": "Test"}]
 
         async def mock_parse_error():
@@ -2368,12 +2472,12 @@ class TestExtractAsyncEdgeCases:
     @pytest.mark.skip(reason="KeyboardInterrupt in async context interferes with test runner")
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_extract_async_handles_flush_error_on_interrupt(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_extract_async_handles_flush_error_on_interrupt(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test extract_async handles flush errors during interrupt."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
 
         async def mock_parse_interrupt():
             await asyncio.sleep(0.01)
@@ -2389,12 +2493,12 @@ class TestExtractAsyncEdgeCases:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_extract_async_handles_flush_error_on_exception(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_extract_async_handles_flush_error_on_exception(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test extract_async handles flush errors during exception handling."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker)
 
         async def mock_parse_error():
             raise RuntimeError("Parse failed")
@@ -2409,12 +2513,12 @@ class TestExtractAsyncEdgeCases:
 
     @pytest.mark.asyncio
     @patch("extractor.pyextractor.extractor.Path.exists")
-    async def test_extract_async_final_flush_error(self, mock_exists: Mock, mock_config: Mock) -> None:
+    async def test_extract_async_final_flush_error(self, mock_exists: Mock, mock_config: Mock, mock_state_marker: StateMarker) -> None:
         """Test extract_async handles final flush errors."""
         mock_exists.return_value = True
         input_file = "discogs_20230101_artists.xml.gz"
 
-        extractor = ConcurrentExtractor(input_file, mock_config, max_workers=1)
+        extractor = ConcurrentExtractor(input_file, mock_config, mock_state_marker, max_workers=1)
         extractor.pending_messages = [{"id": "1", "name": "Test"}]
 
         # Mock parse that completes immediately
