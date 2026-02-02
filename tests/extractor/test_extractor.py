@@ -1151,7 +1151,7 @@ class TestFlushErrorHandling:
 class TestStateMarkerIntegration:
     """Test StateMarker integration in ConcurrentExtractor."""
 
-    def test_state_marker_file_start_tracking(self, _temp_dir: Path) -> None:
+    def test_state_marker_file_start_tracking(self) -> None:
         """Test that state marker tracks file processing start."""
         from common import StateMarker
 
@@ -1164,7 +1164,7 @@ class TestStateMarkerIntegration:
         assert file_progress is not None
         assert file_progress.status == "in_progress"
 
-    def test_state_marker_file_completion_tracking(self, _temp_dir: Path) -> None:
+    def test_state_marker_file_completion_tracking(self) -> None:
         """Test that state marker tracks file processing completion."""
         from common import StateMarker
 
@@ -1178,7 +1178,7 @@ class TestStateMarkerIntegration:
         assert file_progress.status == "completed"
         assert file_progress.records_extracted == 1000
 
-    def test_state_marker_periodic_progress_update(self, _temp_dir: Path) -> None:
+    def test_state_marker_periodic_progress_update(self) -> None:
         """Test that state marker updates progress periodically."""
         from common import StateMarker
 
