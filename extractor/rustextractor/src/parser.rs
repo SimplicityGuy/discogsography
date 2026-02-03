@@ -2,7 +2,9 @@ use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use serde_json::{Map, Value, json};
+use serde_json::{Map, Value};
+#[cfg(test)]
+use serde_json::json;
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::BufReader;
