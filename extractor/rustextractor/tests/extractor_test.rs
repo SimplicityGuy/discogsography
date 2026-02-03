@@ -2,7 +2,9 @@
 // Focus on testing the extraction workflow with mocked dependencies
 
 use rust_extractor::extractor::ExtractorState;
+use rust_extractor::state_marker::StateMarker;
 use rust_extractor::types::{DataType, DataMessage};
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -427,13 +429,28 @@ async fn test_message_batcher_empty_batch() {
     let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(10);
     let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
     let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let state_marker = Arc::new(tokio::sync::Mutex::new(StateMarker::new("test".to_string())));
+    let marker_path = PathBuf::from("/tmp/test_marker.json");
+    let file_name = "test_file.xml".to_string();
+    let state_save_interval = 1000;
 
     // Close sender immediately without sending messages
     drop(parse_sender);
 
     let batcher_handle = tokio::spawn(async move {
         use rust_extractor::extractor::message_batcher;
-        message_batcher(parse_receiver, batch_sender, 10, DataType::Artists, state).await
+        message_batcher(
+            parse_receiver,
+            batch_sender,
+            10,
+            DataType::Artists,
+            state,
+            state_marker,
+            marker_path,
+            file_name,
+            state_save_interval,
+        )
+        .await
     });
 
     // Should not receive any batches
@@ -454,6 +471,10 @@ async fn test_message_batcher_single_message() {
     let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(10);
     let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
     let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let state_marker = Arc::new(tokio::sync::Mutex::new(StateMarker::new("test".to_string())));
+    let marker_path = PathBuf::from("/tmp/test_marker.json");
+    let file_name = "test_file.xml".to_string();
+    let state_save_interval = 1000;
 
     // Send one message
     let msg = DataMessage {
@@ -466,7 +487,18 @@ async fn test_message_batcher_single_message() {
 
     let batcher_handle = tokio::spawn(async move {
         use rust_extractor::extractor::message_batcher;
-        message_batcher(parse_receiver, batch_sender, 10, DataType::Labels, state).await
+        message_batcher(
+            parse_receiver,
+            batch_sender,
+            10,
+            DataType::Labels,
+            state,
+            state_marker,
+            marker_path,
+            file_name,
+            state_save_interval,
+        )
+        .await
     });
 
     // Should receive one batch with one message
@@ -484,6 +516,10 @@ async fn test_message_batcher_multiple_batches() {
     let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(100);
     let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
     let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let state_marker = Arc::new(tokio::sync::Mutex::new(StateMarker::new("test".to_string())));
+    let marker_path = PathBuf::from("/tmp/test_marker.json");
+    let file_name = "test_file.xml".to_string();
+    let state_save_interval = 1000;
 
     let batch_size = 5;
 
@@ -500,7 +536,18 @@ async fn test_message_batcher_multiple_batches() {
 
     let batcher_handle = tokio::spawn(async move {
         use rust_extractor::extractor::message_batcher;
-        message_batcher(parse_receiver, batch_sender, batch_size, DataType::Masters, state).await
+        message_batcher(
+            parse_receiver,
+            batch_sender,
+            batch_size,
+            DataType::Masters,
+            state,
+            state_marker,
+            marker_path,
+            file_name,
+            state_save_interval,
+        )
+        .await
     });
 
     // Should receive two batches
