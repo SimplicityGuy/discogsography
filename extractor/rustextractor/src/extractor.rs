@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 // use chrono::{DateTime, Utc}; // Not directly used in this module
 use std::collections::{HashMap, HashSet};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
@@ -46,23 +46,25 @@ pub async fn process_discogs_data(
         s.error_count = 0;
     }
 
-    // Download latest data
+    // Create downloader
     let mut downloader = Downloader::new(config.discogs_root.clone()).await?;
-    let data_files = downloader.download_discogs_data().await.context("Failed to download Discogs data")?;
 
-    // Filter out checksum files
-    let data_files: Vec<_> = data_files.into_iter().filter(|f| !f.contains("CHECKSUM")).collect();
+    // Get file list to determine version
+    let available_files = downloader.list_s3_files().await.context("Failed to list S3 files")?;
+    let latest_files = downloader.get_latest_monthly_files(&available_files)?;
 
-    if data_files.is_empty() {
-        warn!("⚠️ No data files to process");
+    if latest_files.is_empty() {
+        warn!("⚠️ No data files found");
         return Ok(true);
     }
 
-    // Extract version from filenames
-    let version = data_files
-        .first()
-        .and_then(|f| extract_version_from_filename(f))
-        .ok_or_else(|| anyhow::anyhow!("Could not extract version from filenames"))?;
+    // Extract version from first filename
+    let first_filename = Path::new(&latest_files[0].name)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
+    let version = extract_version_from_filename(first_filename)
+        .ok_or_else(|| anyhow::anyhow!("Could not extract version from filename"))?;
 
     info!("📋 Detected Discogs data version: {}", version);
 
@@ -94,22 +96,21 @@ pub async fn process_discogs_data(
         }
     }
 
-    // Track download phase
-    if state_marker.download_phase.status == PhaseStatus::Pending {
-        state_marker.start_download(data_files.len());
-        for file in &data_files {
-            // Get actual file size from filesystem
-            let file_path = config.discogs_root.join(file);
-            let file_size = tokio::fs::metadata(&file_path)
-                .await
-                .ok()
-                .map(|m| m.len())
-                .unwrap_or(0);
-            state_marker.file_downloaded(file_size);
-        }
-        state_marker.complete_download();
-        state_marker.save(&marker_path).await?;
-        info!("✅ Download phase marked complete: {} files", data_files.len());
+    // Pass state marker to downloader for tracking download progress
+    downloader = downloader.with_state_marker(state_marker, marker_path.clone());
+
+    // Download latest data (this will now track timestamps properly)
+    let data_files = downloader.download_discogs_data().await.context("Failed to download Discogs data")?;
+
+    // Get state marker back from downloader
+    let mut state_marker = downloader.state_marker.take().unwrap();
+
+    // Filter out checksum files
+    let data_files: Vec<_> = data_files.into_iter().filter(|f| !f.contains("CHECKSUM")).collect();
+
+    if data_files.is_empty() {
+        warn!("⚠️ No data files to process");
+        return Ok(true);
     }
 
     // Start processing phase

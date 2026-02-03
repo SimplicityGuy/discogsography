@@ -214,6 +214,11 @@ class StateMarker:
             started_at=datetime.now(UTC),
         )
 
+        # Update summary files_by_type to track in-progress files
+        data_type = _extract_data_type(filename)
+        if data_type:
+            self.summary.files_by_type[data_type] = PhaseStatus.IN_PROGRESS
+
     def update_file_progress(self, filename: str, records: int, messages: int) -> None:
         """Update file processing progress."""
         if filename in self.processing_phase.progress_by_file:

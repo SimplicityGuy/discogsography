@@ -4,10 +4,14 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import requests
 from orjson import OPT_INDENT_2, dumps, loads
 from tqdm import tqdm
+
+if TYPE_CHECKING:
+    from common.state_marker import StateMarker
 
 logger = logging.getLogger(__name__)
 
@@ -205,7 +209,37 @@ def _scrape_file_list_from_discogs() -> dict[str, list[S3FileInfo]]:
         raise
 
 
-def download_discogs_data(output_directory: str) -> list[str]:
+def get_latest_version() -> str | None:
+    """Get the latest available Discogs data version without downloading.
+
+    Returns:
+        The version ID (e.g., "20260201") or None if not found
+    """
+    try:
+        ids = _scrape_file_list_from_discogs()
+        # Return the most recent version that has all required files
+        for id in sorted(ids.keys(), reverse=True):
+            prefix = f"discogs_{id}"
+            required_files = [
+                f"{prefix}_CHECKSUM.txt",
+                f"{prefix}_artists.xml.gz",
+                f"{prefix}_labels.xml.gz",
+                f"{prefix}_masters.xml.gz",
+                f"{prefix}_releases.xml.gz",
+            ]
+            if len(ids[id]) == len(required_files):
+                return id
+        return None
+    except Exception as e:
+        logger.error(f"❌ Failed to get latest version: {e}")
+        return None
+
+
+def download_discogs_data(
+    output_directory: str,
+    state_marker: "StateMarker",
+    marker_path: Path,
+) -> list[str]:
     logger.info("📥 Starting download of most recent Discogs data")
     output_path = Path(output_directory)
     output_path.mkdir(parents=True, exist_ok=True)
@@ -334,6 +368,11 @@ def download_discogs_data(output_directory: str) -> list[str]:
                     f"✅ File {filename} already exists with correct checksum, skipping download"
                 )
                 checksums[filename] = expected_checksum
+
+                # Track existing file in state marker
+                if file_path.exists():
+                    file_size = file_path.stat().st_size
+                    state_marker.file_downloaded(file_size)
             else:
                 if file_path.exists():
                     logger.info(
@@ -342,6 +381,12 @@ def download_discogs_data(output_directory: str) -> list[str]:
                 else:
                     logger.info(f"📄 File {filename} does not exist, will download")
                 files_to_download.append(s3file)
+
+        # Start download phase tracking
+        # Count total files (excluding checksum)
+        total_files = len([f for f in ids[id] if "CHECKSUM" not in Path(f.name).name])
+        state_marker.start_download(total_files)
+        state_marker.save(marker_path)
 
         # Download only the files that need downloading
         for s3file in files_to_download:
@@ -379,6 +424,12 @@ def download_discogs_data(output_directory: str) -> list[str]:
             calculated_checksum = _calculate_file_checksum(path)
             if calculated_checksum:
                 checksums[filename] = calculated_checksum
+
+                # Track file download in state marker
+                if path.exists():
+                    file_size = path.stat().st_size
+                    state_marker.file_downloaded(file_size)
+                    state_marker.save(marker_path)
             else:
                 logger.error(f"❌ Failed to calculate checksum for {filename}")
                 raise ValueError(f"Checksum calculation failed for {filename}")
@@ -424,6 +475,10 @@ def download_discogs_data(output_directory: str) -> list[str]:
 
         # Save updated metadata
         _save_metadata(output_path, new_metadata)
+
+        # Complete download phase tracking
+        state_marker.complete_download()
+        state_marker.save(marker_path)
 
         logger.info(f"✅ Successfully validated version {id}")
 

@@ -9,6 +9,7 @@ use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, warn};
 
+use crate::state_marker::StateMarker;
 use crate::types::{LocalFileInfo, S3FileInfo};
 
 const S3_PREFIX: &str = "data/";
@@ -18,6 +19,8 @@ pub struct Downloader {
     pub output_directory: PathBuf,
     pub metadata: HashMap<String, LocalFileInfo>,
     base_url: String,
+    pub state_marker: Option<StateMarker>,
+    pub marker_path: Option<PathBuf>,
 }
 
 impl Downloader {
@@ -34,7 +37,16 @@ impl Downloader {
             output_directory,
             metadata,
             base_url,
+            state_marker: None,
+            marker_path: None,
         })
+    }
+
+    /// Set the state marker for tracking download progress
+    pub fn with_state_marker(mut self, state_marker: StateMarker, marker_path: PathBuf) -> Self {
+        self.state_marker = Some(state_marker);
+        self.marker_path = Some(marker_path);
+        self
     }
 
     pub async fn download_discogs_data(&mut self) -> Result<Vec<String>> {
@@ -57,6 +69,14 @@ impl Downloader {
         let month = extract_month_from_filename(&latest_files[0].name);
         info!("📅 Latest available month: {}", month);
 
+        // Start download phase tracking if state marker is available
+        if let Some(ref mut marker) = self.state_marker {
+            marker.start_download(latest_files.len());
+            if let Some(ref marker_path) = self.marker_path {
+                marker.save(marker_path).await.ok();
+            }
+        }
+
         let mut downloaded_files = Vec::new();
 
         for file_info in &latest_files {
@@ -65,6 +85,15 @@ impl Downloader {
                     Ok(_) => {
                         let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
                         info!("✅ Successfully downloaded: {}", filename);
+
+                        // Track file download in state marker
+                        if let Some(ref mut marker) = self.state_marker {
+                            marker.file_downloaded(file_info.size);
+                            if let Some(ref marker_path) = self.marker_path {
+                                marker.save(marker_path).await.ok();
+                            }
+                        }
+
                         downloaded_files.push(filename.to_string());
                     }
                     Err(e) => {
@@ -75,7 +104,24 @@ impl Downloader {
             } else {
                 let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
                 info!("✅ Already have latest version of: {}", filename);
+
+                // Track existing file in state marker
+                if let Some(ref mut marker) = self.state_marker {
+                    marker.file_downloaded(file_info.size);
+                    if let Some(ref marker_path) = self.marker_path {
+                        marker.save(marker_path).await.ok();
+                    }
+                }
+
                 downloaded_files.push(filename.to_string());
+            }
+        }
+
+        // Complete download phase tracking if state marker is available
+        if let Some(ref mut marker) = self.state_marker {
+            marker.complete_download();
+            if let Some(ref marker_path) = self.marker_path {
+                marker.save(marker_path).await.ok();
             }
         }
 
@@ -169,7 +215,7 @@ impl Downloader {
         Ok(ids)
     }
 
-    async fn list_s3_files(&self) -> Result<Vec<S3FileInfo>> {
+    pub async fn list_s3_files(&self) -> Result<Vec<S3FileInfo>> {
         info!("🔍 Listing available files from Discogs website...");
 
         // Scrape file list from Discogs website instead of S3 listing

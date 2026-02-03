@@ -26,7 +26,7 @@ from common import (
     setup_logging,
 )
 from dict_hash import sha256
-from extractor.pyextractor.discogs import download_discogs_data
+from extractor.pyextractor.discogs import download_discogs_data, get_latest_version
 from orjson import OPT_INDENT_2, OPT_SORT_KEYS, dumps, loads
 from pika import DeliveryMode
 from pika.spec import BasicProperties
@@ -861,26 +861,13 @@ async def process_discogs_data(
     completed_files.clear()  # Clear completed files for new run
     active_connections.clear()  # Clear active connections tracking
 
-    try:
-        discogs_data = download_discogs_data(str(config.discogs_root))
-    except Exception as e:
-        logger.error("❌ Failed to download Discogs data", error=str(e))
-        return False
-
-    # Filter out checksum files
-    data_files = [file for file in discogs_data if "CHECKSUM" not in file]
-
-    if not data_files:
-        logger.warning("⚠️ No data files to process")
-        return True
-
-    # Extract version from filenames
-    version = _extract_version_from_filename(data_files[0]) if data_files else None
+    # First, determine the latest available version (fast, no download)
+    version = get_latest_version()
     if not version:
-        logger.error("❌ Could not extract version from filenames")
+        logger.error("❌ Could not determine latest Discogs data version")
         return False
 
-    logger.info("📋 Detected Discogs data version", version=version)
+    logger.info("📋 Latest available Discogs data version", version=version)
 
     # Load or create state marker
     marker_path = StateMarker.file_path(Path(config.discogs_root), version)
@@ -900,24 +887,22 @@ async def process_discogs_data(
     elif decision == ProcessingDecision.REPROCESS:
         logger.warning("⚠️ Will re-download and re-process", version=version)
         state_marker = StateMarker(current_version=version)
-    elif decision == ProcessingDecision.CONTINUE:
-        logger.info("🔄 Will continue processing", version=version)
 
-    # Mark download phase (Python extractor uses pre-downloaded files)
-    # but we track it for consistency
-    if state_marker.download_phase.status == PhaseStatus.PENDING:
-        state_marker.start_download(len(data_files))
-        for file in data_files:
-            # Get actual file size from filesystem
-            file_path = Path(config.discogs_root) / file
-            try:
-                file_size = file_path.stat().st_size if file_path.exists() else 0
-            except OSError:
-                file_size = 0
-            state_marker.file_downloaded(file_size)
-        state_marker.complete_download()
-        state_marker.save(marker_path)
-        logger.info("✅ Download phase marked complete", files=len(data_files))
+    # Download with state marker tracking (always required now)
+    try:
+        discogs_data = download_discogs_data(
+            str(config.discogs_root), state_marker, marker_path
+        )
+    except Exception as e:
+        logger.error("❌ Failed to download Discogs data", error=str(e))
+        return False
+
+    # Filter out checksum files
+    data_files = [file for file in discogs_data if "CHECKSUM" not in file]
+
+    if not data_files:
+        logger.warning("⚠️ No data files to process")
+        return True
 
     # Start processing phase
     if state_marker.processing_phase.status != PhaseStatus.COMPLETED:

@@ -295,6 +295,11 @@ impl StateMarker {
         };
 
         self.processing_phase.progress_by_file.insert(filename.to_string(), status);
+
+        // Update summary files_by_type to track in-progress files
+        if let Some(data_type) = extract_data_type(filename) {
+            self.summary.files_by_type.insert(data_type, PhaseStatus::InProgress);
+        }
     }
 
     /// Update file processing progress

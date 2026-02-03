@@ -6,6 +6,7 @@ from unittest.mock import Mock, mock_open, patch
 
 import pytest
 
+from common.state_marker import StateMarker
 from extractor.pyextractor.discogs import (
     LocalFileInfo,
     S3FileInfo,
@@ -48,8 +49,12 @@ class TestDownloadDiscogsData:
 
         mock_download.side_effect = mock_download_impl
 
+        # Create state marker for tracking
+        state_marker = StateMarker(current_version="20240201")
+        marker_path = tmp_path / ".extraction_status_20240201.json"
+
         # Call function
-        result = download_discogs_data(str(tmp_path))
+        result = download_discogs_data(str(tmp_path), state_marker, marker_path)
 
         # Verify results
         assert len(result) == 5
@@ -70,9 +75,13 @@ class TestDownloadDiscogsData:
         # Mock scraping to return empty dict
         mock_scrape.return_value = {}
 
+        # Create state marker
+        state_marker = StateMarker(current_version="20240201")
+        marker_path = tmp_path / ".extraction_status_20240201.json"
+
         # Call function - should raise ValueError
         with pytest.raises(ValueError, match="No complete Discogs export found"):
-            download_discogs_data(str(tmp_path))
+            download_discogs_data(str(tmp_path), state_marker, marker_path)
 
     @patch("extractor.pyextractor.discogs._download_file_from_discogs")
     @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
@@ -103,8 +112,12 @@ class TestDownloadDiscogsData:
 
         mock_download.side_effect = mock_download_impl
 
+        # Create state marker
+        state_marker = StateMarker(current_version="20240201")
+        marker_path = tmp_path / ".extraction_status_20240201.json"
+
         # Function should succeed - web scraping only returns valid files
-        result = download_discogs_data(str(tmp_path))
+        result = download_discogs_data(str(tmp_path), state_marker, marker_path)
         assert len(result) == 5
 
     @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
@@ -112,8 +125,12 @@ class TestDownloadDiscogsData:
         """Test handling of website scraping failure."""
         mock_scrape.side_effect = Exception("Connection failed")
 
+        # Create state marker
+        state_marker = StateMarker(current_version="20240201")
+        marker_path = tmp_path / ".extraction_status_20240201.json"
+
         with pytest.raises(Exception, match="Connection failed"):
-            download_discogs_data(str(tmp_path))
+            download_discogs_data(str(tmp_path), state_marker, marker_path)
 
     @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
     def test_incomplete_export_skipped(self, mock_scrape: Mock, tmp_path: Path) -> None:
@@ -127,8 +144,12 @@ class TestDownloadDiscogsData:
             ]
         }
 
+        # Create state marker
+        state_marker = StateMarker(current_version="20240201")
+        marker_path = tmp_path / ".extraction_status_20240201.json"
+
         with pytest.raises(ValueError, match="No complete Discogs export found"):
-            download_discogs_data(str(tmp_path))
+            download_discogs_data(str(tmp_path), state_marker, marker_path)
 
     @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
     def test_missing_checksum_file(self, mock_scrape: Mock, tmp_path: Path) -> None:
@@ -144,8 +165,12 @@ class TestDownloadDiscogsData:
             ]
         }
 
+        # Create state marker
+        state_marker = StateMarker(current_version="20240201")
+        marker_path = tmp_path / ".extraction_status_20240201.json"
+
         with pytest.raises(ValueError, match="No complete Discogs export found"):
-            download_discogs_data(str(tmp_path))
+            download_discogs_data(str(tmp_path), state_marker, marker_path)
 
     @patch("extractor.pyextractor.discogs._download_file_from_discogs")
     @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
@@ -164,8 +189,12 @@ class TestDownloadDiscogsData:
         # Make checksum download fail
         mock_download.side_effect = Exception("Download failed")
 
+        # Create state marker
+        state_marker = StateMarker(current_version="20240201")
+        marker_path = tmp_path / ".extraction_status_20240201.json"
+
         with pytest.raises(ValueError, match="No complete Discogs export found"):
-            download_discogs_data(str(tmp_path))
+            download_discogs_data(str(tmp_path), state_marker, marker_path)
 
     @patch("extractor.pyextractor.discogs._download_file_from_discogs")
     @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
@@ -189,8 +218,12 @@ class TestDownloadDiscogsData:
 
         mock_download.side_effect = mock_download_impl
 
+        # Create state marker
+        state_marker = StateMarker(current_version="20240201")
+        marker_path = tmp_path / ".extraction_status_20240201.json"
+
         with pytest.raises(ValueError, match="No complete Discogs export found"):
-            download_discogs_data(str(tmp_path))
+            download_discogs_data(str(tmp_path), state_marker, marker_path)
 
     @patch("extractor.pyextractor.discogs._download_file_from_discogs")
     @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
@@ -218,8 +251,12 @@ class TestDownloadDiscogsData:
 
         mock_download.side_effect = mock_download_impl
 
+        # Create state marker
+        state_marker = StateMarker(current_version="20240201")
+        marker_path = tmp_path / ".extraction_status_20240201.json"
+
         with pytest.raises(Exception, match="Download failed"):
-            download_discogs_data(str(tmp_path))
+            download_discogs_data(str(tmp_path), state_marker, marker_path)
 
     @patch("extractor.pyextractor.discogs._download_file_from_discogs")
     @patch("extractor.pyextractor.discogs._scrape_file_list_from_discogs")
@@ -247,8 +284,12 @@ class TestDownloadDiscogsData:
 
         mock_download.side_effect = mock_download_impl
 
+        # Create state marker
+        state_marker = StateMarker(current_version="20240201")
+        marker_path = tmp_path / ".extraction_status_20240201.json"
+
         with pytest.raises(ValueError, match="Checksum validation failed"):
-            download_discogs_data(str(tmp_path))
+            download_discogs_data(str(tmp_path), state_marker, marker_path)
 
 
 class TestMetadataFunctions:
