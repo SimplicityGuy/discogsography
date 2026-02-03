@@ -6,7 +6,7 @@ and real-time update capabilities for the Discovery service.
 
 from collections import defaultdict
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from fastapi import WebSocket, WebSocketDisconnect
@@ -16,7 +16,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-class MessageType(str, Enum):
+class MessageType(StrEnum):
     """WebSocket message types."""
 
     # Client -> Server
@@ -33,7 +33,7 @@ class MessageType(str, Enum):
     ERROR = "error"
 
 
-class Channel(str, Enum):
+class Channel(StrEnum):
     """Available subscription channels."""
 
     TRENDING = "trending"  # Trending artists/releases

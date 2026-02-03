@@ -4,7 +4,7 @@ This module provides advanced full-text search functionality using PostgreSQL's
 tsvector and tsquery for efficient text searching across artists, releases, and labels.
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from sqlalchemy import text
@@ -15,7 +15,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-class SearchEntity(str, Enum):
+class SearchEntity(StrEnum):
     """Entity types that can be searched."""
 
     ARTIST = "artist"
@@ -25,7 +25,7 @@ class SearchEntity(str, Enum):
     ALL = "all"
 
 
-class SearchOperator(str, Enum):
+class SearchOperator(StrEnum):
     """Full-text search operators."""
 
     AND = "and"  # All terms must match

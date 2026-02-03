@@ -6,7 +6,7 @@ algorithms, including test configuration, user assignment, and statistical analy
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 import hashlib
 import json
 from pathlib import Path
@@ -23,7 +23,7 @@ from discovery.recommender_metrics import RecommendationMetrics, RecommenderMetr
 logger = structlog.get_logger(__name__)
 
 
-class ABTestStatus(str, Enum):
+class ABTestStatus(StrEnum):
     """Status of an A/B test."""
 
     DRAFT = "draft"  # Test is being configured
@@ -33,7 +33,7 @@ class ABTestStatus(str, Enum):
     CANCELLED = "cancelled"  # Test was cancelled
 
 
-class AssignmentStrategy(str, Enum):
+class AssignmentStrategy(StrEnum):
     """Strategy for assigning users to test groups."""
 
     RANDOM = "random"  # Random assignment

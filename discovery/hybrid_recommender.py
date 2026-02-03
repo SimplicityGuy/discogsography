@@ -6,7 +6,7 @@ to provide more accurate and diverse recommendations.
 """
 
 from collections import defaultdict
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import structlog
@@ -18,7 +18,7 @@ from discovery.content_based import ContentBasedFilter
 logger = structlog.get_logger(__name__)
 
 
-class HybridStrategy(str, Enum):
+class HybridStrategy(StrEnum):
     """Hybrid recommendation combination strategies."""
 
     WEIGHTED = "weighted"  # Weighted average of scores

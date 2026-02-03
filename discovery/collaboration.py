@@ -7,7 +7,7 @@ sharing discoveries, exploring together, and building collaborative playlists.
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 import uuid
 
@@ -19,7 +19,7 @@ from discovery.websocket_manager import WebSocketManager
 logger = structlog.get_logger(__name__)
 
 
-class SessionType(str, Enum):
+class SessionType(StrEnum):
     """Types of collaboration sessions."""
 
     EXPLORATION = "exploration"  # Explore music graph together
@@ -28,7 +28,7 @@ class SessionType(str, Enum):
     ANALYSIS = "analysis"  # Analyze music trends together
 
 
-class ActionType(str, Enum):
+class ActionType(StrEnum):
     """Types of collaborative actions."""
 
     VIEW_ARTIST = "view_artist"

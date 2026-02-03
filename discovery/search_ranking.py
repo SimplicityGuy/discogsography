@@ -4,7 +4,7 @@ This module provides advanced ranking algorithms that combine multiple signals
 (relevance, popularity, recency, user preferences) to optimize search results.
 """
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 import numpy as np
@@ -14,7 +14,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-class RankingSignal(str, Enum):
+class RankingSignal(StrEnum):
     """Ranking signals that can be used."""
 
     RELEVANCE = "relevance"  # Text/semantic relevance
@@ -25,7 +25,7 @@ class RankingSignal(str, Enum):
     DIVERSITY = "diversity"  # Promotes diverse results
 
 
-class RankingStrategy(str, Enum):
+class RankingStrategy(StrEnum):
     """Ranking strategies."""
 
     LINEAR = "linear"  # Weighted sum of signals

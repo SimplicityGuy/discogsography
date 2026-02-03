@@ -6,7 +6,7 @@ the extractor to resume, re-process, or skip processing based on previous state.
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import Enum
+from enum import Enum, StrEnum
 import json
 from pathlib import Path
 from typing import Any
@@ -17,7 +17,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-class PhaseStatus(str, Enum):
+class PhaseStatus(StrEnum):
     """Phase status for tracking progress."""
 
     PENDING = "pending"
@@ -85,7 +85,7 @@ class ExtractionSummary:
     files_by_type: dict[str, PhaseStatus] = field(default_factory=dict)
 
 
-class ProcessingDecision(str, Enum):
+class ProcessingDecision(StrEnum):
     """Decision on how to handle processing."""
 
     REPROCESS = "reprocess"  # Re-download and re-process everything

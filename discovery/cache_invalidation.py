@@ -9,7 +9,7 @@ from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import Enum
+from enum import StrEnum
 import re
 from re import Pattern
 from typing import Any
@@ -20,7 +20,7 @@ import structlog
 logger = structlog.get_logger(__name__)
 
 
-class EventType(str, Enum):
+class EventType(StrEnum):
     """Types of data change events."""
 
     ARTIST_CREATED = "artist_created"
@@ -42,7 +42,7 @@ class EventType(str, Enum):
     STYLE_UPDATED = "style_updated"
 
 
-class InvalidationScope(str, Enum):
+class InvalidationScope(StrEnum):
     """Scope of cache invalidation."""
 
     EXACT = "exact"  # Only exact cache key
