@@ -890,7 +890,8 @@ class TestPeriodicQueueChecker:
     """Test periodic_queue_checker function."""
 
     @pytest.mark.asyncio
-    @patch("tableinator.tableinator.QUEUE_CHECK_INTERVAL", 0.1)
+    @patch("tableinator.tableinator.QUEUE_CHECK_INTERVAL", 0.05)
+    @patch("tableinator.tableinator.STUCK_CHECK_INTERVAL", 0.05)
     async def test_checks_queues_when_all_idle(self) -> None:
         """Test queue checking when all consumers are idle."""
         mock_rabbitmq_manager = AsyncMock()
@@ -935,7 +936,8 @@ class TestPeriodicQueueChecker:
         assert mock_rabbitmq_manager.connect.called
 
     @pytest.mark.asyncio
-    @patch("tableinator.tableinator.QUEUE_CHECK_INTERVAL", 0.1)
+    @patch("tableinator.tableinator.QUEUE_CHECK_INTERVAL", 0.05)
+    @patch("tableinator.tableinator.STUCK_CHECK_INTERVAL", 0.05)
     async def test_skips_check_when_consumers_active(self) -> None:
         """Test skips checking when consumers are active."""
         mock_rabbitmq_manager = AsyncMock()
@@ -964,7 +966,8 @@ class TestPeriodicQueueChecker:
         mock_rabbitmq_manager.connect.assert_not_called()
 
     @pytest.mark.asyncio
-    @patch("tableinator.tableinator.QUEUE_CHECK_INTERVAL", 0.1)
+    @patch("tableinator.tableinator.QUEUE_CHECK_INTERVAL", 0.05)
+    @patch("tableinator.tableinator.STUCK_CHECK_INTERVAL", 0.05)
     async def test_restarts_consumers_when_messages_found(self) -> None:
         """Test restarting consumers when messages are found in queues."""
         mock_rabbitmq_manager = AsyncMock()
@@ -1025,7 +1028,8 @@ class TestPeriodicQueueChecker:
         assert mock_queue_with_msgs.consume.called
 
     @pytest.mark.asyncio
-    @patch("tableinator.tableinator.QUEUE_CHECK_INTERVAL", 0.1)
+    @patch("tableinator.tableinator.QUEUE_CHECK_INTERVAL", 0.05)
+    @patch("tableinator.tableinator.STUCK_CHECK_INTERVAL", 0.05)
     async def test_handles_check_error_gracefully(self) -> None:
         """Test handling errors during queue checking."""
         mock_rabbitmq_manager = AsyncMock()
@@ -1053,6 +1057,91 @@ class TestPeriodicQueueChecker:
 
         # Task should continue despite error
         assert True  # No exception raised
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.QUEUE_CHECK_INTERVAL", 10)
+    @patch("tableinator.tableinator.STUCK_CHECK_INTERVAL", 0.05)
+    async def test_recovers_from_stuck_state(self) -> None:
+        """Test recovery when consumers die unexpectedly (stuck state)."""
+        mock_rabbitmq_manager = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+
+        # Queue with messages
+        mock_queue_with_msgs = AsyncMock()
+        mock_queue_with_msgs.declaration_result.message_count = 100
+        mock_queue_with_msgs.consume = AsyncMock(return_value="consumer-tag-123")
+        mock_queue_with_msgs.bind = AsyncMock()
+
+        mock_channel.declare_queue = AsyncMock(return_value=mock_queue_with_msgs)
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.set_qos = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_connection.close = AsyncMock()
+        mock_rabbitmq_manager.connect = AsyncMock(return_value=mock_connection)
+
+        import tableinator.tableinator
+
+        tableinator.tableinator.rabbitmq_manager = mock_rabbitmq_manager
+        tableinator.tableinator.active_connection = None
+        tableinator.tableinator.active_channel = None
+        # Stuck state: no consumers, but files not completed and has processed messages
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.completed_files = set()  # No files completed
+        tableinator.tableinator.message_counts = {"artists": 100, "labels": 50, "masters": 25, "releases": 10}
+        tableinator.tableinator.queues = {}
+        tableinator.tableinator.shutdown_requested = False
+        tableinator.tableinator.last_message_time = {
+            "artists": 0.0,
+            "labels": 0.0,
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+
+        from tableinator.tableinator import periodic_queue_checker
+
+        checker_task = asyncio.create_task(periodic_queue_checker())
+        await asyncio.sleep(0.2)
+
+        tableinator.tableinator.shutdown_requested = True
+        await asyncio.sleep(0.05)
+
+        checker_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await checker_task
+
+        # Should have attempted recovery by connecting
+        assert mock_rabbitmq_manager.connect.called
+
+    @pytest.mark.asyncio
+    async def test_check_consumers_unexpectedly_dead(self) -> None:
+        """Test check_consumers_unexpectedly_dead detection."""
+        import tableinator.tableinator
+        from tableinator.tableinator import check_consumers_unexpectedly_dead
+
+        # Case 1: Not stuck - has active consumers
+        tableinator.tableinator.consumer_tags = {"artists": "tag-123"}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.message_counts = {"artists": 100}
+        assert await check_consumers_unexpectedly_dead() is False
+
+        # Case 2: Not stuck - all files completed (normal idle)
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.completed_files = {"artists", "labels", "masters", "releases"}
+        tableinator.tableinator.message_counts = {"artists": 100}
+        assert await check_consumers_unexpectedly_dead() is False
+
+        # Case 3: Not stuck - no messages processed yet (startup)
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+        assert await check_consumers_unexpectedly_dead() is False
+
+        # Case 4: STUCK - no consumers, files not completed, has processed messages
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.completed_files = {"labels"}  # Only 1 of 4 complete
+        tableinator.tableinator.message_counts = {"artists": 100, "labels": 50, "masters": 0, "releases": 0}
+        assert await check_consumers_unexpectedly_dead() is True
 
 
 class TestProgressReporter:

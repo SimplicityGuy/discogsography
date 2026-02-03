@@ -519,7 +519,7 @@ class TestGetHealthData:
             assert result["current_task"] == "Idle - waiting for messages"
 
     def test_no_status_when_no_consumers(self) -> None:
-        """Test health data shows None when no consumers are active."""
+        """Test health data shows healthy when no consumers but all files completed (normal idle)."""
         import time
 
         current_time = time.time()
@@ -540,6 +540,8 @@ class TestGetHealthData:
                 },
             ),
             patch("graphinator.graphinator.consumer_tags", {}),
+            # All files completed = normal idle state, not stuck
+            patch("graphinator.graphinator.completed_files", {"artists", "labels", "masters", "releases"}),
         ):
             from graphinator.graphinator import get_health_data
 
@@ -815,7 +817,8 @@ class TestPeriodicQueueChecker:
     """Test periodic_queue_checker function."""
 
     @pytest.mark.asyncio
-    @patch("graphinator.graphinator.QUEUE_CHECK_INTERVAL", 0.1)
+    @patch("graphinator.graphinator.QUEUE_CHECK_INTERVAL", 0.05)
+    @patch("graphinator.graphinator.STUCK_CHECK_INTERVAL", 0.05)
     @patch("graphinator.graphinator.shutdown_requested", False)
     async def test_checks_queues_periodically(self) -> None:
         """Test periodically checks queues for messages."""
@@ -858,7 +861,8 @@ class TestPeriodicQueueChecker:
         assert mock_rabbitmq_manager.connect.called
 
     @pytest.mark.asyncio
-    @patch("graphinator.graphinator.QUEUE_CHECK_INTERVAL", 0.1)
+    @patch("graphinator.graphinator.QUEUE_CHECK_INTERVAL", 0.05)
+    @patch("graphinator.graphinator.STUCK_CHECK_INTERVAL", 0.05)
     async def test_skips_check_when_connection_active(self) -> None:
         """Test skips check when connection is already active."""
         mock_rabbitmq_manager = AsyncMock()

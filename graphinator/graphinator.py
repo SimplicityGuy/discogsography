@@ -58,6 +58,11 @@ QUEUE_CHECK_INTERVAL = int(
     os.environ.get("QUEUE_CHECK_INTERVAL", "3600")
 )  # Default 1 hour - how often to check for new messages when connection is closed
 
+# Interval for checking stuck state (consumers died unexpectedly)
+STUCK_CHECK_INTERVAL = int(
+    os.environ.get("STUCK_CHECK_INTERVAL", "30")
+)  # Default 30 seconds - how often to check for stuck state
+
 # Driver will be initialized in main
 graph: AsyncResilientNeo4jDriver | None = None
 
@@ -95,9 +100,19 @@ def get_health_data() -> dict[str, Any]:
     if active_task is None and len(consumer_tags) > 0:
         active_task = "Idle - waiting for messages"
 
+    # Check for stuck state: no consumers but work remains (files not completed)
+    no_active_consumers = len(consumer_tags) == 0
+    files_incomplete = len(completed_files) < len(DATA_TYPES)
+    has_processed_messages = any(count > 0 for count in message_counts.values())
+    is_stuck = no_active_consumers and files_incomplete and has_processed_messages
+
+    if is_stuck:
+        active_task = "STUCK - consumers died, awaiting recovery"
+
     # Determine health status:
     # - "starting" if graph driver not yet initialized (startup in progress)
     # - "unhealthy" if graph was initialized but is now None (connection lost)
+    # - "unhealthy" if in stuck state (consumers died unexpectedly)
     # - "healthy" if graph is initialized and ready
     if graph is None:
         # Check if we're still in startup (no consumers registered yet)
@@ -106,6 +121,8 @@ def get_health_data() -> dict[str, Any]:
             active_task = "Initializing Neo4j connection"
         else:
             status = "unhealthy"
+    elif is_stuck:
+        status = "unhealthy"
     else:
         status = "healthy"
 
@@ -116,6 +133,8 @@ def get_health_data() -> dict[str, Any]:
         "progress": current_progress,
         "message_counts": message_counts.copy(),
         "last_message_time": last_message_time.copy(),
+        "active_consumers": list(consumer_tags.keys()),
+        "completed_files": list(completed_files),
         "timestamp": datetime.now().isoformat(),
     }
 
@@ -236,115 +255,72 @@ async def close_rabbitmq_connection() -> None:
 
 
 async def check_all_consumers_idle() -> bool:
-    """Check if all consumers are cancelled (idle)."""
+    """Check if all consumers are cancelled (idle) AND all files completed."""
     return len(consumer_tags) == 0 and len(DATA_TYPES) == len(completed_files)
 
 
+async def check_consumers_unexpectedly_dead() -> bool:
+    """Check if consumers have died unexpectedly (no consumers but files not completed).
+
+    This detects the stuck state where:
+    - No consumers are active (consumer_tags is empty)
+    - Not all files are completed (some work remains)
+    - We've processed at least some messages (not just starting up)
+
+    Returns:
+        True if consumers appear to have died unexpectedly
+    """
+    no_active_consumers = len(consumer_tags) == 0
+    files_incomplete = len(completed_files) < len(DATA_TYPES)
+    has_processed_messages = any(count > 0 for count in message_counts.values())
+
+    return no_active_consumers and files_incomplete and has_processed_messages
+
+
 async def periodic_queue_checker() -> None:
-    """Periodically check all queues for pending messages when connection is closed."""
+    """Periodically check queue health and recover from stuck states.
+
+    This task handles two scenarios:
+    1. Normal idle state: All files completed, check for new messages periodically
+    2. Stuck state: Consumers died unexpectedly, need immediate recovery
+
+    The stuck state check runs frequently (every STUCK_CHECK_INTERVAL seconds) to
+    detect and recover quickly. The normal idle check runs at QUEUE_CHECK_INTERVAL.
+    """
     global active_connection, active_channel, queues, consumer_tags
+
+    last_full_check = 0.0  # Track when we last did a full queue check
 
     while not shutdown_requested:
         try:
-            await asyncio.sleep(QUEUE_CHECK_INTERVAL)
+            await asyncio.sleep(STUCK_CHECK_INTERVAL)
 
-            # Only check if all consumers are idle and connection is closed
+            current_time = time.time()
+
+            # Check for stuck state (consumers died but work remains)
+            if await check_consumers_unexpectedly_dead():
+                logger.warning(
+                    "⚠️ Detected stuck state: consumers died but files not completed. "
+                    "Attempting recovery...",
+                    active_consumers=len(consumer_tags),
+                    completed_files=list(completed_files),
+                    message_counts=message_counts,
+                )
+                await _recover_consumers()
+                continue
+
+            # Normal idle check: only run at QUEUE_CHECK_INTERVAL
+            time_since_last_check = current_time - last_full_check
+            if time_since_last_check < QUEUE_CHECK_INTERVAL:
+                continue
+
+            # Only do full queue check if all consumers are idle and connection is closed
             if not await check_all_consumers_idle() or active_connection:
                 continue
 
+            last_full_check = current_time
             logger.info("🔄 Checking all queues for new messages...")
-
-            # Temporarily connect to check queue depths
-            temp_connection = await rabbitmq_manager.connect()
-            temp_channel = await temp_connection.channel()
-
-            try:
-                # Check each queue for pending messages
-                queues_with_messages = []
-                for data_type in DATA_TYPES:
-                    queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
-
-                    # Use queue.declare with passive=True to get message count without affecting the queue
-                    declared_queue = await temp_channel.declare_queue(
-                        name=queue_name, passive=True
-                    )
-
-                    if declared_queue.declaration_result.message_count > 0:
-                        queues_with_messages.append(
-                            (data_type, declared_queue.declaration_result.message_count)
-                        )
-
-                if queues_with_messages:
-                    logger.info(
-                        f"📬 Found messages in queues, restarting consumers: {queues_with_messages}"
-                    )
-
-                    # Re-establish full connection and start consuming
-                    active_connection = temp_connection
-                    active_channel = temp_channel
-
-                    # Declare exchange and queues
-                    exchange = await active_channel.declare_exchange(
-                        AMQP_EXCHANGE,
-                        AMQP_EXCHANGE_TYPE,
-                        durable=True,
-                        auto_delete=False,
-                    )
-
-                    # Set QoS - must match batch_size for efficient batch processing
-                    await active_channel.set_qos(prefetch_count=200, global_=True)
-
-                    # Declare and bind all queues
-                    queues = {}
-                    for data_type in DATA_TYPES:
-                        queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
-                        queue = await active_channel.declare_queue(
-                            auto_delete=False, durable=True, name=queue_name
-                        )
-                        await queue.bind(exchange, routing_key=data_type)
-                        queues[data_type] = queue
-
-                    # Start consumers for queues with messages
-                    for data_type, _ in queues_with_messages:
-                        if data_type in queues and data_type not in consumer_tags:
-                            # Get appropriate handler for this data type
-                            handler = None
-                            if data_type == "artists":
-                                handler = on_artist_message
-                            elif data_type == "labels":
-                                handler = on_label_message
-                            elif data_type == "masters":
-                                handler = on_master_message
-                            elif data_type == "releases":
-                                handler = on_release_message
-
-                            if handler:
-                                consumer_tag = await queues[data_type].consume(
-                                    handler, consumer_tag=f"graphinator-{data_type}"
-                                )
-                                consumer_tags[data_type] = consumer_tag
-                                # Remove from completed files so it will be processed
-                                completed_files.discard(data_type)
-                                last_message_time[data_type] = time.time()
-                                logger.info(f"✅ Started consumer for {data_type}")
-
-                    # Don't close temp_connection since we're using it as active_connection
-                else:
-                    logger.info(
-                        "📭 No messages in any queue, connection remains closed"
-                    )
-                    # Close the temporary connection
-                    await temp_channel.close()
-                    await temp_connection.close()
-
-            except Exception as e:
-                logger.error(f"❌ Error checking queues: {e}")
-                # Make sure to close temporary connection on error
-                try:
-                    await temp_channel.close()
-                    await temp_connection.close()
-                except Exception:  # nosec: B110
-                    pass
+            await _recover_consumers()
 
         except asyncio.CancelledError:
             logger.info("🛑 Queue checker task cancelled")
@@ -352,6 +328,129 @@ async def periodic_queue_checker() -> None:
         except Exception as e:
             logger.error(f"❌ Error in periodic queue checker: {e}")
             # Continue running despite errors
+
+
+async def _recover_consumers() -> None:
+    """Recover consumers by reconnecting to RabbitMQ and restarting consumption.
+
+    This function handles the actual recovery logic for both:
+    - Normal recovery after idle period
+    - Emergency recovery after unexpected consumer death
+    """
+    global active_connection, active_channel, queues, consumer_tags
+
+    # Close any existing broken connection first
+    if active_connection:
+        try:
+            await active_connection.close()
+        except Exception:  # nosec: B110
+            pass
+        active_connection = None
+        active_channel = None
+
+    # Temporarily connect to check queue depths
+    try:
+        temp_connection = await rabbitmq_manager.connect()
+        temp_channel = await temp_connection.channel()
+    except Exception as e:
+        logger.error(f"❌ Failed to connect to RabbitMQ for recovery: {e}")
+        return
+
+    try:
+        # Check each queue for pending messages
+        queues_with_messages = []
+        for data_type in DATA_TYPES:
+            queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+
+            # Use queue.declare with passive=True to get message count without affecting the queue
+            declared_queue = await temp_channel.declare_queue(
+                name=queue_name, passive=True
+            )
+
+            if declared_queue.declaration_result.message_count > 0:
+                queues_with_messages.append(
+                    (data_type, declared_queue.declaration_result.message_count)
+                )
+
+        if queues_with_messages:
+            total_messages = sum(count for _, count in queues_with_messages)
+            logger.info(
+                f"📬 Found messages in queues, restarting consumers: {queues_with_messages} "
+                f"(total: {total_messages})"
+            )
+
+            # Re-establish full connection and start consuming
+            active_connection = temp_connection
+            active_channel = temp_channel
+
+            # Declare exchange and queues
+            exchange = await active_channel.declare_exchange(
+                AMQP_EXCHANGE,
+                AMQP_EXCHANGE_TYPE,
+                durable=True,
+                auto_delete=False,
+            )
+
+            # Set QoS - must match batch_size for efficient batch processing
+            await active_channel.set_qos(prefetch_count=200, global_=True)
+
+            # Declare and bind all queues
+            queues = {}
+            for data_type in DATA_TYPES:
+                queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+                queue = await active_channel.declare_queue(
+                    auto_delete=False, durable=True, name=queue_name
+                )
+                await queue.bind(exchange, routing_key=data_type)
+                queues[data_type] = queue
+
+            # Start consumers for queues with messages
+            for data_type, msg_count in queues_with_messages:
+                if data_type in queues and data_type not in consumer_tags:
+                    # Get appropriate handler for this data type
+                    handler = None
+                    if data_type == "artists":
+                        handler = on_artist_message
+                    elif data_type == "labels":
+                        handler = on_label_message
+                    elif data_type == "masters":
+                        handler = on_master_message
+                    elif data_type == "releases":
+                        handler = on_release_message
+
+                    if handler:
+                        consumer_tag = await queues[data_type].consume(
+                            handler, consumer_tag=f"graphinator-{data_type}"
+                        )
+                        consumer_tags[data_type] = consumer_tag
+                        # Remove from completed files so it will be processed
+                        completed_files.discard(data_type)
+                        last_message_time[data_type] = time.time()
+                        logger.info(
+                            f"✅ Started consumer for {data_type} "
+                            f"(pending: {msg_count})"
+                        )
+
+            logger.info(
+                f"✅ Recovery complete - consumers restarted: {list(consumer_tags.keys())}"
+            )
+            # Don't close temp_connection since we're using it as active_connection
+        else:
+            logger.info(
+                "📭 No messages in any queue, connection remains closed"
+            )
+            # Close the temporary connection
+            await temp_channel.close()
+            await temp_connection.close()
+
+    except Exception as e:
+        logger.error(f"❌ Error during consumer recovery: {e}")
+        # Make sure to close temporary connection on error
+        try:
+            await temp_channel.close()
+            await temp_connection.close()
+        except Exception:  # nosec: B110
+            pass
 
 
 async def check_file_completion(
