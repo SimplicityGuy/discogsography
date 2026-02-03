@@ -97,8 +97,15 @@ pub async fn process_discogs_data(
     // Track download phase
     if state_marker.download_phase.status == PhaseStatus::Pending {
         state_marker.start_download(data_files.len());
-        for _ in &data_files {
-            state_marker.file_downloaded(0); // We don't track actual file sizes in Rust yet
+        for file in &data_files {
+            // Get actual file size from filesystem
+            let file_path = config.discogs_root.join(file);
+            let file_size = tokio::fs::metadata(&file_path)
+                .await
+                .ok()
+                .map(|m| m.len())
+                .unwrap_or(0);
+            state_marker.file_downloaded(file_size);
         }
         state_marker.complete_download();
         state_marker.save(&marker_path).await?;
@@ -130,12 +137,16 @@ pub async fn process_discogs_data(
         data_files.len() - pending_files.len()
     );
 
+    debug!("📋 Pending files list: {:?}", pending_files);
+
     // Process files concurrently
     let semaphore = Arc::new(tokio::sync::Semaphore::new(3)); // Limit concurrent files
     let mut tasks = Vec::new();
     let state_marker_arc = Arc::new(tokio::sync::Mutex::new(state_marker));
 
-    for file in pending_files {
+    for (idx, file) in pending_files.iter().enumerate() {
+        debug!("📋 Spawning task {} for file: {}", idx, file);
+        let file = file.clone(); // Clone the filename string
         let config = config.clone();
         let state = state.clone();
         let shutdown = shutdown.clone();
@@ -158,6 +169,8 @@ pub async fn process_discogs_data(
 
         tasks.push(task);
     }
+
+    info!("📋 Spawned {} tasks for processing", tasks.len());
 
     // Start progress reporter
     let reporter_state = state.clone();

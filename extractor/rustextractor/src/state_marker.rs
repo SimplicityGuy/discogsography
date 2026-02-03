@@ -280,6 +280,8 @@ impl StateMarker {
         self.processing_phase.files_total = files_total;
         self.processing_phase.files_processed = 0;
         self.processing_phase.records_extracted = 0;
+        // Update summary status when processing starts
+        self.summary.overall_status = PhaseStatus::InProgress;
     }
 
     /// Mark a file processing as started
@@ -301,6 +303,17 @@ impl StateMarker {
             status.records_extracted = records;
             status.messages_published = messages;
         }
+
+        // Update processing phase totals by summing all file progress
+        self.processing_phase.records_extracted = self
+            .processing_phase
+            .progress_by_file
+            .values()
+            .map(|s| s.records_extracted)
+            .sum();
+
+        // files_processed is only incremented when files complete, not during progress updates
+        // This is handled by complete_file_processing()
     }
 
     /// Mark a file processing as completed
@@ -312,7 +325,15 @@ impl StateMarker {
         }
 
         self.processing_phase.files_processed += 1;
-        self.processing_phase.records_extracted += records;
+
+        // Update total records by summing from all files (same as update_file_progress)
+        // This ensures we don't double-count since we're already tracking in progress_by_file
+        self.processing_phase.records_extracted = self
+            .processing_phase
+            .progress_by_file
+            .values()
+            .map(|s| s.records_extracted)
+            .sum();
 
         // Update summary
         if let Some(data_type) = extract_data_type(filename) {
@@ -445,20 +466,31 @@ mod tests {
     fn test_processing_phase_lifecycle() {
         let mut marker = StateMarker::new("20260101".to_string());
 
-        // Start processing
+        // Start processing - should also set summary status to InProgress
         marker.start_processing(4);
         assert_eq!(marker.processing_phase.status, PhaseStatus::InProgress);
         assert_eq!(marker.processing_phase.files_total, 4);
+        assert_eq!(marker.summary.overall_status, PhaseStatus::InProgress);
 
         // Process file
         marker.start_file_processing("discogs_20260101_artists.xml.gz");
         assert_eq!(marker.processing_phase.current_file, Some("discogs_20260101_artists.xml.gz".to_string()));
 
+        // Update progress - should update phase totals
         marker.update_file_progress("discogs_20260101_artists.xml.gz", 100, 10);
-        marker.complete_file_processing("discogs_20260101_artists.xml.gz", 100);
+        assert_eq!(marker.processing_phase.records_extracted, 100); // Should sum from progress_by_file
+        assert_eq!(marker.processing_phase.files_processed, 0); // No files completed yet
 
-        assert_eq!(marker.processing_phase.files_processed, 1);
-        assert_eq!(marker.processing_phase.records_extracted, 100);
+        // Start another file
+        marker.start_file_processing("discogs_20260101_labels.xml.gz");
+        marker.update_file_progress("discogs_20260101_labels.xml.gz", 50, 5);
+        assert_eq!(marker.processing_phase.records_extracted, 150); // 100 + 50
+        assert_eq!(marker.processing_phase.files_processed, 0); // Still no files completed
+
+        // Complete first file - this increments files_processed
+        marker.complete_file_processing("discogs_20260101_artists.xml.gz", 100);
+        assert_eq!(marker.processing_phase.files_processed, 1); // Now 1 file completed
+        assert_eq!(marker.processing_phase.records_extracted, 150); // Still 150 total (complete doesn't add, it's already counted)
 
         // Complete processing
         marker.complete_processing();

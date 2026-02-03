@@ -203,6 +203,8 @@ class StateMarker:
         self.processing_phase.files_total = files_total
         self.processing_phase.files_processed = 0
         self.processing_phase.records_extracted = 0
+        # Update summary status when processing starts
+        self.summary.overall_status = PhaseStatus.IN_PROGRESS
 
     def start_file_processing(self, filename: str) -> None:
         """Mark a file processing as started."""
@@ -219,6 +221,12 @@ class StateMarker:
             status.records_extracted = records
             status.messages_published = messages
 
+        # Update processing phase totals by summing all file progress
+        self.processing_phase.records_extracted = sum(status.records_extracted for status in self.processing_phase.progress_by_file.values())
+
+        # files_processed is only incremented when files complete, not during progress updates
+        # This is handled by complete_file_processing()
+
     def complete_file_processing(self, filename: str, records: int) -> None:
         """Mark a file processing as completed."""
         if filename in self.processing_phase.progress_by_file:
@@ -228,7 +236,10 @@ class StateMarker:
             status.records_extracted = records
 
         self.processing_phase.files_processed += 1
-        self.processing_phase.records_extracted += records
+
+        # Update total records by summing from all files (same as update_file_progress)
+        # This ensures we don't double-count since we're already tracking in progress_by_file
+        self.processing_phase.records_extracted = sum(status.records_extracted for status in self.processing_phase.progress_by_file.values())
 
         # Update summary
         data_type = _extract_data_type(filename)

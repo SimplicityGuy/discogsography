@@ -133,20 +133,31 @@ class TestStateMarker:
         """Test processing phase lifecycle."""
         marker = StateMarker(current_version="20260101")
 
-        # Start processing
+        # Start processing - should also set summary status to IN_PROGRESS
         marker.start_processing(4)
         assert marker.processing_phase.status == PhaseStatus.IN_PROGRESS
         assert marker.processing_phase.files_total == 4
+        assert marker.summary.overall_status == PhaseStatus.IN_PROGRESS
 
         # Process file
         marker.start_file_processing("discogs_20260101_artists.xml.gz")
         assert marker.processing_phase.current_file == "discogs_20260101_artists.xml.gz"
 
+        # Update progress - should update phase totals
         marker.update_file_progress("discogs_20260101_artists.xml.gz", 100, 10)
-        marker.complete_file_processing("discogs_20260101_artists.xml.gz", 100)
+        assert marker.processing_phase.records_extracted == 100  # Should sum from progress_by_file
+        assert marker.processing_phase.files_processed == 0  # No files completed yet
 
-        assert marker.processing_phase.files_processed == 1
-        assert marker.processing_phase.records_extracted == 100
+        # Start another file
+        marker.start_file_processing("discogs_20260101_labels.xml.gz")
+        marker.update_file_progress("discogs_20260101_labels.xml.gz", 50, 5)
+        assert marker.processing_phase.records_extracted == 150  # 100 + 50
+        assert marker.processing_phase.files_processed == 0  # Still no files completed
+
+        # Complete first file - this increments files_processed
+        marker.complete_file_processing("discogs_20260101_artists.xml.gz", 100)
+        assert marker.processing_phase.files_processed == 1  # Now 1 file completed
+        assert marker.processing_phase.records_extracted == 150  # Still 150 total (complete doesn't add, it's already counted)
 
         # Complete processing
         marker.complete_processing()

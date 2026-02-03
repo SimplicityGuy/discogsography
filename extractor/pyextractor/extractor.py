@@ -907,7 +907,13 @@ async def process_discogs_data(
     # but we track it for consistency
     if state_marker.download_phase.status == PhaseStatus.PENDING:
         state_marker.start_download(len(data_files))
-        for file_size in [0] * len(data_files):  # We don't track actual sizes
+        for file in data_files:
+            # Get actual file size from filesystem
+            file_path = Path(config.discogs_root) / file
+            try:
+                file_size = file_path.stat().st_size if file_path.exists() else 0
+            except OSError:
+                file_size = 0
             state_marker.file_downloaded(file_size)
         state_marker.complete_download()
         state_marker.save(marker_path)
