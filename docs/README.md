@@ -57,17 +57,18 @@
 
 ### 📋 Reference Guides
 
-| Document                                                    | Description                                              |
-| ----------------------------------------------------------- | -------------------------------------------------------- |
-| **[State Marker System](state-marker-system.md)**           | 📋 Extraction progress tracking and recovery system      |
-| **[Emoji Guide](emoji-guide.md)**                           | 📋 Standardized emoji usage across the project           |
+| Document                                                         | Description                                              |
+| ---------------------------------------------------------------- | -------------------------------------------------------- |
+| **[State Marker System](state-marker-system.md)**                | 📋 Extraction progress tracking and recovery system      |
+| **[State Marker Periodic Updates](state-marker-periodic-updates.md)** | 💾 Periodic state saves implementation and crash recovery |
+| **[Emoji Guide](emoji-guide.md)**                                | 📋 Standardized emoji usage across the project           |
 | **[Consumer Cancellation](consumer-cancellation.md)**       | 🔄 File completion and consumer lifecycle management     |
 | **[File Completion Tracking](file-completion-tracking.md)** | 📊 Intelligent completion tracking and stalled detection |
 | **[Platform Targeting](platform-targeting.md)**             | 🎯 Cross-platform compatibility guidelines               |
 | **[Neo4j Indexing](neo4j-indexing.md)**                     | 🔗 Advanced Neo4j indexing strategies                    |
 | **[Performance Benchmarks](performance-benchmarks.md)**     | 📈 Performance benchmarks and tuning results             |
 | **[Logging Configuration](logging-configuration.md)**       | 📝 Detailed logging configuration reference              |
-| **[Adding Query Logging](adding-query-logging.md)**         | 🔍 How to add query logging to services                  |
+| **[S3 Listing Fix](s3-listing-fix.md)**                     | 🔧 Discogs S3 bucket access workaround                   |
 | **[Recent Improvements](recent-improvements.md)**           | 🚀 Latest platform enhancements and changes              |
 
 ## 🎯 Documentation by Role
@@ -271,7 +272,7 @@ ______________________________________________________________________
 
 <div align="center">
 
-**Last Updated**: 2026-02-01
+**Last Updated**: 2026-02-03
 
 Made with ❤️ by the Discogsography community
 

@@ -250,8 +250,25 @@ async fn process_single_file(
 
     let batcher_handle = tokio::spawn({
         let batch_size = config.batch_size;
+        let state_save_interval = config.state_save_interval;
         let state = state.clone();
-        async move { message_batcher(parse_receiver, batch_sender, batch_size, data_type, state).await }
+        let state_marker = state_marker.clone();
+        let marker_path = marker_path.clone();
+        let file_name = file_name.to_string();
+        async move {
+            message_batcher(
+                parse_receiver,
+                batch_sender,
+                batch_size,
+                data_type,
+                state,
+                state_marker,
+                marker_path,
+                file_name,
+                state_save_interval,
+            )
+            .await
+        }
     });
 
     let publisher_handle = tokio::spawn({
@@ -297,21 +314,43 @@ pub async fn message_batcher(
     batch_size: usize,
     data_type: DataType,
     state: Arc<RwLock<ExtractorState>>,
+    state_marker: Arc<tokio::sync::Mutex<StateMarker>>,
+    marker_path: PathBuf,
+    file_name: String,
+    state_save_interval: usize,
 ) -> Result<()> {
     let mut batch = Vec::with_capacity(batch_size);
     let mut last_flush = Instant::now();
+    let mut total_records = 0u64;
+    let mut last_state_save = 0u64;
 
     loop {
         // Try to receive with timeout
         match tokio::time::timeout(Duration::from_millis(100), receiver.recv()).await {
             Ok(Some(message)) => {
                 batch.push(message);
+                total_records += 1;
 
                 // Update progress
                 {
                     let mut s = state.write().await;
                     s.extraction_progress.increment(data_type);
                     s.last_extraction_time.insert(data_type, Instant::now().elapsed().as_secs_f64());
+                }
+
+                // Save state marker periodically
+                if total_records % state_save_interval as u64 == 0 && total_records != last_state_save {
+                    last_state_save = total_records;
+                    let mut marker = state_marker.lock().await;
+                    marker.update_file_progress(&file_name, total_records, total_records);
+                    if let Err(e) = marker.save(&marker_path).await {
+                        warn!("⚠️ Failed to save state marker progress: {}", e);
+                    } else {
+                        debug!(
+                            "💾 Saved state marker progress: {} records for {}",
+                            total_records, file_name
+                        );
+                    }
                 }
 
                 // Send batch if full
@@ -608,9 +647,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_message_batcher_basic() {
+        use crate::state_marker::StateMarker;
+        use tempfile::TempDir;
+
         let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(10);
         let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
         let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker_path = temp_dir.path().join(".extraction_status_20230101.json");
+        let state_marker = Arc::new(tokio::sync::Mutex::new(StateMarker::new("20230101".to_string())));
 
         // Send some test messages
         for i in 0..5 {
@@ -624,7 +670,17 @@ mod tests {
         drop(parse_sender);
 
         // Run batcher
-        let batcher = message_batcher(parse_receiver, batch_sender, 3, DataType::Artists, state.clone());
+        let batcher = message_batcher(
+            parse_receiver,
+            batch_sender,
+            3,
+            DataType::Artists,
+            state.clone(),
+            state_marker,
+            marker_path,
+            "test_file.xml.gz".to_string(),
+            5000,
+        );
 
         // Spawn batcher task
         tokio::spawn(batcher);
@@ -644,9 +700,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_message_batcher_respects_batch_size() {
+        use crate::state_marker::StateMarker;
+        use tempfile::TempDir;
+
         let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(100);
         let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
         let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker_path = temp_dir.path().join(".extraction_status_20230101.json");
+        let state_marker = Arc::new(tokio::sync::Mutex::new(StateMarker::new("20230101".to_string())));
 
         // Send exactly batch_size messages
         let batch_size = 10;
@@ -661,7 +724,17 @@ mod tests {
         drop(parse_sender);
 
         // Run batcher
-        let batcher = message_batcher(parse_receiver, batch_sender, batch_size, DataType::Labels, state.clone());
+        let batcher = message_batcher(
+            parse_receiver,
+            batch_sender,
+            batch_size,
+            DataType::Labels,
+            state.clone(),
+            state_marker,
+            marker_path,
+            "test_file.xml.gz".to_string(),
+            5000,
+        );
         tokio::spawn(batcher);
 
         // Get first batch
@@ -672,9 +745,16 @@ mod tests {
 
     #[tokio::test]
     async fn test_message_batcher_timeout_flush() {
+        use crate::state_marker::StateMarker;
+        use tempfile::TempDir;
+
         let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(10);
         let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
         let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker_path = temp_dir.path().join(".extraction_status_20230101.json");
+        let state_marker = Arc::new(tokio::sync::Mutex::new(StateMarker::new("20230101".to_string())));
 
         // Send fewer messages than batch size
         for i in 0..3 {
@@ -687,7 +767,17 @@ mod tests {
         }
 
         // Run batcher with large batch size
-        let batcher = message_batcher(parse_receiver, batch_sender, 100, DataType::Masters, state.clone());
+        let batcher = message_batcher(
+            parse_receiver,
+            batch_sender,
+            100,
+            DataType::Masters,
+            state.clone(),
+            state_marker,
+            marker_path,
+            "test_file.xml.gz".to_string(),
+            5000,
+        );
         let batcher_handle = tokio::spawn(batcher);
 
         // Wait a bit for timeout flush

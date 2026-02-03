@@ -14,6 +14,7 @@ pub struct ExtractorConfig {
     pub batch_size: usize,
     pub queue_size: usize,
     pub progress_log_interval: usize,
+    pub state_save_interval: usize,
     pub s3_bucket: String,
     pub s3_region: String,
 }
@@ -30,6 +31,7 @@ impl Default for ExtractorConfig {
             batch_size: 100,
             queue_size: 5000,
             progress_log_interval: 1000,
+            state_save_interval: 5000,
             s3_bucket: "discogs-data-dumps".to_string(),
             s3_region: "us-west-2".to_string(),
         }
@@ -67,6 +69,7 @@ impl ExtractorConfig {
         let batch_size = std::env::var("BATCH_SIZE").unwrap_or_else(|_| "100".to_string()).parse::<usize>().unwrap_or(100);
         let queue_size = 5000; // Fixed for compatibility
         let progress_log_interval = 1000; // Fixed for compatibility
+        let state_save_interval = 5000; // Fixed for compatibility - matches pyextractor
         let health_port = 8000; // Fixed port for drop-in replacement
 
         let s3_bucket = "discogs-data-dumps".to_string();
@@ -82,6 +85,7 @@ impl ExtractorConfig {
             batch_size,
             queue_size,
             progress_log_interval,
+            state_save_interval,
             s3_bucket,
             s3_region,
         })
@@ -101,6 +105,7 @@ mod tests {
         assert_eq!(config.batch_size, 100);
         assert_eq!(config.queue_size, 5000);
         assert_eq!(config.progress_log_interval, 1000);
+        assert_eq!(config.state_save_interval, 5000);
         assert_eq!(config.health_port, 8000);
         assert_eq!(config.s3_bucket, "discogs-data-dumps");
         assert_eq!(config.s3_region, "us-west-2");
@@ -239,6 +244,7 @@ mod tests {
         // These should always be fixed for drop-in compatibility
         assert_eq!(config.queue_size, 5000);
         assert_eq!(config.progress_log_interval, 1000);
+        assert_eq!(config.state_save_interval, 5000);
         assert_eq!(config.health_port, 8000);
         assert_eq!(config.s3_bucket, "discogs-data-dumps");
         assert_eq!(config.s3_region, "us-west-2");

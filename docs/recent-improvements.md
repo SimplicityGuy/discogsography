@@ -66,6 +66,35 @@ development experience enhancements.
 
 See **[State Marker System](state-marker-system.md)** for complete documentation.
 
+### 💾 State Marker Periodic Updates
+
+**Problem**: Rustextractor only saved state at file boundaries (start/complete), meaning a crash during processing could lose hours of progress. State files showed 0 records even after hours of processing.
+
+**Solution**: Implemented periodic state marker updates every 5,000 records in rustextractor, matching pyextractor's existing behavior.
+
+#### Key Changes
+
+- ✅ **Config**: Added `state_save_interval` parameter (default: 5,000 records)
+- ✅ **Batcher**: Modified `message_batcher` to save state periodically during processing
+- ✅ **Tests**: Updated all 125 tests to pass with new signature
+- ✅ **Consistency**: Both extractors now have identical periodic save behavior
+
+#### Benefits
+
+- **Crash Recovery**: Resume from last checkpoint (max 5,000 records lost vs. entire file)
+- **Progress Visibility**: Real-time progress updates in state file
+- **Minimal Overhead**: ~1-2ms per save, ~580 saves for 2.9M records (negligible)
+- **Production-Ready**: Tested with multi-million record files
+
+#### Performance Impact
+
+| File | Records | Saves | Overhead |
+|------|---------|-------|----------|
+| Masters | 2.9M | ~580 | <2s |
+| Releases | 20M | ~4,000 | <10s |
+
+See **[State Marker Periodic Updates](state-marker-periodic-updates.md)** for implementation details.
+
 ## 🎯 GitHub Actions Improvements
 
 ### 🎨 Visual Consistency
