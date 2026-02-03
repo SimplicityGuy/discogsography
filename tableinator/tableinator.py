@@ -403,9 +403,7 @@ async def _recover_consumers() -> None:
             # Start consumers for queues with messages
             for data_type, msg_count in queues_with_messages:
                 if data_type in queues and data_type not in consumer_tags:
-                    consumer_tag = await queues[data_type].consume(
-                        on_data_message
-                    )
+                    consumer_tag = await queues[data_type].consume(on_data_message)
                     consumer_tags[data_type] = consumer_tag
                     # Remove from completed files so it will be processed
                     completed_files.discard(data_type)
@@ -422,9 +420,7 @@ async def _recover_consumers() -> None:
             )
             # Don't close temp_connection since we're using it as active_connection
         else:
-            logger.info(
-                "📭 No messages in any queue, connection remains closed"
-            )
+            logger.info("📭 No messages in any queue, connection remains closed")
             # Close the temporary connection
             await temp_channel.close()
             await temp_connection.close()

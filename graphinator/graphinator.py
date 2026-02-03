@@ -436,9 +436,7 @@ async def _recover_consumers() -> None:
             )
             # Don't close temp_connection since we're using it as active_connection
         else:
-            logger.info(
-                "📭 No messages in any queue, connection remains closed"
-            )
+            logger.info("📭 No messages in any queue, connection remains closed")
             # Close the temporary connection
             await temp_channel.close()
             await temp_connection.close()
