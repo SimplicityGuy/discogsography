@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::{debug, info, warn};
 
-use crate::types::DataType;
 
 /// Phase status for tracking progress
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
