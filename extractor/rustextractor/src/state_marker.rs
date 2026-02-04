@@ -205,15 +205,26 @@ impl StateMarker {
             return Ok(None);
         }
 
-        let contents = fs::read_to_string(path)
-            .await
-            .context("Failed to read state marker file")?;
+        // Try to read and parse the file, but return None if it fails
+        // This allows the extractor to start fresh if the state file is corrupt
+        let contents = match fs::read_to_string(path).await {
+            Ok(contents) => contents,
+            Err(e) => {
+                warn!("⚠️ Failed to read state marker file, will start fresh: {}", e);
+                return Ok(None);
+            }
+        };
 
-        let marker: StateMarker = serde_json::from_str(&contents)
-            .context("Failed to parse state marker JSON")?;
-
-        info!("📋 Loaded state marker for version: {}", marker.current_version);
-        Ok(Some(marker))
+        match serde_json::from_str::<StateMarker>(&contents) {
+            Ok(marker) => {
+                info!("📋 Loaded state marker for version: {}", marker.current_version);
+                Ok(Some(marker))
+            }
+            Err(e) => {
+                warn!("⚠️ Failed to parse state marker JSON, will start fresh: {}", e);
+                Ok(None)
+            }
+        }
     }
 
     /// Save state marker to file
@@ -725,5 +736,50 @@ mod tests {
         assert_eq!(deserialized.download_phase.files_downloaded, 1);
         assert_eq!(deserialized.download_phase.bytes_downloaded, 1000);
         assert_eq!(deserialized.download_phase.downloads_by_file.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_load_missing_file() {
+        let path = Path::new("/tmp/nonexistent_state_marker.json");
+        let result = StateMarker::load(path).await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_load_corrupt_file() {
+        use std::io::Write;
+        use tempfile::NamedTempFile;
+
+        // Create a temporary file with corrupt JSON
+        let mut temp_file = NamedTempFile::new().unwrap();
+        temp_file.write_all(b"{ corrupt json }").unwrap();
+        let path = temp_file.path();
+
+        // Should return None instead of failing
+        let result = StateMarker::load(path).await.unwrap();
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_load_and_save_roundtrip() {
+        use tempfile::NamedTempFile;
+
+        let temp_file = NamedTempFile::new().unwrap();
+        let path = temp_file.path();
+
+        // Create and save a marker
+        let mut marker = StateMarker::new("20260101".to_string());
+        marker.start_download(4);
+        marker.file_downloaded("discogs_20260101_artists.xml.gz", 1000);
+        marker.save(path).await.unwrap();
+
+        // Load it back
+        let loaded = StateMarker::load(path).await.unwrap();
+        assert!(loaded.is_some());
+        let loaded = loaded.unwrap();
+
+        assert_eq!(loaded.current_version, "20260101");
+        assert_eq!(loaded.download_phase.files_downloaded, 1);
+        assert_eq!(loaded.download_phase.bytes_downloaded, 1000);
     }
 }
