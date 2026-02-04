@@ -296,11 +296,13 @@ async fn process_single_file(
     batcher_handle.await??;
     publisher_handle.await??;
 
-    // Send file completion message
-    mq.send_file_complete(data_type, file_name, total_count).await?;
-
-    // Clean up
-    mq.close().await?;
+    // Mark file as completed in state marker FIRST (consistent with Python)
+    {
+        let mut marker = state_marker.lock().await;
+        marker.complete_file_processing(file_name, total_count);
+        marker.save(&marker_path).await?;
+        info!("✅ Completed file processing in state marker: {} ({} records)", file_name, total_count);
+    }
 
     // Update state
     {
@@ -309,13 +311,11 @@ async fn process_single_file(
         s.active_connections.remove(&data_type);
     }
 
-    // Mark file as completed in state marker
-    {
-        let mut marker = state_marker.lock().await;
-        marker.complete_file_processing(file_name, total_count);
-        marker.save(&marker_path).await?;
-        info!("✅ Completed file processing in state marker: {} ({} records)", file_name, total_count);
-    }
+    // THEN send file completion message (consistent with Python)
+    mq.send_file_complete(data_type, file_name, total_count).await?;
+
+    // Clean up
+    mq.close().await?;
 
     info!("✅ Completed processing {} with {} records", file_name, total_count);
     Ok(())
@@ -336,6 +336,7 @@ pub async fn message_batcher(
     let mut batch = Vec::with_capacity(batch_size);
     let mut last_flush = Instant::now();
     let mut total_records = 0u64;
+    let mut total_batches = 0u64;
     let mut last_state_save = 0u64;
 
     loop {
@@ -356,13 +357,13 @@ pub async fn message_batcher(
                 if total_records % state_save_interval as u64 == 0 && total_records != last_state_save {
                     last_state_save = total_records;
                     let mut marker = state_marker.lock().await;
-                    marker.update_file_progress(&file_name, total_records, total_records);
+                    marker.update_file_progress(&file_name, total_records, total_records, total_batches);
                     if let Err(e) = marker.save(&marker_path).await {
                         warn!("⚠️ Failed to save state marker progress: {}", e);
                     } else {
                         debug!(
-                            "💾 Saved state marker progress: {} records for {}",
-                            total_records, file_name
+                            "💾 Saved state marker progress: {} records, {} batches for {}",
+                            total_records, total_batches, file_name
                         );
                     }
                 }
@@ -371,6 +372,7 @@ pub async fn message_batcher(
                 if batch.len() >= batch_size {
                     let messages = std::mem::replace(&mut batch, Vec::with_capacity(batch_size));
                     sender.send(messages).await?;
+                    total_batches += 1;
                     last_flush = Instant::now();
                 }
             }
@@ -378,6 +380,7 @@ pub async fn message_batcher(
                 // Channel closed, send remaining messages
                 if !batch.is_empty() {
                     sender.send(batch).await?;
+                    total_batches += 1;
                 }
                 break;
             }
@@ -386,6 +389,7 @@ pub async fn message_batcher(
                 if !batch.is_empty() && last_flush.elapsed() > Duration::from_secs(1) {
                     let messages = std::mem::replace(&mut batch, Vec::with_capacity(batch_size));
                     sender.send(messages).await?;
+                    total_batches += 1;
                     last_flush = Instant::now();
                 }
             }
@@ -606,9 +610,9 @@ mod tests {
         let mut marker = StateMarker::new("20230101".to_string());
         marker.start_file_processing("discogs_20230101_artists.xml.gz");
 
-        // Simulate periodic record updates (records, messages)
+        // Simulate periodic record updates (records, messages, batches)
         for i in 1..=3 {
-            marker.update_file_progress("discogs_20230101_artists.xml.gz", i * 1000, i * 1000);
+            marker.update_file_progress("discogs_20230101_artists.xml.gz", i * 1000, i * 1000, i * 10);
         }
 
         let file_progress = marker

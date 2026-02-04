@@ -116,6 +116,7 @@ class ConcurrentExtractor:
         self.max_workers = max_workers
         self.total_count: int = 0
         self.error_count: int = 0
+        self.batches_sent: int = 0
         self.start_time = datetime.now()
         self.end_time = datetime.now()
         self.last_progress_log = datetime.now()
@@ -699,8 +700,8 @@ class ConcurrentExtractor:
                 self.state_marker.update_file_progress(
                     self.input_file,
                     self.total_count,
-                    self.total_count
-                    // self.batch_size,  # Approximate messages published
+                    self.total_count,  # Messages published (one per record)
+                    self.batches_sent,  # Actual batches sent
                 )
                 marker_path = StateMarker.file_path(
                     Path(self.config.discogs_root), self.state_marker.current_version
@@ -797,8 +798,13 @@ class ConcurrentExtractor:
                     )
                     raise
 
+            # Increment batches sent counter
+            self.batches_sent += 1
+
             logger.debug(
-                "✅ Flushed messages to AMQP exchange", count=len(messages_to_send)
+                "✅ Flushed messages to AMQP exchange",
+                count=len(messages_to_send),
+                batches_sent=self.batches_sent,
             )
 
         except Exception as e:

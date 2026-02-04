@@ -17,6 +17,26 @@ pub enum PhaseStatus {
     Failed,
 }
 
+/// Per-file download tracking
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileDownloadStatus {
+    pub status: PhaseStatus,
+    pub bytes_downloaded: u64,
+    pub started_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+}
+
+impl Default for FileDownloadStatus {
+    fn default() -> Self {
+        Self {
+            status: PhaseStatus::Pending,
+            bytes_downloaded: 0,
+            started_at: None,
+            completed_at: None,
+        }
+    }
+}
+
 /// Download phase tracking
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DownloadPhase {
@@ -26,6 +46,7 @@ pub struct DownloadPhase {
     pub files_downloaded: usize,
     pub files_total: usize,
     pub bytes_downloaded: u64,
+    pub downloads_by_file: HashMap<String, FileDownloadStatus>,
     pub errors: Vec<String>,
 }
 
@@ -38,6 +59,7 @@ impl Default for DownloadPhase {
             files_downloaded: 0,
             files_total: 0,
             bytes_downloaded: 0,
+            downloads_by_file: HashMap::new(),
             errors: Vec::new(),
         }
     }
@@ -49,6 +71,7 @@ pub struct FileProcessingStatus {
     pub status: PhaseStatus,
     pub records_extracted: u64,
     pub messages_published: u64,
+    pub batches_sent: u64,
     pub started_at: Option<DateTime<Utc>>,
     pub completed_at: Option<DateTime<Utc>>,
 }
@@ -59,6 +82,7 @@ impl Default for FileProcessingStatus {
             status: PhaseStatus::Pending,
             records_extracted: 0,
             messages_published: 0,
+            batches_sent: 0,
             started_at: None,
             completed_at: None,
         }
@@ -251,10 +275,43 @@ impl StateMarker {
         self.download_phase.bytes_downloaded = 0;
     }
 
+    /// Mark a file download as started
+    pub fn start_file_download(&mut self, filename: &str) {
+        let status = FileDownloadStatus {
+            status: PhaseStatus::InProgress,
+            started_at: Some(Utc::now()),
+            ..Default::default()
+        };
+        self.download_phase.downloads_by_file.insert(filename.to_string(), status);
+    }
+
     /// Mark a file as downloaded
-    pub fn file_downloaded(&mut self, bytes: u64) {
+    pub fn file_downloaded(&mut self, filename: &str, bytes: u64) {
+        if let Some(status) = self.download_phase.downloads_by_file.get_mut(filename) {
+            status.status = PhaseStatus::Completed;
+            status.bytes_downloaded = bytes;
+            status.completed_at = Some(Utc::now());
+        } else {
+            // If not tracked, create entry
+            self.download_phase.downloads_by_file.insert(
+                filename.to_string(),
+                FileDownloadStatus {
+                    status: PhaseStatus::Completed,
+                    bytes_downloaded: bytes,
+                    started_at: Some(Utc::now()),
+                    completed_at: Some(Utc::now()),
+                },
+            );
+        }
+
         self.download_phase.files_downloaded += 1;
-        self.download_phase.bytes_downloaded += bytes;
+        // Recalculate total bytes from all files
+        self.download_phase.bytes_downloaded = self
+            .download_phase
+            .downloads_by_file
+            .values()
+            .map(|s| s.bytes_downloaded)
+            .sum();
     }
 
     /// Mark download phase as completed
@@ -303,10 +360,11 @@ impl StateMarker {
     }
 
     /// Update file processing progress
-    pub fn update_file_progress(&mut self, filename: &str, records: u64, messages: u64) {
+    pub fn update_file_progress(&mut self, filename: &str, records: u64, messages: u64, batches: u64) {
         if let Some(status) = self.processing_phase.progress_by_file.get_mut(filename) {
             status.records_extracted = records;
             status.messages_published = messages;
+            status.batches_sent = batches;
         }
 
         // Update processing phase totals by summing all file progress
@@ -316,6 +374,26 @@ impl StateMarker {
             .values()
             .map(|s| s.records_extracted)
             .sum();
+
+        // Update publishing phase totals by summing from all files
+        self.publishing_phase.messages_published = self
+            .processing_phase
+            .progress_by_file
+            .values()
+            .map(|s| s.messages_published)
+            .sum();
+        self.publishing_phase.batches_sent = self
+            .processing_phase
+            .progress_by_file
+            .values()
+            .map(|s| s.batches_sent)
+            .sum();
+
+        // Update publishing phase status if any messages have been published
+        if self.publishing_phase.messages_published > 0 {
+            self.publishing_phase.status = PhaseStatus::InProgress;
+            self.publishing_phase.last_amqp_heartbeat = Some(Utc::now());
+        }
 
         // files_processed is only incremented when files complete, not during progress updates
         // This is handled by complete_file_processing()
@@ -338,6 +416,20 @@ impl StateMarker {
             .progress_by_file
             .values()
             .map(|s| s.records_extracted)
+            .sum();
+
+        // Update publishing phase totals by summing from all files
+        self.publishing_phase.messages_published = self
+            .processing_phase
+            .progress_by_file
+            .values()
+            .map(|s| s.messages_published)
+            .sum();
+        self.publishing_phase.batches_sent = self
+            .processing_phase
+            .progress_by_file
+            .values()
+            .map(|s| s.batches_sent)
             .sum();
 
         // Update summary
@@ -456,10 +548,11 @@ mod tests {
         assert!(marker.download_phase.started_at.is_some());
 
         // Download files
-        marker.file_downloaded(1000);
-        marker.file_downloaded(2000);
+        marker.file_downloaded("discogs_20260101_artists.xml.gz", 1000);
+        marker.file_downloaded("discogs_20260101_labels.xml.gz", 2000);
         assert_eq!(marker.download_phase.files_downloaded, 2);
         assert_eq!(marker.download_phase.bytes_downloaded, 3000);
+        assert_eq!(marker.download_phase.downloads_by_file.len(), 2);
 
         // Complete download
         marker.complete_download();
@@ -481,16 +574,20 @@ mod tests {
         marker.start_file_processing("discogs_20260101_artists.xml.gz");
         assert_eq!(marker.processing_phase.current_file, Some("discogs_20260101_artists.xml.gz".to_string()));
 
-        // Update progress - should update phase totals
-        marker.update_file_progress("discogs_20260101_artists.xml.gz", 100, 10);
+        // Update progress - should update phase totals and publishing metrics
+        marker.update_file_progress("discogs_20260101_artists.xml.gz", 100, 100, 2);
         assert_eq!(marker.processing_phase.records_extracted, 100); // Should sum from progress_by_file
         assert_eq!(marker.processing_phase.files_processed, 0); // No files completed yet
+        assert_eq!(marker.publishing_phase.messages_published, 100); // Should aggregate from files
+        assert_eq!(marker.publishing_phase.batches_sent, 2); // Should aggregate from files
 
         // Start another file
         marker.start_file_processing("discogs_20260101_labels.xml.gz");
-        marker.update_file_progress("discogs_20260101_labels.xml.gz", 50, 5);
+        marker.update_file_progress("discogs_20260101_labels.xml.gz", 50, 50, 1);
         assert_eq!(marker.processing_phase.records_extracted, 150); // 100 + 50
         assert_eq!(marker.processing_phase.files_processed, 0); // Still no files completed
+        assert_eq!(marker.publishing_phase.messages_published, 150); // 100 + 50
+        assert_eq!(marker.publishing_phase.batches_sent, 3); // 2 + 1
 
         // Complete first file - this increments files_processed
         marker.complete_file_processing("discogs_20260101_artists.xml.gz", 100);
@@ -619,7 +716,7 @@ mod tests {
     async fn test_serialization() {
         let mut marker = StateMarker::new("20260101".to_string());
         marker.start_download(4);
-        marker.file_downloaded(1000);
+        marker.file_downloaded("discogs_20260101_artists.xml.gz", 1000);
 
         let json = serde_json::to_string_pretty(&marker).unwrap();
         let deserialized: StateMarker = serde_json::from_str(&json).unwrap();
@@ -627,5 +724,6 @@ mod tests {
         assert_eq!(deserialized.current_version, "20260101");
         assert_eq!(deserialized.download_phase.files_downloaded, 1);
         assert_eq!(deserialized.download_phase.bytes_downloaded, 1000);
+        assert_eq!(deserialized.download_phase.downloads_by_file.len(), 1);
     }
 }

@@ -368,11 +368,7 @@ def download_discogs_data(
                     f"✅ File {filename} already exists with correct checksum, skipping download"
                 )
                 checksums[filename] = expected_checksum
-
-                # Track existing file in state marker
-                if file_path.exists():
-                    file_size = file_path.stat().st_size
-                    state_marker.file_downloaded(file_size)
+                # Note: state marker tracking happens after start_download() below
             else:
                 if file_path.exists():
                     logger.info(
@@ -388,6 +384,17 @@ def download_discogs_data(
         state_marker.start_download(total_files)
         state_marker.save(marker_path)
 
+        # Track cached files (those with valid checksums that were skipped)
+        for filename, checksum in checksums.items():
+            file_path = output_path / filename
+            if file_path.exists():
+                file_size = file_path.stat().st_size
+                state_marker.file_downloaded(filename, file_size)
+
+        # Save after tracking cached files
+        if checksums:
+            state_marker.save(marker_path)
+
         # Download only the files that need downloading
         for s3file in files_to_download:
             filename = Path(s3file.name).name
@@ -401,6 +408,10 @@ def download_discogs_data(
             path = output_path / filename
             desc = f"{filename:33}"
             bar_format = "{desc}{percentage:3.0f}%|{bar:80}{r_bar}"
+
+            # Start tracking file download in state marker
+            state_marker.start_file_download(filename)
+            state_marker.save(marker_path)
 
             # Note: size from scraping is 0, so we don't know total size upfront
             # The progress bar will show bytes downloaded without percentage
@@ -428,7 +439,7 @@ def download_discogs_data(
                 # Track file download in state marker
                 if path.exists():
                     file_size = path.stat().st_size
-                    state_marker.file_downloaded(file_size)
+                    state_marker.file_downloaded(filename, file_size)
                     state_marker.save(marker_path)
             else:
                 logger.error(f"❌ Failed to calculate checksum for {filename}")

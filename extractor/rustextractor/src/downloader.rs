@@ -80,15 +80,27 @@ impl Downloader {
         let mut downloaded_files = Vec::new();
 
         for file_info in &latest_files {
+            let filename = std::path::Path::new(&file_info.name)
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("unknown_file");
+
             if self.should_download(file_info).await? {
+                // Start tracking file download
+                if let Some(ref mut marker) = self.state_marker {
+                    marker.start_file_download(filename);
+                    if let Some(ref marker_path) = self.marker_path {
+                        marker.save(marker_path).await.ok();
+                    }
+                }
+
                 match self.download_file(file_info).await {
                     Ok(_) => {
-                        let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
                         info!("✅ Successfully downloaded: {}", filename);
 
                         // Track file download in state marker
                         if let Some(ref mut marker) = self.state_marker {
-                            marker.file_downloaded(file_info.size);
+                            marker.file_downloaded(filename, file_info.size);
                             if let Some(ref marker_path) = self.marker_path {
                                 marker.save(marker_path).await.ok();
                             }
@@ -97,17 +109,15 @@ impl Downloader {
                         downloaded_files.push(filename.to_string());
                     }
                     Err(e) => {
-                        let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
                         error!("❌ Failed to download {}: {}", filename, e);
                     }
                 }
             } else {
-                let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
                 info!("✅ Already have latest version of: {}", filename);
 
                 // Track existing file in state marker
                 if let Some(ref mut marker) = self.state_marker {
-                    marker.file_downloaded(file_info.size);
+                    marker.file_downloaded(filename, file_info.size);
                     if let Some(ref marker_path) = self.marker_path {
                         marker.save(marker_path).await.ok();
                     }

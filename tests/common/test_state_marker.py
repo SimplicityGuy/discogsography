@@ -119,10 +119,11 @@ class TestStateMarker:
         assert marker.download_phase.started_at is not None
 
         # Download files
-        marker.file_downloaded(1000)
-        marker.file_downloaded(2000)
+        marker.file_downloaded("discogs_20260101_artists.xml.gz", 1000)
+        marker.file_downloaded("discogs_20260101_labels.xml.gz", 2000)
         assert marker.download_phase.files_downloaded == 2
         assert marker.download_phase.bytes_downloaded == 3000
+        assert len(marker.download_phase.downloads_by_file) == 2
 
         # Complete download
         marker.complete_download()
@@ -212,7 +213,7 @@ class TestStateMarker:
         """Test saving and loading state marker."""
         marker = StateMarker(current_version="20260101")
         marker.start_download(4)
-        marker.file_downloaded(1000)
+        marker.file_downloaded("discogs_20260101_artists.xml.gz", 1000)
 
         # Save
         path = tmp_path / ".extraction_status_20260101.json"
@@ -225,6 +226,7 @@ class TestStateMarker:
         assert loaded.current_version == "20260101"
         assert loaded.download_phase.files_downloaded == 1
         assert loaded.download_phase.bytes_downloaded == 1000
+        assert len(loaded.download_phase.downloads_by_file) == 1
 
     def test_load_nonexistent_file(self, tmp_path: Path):
         """Test loading from nonexistent file."""
@@ -291,16 +293,15 @@ class TestStateMarker:
 
         # Set up complete state
         marker.start_download(4)
-        marker.file_downloaded(1000)
+        marker.file_downloaded("discogs_20260101_artists.xml.gz", 1000)
         marker.complete_download()
 
         marker.start_processing(4)
         marker.start_file_processing("discogs_20260101_artists.xml.gz")
-        marker.update_file_progress("discogs_20260101_artists.xml.gz", 100, 10)
+        marker.update_file_progress("discogs_20260101_artists.xml.gz", 100, 100, 2)
         marker.complete_file_processing("discogs_20260101_artists.xml.gz", 100)
         marker.complete_processing()
 
-        marker.update_publishing(100, 1)
         marker.complete_extraction()
 
         # Save and load
@@ -322,7 +323,7 @@ class TestStateMarker:
 
         assert loaded.publishing_phase.status == PhaseStatus.COMPLETED
         assert loaded.publishing_phase.messages_published == 100
-        assert loaded.publishing_phase.batches_sent == 1
+        assert loaded.publishing_phase.batches_sent == 2  # From update_file_progress call
 
         assert loaded.summary.overall_status == PhaseStatus.COMPLETED
         assert loaded.summary.total_duration_seconds is not None

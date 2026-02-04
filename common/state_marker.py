@@ -27,6 +27,16 @@ class PhaseStatus(StrEnum):
 
 
 @dataclass
+class FileDownloadStatus:
+    """Per-file download tracking."""
+
+    status: PhaseStatus = PhaseStatus.PENDING
+    bytes_downloaded: int = 0
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+
+
+@dataclass
 class DownloadPhase:
     """Download phase tracking."""
 
@@ -35,7 +45,8 @@ class DownloadPhase:
     completed_at: datetime | None = None
     files_downloaded: int = 0
     files_total: int = 0
-    bytes_downloaded: int = 0
+    bytes_downloaded: int = 0  # Aggregate from downloads_by_file
+    downloads_by_file: dict[str, FileDownloadStatus] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
 
 
@@ -46,6 +57,7 @@ class FileProcessingStatus:
     status: PhaseStatus = PhaseStatus.PENDING
     records_extracted: int = 0
     messages_published: int = 0
+    batches_sent: int = 0
     started_at: datetime | None = None
     completed_at: datetime | None = None
 
@@ -175,10 +187,32 @@ class StateMarker:
         self.download_phase.files_downloaded = 0
         self.download_phase.bytes_downloaded = 0
 
-    def file_downloaded(self, bytes_count: int) -> None:
+    def start_file_download(self, filename: str) -> None:
+        """Mark a file download as started."""
+        self.download_phase.downloads_by_file[filename] = FileDownloadStatus(
+            status=PhaseStatus.IN_PROGRESS,
+            started_at=datetime.now(UTC),
+        )
+
+    def file_downloaded(self, filename: str, bytes_count: int) -> None:
         """Mark a file as downloaded."""
+        if filename in self.download_phase.downloads_by_file:
+            status = self.download_phase.downloads_by_file[filename]
+            status.status = PhaseStatus.COMPLETED
+            status.bytes_downloaded = bytes_count
+            status.completed_at = datetime.now(UTC)
+        else:
+            # If not tracked, create entry
+            self.download_phase.downloads_by_file[filename] = FileDownloadStatus(
+                status=PhaseStatus.COMPLETED,
+                bytes_downloaded=bytes_count,
+                started_at=datetime.now(UTC),
+                completed_at=datetime.now(UTC),
+            )
+
         self.download_phase.files_downloaded += 1
-        self.download_phase.bytes_downloaded += bytes_count
+        # Recalculate total bytes from all files
+        self.download_phase.bytes_downloaded = sum(status.bytes_downloaded for status in self.download_phase.downloads_by_file.values())
 
     def complete_download(self) -> None:
         """Mark download phase as completed."""
@@ -219,15 +253,25 @@ class StateMarker:
         if data_type:
             self.summary.files_by_type[data_type] = PhaseStatus.IN_PROGRESS
 
-    def update_file_progress(self, filename: str, records: int, messages: int) -> None:
+    def update_file_progress(self, filename: str, records: int, messages: int, batches: int = 0) -> None:
         """Update file processing progress."""
         if filename in self.processing_phase.progress_by_file:
             status = self.processing_phase.progress_by_file[filename]
             status.records_extracted = records
             status.messages_published = messages
+            status.batches_sent = batches
 
         # Update processing phase totals by summing all file progress
         self.processing_phase.records_extracted = sum(status.records_extracted for status in self.processing_phase.progress_by_file.values())
+
+        # Update publishing phase totals by summing from all files
+        self.publishing_phase.messages_published = sum(status.messages_published for status in self.processing_phase.progress_by_file.values())
+        self.publishing_phase.batches_sent = sum(status.batches_sent for status in self.processing_phase.progress_by_file.values())
+
+        # Update publishing phase status if any messages have been published
+        if self.publishing_phase.messages_published > 0:
+            self.publishing_phase.status = PhaseStatus.IN_PROGRESS
+            self.publishing_phase.last_amqp_heartbeat = datetime.now(UTC)
 
         # files_processed is only incremented when files complete, not during progress updates
         # This is handled by complete_file_processing()
@@ -245,6 +289,10 @@ class StateMarker:
         # Update total records by summing from all files (same as update_file_progress)
         # This ensures we don't double-count since we're already tracking in progress_by_file
         self.processing_phase.records_extracted = sum(status.records_extracted for status in self.processing_phase.progress_by_file.values())
+
+        # Update publishing phase totals by summing from all files
+        self.publishing_phase.messages_published = sum(status.messages_published for status in self.processing_phase.progress_by_file.values())
+        self.publishing_phase.batches_sent = sum(status.batches_sent for status in self.processing_phase.progress_by_file.values())
 
         # Update summary
         data_type = _extract_data_type(filename)
@@ -332,6 +380,15 @@ class StateMarker:
 
         # Parse download phase
         download_data = data.get("download_phase", {})
+        downloads_by_file = {}
+        for filename, status_data in download_data.get("downloads_by_file", {}).items():
+            downloads_by_file[filename] = FileDownloadStatus(
+                status=parse_phase_status(status_data.get("status", "pending")),
+                bytes_downloaded=status_data.get("bytes_downloaded", 0),
+                started_at=parse_datetime(status_data.get("started_at")),
+                completed_at=parse_datetime(status_data.get("completed_at")),
+            )
+
         download_phase = DownloadPhase(
             status=parse_phase_status(download_data.get("status", "pending")),
             started_at=parse_datetime(download_data.get("started_at")),
@@ -339,6 +396,7 @@ class StateMarker:
             files_downloaded=download_data.get("files_downloaded", 0),
             files_total=download_data.get("files_total", 0),
             bytes_downloaded=download_data.get("bytes_downloaded", 0),
+            downloads_by_file=downloads_by_file,
             errors=download_data.get("errors", []),
         )
 
@@ -350,6 +408,7 @@ class StateMarker:
                 status=parse_phase_status(status_data.get("status", "pending")),
                 records_extracted=status_data.get("records_extracted", 0),
                 messages_published=status_data.get("messages_published", 0),
+                batches_sent=status_data.get("batches_sent", 0),
                 started_at=parse_datetime(status_data.get("started_at")),
                 completed_at=parse_datetime(status_data.get("completed_at")),
             )
