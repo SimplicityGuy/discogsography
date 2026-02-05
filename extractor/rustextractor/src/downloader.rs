@@ -95,12 +95,12 @@ impl Downloader {
                 }
 
                 match self.download_file(file_info).await {
-                    Ok(_) => {
+                    Ok(downloaded_size) => {
                         info!("✅ Successfully downloaded: {}", filename);
 
-                        // Track file download in state marker
+                        // Track file download in state marker with actual downloaded size
                         if let Some(ref mut marker) = self.state_marker {
-                            marker.file_downloaded(filename, file_info.size);
+                            marker.file_downloaded(filename, downloaded_size);
                             if let Some(ref marker_path) = self.marker_path {
                                 marker.save(marker_path).await.ok();
                             }
@@ -115,9 +115,18 @@ impl Downloader {
             } else {
                 info!("✅ Already have latest version of: {}", filename);
 
-                // Track existing file in state marker
+                // Track existing file in state marker with actual file size
                 if let Some(ref mut marker) = self.state_marker {
-                    marker.file_downloaded(filename, file_info.size);
+                    let local_path = self.output_directory.join(filename);
+                    let file_size = if local_path.exists() {
+                        tokio::fs::metadata(&local_path)
+                            .await
+                            .map(|m| m.len())
+                            .unwrap_or(0)
+                    } else {
+                        0
+                    };
+                    marker.file_downloaded(filename, file_size);
                     if let Some(ref marker_path) = self.marker_path {
                         marker.save(marker_path).await.ok();
                     }
@@ -323,8 +332,9 @@ impl Downloader {
     }
 
     /// Download a single file (exposed for testing)
+    /// Returns the number of bytes downloaded
     #[doc(hidden)]
-    pub async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<()> {
+    pub async fn download_file(&mut self, file_info: &S3FileInfo) -> Result<u64> {
         use futures::StreamExt;
 
         // Reconstruct the full S3 key by prepending the prefix
@@ -390,7 +400,7 @@ impl Downloader {
             },
         );
 
-        Ok(())
+        Ok(downloaded)
     }
 
     pub fn save_metadata(&self) -> Result<()> {

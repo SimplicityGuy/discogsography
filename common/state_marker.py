@@ -283,6 +283,7 @@ class StateMarker:
             status.status = PhaseStatus.COMPLETED
             status.completed_at = datetime.now(UTC)
             status.records_extracted = records
+            status.messages_published = records  # Ensure messages match records on completion
 
         self.processing_phase.files_processed += 1
 

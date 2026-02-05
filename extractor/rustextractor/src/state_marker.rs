@@ -416,6 +416,7 @@ impl StateMarker {
             status.status = PhaseStatus::Completed;
             status.completed_at = Some(Utc::now());
             status.records_extracted = records;
+            status.messages_published = records; // Ensure messages match records on completion
         }
 
         self.processing_phase.files_processed += 1;
@@ -781,5 +782,63 @@ mod tests {
         assert_eq!(loaded.current_version, "20260101");
         assert_eq!(loaded.download_phase.files_downloaded, 1);
         assert_eq!(loaded.download_phase.bytes_downloaded, 1000);
+    }
+
+    #[test]
+    fn test_complete_file_processing_syncs_messages_with_records() {
+        let mut marker = StateMarker::new("20260101".to_string());
+
+        // Start file processing
+        marker.start_file_processing("discogs_20260101_artists.xml.gz");
+
+        // Simulate periodic updates with different record/message counts
+        marker.update_file_progress("discogs_20260101_artists.xml.gz", 1000, 950, 10);
+
+        // Complete file processing with final record count
+        let final_records = 1250;
+        marker.complete_file_processing("discogs_20260101_artists.xml.gz", final_records);
+
+        // Verify both records and messages are set to the final count
+        let status = marker
+            .processing_phase
+            .progress_by_file
+            .get("discogs_20260101_artists.xml.gz")
+            .unwrap();
+        assert_eq!(status.records_extracted, final_records);
+        assert_eq!(status.messages_published, final_records, "messages_published should match records_extracted on completion");
+    }
+
+    #[test]
+    fn test_file_downloaded_tracks_bytes() {
+        let mut marker = StateMarker::new("20260101".to_string());
+
+        // Start download phase
+        marker.start_download(2);
+
+        // Download files with actual byte counts
+        marker.start_file_download("discogs_20260101_artists.xml.gz");
+        marker.file_downloaded("discogs_20260101_artists.xml.gz", 480351382);
+
+        marker.start_file_download("discogs_20260101_labels.xml.gz");
+        marker.file_downloaded("discogs_20260101_labels.xml.gz", 86848860);
+
+        // Verify individual file byte counts
+        let artists_status = marker
+            .download_phase
+            .downloads_by_file
+            .get("discogs_20260101_artists.xml.gz")
+            .unwrap();
+        assert_eq!(artists_status.bytes_downloaded, 480351382, "artists file should track actual bytes downloaded");
+
+        let labels_status = marker
+            .download_phase
+            .downloads_by_file
+            .get("discogs_20260101_labels.xml.gz")
+            .unwrap();
+        assert_eq!(labels_status.bytes_downloaded, 86848860, "labels file should track actual bytes downloaded");
+
+        // Verify total bytes downloaded
+        let expected_total = 480351382 + 86848860;
+        assert_eq!(marker.download_phase.bytes_downloaded, expected_total, "total bytes_downloaded should sum individual file downloads");
     }
 }

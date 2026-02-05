@@ -336,6 +336,55 @@ class TestStateMarker:
         loaded = StateMarker.load(path)
         assert loaded is None
 
+    def test_complete_file_processing_syncs_messages_with_records(self):
+        """Test that complete_file_processing syncs messages_published with records_extracted."""
+        marker = StateMarker(current_version="20260101")
+
+        # Start file processing
+        marker.start_file_processing("discogs_20260101_artists.xml.gz")
+
+        # Simulate periodic updates with different record/message counts
+        marker.update_file_progress("discogs_20260101_artists.xml.gz", 1000, 950, 10)
+
+        # Verify initial state has different counts
+        status = marker.processing_phase.progress_by_file["discogs_20260101_artists.xml.gz"]
+        assert status.records_extracted == 1000
+        assert status.messages_published == 950
+
+        # Complete file processing with final record count
+        final_records = 1250
+        marker.complete_file_processing("discogs_20260101_artists.xml.gz", final_records)
+
+        # Verify both records and messages are set to the final count
+        status = marker.processing_phase.progress_by_file["discogs_20260101_artists.xml.gz"]
+        assert status.records_extracted == final_records
+        assert status.messages_published == final_records, "messages_published should match records_extracted on completion"
+
+    def test_file_downloaded_tracks_bytes(self):
+        """Test that file_downloaded correctly tracks actual bytes downloaded."""
+        marker = StateMarker(current_version="20260101")
+
+        # Start download phase
+        marker.start_download(2)
+
+        # Download files with actual byte counts
+        marker.start_file_download("discogs_20260101_artists.xml.gz")
+        marker.file_downloaded("discogs_20260101_artists.xml.gz", 480351382)
+
+        marker.start_file_download("discogs_20260101_labels.xml.gz")
+        marker.file_downloaded("discogs_20260101_labels.xml.gz", 86848860)
+
+        # Verify individual file byte counts
+        artists_status = marker.download_phase.downloads_by_file["discogs_20260101_artists.xml.gz"]
+        assert artists_status.bytes_downloaded == 480351382, "artists file should track actual bytes downloaded"
+
+        labels_status = marker.download_phase.downloads_by_file["discogs_20260101_labels.xml.gz"]
+        assert labels_status.bytes_downloaded == 86848860, "labels file should track actual bytes downloaded"
+
+        # Verify total bytes downloaded
+        expected_total = 480351382 + 86848860
+        assert marker.download_phase.bytes_downloaded == expected_total, "total bytes_downloaded should sum individual file downloads"
+
 
 class TestExtractDataType:
     """Test data type extraction."""
