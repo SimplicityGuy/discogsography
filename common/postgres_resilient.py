@@ -454,12 +454,11 @@ class AsyncPostgreSQLPool:
                                 self.connections.get(),
                                 timeout=self.backoff.get_delay(retry_count),
                             )
-                        except asyncio.TimeoutError:
+                        except TimeoutError:
                             retry_count += 1
                             if retry_count < self.max_retries:
                                 logger.warning(
-                                    f"⚠️ Connection pool exhausted (attempt {retry_count}/{self.max_retries}), "
-                                    f"waiting for available connection..."
+                                    f"⚠️ Connection pool exhausted (attempt {retry_count}/{self.max_retries}), waiting for available connection..."
                                 )
                             continue
 
