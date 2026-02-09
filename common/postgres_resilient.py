@@ -467,11 +467,17 @@ class AsyncPostgreSQLPool:
                     logger.warning("⚠️ Got unhealthy connection from pool, creating new one")
                     with contextlib.suppress(Exception):
                         await conn.close()
+                    # Decrement counter for the closed unhealthy connection
+                    async with self._lock:
+                        self.active_connections = max(0, self.active_connections - 1)
                     try:
                         conn = await self._create_connection()
-                    except Exception:
+                        # Increment counter for the new connection
                         async with self._lock:
-                            self.active_connections = max(0, self.active_connections - 1)
+                            self.active_connections += 1
+                    except Exception:
+                        # Counter already decremented for closed connection,
+                        # so no need to decrement again
                         raise
 
                 if conn:
