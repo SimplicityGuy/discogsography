@@ -140,14 +140,19 @@ class AsyncResilientRabbitMQ:
 
     async def connect(self) -> aio_pika.abc.AbstractRobustConnection:
         """Get or create a robust connection."""
-        async with self._lock:
-            if self._connection and not self._connection.is_closed:
-                return self._connection
+        # Fast path: check without lock
+        if self._connection and not self._connection.is_closed:
+            return self._connection
 
-            retry_count = 0
-            last_error = None
+        retry_count = 0
+        last_error = None
 
-            while retry_count < self.max_retries:
+        while retry_count < self.max_retries:
+            async with self._lock:
+                # Double-check under lock (another task may have connected)
+                if self._connection and not self._connection.is_closed:
+                    return self._connection
+
                 try:
                     logger.info(f"🐰 Creating robust RabbitMQ connection (attempt {retry_count + 1}/{self.max_retries})")
 
@@ -183,14 +188,16 @@ class AsyncResilientRabbitMQ:
                     last_error = e
                     retry_count += 1
 
-                    if retry_count < self.max_retries:
-                        delay = self.backoff.get_delay(retry_count - 1)
-                        logger.warning(f"⚠️ RabbitMQ connection attempt {retry_count} failed: {e}. Retrying in {delay:.1f} seconds...")
-                        await asyncio.sleep(delay)
-                    else:
+                    if retry_count >= self.max_retries:
                         logger.error("❌ All RabbitMQ connection attempts failed")
 
-            raise Exception(f"Failed to establish RabbitMQ connection after {self.max_retries} attempts") from last_error
+            # Sleep OUTSIDE the lock to allow other tasks to proceed
+            if retry_count < self.max_retries:
+                delay = self.backoff.get_delay(retry_count - 1)
+                logger.warning(f"⚠️ RabbitMQ connection attempt {retry_count} failed: {last_error}. Retrying in {delay:.1f} seconds...")
+                await asyncio.sleep(delay)
+
+        raise Exception(f"Failed to establish RabbitMQ connection after {self.max_retries} attempts") from last_error
 
     async def channel(self) -> aio_pika.abc.AbstractChannel:
         """Get or create a robust channel."""

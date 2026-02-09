@@ -335,6 +335,7 @@ class AsyncPostgreSQLPool:
                 conn = await self._create_connection()
                 if conn:
                     await self.connections.put(conn)
+                    self.active_connections += 1
             except asyncio.QueueFull:
                 break
             except Exception as e:
@@ -384,6 +385,8 @@ class AsyncPostgreSQLPool:
                         logger.warning("⚠️ Removing unhealthy connection from pool")
                         with contextlib.suppress(Exception):
                             await conn.close()
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
                 except asyncio.QueueEmpty:
                     break
 
@@ -393,6 +396,8 @@ class AsyncPostgreSQLPool:
                     self.connections.put_nowait(conn)
                 except asyncio.QueueFull:
                     await conn.close()
+                    async with self._lock:
+                        self.active_connections = max(0, self.active_connections - 1)
 
             # Ensure minimum connections
             current_size = self.connections.qsize()
@@ -403,6 +408,8 @@ class AsyncPostgreSQLPool:
                         conn = await self._create_connection()
                         if conn:
                             await self.connections.put(conn)
+                            async with self._lock:
+                                self.active_connections += 1
                     except Exception as e:
                         logger.warning(f"⚠️ Failed to replenish connection: {e}")
                         break
@@ -422,26 +429,51 @@ class AsyncPostgreSQLPool:
 
         while retry_count < self.max_retries:
             try:
-                # Try to get existing connection
+                # Try to get existing connection (non-blocking)
                 try:
                     conn = self.connections.get_nowait()
                 except asyncio.QueueEmpty:
-                    # Create new connection if pool is not at max
+                    # Pool is empty - try to create a new connection
+                    created = False
                     async with self._lock:
                         if self.active_connections < self.max_connections:
                             self.active_connections += 1
-                            try:
-                                conn = await self._create_connection()
-                            except Exception:
+                            created = True
+
+                    if created:
+                        try:
+                            conn = await self._create_connection()
+                        except Exception:
+                            async with self._lock:
                                 self.active_connections -= 1
-                                raise
+                            raise
+                    else:
+                        # Pool exhausted - wait for a connection to be returned
+                        try:
+                            conn = await asyncio.wait_for(
+                                self.connections.get(),
+                                timeout=self.backoff.get_delay(retry_count),
+                            )
+                        except asyncio.TimeoutError:
+                            retry_count += 1
+                            if retry_count < self.max_retries:
+                                logger.warning(
+                                    f"⚠️ Connection pool exhausted (attempt {retry_count}/{self.max_retries}), "
+                                    f"waiting for available connection..."
+                                )
+                            continue
 
                 # Test connection health
                 if conn and not await self._test_connection(conn):
                     logger.warning("⚠️ Got unhealthy connection from pool, creating new one")
                     with contextlib.suppress(Exception):
                         await conn.close()
-                    conn = await self._create_connection()
+                    try:
+                        conn = await self._create_connection()
+                    except Exception:
+                        async with self._lock:
+                            self.active_connections = max(0, self.active_connections - 1)
+                        raise
 
                 if conn:
                     break
@@ -465,6 +497,8 @@ class AsyncPostgreSQLPool:
             logger.warning(f"⚠️ Connection error during operation: {e}")
             with contextlib.suppress(Exception):
                 await conn.close()
+            async with self._lock:
+                self.active_connections = max(0, self.active_connections - 1)
             conn = None
             raise
         finally:
@@ -476,6 +510,8 @@ class AsyncPostgreSQLPool:
                     # Pool is full, close connection
                     with contextlib.suppress(Exception):
                         await conn.close()
+                    async with self._lock:
+                        self.active_connections = max(0, self.active_connections - 1)
             elif conn:
                 # Close bad connections
                 with contextlib.suppress(Exception):
