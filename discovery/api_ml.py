@@ -7,6 +7,8 @@ Note: Phase 4.1.1 initial implementation - some endpoints return placeholder res
 and will be fully implemented in subsequent iterations.
 """
 
+import asyncio
+import contextlib
 from datetime import datetime
 import time
 from typing import Any
@@ -127,6 +129,7 @@ collaborative_filter: Any = None
 content_based_filter: Any = None
 hybrid_recommender: Any = None
 explainer: Any = None
+_collab_build_task: asyncio.Task[None] | None = None
 
 
 async def initialize_ml_api(neo4j_driver: Any, postgres_conn: Any) -> None:  # noqa: ARG001
@@ -152,22 +155,40 @@ async def initialize_ml_api(neo4j_driver: Any, postgres_conn: Any) -> None:  # n
     hybrid_recommender = HybridRecommender(collaborative_filter, content_based_filter)
     explainer = RecommendationExplainer(collaborative_filter, content_based_filter, hybrid_recommender)
 
-    # Build collaborative filtering model if needed
-    try:
-        await collaborative_filter.build_cooccurrence_matrix()
-        logger.info("✅ Collaborative filter model built successfully")
-    except Exception as e:
-        logger.warning(f"⚠️ Could not build collaborative filter model: {e}")
+    # Build collaborative filtering model in the background so startup isn't blocked.
+    # The collaborative filter handles the unbuilt-matrix case via on-demand recommendations.
+    global _collab_build_task
+    _collab_build_task = asyncio.create_task(_build_collab_filter_background())
 
     ml_api_initialized = True
     logger.info("✅ ML API initialization complete")
 
 
+async def _build_collab_filter_background() -> None:
+    """Build the collaborative filtering matrix in the background."""
+    try:
+        await collaborative_filter.build_cooccurrence_matrix()
+        logger.info("✅ Collaborative filter model built successfully (background)")
+    except asyncio.CancelledError:
+        logger.info("🛑 Collaborative filter background build cancelled")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not build collaborative filter model: {e}")
+
+
 async def close_ml_api() -> None:
     """Close ML API components and cleanup resources."""
-    global ml_api_initialized
+    global ml_api_initialized, _collab_build_task
 
     logger.info("🛑 Closing ML API components...")
+
+    # Cancel the background build task if still running
+    if _collab_build_task is not None and not _collab_build_task.done():
+        _collab_build_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await _collab_build_task
+        logger.info("🛑 Cancelled collaborative filter background build")
+    _collab_build_task = None
+
     ml_api_initialized = False
     logger.info("✅ ML API components closed")
 

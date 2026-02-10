@@ -275,14 +275,26 @@ class CollaborativeFilter:
         # Convert to CSR for efficient operations
         self.co_occurrence_matrix = self.co_occurrence_matrix.tocsr()
 
-        # Calculate item-item similarity using cosine similarity
-        self.item_similarity_matrix = cosine_similarity(self.co_occurrence_matrix, dense_output=False)
+        # Safety cap: skip dense cosine_similarity when the matrix is too large,
+        # as it can OOM or hang. On-demand recommendations still work without it.
+        MAX_NNZ = int(os.getenv("COLLAB_FILTER_MAX_NNZ", "10000000"))  # 10M default
+        if self.co_occurrence_matrix.nnz > MAX_NNZ:
+            logger.warning(
+                "⚠️ Co-occurrence matrix too large for cosine similarity, "
+                "skipping pre-built similarity matrix (on-demand recs still work)",
+                nnz=self.co_occurrence_matrix.nnz,
+                max_nnz=MAX_NNZ,
+            )
+        else:
+            # Calculate item-item similarity using cosine similarity
+            self.item_similarity_matrix = cosine_similarity(self.co_occurrence_matrix, dense_output=False)
 
         logger.info(
             "✅ Built co-occurrence matrix",
             artists=n_artists,
             nnz=self.co_occurrence_matrix.nnz,
             density=f"{100 * self.co_occurrence_matrix.nnz / (n_artists * n_artists) if n_artists > 0 else 0:.4f}%",
+            similarity_matrix_built=self.item_similarity_matrix is not None,
         )
 
     async def get_recommendations(self, artist_name: str, limit: int = 10) -> list[dict[str, Any]]:
