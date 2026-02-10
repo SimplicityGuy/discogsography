@@ -46,11 +46,7 @@ class CentralityAnalyzer:
             NetworkX graph
         """
         now = time.monotonic()
-        if (
-            self.graph is not None
-            and self._cache_limit == limit
-            and (now - self._cache_built_at) < self.NETWORK_CACHE_TTL
-        ):
+        if self.graph is not None and self._cache_limit == limit and (now - self._cache_built_at) < self.NETWORK_CACHE_TTL:
             logger.info(
                 "⚡ Using cached network",
                 age_seconds=round(now - self._cache_built_at),

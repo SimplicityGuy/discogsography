@@ -105,7 +105,7 @@ class PlaygroundAPI:
             Escaped query with wildcard suffix for partial matching
         """
         # Escape Lucene special characters: + - && || ! ( ) { } [ ] ^ " ~ * ? : \ /
-        escaped = re.sub(r'([+\-&|!(){}[\]^"~*?:\\/])', r'\\\1', query)
+        escaped = re.sub(r'([+\-&|!(){}[\]^"~*?:\\/])', r"\\\1", query)
         # Add wildcard suffix for partial matching (approximates CONTAINS)
         terms = escaped.strip().split()
         if not terms:

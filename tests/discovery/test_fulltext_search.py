@@ -434,12 +434,14 @@ class TestFullTextSearch:
         # pg_class query returns all table counts in a single result
         mock_result = AsyncMock()
         mock_result.mappings = MagicMock(return_value=mock_result)
-        mock_result.all = MagicMock(return_value=[
-            {"table_name": "artists", "count": 100},
-            {"table_name": "releases", "count": 500},
-            {"table_name": "labels", "count": 50},
-            {"table_name": "masters", "count": 200},
-        ])
+        mock_result.all = MagicMock(
+            return_value=[
+                {"table_name": "artists", "count": 100},
+                {"table_name": "releases", "count": 500},
+                {"table_name": "labels", "count": 50},
+                {"table_name": "masters", "count": 200},
+            ]
+        )
 
         mock_conn = AsyncMock()
         mock_conn.execute = AsyncMock(return_value=mock_result)
