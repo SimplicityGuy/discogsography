@@ -119,8 +119,8 @@ async def _create_cache_warming_queries() -> list[dict[str, Any]]:
     # Warm heatmap data
     warming_queries.append(
         {
-            "query_func": lambda: playground_api.get_heatmap(heatmap_type="genre_year", top_n=20),
-            "cache_key": "heatmap:genre_year:20",
+            "query_func": lambda: playground_api.get_heatmap(heatmap_type="genre", top_n=20),
+            "cache_key": "heatmap:genre:20",
             "ttl": CACHE_TTL.get("heatmap", 7200),
         }
     )
@@ -157,41 +157,68 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     setup_onnx_model()
 
-    # Initialize all engines
+    # Initialize all engines (individually guarded for degraded-mode startup)
     recommender = get_recommender_instance()
     analytics = get_analytics_instance()
     graph_explorer = get_graph_explorer_instance()
 
-    await recommender.initialize()
-    await analytics.initialize()
-    await graph_explorer.initialize()
-    await playground_api.initialize()
+    try:
+        await recommender.initialize()
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to initialize recommender (non-fatal): {e}")
+
+    try:
+        await analytics.initialize()
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to initialize analytics (non-fatal): {e}")
+
+    try:
+        await graph_explorer.initialize()
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to initialize graph_explorer (non-fatal): {e}")
+
+    try:
+        await playground_api.initialize()
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to initialize playground_api (non-fatal): {e}")
 
     # Initialize ML API with Neo4j and PostgreSQL connections
     from discovery.api_ml import initialize_ml_api
 
-    await initialize_ml_api(
-        neo4j_driver=recommender.driver,
-        postgres_conn=analytics.postgres_engine if hasattr(analytics, "postgres_engine") else None,
-    )
+    try:
+        await initialize_ml_api(
+            neo4j_driver=recommender.driver,
+            postgres_conn=analytics.postgres_engine if hasattr(analytics, "postgres_engine") else None,
+        )
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to initialize ML API (non-fatal): {e}")
 
     # Initialize Search API
     from discovery.api_search import initialize_search_api
 
-    await initialize_search_api(
-        neo4j_driver=recommender.driver,
-        postgres_conn=analytics.postgres_engine if hasattr(analytics, "postgres_engine") else None,
-    )
+    try:
+        await initialize_search_api(
+            neo4j_driver=recommender.driver,
+            postgres_conn=analytics.postgres_engine if hasattr(analytics, "postgres_engine") else None,
+        )
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to initialize Search API (non-fatal): {e}")
 
     # Initialize Graph Analytics API
     from discovery.api_graph import initialize_graph_api
 
-    await initialize_graph_api(neo4j_driver=recommender.driver)
+    try:
+        await initialize_graph_api(neo4j_driver=recommender.driver)
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to initialize Graph API (non-fatal): {e}")
 
     # Initialize Real-Time Features API
     from discovery.api_realtime import initialize_realtime_api
 
-    await initialize_realtime_api(neo4j_driver=recommender.driver)
+    try:
+        await initialize_realtime_api(neo4j_driver=recommender.driver)
+    except Exception as e:
+        logger.warning(f"⚠️  Failed to initialize Real-Time API (non-fatal): {e}")
 
     # Create Neo4j indexes for optimal query performance
     from common import get_config

@@ -415,6 +415,39 @@ class PlaygroundAPI:
                 async for record in result:
                     trends.append({"year": record["year"], "data": record["top_artists"]})
 
+        elif trend_type == "label":
+            if not self.neo4j_driver:
+                return {
+                    "trends": [],
+                    "type": trend_type,
+                    "has_more": False,
+                    "next_cursor": None,
+                    "page_info": {
+                        "type": trend_type,
+                        "start_year": start_year,
+                        "end_year": end_year,
+                        "offset": offset,
+                    },
+                }
+
+            async with self.neo4j_driver.session() as session:
+                query = """
+                MATCH (l:Label)<-[:ON]-(r:Release)
+                WHERE r.year >= $start_year AND r.year <= $end_year
+                WITH l.name AS label, r.year AS year, COUNT(r) AS releases
+                ORDER BY year, releases DESC
+                WITH year, collect({label: label, releases: releases})[0..$top_n] AS top_labels
+                RETURN year, top_labels
+                ORDER BY year
+                SKIP $offset
+                LIMIT $limit
+                """
+
+                result = await session.run(query, start_year=start_year, end_year=end_year, top_n=top_n, offset=offset, limit=limit)
+
+                async for record in result:
+                    trends.append({"year": record["year"], "data": record["top_labels"]})
+
         # Determine if there are more results
         has_more = len(trends) >= limit
         next_cursor = None
