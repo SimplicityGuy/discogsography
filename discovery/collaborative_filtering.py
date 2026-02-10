@@ -134,7 +134,7 @@ class CollaborativeFilter:
                     )
 
                 artists_data.extend(batch_data)
-                logger.info(f"✅ Batch {batch_num}/{total_batches} complete", artists_in_batch=len(batch_data))
+                logger.info(f"✅ Batch {batch_num}/{total_batches} complete", batch_size=len(batch_data))
 
         if not artists_data:
             logger.warning("⚠️ No artist data found for collaborative filtering")
@@ -262,7 +262,10 @@ class CollaborativeFilter:
 
             # Log progress every 1000 artists
             if (i + 1) % 1000 == 0:
-                logger.info(f"🔄 Processed {i + 1}/{n_artists} artists", edges_so_far=total_edges)
+                logger.info(
+                    f"🔄 Processing artists {i + 1}/{n_artists}",
+                    edges_so_far=total_edges,
+                )
 
         logger.info(
             "🔍 Comparison statistics",
