@@ -8,7 +8,7 @@ dynamic filter updates based on current results.
 from collections import Counter
 from typing import Any
 
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 import structlog
 
@@ -369,18 +369,16 @@ class FacetedSearchEngine:
         if not artist_ids:
             return Counter()
 
-        placeholders = ", ".join(["%s"] * len(artist_ids))
-        # Safe: Placeholders are generated programmatically, values are parameterized
-        query = f"""
+        query = text("""
             SELECT g.name, COUNT(DISTINCT ag.artist_id) as count
             FROM artist_genres ag
             JOIN genres g ON ag.genre_id = g.id
-            WHERE ag.artist_id IN ({placeholders})
+            WHERE ag.artist_id IN :artist_ids
             GROUP BY g.name
-        """  # noqa: S608  # nosec: B608
+        """).bindparams(bindparam("artist_ids", expanding=True))
 
         async with self.db_engine.connect() as conn:
-            result = await conn.execute(text(query), artist_ids)
+            result = await conn.execute(query, {"artist_ids": artist_ids})
             rows = result.mappings().all()
 
         return Counter({row["name"]: row["count"] for row in rows})
@@ -397,18 +395,16 @@ class FacetedSearchEngine:
         if not artist_ids:
             return Counter()
 
-        placeholders = ", ".join(["%s"] * len(artist_ids))
-        # Safe: Placeholders are generated programmatically, values are parameterized
-        query = f"""
+        query = text("""
             SELECT s.name, COUNT(DISTINCT ast.artist_id) as count
             FROM artist_styles ast
             JOIN styles s ON ast.style_id = s.id
-            WHERE ast.artist_id IN ({placeholders})
+            WHERE ast.artist_id IN :artist_ids
             GROUP BY s.name
-        """  # noqa: S608  # nosec: B608
+        """).bindparams(bindparam("artist_ids", expanding=True))
 
         async with self.db_engine.connect() as conn:
-            result = await conn.execute(text(query), artist_ids)
+            result = await conn.execute(query, {"artist_ids": artist_ids})
             rows = result.mappings().all()
 
         return Counter({row["name"]: row["count"] for row in rows})
@@ -425,18 +421,16 @@ class FacetedSearchEngine:
         if not artist_ids:
             return Counter()
 
-        placeholders = ", ".join(["%s"] * len(artist_ids))
-        # Safe: Placeholders are generated programmatically, values are parameterized
-        query = f"""
+        query = text("""
             SELECT l.name, COUNT(DISTINCT al.artist_id) as count
             FROM artist_labels al
             JOIN labels l ON al.label_id = l.id
-            WHERE al.artist_id IN ({placeholders})
+            WHERE al.artist_id IN :artist_ids
             GROUP BY l.name
-        """  # noqa: S608  # nosec: B608
+        """).bindparams(bindparam("artist_ids", expanding=True))
 
         async with self.db_engine.connect() as conn:
-            result = await conn.execute(text(query), artist_ids)
+            result = await conn.execute(query, {"artist_ids": artist_ids})
             rows = result.mappings().all()
 
         return Counter({row["name"]: row["count"] for row in rows})
@@ -453,18 +447,16 @@ class FacetedSearchEngine:
         if not release_ids:
             return Counter()
 
-        placeholders = ", ".join(["%s"] * len(release_ids))
-        # Safe: Placeholders are generated programmatically, values are parameterized
-        query = f"""
+        query = text("""
             SELECT g.name, COUNT(DISTINCT rg.release_id) as count
             FROM release_genres rg
             JOIN genres g ON rg.genre_id = g.id
-            WHERE rg.release_id IN ({placeholders})
+            WHERE rg.release_id IN :release_ids
             GROUP BY g.name
-        """  # noqa: S608  # nosec: B608
+        """).bindparams(bindparam("release_ids", expanding=True))
 
         async with self.db_engine.connect() as conn:
-            result = await conn.execute(text(query), release_ids)
+            result = await conn.execute(query, {"release_ids": release_ids})
             rows = result.mappings().all()
 
         return Counter({row["name"]: row["count"] for row in rows})
@@ -481,18 +473,16 @@ class FacetedSearchEngine:
         if not release_ids:
             return Counter()
 
-        placeholders = ", ".join(["%s"] * len(release_ids))
-        # Safe: Placeholders are generated programmatically, values are parameterized
-        query = f"""
+        query = text("""
             SELECT s.name, COUNT(DISTINCT rs.release_id) as count
             FROM release_styles rs
             JOIN styles s ON rs.style_id = s.id
-            WHERE rs.release_id IN ({placeholders})
+            WHERE rs.release_id IN :release_ids
             GROUP BY s.name
-        """  # noqa: S608  # nosec: B608
+        """).bindparams(bindparam("release_ids", expanding=True))
 
         async with self.db_engine.connect() as conn:
-            result = await conn.execute(text(query), release_ids)
+            result = await conn.execute(query, {"release_ids": release_ids})
             rows = result.mappings().all()
 
         return Counter({row["name"]: row["count"] for row in rows})

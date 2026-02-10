@@ -111,7 +111,7 @@ async def close_search_api() -> None:
 # API Endpoints
 
 
-@router.post("/fulltext")  # type: ignore[untyped-decorator]
+@router.post("/fulltext")
 async def fulltext_search_endpoint(request: Request, req_body: FullTextSearchRequest) -> dict[str, Any]:  # noqa: ARG001
     """Perform full-text search using PostgreSQL tsvector.
 
@@ -170,7 +170,7 @@ async def fulltext_search_endpoint(request: Request, req_body: FullTextSearchReq
         raise HTTPException(status_code=500, detail=f"Search error: {e!s}") from e
 
 
-@router.post("/semantic")  # type: ignore[untyped-decorator]
+@router.post("/semantic")
 async def semantic_search_endpoint(request: Request, req_body: SemanticSearchRequest) -> dict[str, Any]:  # noqa: ARG001
     """Perform semantic search using ONNX embeddings.
 
@@ -211,7 +211,7 @@ async def semantic_search_endpoint(request: Request, req_body: SemanticSearchReq
     }
 
 
-@router.post("/faceted")  # type: ignore[untyped-decorator]
+@router.post("/faceted")
 async def faceted_search_endpoint(request: Request, req_body: FacetedSearchRequest) -> dict[str, Any]:  # noqa: ARG001
     """Perform faceted search with dynamic filters.
 
@@ -263,7 +263,7 @@ async def faceted_search_endpoint(request: Request, req_body: FacetedSearchReque
         raise HTTPException(status_code=500, detail=f"Search error: {e!s}") from e
 
 
-@router.post("/autocomplete")  # type: ignore[untyped-decorator]
+@router.post("/autocomplete")
 async def autocomplete_endpoint(request: Request, req_body: AutocompleteRequest) -> dict[str, Any]:  # noqa: ARG001
     """Get search autocomplete suggestions.
 
@@ -315,7 +315,7 @@ async def autocomplete_endpoint(request: Request, req_body: AutocompleteRequest)
         raise HTTPException(status_code=500, detail=f"Autocomplete error: {e!s}") from e
 
 
-@router.get("/stats")  # type: ignore[untyped-decorator]
+@router.get("/stats")
 async def get_search_stats(request: Request) -> dict[str, Any]:  # noqa: ARG001
     """Get search statistics.
 
@@ -346,7 +346,7 @@ async def get_search_stats(request: Request) -> dict[str, Any]:  # noqa: ARG001
         raise HTTPException(status_code=500, detail=f"Statistics error: {e!s}") from e
 
 
-@router.get("/status")  # type: ignore[untyped-decorator]
+@router.get("/status")
 async def get_search_api_status(request: Request) -> dict[str, Any]:  # noqa: ARG001
     """Get Search API status and feature availability.
 

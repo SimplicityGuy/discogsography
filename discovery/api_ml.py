@@ -200,7 +200,7 @@ async def close_ml_api() -> None:
             "content": {"application/json": {"example": {"detail": "ML API not initialized"}}},
         },
     },
-)  # type: ignore[untyped-decorator]
+)
 async def collaborative_recommend(request: Request, req_body: CollaborativeFilterRequest) -> dict[str, Any]:  # noqa: ARG001
     """Get recommendations using collaborative filtering.
 
@@ -263,7 +263,7 @@ async def collaborative_recommend(request: Request, req_body: CollaborativeFilte
         raise HTTPException(status_code=500, detail=f"Recommendation error: {e!s}") from e
 
 
-@router.post("/recommend/hybrid")  # type: ignore[untyped-decorator]
+@router.post("/recommend/hybrid")
 async def hybrid_recommend(request: Request, req_body: HybridRecommendRequest) -> dict[str, Any]:  # noqa: ARG001
     """Get recommendations using hybrid multi-signal approach.
 
@@ -311,7 +311,7 @@ async def hybrid_recommend(request: Request, req_body: HybridRecommendRequest) -
         raise HTTPException(status_code=500, detail=f"Recommendation error: {e!s}") from e
 
 
-@router.post("/recommend/explain")  # type: ignore[untyped-decorator]
+@router.post("/recommend/explain")
 async def explain_recommendation(request: Request, req_body: ExplainRequest) -> dict[str, Any]:  # noqa: ARG001
     """Explain why an artist was recommended.
 
@@ -359,7 +359,7 @@ async def explain_recommendation(request: Request, req_body: ExplainRequest) -> 
         raise HTTPException(status_code=500, detail=f"Explanation error: {e!s}") from e
 
 
-@router.get("/status")  # type: ignore[untyped-decorator]
+@router.get("/status")
 async def get_ml_api_status(request: Request) -> dict[str, Any]:  # noqa: ARG001
     """Get ML API status and feature availability.
 
@@ -388,7 +388,7 @@ async def get_ml_api_status(request: Request) -> dict[str, Any]:  # noqa: ARG001
     }
 
 
-@router.post("/rebuild")  # type: ignore[untyped-decorator]
+@router.post("/rebuild")
 async def rebuild_ml_models(request: Request) -> dict[str, Any]:  # noqa: ARG001
     """Rebuild ML models (collaborative filter and recommender).
 

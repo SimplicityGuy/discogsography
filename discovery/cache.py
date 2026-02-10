@@ -1,12 +1,12 @@
 """Two-level caching module for Discovery service (L1: in-memory, L2: Redis)."""
 
 from collections import OrderedDict
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 import hashlib
 import json
 import logging
 import time
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
 import orjson
 from redis import asyncio as aioredis
@@ -158,8 +158,8 @@ class CacheManager:
                 decode_responses=False,  # We'll handle decoding ourselves for orjson
                 max_connections=10,
             )
-            # Test connection
-            await self.redis.ping()
+            # Test connection (cast to handle redis-py type stubs inconsistency)
+            await cast("Awaitable[bool]", self.redis.ping())
             self.connected = True
             logger.info("🔄 Redis cache connected successfully")
         except (RedisError, OSError) as e:

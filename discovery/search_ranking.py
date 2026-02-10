@@ -530,7 +530,7 @@ class SearchRanker:
             similarities.append(similarity)
 
         # Diversity is inverse of average similarity
-        avg_similarity = np.mean(similarities) if similarities else 0.0
+        avg_similarity = float(np.mean(similarities)) if similarities else 0.0
         diversity = 1.0 - avg_similarity
 
-        return max(0.0, min(diversity, 1.0))
+        return float(max(0.0, min(diversity, 1.0)))

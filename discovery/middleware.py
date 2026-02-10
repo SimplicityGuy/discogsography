@@ -1,6 +1,6 @@
 """Middleware for request tracking and correlation."""
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 import time
 import uuid
 
@@ -17,7 +17,7 @@ logger = structlog.get_logger(__name__)
 class RequestIDMiddleware(BaseHTTPMiddleware):
     """Middleware to add unique request ID to each request."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
         """Process request and add request ID.
 
         Args:

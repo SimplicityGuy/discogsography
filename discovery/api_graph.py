@@ -105,7 +105,7 @@ async def close_graph_api() -> None:
 # API Endpoints
 
 
-@router.post("/centrality")  # type: ignore[untyped-decorator]
+@router.post("/centrality")
 async def calculate_centrality_endpoint(request: Request, req_body: CentralityRequest) -> dict[str, Any]:  # noqa: ARG001
     """Calculate centrality metrics for graph nodes.
 
@@ -169,7 +169,7 @@ async def calculate_centrality_endpoint(request: Request, req_body: CentralityRe
         raise HTTPException(status_code=500, detail=f"Centrality calculation error: {e!s}") from e
 
 
-@router.post("/communities")  # type: ignore[untyped-decorator]
+@router.post("/communities")
 async def detect_communities_endpoint(request: Request, req_body: CommunityDetectionRequest) -> dict[str, Any]:  # noqa: ARG001
     """Detect communities in the graph.
 
@@ -230,7 +230,7 @@ async def detect_communities_endpoint(request: Request, req_body: CommunityDetec
         raise HTTPException(status_code=500, detail=f"Community detection error: {e!s}") from e
 
 
-@router.post("/genre-evolution")  # type: ignore[untyped-decorator]
+@router.post("/genre-evolution")
 async def analyze_genre_evolution_endpoint(request: Request, req_body: GenreEvolutionRequest) -> dict[str, Any]:  # noqa: ARG001
     """Analyze genre evolution over time.
 
@@ -298,7 +298,7 @@ async def analyze_genre_evolution_endpoint(request: Request, req_body: GenreEvol
         raise HTTPException(status_code=500, detail=f"Genre evolution error: {e!s}") from e
 
 
-@router.post("/similarity-network")  # type: ignore[untyped-decorator]
+@router.post("/similarity-network")
 async def build_similarity_network_endpoint(request: Request, req_body: SimilarityNetworkRequest) -> dict[str, Any]:  # noqa: ARG001
     """Build similarity network for an artist.
 
@@ -352,7 +352,7 @@ async def build_similarity_network_endpoint(request: Request, req_body: Similari
         raise HTTPException(status_code=500, detail=f"Similarity network error: {e!s}") from e
 
 
-@router.get("/stats")  # type: ignore[untyped-decorator]
+@router.get("/stats")
 async def get_graph_stats(request: Request) -> dict[str, Any]:  # noqa: ARG001
     """Get graph statistics.
 
@@ -388,7 +388,7 @@ async def get_graph_stats(request: Request) -> dict[str, Any]:  # noqa: ARG001
     }
 
 
-@router.get("/status")  # type: ignore[untyped-decorator]
+@router.get("/status")
 async def get_graph_api_status(request: Request) -> dict[str, Any]:  # noqa: ARG001
     """Get Graph Analytics API status and feature availability.
 

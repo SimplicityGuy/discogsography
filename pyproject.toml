@@ -186,8 +186,11 @@ module = [
     "botocore.*",
     "dict_hash",
     "neo4j.*",
+    "onnxruntime",
+    "optimum.*",
     "pika.*",
     "psycopg.*",
+    "scipy.*",
     "tqdm",
     "xmltodict",
     "pandas.*",
@@ -206,8 +209,25 @@ module = "tests.*"
 disallow_untyped_decorators = false
 
 [[tool.mypy.overrides]]
-module = "discovery.discovery"
+module = [
+    "discovery.discovery",
+    "discovery.api_graph",
+    "discovery.api_ml",
+    "discovery.api_realtime",
+    "discovery.api_search",
+]
 disallow_untyped_decorators = false
+
+[[tool.mypy.overrides]]
+module = [
+    "discovery.ab_testing",
+    "discovery.collaborative_filtering",
+    "discovery.onnx_sentence_transformer",
+    "discovery.setup_onnx_model",
+    "discovery.export_model_to_onnx",
+]
+disallow_untyped_calls = false
+disallow_untyped_defs = false
 
 [tool.coverage.run]
 source = ["common", "dashboard", "discovery", "extractor/pyextractor", "graphinator", "tableinator"]

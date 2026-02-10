@@ -98,7 +98,7 @@ async def close_realtime_api() -> None:
 # API Endpoints
 
 
-@router.post("/trending")  # type: ignore[untyped-decorator]
+@router.post("/trending")
 async def get_trending_endpoint(request: Request, req_body: TrendingRequest) -> dict[str, Any]:  # noqa: ARG001
     """Get current trending items.
 
@@ -152,7 +152,7 @@ async def get_trending_endpoint(request: Request, req_body: TrendingRequest) -> 
         raise HTTPException(status_code=500, detail=f"Trending error: {e!s}") from e
 
 
-@router.post("/subscribe")  # type: ignore[untyped-decorator]
+@router.post("/subscribe")
 async def subscribe_channels(request: Request, req_body: SubscribeRequest) -> dict[str, Any]:  # noqa: ARG001
     """Subscribe to real-time update channels.
 
@@ -206,7 +206,7 @@ async def subscribe_channels(request: Request, req_body: SubscribeRequest) -> di
     }
 
 
-@router.post("/cache/invalidate")  # type: ignore[untyped-decorator]
+@router.post("/cache/invalidate")
 async def invalidate_cache(request: Request, req_body: CacheInvalidateRequest) -> dict[str, Any]:  # noqa: ARG001
     """Manually invalidate cache entries.
 
@@ -287,7 +287,7 @@ async def invalidate_cache(request: Request, req_body: CacheInvalidateRequest) -
         raise HTTPException(status_code=500, detail=f"Cache invalidation error: {e!s}") from e
 
 
-@router.get("/ws/stats")  # type: ignore[untyped-decorator]
+@router.get("/ws/stats")
 async def get_websocket_stats(request: Request) -> dict[str, Any]:  # noqa: ARG001
     """Get WebSocket connection statistics.
 
@@ -321,7 +321,7 @@ async def get_websocket_stats(request: Request) -> dict[str, Any]:  # noqa: ARG0
         raise HTTPException(status_code=500, detail=f"WebSocket stats error: {e!s}") from e
 
 
-@router.get("/status")  # type: ignore[untyped-decorator]
+@router.get("/status")
 async def get_realtime_api_status(request: Request) -> dict[str, Any]:  # noqa: ARG001
     """Get Real-Time Features API status and feature availability.
 
@@ -356,7 +356,7 @@ async def get_realtime_api_status(request: Request) -> dict[str, Any]:  # noqa: 
 
 
 # WebSocket endpoint
-@router.websocket("/ws")  # type: ignore[untyped-decorator]
+@router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates.
 

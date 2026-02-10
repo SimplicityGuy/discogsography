@@ -70,6 +70,19 @@ logger = structlog.get_logger(__name__)
 limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
 
 
+def _rate_limit_handler(request: Request, exc: Exception) -> Response:
+    """
+    Wrapper for rate limit exception handler with correct type signature.
+
+    This wrapper ensures type compatibility with Starlette's exception handler
+    signature while delegating to slowapi's built-in handler.
+    """
+    if isinstance(exc, RateLimitExceeded):
+        return _rate_limit_exceeded_handler(request, exc)
+    # If it's not a rate limit exception, re-raise it
+    raise exc
+
+
 async def _create_cache_warming_queries() -> list[dict[str, Any]]:
     """Create a list of cache warming queries for frequently accessed data.
 
@@ -427,7 +440,7 @@ All endpoints return JSON responses with:
 
 # Configure rate limiting for the app
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_handler)
 
 # Configure CORS origins from environment or use secure defaults
 _config = get_config()

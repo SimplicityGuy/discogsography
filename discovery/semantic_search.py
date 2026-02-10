@@ -6,7 +6,7 @@ embedding models, caching, and multi-modal features.
 
 import hashlib
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 from sentence_transformers import SentenceTransformer
@@ -84,7 +84,7 @@ class SemanticSearchEngine:
         cache_path = self.cache_dir / f"{cache_key}.npy"
         if cache_path.exists():
             try:
-                embedding = np.load(cache_path)
+                embedding = cast("np.ndarray", np.load(cache_path))
                 # Store in memory cache
                 self.embedding_cache[cache_key] = embedding
                 return embedding

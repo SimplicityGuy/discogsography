@@ -155,12 +155,16 @@ class ConnectionPoolMonitor:
             try:
                 pool = engine.pool
 
-                # Get pool statistics
+                # Get pool statistics (using getattr for type safety with async pools)
+                size = getattr(pool, "size", lambda: 0)()
+                checkedout = getattr(pool, "checkedout", lambda: 0)()
+                overflow = getattr(pool, "overflow", lambda: 0)()
+
                 pool_metrics = {
-                    "size": pool.size(),
-                    "checkedout": pool.checkedout(),
-                    "overflow": pool.overflow(),
-                    "checkedin": pool.size() - pool.checkedout(),
+                    "size": size,
+                    "checkedout": checkedout,
+                    "overflow": overflow,
+                    "checkedin": size - checkedout,
                 }
 
                 # Update Prometheus metrics
