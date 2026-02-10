@@ -68,7 +68,7 @@ num_cpus = "1.17"
 url = "2.5"  # URL parsing for AMQP connection normalization
 
 [dev-dependencies]
-tempfile = "3.24"
+tempfile = "3.25"
 mockito = "1.7"
 proptest = "1.10"
 criterion = "0.6"
