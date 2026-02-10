@@ -431,25 +431,18 @@ class TestFullTextSearch:
     @pytest.mark.asyncio
     async def test_get_search_statistics(self, search_engine, mock_db_engine):
         """Test get_search_statistics method."""
-        # Return different counts for each entity type
-        counts = [100, 500, 50, 200]  # artists, releases, labels, masters
-        call_count = [0]
-
-        def create_count_result():
-            mock_result = AsyncMock()
-            mock_result.mappings = MagicMock(return_value=mock_result)
-            mock_result.all = MagicMock(return_value=[])
-
-            def mock_fetchone():
-                result = {"count": counts[call_count[0]]}
-                call_count[0] += 1
-                return result
-
-            mock_result.fetchone = MagicMock(side_effect=mock_fetchone)
-            return mock_result
+        # pg_class query returns all table counts in a single result
+        mock_result = AsyncMock()
+        mock_result.mappings = MagicMock(return_value=mock_result)
+        mock_result.all = MagicMock(return_value=[
+            {"table_name": "artists", "count": 100},
+            {"table_name": "releases", "count": 500},
+            {"table_name": "labels", "count": 50},
+            {"table_name": "masters", "count": 200},
+        ])
 
         mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock(side_effect=[create_count_result() for _ in range(4)])
+        mock_conn.execute = AsyncMock(return_value=mock_result)
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_conn.__aexit__ = AsyncMock(return_value=None)
         mock_db_engine.connect = MagicMock(return_value=mock_conn)
@@ -461,28 +454,25 @@ class TestFullTextSearch:
         assert stats["label"] == 50
         assert stats["master"] == 200
         assert stats["total_searchable"] == 850
-        assert mock_conn.execute.call_count == 4
+        assert mock_conn.execute.call_count == 1
 
     @pytest.mark.asyncio
     async def test_get_search_statistics_empty_database(self, search_engine, mock_db_engine):
         """Test get_search_statistics with empty database."""
-
-        def create_none_result():
-            mock_result = AsyncMock()
-            mock_result.mappings = MagicMock(return_value=mock_result)
-            mock_result.all = MagicMock(return_value=[])
-            mock_result.fetchone = MagicMock(return_value=None)
-            return mock_result
+        # pg_class returns no rows for missing tables
+        mock_result = AsyncMock()
+        mock_result.mappings = MagicMock(return_value=mock_result)
+        mock_result.all = MagicMock(return_value=[])
 
         mock_conn = AsyncMock()
-        mock_conn.execute = AsyncMock(side_effect=[create_none_result() for _ in range(4)])
+        mock_conn.execute = AsyncMock(return_value=mock_result)
         mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_conn.__aexit__ = AsyncMock(return_value=None)
         mock_db_engine.connect = MagicMock(return_value=mock_conn)
 
         stats = await search_engine.get_search_statistics()
 
-        # All counts should be 0 when fetchone returns None
+        # All counts should be 0 when pg_class returns no rows
         assert stats["artist"] == 0
         assert stats["release"] == 0
         assert stats["label"] == 0

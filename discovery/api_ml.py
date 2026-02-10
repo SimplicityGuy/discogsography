@@ -8,6 +8,7 @@ and will be fully implemented in subsequent iterations.
 """
 
 from datetime import datetime
+import time
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -383,5 +384,60 @@ async def get_ml_api_status(request: Request) -> dict[str, Any]:  # noqa: ARG001
             "explainer": explainer is not None,
         },
         "phase": "4.2 (Full Implementation)",
+        "timestamp": datetime.now().isoformat(),
+    }
+
+
+@router.post("/rebuild")  # type: ignore[untyped-decorator]
+async def rebuild_ml_models(request: Request) -> dict[str, Any]:  # noqa: ARG001
+    """Rebuild ML models (collaborative filter and recommender).
+
+    Use this after the graphinator has finished loading data into Neo4j
+    to refresh the collaborative filtering matrix and recommender embeddings.
+
+    Args:
+        request: FastAPI request object (required for rate limiting)
+
+    Returns:
+        Dictionary with rebuild status and timing info
+    """
+    if not ml_api_initialized:
+        raise HTTPException(status_code=503, detail="ML API not initialized")
+
+    logger.info("🔄 Rebuilding ML models...")
+    results: dict[str, Any] = {}
+
+    # Rebuild collaborative filter
+    if collaborative_filter is not None:
+        start = time.monotonic()
+        try:
+            collaborative_filter.reset()
+            await collaborative_filter.build_cooccurrence_matrix()
+            elapsed = time.monotonic() - start
+            results["collaborative_filter"] = {"status": "success", "elapsed_seconds": round(elapsed, 2)}
+            logger.info("✅ Collaborative filter rebuilt", elapsed=f"{elapsed:.2f}s")
+        except Exception as e:
+            elapsed = time.monotonic() - start
+            results["collaborative_filter"] = {"status": "error", "error": str(e), "elapsed_seconds": round(elapsed, 2)}
+            logger.error(f"❌ Collaborative filter rebuild failed: {e}")
+
+    # Rebuild recommender embeddings
+    from discovery.recommender import recommender as recommender_instance
+
+    if recommender_instance is not None:
+        start = time.monotonic()
+        try:
+            await recommender_instance.rebuild()
+            elapsed = time.monotonic() - start
+            results["recommender"] = {"status": "success", "elapsed_seconds": round(elapsed, 2)}
+            logger.info("✅ Recommender rebuilt", elapsed=f"{elapsed:.2f}s")
+        except Exception as e:
+            elapsed = time.monotonic() - start
+            results["recommender"] = {"status": "error", "error": str(e), "elapsed_seconds": round(elapsed, 2)}
+            logger.error(f"❌ Recommender rebuild failed: {e}")
+
+    return {
+        "status": "success",
+        "results": results,
         "timestamp": datetime.now().isoformat(),
     }

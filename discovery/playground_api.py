@@ -1,6 +1,7 @@
 """Extended API endpoints for Discovery Playground."""
 
 import logging
+import re
 from typing import Any
 
 from fastapi import HTTPException, Query
@@ -93,6 +94,24 @@ class PlaygroundAPI:
         if self.pg_engine:
             await self.pg_engine.dispose()
 
+    @staticmethod
+    def _escape_lucene_query(query: str) -> str:
+        """Escape Lucene special characters and build a fulltext search query.
+
+        Args:
+            query: Raw user search query
+
+        Returns:
+            Escaped query with wildcard suffix for partial matching
+        """
+        # Escape Lucene special characters: + - && || ! ( ) { } [ ] ^ " ~ * ? : \ /
+        escaped = re.sub(r'([+\-&|!(){}[\]^"~*?:\\/])', r'\\\1', query)
+        # Add wildcard suffix for partial matching (approximates CONTAINS)
+        terms = escaped.strip().split()
+        if not terms:
+            return ""
+        return " AND ".join(f"{term}*" for term in terms)
+
     @cached("search", ttl=CACHE_TTL["search"])
     async def search(self, query: str, search_type: str = "all", limit: int = 10, cursor: str | None = None) -> dict[str, Any]:
         """Search for artists, releases, or labels with cursor-based pagination."""
@@ -106,44 +125,54 @@ class PlaygroundAPI:
         if not self.neo4j_driver:
             raise HTTPException(status_code=500, detail="Database not initialized")
 
+        lucene_query = self._escape_lucene_query(query)
+        if not lucene_query:
+            return {
+                "items": results,
+                "total": None,
+                "has_more": False,
+                "next_cursor": None,
+                "page_info": {"query": query, "type": search_type, "offset": offset},
+            }
+
         async with self.neo4j_driver.session() as session:
-            # Search artists
+            # Search artists using fulltext index
             if search_type in ["all", "artist"]:
                 artist_query = """
-                MATCH (a:Artist)
-                WHERE toLower(a.name) CONTAINS toLower($query)
-                RETURN a.id AS id, a.name AS name, a.real_name AS real_name
-                ORDER BY a.name
+                CALL db.index.fulltext.queryNodes('artist_name_fulltext', $query)
+                YIELD node, score
+                RETURN node.id AS id, node.name AS name, node.real_name AS real_name, score
+                ORDER BY score DESC
                 SKIP $offset
                 LIMIT $limit
                 """
-                artist_result = await session.run(artist_query, {"query": query, "offset": offset, "limit": limit})
+                artist_result = await session.run(artist_query, {"query": lucene_query, "offset": offset, "limit": limit})
                 results["artists"] = [dict(record) async for record in artist_result]
 
-            # Search releases
+            # Search releases using fulltext index
             if search_type in ["all", "release"]:
                 release_query = """
-                MATCH (r:Release)
-                WHERE toLower(r.title) CONTAINS toLower($query)
-                RETURN r.id AS id, r.title AS title, r.year AS year
-                ORDER BY r.title
+                CALL db.index.fulltext.queryNodes('release_title_fulltext', $query)
+                YIELD node, score
+                RETURN node.id AS id, node.title AS title, node.year AS year, score
+                ORDER BY score DESC
                 SKIP $offset
                 LIMIT $limit
                 """
-                release_result = await session.run(release_query, {"query": query, "offset": offset, "limit": limit})
+                release_result = await session.run(release_query, {"query": lucene_query, "offset": offset, "limit": limit})
                 results["releases"] = [dict(record) async for record in release_result]
 
-            # Search labels
+            # Search labels using fulltext index
             if search_type in ["all", "label"]:
                 label_query = """
-                MATCH (l:Label)
-                WHERE toLower(l.name) CONTAINS toLower($query)
-                RETURN l.id AS id, l.name AS name
-                ORDER BY l.name
+                CALL db.index.fulltext.queryNodes('label_name_fulltext', $query)
+                YIELD node, score
+                RETURN node.id AS id, node.name AS name, score
+                ORDER BY score DESC
                 SKIP $offset
                 LIMIT $limit
                 """
-                label_result = await session.run(label_query, {"query": query, "offset": offset, "limit": limit})
+                label_result = await session.run(label_query, {"query": lucene_query, "offset": offset, "limit": limit})
                 results["labels"] = [dict(record) async for record in label_result]
 
         # Create paginated response
@@ -420,17 +449,24 @@ class PlaygroundAPI:
                 }
 
             async with self.neo4j_driver.session() as session:
-                # Get top artists by release count
-                query = """
+                # Step 1: Get top artists by release count
+                top_artists_query = """
                 MATCH (a:Artist)<-[:BY]-(r:Release)
                 WITH a, COUNT(r) AS release_count
                 ORDER BY release_count DESC
                 LIMIT $top_n
-                WITH collect(a) AS artists
-                UNWIND artists AS a1
-                UNWIND artists AS a2
-                MATCH (a1)<-[:BY]-(r1:Release)-[:IS]->(g:Genre)<-[:IS]-(r2:Release)-[:BY]->(a2)
-                WHERE id(a1) < id(a2)
+                RETURN a.id AS id, a.name AS name
+                """
+                top_result = await session.run(top_artists_query, top_n=top_n)
+                top_artist_ids = []
+                async for record in top_result:
+                    top_artist_ids.append(record["id"])
+
+                # Step 2: For those artists, find shared genres pairwise
+                query = """
+                MATCH (a1:Artist)<-[:BY]-(r1:Release)-[:IS]->(g:Genre)<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
+                WHERE a1.id IN $artist_ids AND a2.id IN $artist_ids
+                  AND a1.id < a2.id
                 WITH a1.name AS artist1, a2.name AS artist2, COUNT(DISTINCT g) AS shared_genres
                 RETURN artist1, artist2, shared_genres
                 ORDER BY shared_genres DESC, artist1, artist2
@@ -438,7 +474,7 @@ class PlaygroundAPI:
                 LIMIT $limit
                 """
 
-                result = await session.run(query, top_n=top_n, offset=offset, limit=limit)
+                result = await session.run(query, artist_ids=top_artist_ids, offset=offset, limit=limit)
                 data = []
                 artists = set()
 
@@ -480,26 +516,33 @@ class PlaygroundAPI:
                 }
 
             async with self.neo4j_driver.session() as session:
-                query = """
+                # Step 1: Get top collaborating artists
+                top_collab_query = """
                 MATCH (a:Artist)<-[:BY]-(r:Release)-[:BY]->(other:Artist)
                 WHERE a <> other
                 WITH a, count(DISTINCT other) AS collab_count
                 ORDER BY collab_count DESC
                 LIMIT $top_n
-                WITH collect(a) AS artists
-                UNWIND artists AS a1
-                UNWIND artists AS a2
-                WHERE id(a1) < id(a2)
-                OPTIONAL MATCH (a1)<-[:BY]-(r:Release)-[:BY]->(a2)
-                WITH a1.name AS artist1, a2.name AS artist2,
-                     CASE WHEN r IS NOT NULL THEN 1 ELSE 0 END AS collaborated
+                RETURN a.id AS id, a.name AS name
+                """
+                top_result = await session.run(top_collab_query, top_n=top_n)
+                top_artist_ids = []
+                async for record in top_result:
+                    top_artist_ids.append(record["id"])
+
+                # Step 2: For those artists, compute pairwise collaboration
+                query = """
+                MATCH (a1:Artist)<-[:BY]-(r:Release)-[:BY]->(a2:Artist)
+                WHERE a1.id IN $artist_ids AND a2.id IN $artist_ids
+                  AND a1.id < a2.id
+                WITH a1.name AS artist1, a2.name AS artist2, COUNT(DISTINCT r) AS collaborated
                 RETURN artist1, artist2, collaborated
                 ORDER BY collaborated DESC, artist1, artist2
                 SKIP $offset
                 LIMIT $limit
                 """
 
-                result = await session.run(query, top_n=top_n, offset=offset, limit=limit)
+                result = await session.run(query, artist_ids=top_artist_ids, offset=offset, limit=limit)
                 data = []
                 artists = set()
 

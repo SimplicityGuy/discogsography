@@ -540,33 +540,42 @@ class FullTextSearch:
     async def get_search_statistics(self) -> dict[str, Any]:
         """Get statistics about searchable content.
 
+        Uses pg_class.reltuples for approximate row counts (updated by VACUUM/ANALYZE)
+        instead of COUNT(*) which requires full table scans on large tables.
+
         Returns:
             Dictionary with search statistics
         """
-        stats = {}
+        query = text("""
+            SELECT relname AS table_name, reltuples::bigint AS count
+            FROM pg_class
+            WHERE relname IN ('artists', 'releases', 'labels', 'masters')
+        """)
 
-        # Count each entity type
+        table_to_entity = {
+            "artists": SearchEntity.ARTIST.value,
+            "releases": SearchEntity.RELEASE.value,
+            "labels": SearchEntity.LABEL.value,
+            "masters": SearchEntity.MASTER.value,
+        }
+
+        stats: dict[str, Any] = {}
+
+        async with self.db_engine.connect() as conn:
+            result = await conn.execute(query)
+            rows = result.mappings().all()
+
+            for row in rows:
+                entity_key = table_to_entity.get(row["table_name"])
+                if entity_key:
+                    stats[entity_key] = max(0, row["count"])
+
+        # Ensure all entity types are present (default to 0)
         for entity in [SearchEntity.ARTIST, SearchEntity.RELEASE, SearchEntity.LABEL, SearchEntity.MASTER]:
-            if entity == SearchEntity.ARTIST:
-                table = "artists"
-            elif entity == SearchEntity.RELEASE:
-                table = "releases"
-            elif entity == SearchEntity.LABEL:
-                table = "labels"
-            elif entity == SearchEntity.MASTER:
-                table = "masters"
-            else:
-                continue
+            if entity.value not in stats:
+                stats[entity.value] = 0
 
-            # Safe: table name from enum mapping
-            query = text(f"SELECT COUNT(*) as count FROM {table}")  # noqa: S608  # nosec B608
-
-            async with self.db_engine.connect() as conn:
-                result = await conn.execute(query)
-                row = result.mappings().fetchone()
-                stats[entity.value] = row["count"] if row else 0
-
-        stats["total_searchable"] = sum(stats.values())
+        stats["total_searchable"] = sum(stats[e.value] for e in [SearchEntity.ARTIST, SearchEntity.RELEASE, SearchEntity.LABEL, SearchEntity.MASTER])
 
         logger.info("📊 Search statistics", **stats)
 

@@ -40,6 +40,19 @@ class CollaborativeFilter:
         self.style_to_artists: dict[str, set[int]] = defaultdict(set)
         self.collaborator_to_artists: dict[str, set[int]] = defaultdict(set)
 
+    def reset(self) -> None:
+        """Reset all state so the co-occurrence matrix can be rebuilt cleanly."""
+        self.item_similarity_matrix = None
+        self.artist_to_index.clear()
+        self.index_to_artist.clear()
+        self.co_occurrence_matrix = None
+        self.artist_features.clear()
+        self.label_to_artists.clear()
+        self.genre_to_artists.clear()
+        self.style_to_artists.clear()
+        self.collaborator_to_artists.clear()
+        logger.info("🔄 Collaborative filter state reset")
+
     async def build_cooccurrence_matrix(self) -> None:
         """Build co-occurrence matrix from graph relationships.
 
@@ -285,6 +298,14 @@ class CollaborativeFilter:
         Returns:
             List of recommended artists with similarity scores
         """
+        # Lazy initialization: if matrix was never built (e.g. Neo4j was empty at startup), try now
+        if self.item_similarity_matrix is None and not self.artist_to_index:
+            logger.info("🔄 Lazy init: building co-occurrence matrix on first recommendation request")
+            try:
+                await self.build_cooccurrence_matrix()
+            except Exception as e:
+                logger.warning(f"⚠️ Lazy init failed: {e}")
+
         # If artist is in pre-built matrix, use it
         if self.item_similarity_matrix is not None and artist_name in self.artist_to_index:
             artist_idx = self.artist_to_index[artist_name]

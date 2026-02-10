@@ -459,16 +459,27 @@ async def test_get_trends_database_not_initialized() -> None:
 @pytest.mark.asyncio
 async def test_get_heatmap_genre(api_instance: PlaygroundAPI, mock_neo4j_driver: MagicMock) -> None:
     """Test get_heatmap with genre type."""
-    mock_result = AsyncMock()
+    # First query returns top artist IDs
+    mock_top_result = AsyncMock()
 
-    async def mock_records(self: Any) -> Any:
+    async def mock_top_records(self: Any) -> Any:
+        yield {"id": "1", "name": "Miles Davis"}
+        yield {"id": "2", "name": "John Coltrane"}
+        yield {"id": "3", "name": "Bill Evans"}
+
+    mock_top_result.__aiter__ = mock_top_records
+
+    # Second query returns pairwise genre data
+    mock_pairwise_result = AsyncMock()
+
+    async def mock_pairwise_records(self: Any) -> Any:
         yield {"artist1": "Miles Davis", "artist2": "John Coltrane", "shared_genres": 5}
         yield {"artist1": "Miles Davis", "artist2": "Bill Evans", "shared_genres": 3}
 
-    mock_result.__aiter__ = mock_records
+    mock_pairwise_result.__aiter__ = mock_pairwise_records
 
     session = await mock_neo4j_driver.session().__aenter__()
-    session.run = AsyncMock(return_value=mock_result)
+    session.run = AsyncMock(side_effect=[mock_top_result, mock_pairwise_result])
 
     result = await api_instance.get_heatmap("genre", 20)
 
@@ -480,16 +491,27 @@ async def test_get_heatmap_genre(api_instance: PlaygroundAPI, mock_neo4j_driver:
 @pytest.mark.asyncio
 async def test_get_heatmap_collab(api_instance: PlaygroundAPI, mock_neo4j_driver: MagicMock) -> None:
     """Test get_heatmap with collaboration type."""
-    mock_result = AsyncMock()
+    # First query returns top collaborating artist IDs
+    mock_top_result = AsyncMock()
 
-    async def mock_records(self: Any) -> Any:
+    async def mock_top_records(self: Any) -> Any:
+        yield {"id": "1", "name": "Miles Davis"}
+        yield {"id": "2", "name": "John Coltrane"}
+        yield {"id": "3", "name": "Bill Evans"}
+
+    mock_top_result.__aiter__ = mock_top_records
+
+    # Second query returns pairwise collaboration data
+    mock_pairwise_result = AsyncMock()
+
+    async def mock_pairwise_records(self: Any) -> Any:
         yield {"artist1": "Miles Davis", "artist2": "John Coltrane", "collaborated": 1}
         yield {"artist1": "Miles Davis", "artist2": "Bill Evans", "collaborated": 0}  # Should be filtered
 
-    mock_result.__aiter__ = mock_records
+    mock_pairwise_result.__aiter__ = mock_pairwise_records
 
     session = await mock_neo4j_driver.session().__aenter__()
-    session.run = AsyncMock(return_value=mock_result)
+    session.run = AsyncMock(side_effect=[mock_top_result, mock_pairwise_result])
 
     result = await api_instance.get_heatmap("collab", 20)
 

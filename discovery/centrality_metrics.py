@@ -4,6 +4,7 @@ This module calculates various centrality metrics to identify influential
 artists in the collaboration network and music industry.
 """
 
+import time
 from typing import Any
 
 from neo4j import AsyncDriver
@@ -17,6 +18,9 @@ logger = structlog.get_logger(__name__)
 class CentralityAnalyzer:
     """Calculate centrality and influence metrics for artists."""
 
+    # Cache TTL in seconds (30 minutes)
+    NETWORK_CACHE_TTL = 30 * 60
+
     def __init__(self, driver: AsyncDriver) -> None:
         """Initialize centrality analyzer.
 
@@ -26,9 +30,14 @@ class CentralityAnalyzer:
         self.driver = driver
         self.graph: nx.Graph | None = None
         self.metrics: dict[str, dict[str, float]] = {}
+        self._cache_built_at: float = 0.0
+        self._cache_limit: int = 0
 
     async def build_network(self, limit: int = 5000) -> nx.Graph:
-        """Build artist collaboration network.
+        """Build artist collaboration network, using cache if available.
+
+        Returns the cached graph if the same limit was used and the cache
+        hasn't expired (TTL: 30 minutes).
 
         Args:
             limit: Maximum number of edges to include
@@ -36,6 +45,20 @@ class CentralityAnalyzer:
         Returns:
             NetworkX graph
         """
+        now = time.monotonic()
+        if (
+            self.graph is not None
+            and self._cache_limit == limit
+            and (now - self._cache_built_at) < self.NETWORK_CACHE_TTL
+        ):
+            logger.info(
+                "⚡ Using cached network",
+                age_seconds=round(now - self._cache_built_at),
+                nodes=self.graph.number_of_nodes(),
+                edges=self.graph.number_of_edges(),
+            )
+            return self.graph
+
         logger.info("🔨 Building network for centrality analysis...")
 
         graph = nx.Graph()
@@ -62,6 +85,10 @@ class CentralityAnalyzer:
                 )
 
         self.graph = graph
+        self._cache_built_at = time.monotonic()
+        self._cache_limit = limit
+        # Clear stale metrics when graph is rebuilt
+        self.metrics.clear()
 
         logger.info(
             "✅ Built network",

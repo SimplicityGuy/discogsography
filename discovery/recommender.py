@@ -370,6 +370,24 @@ class MusicRecommender:
 
         return None
 
+    async def rebuild(self) -> None:
+        """Rebuild collaboration graph and artist embeddings.
+
+        Use this to refresh data after the graphinator finishes loading.
+        """
+        logger.info("🔄 Rebuilding recommender data...")
+
+        # Clear existing state
+        self.graph = None
+        self.artist_embeddings = None
+        self.artist_to_index.clear()
+        self.index_to_artist.clear()
+
+        await self._build_collaboration_graph()
+        await self._generate_artist_embeddings()
+
+        logger.info("✅ Recommender rebuild complete")
+
     async def close(self) -> None:
         """Close database connections."""
         if self.driver:
