@@ -283,8 +283,7 @@ class CollaborativeFilter:
         MAX_NNZ = int(os.getenv("COLLAB_FILTER_MAX_NNZ", "10000000"))  # 10M default
         if self.co_occurrence_matrix.nnz > MAX_NNZ:
             logger.warning(
-                "⚠️ Co-occurrence matrix too large for cosine similarity, "
-                "skipping pre-built similarity matrix (on-demand recs still work)",
+                "⚠️ Co-occurrence matrix too large for cosine similarity, skipping pre-built similarity matrix (on-demand recs still work)",
                 nnz=self.co_occurrence_matrix.nnz,
                 max_nnz=MAX_NNZ,
             )
