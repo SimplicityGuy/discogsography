@@ -182,8 +182,8 @@ class DiscoveryPlayground {
         this.currentData = results;
 
         // Store selected artist if search returned artists
-        if (results.artists?.length > 0) {
-            this.selectedArtist = results.artists[0];
+        if (results.items?.artists?.length > 0) {
+            this.selectedArtist = results.items.artists[0];
             console.log('Selected artist:', this.selectedArtist);
         } else {
             console.warn('No artists found in search results');
@@ -261,8 +261,8 @@ class DiscoveryPlayground {
         try {
             // Search for the artist first
             const searchResults = await discoveryAPI.search(searchValue, 'artist');
-            if (searchResults.artists?.length > 0) {
-                const artistId = searchResults.artists[0].id;
+            if (searchResults.items?.artists?.length > 0) {
+                const artistId = searchResults.items.artists[0].id;
                 await this.loadGraphData(artistId);
             } else {
                 this.showNotification('No artists found', 'warning');
@@ -427,21 +427,22 @@ class DiscoveryPlayground {
 
         let html = '';
 
-        // Handle search results
-        if (data.artists || data.releases || data.labels) {
+        // Handle search results (nested under items key from API)
+        const items = data.items || data;
+        if (items.artists || items.releases || items.labels) {
             html = '<h6>Search Results</h6>';
 
-            if (data.artists?.length > 0) {
+            if (items.artists?.length > 0) {
                 html += '<div class="info-item"><div class="info-label">Artists</div>';
-                data.artists.slice(0, 5).forEach(artist => {
+                items.artists.slice(0, 5).forEach(artist => {
                     html += `<div class="info-value">• ${artist.name}</div>`;
                 });
                 html += '</div>';
             }
 
-            if (data.releases?.length > 0) {
+            if (items.releases?.length > 0) {
                 html += '<div class="info-item"><div class="info-label">Releases</div>';
-                data.releases.slice(0, 5).forEach(release => {
+                items.releases.slice(0, 5).forEach(release => {
                     html += `<div class="info-value">• ${release.title}</div>`;
                 });
                 html += '</div>';
