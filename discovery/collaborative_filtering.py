@@ -4,6 +4,7 @@ This module implements item-item collaborative filtering based on co-occurrence
 patterns in the music graph (collaborations, shared labels, shared genres).
 """
 
+import asyncio
 from collections import defaultdict
 import os
 from typing import Any
@@ -140,6 +141,19 @@ class CollaborativeFilter:
             logger.warning("⚠️ No artist data found for collaborative filtering")
             return
 
+        # Offload CPU-bound matrix computation to a thread so the event loop
+        # stays free for health checks and API requests.
+        await asyncio.to_thread(self._build_matrix_sync, artists_data)
+
+    def _build_matrix_sync(self, artists_data: list[dict[str, Any]]) -> None:
+        """Build the co-occurrence and similarity matrices (CPU-bound).
+
+        This runs in a thread pool via asyncio.to_thread() so it doesn't
+        block the event loop.
+
+        Args:
+            artists_data: List of artist dicts with labels, genres, styles, collaborators.
+        """
         # Debug: Analyze feature distribution
         label_counts = sum(1 for a in artists_data if a["labels"])
         genre_counts = sum(1 for a in artists_data if a["genres"])
