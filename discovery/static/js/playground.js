@@ -84,6 +84,26 @@ class DiscoveryPlayground {
         document.getElementById('fullscreenBtn').addEventListener('click', () => {
             this.toggleFullscreen();
         });
+
+        // Info panel toggle
+        document.getElementById('infoPanelBtn').addEventListener('click', () => {
+            this.toggleInfoPanel();
+        });
+
+        document.getElementById('closeInfoPanel').addEventListener('click', () => {
+            this.toggleInfoPanel(false);
+        });
+
+        // Escape key exits fullscreen and closes info panel
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                const card = document.getElementById('fullscreenBtn').closest('.card');
+                if (card.classList.contains('fullscreen')) {
+                    this.toggleFullscreen();
+                }
+                this.toggleInfoPanel(false);
+            }
+        });
     }
 
     initializeVisualizations() {
@@ -459,6 +479,11 @@ class DiscoveryPlayground {
         }
 
         infoPanel.innerHTML = html || '<p class="text-muted">No details available</p>';
+
+        // Auto-open the right panel when there's content
+        if (html) {
+            this.toggleInfoPanel(true);
+        }
     }
 
     resetView() {
@@ -482,8 +507,9 @@ class DiscoveryPlayground {
             }
         });
 
-        // Clear info panel
+        // Clear info panel and close it
         document.getElementById('infoPanel').innerHTML = '<p class="text-muted">Select an item to view details</p>';
+        this.toggleInfoPanel(false);
 
         // Load default data
         this.loadDefaultData();
@@ -514,8 +540,8 @@ class DiscoveryPlayground {
     }
 
     toggleFullscreen() {
-        const container = document.getElementById('visualizationContainer');
-        container.classList.toggle('fullscreen');
+        const card = document.getElementById('fullscreenBtn').closest('.card');
+        card.classList.toggle('fullscreen');
 
         // Update button icon
         const btn = document.getElementById('fullscreenBtn');
@@ -525,6 +551,15 @@ class DiscoveryPlayground {
 
         // Trigger resize for visualizations
         window.dispatchEvent(new Event('resize'));
+    }
+
+    toggleInfoPanel(forceState) {
+        const panel = document.getElementById('rightInfoPanel');
+        if (typeof forceState === 'boolean') {
+            panel.classList.toggle('open', forceState);
+        } else {
+            panel.classList.toggle('open');
+        }
     }
 
     showLoading(show) {

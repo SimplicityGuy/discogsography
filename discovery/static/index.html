@@ -171,17 +171,6 @@
                     </div>
                 </div>
 
-                <!-- Info Panel -->
-                <div class="card mt-3">
-                    <div class="card-header">
-                        <h5 class="mb-0">
-                            <i class="fas fa-info-circle"></i> Selection Info
-                        </h5>
-                    </div>
-                    <div class="card-body" id="infoPanel">
-                        <p class="text-muted">Select an item to view details</p>
-                    </div>
-                </div>
             </div>
 
             <!-- Visualization Area -->
@@ -201,6 +190,9 @@
                                 </button>
                                 <button class="btn btn-outline-secondary" id="fullscreenBtn">
                                     <i class="fas fa-expand"></i>
+                                </button>
+                                <button class="btn btn-outline-secondary" id="infoPanelBtn" title="Toggle Info Panel">
+                                    <i class="fas fa-info-circle"></i>
                                 </button>
                             </div>
                         </h5>
@@ -239,6 +231,21 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- Right Info Panel -->
+    <div id="rightInfoPanel" class="right-panel">
+        <div class="right-panel-header">
+            <h5 class="mb-0">
+                <i class="fas fa-info-circle"></i> Selection Info
+            </h5>
+            <button class="btn btn-sm btn-outline-secondary" id="closeInfoPanel">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="right-panel-body" id="infoPanel">
+            <p class="text-muted">Select an item to view details</p>
         </div>
     </div>
 
