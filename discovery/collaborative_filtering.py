@@ -135,7 +135,7 @@ class CollaborativeFilter:
                     )
 
                 artists_data.extend(batch_data)
-                logger.info(f"✅ Batch {batch_num}/{total_batches} complete", artists_in_batch=len(batch_data))
+                logger.info(f"✅ Batch {batch_num}/{total_batches} complete", batch_size=len(batch_data))
 
         if not artists_data:
             logger.warning("⚠️ No artist data found for collaborative filtering")
@@ -276,7 +276,10 @@ class CollaborativeFilter:
 
             # Log progress every 1000 artists
             if (i + 1) % 1000 == 0:
-                logger.info(f"🔄 Processed {i + 1}/{n_artists} artists", edges_so_far=total_edges)
+                logger.info(
+                    f"🔄 Processing artists {i + 1}/{n_artists}",
+                    edges_so_far=total_edges,
+                )
 
         logger.info(
             "🔍 Comparison statistics",
@@ -294,8 +297,7 @@ class CollaborativeFilter:
         MAX_NNZ = int(os.getenv("COLLAB_FILTER_MAX_NNZ", "10000000"))  # 10M default
         if self.co_occurrence_matrix.nnz > MAX_NNZ:
             logger.warning(
-                "⚠️ Co-occurrence matrix too large for cosine similarity, "
-                "skipping pre-built similarity matrix (on-demand recs still work)",
+                "⚠️ Co-occurrence matrix too large for cosine similarity, skipping pre-built similarity matrix (on-demand recs still work)",
                 nnz=self.co_occurrence_matrix.nnz,
                 max_nnz=MAX_NNZ,
             )
