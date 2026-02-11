@@ -96,6 +96,10 @@ body {
     fill: #6c757d;
 }
 
+.node.master circle {
+    fill: #eb4d4b;
+}
+
 .node.genre circle {
     fill: #ffc107;
 }

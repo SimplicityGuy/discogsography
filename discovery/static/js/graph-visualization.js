@@ -14,6 +14,7 @@ class GraphVisualization {
         this.nodeTypes = {
             artist: { color: '#1DB954', size: 10 },
             release: { color: '#FF6B6B', size: 8 },
+            master: { color: '#eb4d4b', size: 9 },
             label: { color: '#6c757d', size: 9 },
             genre: { color: '#ffc107', size: 7 }
         };
@@ -119,7 +120,7 @@ class GraphVisualization {
                 .attr('text-anchor', 'middle')
                 .attr('font-size', '12px')
                 .attr('font-weight', '500')
-                .text(d => d.name || d.label || '')
+                .text(d => d.name || d.title || d.label || `${d.type} ${d.id}`)
                 .style('pointer-events', 'none');
         }
 
@@ -174,7 +175,7 @@ class GraphVisualization {
     }
 
     getNodeTooltip(node) {
-        let tooltip = node.name || node.label || 'Unknown';
+        let tooltip = node.name || node.title || node.label || `${node.type} ${node.id}`;
         if (node.type) tooltip += `\nType: ${node.type}`;
         if (node.year) tooltip += `\nYear: ${node.year}`;
         if (node.genres?.length > 0) tooltip += `\nGenres: ${node.genres.join(', ')}`;

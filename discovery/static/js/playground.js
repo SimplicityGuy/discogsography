@@ -372,7 +372,7 @@ class DiscoveryPlayground {
         this.loadNodeDetails(node);
 
         // Update search input
-        document.getElementById('searchInput').value = node.name || node.label || '';
+        document.getElementById('searchInput').value = node.name || node.title || node.label || '';
     }
 
     async loadNodeDetails(node) {
