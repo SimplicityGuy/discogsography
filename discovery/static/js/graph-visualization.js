@@ -35,14 +35,14 @@ class GraphVisualization {
         this.container = this.svg.append('g');
 
         // Add zoom behavior
-        const zoom = d3.zoom()
+        this.zoomBehavior = d3.zoom()
             .scaleExtent([0.1, 10])
             .on('zoom', (event) => {
                 this.transform = event.transform;
                 this.container.attr('transform', event.transform);
             });
 
-        this.svg.call(zoom);
+        this.svg.call(this.zoomBehavior);
 
         // Add arrow markers for directed edges
         this.svg.append('defs').selectAll('marker')
@@ -286,14 +286,14 @@ class GraphVisualization {
 
         this.svg.transition()
             .duration(300)
-            .call(d3.zoom().transform, newTransform);
+            .call(this.zoomBehavior.transform, newTransform);
     }
 
     reset() {
         // Reset zoom
         this.svg.transition()
             .duration(300)
-            .call(d3.zoom().transform, d3.zoomIdentity);
+            .call(this.zoomBehavior.transform, d3.zoomIdentity);
 
         // Clear data
         this.nodes = [];
