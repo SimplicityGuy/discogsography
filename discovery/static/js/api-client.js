@@ -102,6 +102,11 @@ class DiscoveryAPI {
         return this.fetchAPI(`/api/artists/${artistId}`);
     }
 
+    // Get master details
+    async getMasterDetails(masterId) {
+        return this.fetchAPI(`/api/masters/${masterId}`);
+    }
+
     // Get release details
     async getReleaseDetails(releaseId) {
         return this.fetchAPI(`/api/releases/${releaseId}`);

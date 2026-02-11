@@ -39,6 +39,7 @@ from discovery.playground_api import (
     graph_data_handler,
     heatmap_handler,
     journey_handler,
+    master_details_handler,
     playground_api,
     search_handler,
     trends_handler,
@@ -796,6 +797,16 @@ async def artist_details_api(request: Request, artist_id: str) -> dict[str, Any]
     validated_artist_id = validate_node_id(artist_id)
 
     return await artist_details_handler(validated_artist_id)
+
+
+@app.get("/api/masters/{master_id}")
+@limiter.limit("100/minute")
+async def master_details_api(request: Request, master_id: str) -> dict[str, Any]:
+    """Master details endpoint for playground."""
+    # Validate and sanitize inputs
+    validated_master_id = validate_node_id(master_id)
+
+    return await master_details_handler(validated_master_id)
 
 
 # WebSocket endpoint for real-time updates

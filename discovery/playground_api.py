@@ -211,17 +211,34 @@ class PlaygroundAPI:
 
         nodes = []
         links = []
+        link_keys: set[tuple[str, str, str]] = set()
         node_ids = set()
 
         if not self.neo4j_driver:
             raise HTTPException(status_code=500, detail="Database not initialized")
 
         async with self.neo4j_driver.session() as session:
-            # Get the center node and its connections
-            query = """
-            MATCH (center)
-            WHERE center.id = $node_id
-            OPTIONAL MATCH path = (center)-[*1..$depth]-(connected)
+            # Get the center node and its connections.
+            # Use UNION across labeled matches so Neo4j can leverage
+            # per-label indexes on the `id` property.  An unlabeled
+            # MATCH (center) WHERE center.id = ... would require a
+            # full graph scan on 30M+ nodes.
+            # Depth (already validated as int 1-5) is interpolated
+            # directly because Neo4j disallows parameterized
+            # variable-length relationships.
+            query = f"""
+            CALL {{
+                MATCH (n:Artist {{id: $node_id}}) RETURN n
+                UNION ALL
+                MATCH (n:Release {{id: $node_id}}) RETURN n
+                UNION ALL
+                MATCH (n:Label {{id: $node_id}}) RETURN n
+                UNION ALL
+                MATCH (n:Master {{id: $node_id}}) RETURN n
+            }}
+            WITH n AS center
+            OPTIONAL MATCH path = (center)-[*1..{depth}]-(connected)
+            WHERE NOT (connected:Master AND connected.id = '0')
             WITH center, connected, relationships(path) AS rels, nodes(path) AS path_nodes
             ORDER BY connected.id
             SKIP $offset
@@ -229,49 +246,74 @@ class PlaygroundAPI:
             RETURN DISTINCT center, connected, rels, path_nodes
             """
 
-            result = await session.run(query, node_id=node_id, depth=depth, offset=offset, limit=limit)
+            result = await session.run(query, node_id=node_id, offset=offset, limit=limit)
+
+            def _node_id(neo_node: Any) -> str:
+                """Return a stable unique ID for a Neo4j node.
+
+                Genre/Style nodes lack an ``id`` property, so fall back to
+                a label:name composite key, then to the Neo4j element_id.
+                """
+                nid = neo_node.get("id")
+                if nid is not None:
+                    return str(nid)
+                name = neo_node.get("name", "")
+                label = next(iter(neo_node.labels), "node")
+                if name:
+                    return f"{label}:{name}"
+                return str(neo_node.element_id)
 
             async for record in result:
                 # Add center node
                 center = record["center"]
-                if center and center["id"] not in node_ids:
-                    node_ids.add(center["id"])
+                cid = _node_id(center) if center else None
+                if center and cid not in node_ids:
+                    node_ids.add(cid)
                     nodes.append(
                         {
-                            "id": center["id"],
+                            "id": cid,
                             "name": center.get("name", center.get("title", "")),
+                            "title": center.get("title", ""),
                             "type": next(iter(center.labels)).lower(),
                             "properties": dict(center),
                         }
                     )
 
-                # Add connected nodes and relationships
+                # Add all path nodes (including intermediates) and relationships
                 if record["connected"] and record["rels"]:
-                    connected = record["connected"]
-                    if connected["id"] not in node_ids:
-                        node_ids.add(connected["id"])
-                        nodes.append(
-                            {
-                                "id": connected["id"],
-                                "name": connected.get("name", connected.get("title", "")),
-                                "type": next(iter(connected.labels)).lower(),
-                                "properties": dict(connected),
-                            }
-                        )
+                    # Add every node along the path so links can reference them
+                    for path_node in record["path_nodes"]:
+                        if path_node:
+                            pid = _node_id(path_node)
+                            if pid not in node_ids:
+                                node_ids.add(pid)
+                                nodes.append(
+                                    {
+                                        "id": pid,
+                                        "name": path_node.get("name", path_node.get("title", "")),
+                                        "title": path_node.get("title", ""),
+                                        "type": next(iter(path_node.labels)).lower(),
+                                        "properties": dict(path_node),
+                                    }
+                                )
 
-                    # Add relationships
+                    # Add relationships (deduplicated)
                     for i, rel in enumerate(record["rels"]):
                         if i < len(record["path_nodes"]) - 1:
-                            source_node = record["path_nodes"][i]
-                            target_node = record["path_nodes"][i + 1]
-                            links.append(
-                                {
-                                    "source": source_node["id"],
-                                    "target": target_node["id"],
-                                    "type": rel.type.lower(),
-                                    "properties": dict(rel),
-                                }
-                            )
+                            src = _node_id(record["path_nodes"][i])
+                            tgt = _node_id(record["path_nodes"][i + 1])
+                            rel_type = rel.type.lower()
+                            link_key = (src, tgt, rel_type)
+                            if link_key not in link_keys:
+                                link_keys.add(link_key)
+                                links.append(
+                                    {
+                                        "source": src,
+                                        "target": tgt,
+                                        "type": rel_type,
+                                        "properties": dict(rel),
+                                    }
+                                )
 
         # Determine if there are more results
         # We check if we got the full limit of results
@@ -295,28 +337,30 @@ class PlaygroundAPI:
             raise HTTPException(status_code=500, detail="Database not initialized")
 
         async with self.neo4j_driver.session() as session:
-            query = """
+            # Note: Neo4j does not allow parameterized variable-length
+            # relationships, so max_depth (already validated as int 1-5)
+            # is interpolated directly into the query string.
+            query = f"""
             MATCH path = shortestPath(
-                (start:Artist {id: $start_id})-[*1..$max_depth]-(end:Artist {id: $end_id})
+                (start:Artist {{id: $start_id}})-[*1..{max_depth}]-(end:Artist {{id: $end_id}})
             )
             RETURN path,
-                   [node in nodes(path) | {
+                   [node in nodes(path) | {{
                        id: node.id,
-                       name: node.name,
+                       name: COALESCE(node.name, node.title),
                        type: labels(node)[0],
                        properties: properties(node)
-                   }] AS nodes,
-                   [rel in relationships(path) | {
+                   }}] AS nodes,
+                   [rel in relationships(path) | {{
                        type: type(rel),
                        properties: properties(rel)
-                   }] AS relationships
+                   }}] AS relationships
             """
 
             result = await session.run(
                 query,
                 start_id=start_artist_id,
                 end_id=end_artist_id,
-                max_depth=max_depth,
             )
 
             record = await result.single()
@@ -615,6 +659,41 @@ class PlaygroundAPI:
             "page_info": {"type": heatmap_type, "top_n": top_n, "offset": offset},
         }
 
+    @cached("master_details", ttl=CACHE_TTL["master_details"])
+    async def get_master_details(self, master_id: str) -> dict[str, Any]:
+        """Get detailed information about a master release."""
+        if not self.neo4j_driver:
+            raise HTTPException(status_code=500, detail="Database not initialized")
+
+        async with self.neo4j_driver.session() as session:
+            query = """
+            MATCH (m:Master {id: $master_id})
+            OPTIONAL MATCH (m)<-[:VERSION_OF]-(r:Release)
+            OPTIONAL MATCH (m)-[:BY]->(a:Artist)
+            RETURN m,
+                   COUNT(DISTINCT r) AS version_count,
+                   collect(DISTINCT r.title)[0..10] AS versions,
+                   collect(DISTINCT a.name) AS artists
+            """
+
+            result = await session.run(query, master_id=master_id)
+            record = await result.single()
+
+            if not record:
+                raise HTTPException(status_code=404, detail="Master not found")
+
+            master = record["m"]
+            return {
+                "id": master["id"],
+                "title": master.get("title"),
+                "year": master.get("year"),
+                "genres": master.get("genres", []),
+                "styles": master.get("styles", []),
+                "version_count": record["version_count"],
+                "versions": record["versions"],
+                "artists": record["artists"],
+            }
+
     @cached("artist_details", ttl=CACHE_TTL["artist_details"])
     async def get_artist_details(self, artist_id: str) -> dict[str, Any]:
         """Get detailed information about an artist."""
@@ -710,6 +789,12 @@ async def heatmap_handler(
 ) -> dict[str, Any]:
     """Heatmap endpoint handler with cursor-based pagination."""
     result: dict[str, Any] = await playground_api.get_heatmap(type, top_n, limit, cursor)
+    return result
+
+
+async def master_details_handler(master_id: str) -> dict[str, Any]:
+    """Master details endpoint handler."""
+    result: dict[str, Any] = await playground_api.get_master_details(master_id)
     return result
 
 

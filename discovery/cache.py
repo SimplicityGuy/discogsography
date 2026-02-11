@@ -1,5 +1,6 @@
 """Two-level caching module for Discovery service (L1: in-memory, L2: Redis)."""
 
+import asyncio
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 import hashlib
@@ -462,8 +463,8 @@ class CacheManager:
                 cache_key = query_config["cache_key"]
                 ttl = query_config.get("ttl")
 
-                # Execute query
-                result = await query_func()
+                # Execute query with timeout to avoid blocking startup
+                result = await asyncio.wait_for(query_func(), timeout=30.0)
 
                 # Store in cache
                 success = await self.set(cache_key, result, ttl)
@@ -546,6 +547,7 @@ CACHE_TTL = {
     "trends": 7200,  # 2 hours
     "heatmap": 7200,  # 2 hours
     "artist_details": 3600,  # 1 hour
+    "master_details": 3600,  # 1 hour
     "recommendations": 1800,  # 30 minutes
     "analytics": 3600,  # 1 hour
 }

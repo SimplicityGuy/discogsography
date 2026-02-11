@@ -59,7 +59,7 @@ class JourneyBuilder {
                         <i class="fas ${icon}"></i>
                     </div>
                     <div class="node-info">
-                        <div class="node-name">${node.name || 'Unknown'}</div>
+                        <div class="node-name">${node.name || node.properties?.title || 'Unknown'}</div>
                         <div class="node-type">${node.type}</div>
                         ${node.properties?.year ? `<div class="node-year">${node.properties.year}</div>` : ''}
                     </div>
@@ -121,7 +121,7 @@ class JourneyBuilder {
             .filter(n => n.properties?.year)
             .map(n => ({
                 year: n.properties.year,
-                name: n.name,
+                name: n.name || n.properties?.title || 'Unknown',
                 type: n.type
             }))
             .sort((a, b) => a.year - b.year);

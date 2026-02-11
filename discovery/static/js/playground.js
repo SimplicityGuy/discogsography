@@ -154,6 +154,11 @@ class DiscoveryPlayground {
         };
         document.getElementById('viewTitle').innerHTML = titles[view] || view;
 
+        // Toggle button visibility based on active view
+        document.getElementById('zoomControls').style.display = view === 'graph' ? '' : 'none';
+        document.getElementById('exploreBtn').style.display = view === 'journey' ? 'none' : '';
+        document.getElementById('resetBtn').style.display = view === 'journey' ? 'none' : '';
+
         // Load data for the view - if artist selected, load artist data; otherwise load defaults
         if (this.selectedArtist) {
             this.loadDataForCurrentView();
@@ -407,6 +412,9 @@ class DiscoveryPlayground {
                 case 'label':
                     details = await discoveryAPI.getLabelDetails(node.id);
                     break;
+                case 'master':
+                    details = await discoveryAPI.getMasterDetails(node.id);
+                    break;
                 default:
                     details = node;
             }
@@ -460,7 +468,12 @@ class DiscoveryPlayground {
                 { key: 'styles', label: 'Styles' },
                 { key: 'country', label: 'Country' },
                 { key: 'members', label: 'Members' },
-                { key: 'aliases', label: 'Aliases' }
+                { key: 'aliases', label: 'Aliases' },
+                { key: 'version_count', label: 'Versions' },
+                { key: 'versions', label: 'Version Titles' },
+                { key: 'artists', label: 'Artists' },
+                { key: 'collaborators', label: 'Collaborators' },
+                { key: 'release_count', label: 'Releases' }
             ];
 
             fields.forEach(field => {
