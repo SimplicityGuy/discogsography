@@ -36,14 +36,13 @@ class DiscoveryPlayground {
             });
         });
 
-        // Search
+        // Search - only trigger on Enter key
         const searchInput = document.getElementById('searchInput');
-        let searchTimeout;
-        searchInput.addEventListener('input', (e) => {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                this.performSearch(e.target.value);
-            }, 300);
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                this.explore();
+            }
         });
 
         // Controls
