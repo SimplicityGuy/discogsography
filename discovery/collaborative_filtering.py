@@ -141,15 +141,14 @@ class CollaborativeFilter:
             logger.warning("⚠️ No artist data found for collaborative filtering")
             return
 
-        # Offload CPU-bound matrix computation to a thread so the event loop
-        # stays free for health checks and API requests.
-        await asyncio.to_thread(self._build_matrix_sync, artists_data)
+        # Process matrix computation with async yielding to keep event loop responsive
+        await self._build_matrix_async(artists_data)
 
-    def _build_matrix_sync(self, artists_data: list[dict[str, Any]]) -> None:
-        """Build the co-occurrence and similarity matrices (CPU-bound).
+    async def _build_matrix_async(self, artists_data: list[dict[str, Any]]) -> None:
+        """Build the co-occurrence and similarity matrices with async yielding.
 
-        This runs in a thread pool via asyncio.to_thread() so it doesn't
-        block the event loop.
+        Processes artists in batches with periodic yielding to prevent starving
+        the event loop and keep health checks responsive.
 
         Args:
             artists_data: List of artist dicts with labels, genres, styles, collaborators.
@@ -276,7 +275,7 @@ class CollaborativeFilter:
 
             # Yield to event loop periodically to avoid starving other tasks
             if (i + 1) % 100 == 0:
-                await asyncio.sleep(0)  # type: ignore[await-not-async]
+                await asyncio.sleep(0)
 
             # Log progress every 1000 artists
             if (i + 1) % 1000 == 0:
