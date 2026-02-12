@@ -43,19 +43,7 @@ repos:
         args: [--fix]
       - id: ruff-format
 
-  - repo: https://github.com/pre-commit/mirrors-mypy
-    rev: a66e98df7b4aeeb3724184b332785976d062b92e  # frozen: v1.19.1
-    hooks:
-      - id: mypy
-        files: ^(common|dashboard|discovery|extractor|graphinator|tableinator)/.*\.py$
-        additional_dependencies:
-          - types-tqdm
-          - types-xmltodict
-          - orjson
-          - dict-hash
-          - aio-pika
-          - neo4j
-          - psycopg[binary]
+  # Mypy configured as local hook - see local hooks section below
 
   - repo: https://github.com/PyCQA/bandit
     rev: 765f00d3f202f83f61d03f882f80a2d5142d81f8  # frozen: 1.9.3
@@ -101,6 +89,13 @@ repos:
   # Local hooks
   - repo: local
     hooks:
+      - id: mypy
+        name: mypy
+        entry: uv run mypy
+        language: system
+        types: [python]
+        pass_filenames: false
+        args: ["."]
       - id: cargo-fmt
         name: cargo fmt
         entry: bash -c 'cd extractor/rustextractor 2>/dev/null && cargo fmt --check || exit 0'

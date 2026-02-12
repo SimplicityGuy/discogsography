@@ -35,17 +35,21 @@ try:
     WEBSOCKET_CONNECTIONS = Gauge("dashboard_websocket_connections", "Number of active WebSocket connections")
 except ValueError:
     # Metric already registered (happens during reload)
+    from typing import cast
+
     from prometheus_client import REGISTRY
 
-    WEBSOCKET_CONNECTIONS = REGISTRY._names_to_collectors["dashboard_websocket_connections"]
+    WEBSOCKET_CONNECTIONS = cast("Gauge", REGISTRY._names_to_collectors["dashboard_websocket_connections"])
 
 try:
     API_REQUESTS = Counter("dashboard_api_requests", "Total API requests", ["endpoint", "method"])
 except ValueError:
     # Metric already registered (happens during reload)
+    from typing import cast
+
     from prometheus_client import REGISTRY
 
-    API_REQUESTS = REGISTRY._names_to_collectors["dashboard_api_requests_total"]
+    API_REQUESTS = cast("Counter", REGISTRY._names_to_collectors["dashboard_api_requests_total"])
 
 
 class ServiceStatus(BaseModel):
@@ -462,7 +466,7 @@ app.add_middleware(
 )
 
 
-@app.get("/health")  # type: ignore[untyped-decorator]
+@app.get("/health")
 async def health_check() -> ORJSONResponse:
     """Health check endpoint for Docker and monitoring."""
     return ORJSONResponse(
@@ -475,7 +479,7 @@ async def health_check() -> ORJSONResponse:
     )
 
 
-@app.get("/api/metrics")  # type: ignore[untyped-decorator]
+@app.get("/api/metrics")
 async def get_metrics() -> ORJSONResponse:
     """Get current system metrics."""
     API_REQUESTS.labels(endpoint="/api/metrics", method="GET").inc()
@@ -490,7 +494,7 @@ async def get_metrics() -> ORJSONResponse:
         return ORJSONResponse(content={})
 
 
-@app.get("/api/services")  # type: ignore[untyped-decorator]
+@app.get("/api/services")
 async def get_services() -> ORJSONResponse:
     """Get service statuses."""
     API_REQUESTS.labels(endpoint="/api/services", method="GET").inc()
@@ -500,7 +504,7 @@ async def get_services() -> ORJSONResponse:
     return ORJSONResponse(content=[s.model_dump() for s in services])
 
 
-@app.get("/api/queues")  # type: ignore[untyped-decorator]
+@app.get("/api/queues")
 async def get_queues() -> ORJSONResponse:
     """Get queue information."""
     API_REQUESTS.labels(endpoint="/api/queues", method="GET").inc()
@@ -510,7 +514,7 @@ async def get_queues() -> ORJSONResponse:
     return ORJSONResponse(content=[q.model_dump() for q in queues])
 
 
-@app.get("/api/databases")  # type: ignore[untyped-decorator]
+@app.get("/api/databases")
 async def get_databases() -> ORJSONResponse:
     """Get database information."""
     API_REQUESTS.labels(endpoint="/api/databases", method="GET").inc()
@@ -520,7 +524,7 @@ async def get_databases() -> ORJSONResponse:
     return ORJSONResponse(content=[d.model_dump() for d in databases])
 
 
-@app.get("/metrics")  # type: ignore[untyped-decorator]
+@app.get("/metrics")
 async def prometheus_metrics() -> Response:
     """Expose Prometheus metrics."""
     return Response(content=generate_latest(), media_type="text/plain")
@@ -529,7 +533,7 @@ async def prometheus_metrics() -> Response:
 # Discovery API Proxy Endpoints for Phase 4.3 UI
 
 
-@app.get("/api/discovery/ml/status")  # type: ignore[untyped-decorator]
+@app.get("/api/discovery/ml/status")
 async def get_ml_status() -> ORJSONResponse:
     """Get ML API status from Discovery service."""
     API_REQUESTS.labels(endpoint="/api/discovery/ml/status", method="GET").inc()
@@ -544,7 +548,7 @@ async def get_ml_status() -> ORJSONResponse:
         return ORJSONResponse(content={"error": str(e)}, status_code=503)
 
 
-@app.post("/api/discovery/ml/recommend/collaborative")  # type: ignore[untyped-decorator]
+@app.post("/api/discovery/ml/recommend/collaborative")
 async def get_collaborative_recommendations(artist_id: str = "The Beatles", limit: int = 10, min_similarity: float = 0.1) -> ORJSONResponse:
     """Get collaborative filtering recommendations from Discovery service."""
     API_REQUESTS.labels(endpoint="/api/discovery/ml/recommend/collaborative", method="POST").inc()
@@ -562,7 +566,7 @@ async def get_collaborative_recommendations(artist_id: str = "The Beatles", limi
         return ORJSONResponse(content={"error": str(e)}, status_code=503)
 
 
-@app.post("/api/discovery/ml/recommend/hybrid")  # type: ignore[untyped-decorator]
+@app.post("/api/discovery/ml/recommend/hybrid")
 async def get_hybrid_recommendations(artist_name: str = "The Beatles", limit: int = 10, strategy: str = "weighted") -> ORJSONResponse:
     """Get hybrid recommendations from Discovery service."""
     API_REQUESTS.labels(endpoint="/api/discovery/ml/recommend/hybrid", method="POST").inc()
@@ -580,7 +584,7 @@ async def get_hybrid_recommendations(artist_name: str = "The Beatles", limit: in
         return ORJSONResponse(content={"error": str(e)}, status_code=503)
 
 
-@app.get("/api/discovery/search/status")  # type: ignore[untyped-decorator]
+@app.get("/api/discovery/search/status")
 async def get_search_status() -> ORJSONResponse:
     """Get Search API status from Discovery service."""
     API_REQUESTS.labels(endpoint="/api/discovery/search/status", method="GET").inc()
@@ -595,7 +599,7 @@ async def get_search_status() -> ORJSONResponse:
         return ORJSONResponse(content={"error": str(e)}, status_code=503)
 
 
-@app.get("/api/discovery/search/stats")  # type: ignore[untyped-decorator]
+@app.get("/api/discovery/search/stats")
 async def get_search_stats() -> ORJSONResponse:
     """Get search statistics from Discovery service."""
     API_REQUESTS.labels(endpoint="/api/discovery/search/stats", method="GET").inc()
@@ -610,7 +614,7 @@ async def get_search_stats() -> ORJSONResponse:
         return ORJSONResponse(content={"error": str(e)}, status_code=503)
 
 
-@app.get("/api/discovery/graph/status")  # type: ignore[untyped-decorator]
+@app.get("/api/discovery/graph/status")
 async def get_graph_status() -> ORJSONResponse:
     """Get Graph Analytics API status from Discovery service."""
     API_REQUESTS.labels(endpoint="/api/discovery/graph/status", method="GET").inc()
@@ -625,7 +629,7 @@ async def get_graph_status() -> ORJSONResponse:
         return ORJSONResponse(content={"error": str(e)}, status_code=503)
 
 
-@app.post("/api/discovery/graph/centrality")  # type: ignore[untyped-decorator]
+@app.post("/api/discovery/graph/centrality")
 async def get_centrality_metrics(
     metric: str = "pagerank", limit: int = 20, node_type: str = "artist", sample_size: int | None = None
 ) -> ORJSONResponse:
@@ -645,7 +649,7 @@ async def get_centrality_metrics(
         return ORJSONResponse(content={"error": str(e)}, status_code=503)
 
 
-@app.get("/api/discovery/realtime/status")  # type: ignore[untyped-decorator]
+@app.get("/api/discovery/realtime/status")
 async def get_realtime_status() -> ORJSONResponse:
     """Get Real-Time API status from Discovery service."""
     API_REQUESTS.labels(endpoint="/api/discovery/realtime/status", method="GET").inc()
@@ -660,7 +664,7 @@ async def get_realtime_status() -> ORJSONResponse:
         return ORJSONResponse(content={"error": str(e)}, status_code=503)
 
 
-@app.post("/api/discovery/realtime/trending")  # type: ignore[untyped-decorator]
+@app.post("/api/discovery/realtime/trending")
 async def get_trending(category: str = "artists", limit: int = 10, time_window: str = "day") -> ORJSONResponse:
     """Get trending items from Discovery service."""
     API_REQUESTS.labels(endpoint="/api/discovery/realtime/trending", method="POST").inc()
@@ -678,7 +682,7 @@ async def get_trending(category: str = "artists", limit: int = 10, time_window: 
         return ORJSONResponse(content={"error": str(e)}, status_code=503)
 
 
-@app.websocket("/ws")  # type: ignore[untyped-decorator]
+@app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket) -> None:
     """WebSocket endpoint for real-time updates."""
     await websocket.accept()

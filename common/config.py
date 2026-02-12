@@ -5,8 +5,12 @@ import logging
 from os import getenv
 from pathlib import Path
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 import warnings
+
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
 
 import orjson
 import structlog
@@ -188,7 +192,7 @@ def setup_logging(
     # Configure structlog processors
     timestamper = structlog.processors.TimeStamper(fmt="iso", utc=True)
 
-    shared_processors = [
+    shared_processors: Sequence[Any] = [
         # Merge contextvars (correlation IDs, request context) into log entries
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,

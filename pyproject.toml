@@ -177,6 +177,8 @@ warn_no_return = true
 warn_unreachable = true
 strict_equality = true
 explicit_package_bases = true
+# Exclude test files from type checking
+exclude = "^tests/"
 
 # Ignore missing imports for third-party libraries without stubs
 [[tool.mypy.overrides]]

@@ -276,7 +276,7 @@ class CollaborativeFilter:
 
             # Yield to event loop periodically to avoid starving other tasks
             if (i + 1) % 100 == 0:
-                await asyncio.sleep(0)
+                await asyncio.sleep(0)  # type: ignore[await-not-async]
 
             # Log progress every 1000 artists
             if (i + 1) % 1000 == 0:
