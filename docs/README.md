@@ -34,7 +34,7 @@
 | **[Development Guide](development.md)**                       | 💻 Complete developer setup and workflow guide     |
 | **[Contributing Guide](contributing.md)**                     | 🤝 How to contribute to the project                |
 | **[Testing Guide](testing-guide.md)**                         | 🧪 Comprehensive testing strategies and patterns   |
-| **[Logging Guide](logging-guide.md)**                         | 📊 Structured logging standards and best practices |
+| **[Logging Guide](logging-guide.md)**                         | 📊 Complete logging configuration and best practices |
 | **[Python Version Management](python-version-management.md)** | 🐍 Managing Python 3.13+ across the project        |
 
 ### 🚀 Operations & Infrastructure
@@ -67,9 +67,6 @@
 | **[Platform Targeting](platform-targeting.md)**             | 🎯 Cross-platform compatibility guidelines               |
 | **[Neo4j Indexing](neo4j-indexing.md)**                     | 🔗 Advanced Neo4j indexing strategies                    |
 | **[Performance Benchmarks](performance-benchmarks.md)**     | 📈 Performance benchmarks and tuning results             |
-| **[Logging Configuration](logging-configuration.md)**       | 📝 Detailed logging configuration reference              |
-| **[S3 Listing Fix](s3-listing-fix.md)**                     | 🔧 Discogs S3 bucket access workaround                   |
-| **[Recent Improvements](recent-improvements.md)**           | 🚀 Latest platform enhancements and changes              |
 
 ## 🎯 Documentation by Role
 
@@ -118,7 +115,7 @@ When things go wrong:
 
 1. **[Troubleshooting Guide](troubleshooting.md)** - Common issues and fixes
 1. **[Monitoring Guide](monitoring.md)** - Debug and diagnose
-1. **[Logging Configuration](logging-configuration.md)** - Enable debug logging
+1. **[Logging Guide](logging-guide.md)** - Configure logging and debug
 1. **[Performance Guide](performance-guide.md)** - Performance issues
 
 ## 📝 Documentation Standards
@@ -272,7 +269,7 @@ ______________________________________________________________________
 
 <div align="center">
 
-**Last Updated**: 2026-02-03
+**Last Updated**: 2026-02-12
 
 Made with ❤️ by the Discogsography community
 
