@@ -355,6 +355,39 @@ class DashboardConfig:
 DiscoveryConfig = DashboardConfig
 
 
+@dataclass(frozen=True)
+class ExploreConfig:
+    """Configuration for the explore service."""
+
+    neo4j_address: str
+    neo4j_username: str
+    neo4j_password: str
+
+    @classmethod
+    def from_env(cls) -> "ExploreConfig":
+        """Create configuration from environment variables."""
+        neo4j_address = getenv("NEO4J_ADDRESS")
+        neo4j_username = getenv("NEO4J_USERNAME")
+        neo4j_password = getenv("NEO4J_PASSWORD")
+
+        missing_vars = []
+        if not neo4j_address:
+            missing_vars.append("NEO4J_ADDRESS")
+        if not neo4j_username:
+            missing_vars.append("NEO4J_USERNAME")
+        if not neo4j_password:
+            missing_vars.append("NEO4J_PASSWORD")
+
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        return cls(
+            neo4j_address=neo4j_address,  # type: ignore
+            neo4j_username=neo4j_username,  # type: ignore
+            neo4j_password=neo4j_password,  # type: ignore
+        )
+
+
 def get_config() -> DashboardConfig:
     """Get dashboard/discovery configuration from environment.
 

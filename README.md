@@ -47,6 +47,7 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 | **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator**      | Builds Neo4j knowledge graphs                    | `neo4j-driver`, graph algorithms              |
 | **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator**      | Creates PostgreSQL analytics tables              | `psycopg3`, JSONB, full-text search           |
 | **[🎵](docs/emoji-guide.md#service-identifiers) Discovery**        | AI-powered music intelligence                    | `sentence-transformers`, `plotly`, `networkx` |
+| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**          | Interactive graph exploration & trends            | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j        |
 | **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**        | Real-time system monitoring                      | `FastAPI`, WebSocket, reactive UI             |
 
 ### 📐 System Architecture
@@ -64,6 +65,7 @@ graph TD
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     DISCO[["🎵 Discovery<br/>AI Engine<br/>ML Models"]]
+    EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends"]]
 
     S3 -->|1a. Download & Parse| PYEXT
     S3 -->|1b. Download & Parse| RSEXT
@@ -78,6 +80,8 @@ graph TD
     DISCO -.->|Query via asyncpg| PG
     DISCO -.->|Cache| REDIS
     DISCO -.->|Analyze| DISCO
+
+    EXPLORE -.->|Query| NEO4J
 
     DASH -.->|Monitor| PYEXT
     DASH -.->|Monitor| RSEXT
@@ -98,6 +102,7 @@ graph TD
     style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
     style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style DISCO fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
 ```
 
 ## 🌟 Key Features
@@ -212,6 +217,7 @@ open http://localhost:8003
 | Service           | URL                    | Default Credentials                 | Purpose            |
 | ----------------- | ---------------------- | ----------------------------------- | ------------------ |
 | 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring  |
+| 🔍 **Explore**    | http://localhost:8006  | None                                | Graph exploration  |
 | 🎵 **Discovery**  | http://localhost:8005  | None                                | AI music discovery |
 | 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management   |
 | 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph exploration  |
@@ -238,6 +244,7 @@ just init
 
 # 5. Run any service
 just dashboard         # Monitoring UI
+just explore           # Graph exploration & trends
 just discovery         # AI discovery
 just pyextractor       # Python data ingestion
 just rustextractor-run # Rust data ingestion (requires cargo)
@@ -523,6 +530,7 @@ uv run pytest tests/extractor/      # Extractor tests (Python)
 uv run pytest tests/graphinator/    # Graphinator tests
 uv run pytest tests/tableinator/    # Tableinator tests
 uv run pytest tests/dashboard/      # Dashboard tests
+uv run pytest tests/explore/        # Explore tests
 ```
 
 #### 🎭 E2E Testing with Playwright
@@ -566,6 +574,9 @@ discogsography/
 ├── 📊 dashboard/           # Real-time monitoring dashboard
 │   ├── dashboard.py        # FastAPI backend with WebSocket
 │   └── static/             # Frontend HTML/CSS/JS
+├── 🔍 explore/             # Interactive graph exploration & trends
+│   ├── explore.py          # FastAPI backend with Neo4j queries
+│   └── static/             # Frontend HTML/CSS/JS (D3.js, Plotly.js)
 ├── 📥 extractor/           # Data extraction services
 │   ├── pyextractor/        # Python-based Discogs data ingestion
 │   │   ├── extractor.py    # Main processing logic
@@ -850,6 +861,7 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
    curl http://localhost:8002/health  # Tableinator
    curl http://localhost:8003/health  # Dashboard
    curl http://localhost:8004/health  # Discovery
+   curl http://localhost:8007/health  # Explore
    ```
 
 1. **🔍 Enable Debug Logging**

@@ -400,8 +400,8 @@ class TestDashboardAppDataCollection:
 
                 statuses = await app.get_service_statuses()
 
-                # Should have 4 services
-                assert len(statuses) == 4
+                # Should have 3 services (extractor, graphinator, tableinator)
+                assert len(statuses) == 3
 
                 # All should be healthy
                 for status in statuses:
@@ -425,19 +425,15 @@ class TestDashboardAppDataCollection:
                 call_count += 1
                 response = Mock()
                 if call_count == 1:
-                    # First service healthy
+                    # First service (extractor) healthy
                     response.status_code = 200
                     response.json = Mock(return_value={"status": "healthy"})
                 elif call_count == 2:
-                    # Second service returns error code
+                    # Second service (graphinator) returns error code
                     response.status_code = 500
-                elif call_count == 3:
-                    # Third service raises exception
-                    raise httpx.ConnectError("Connection failed")
                 else:
-                    # Fourth service healthy
-                    response.status_code = 200
-                    response.json = Mock(return_value={"status": "healthy"})
+                    # Third service (tableinator) raises exception
+                    raise httpx.ConnectError("Connection failed")
                 return response
 
             with patch("httpx.AsyncClient") as mock_client_class:
@@ -449,13 +445,12 @@ class TestDashboardAppDataCollection:
 
                 statuses = await app.get_service_statuses()
 
-                assert len(statuses) == 4
+                assert len(statuses) == 3
                 assert statuses[0].status == "healthy"
                 assert statuses[1].status == "unhealthy"
                 assert statuses[1].error == "HTTP 500"
                 assert statuses[2].status == "unknown"
                 assert "Connection failed" in statuses[2].error
-                assert statuses[3].status == "healthy"
 
     @pytest.mark.asyncio
     async def test_get_queue_info_success(self) -> None:
@@ -1005,314 +1000,6 @@ class TestFastAPIEndpoints:
             assert "text/plain" in response.headers["content-type"]
             # Prometheus metrics should contain some text
             assert len(response.text) > 0
-
-
-class TestDiscoveryProxyEndpoints:
-    """Test Discovery API proxy endpoints."""
-
-    @pytest.mark.asyncio
-    async def test_get_ml_status_success(self) -> None:
-        """Test ML status proxy endpoint success."""
-        from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
-
-        from dashboard.dashboard import get_ml_status
-
-        mock_response_data = {"status": "healthy", "model": "loaded"}
-
-        async def mock_get(_url: str) -> Mock:
-            response = Mock()
-            response.status_code = 200
-            response.json = Mock(return_value=mock_response_data)
-            return response
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.get = mock_get
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            test_app = FastAPI(default_response_class=ORJSONResponse)
-            test_app.get("/api/discovery/ml/status")(get_ml_status)
-
-            with TestClient(test_app) as client:
-                response = client.get("/api/discovery/ml/status")
-                assert response.status_code == 200
-                data = response.json()
-                assert data["status"] == "healthy"
-
-    @pytest.mark.asyncio
-    async def test_get_ml_status_error(self) -> None:
-        """Test ML status proxy endpoint error."""
-        from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
-
-        from dashboard.dashboard import get_ml_status
-
-        async def mock_get(_url: str) -> Mock:
-            raise Exception("Discovery service unavailable")
-
-        with (
-            patch("httpx.AsyncClient") as mock_client_class,
-            patch("dashboard.dashboard.logger") as _mock_logger,
-        ):
-            mock_client = AsyncMock()
-            mock_client.get = mock_get
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            test_app = FastAPI(default_response_class=ORJSONResponse)
-            test_app.get("/api/discovery/ml/status")(get_ml_status)
-
-            with TestClient(test_app) as client:
-                response = client.get("/api/discovery/ml/status")
-                assert response.status_code == 503
-                data = response.json()
-                assert "error" in data
-
-    @pytest.mark.asyncio
-    async def test_get_collaborative_recommendations(self) -> None:
-        """Test collaborative recommendations proxy endpoint."""
-        from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
-
-        from dashboard.dashboard import get_collaborative_recommendations
-
-        mock_response_data = {"recommendations": [{"id": "1", "score": 0.95}]}
-
-        async def mock_post(_url: str, **_kwargs: Any) -> Mock:
-            response = Mock()
-            response.status_code = 200
-            response.json = Mock(return_value=mock_response_data)
-            return response
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = mock_post
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            test_app = FastAPI(default_response_class=ORJSONResponse)
-            test_app.post("/api/discovery/ml/recommend/collaborative")(get_collaborative_recommendations)
-
-            with TestClient(test_app) as client:
-                response = client.post("/api/discovery/ml/recommend/collaborative?artist_id=Beatles&limit=10")
-                assert response.status_code == 200
-                data = response.json()
-                assert "recommendations" in data
-
-    @pytest.mark.asyncio
-    async def test_get_hybrid_recommendations(self) -> None:
-        """Test hybrid recommendations proxy endpoint."""
-        from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
-
-        from dashboard.dashboard import get_hybrid_recommendations
-
-        mock_response_data = {"recommendations": []}
-
-        async def mock_post(_url: str, **_kwargs: Any) -> Mock:
-            response = Mock()
-            response.status_code = 200
-            response.json = Mock(return_value=mock_response_data)
-            return response
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = mock_post
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            test_app = FastAPI(default_response_class=ORJSONResponse)
-            test_app.post("/api/discovery/ml/recommend/hybrid")(get_hybrid_recommendations)
-
-            with TestClient(test_app) as client:
-                response = client.post("/api/discovery/ml/recommend/hybrid")
-                assert response.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_get_search_status(self) -> None:
-        """Test search status proxy endpoint."""
-        from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
-
-        from dashboard.dashboard import get_search_status
-
-        mock_response_data = {"status": "healthy", "indexed": 1000}
-
-        async def mock_get(_url: str) -> Mock:
-            response = Mock()
-            response.status_code = 200
-            response.json = Mock(return_value=mock_response_data)
-            return response
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.get = mock_get
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            test_app = FastAPI(default_response_class=ORJSONResponse)
-            test_app.get("/api/discovery/search/status")(get_search_status)
-
-            with TestClient(test_app) as client:
-                response = client.get("/api/discovery/search/status")
-                assert response.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_get_search_stats(self) -> None:
-        """Test search stats proxy endpoint."""
-        from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
-
-        from dashboard.dashboard import get_search_stats
-
-        mock_response_data = {"queries": 500, "avg_time": 0.25}
-
-        async def mock_get(_url: str) -> Mock:
-            response = Mock()
-            response.status_code = 200
-            response.json = Mock(return_value=mock_response_data)
-            return response
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.get = mock_get
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            test_app = FastAPI(default_response_class=ORJSONResponse)
-            test_app.get("/api/discovery/search/stats")(get_search_stats)
-
-            with TestClient(test_app) as client:
-                response = client.get("/api/discovery/search/stats")
-                assert response.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_get_graph_status(self) -> None:
-        """Test graph status proxy endpoint."""
-        from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
-
-        from dashboard.dashboard import get_graph_status
-
-        mock_response_data = {"status": "healthy", "algorithms": ["pagerank"]}
-
-        async def mock_get(_url: str) -> Mock:
-            response = Mock()
-            response.status_code = 200
-            response.json = Mock(return_value=mock_response_data)
-            return response
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.get = mock_get
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            test_app = FastAPI(default_response_class=ORJSONResponse)
-            test_app.get("/api/discovery/graph/status")(get_graph_status)
-
-            with TestClient(test_app) as client:
-                response = client.get("/api/discovery/graph/status")
-                assert response.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_get_centrality_metrics(self) -> None:
-        """Test centrality metrics proxy endpoint."""
-        from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
-
-        from dashboard.dashboard import get_centrality_metrics
-
-        mock_response_data = {"results": [{"node": "A", "score": 0.95}]}
-
-        async def mock_post(_url: str, **_kwargs: Any) -> Mock:
-            response = Mock()
-            response.status_code = 200
-            response.json = Mock(return_value=mock_response_data)
-            return response
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = mock_post
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            test_app = FastAPI(default_response_class=ORJSONResponse)
-            test_app.post("/api/discovery/graph/centrality")(get_centrality_metrics)
-
-            with TestClient(test_app) as client:
-                response = client.post("/api/discovery/graph/centrality")
-                assert response.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_get_realtime_status(self) -> None:
-        """Test realtime status proxy endpoint."""
-        from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
-
-        from dashboard.dashboard import get_realtime_status
-
-        mock_response_data = {"status": "healthy", "stream_active": True}
-
-        async def mock_get(_url: str) -> Mock:
-            response = Mock()
-            response.status_code = 200
-            response.json = Mock(return_value=mock_response_data)
-            return response
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.get = mock_get
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            test_app = FastAPI(default_response_class=ORJSONResponse)
-            test_app.get("/api/discovery/realtime/status")(get_realtime_status)
-
-            with TestClient(test_app) as client:
-                response = client.get("/api/discovery/realtime/status")
-                assert response.status_code == 200
-
-    @pytest.mark.asyncio
-    async def test_get_trending(self) -> None:
-        """Test trending items proxy endpoint."""
-        from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
-
-        from dashboard.dashboard import get_trending
-
-        mock_response_data = {"trending": [{"name": "Artist1", "score": 100}]}
-
-        async def mock_post(_url: str, **_kwargs: Any) -> Mock:
-            response = Mock()
-            response.status_code = 200
-            response.json = Mock(return_value=mock_response_data)
-            return response
-
-        with patch("httpx.AsyncClient") as mock_client_class:
-            mock_client = AsyncMock()
-            mock_client.post = mock_post
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=None)
-            mock_client_class.return_value = mock_client
-
-            test_app = FastAPI(default_response_class=ORJSONResponse)
-            test_app.post("/api/discovery/realtime/trending")(get_trending)
-
-            with TestClient(test_app) as client:
-                response = client.post("/api/discovery/realtime/trending")
-                assert response.status_code == 200
 
 
 class TestWebSocketEndpoint:

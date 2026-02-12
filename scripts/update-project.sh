@@ -593,7 +593,7 @@ update_python_packages() {
         backup_file "pyproject.toml"
 
         # Backup all pyproject.toml files including nested ones
-        for service in common dashboard discovery graphinator tableinator; do
+        for service in common dashboard discovery explore graphinator tableinator; do
             if [[ -f "$service/pyproject.toml" ]]; then
                 backup_file "$service/pyproject.toml"
             fi
@@ -862,6 +862,7 @@ show_file_report() {
     echo "  ✓ common/pyproject.toml"
     echo "  ✓ dashboard/pyproject.toml"
     echo "  ✓ discovery/pyproject.toml"
+    echo "  ✓ explore/pyproject.toml"
     echo "  ✓ extractor/pyextractor/pyproject.toml"
     echo "  ✓ extractor/rustextractor/pyproject.toml (tools only - Rust project)"
     echo "  ✓ graphinator/pyproject.toml"
@@ -874,6 +875,7 @@ show_file_report() {
     echo "🐳 Docker Configuration:"
     echo "  ✓ dashboard/Dockerfile"
     echo "  ✓ discovery/Dockerfile"
+    echo "  ✓ explore/Dockerfile"
     echo "  ✓ extractor/pyextractor/Dockerfile"
     echo "  ✓ extractor/rustextractor/Dockerfile"
     echo "  ✓ graphinator/Dockerfile"
@@ -925,6 +927,7 @@ verify_components() {
         "common/pyproject.toml"
         "dashboard/pyproject.toml"
         "discovery/pyproject.toml"
+        "explore/pyproject.toml"
         "extractor/pyextractor/pyproject.toml"
         "extractor/rustextractor/pyproject.toml"
         "graphinator/pyproject.toml"
@@ -945,6 +948,7 @@ verify_components() {
     local dockerfile_list=(
         "dashboard/Dockerfile"
         "discovery/Dockerfile"
+        "explore/Dockerfile"
         "extractor/pyextractor/Dockerfile"
         "extractor/rustextractor/Dockerfile"
         "graphinator/Dockerfile"

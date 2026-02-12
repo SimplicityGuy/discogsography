@@ -75,6 +75,15 @@ utilities = [
     "psutil>=5.9.0",
     "requests>=2.31.0",
 ]
+explore = [
+    "fastapi>=0.115.6",
+    "neo4j>=5.15.0",
+    "orjson>=3.9.0",
+    "pydantic>=2.10.5",
+    "python-multipart>=0.0.20",
+    "structlog>=24.0.0",
+    "uvicorn[standard]>=0.34.0",
+]
 discovery = [
     # Web framework dependencies
     "fastapi>=0.115.6",
@@ -102,7 +111,7 @@ discovery = [
     "asyncpg>=0.29.0",                  # Async PostgreSQL driver for SQLAlchemy
 ]
 all = [
-    "discogsography[dashboard,discovery,pyextractor,graphinator,tableinator,dev,utilities]",
+    "discogsography[dashboard,discovery,explore,pyextractor,graphinator,tableinator,dev,utilities]",
 ]
 
 [tool.ruff.format]
@@ -117,7 +126,7 @@ docstring-code-line-length = "dynamic"
 lines-after-imports = 2
 combine-as-imports = true
 split-on-trailing-comma = true
-known-first-party = ["common", "dashboard", "discovery", "extractor", "graphinator", "tableinator"]
+known-first-party = ["common", "dashboard", "discovery", "explore", "extractor", "graphinator", "tableinator"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 force-sort-within-sections = true
 
@@ -155,6 +164,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
+"*/explore.py" = ["T201"]      # Allow print statements for ASCII art
 "*/extractor.py" = ["T201"]    # Allow print statements for ASCII art
 "*/graphinator.py" = ["T201"]  # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]  # Allow print statements for ASCII art
@@ -217,6 +227,7 @@ module = [
     "discovery.api_ml",
     "discovery.api_realtime",
     "discovery.api_search",
+    "explore.explore",
 ]
 disallow_untyped_decorators = false
 
@@ -232,7 +243,7 @@ disallow_untyped_calls = false
 disallow_untyped_defs = false
 
 [tool.coverage.run]
-source = ["common", "dashboard", "discovery", "extractor/pyextractor", "graphinator", "tableinator"]
+source = ["common", "dashboard", "discovery", "explore", "extractor/pyextractor", "graphinator", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
 
 [tool.coverage.report]
@@ -311,7 +322,7 @@ split_on_trailing_comma = true
 
 # uv workspace configuration
 [tool.uv.workspace]
-members = ["common", "dashboard", "discovery", "extractor/pyextractor", "graphinator", "tableinator"]
+members = ["common", "dashboard", "discovery", "explore", "extractor/pyextractor", "graphinator", "tableinator"]
 
 # Environment restrictions for uv to avoid iOS and other incompatible platforms
 [tool.uv]
