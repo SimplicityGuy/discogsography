@@ -274,7 +274,11 @@ class CollaborativeFilter:
                     self.co_occurrence_matrix[i, j] = score
                     total_edges += 1
 
-            # Log progress every 1000 artists (runs in thread pool, won't block event loop)
+            # Yield to event loop periodically to avoid starving other tasks
+            if (i + 1) % 100 == 0:
+                await asyncio.sleep(0)
+
+            # Log progress every 1000 artists
             if (i + 1) % 1000 == 0:
                 logger.info(
                     f"🔄 Processing artists {i + 1}/{n_artists}",
