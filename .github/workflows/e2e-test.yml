@@ -39,6 +39,7 @@ env:
 permissions:
   contents: read
   pull-requests: write  # Required for coverage report comments
+  statuses: write  # Required for coverage status creation
 
 jobs:
   e2e-test:
