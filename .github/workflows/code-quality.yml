@@ -105,8 +105,9 @@ jobs:
         run: |
           just install
           # Install workspace packages
-          uv pip install -e dashboard
           uv pip install -e common
+          uv pip install -e dashboard
+          uv pip install -e explore
 
       - name: 🧪 Run pre-commit hooks
         run: |

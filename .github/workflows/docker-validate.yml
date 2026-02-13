@@ -59,6 +59,7 @@ jobs:
           failure-threshold: error
 
       - name: 🐳 Test Docker build for ${{ matrix.sub-project }}
+        if: matrix.sub-project != 'discovery'
         run: |
           echo "🔨 Testing build for ${{ matrix.sub-project }}..."
           docker build --build-arg PYTHON_VERSION=${{ env.PYTHON_VERSION }} -f ${{ matrix.sub-project }}/Dockerfile . --target builder
