@@ -346,6 +346,7 @@ http://localhost:8000/api/health
 ### Service Ports
 
 - Dashboard: 8003
+- Explore: 8006 (service), 8007 (health)
 - Discovery: 8005 (service), 8004 (health)
 - Neo4j: 7474 (browser), 7687 (bolt)
 - PostgreSQL: 5433 (mapped from 5432)

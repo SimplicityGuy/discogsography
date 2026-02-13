@@ -1,11 +1,16 @@
-# 📝 Logging Conventions Guide
+# 📝 Logging Guide
 
-> Consistent, emoji-enhanced logging patterns across all Discogsography services
+<div align="center">
 
-## Overview
+**Consistent, emoji-enhanced logging patterns and configuration across all Discogsography services**
 
-Discogsography uses a standardized logging approach with emoji prefixes for visual clarity and quick issue
-identification. This guide ensures consistent logging across all services.
+[🏠 Back to Main](../README.md) | [📚 Documentation Index](README.md) | [📋 Emoji Guide](emoji-guide.md)
+
+</div>
+
+## 📖 Overview
+
+Discogsography uses a standardized logging approach with emoji prefixes for visual clarity and quick issue identification. All services use consistent logging controlled by the `LOG_LEVEL` environment variable.
 
 ### Logging Flow
 
@@ -38,6 +43,139 @@ flowchart LR
     style Code fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
     style Console fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
     style File fill:#fff3e0,stroke:#ff9800,stroke-width:2px
+```
+
+## ⚙️ Configuration
+
+### Environment Variable
+
+All services in the Discogsography platform use the `LOG_LEVEL` environment variable for consistent logging control.
+
+#### Supported Log Levels
+
+| Level      | Description                                   | Use Case                        |
+| ---------- | --------------------------------------------- | ------------------------------- |
+| `DEBUG`    | Detailed diagnostic information               | Development and troubleshooting |
+| `INFO`     | General informational messages                | Production (default)            |
+| `WARNING`  | Warning messages for potential issues         | Production monitoring           |
+| `ERROR`    | Error messages for failures                   | Production alerts               |
+| `CRITICAL` | Critical errors requiring immediate attention | Production alerts               |
+
+**Default**: If `LOG_LEVEL` is not set, all services default to `INFO`.
+
+#### Setting Log Level
+
+```bash
+# Development with debug logging
+export LOG_LEVEL=DEBUG
+
+# Production with info logging (default)
+export LOG_LEVEL=INFO
+
+# Error-only logging
+export LOG_LEVEL=ERROR
+```
+
+#### Docker Compose
+
+```yaml
+services:
+  my-service:
+    environment:
+      LOG_LEVEL: INFO
+```
+
+#### Docker Run
+
+```bash
+docker run -e LOG_LEVEL=DEBUG discogsography/service:latest
+```
+
+### Service-Specific Implementation
+
+#### Python Services
+
+All Python services (extractor, graphinator, tableinator, dashboard, discovery) use the `setup_logging()` function from `common/config.py`:
+
+```python
+from common import setup_logging
+
+# Reads from LOG_LEVEL environment variable, defaults to INFO
+setup_logging("service_name", log_file=Path("/logs/service.log"))
+```
+
+**Features**:
+- Structured JSON logging with emoji indicators
+- Correlation IDs from contextvars
+- Service-specific context (name, environment)
+- File and console output
+- Automatic suppression of verbose third-party logs
+
+#### Rust Extractor
+
+The Rust extractor uses Rust's `tracing` framework and maps Python log levels to Rust equivalents:
+
+| Python Level | Rust Level | Notes                                  |
+| ------------ | ---------- | -------------------------------------- |
+| DEBUG        | debug      | Detailed diagnostic info               |
+| INFO         | info       | General messages (default)             |
+| WARNING      | warn       | Warning messages                       |
+| ERROR        | error      | Error messages                         |
+| CRITICAL     | error      | Mapped to error (Rust has no critical) |
+
+**Configuration**:
+
+```bash
+# Debug logging
+LOG_LEVEL=DEBUG cargo run
+
+# Production logging
+LOG_LEVEL=INFO cargo run
+```
+
+**Implementation** (main.rs):
+
+```rust
+let log_level = std::env::var("LOG_LEVEL")
+    .unwrap_or_else(|_| "INFO".to_string())
+    .to_uppercase();
+
+let rust_level = match log_level.as_str() {
+    "DEBUG" => "debug",
+    "INFO" => "info",
+    "WARNING" | "WARN" => "warn",
+    "ERROR" => "error",
+    "CRITICAL" => "error",
+    _ => "info"
+};
+```
+
+## 📋 Log Format
+
+### Python Services (JSON)
+
+```json
+{
+  "timestamp": "2024-01-15T10:30:45.123456Z",
+  "level": "info",
+  "logger": "graphinator",
+  "event": "🚀 Service starting...",
+  "service": "graphinator",
+  "environment": "production",
+  "lineno": 1210
+}
+```
+
+### Rust Extractor (JSON)
+
+```json
+{
+  "timestamp": "2024-01-15T10:30:45.123456Z",
+  "level": "INFO",
+  "target": "rust_extractor",
+  "message": "🚀 Starting Rust-based Discogs data extractor with high performance",
+  "line": 59
+}
 ```
 
 ## 🎨 Emoji Pattern
@@ -266,30 +404,7 @@ except Exception as e:
     raise
 ```
 
-## 🔧 Configuration
-
-### LOG_LEVEL Environment Variable
-
-All Discogsography services use the `LOG_LEVEL` environment variable for consistent log level control:
-
-```bash
-# Set log level for all services
-export LOG_LEVEL=DEBUG    # Detailed diagnostic information
-export LOG_LEVEL=INFO     # General informational messages (default)
-export LOG_LEVEL=WARNING  # Warning conditions only
-export LOG_LEVEL=ERROR    # Error conditions only
-export LOG_LEVEL=CRITICAL # Critical conditions only
-
-# Run service with specific log level
-LOG_LEVEL=DEBUG docker-compose up discovery
-
-# Check what DEBUG logging shows
-docker-compose logs discovery | grep "🔍"  # Neo4j queries
-docker-compose logs discovery | grep "📊"  # Progress updates
-docker-compose logs discovery | grep "🔄"  # Processing operations
-```
-
-For complete details on log level configuration across all services, see [Logging Configuration](logging-configuration.md).
+## 🔧 Advanced Configuration
 
 ### Basic Setup
 
@@ -332,6 +447,40 @@ class JSONFormatter(logging.Formatter):
             }
         )
 ```
+
+## 🔍 Troubleshooting
+
+### Service not respecting LOG_LEVEL
+
+1. **Check environment variable is set**:
+
+   ```bash
+   docker exec <container> printenv LOG_LEVEL
+   ```
+
+2. **Verify service startup logs**:
+
+   ```bash
+   docker logs <container> | head -20
+   ```
+
+3. **Check for explicit level parameter** (Python):
+
+   ```python
+   # This overrides LOG_LEVEL
+   setup_logging("service", level="WARNING")
+   ```
+
+### Too much logging in production
+
+1. Set `LOG_LEVEL=WARNING` or `LOG_LEVEL=ERROR`
+2. Check third-party library log levels are suppressed (handled automatically)
+
+### Not enough logging for debugging
+
+1. Set `LOG_LEVEL=DEBUG`
+2. Restart the service
+3. Monitor logs: `docker logs -f <container>`
 
 ## 📊 Log Analysis
 
@@ -377,6 +526,48 @@ logger.info("Starting service 🚀")
 logger.info("🚀 🔧 Starting and configuring")
 ```
 
+## 🔄 Migration Notes
+
+### From RUST_LOG (Rust Extractor)
+
+**Old**:
+
+```yaml
+environment:
+  RUST_LOG: rust_extractor=info,lapin=warn
+```
+
+**New**:
+
+```yaml
+environment:
+  LOG_LEVEL: INFO
+```
+
+### From Verbose Flag (Rust Extractor)
+
+**Old**:
+
+```bash
+cargo run --verbose
+```
+
+**New**:
+
+```bash
+LOG_LEVEL=DEBUG cargo run
+```
+
+## 📝 Best Practices Summary
+
+1. **Development**: Use `DEBUG` for detailed diagnostic information
+2. **Staging**: Use `INFO` to match production behavior
+3. **Production**: Use `INFO` or `WARNING` depending on volume
+4. **Incident Response**: Temporarily set to `DEBUG` for affected services
+5. **Case Insensitive**: LOG_LEVEL values are case-insensitive (`debug` == `DEBUG`)
+6. **Container Logs**: All logs go to stdout/stderr for container orchestration
+7. **File Logs**: Python services also write to `/logs/<service>.log` inside containers
+
 ## 📚 Quick Reference Card
 
 ```
@@ -390,6 +581,19 @@ Services:  🐰 RabbitMQ | 🔗 Neo4j | 🐘 PostgreSQL | 🌐 Network
 
 > **💡 Tip**: Set `LOG_LEVEL=DEBUG` to see detailed diagnostic logs including database queries marked with 🔍
 
-______________________________________________________________________
+## 🔗 Related Documentation
+
+- [Emoji Guide](emoji-guide.md) - Complete emoji reference for the project
+- [Monitoring Guide](monitoring.md) - Real-time monitoring and debugging
+- [Troubleshooting Guide](troubleshooting.md) - Common issues and solutions
+- [Configuration Guide](configuration.md) - Complete environment variable reference
+
+---
+
+<div align="center">
+
+**Last Updated**: 2026-02-12
 
 Remember: Consistent logging makes debugging easier and operations smoother! 🎯
+
+</div>

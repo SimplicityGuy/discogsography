@@ -122,6 +122,9 @@ test-parallel:
     uv run pytest tests/discovery/ -m 'not e2e' -v > /tmp/test-discovery.log 2>&1 &
     pid_discovery=$!
 
+    uv run pytest tests/explore/ -m 'not e2e' -v > /tmp/test-explore.log 2>&1 &
+    pid_explore=$!
+
     uv run pytest tests/extractor/ -v > /tmp/test-pyextractor.log 2>&1 &
     pid_pyextractor=$!
 
@@ -142,6 +145,7 @@ test-parallel:
     wait $pid_common || { echo "❌ Common tests failed"; cat /tmp/test-common.log; failed=1; }
     wait $pid_dashboard || { echo "❌ Dashboard tests failed"; cat /tmp/test-dashboard.log; failed=1; }
     wait $pid_discovery || { echo "❌ Discovery tests failed"; cat /tmp/test-discovery.log; failed=1; }
+    wait $pid_explore || { echo "❌ Explore tests failed"; cat /tmp/test-explore.log; failed=1; }
     wait $pid_pyextractor || { echo "❌ PyExtractor tests failed"; cat /tmp/test-pyextractor.log; failed=1; }
     wait $pid_graphinator || { echo "❌ Graphinator tests failed"; cat /tmp/test-graphinator.log; failed=1; }
     wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
@@ -180,6 +184,11 @@ test-dashboard:
 test-discovery:
     uv run pytest tests/discovery/ -m 'not e2e' -v
 
+# Run explore service tests
+[group('test')]
+test-explore:
+    uv run pytest tests/explore/ -m 'not e2e' -v
+
 # Run Python extractor tests
 [group('test')]
 test-pyextractor:
@@ -208,6 +217,11 @@ test-tableinator:
 [group('services')]
 dashboard:
     uv run python dashboard/dashboard.py
+
+# Run the explore service (graph exploration and trends)
+[group('services')]
+explore:
+    uv run python -m explore.explore
 
 # Run the discovery service (AI-powered music intelligence)
 [group('services')]
@@ -312,6 +326,7 @@ build:
     docker-compose build \
         dashboard \
         discovery \
+        explore \
         pyextractor \
         rustextractor \
         graphinator \

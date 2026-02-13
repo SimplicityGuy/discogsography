@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+"""Explore service for interactive graph exploration of Discogs data."""
+
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime
+import logging
+from pathlib import Path
+from typing import Any
+
+from fastapi import FastAPI, Query
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from common import (
+    AsyncResilientNeo4jDriver,
+    ExploreConfig,
+    HealthServer,
+    setup_logging,
+)
+from explore.neo4j_indexes import create_all_indexes
+from explore.neo4j_queries import (
+    AUTOCOMPLETE_DISPATCH,
+    DETAILS_DISPATCH,
+    EXPAND_DISPATCH,
+    EXPLORE_DISPATCH,
+    TRENDS_DISPATCH,
+)
+
+
+logger = logging.getLogger(__name__)
+
+# Module-level state
+neo4j_driver: AsyncResilientNeo4jDriver | None = None
+config: ExploreConfig | None = None
+
+
+def get_health_data() -> dict[str, Any]:
+    """Return health check data."""
+    return {
+        "status": "healthy" if neo4j_driver else "starting",
+        "service": "explore",
+        "timestamp": datetime.now(UTC).isoformat(),
+    }
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+    """Manage application lifecycle."""
+    # fmt: off
+    print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗               ")
+    print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝               ")
+    print("██║  ██║██║███████╗██║     ██║   ██║██║  ███╗███████╗               ")
+    print("██║  ██║██║╚════██║██║     ██║   ██║██║   ██║╚════██║               ")
+    print("██████╔╝██║███████║╚██████╗╚██████╔╝╚██████╔╝███████║               ")
+    print("╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝               ")
+    print("                                                                     ")
+    print("███████╗██╗  ██╗██████╗ ██╗      ██████╗ ██████╗ ███████╗            ")
+    print("██╔════╝╚██╗██╔╝██╔══██╗██║     ██╔═══██╗██╔══██╗██╔════╝            ")
+    print("█████╗   ╚███╔╝ ██████╔╝██║     ██║   ██║██████╔╝█████╗              ")
+    print("██╔══╝   ██╔██╗ ██╔═══╝ ██║     ██║   ██║██╔══██╗██╔══╝              ")
+    print("███████╗██╔╝ ██╗██║     ███████╗╚██████╔╝██║  ██║███████╗            ")
+    print("╚══════╝╚═╝  ╚═╝╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝            ")
+    print()
+    # fmt: on
+
+    logger.info("🚀 Starting Explore service...")
+
+    global neo4j_driver, config
+    config = ExploreConfig.from_env()
+
+    # Start health server on separate port
+    health_server = HealthServer(8007, get_health_data)
+    health_server.start_background()
+
+    # Initialize Neo4j driver
+    neo4j_driver = AsyncResilientNeo4jDriver(
+        uri=config.neo4j_address,
+        auth=(config.neo4j_username, config.neo4j_password),
+        max_retries=5,
+        encrypted=False,
+    )
+    logger.info("🔗 Connected to Neo4j with resilient driver")
+
+    # Create indexes
+    await create_all_indexes(config.neo4j_address, config.neo4j_username, config.neo4j_password)
+
+    logger.info("✅ Explore service ready")
+    yield
+
+    # Shutdown
+    if neo4j_driver:
+        await neo4j_driver.close()
+    health_server.stop()
+    logger.info("✅ Explore service shutdown complete")
+
+
+app = FastAPI(
+    title="Discogsography Explore",
+    version="0.1.0",
+    default_response_class=ORJSONResponse,
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# --- Autocomplete cache ---
+
+_autocomplete_cache: dict[tuple[str, str, int], list[dict[str, Any]]] = {}
+_AUTOCOMPLETE_CACHE_MAX = 512
+
+
+def _get_cache_key(query: str, entity_type: str, limit: int) -> tuple[str, str, int]:
+    return (query.lower().strip(), entity_type, limit)
+
+
+# --- API Endpoints ---
+
+
+@app.get("/health")
+async def health_check() -> ORJSONResponse:
+    """Health check endpoint."""
+    return ORJSONResponse(content=get_health_data())
+
+
+@app.get("/api/autocomplete")
+async def autocomplete(
+    q: str = Query(..., min_length=2, description="Search query"),
+    type: str = Query("artist", description="Entity type: artist, genre, label"),
+    limit: int = Query(10, ge=1, le=50, description="Max results"),
+) -> ORJSONResponse:
+    """Autocomplete search for entities."""
+    if not neo4j_driver:
+        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    entity_type = type.lower()
+    if entity_type not in AUTOCOMPLETE_DISPATCH:
+        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, or label"}, status_code=400)
+
+    # Check cache
+    cache_key = _get_cache_key(q, entity_type, limit)
+    if cache_key in _autocomplete_cache:
+        return ORJSONResponse(content={"results": _autocomplete_cache[cache_key]})
+
+    query_func = AUTOCOMPLETE_DISPATCH[entity_type]
+    results = await query_func(neo4j_driver, q, limit)
+
+    # Cache result (simple bounded cache)
+    if len(_autocomplete_cache) >= _AUTOCOMPLETE_CACHE_MAX:
+        # Remove oldest quarter of entries
+        keys_to_remove = list(_autocomplete_cache.keys())[: _AUTOCOMPLETE_CACHE_MAX // 4]
+        for k in keys_to_remove:
+            del _autocomplete_cache[k]
+    _autocomplete_cache[cache_key] = results
+
+    return ORJSONResponse(content={"results": results})
+
+
+@app.get("/api/explore")
+async def explore(
+    name: str = Query(..., description="Entity name to explore"),
+    type: str = Query("artist", description="Entity type: artist, genre, label"),
+) -> ORJSONResponse:
+    """Get center node with category counts for graph exploration."""
+    if not neo4j_driver:
+        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    entity_type = type.lower()
+    if entity_type not in EXPLORE_DISPATCH:
+        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, or label"}, status_code=400)
+
+    query_func = EXPLORE_DISPATCH[entity_type]
+    result = await query_func(neo4j_driver, name)
+
+    if not result:
+        return ORJSONResponse(content={"error": f"{type.capitalize()} '{name}' not found"}, status_code=404)
+
+    # Build category nodes based on type
+    categories = _build_categories(entity_type, result)
+
+    return ORJSONResponse(
+        content={
+            "center": {"id": str(result["id"]), "name": result["name"], "type": entity_type},
+            "categories": categories,
+        }
+    )
+
+
+def _build_categories(entity_type: str, result: dict[str, Any]) -> list[dict[str, Any]]:
+    """Build artificial category nodes from explore result."""
+    categories = []
+
+    if entity_type == "artist":
+        categories = [
+            {"id": "cat-releases", "name": "Releases", "category": "releases", "count": result.get("release_count", 0)},
+            {"id": "cat-labels", "name": "Labels", "category": "labels", "count": result.get("label_count", 0)},
+            {"id": "cat-aliases", "name": "Aliases & Members", "category": "aliases", "count": result.get("alias_count", 0)},
+        ]
+    elif entity_type == "genre":
+        categories = [
+            {"id": "cat-artists", "name": "Artists", "category": "artists", "count": result.get("artist_count", 0)},
+            {"id": "cat-labels", "name": "Labels", "category": "labels", "count": result.get("label_count", 0)},
+            {"id": "cat-styles", "name": "Styles", "category": "styles", "count": result.get("style_count", 0)},
+        ]
+    elif entity_type == "label":
+        categories = [
+            {"id": "cat-releases", "name": "Releases", "category": "releases", "count": result.get("release_count", 0)},
+            {"id": "cat-artists", "name": "Artists", "category": "artists", "count": result.get("artist_count", 0)},
+        ]
+
+    return categories
+
+
+@app.get("/api/expand")
+async def expand(
+    node_id: str = Query(..., description="Parent entity name"),
+    type: str = Query(..., description="Parent entity type: artist, genre, label"),
+    category: str = Query(..., description="Category to expand: releases, labels, aliases, artists, styles"),
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+) -> ORJSONResponse:
+    """Expand a category node to get its children."""
+    if not neo4j_driver:
+        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    entity_type = type.lower()
+    category_lower = category.lower()
+
+    if entity_type not in EXPAND_DISPATCH:
+        return ORJSONResponse(content={"error": f"Invalid type: {type}"}, status_code=400)
+
+    type_categories = EXPAND_DISPATCH[entity_type]
+    if category_lower not in type_categories:
+        valid = ", ".join(type_categories.keys())
+        return ORJSONResponse(content={"error": f"Invalid category '{category}' for type '{type}'. Valid: {valid}"}, status_code=400)
+
+    query_func = type_categories[category_lower]
+    results = await query_func(neo4j_driver, node_id, limit)
+
+    return ORJSONResponse(content={"children": results})
+
+
+@app.get("/api/node/{node_id}")
+async def get_node_details(
+    node_id: str,
+    type: str = Query("artist", description="Node type: artist, release, label, genre, style"),
+) -> ORJSONResponse:
+    """Get full details for a specific node."""
+    if not neo4j_driver:
+        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    entity_type = type.lower()
+    if entity_type not in DETAILS_DISPATCH:
+        return ORJSONResponse(content={"error": f"Invalid type: {type}"}, status_code=400)
+
+    query_func = DETAILS_DISPATCH[entity_type]
+    result = await query_func(neo4j_driver, node_id)
+
+    if not result:
+        return ORJSONResponse(content={"error": f"{type.capitalize()} '{node_id}' not found"}, status_code=404)
+
+    return ORJSONResponse(content=result)
+
+
+@app.get("/api/trends")
+async def get_trends(
+    name: str = Query(..., description="Entity name"),
+    type: str = Query("artist", description="Entity type: artist, genre, label"),
+) -> ORJSONResponse:
+    """Get time-series release counts for an entity."""
+    if not neo4j_driver:
+        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    entity_type = type.lower()
+    if entity_type not in TRENDS_DISPATCH:
+        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, or label"}, status_code=400)
+
+    query_func = TRENDS_DISPATCH[entity_type]
+    results = await query_func(neo4j_driver, name)
+
+    return ORJSONResponse(
+        content={
+            "name": name,
+            "type": entity_type,
+            "data": results,
+        }
+    )
+
+
+# Mount static files for the UI
+static_dir = Path(__file__).parent / "static"
+app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    setup_logging("explore", log_file=Path("/logs/explore.log"))
+
+    uvicorn.run(
+        "explore.explore:app",
+        host="0.0.0.0",  # noqa: S104  # nosec B104
+        port=8006,
+        reload=False,
+        log_level="info",
+    )

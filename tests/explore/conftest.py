@@ -1,0 +1,230 @@
+"""Fixtures for Explore service tests."""
+
+import os
+
+
+# Set environment variables BEFORE importing explore modules
+os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
+os.environ.setdefault("NEO4J_USERNAME", "neo4j")
+os.environ.setdefault("NEO4J_PASSWORD", "testpassword")
+
+from collections.abc import AsyncGenerator, Generator
+from contextlib import asynccontextmanager
+import subprocess
+import sys
+import time
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+import httpx
+import pytest
+
+
+@pytest.fixture
+def mock_neo4j_driver() -> MagicMock:
+    """Create a mock Neo4j async driver."""
+    driver = MagicMock()
+
+    # Setup async session context manager
+    mock_session = AsyncMock()
+    mock_result = AsyncMock()
+
+    # Make session work as async context manager
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_session.run = AsyncMock(return_value=mock_result)
+
+    # Make result iterable (for list comprehension async for)
+    mock_result.__aiter__ = MagicMock(return_value=iter([]))
+    mock_result.single = AsyncMock(return_value=None)
+
+    driver.session = MagicMock(return_value=mock_session)
+    driver.close = AsyncMock()
+
+    return driver
+
+
+@pytest.fixture
+def mock_neo4j_session(mock_neo4j_driver: MagicMock) -> AsyncMock:
+    """Get the mock session from the mock driver."""
+    session: AsyncMock = mock_neo4j_driver.session()
+    return session
+
+
+@pytest.fixture
+def test_client(mock_neo4j_driver: MagicMock) -> Generator[TestClient]:
+    """Create a test client with mocked Neo4j driver, bypassing real lifespan."""
+    import explore.explore as explore_module
+    from explore.explore import app
+
+    # Replace the lifespan with a no-op so we don't try to connect to Neo4j
+    @asynccontextmanager
+    async def mock_lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+        yield
+
+    original_lifespan = app.router.lifespan_context
+    app.router.lifespan_context = mock_lifespan
+
+    # Patch the module-level driver
+    original_driver = explore_module.neo4j_driver
+    explore_module.neo4j_driver = mock_neo4j_driver
+
+    # Clear autocomplete cache between tests
+    explore_module._autocomplete_cache.clear()
+
+    with TestClient(app, raise_server_exceptions=False) as client:
+        yield client
+
+    # Restore
+    explore_module.neo4j_driver = original_driver
+    app.router.lifespan_context = original_lifespan
+
+
+@pytest.fixture
+def sample_artist_autocomplete() -> list[dict[str, Any]]:
+    """Sample autocomplete results for artists."""
+    return [
+        {"id": "1", "name": "Radiohead", "score": 9.5},
+        {"id": "2", "name": "Radio Dept.", "score": 7.2},
+        {"id": "3", "name": "Radiator Hospital", "score": 5.1},
+    ]
+
+
+@pytest.fixture
+def sample_explore_artist() -> dict[str, Any]:
+    """Sample explore result for an artist."""
+    return {
+        "id": "1",
+        "name": "Radiohead",
+        "release_count": 42,
+        "label_count": 5,
+        "alias_count": 2,
+    }
+
+
+@pytest.fixture
+def sample_explore_genre() -> dict[str, Any]:
+    """Sample explore result for a genre."""
+    return {
+        "id": "Rock",
+        "name": "Rock",
+        "artist_count": 1000,
+        "label_count": 200,
+        "style_count": 50,
+    }
+
+
+@pytest.fixture
+def sample_explore_label() -> dict[str, Any]:
+    """Sample explore result for a label."""
+    return {
+        "id": "100",
+        "name": "Warp Records",
+        "release_count": 500,
+        "artist_count": 120,
+    }
+
+
+@pytest.fixture
+def sample_expand_releases() -> list[dict[str, Any]]:
+    """Sample expand results for releases."""
+    return [
+        {"id": "10", "name": "OK Computer", "type": "release", "year": 1997},
+        {"id": "11", "name": "Kid A", "type": "release", "year": 2000},
+        {"id": "12", "name": "In Rainbows", "type": "release", "year": 2007},
+    ]
+
+
+@pytest.fixture
+def sample_artist_details() -> dict[str, Any]:
+    """Sample artist details."""
+    return {
+        "id": "1",
+        "name": "Radiohead",
+        "genres": ["Rock", "Electronic"],
+        "styles": ["Alternative Rock", "Art Rock"],
+        "release_count": 42,
+        "groups": [],
+    }
+
+
+@pytest.fixture
+def sample_trends_data() -> list[dict[str, Any]]:
+    """Sample trends time-series data."""
+    return [
+        {"year": 1993, "count": 1},
+        {"year": 1995, "count": 2},
+        {"year": 1997, "count": 1},
+        {"year": 2000, "count": 1},
+        {"year": 2003, "count": 1},
+    ]
+
+
+# E2E fixtures
+
+
+@pytest.fixture(scope="session")
+def test_server() -> Generator[str]:
+    """Start explore test server for E2E tests."""
+    port = 8006
+    server_url = f"http://localhost:{port}"
+
+    process = subprocess.Popen(  # noqa: S603
+        [
+            sys.executable,
+            "-m",
+            "uvicorn",
+            "tests.explore.explore_test_app:create_test_app",
+            "--factory",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+
+    # Wait for server readiness
+    max_retries = 40
+    for _i in range(max_retries):
+        try:
+            response = httpx.get(f"{server_url}/health", timeout=2.0)
+            if response.status_code == 200:
+                break
+        except (httpx.ConnectError, httpx.TimeoutException):
+            pass
+        time.sleep(0.5)
+    else:
+        process.terminate()
+        stdout, stderr = process.communicate(timeout=5)
+        raise RuntimeError(f"Test server failed to start.\nStdout: {stdout.decode()}\nStderr: {stderr.decode()}")
+
+    yield server_url
+
+    process.terminate()
+    try:
+        process.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+@pytest.fixture(scope="session")
+def browser_context_args() -> dict[str, Any]:
+    """Configure browser context for E2E tests."""
+    return {
+        "viewport": {"width": 1280, "height": 720},
+        "ignore_https_errors": True,
+    }
+
+
+@pytest.fixture(scope="session")
+def browser_type_launch_args() -> dict[str, Any]:
+    """Configure browser launch arguments."""
+    return {
+        "headless": True,
+        "args": ["--no-sandbox", "--disable-gpu"],
+    }
