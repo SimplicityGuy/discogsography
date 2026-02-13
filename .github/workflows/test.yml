@@ -170,7 +170,27 @@ jobs:
         run: just install
 
       - name: 🧪 Run explore tests
-        run: just test-explore
+        run: |
+          uv run pytest tests/explore/ -v -m 'not e2e' \
+            --cov=explore --cov-report=xml --cov-report=json --cov-report=term
+
+      - name: 📋 Process coverage reports
+        id: coverage-setup
+        if: always()
+        run: |
+          if [ -f coverage.json ]; then
+            jq '{
+              total: {
+                statements: {total: .totals.num_statements, covered: .totals.covered_lines},
+                lines: {total: .totals.num_statements, covered: .totals.covered_lines},
+                functions: {total: 0, covered: 0},
+                branches: {total: 0, covered: 0}
+              }
+            }' coverage.json > coverage-summary.json
+            echo "coverage-exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "coverage-exists=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: 📊 Upload coverage (explore)
         if: always()
@@ -180,6 +200,7 @@ jobs:
           files: ./coverage.xml
           flags: explore
           name: explore-tests
+          fail_ci_if_error: false
 
   # ============================================================================
   # PYTHON EXTRACTOR TESTS - Runs in parallel with all other test jobs
