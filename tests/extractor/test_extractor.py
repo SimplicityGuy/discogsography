@@ -177,7 +177,8 @@ class TestConcurrentExtractorContextManager:
         channel = extractor.amqp_channel
         channel.confirm_delivery.assert_called_once()
         channel.basic_qos.assert_called_once_with(prefetch_count=100)
-        channel.exchange_declare.assert_called_once()
+        # Should declare 2 exchanges: main exchange and dead-letter exchange (DLX)
+        assert channel.exchange_declare.call_count == 2
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.StateMarker.save")
@@ -200,9 +201,10 @@ class TestConcurrentExtractorContextManager:
         extractor.__enter__()
 
         channel = extractor.amqp_channel
-        # Should declare 2 queues (graphinator and tableinator)
-        assert channel.queue_declare.call_count == 2
-        assert channel.queue_bind.call_count == 2
+        # Should declare 4 queues: 2 main queues (graphinator, tableinator) + 2 DLQs
+        assert channel.queue_declare.call_count == 4
+        # Should bind 4 queues: 2 DLQs to DLX + 2 main queues to main exchange
+        assert channel.queue_bind.call_count == 4
 
     @patch("extractor.pyextractor.extractor.Path.exists")
     @patch("extractor.pyextractor.extractor.StateMarker.save")

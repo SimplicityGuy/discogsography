@@ -28,6 +28,8 @@
 
 - ✅ **ALWAYS use `uv` for Python package management and running Python tools** - Never use pip, pipenv, or poetry.
 - ✅ **State Marker System** - Both extractors use version-specific state markers (`.extraction_status_<version>.json`) to track progress and enable safe restarts. See `docs/state-marker-system.md`.
+- ✅ **Dual Extractor Architecture** - Both Python and Rust extractors declare 2 exchanges (main + DLX) and 4 queues (2 main + 2 DLQs) for poison message handling.
+- ✅ **Update Script Tests** - The `update-project.sh` script runs both Python (`just test`) and Rust (`just test-rustextractor`) tests to ensure all code is validated.
 - ✅ Create Mermaid style diagrams when diagrams are added to Markdown files.
 - ✅ New markdown files should have a lowercase filename preferring - instead \_, unless the document is a README. Do not rename any existing markdown files.
 - ✅ All pyproject.toml files should follow the standard structure and ordering (see pyproject.toml Standards section).

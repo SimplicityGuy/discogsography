@@ -696,12 +696,22 @@ run_tests() {
         print_warning "Linting failed - review the changes"
     fi
 
-    # Run tests
-    print_info "Running tests..."
+    # Run Python tests
+    print_info "Running Python tests..."
     if just test; then
-        print_success "Tests passed"
+        print_success "Python tests passed"
     else
-        print_warning "Tests failed - review the changes"
+        print_warning "Python tests failed - review the changes"
+    fi
+
+    # Run Rust tests if Rust extractor exists
+    if [[ -d "extractor/rustextractor" ]] && [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+        print_info "Running Rust tests..."
+        if just test-rustextractor; then
+            print_success "Rust tests passed"
+        else
+            print_warning "Rust tests failed - review the changes"
+        fi
     fi
 }
 
