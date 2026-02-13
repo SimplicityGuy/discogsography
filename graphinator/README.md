@@ -15,8 +15,8 @@ The graphinator service:
 ## Architecture
 
 - **Language**: Python 3.13+
-- **Database**: Neo4j 5.x
-- **Message Broker**: RabbitMQ (AMQP)
+- **Database**: Neo4j 2026 (calendar versioning)
+- **Message Broker**: RabbitMQ 4.x (quorum queues)
 - **Health Port**: 8001
 - **Processing**: Batch transactions for performance
 

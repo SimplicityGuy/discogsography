@@ -391,15 +391,46 @@ async def _recover_consumers() -> None:
                 auto_delete=False,
             )
 
+            # Declare dead-letter exchange for poison messages
+            dlx_exchange_name = f"{AMQP_EXCHANGE}.dlx"
+            dlx_exchange = await active_channel.declare_exchange(
+                dlx_exchange_name,
+                "topic",
+                durable=True,
+                auto_delete=False,
+            )
+
             # Set QoS - must match batch_size for efficient batch processing
             await active_channel.set_qos(prefetch_count=200, global_=True)
+
+            # Queue arguments for quorum queues with DLX
+            queue_args = {
+                "x-queue-type": "quorum",
+                "x-dead-letter-exchange": dlx_exchange_name,
+                "x-delivery-limit": 20,
+            }
 
             # Declare and bind all queues
             queues = {}
             for data_type in DATA_TYPES:
                 queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+                dlq_name = f"{queue_name}.dlq"
+
+                # Declare DLQ (classic queue for dead letters)
+                dlq = await active_channel.declare_queue(
+                    auto_delete=False,
+                    durable=True,
+                    name=dlq_name,
+                    arguments={"x-queue-type": "classic"},
+                )
+                await dlq.bind(dlx_exchange, routing_key=data_type)
+
+                # Declare main quorum queue
                 queue = await active_channel.declare_queue(
-                    auto_delete=False, durable=True, name=queue_name
+                    auto_delete=False,
+                    durable=True,
+                    name=queue_name,
+                    arguments=queue_args,
                 )
                 await queue.bind(exchange, routing_key=data_type)
                 queues[data_type] = queue
@@ -1587,12 +1618,40 @@ async def main() -> None:
             AMQP_EXCHANGE, AMQP_EXCHANGE_TYPE, durable=True, auto_delete=False
         )
 
+        # Declare dead-letter exchange for poison messages
+        dlx_exchange_name = f"{AMQP_EXCHANGE}.dlx"
+        dlx_exchange = await channel.declare_exchange(
+            dlx_exchange_name, "topic", durable=True, auto_delete=False
+        )
+
+        # Queue arguments for quorum queues with DLX
+        queue_args = {
+            "x-queue-type": "quorum",
+            "x-dead-letter-exchange": dlx_exchange_name,
+            "x-delivery-limit": 20,
+        }
+
         # Declare queues for all data types and bind them to exchange
         queues = {}
         for data_type in DATA_TYPES:
             queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+            dlq_name = f"{queue_name}.dlq"
+
+            # Declare DLQ (classic queue for dead letters)
+            dlq = await channel.declare_queue(
+                auto_delete=False,
+                durable=True,
+                name=dlq_name,
+                arguments={"x-queue-type": "classic"},
+            )
+            await dlq.bind(dlx_exchange, routing_key=data_type)
+
+            # Declare main quorum queue
             queue = await channel.declare_queue(
-                auto_delete=False, durable=True, name=queue_name
+                auto_delete=False,
+                durable=True,
+                name=queue_name,
+                arguments=queue_args,
             )
             await queue.bind(exchange, routing_key=data_type)
             queues[data_type] = queue

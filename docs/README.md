@@ -47,6 +47,14 @@
 | **[Performance Guide](performance-guide.md)**       | ⚡ Performance optimization strategies           |
 | **[Maintenance Guide](maintenance.md)**             | 🔧 Keeping the system up-to-date and healthy     |
 
+### 🔄 Upgrade & Migration Guides
+
+| Document                                                | Description                                          |
+| ------------------------------------------------------- | ---------------------------------------------------- |
+| **[RabbitMQ 4.x Migration](rabbitmq-4-migration.md)**   | 🐰 Upgrade from 3.x to 4.x with quorum queues        |
+| **[Neo4j 2026 Migration](neo4j-2026-migration.md)**     | 🔗 Upgrade from 5.x to 2026 with calendar versioning |
+| **[PostgreSQL 18 Migration](postgresql-18-migration.md)** | 🐘 Upgrade from 16 to 18 with JSONB improvements    |
+
 ### ⚙️ Workflow & Automation
 
 | Document                                            | Description                                          |
@@ -99,6 +107,9 @@ Deploy and maintain Discogsography in production:
 1. **[Monitoring Guide](monitoring.md)** - Observe and debug
 1. **[Performance Guide](performance-guide.md)** - Optimize performance
 1. **[Maintenance Guide](maintenance.md)** - Keep systems healthy
+1. **[RabbitMQ Migration](rabbitmq-4-migration.md)** - Upgrade to RabbitMQ 4.x
+1. **[Neo4j Migration](neo4j-2026-migration.md)** - Upgrade to Neo4j 2026
+1. **[PostgreSQL Migration](postgresql-18-migration.md)** - Upgrade to PostgreSQL 18
 
 ### For Data Engineers
 

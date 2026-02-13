@@ -19,7 +19,7 @@ classifiers = [
 license = {text = "MIT"}
 dependencies = [
     "fastapi>=0.115.6",
-    "neo4j>=5.15.0",
+    "neo4j>=6.1.0",
     "orjson>=3.9.0",
     "pydantic>=2.10.5",
     "python-multipart>=0.0.20",

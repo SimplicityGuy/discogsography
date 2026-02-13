@@ -119,9 +119,55 @@ impl MessageQueue {
         let graphinator_queue = format!("{}-{}", AMQP_QUEUE_PREFIX_GRAPHINATOR, data_type);
         let tableinator_queue = format!("{}-{}", AMQP_QUEUE_PREFIX_TABLEINATOR, data_type);
 
-        // Declare and bind graphinator queue
+        // Declare dead-letter exchange for poison messages
+        let dlx_exchange = format!("{}.dlx", AMQP_EXCHANGE);
         channel
-            .queue_declare(&graphinator_queue, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, FieldTable::default())
+            .exchange_declare(
+                &dlx_exchange,
+                lapin::ExchangeKind::Topic,
+                ExchangeDeclareOptions { durable: true, auto_delete: false, ..Default::default() },
+                FieldTable::default(),
+            )
+            .await
+            .context("Failed to declare dead-letter exchange")?;
+
+        // Queue arguments for quorum queues with DLX
+        let mut queue_args = FieldTable::default();
+        queue_args.insert("x-queue-type".into(), lapin::types::AMQPValue::LongString("quorum".into()));
+        queue_args.insert("x-dead-letter-exchange".into(), lapin::types::AMQPValue::LongString(dlx_exchange.clone().into()));
+        queue_args.insert("x-delivery-limit".into(), lapin::types::AMQPValue::LongInt(20));
+
+        // DLQ arguments (classic queues)
+        let mut dlq_args = FieldTable::default();
+        dlq_args.insert("x-queue-type".into(), lapin::types::AMQPValue::LongString("classic".into()));
+
+        // Declare and bind graphinator DLQ
+        let graphinator_dlq = format!("{}.dlq", graphinator_queue);
+        channel
+            .queue_declare(&graphinator_dlq, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, dlq_args.clone())
+            .await
+            .context("Failed to declare graphinator DLQ")?;
+
+        channel
+            .queue_bind(&graphinator_dlq, &dlx_exchange, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
+            .await
+            .context("Failed to bind graphinator DLQ")?;
+
+        // Declare and bind tableinator DLQ
+        let tableinator_dlq = format!("{}.dlq", tableinator_queue);
+        channel
+            .queue_declare(&tableinator_dlq, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, dlq_args.clone())
+            .await
+            .context("Failed to declare tableinator DLQ")?;
+
+        channel
+            .queue_bind(&tableinator_dlq, &dlx_exchange, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
+            .await
+            .context("Failed to bind tableinator DLQ")?;
+
+        // Declare and bind graphinator queue (quorum)
+        channel
+            .queue_declare(&graphinator_queue, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, queue_args.clone())
             .await
             .context("Failed to declare graphinator queue")?;
 
@@ -130,9 +176,9 @@ impl MessageQueue {
             .await
             .context("Failed to bind graphinator queue")?;
 
-        // Declare and bind tableinator queue
+        // Declare and bind tableinator queue (quorum)
         channel
-            .queue_declare(&tableinator_queue, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, FieldTable::default())
+            .queue_declare(&tableinator_queue, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, queue_args.clone())
             .await
             .context("Failed to declare tableinator queue")?;
 
@@ -141,7 +187,7 @@ impl MessageQueue {
             .await
             .context("Failed to bind tableinator queue")?;
 
-        debug!("✅ Set up AMQP queues for {} (exchange: {}, type: {:?})", data_type, AMQP_EXCHANGE, AMQP_EXCHANGE_TYPE);
+        debug!("✅ Set up AMQP queues for {} (exchange: {}, type: quorum with DLX)", data_type, AMQP_EXCHANGE);
 
         Ok(())
     }

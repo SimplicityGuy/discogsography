@@ -15,8 +15,8 @@ The tableinator service:
 ## Architecture
 
 - **Language**: Python 3.13+
-- **Database**: PostgreSQL 16
-- **Message Broker**: RabbitMQ (AMQP)
+- **Database**: PostgreSQL 18 (with JSONB performance improvements)
+- **Message Broker**: RabbitMQ 4.x (quorum queues)
 - **Health Port**: 8002
 - **Driver**: psycopg3 with binary support
 

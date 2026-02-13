@@ -184,14 +184,65 @@ class ConcurrentExtractor:
                 exchange_type=AMQP_EXCHANGE_TYPE,
             )
 
+            # Create dead-letter exchange for poison messages
+            dlx_exchange = f"{AMQP_EXCHANGE}.dlx"
+            self.amqp_channel.exchange_declare(
+                auto_delete=False,
+                durable=True,
+                exchange=dlx_exchange,
+                exchange_type="topic",
+            )
+
             # The topic exchange routes messages by data type to both graphinator and tableinator
             # This ensures the same data reaches both services for concurrent processing
             graphinator_queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{self.data_type}"
             tableinator_queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{self.data_type}"
 
-            # Declare queues for this data type (other extractors may have already created them)
+            # Queue arguments for quorum queues with DLX
+            # x-queue-type: quorum - Use quorum queues for HA and data safety
+            # x-dead-letter-exchange: Route poison messages (20+ retries) to DLX
+            # x-delivery-limit: Default is 20, explicitly set for clarity
+            queue_args = {
+                "x-queue-type": "quorum",
+                "x-dead-letter-exchange": dlx_exchange,
+                "x-delivery-limit": 20,
+            }
+
+            # Create dead-letter queues for poison messages
+            graphinator_dlq_name = f"{graphinator_queue_name}.dlq"
+            tableinator_dlq_name = f"{tableinator_queue_name}.dlq"
+
+            # Declare DLQs (using classic queues for DLQs is fine)
             self.amqp_channel.queue_declare(
-                auto_delete=False, durable=True, queue=graphinator_queue_name
+                auto_delete=False,
+                durable=True,
+                queue=graphinator_dlq_name,
+                arguments={"x-queue-type": "classic"},
+            )
+            self.amqp_channel.queue_bind(
+                exchange=dlx_exchange,
+                queue=graphinator_dlq_name,
+                routing_key=self.data_type,
+            )
+
+            self.amqp_channel.queue_declare(
+                auto_delete=False,
+                durable=True,
+                queue=tableinator_dlq_name,
+                arguments={"x-queue-type": "classic"},
+            )
+            self.amqp_channel.queue_bind(
+                exchange=dlx_exchange,
+                queue=tableinator_dlq_name,
+                routing_key=self.data_type,
+            )
+
+            # Declare main quorum queues for this data type (other extractors may have already created them)
+            self.amqp_channel.queue_declare(
+                auto_delete=False,
+                durable=True,
+                queue=graphinator_queue_name,
+                arguments=queue_args,
             )
             self.amqp_channel.queue_bind(
                 exchange=AMQP_EXCHANGE,
@@ -200,7 +251,10 @@ class ConcurrentExtractor:
             )
 
             self.amqp_channel.queue_declare(
-                auto_delete=False, durable=True, queue=tableinator_queue_name
+                auto_delete=False,
+                durable=True,
+                queue=tableinator_queue_name,
+                arguments=queue_args,
             )
             self.amqp_channel.queue_bind(
                 exchange=AMQP_EXCHANGE,

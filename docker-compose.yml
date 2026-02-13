@@ -16,7 +16,7 @@ networks:
 services:
   # Message broker
   rabbitmq:
-    image: rabbitmq:3.13-management
+    image: rabbitmq:4-management
     container_name: discogsography-rabbitmq
     hostname: rabbitmq
     environment:
@@ -24,6 +24,8 @@ services:
       RABBITMQ_DEFAULT_PASS: discogsography
       RABBITMQ_DEFAULT_VHOST: /
       RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit log_levels [{connection,error},{default,warning}]"
+      # Set default queue type to quorum for RabbitMQ 4.2+
+      RABBITMQ_DEFAULT_QUEUE_TYPE: quorum
     ports:
       - "5672:5672"      # AMQP port
       - "15672:15672"    # Management UI
@@ -45,7 +47,7 @@ services:
 
   # PostgreSQL database
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: discogsography-postgres
     hostname: postgres
     environment:
@@ -76,7 +78,7 @@ services:
 
   # Neo4j graph database
   neo4j:
-    image: neo4j:5.25-community
+    image: neo4j:2026-community
     container_name: discogsography-neo4j
     hostname: neo4j
     environment:
