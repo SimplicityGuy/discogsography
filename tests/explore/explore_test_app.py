@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Query
-from fastapi.responses import FileResponse, ORJSONResponse
+from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
 
 
@@ -158,13 +158,8 @@ def create_test_app() -> FastAPI:
             }
         )
 
-    # Serve static files from explore module
+    # Serve static files from explore module (html=True serves index.html at root)
     static_dir = Path(__file__).parent.parent.parent / "explore" / "static"
-
-    @app.get("/", response_class=FileResponse)
-    async def serve_index() -> FileResponse:
-        return FileResponse(str(static_dir / "index.html"))
-
-    app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
     return app

@@ -11,6 +11,7 @@ from explore.neo4j_queries import (
     EXPAND_DISPATCH,
     EXPLORE_DISPATCH,
     TRENDS_DISPATCH,
+    _autocomplete_cache_key,
     autocomplete_artist,
     autocomplete_genre,
     autocomplete_label,
@@ -195,6 +196,16 @@ class TestExploreQueries:
         assert result["artist_count"] == 1000
 
     @pytest.mark.asyncio
+    async def test_explore_genre_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session().__aenter__.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await explore_genre(mock_driver, "NonExistent")
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_explore_label(self, mock_driver: MagicMock) -> None:
         expected = {"id": "100", "name": "Warp Records", "release_count": 500, "artist_count": 120}
         mock_session = mock_driver.session().__aenter__.return_value
@@ -205,6 +216,16 @@ class TestExploreQueries:
         result = await explore_label(mock_driver, "Warp Records")
         assert result is not None
         assert result["release_count"] == 500
+
+    @pytest.mark.asyncio
+    async def test_explore_label_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session().__aenter__.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await explore_label(mock_driver, "NonExistent")
+        assert result is None
 
 
 class TestExpandQueries:
@@ -363,6 +384,36 @@ class TestNodeDetailsQueries:
         assert result is not None
         assert result["artist_count"] == 1000
 
+    @pytest.mark.asyncio
+    async def test_get_release_details_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session().__aenter__.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await get_release_details(mock_driver, "nonexistent")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_label_details_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session().__aenter__.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await get_label_details(mock_driver, "nonexistent")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_genre_details_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session().__aenter__.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await get_genre_details(mock_driver, "nonexistent")
+        assert result is None
+
 
 class TestTrendsQueries:
     """Test trends query functions."""
@@ -405,3 +456,20 @@ class TestTrendsQueries:
 
         results = await trends_artist(mock_driver, "Unknown")
         assert results == []
+
+
+class TestAutocompleteCacheKey:
+    """Test the _autocomplete_cache_key helper."""
+
+    def test_cache_key_lowercases_query(self) -> None:
+        result = _autocomplete_cache_key("Radiohead", "artist", 10)
+        assert result == ("radiohead", "artist", 10)
+
+    def test_cache_key_preserves_type_and_limit(self) -> None:
+        result = _autocomplete_cache_key("rock", "genre", 25)
+        assert result == ("rock", "genre", 25)
+
+    def test_cache_key_same_inputs_same_output(self) -> None:
+        result1 = _autocomplete_cache_key("test", "label", 5)
+        result2 = _autocomplete_cache_key("test", "label", 5)
+        assert result1 == result2

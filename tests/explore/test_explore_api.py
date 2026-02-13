@@ -1,9 +1,10 @@
 """Tests for Explore service API endpoints."""
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
+import pytest
 
 
 class TestHealthEndpoint:
@@ -97,6 +98,28 @@ class TestAutocompleteEndpoint:
 
         explore_module.neo4j_driver = original_driver
 
+    def test_autocomplete_cache_eviction(self, test_client: TestClient) -> None:
+        """Test that cache evicts oldest entries when full."""
+        import explore.explore as explore_module
+
+        # Set a small cache max to trigger eviction
+        original_max = explore_module._AUTOCOMPLETE_CACHE_MAX
+        explore_module._AUTOCOMPLETE_CACHE_MAX = 4
+        explore_module._autocomplete_cache.clear()
+
+        mock_func = AsyncMock(return_value=[{"id": "1", "name": "Test", "score": 1.0}])
+        with patch.dict("explore.explore.AUTOCOMPLETE_DISPATCH", {"artist": mock_func}):
+            # Fill cache beyond max to trigger eviction
+            for i in range(5):
+                response = test_client.get(f"/api/autocomplete?q=evict{i}&type=artist")
+                assert response.status_code == 200
+
+        # Cache should have been evicted (oldest quarter removed)
+        assert len(explore_module._autocomplete_cache) <= 4
+
+        explore_module._AUTOCOMPLETE_CACHE_MAX = original_max
+        explore_module._autocomplete_cache.clear()
+
 
 class TestExploreEndpoint:
     """Test the explore endpoint."""
@@ -161,6 +184,17 @@ class TestExploreEndpoint:
         response = test_client.get("/api/explore?name=Test&type=invalid")
         assert response.status_code == 400
 
+    def test_explore_service_not_ready(self, test_client: TestClient) -> None:
+        import explore.explore as explore_module
+
+        original_driver = explore_module.neo4j_driver
+        explore_module.neo4j_driver = None
+
+        response = test_client.get("/api/explore?name=Test&type=artist")
+        assert response.status_code == 503
+
+        explore_module.neo4j_driver = original_driver
+
     def test_explore_category_counts(
         self,
         test_client: TestClient,
@@ -199,6 +233,17 @@ class TestExpandEndpoint:
     def test_expand_invalid_type(self, test_client: TestClient) -> None:
         response = test_client.get("/api/expand?node_id=Test&type=invalid&category=releases")
         assert response.status_code == 400
+
+    def test_expand_service_not_ready(self, test_client: TestClient) -> None:
+        import explore.explore as explore_module
+
+        original_driver = explore_module.neo4j_driver
+        explore_module.neo4j_driver = None
+
+        response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases")
+        assert response.status_code == 503
+
+        explore_module.neo4j_driver = original_driver
 
     def test_expand_invalid_category(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[])
@@ -292,6 +337,17 @@ class TestNodeDetailsEndpoint:
         response = test_client.get("/api/node/1?type=invalid")
         assert response.status_code == 400
 
+    def test_get_node_service_not_ready(self, test_client: TestClient) -> None:
+        import explore.explore as explore_module
+
+        original_driver = explore_module.neo4j_driver
+        explore_module.neo4j_driver = None
+
+        response = test_client.get("/api/node/1?type=artist")
+        assert response.status_code == 503
+
+        explore_module.neo4j_driver = original_driver
+
     def test_get_genre_details(self, test_client: TestClient) -> None:
         genre_data = {"id": "Rock", "name": "Rock", "artist_count": 1000}
         mock_func = AsyncMock(return_value=genre_data)
@@ -353,6 +409,17 @@ class TestTrendsEndpoint:
     def test_trends_invalid_type(self, test_client: TestClient) -> None:
         response = test_client.get("/api/trends?name=Test&type=invalid")
         assert response.status_code == 400
+
+    def test_trends_service_not_ready(self, test_client: TestClient) -> None:
+        import explore.explore as explore_module
+
+        original_driver = explore_module.neo4j_driver
+        explore_module.neo4j_driver = None
+
+        response = test_client.get("/api/trends?name=Test&type=artist")
+        assert response.status_code == 503
+
+        explore_module.neo4j_driver = original_driver
 
     def test_trends_empty_results(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[])
@@ -437,3 +504,87 @@ class TestStaticFiles:
         for js_file in js_files:
             response = test_client.get(f"/{js_file}")
             assert response.status_code == 200, f"Failed to serve {js_file}"
+
+
+class TestGetHealthData:
+    """Test the get_health_data helper function."""
+
+    def test_health_data_when_driver_exists(self) -> None:
+        import explore.explore as explore_module
+
+        original_driver = explore_module.neo4j_driver
+        explore_module.neo4j_driver = MagicMock()
+
+        data = explore_module.get_health_data()
+        assert data["status"] == "healthy"
+        assert data["service"] == "explore"
+        assert "timestamp" in data
+
+        explore_module.neo4j_driver = original_driver
+
+    def test_health_data_when_driver_none(self) -> None:
+        import explore.explore as explore_module
+
+        original_driver = explore_module.neo4j_driver
+        explore_module.neo4j_driver = None
+
+        data = explore_module.get_health_data()
+        assert data["status"] == "starting"
+
+        explore_module.neo4j_driver = original_driver
+
+
+class TestGetCacheKey:
+    """Test the _get_cache_key helper function."""
+
+    def test_cache_key_lowercases(self) -> None:
+        from explore.explore import _get_cache_key
+
+        key = _get_cache_key("Radiohead", "artist", 10)
+        assert key == ("radiohead", "artist", 10)
+
+    def test_cache_key_strips_whitespace(self) -> None:
+        from explore.explore import _get_cache_key
+
+        key = _get_cache_key("  radio  ", "artist", 10)
+        assert key == ("radio", "artist", 10)
+
+
+class TestLifespan:
+    """Test the application lifespan context manager."""
+
+    @pytest.mark.asyncio
+    async def test_lifespan_startup_and_shutdown(self) -> None:
+        from explore.explore import app, lifespan
+
+        mock_driver = MagicMock()
+        mock_driver.close = AsyncMock()
+
+        with (
+            patch("explore.explore.ExploreConfig") as mock_config_class,
+            patch("explore.explore.HealthServer") as mock_health_server_class,
+            patch("explore.explore.AsyncResilientNeo4jDriver", return_value=mock_driver),
+            patch("explore.explore.create_all_indexes", new_callable=AsyncMock),
+        ):
+            mock_config = MagicMock()
+            mock_config.neo4j_address = "bolt://localhost:7687"
+            mock_config.neo4j_username = "neo4j"
+            mock_config.neo4j_password = "password"
+            mock_config_class.from_env.return_value = mock_config
+
+            mock_health_server = MagicMock()
+            mock_health_server_class.return_value = mock_health_server
+
+            import explore.explore as explore_module
+
+            original_driver = explore_module.neo4j_driver
+
+            async with lifespan(app):
+                # During lifespan, driver should be set
+                assert explore_module.neo4j_driver is mock_driver
+
+            # After lifespan, driver close should have been called
+            mock_driver.close.assert_awaited_once()
+            mock_health_server.stop.assert_called_once()
+
+            explore_module.neo4j_driver = original_driver

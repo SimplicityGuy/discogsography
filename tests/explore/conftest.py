@@ -49,7 +49,8 @@ def mock_neo4j_driver() -> MagicMock:
 @pytest.fixture
 def mock_neo4j_session(mock_neo4j_driver: MagicMock) -> AsyncMock:
     """Get the mock session from the mock driver."""
-    return mock_neo4j_driver.session()
+    session: AsyncMock = mock_neo4j_driver.session()
+    return session
 
 
 @pytest.fixture
