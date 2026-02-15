@@ -57,15 +57,15 @@ graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
     PYEXT[["📥 Python Extractor<br/>XML → JSON<br/>Deduplication"]]
     RSEXT[["⚡ Rust Extractor<br/>High-Performance<br/>XML Processing"]]
-    RMQ{{"🐰 RabbitMQ<br/>Message Broker<br/>4 Queues"}}
-    NEO4J[("🔗 Neo4j<br/>Graph Database<br/>Relationships")]
-    PG[("🐘 PostgreSQL<br/>Analytics DB<br/>Full-text Search")]
+    RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>8 Queues + DLQs"}}
+    NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
+    PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
     REDIS[("🔴 Redis<br/>Cache Layer<br/>Query & ML Cache")]
     GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     DISCO[["🎵 Discovery<br/>AI Engine<br/>ML Models"]]
-    EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends"]]
+    EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
 
     S3 -->|1a. Download & Parse| PYEXT
     S3 -->|1b. Download & Parse| RSEXT
@@ -81,13 +81,15 @@ graph TD
     DISCO -.->|Cache| REDIS
     DISCO -.->|Analyze| DISCO
 
-    EXPLORE -.->|Query| NEO4J
+    EXPLORE -.->|Query Graph| NEO4J
+    EXPLORE -.->|Explore Paths| NEO4J
 
     DASH -.->|Monitor| PYEXT
     DASH -.->|Monitor| RSEXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
     DASH -.->|Monitor| DISCO
+    DASH -.->|Monitor| EXPLORE
     DASH -.->|Cache| REDIS
     DASH -.->|Stats| RMQ
     DASH -.->|Stats| NEO4J
@@ -98,6 +100,13 @@ graph TD
     style RSEXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+    style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style DISCO fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style EXPLORE fill:#f1f8e9,stroke:#33691e,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
     style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
     style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px

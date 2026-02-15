@@ -96,13 +96,14 @@ Open your browser and visit:
 
 ### Service Access Details
 
-| Service           | URL                    | Default Credentials                 | Purpose            |
-| ----------------- | ---------------------- | ----------------------------------- | ------------------ |
-| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring  |
-| 🎵 **Discovery**  | http://localhost:8005  | None                                | AI music discovery |
-| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management   |
-| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph exploration  |
-| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access    |
+| Service           | URL                    | Default Credentials                 | Purpose               |
+| ----------------- | ---------------------- | ----------------------------------- | --------------------- |
+| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring     |
+| 🎵 **Discovery**  | http://localhost:8005  | None                                | AI music discovery    |
+| 🔍 **Explore**    | http://localhost:8006  | None                                | Graph exploration     |
+| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management      |
+| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph database UI     |
+| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access       |
 
 ## 💻 Local Development Setup
 

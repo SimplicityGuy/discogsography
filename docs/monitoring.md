@@ -40,7 +40,9 @@ open http://localhost:8003
 - Python/Rust Extractor (http://localhost:8000/health)
 - Graphinator (http://localhost:8001/health)
 - Tableinator (http://localhost:8002/health)
-- Discovery (http://localhost:8004/health)
+- Dashboard (http://localhost:8003/health)
+- Discovery (http://localhost:8004/health, http://localhost:8005)
+- Explore (http://localhost:8006/health, http://localhost:8007)
 
 #### Queue Metrics Panel
 
@@ -505,11 +507,14 @@ async def check_custom_condition():
 ./scripts/check-all-health.sh
 
 # Or individually
-curl http://localhost:8000/health
-curl http://localhost:8001/health
-curl http://localhost:8002/health
-curl http://localhost:8003/health
-curl http://localhost:8004/health
+curl http://localhost:8000/health  # Extractor
+curl http://localhost:8001/health  # Graphinator
+curl http://localhost:8002/health  # Tableinator
+curl http://localhost:8003/health  # Dashboard
+curl http://localhost:8004/health  # Discovery (health check port)
+curl http://localhost:8005/health  # Discovery (service port)
+curl http://localhost:8006/health  # Explore (service port)
+curl http://localhost:8007/health  # Explore (health check port)
 ```
 
 ### Step 2: Enable Debug Logging

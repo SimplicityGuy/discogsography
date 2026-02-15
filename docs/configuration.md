@@ -577,6 +577,20 @@ LOG_LEVEL=INFO
 
 Health check: http://localhost:8004/health
 
+### Explore
+
+```bash
+# Required
+NEO4J_ADDRESS="bolt://localhost:7687"
+NEO4J_USERNAME="neo4j"
+NEO4J_PASSWORD="discogsography"
+
+# Optional
+LOG_LEVEL=INFO
+```
+
+Health check: http://localhost:8006/health (service), http://localhost:8007/health (internal)
+
 ### Dashboard
 
 ```bash

@@ -15,6 +15,37 @@ This helps free up resources and provides clearer monitoring of active vs. compl
 
 ## How It Works
 
+### Consumer Cancellation Lifecycle
+
+```mermaid
+sequenceDiagram
+    participant EXT as Extractor
+    participant RMQ as RabbitMQ
+    participant CONS as Consumer<br/>(Graphinator/Tableinator)
+    participant TIMER as Cancellation Timer
+
+    EXT->>RMQ: Publish file_complete message
+    RMQ->>CONS: Deliver file_complete message
+    CONS->>CONS: Mark file as complete (🎉)
+    CONS->>TIMER: Schedule cancellation (300s grace period)
+
+    Note over CONS,TIMER: Grace period (5 minutes)
+
+    TIMER-->>CONS: Grace period expired
+    CONS->>RMQ: Cancel consumer for queue
+    CONS->>CONS: Update active consumers list
+    CONS->>CONS: Log consumer status
+
+    Note over CONS: Connection remains open<br/>for other queues
+
+    style EXT fill:#fff9c4
+    style RMQ fill:#fff3e0
+    style CONS fill:#e0f2f1
+    style TIMER fill:#ffebee
+```
+
+### Process Steps
+
 1. When the Python/Rust extractor sends a "file_complete" message, both tableinator and graphinator:
 
    - Mark the file as complete (shows 🎉 in progress reports)
