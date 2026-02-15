@@ -70,13 +70,13 @@ Tasks are organized into logical groups for easier navigation:
 
 | Task                  | Description                          |
 | --------------------- | ------------------------------------ |
-| `rustextractor-build` | Build Rust extractor in release mode |
-| `rustextractor-test`  | Run Rust extractor tests             |
-| `rustextractor-bench` | Run Rust extractor benchmarks        |
-| `rustextractor-run`   | Run Rust extractor in release mode   |
-| `rustextractor-lint`  | Lint Rust code with clippy           |
-| `rustextractor-fmt`   | Format Rust code                     |
-| `rustextractor-clean` | Clean Rust build artifacts           |
+| `extractor-build` | Build Rust extractor in release mode |
+| `extractor-test`  | Run Rust extractor tests             |
+| `extractor-bench` | Run Rust extractor benchmarks        |
+| `extractor-run`   | Run Rust extractor in release mode   |
+| `extractor-lint`  | Lint Rust code with clippy           |
+| `extractor-fmt`   | Format Rust code                     |
+| `extractor-clean` | Clean Rust build artifacts           |
 
 ### 🐋 Docker Group
 

@@ -168,7 +168,7 @@ RUN groupadd -r -g ${GID} discogsography && \
 Additional directories:
 
 - **extractor/pyextractor**: Add `/discogs-data` directory
-- **extractor/rustextractor**: Add `/discogs-data` directory
+- **extractor/extractor**: Add `/discogs-data` directory
 
 ### 5. Startup Script
 
@@ -216,7 +216,7 @@ Service-specific additions:
 - **dashboard**: All database connections
 - **discovery**: All database connections
 - **extractor/pyextractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
-- **extractor/rustextractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
+- **extractor/extractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
 - **graphinator**: Neo4j connections
 - **tableinator**: PostgreSQL connections
 
@@ -238,7 +238,7 @@ VOLUME ["/logs"]
 Additional volumes:
 
 - **extractor/pyextractor**: Add `"/discogs-data"`
-- **extractor/rustextractor**: Add `"/discogs-data"`
+- **extractor/extractor**: Add `"/discogs-data"`
 
 ## 🔧 Service-Specific Requirements
 
@@ -260,7 +260,7 @@ Additional volumes:
 - Add /discogs-data volume
 - Special environment variables for Discogs configuration
 
-### Rust Extractor (extractor/rustextractor)
+### Extractor (extractor/extractor)
 
 - Rust-based container using multi-stage build
 - Create /discogs-data directory

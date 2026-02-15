@@ -10,7 +10,7 @@ The main script for updating project dependencies and versions. This is a compre
 
 - 🐍 **Python Version Updates**: Update Python version across all project files
 - 📦 **Package Dependency Updates**: Update all Python packages with detailed change tracking
-- 🦀 **Rust Dependency Updates**: Update all Rust crates in rustextractor (main, dev, and build deps)
+- 🦀 **Rust Dependency Updates**: Update all Rust crates in extractor (main, dev, and build deps)
 - 🐳 **UV Package Manager Updates**: Update UV version in all Dockerfiles (including nested ones)
 - 🔍 **Component Verification**: Verifies all expected components exist before updating
 - 💾 **Automatic Backups**: Creates timestamped backups before making changes
@@ -75,12 +75,12 @@ The script now includes comprehensive component verification and updates **all**
 
 **Docker Configuration (7 files)**:
 
-- ✅ All service Dockerfiles including nested `extractor/pyextractor` and `extractor/rustextractor`
+- ✅ All service Dockerfiles including nested `extractor/pyextractor` and `extractor/extractor`
 - ✅ Documentation standards file
 
 **Rust Configuration (2 files)**:
 
-- ✅ `Cargo.toml` and `Cargo.lock` for rustextractor
+- ✅ `Cargo.toml` and `Cargo.lock` for extractor
 
 **Total: 15+ components verified and updated automatically**
 
@@ -151,10 +151,10 @@ Standalone script for updating Python version across the codebase. This is calle
 - All `pyproject.toml` files in:
   - Root directory
   - `common/`, `dashboard/`, `discovery/`, `graphinator/`, `tableinator/`
-  - `extractor/pyextractor/` and `extractor/rustextractor/`
+  - `extractor/pyextractor/` and `extractor/extractor/`
 - All Dockerfiles including nested ones in:
   - `dashboard/`, `discovery/`, `graphinator/`, `tableinator/`
-  - `extractor/pyextractor/` and `extractor/rustextractor/`
+  - `extractor/pyextractor/` and `extractor/extractor/`
   - `docs/dockerfile-standards.md`
 - GitHub workflow files
 - `pyrightconfig.json`

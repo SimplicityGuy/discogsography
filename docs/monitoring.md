@@ -37,7 +37,7 @@ open http://localhost:8003
 
 **Services Monitored**:
 
-- Rust Extractor (http://localhost:8000/health)
+- Extractor (http://localhost:8000/health)
 - Graphinator (http://localhost:8001/health)
 - Tableinator (http://localhost:8002/health)
 - Dashboard (http://localhost:8003/health)
@@ -180,7 +180,7 @@ uv run task logs
 docker-compose logs -f
 
 # Specific service
-docker-compose logs -f extractor-rust
+docker-compose logs -f extractor
 docker-compose logs -f graphinator
 docker-compose logs -f tableinator
 docker-compose logs -f dashboard
@@ -368,7 +368,7 @@ TTL discovery:genre_trends:Jazz
 All services expose HTTP health check endpoints:
 
 ```bash
-# Rust Extractor
+# Extractor
 curl http://localhost:8000/health
 # Response: {"status": "healthy"}
 
@@ -396,7 +396,7 @@ curl http://localhost:8007/health
 # check-all-health.sh
 
 services=(
-  "Rust Extractor:8000"
+  "Extractor:8000"
   "Graphinator:8001"
   "Tableinator:8002"
   "Dashboard:8003"
@@ -505,7 +505,7 @@ async def check_custom_condition():
 ./scripts/check-all-health.sh
 
 # Or individually
-curl http://localhost:8000/health  # Rust Extractor
+curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
@@ -633,7 +633,7 @@ Track records/second for each service:
 docker-compose logs -f | grep "📊"
 
 # Expected rates
-# - Rust Extractor: 20,000-400,000+ records/s
+# - Extractor: 20,000-400,000+ records/s
 # - Graphinator: 1,000-2,000 records/s
 # - Tableinator: 3,000-5,000 records/s
 ```

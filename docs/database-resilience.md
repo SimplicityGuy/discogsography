@@ -75,7 +75,7 @@ During database outages:
 
 ## Service-Specific Implementation
 
-### Python/Rust Extractor Services
+### Python/Extractor Services
 
 - Uses `ResilientRabbitMQConnection` for publishing
 - Buffers messages during connection issues
@@ -168,7 +168,7 @@ When databases undergo nightly maintenance:
 Each service exposes health data including connection status:
 
 - Python Extractor: `http://localhost:8000/health`
-- Rust Extractor: `http://localhost:8000/health`
+- Extractor: `http://localhost:8000/health`
 - Graphinator: `http://localhost:8001/health`
 - Tableinator: `http://localhost:8002/health`
 - Dashboard: `http://localhost:8003/health`

@@ -102,7 +102,7 @@ queue_args = {
 dlq_name = f"{queue_name}.dlq"
 ```
 
-**Rust Extractor:**
+**Extractor:**
 ```rust
 // Added DLX exchange
 let dlx_exchange = format!("{}.dlx", AMQP_EXCHANGE);

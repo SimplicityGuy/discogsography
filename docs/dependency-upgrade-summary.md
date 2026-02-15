@@ -85,7 +85,7 @@ transformers    4.57.6  5.1.0  wheel  (blocked)
 ### Files Modified
 ```
 .pre-commit-config.yaml            (pre-commit hooks updated)
-extractor/rustextractor/Cargo.lock  (Rust dependencies updated)
+extractor/extractor/Cargo.lock  (Rust dependencies updated)
 scripts/update-project.sh          (script improvements)
 uv.lock                            (Python dependencies updated)
 ```

@@ -2,18 +2,18 @@
 
 ## Overview
 
-This document describes the implementation of periodic state marker updates in both the rustextractor and pyextractor to enable crash recovery and progress monitoring.
+This document describes the implementation of periodic state marker updates in both the extractor and pyextractor to enable crash recovery and progress monitoring.
 
 ## Problem Statement
 
 Prior to this fix:
-- **rustextractor**: Only saved state marker when file processing started (0 records) and completed (final count)
+- **extractor**: Only saved state marker when file processing started (0 records) and completed (final count)
 - **pyextractor**: Already had periodic saves every 5,000 records
 - **Impact**: Rustextractor could lose hours of progress if it crashed or was restarted
 
 ## Solution
 
-Implemented periodic state marker updates in rustextractor to match pyextractor behavior.
+Implemented periodic state marker updates in extractor to match pyextractor behavior.
 
 ### Configuration
 
@@ -122,7 +122,7 @@ If the extractor crashes or is restarted:
 
 All tests pass (125 total):
 ```bash
-cd extractor/rustextractor
+cd extractor/extractor
 cargo test --lib
 ```
 

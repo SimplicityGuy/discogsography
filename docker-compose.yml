@@ -145,13 +145,13 @@ services:
       - no-new-privileges:true
 
   # Rust-based extractor service
-  rustextractor:
+  extractor:
     build:
       context: .
-      dockerfile: extractor/rustextractor/Dockerfile
-    image: discogsography/rustextractor:latest
-    container_name: discogsography-rustextractor
-    hostname: rustextractor
+      dockerfile: extractor/Dockerfile
+    image: discogsography/extractor:latest
+    container_name: discogsography-extractor
+    hostname: extractor
     user: "1000:1000"
     environment:
       AMQP_CONNECTION: amqp://discogsography:discogsography@rabbitmq:5672//
@@ -160,7 +160,7 @@ services:
       STARTUP_DELAY: "10"
     volumes:
       - discogs_data:/discogs-data
-      - rust_extractor_logs:/logs
+      - extractor_logs:/logs
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -179,7 +179,7 @@ services:
     cap_drop:
       - ALL
     profiles:
-      - rustextractor
+      - extractor
 
   # Graphinator service
   graphinator:
@@ -390,4 +390,4 @@ volumes:
   neo4j_plugins:
   redis_data:
   discogs_data:
-  rust_extractor_logs:
+  extractor_logs:

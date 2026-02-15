@@ -111,7 +111,7 @@ setup_logging("service_name", log_file=Path("/logs/service.log"))
 - File and console output
 - Automatic suppression of verbose third-party logs
 
-#### Rust Extractor
+#### Extractor
 
 The Rust extractor uses Rust's `tracing` framework and maps Python log levels to Rust equivalents:
 
@@ -166,7 +166,7 @@ let rust_level = match log_level.as_str() {
 }
 ```
 
-### Rust Extractor (JSON)
+### Extractor (JSON)
 
 ```json
 {
@@ -528,7 +528,7 @@ logger.info("🚀 🔧 Starting and configuring")
 
 ## 🔄 Migration Notes
 
-### From RUST_LOG (Rust Extractor)
+### From RUST_LOG (Extractor)
 
 **Old**:
 
@@ -544,7 +544,7 @@ environment:
   LOG_LEVEL: INFO
 ```
 
-### From Verbose Flag (Rust Extractor)
+### From Verbose Flag (Extractor)
 
 **Old**:
 

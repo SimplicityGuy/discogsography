@@ -17,8 +17,8 @@ on:
       - "**/*.py"
       - "**/pyproject.toml"
       - "**/uv.lock"
-      - "extractor/rustextractor/**/*.rs"
-      - "extractor/rustextractor/**/Cargo.toml"
+      - "extractor/**/*.rs"
+      - "extractor/**/Cargo.toml"
       - ".github/workflows/test.yml"
   pull_request:
     branches:
@@ -27,8 +27,8 @@ on:
       - "**/*.py"
       - "**/pyproject.toml"
       - "**/uv.lock"
-      - "extractor/rustextractor/**/*.rs"
-      - "extractor/rustextractor/**/Cargo.toml"
+      - "extractor/**/*.rs"
+      - "extractor/**/Cargo.toml"
       - ".github/workflows/test.yml"
 
 env:
@@ -239,7 +239,7 @@ jobs:
   # ============================================================================
   # RUST EXTRACTOR TESTS - Runs in parallel with all other test jobs
   # ============================================================================
-  test-rustextractor:
+  test-extractor:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -250,7 +250,7 @@ jobs:
       - name: 🔍 Check if Rust extractor exists
         id: check-rust
         run: |
-          if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+          if [[ -f "extractor/Cargo.toml" ]]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "✅ Rust extractor found - tests will run"
           else
@@ -283,7 +283,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            extractor/rustextractor/target/
+            extractor/target/
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-test-
@@ -292,7 +292,7 @@ jobs:
       - name: 🧪 Run Rust tests with coverage
         if: steps.check-rust.outputs.exists == 'true'
         run: |
-          cd extractor/rustextractor
+          cd extractor
           cargo llvm-cov test --verbose --lcov --output-path lcov.info
 
       - name: 📊 Upload Rust coverage reports
@@ -301,9 +301,9 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
-          files: ./extractor/rustextractor/lcov.info
-          flags: rustextractor
-          name: rustextractor-tests
+          files: ./extractor/lcov.info
+          flags: extractor
+          name: extractor-tests
           fail_ci_if_error: false
           disable_search: true
           verbose: false
@@ -323,7 +323,7 @@ jobs:
       - test-explore
       - test-graphinator
       - test-tableinator
-      - test-rustextractor
+      - test-extractor
     if: always()
 
     steps:
@@ -335,7 +335,7 @@ jobs:
           echo "  Explore: ${{ needs.test-explore.result }}"
           echo "  Graphinator: ${{ needs.test-graphinator.result }}"
           echo "  Tableinator: ${{ needs.test-tableinator.result }}"
-          echo "  RustExtractor: ${{ needs.test-rustextractor.result }}"
+          echo "  Extractor: ${{ needs.test-extractor.result }}"
 
           # Check if any test job failed
           if [[ "${{ needs.test-common.result }}" == "failure" ]] || \
@@ -343,7 +343,7 @@ jobs:
              [[ "${{ needs.test-explore.result }}" == "failure" ]] || \
              [[ "${{ needs.test-graphinator.result }}" == "failure" ]] || \
              [[ "${{ needs.test-tableinator.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-rustextractor.result }}" == "failure" ]]; then
+             [[ "${{ needs.test-extractor.result }}" == "failure" ]]; then
             echo "❌ One or more test jobs failed"
             exit 1
           fi

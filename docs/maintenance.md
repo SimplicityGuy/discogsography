@@ -50,7 +50,7 @@ The `upgrade-packages.sh` script provides:
 - Development dependencies
 - Optional dependencies
 
-**Rust Packages** (if Rust Extractor is used):
+**Rust Packages** (if Extractor is used):
 
 - `Cargo.toml` dependencies
 - Cargo.lock updates
@@ -119,7 +119,7 @@ uv add "package-name>=new.version"
 # Or update to latest
 uv lock --upgrade-package package-name
 
-# Rust package (in extractor/rustextractor/)
+# Rust package (in extractor/extractor/)
 cargo update -p package-name
 ```
 

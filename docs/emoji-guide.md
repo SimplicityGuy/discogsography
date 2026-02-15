@@ -19,7 +19,7 @@ Emojis in Discogsography serve to:
 | Emoji | Service          | Usage                                          |
 | ----- | ---------------- | ---------------------------------------------- |
 | 📥    | Python Extractor | Python-based data extraction service           |
-| ⚡    | Rust Extractor   | Rust-based high-performance extraction service |
+| ⚡    | Extractor   | Rust-based high-performance extraction service |
 | 🔗    | Graphinator      | Neo4j graph service                            |
 | 🐘    | Tableinator      | PostgreSQL service                             |
 | 🎵    | Discovery        | Music discovery service                        |

@@ -143,7 +143,7 @@ docker-compose logs -f tableinator graphinator
 - Cancellation tasks are tracked to allow proper cleanup on shutdown
 - The `nowait=True` parameter prevents hanging if RabbitMQ is slow to respond
 
-## Python/Rust Extractor Integration
+## Python/Extractor Integration
 
 Both the Python and Rust extractor services integrate with consumer cancellation by:
 

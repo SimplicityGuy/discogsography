@@ -481,7 +481,7 @@ verify_dependency_updates() {
     print_success "✓ Python build dependencies ([build-system])"
 
     # Rust dependencies
-    if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+    if [[ -f "extractor/Cargo.toml" ]]; then
         print_success "✓ Rust main dependencies ([dependencies])"
         print_success "✓ Rust dev dependencies ([dev-dependencies])"
         print_success "✓ Rust build dependencies ([build-dependencies])"
@@ -497,15 +497,15 @@ verify_dependency_updates() {
     if [[ "$DRY_RUN" == false ]]; then
         print_info "Run 'uv tree --outdated' to verify all Python packages are up to date"
 
-        if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
-            print_info "Run 'cargo outdated' in extractor/rustextractor to verify Rust crates"
+        if [[ -f "extractor/Cargo.toml" ]]; then
+            print_info "Run 'cargo outdated' in extractor to verify Rust crates"
         fi
     fi
 }
 
 # Update Rust crates including ALL dependency types
 update_rust_crates() {
-    if [[ ! -d "extractor/rustextractor" ]] || [[ ! -f "extractor/rustextractor/Cargo.toml" ]]; then
+    if [[ ! -d "extractor" ]] || [[ ! -f "extractor/Cargo.toml" ]]; then
         print_info "No Rust extractor found, skipping Rust updates"
         return
     fi
@@ -514,8 +514,8 @@ update_rust_crates() {
 
     # Backup Cargo files
     if [[ "$BACKUP" == true ]] && [[ "$DRY_RUN" == false ]]; then
-        backup_file "extractor/rustextractor/Cargo.toml"
-        backup_file "extractor/rustextractor/Cargo.lock"
+        backup_file "extractor/Cargo.toml"
+        backup_file "extractor/Cargo.lock"
     fi
 
     print_info "Updating ALL Rust dependency types:"
@@ -525,7 +525,7 @@ update_rust_crates() {
     print_info "  • Target-specific dependencies"
 
     if [[ "$DRY_RUN" == false ]]; then
-        pushd extractor/rustextractor > /dev/null
+        pushd extractor > /dev/null
 
         # Check if cargo-edit is installed for updating Cargo.toml versions
         if command -v cargo-upgrade &> /dev/null; then
@@ -545,7 +545,7 @@ update_rust_crates() {
             print_info "Updating all dependencies (main, dev, build, target-specific)..."
             if $upgrade_cmd; then
                 print_success "Updated all dependency versions"
-                FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated all dependency versions")
+                FILE_CHANGES+=("extractor/Cargo.toml: Updated all dependency versions")
                 CHANGES_MADE=true
             fi
         else
@@ -559,7 +559,7 @@ update_rust_crates() {
 
                 if $upgrade_cmd; then
                     print_success "Updated all dependency versions"
-                    FILE_CHANGES+=("extractor/rustextractor/Cargo.toml: Updated all dependency versions")
+                    FILE_CHANGES+=("extractor/Cargo.toml: Updated all dependency versions")
                     CHANGES_MADE=true
                 fi
             else
@@ -571,7 +571,7 @@ update_rust_crates() {
         print_info "Updating Cargo.lock with ALL dependency changes..."
         if cargo update; then
             print_success "ALL Rust dependencies in lock file updated successfully"
-            FILE_CHANGES+=("extractor/rustextractor/Cargo.lock: Updated ALL Rust dependencies")
+            FILE_CHANGES+=("extractor/Cargo.lock: Updated ALL Rust dependencies")
             CHANGES_MADE=true
         else
             print_warning "Failed to update Rust crates lock file"
@@ -603,7 +603,7 @@ update_python_packages() {
             fi
         done
 
-        # Note: extractor/rustextractor is a Rust project, skip Python backups
+        # Note: extractor is a Rust project, skip Python backups
     fi
 
     # Update uv itself
@@ -705,9 +705,9 @@ run_tests() {
     fi
 
     # Run Rust tests if Rust extractor exists
-    if [[ -d "extractor/rustextractor" ]] && [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+    if [[ -d "extractor" ]] && [[ -f "extractor/Cargo.toml" ]]; then
         print_info "Running Rust tests..."
-        if just test-rustextractor; then
+        if just test-extractor; then
             print_success "Rust tests passed"
         else
             print_warning "Rust tests failed - review the changes"
@@ -872,7 +872,7 @@ show_file_report() {
     echo "  ✓ common/pyproject.toml"
     echo "  ✓ dashboard/pyproject.toml"
     echo "  ✓ explore/pyproject.toml"
-    echo "  ✓ extractor/rustextractor/pyproject.toml (tools only - Rust project)"
+    echo "  ✓ extractor/pyproject.toml (tools only - Rust project)"
     echo "  ✓ graphinator/pyproject.toml"
     echo "  ✓ tableinator/pyproject.toml"
     echo "  ✓ uv.lock (root)"
@@ -883,7 +883,7 @@ show_file_report() {
     echo "🐳 Docker Configuration:"
     echo "  ✓ dashboard/Dockerfile"
     echo "  ✓ explore/Dockerfile"
-    echo "  ✓ extractor/rustextractor/Dockerfile"
+    echo "  ✓ extractor/Dockerfile"
     echo "  ✓ graphinator/Dockerfile"
     echo "  ✓ tableinator/Dockerfile"
     echo "  ✓ docs/dockerfile-standards.md"
@@ -892,10 +892,10 @@ show_file_report() {
     echo ""
 
     # Rust files
-    if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+    if [[ -f "extractor/Cargo.toml" ]]; then
         echo "🦀 Rust Configuration:"
-        echo "  ✓ extractor/rustextractor/Cargo.toml"
-        echo "  ✓ extractor/rustextractor/Cargo.lock"
+        echo "  ✓ extractor/Cargo.toml"
+        echo "  ✓ extractor/Cargo.lock"
         echo ""
     fi
 
@@ -933,7 +933,7 @@ verify_components() {
         "common/pyproject.toml"
         "dashboard/pyproject.toml"
         "explore/pyproject.toml"
-        "extractor/rustextractor/pyproject.toml"
+        "extractor/pyproject.toml"
         "graphinator/pyproject.toml"
         "tableinator/pyproject.toml"
     )
@@ -952,7 +952,7 @@ verify_components() {
     local dockerfile_list=(
         "dashboard/Dockerfile"
         "explore/Dockerfile"
-        "extractor/rustextractor/Dockerfile"
+        "extractor/Dockerfile"
         "graphinator/Dockerfile"
         "tableinator/Dockerfile"
     )
@@ -967,7 +967,7 @@ verify_components() {
     done
 
     # Check Rust components
-    if [[ -f "extractor/rustextractor/Cargo.toml" ]]; then
+    if [[ -f "extractor/Cargo.toml" ]]; then
         print_info "Found Rust extractor (Cargo.toml)"
         total_components=$((total_components + 1))
         found_components=$((found_components + 1))

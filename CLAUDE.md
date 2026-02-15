@@ -29,7 +29,7 @@
 - ✅ **ALWAYS use `uv` for Python package management and running Python tools** - Never use pip, pipenv, or poetry.
 - ✅ **State Marker System** - Both extractors use version-specific state markers (`.extraction_status_<version>.json`) to track progress and enable safe restarts. See `docs/state-marker-system.md`.
 - ✅ **Dual Extractor Architecture** - Both Python and Rust extractors declare 2 exchanges (main + DLX) and 4 queues (2 main + 2 DLQs) for poison message handling.
-- ✅ **Update Script Tests** - The `update-project.sh` script runs both Python (`just test`) and Rust (`just test-rustextractor`) tests to ensure all code is validated.
+- ✅ **Update Script Tests** - The `update-project.sh` script runs both Python (`just test`) and Rust (`just test-extractor`) tests to ensure all code is validated.
 - ✅ Create Mermaid style diagrams when diagrams are added to Markdown files.
 - ✅ New markdown files should have a lowercase filename preferring - instead \_, unless the document is a README. Do not rename any existing markdown files.
 - ✅ All pyproject.toml files should follow the standard structure and ordering (see pyproject.toml Standards section).
@@ -350,7 +350,7 @@ http://localhost:8000/api/health
 - Neo4j: 7474 (browser), 7687 (bolt)
 - PostgreSQL: 5433 (mapped from 5432)
 - RabbitMQ: 5672 (AMQP), 15672 (management)
-- Rust Extractor: 8000 (health)
+- Extractor: 8000 (health)
 - Graphinator: 8001 (health)
 - Tableinator: 8002 (health)
 

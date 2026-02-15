@@ -40,9 +40,9 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 ### ⚙️ Core Services
 
-| Service                                                          | Purpose                           | Key Technologies                   |
-| ---------------------------------------------------------------- | --------------------------------- | ---------------------------------- |
-| **[⚡](docs/emoji-guide.md#service-identifiers) Rust Extractor** | High-performance Rust-based extractor | `tokio`, `quick-xml`, `lapin`      |
+| Service                                                      | Purpose                           | Key Technologies                   |
+| ------------------------------------------------------------ | --------------------------------- | ---------------------------------- |
+| **[⚡](docs/emoji-guide.md#service-identifiers) Extractor** | High-performance Rust-based extractor | `tokio`, `quick-xml`, `lapin`      |
 | **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator**    | Builds Neo4j knowledge graphs     | `neo4j-driver`, graph algorithms   |
 | **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator**    | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search |
 | **[🔍](docs/emoji-guide.md#service-identifiers) Explore**        | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j |
@@ -53,7 +53,7 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
-    RSEXT[["⚡ Rust Extractor<br/>High-Performance<br/>XML Processing"]]
+    EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>8 Queues + DLQs"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
@@ -63,8 +63,8 @@ graph TD
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
 
-    S3 -->|1. Download & Parse| RSEXT
-    RSEXT -->|2. Publish Messages| RMQ
+    S3 -->|1. Download & Parse| EXT
+    EXT -->|2. Publish Messages| RMQ
     RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
     RMQ -->|3b. Artists/Labels/Releases/Masters| TABLE
     GRAPH -->|4a. Build Graph| NEO4J
@@ -73,7 +73,7 @@ graph TD
     EXPLORE -.->|Query Graph| NEO4J
     EXPLORE -.->|Explore Paths| NEO4J
 
-    DASH -.->|Monitor| RSEXT
+    DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
     DASH -.->|Monitor| EXPLORE
@@ -83,7 +83,7 @@ graph TD
     DASH -.->|Stats| PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    style RSEXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
@@ -227,11 +227,11 @@ just install
 just init
 
 # 5. Run any service
-just dashboard         # Monitoring UI
-just explore           # Graph exploration & trends
-just rustextractor-run # Rust data ingestion (requires cargo)
-just graphinator       # Neo4j builder
-just tableinator       # PostgreSQL builder
+just dashboard     # Monitoring UI
+just explore       # Graph exploration & trends
+just extractor-run # Rust-based data ingestion (requires cargo)
+just graphinator   # Neo4j builder
+just tableinator   # PostgreSQL builder
 ```
 
 #### Environment Setup
@@ -266,13 +266,13 @@ cp .env.example .env
 
 #### Core Settings
 
-| Variable              | Description               | Default                              | Used By        |
-| --------------------- | ------------------------- | ------------------------------------ | -------------- |
-| `AMQP_CONNECTION`     | RabbitMQ URL              | `amqp://guest:guest@localhost:5672/` | All services   |
-| `DISCOGS_ROOT`        | Data storage path         | `/discogs-data`                      | Rust Extractor |
-| `PERIODIC_CHECK_DAYS` | Update check interval     | `15`                                 | Rust Extractor |
-| `PYTHON_VERSION`      | Python version for builds | `3.13`                               | Docker, CI/CD  |
-| `LOG_LEVEL`           | Logging verbosity         | `INFO`                               | All services   |
+| Variable              | Description               | Default                              | Used By       |
+| --------------------- | ------------------------- | ------------------------------------ | ------------- |
+| `AMQP_CONNECTION`     | RabbitMQ URL              | `amqp://guest:guest@localhost:5672/` | All services  |
+| `DISCOGS_ROOT`        | Data storage path         | `/discogs-data`                      | Extractor     |
+| `PERIODIC_CHECK_DAYS` | Update check interval     | `15`                                 | Extractor     |
+| `PYTHON_VERSION`      | Python version for builds | `3.13`                               | Docker, CI/CD |
+| `LOG_LEVEL`           | Logging verbosity         | `INFO`                               | All services  |
 
 > **📝 Note**: `LOG_LEVEL` supports standard Python log levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. When set to `DEBUG`, services output detailed diagnostic information including database queries. See [Logging Configuration](docs/logging-configuration.md) for details.
 
@@ -548,14 +548,10 @@ discogsography/
 ├── 🔍 explore/             # Interactive graph exploration & trends
 │   ├── explore.py          # FastAPI backend with Neo4j queries
 │   └── static/             # Frontend HTML/CSS/JS (D3.js, Plotly.js)
-├── 📥 extractor/           # Data extraction services
-│   ├── pyextractor/        # Python-based Discogs data ingestion
-│   │   ├── extractor.py    # Main processing logic
-│   │   └── discogs.py      # S3 download and validation
-│   └── rustextractor/      # Rust-based high-performance extractor
-│       ├── src/
-│       │   └── main.rs     # Rust processing logic
-│       └── Cargo.toml      # Rust dependencies
+├── 📥 extractor/           # Rust-based high-performance extractor
+│   ├── src/
+│   │   └── main.rs         # Rust processing logic
+│   └── Cargo.toml          # Rust dependencies
 ├── 🔗 graphinator/         # Neo4j graph database service
 │   └── graphinator.py      # Graph relationship builder
 ├── 🐘 tableinator/         # PostgreSQL storage service
@@ -699,11 +695,11 @@ CREATE INDEX idx_releases_gin ON releases USING GIN (data);
 
 Typical processing rates on modern hardware:
 
-| Service                | Records/Second  | Bottleneck               |
-| ---------------------- | --------------- | ------------------------ |
-| ⚡ **Rust Extractor**  | 20,000-400,000+ | Network I/O (Rust-based) |
-| 🔗 **Graphinator**     | 1,000-2,000     | Neo4j transactions       |
-| 🐘 **Tableinator**     | 3,000-5,000     | PostgreSQL inserts       |
+| Service             | Records/Second  | Bottleneck               |
+| ------------------- | --------------- | ------------------------ |
+| ⚡ **Extractor**    | 20,000-400,000+ | Network I/O (Rust-based) |
+| 🔗 **Graphinator**  | 1,000-2,000     | Neo4j transactions       |
+| 🐘 **Tableinator**  | 3,000-5,000     | PostgreSQL inserts       |
 
 ### 💻 Hardware Requirements
 
@@ -762,7 +758,7 @@ PREFETCH_COUNT: 100  # Adjust based on processing speed
 
 ### ❌ Common Issues & Solutions
 
-#### Rust Extractor Download Failures
+#### Extractor Download Failures
 
 ```bash
 # Check connectivity
@@ -826,7 +822,7 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
 1. **📋 Check Service Health**
 
    ```bash
-   curl http://localhost:8000/health  # Rust Extractor
+   curl http://localhost:8000/health  # Extractor
    curl http://localhost:8001/health  # Graphinator
    curl http://localhost:8002/health  # Tableinator
    curl http://localhost:8003/health  # Dashboard
@@ -857,7 +853,7 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
    uv run task logs
 
    # Specific service
-   docker-compose logs -f extractor-rust
+   docker-compose logs -f extractor
 
    # Filter for errors only
    docker-compose logs dashboard | grep "❌"

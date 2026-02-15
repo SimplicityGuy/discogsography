@@ -38,8 +38,8 @@ check-updates:
     uv pip list --outdated
     @echo ''
     @echo '🦀 Rust dependency updates:'
-    @if [ -d 'extractor/rustextractor' ]; then \
-        cd extractor/rustextractor && cargo outdated || echo 'cargo-outdated not installed. Install with: cargo install cargo-outdated'; \
+    @if [ -d 'extractor' ]; then \
+        cd extractor && cargo outdated || echo 'cargo-outdated not installed. Install with: cargo install cargo-outdated'; \
     else \
         echo 'No Rust project found'; \
     fi
@@ -128,9 +128,9 @@ test-parallel:
     uv run pytest tests/tableinator/ -v > /tmp/test-tableinator.log 2>&1 &
     pid_tableinator=$!
 
-    if [ -d "extractor/rustextractor" ]; then
-        (cd extractor/rustextractor && cargo test) > /tmp/test-rustextractor.log 2>&1 &
-        pid_rustextractor=$!
+    if [ -d "extractor" ]; then
+        (cd extractor && cargo test) > /tmp/test-extractor.log 2>&1 &
+        pid_extractor=$!
     fi
 
     # Wait for all tests and track results
@@ -142,8 +142,8 @@ test-parallel:
     wait $pid_graphinator || { echo "❌ Graphinator tests failed"; cat /tmp/test-graphinator.log; failed=1; }
     wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
 
-    if [ -n "$pid_rustextractor" ]; then
-        wait $pid_rustextractor || { echo "❌ RustExtractor tests failed"; cat /tmp/test-rustextractor.log; failed=1; }
+    if [ -n "$pid_extractor" ]; then
+        wait $pid_extractor || { echo "❌ RustExtractor tests failed"; cat /tmp/test-extractor.log; failed=1; }
     fi
 
     if [ $failed -eq 0 ]; then
@@ -176,10 +176,10 @@ test-dashboard:
 test-explore:
     uv run pytest tests/explore/ -m 'not e2e' -v
 
-# Run Rust extractor tests (same as rustextractor-test)
+# Run Rust extractor tests (same as extractor-test)
 [group('test')]
-test-rustextractor:
-    cd extractor/rustextractor && cargo test
+test-extractor:
+    cd extractor && cargo test
 
 # Run graphinator service tests
 [group('test')]
@@ -221,44 +221,44 @@ tableinator:
 
 # Build Rust extractor in release mode
 [group('rust')]
-rustextractor-build:
-    cd extractor/rustextractor && \
+extractor-build:
+    cd extractor && \
     cargo build --release
 
 # Run Rust extractor tests
 [group('rust')]
-rustextractor-test:
-    cd extractor/rustextractor && \
+extractor-test:
+    cd extractor && \
     cargo test
 
 # Run Rust extractor benchmarks
 [group('rust')]
-rustextractor-bench:
-    cd extractor/rustextractor && \
+extractor-bench:
+    cd extractor && \
     cargo bench
 
 # Run Rust extractor in release mode
 [group('rust')]
-rustextractor-run:
-    cd extractor/rustextractor && \
+extractor-run:
+    cd extractor && \
     cargo run --release
 
 # Lint Rust code with clippy
 [group('rust')]
-rustextractor-lint:
-    cd extractor/rustextractor && \
+extractor-lint:
+    cd extractor && \
     cargo clippy -- -D warnings
 
 # Format Rust code
 [group('rust')]
-rustextractor-fmt:
-    cd extractor/rustextractor && \
+extractor-fmt:
+    cd extractor && \
     cargo fmt
 
 # Clean Rust build artifacts
 [group('rust')]
-rustextractor-clean:
-    cd extractor/rustextractor && \
+extractor-clean:
+    cd extractor && \
     cargo clean
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -293,7 +293,7 @@ build:
     docker-compose build \
         dashboard \
         explore \
-        rustextractor \
+        extractor \
         graphinator \
         tableinator
 
@@ -359,8 +359,8 @@ clean:
     @find . -type f -name '*.swp' ! -path './.claude/*' -delete 2>/dev/null || true
     @find . -type f -name '*.swo' ! -path './.claude/*' -delete 2>/dev/null || true
     @find . -type f -name '*~' ! -path './.claude/*' -delete 2>/dev/null || true
-    @if [ -d 'extractor/rustextractor/target' ]; then \
-        rm -rf extractor/rustextractor/target; \
+    @if [ -d 'extractor/target' ]; then \
+        rm -rf extractor/target; \
     fi
     @if [ -d '.hypothesis' ]; then \
         rm -rf .hypothesis; \

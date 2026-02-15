@@ -130,7 +130,7 @@ When the extractor restarts, it checks the state marker and makes one of three d
 - Wait for next periodic check
 - No processing occurs
 
-## Usage in Rust Extractor
+## Usage in Extractor
 
 ```rust
 use crate::state_marker::{StateMarker, ProcessingDecision};
@@ -313,7 +313,7 @@ Both Rust and Python implementations have comprehensive tests:
 
 **Rust:**
 ```bash
-cd extractor/rustextractor
+cd extractor/extractor
 cargo test state_marker
 ```
 

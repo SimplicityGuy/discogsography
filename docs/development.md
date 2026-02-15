@@ -53,7 +53,7 @@ discogsography/
 │   ├── README.md
 │   └── __init__.py
 ├── 📥 extractor/           # Data extraction services
-│   └── rustextractor/      # Rust-based high-performance extractor
+│   └── extractor/      # Rust-based high-performance extractor
 │       ├── src/
 │       │   └── main.rs     # Rust processing logic
 │       ├── Cargo.toml      # Rust dependencies

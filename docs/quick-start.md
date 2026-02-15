@@ -36,7 +36,7 @@ This guide will help you get Discogsography running quickly, whether you're usin
 - Python 3.13+
 - [uv](https://github.com/astral-sh/uv) package manager
 - [just](https://just.systems/) task runner (optional but recommended)
-- Rust toolchain (only if developing Rust Extractor)
+- Rust toolchain (only if developing Extractor)
 
 ## 🐳 Docker Compose Setup (Recommended)
 
@@ -195,8 +195,8 @@ just dashboard
 # Explore (graph exploration)
 just explore
 
-# Rust Extractor (high-performance ingestion, requires Rust)
-just rustextractor-run
+# Extractor (high-performance ingestion, requires Rust)
+just extractor-run
 
 # Graphinator (Neo4j builder)
 just graphinator
@@ -229,7 +229,7 @@ All services expose health endpoints:
 
 ```bash
 # Check each service
-curl http://localhost:8000/health  # Rust Extractor
+curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
@@ -251,7 +251,7 @@ Watch the logs to see data processing:
 docker-compose logs -f
 
 # Specific service
-docker-compose logs -f extractor-rust
+docker-compose logs -f extractor
 docker-compose logs -f graphinator
 docker-compose logs -f tableinator
 ```
@@ -332,14 +332,14 @@ docker-compose logs [service-name]
 docker-compose restart [service-name]
 ```
 
-### Rust Extractor Not Downloading Data
+### Extractor Not Downloading Data
 
 ```bash
 # Check internet connectivity
 curl -I https://discogs-data-dumps.s3.us-west-2.amazonaws.com
 
 # Check extractor logs
-docker-compose logs extractor-rust
+docker-compose logs extractor
 
 # Verify DISCOGS_ROOT permissions
 ls -la /discogs-data  # or your configured path

@@ -16,9 +16,9 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### ⚙️ Service Components
 
-| Service                                                     | Purpose                             | Key Technologies                   | Port(s)       |
-| ----------------------------------------------------------- | ----------------------------------- | ---------------------------------- | ------------- |
-| **[⚡](emoji-guide.md#service-identifiers) Rust Extractor** | High-performance Rust-based extractor | `tokio`, `quick-xml`, `lapin`      | 8000 (health) |
+| Service                                                 | Purpose                             | Key Technologies                   | Port(s)       |
+| ------------------------------------------------------- | ----------------------------------- | ---------------------------------- | ------------- |
+| **[⚡](emoji-guide.md#service-identifiers) Extractor** | High-performance Rust-based extractor | `tokio`, `quick-xml`, `lapin`      | 8000 (health) |
 | **[🔗](emoji-guide.md#service-identifiers) Graphinator**    | Builds Neo4j knowledge graphs       | `neo4j-driver`, graph algorithms   | 8001 (health) |
 | **[🐘](emoji-guide.md#service-identifiers) Tableinator**    | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search | 8002 (health) |
 | **[🔍](emoji-guide.md#service-identifiers) Explore**        | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson` | 8006, 8007    |
@@ -38,7 +38,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
-    RSEXT[["⚡ Rust Extractor<br/>High-Performance<br/>XML Processing"]]
+    EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>8 Queues + DLQs"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
@@ -48,8 +48,8 @@ graph TD
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
 
-    S3 -->|1. Download & Parse| RSEXT
-    RSEXT -->|2. Publish Messages| RMQ
+    S3 -->|1. Download & Parse| EXT
+    EXT -->|2. Publish Messages| RMQ
     RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
     RMQ -->|3b. Artists/Labels/Releases/Masters| TABLE
     GRAPH -->|4a. Build Graph| NEO4J
@@ -58,7 +58,7 @@ graph TD
     EXPLORE -.->|Query Graph| NEO4J
     EXPLORE -.->|Explore Paths| NEO4J
 
-    DASH -.->|Monitor| RSEXT
+    DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
     DASH -.->|Monitor| EXPLORE
@@ -68,7 +68,7 @@ graph TD
     DASH -.->|Stats| PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    style RSEXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
@@ -83,7 +83,7 @@ graph TD
 
 ### 1. Data Extraction Phase
 
-**Rust Extractor**:
+**Extractor** (Rust-based):
 
 - Downloads XML dumps from Discogs S3 bucket
 - High-performance XML parsing (20,000-400,000+ records/sec)
@@ -143,7 +143,7 @@ graph TD
 
 ## Component Details
 
-### Rust Extractor
+### Extractor
 
 **Responsibilities**:
 
@@ -168,7 +168,7 @@ graph TD
 - `PERIODIC_CHECK_DAYS`: Update check interval
 - `AMQP_CONNECTION`: RabbitMQ connection string
 
-See [Rust Extractor README](../extractor/rustextractor/README.md) for details.
+See [Extractor README](../extractor/README.md) for details.
 
 ### Graphinator
 
@@ -272,7 +272,7 @@ See [Dashboard README](../dashboard/README.md) for details.
 ```mermaid
 graph LR
     subgraph Producers
-        RSEXT[Rust Extractor]
+        EXT[Extractor]
     end
 
     subgraph RabbitMQ
@@ -287,10 +287,10 @@ graph LR
         TABLE[Tableinator]
     end
 
-    RSEXT --> AQ
-    RSEXT --> LQ
-    RSEXT --> RQ
-    RSEXT --> MQ
+    EXT --> AQ
+    EXT --> LQ
+    EXT --> RQ
+    EXT --> MQ
 
     AQ --> GRAPH
     AQ --> TABLE
@@ -301,7 +301,7 @@ graph LR
     MQ --> GRAPH
     MQ --> TABLE
 
-    style RSEXT fill:#ffccbc,stroke:#d84315
+    style EXT fill:#ffccbc,stroke:#d84315
     style GRAPH fill:#f3e5f5,stroke:#4a148c
     style TABLE fill:#e8f5e9,stroke:#1b5e20
 ```
@@ -419,7 +419,7 @@ See [Docker Security](docker-security.md) for details.
 All services expose HTTP health endpoints:
 
 ```bash
-curl http://localhost:8000/health  # Rust Extractor
+curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
@@ -451,7 +451,7 @@ See [Monitoring](monitoring.md) for details.
 
 **Stateless Services** (can scale horizontally):
 
-- Rust Extractor (one instance per data type)
+- Extractor (one instance per data type)
 - Graphinator (multiple consumers per queue)
 - Tableinator (multiple consumers per queue)
 - Explore (load balanced)

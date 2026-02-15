@@ -1,10 +1,10 @@
-# Rust Extractor
+# Extractor
 
 High-performance Rust-based Discogs data extractor for the Discogsography platform.
 
 ## Overview
 
-Rust Extractor is a Rust reimplementation of the Python-based extractor service, offering significantly improved
+Extractor is a Rust reimplementation of the Python-based extractor service, offering significantly improved
 performance and lower resource usage. It streams and parses Discogs XML data dumps, sending processed records to
 RabbitMQ for consumption by downstream services.
 
@@ -38,7 +38,7 @@ Based on disco-quick reference implementation:
 
 ## Configuration
 
-Rust Extractor can be configured via environment variables or a TOML configuration file.
+Extractor can be configured via environment variables or a TOML configuration file.
 
 ### Environment Variables
 
@@ -93,10 +93,10 @@ cargo run
 
 ```bash
 # Build image
-docker build -t rustextractor .
+docker build -t extractor .
 
 # Run container
-docker run -e AMQP_CONNECTION=amqp://rabbitmq:5672 rustextractor
+docker run -e AMQP_CONNECTION=amqp://rabbitmq:5672 extractor
 ```
 
 ## Testing
@@ -114,7 +114,7 @@ cargo bench
 
 ## State Marker System
 
-Rust Extractor uses a version-specific state marker system to track extraction progress and enable safe restarts:
+Extractor uses a version-specific state marker system to track extraction progress and enable safe restarts:
 
 ### Features
 
@@ -168,7 +168,7 @@ See **[State Marker System](../../docs/state-marker-system.md)** for complete do
 
 ## Architecture
 
-Rust Extractor uses a streaming pipeline architecture:
+Extractor uses a streaming pipeline architecture:
 
 1. **Downloader**: Fetches latest Discogs dumps from S3
 1. **Parser**: Streams XML using quick-xml, extracting records
@@ -178,7 +178,7 @@ Rust Extractor uses a streaming pipeline architecture:
 
 ## Logging
 
-Rust Extractor uses structured JSON logging with emoji indicators:
+Extractor uses structured JSON logging with emoji indicators:
 
 - 🚀 Service starting
 - 📥 Download operations
@@ -207,7 +207,7 @@ Set the `LOG_LEVEL` environment variable to control logging verbosity:
 
 ## Integration
 
-Rust Extractor integrates with the Discogsography platform:
+Extractor integrates with the Discogsography platform:
 
 - Publishes to the same AMQP exchange as the Python extractor
 - Maintains compatibility with existing message formats
@@ -216,14 +216,14 @@ Rust Extractor integrates with the Discogsography platform:
 
 ## Migration from Python Extractor
 
-Rust Extractor is a drop-in replacement for the Python extractor:
+Extractor is a drop-in replacement for the Python extractor:
 
 1. Uses the same environment variables
 1. Publishes to the same AMQP queues
 1. Produces identical message formats
 1. Maintains the same file processing state
 
-To migrate, simply replace the Python extractor service with rustextractor in your deployment configuration.
+To migrate, simply replace the Python extractor service with extractor in your deployment configuration.
 
 ## License
 

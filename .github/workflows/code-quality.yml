@@ -14,8 +14,8 @@ on:
       - "**/pyproject.toml"
       - "**/uv.lock"
       - "**/Dockerfile"
-      - "extractor/rustextractor/**/*.rs"
-      - "extractor/rustextractor/**/Cargo.toml"
+      - "extractor/**/*.rs"
+      - "extractor/**/Cargo.toml"
       - ".github/workflows/code-quality.yml"
       - ".pre-commit-config.yaml"
   pull_request:
@@ -26,8 +26,8 @@ on:
       - "**/pyproject.toml"
       - "**/uv.lock"
       - "**/Dockerfile"
-      - "extractor/rustextractor/**/*.rs"
-      - "extractor/rustextractor/**/Cargo.toml"
+      - "extractor/**/*.rs"
+      - "extractor/**/Cargo.toml"
       - ".github/workflows/code-quality.yml"
       - ".pre-commit-config.yaml"
 
@@ -96,7 +96,7 @@ jobs:
             ~/.cargo/registry/index/
             ~/.cargo/registry/cache/
             ~/.cargo/git/db/
-            extractor/rustextractor/target/
+            extractor/target/
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-

@@ -87,7 +87,7 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 | `DISCOGS_ROOT`        | Data storage path     | `/discogs-data` | Yes      |
 | `PERIODIC_CHECK_DAYS` | Update check interval | `15`            | No       |
 
-**Used By**: Rust Extractor
+**Used By**: Extractor
 
 **DISCOGS_ROOT Details**:
 
@@ -428,7 +428,7 @@ See [Performance Guide](performance-guide.md) for detailed optimization strategi
 
 ## Service-Specific Settings
 
-### Rust Extractor
+### Extractor
 
 ```bash
 # Required

@@ -106,7 +106,7 @@ development experience enhancements.
 
 #### Implementation
 
-- ✅ **Rust Implementation**: `extractor/rustextractor/src/state_marker.rs` with 11 unit tests
+- ✅ **Rust Implementation**: `extractor/extractor/src/state_marker.rs` with 11 unit tests
 - ✅ **Python Implementation**: `common/state_marker.py` with 22 unit tests
 - ✅ **Documentation**: Complete usage guide in `docs/state-marker-system.md`
 - ✅ **Cross-Platform**: Identical functionality in both Rust and Python extractors
@@ -145,7 +145,7 @@ See **[State Marker System](state-marker-system.md)** for complete documentation
 
 **Problem**: Rustextractor only saved state at file boundaries (start/complete), meaning a crash during processing could lose hours of progress. State files showed 0 records even after hours of processing.
 
-**Solution**: Implemented periodic state marker updates every 5,000 records in rustextractor, matching pyextractor's existing behavior.
+**Solution**: Implemented periodic state marker updates every 5,000 records in extractor, matching pyextractor's existing behavior.
 
 #### Key Changes
 

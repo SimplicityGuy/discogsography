@@ -27,7 +27,7 @@ graph TD
     Extractor[extractor/<br/>Data Extraction]
     PyExtractor[pyextractor/<br/>Python Service]
     PyExtFiles[extractor.py<br/>discogs.py]
-    RustExtractor[rustextractor/<br/>Rust Service]
+    RustExtractor[extractor/<br/>Rust Service]
     RustExtFiles[src/main.rs<br/>Cargo.toml]
 
     Graphinator[graphinator/<br/>Neo4j Service]
@@ -92,7 +92,7 @@ discogsography/                    # Root workspace
 │   ├── pyextractor/              # Python extraction service
 │   │   ├── pyproject.toml       # Python dependencies
 │   │   └── extractor.py         # Python entry point
-│   └── rustextractor/            # Rust extraction service
+│   └── extractor/            # Rust extraction service
 │       ├── Cargo.toml           # Rust dependencies
 │       └── src/
 │           └── main.rs          # Rust entry point
@@ -198,7 +198,7 @@ uv run python extractor/pyextractor/extractor.py
 
 # Using task commands
 uv run task dashboard
-uv run task extractor-python
+uv run task extractor
 ```
 
 ### Import Patterns

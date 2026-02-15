@@ -14,7 +14,7 @@ This guide covers common issues you might encounter while using Discogsography a
 
 ## 🚨 Common Issues & Solutions
 
-### ❌ Python/Rust Extractor Download Failures
+### ❌ Python/Extractor Download Failures
 
 **Symptoms**:
 
@@ -36,7 +36,7 @@ df -h /discogs-data
 ls -la /discogs-data
 
 # View extractor logs
-docker-compose logs -f extractor-python  # or extractor-rust
+docker-compose logs -f extractor
 ```
 
 **Solutions**:
@@ -566,8 +566,8 @@ Run the extractor and graphinator to load data:
 
 ```bash
 # Start extractor (Python or Rust)
-docker-compose up -d extractor-python  # or extractor-rust
-docker-compose logs -f extractor-python
+docker-compose up -d extractor
+docker-compose logs -f extractor
 
 # Start graphinator
 docker-compose up -d graphinator
@@ -692,10 +692,10 @@ docker-compose restart dashboard
 curl -I https://discogs-data-dumps.s3.us-west-2.amazonaws.com
 
 # Restart extractor
-docker-compose restart extractor-python  # or extractor-rust
+docker-compose restart extractor  # or extractor
 
 # Check logs
-docker-compose logs -f extractor-python
+docker-compose logs -f extractor
 ```
 
 #### Slow Download Speed
@@ -715,7 +715,7 @@ docker-compose logs -f extractor-python
    speedtest-cli
    ```
 
-1. **Switch to Rust Extractor** (20-400x faster)
+1. **Switch to Extractor** (20-400x faster)
 
    ```bash
    ./scripts/switch-extractor.sh rust
