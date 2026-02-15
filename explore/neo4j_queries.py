@@ -12,10 +12,19 @@ Graph model reference:
   (Artist)-[:MEMBER_OF]->(Artist)   Artist is member of group
 """
 
+import re
 from functools import lru_cache
 from typing import Any
 
 from common import AsyncResilientNeo4jDriver
+
+# Lucene special characters that must be escaped in fulltext queries
+_LUCENE_SPECIAL_RE = re.compile(r'([+\-&|!(){}[\]^"~*?:\\/ ])')
+
+
+def _escape_lucene_query(query: str) -> str:
+    """Escape Lucene special characters in a fulltext search query."""
+    return _LUCENE_SPECIAL_RE.sub(r"\\\1", query)
 
 
 # --- Autocomplete ---
@@ -23,29 +32,31 @@ from common import AsyncResilientNeo4jDriver
 
 async def autocomplete_artist(driver: AsyncResilientNeo4jDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search artists by name using fulltext index."""
+    escaped = _escape_lucene_query(query)
     cypher = """
-    CALL db.index.fulltext.queryNodes('artist_name_fulltext', $query + '*')
+    CALL db.index.fulltext.queryNodes('artist_name_fulltext', $query)
     YIELD node, score
     RETURN node.id AS id, node.name AS name, score
     ORDER BY score DESC
     LIMIT $limit
     """
     async with await driver.session() as session:
-        result = await session.run(cypher, parameters={"query": query, "limit": limit})
+        result = await session.run(cypher, parameters={"query": escaped + "*", "limit": limit})
         return [dict(record) async for record in result]
 
 
 async def autocomplete_label(driver: AsyncResilientNeo4jDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search labels by name using fulltext index."""
+    escaped = _escape_lucene_query(query)
     cypher = """
-    CALL db.index.fulltext.queryNodes('label_name_fulltext', $query + '*')
+    CALL db.index.fulltext.queryNodes('label_name_fulltext', $query)
     YIELD node, score
     RETURN node.id AS id, node.name AS name, score
     ORDER BY score DESC
     LIMIT $limit
     """
     async with await driver.session() as session:
-        result = await session.run(cypher, parameters={"query": query, "limit": limit})
+        result = await session.run(cypher, parameters={"query": escaped + "*", "limit": limit})
         return [dict(record) async for record in result]
 
 
