@@ -4,13 +4,6 @@
 class TestServiceIntegration:
     """Test service integration and configuration."""
 
-    def test_extractor_import(self) -> None:
-        """Test that extractor can be imported with proper env vars."""
-        # Services should be importable when env vars are set
-        import extractor.pyextractor.extractor
-
-        assert hasattr(extractor.pyextractor.extractor, "main")
-
     def test_graphinator_import_requires_config(self) -> None:
         """Test that graphinator requires configuration."""
         # Should be importable now that config is not initialized at module level
@@ -24,13 +17,6 @@ class TestServiceIntegration:
         import tableinator.tableinator
 
         assert hasattr(tableinator.tableinator, "main")
-
-    def test_extractor_has_main_function(self) -> None:
-        """Test extractor has main function."""
-        from extractor.pyextractor.extractor import main
-
-        # Should have main function
-        assert callable(main)
 
     def test_service_configs_consistent(self) -> None:
         """Test that all services use consistent configuration."""

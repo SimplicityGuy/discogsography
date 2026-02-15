@@ -40,55 +40,42 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 ### ⚙️ Core Services
 
-| Service                                                            | Purpose                                          | Key Technologies                              |
-| ------------------------------------------------------------------ | ------------------------------------------------ | --------------------------------------------- |
-| **[📥](docs/emoji-guide.md#service-identifiers) Python Extractor** | Downloads & processes Discogs XML dumps (Python) | `asyncio`, `orjson`, `aio-pika`               |
-| **[⚡](docs/emoji-guide.md#service-identifiers) Rust Extractor**   | High-performance Rust-based extractor            | `tokio`, `quick-xml`, `lapin`                 |
-| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator**      | Builds Neo4j knowledge graphs                    | `neo4j-driver`, graph algorithms              |
-| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator**      | Creates PostgreSQL analytics tables              | `psycopg3`, JSONB, full-text search           |
-| **[🎵](docs/emoji-guide.md#service-identifiers) Discovery**        | AI-powered music intelligence                    | `sentence-transformers`, `plotly`, `networkx` |
-| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**          | Interactive graph exploration & trends            | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j        |
-| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**        | Real-time system monitoring                      | `FastAPI`, WebSocket, reactive UI             |
+| Service                                                          | Purpose                           | Key Technologies                   |
+| ---------------------------------------------------------------- | --------------------------------- | ---------------------------------- |
+| **[⚡](docs/emoji-guide.md#service-identifiers) Rust Extractor** | High-performance Rust-based extractor | `tokio`, `quick-xml`, `lapin`      |
+| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator**    | Builds Neo4j knowledge graphs     | `neo4j-driver`, graph algorithms   |
+| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator**    | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search |
+| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**        | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j |
+| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**      | Real-time system monitoring       | `FastAPI`, WebSocket, reactive UI  |
 
 ### 📐 System Architecture
 
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
-    PYEXT[["📥 Python Extractor<br/>XML → JSON<br/>Deduplication"]]
     RSEXT[["⚡ Rust Extractor<br/>High-Performance<br/>XML Processing"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>8 Queues + DLQs"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
-    REDIS[("🔴 Redis<br/>Cache Layer<br/>Query & ML Cache")]
+    REDIS[("🔴 Redis<br/>Cache Layer<br/>Query Cache")]
     GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
-    DISCO[["🎵 Discovery<br/>AI Engine<br/>ML Models"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
 
-    S3 -->|1a. Download & Parse| PYEXT
-    S3 -->|1b. Download & Parse| RSEXT
-    PYEXT -->|2. Publish Messages| RMQ
+    S3 -->|1. Download & Parse| RSEXT
     RSEXT -->|2. Publish Messages| RMQ
     RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
     RMQ -->|3b. Artists/Labels/Releases/Masters| TABLE
     GRAPH -->|4a. Build Graph| NEO4J
     TABLE -->|4b. Store Data| PG
 
-    DISCO -.->|Query| NEO4J
-    DISCO -.->|Query via asyncpg| PG
-    DISCO -.->|Cache| REDIS
-    DISCO -.->|Analyze| DISCO
-
     EXPLORE -.->|Query Graph| NEO4J
     EXPLORE -.->|Explore Paths| NEO4J
 
-    DASH -.->|Monitor| PYEXT
     DASH -.->|Monitor| RSEXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
-    DASH -.->|Monitor| DISCO
     DASH -.->|Monitor| EXPLORE
     DASH -.->|Cache| REDIS
     DASH -.->|Stats| RMQ
@@ -96,7 +83,6 @@ graph TD
     DASH -.->|Stats| PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    style PYEXT fill:#fff9c4,stroke:#f57c00,stroke-width:2px
     style RSEXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
@@ -105,12 +91,6 @@ graph TD
     style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style DISCO fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
-    style EXPLORE fill:#f1f8e9,stroke:#33691e,stroke-width:2px
-    style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
-    style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
-    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style DISCO fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
     style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
 ```
 
@@ -207,12 +187,8 @@ cd discogsography
 # 2. Copy environment template (optional - has sensible defaults)
 cp .env.example .env
 
-# 3. Start all services (default: Python Extractor)
+# 3. Start all services
 docker-compose up -d
-
-# 3b. (Optional) Use high-performance Rust Extractor instead
-./scripts/switch-extractor.sh rust
-# To switch back to Python Extractor: ./scripts/switch-extractor.sh python
 
 # 4. Watch the magic happen!
 docker-compose logs -f
@@ -223,14 +199,13 @@ open http://localhost:8003
 
 ### 🌐 Service Access
 
-| Service           | URL                    | Default Credentials                 | Purpose            |
-| ----------------- | ---------------------- | ----------------------------------- | ------------------ |
-| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring  |
-| 🔍 **Explore**    | http://localhost:8006  | None                                | Graph exploration  |
-| 🎵 **Discovery**  | http://localhost:8005  | None                                | AI music discovery |
-| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management   |
-| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph exploration  |
-| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access    |
+| Service           | URL                    | Default Credentials                 | Purpose           |
+| ----------------- | ---------------------- | ----------------------------------- | ----------------- |
+| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring |
+| 🔍 **Explore**    | http://localhost:8006  | None                                | Graph exploration |
+| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management  |
+| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph exploration |
+| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access   |
 
 ### 💻 Local Development
 
@@ -254,8 +229,6 @@ just init
 # 5. Run any service
 just dashboard         # Monitoring UI
 just explore           # Graph exploration & trends
-just discovery         # AI discovery
-just pyextractor       # Python data ingestion
 just rustextractor-run # Rust data ingestion (requires cargo)
 just graphinator       # Neo4j builder
 just tableinator       # PostgreSQL builder
@@ -293,27 +266,27 @@ cp .env.example .env
 
 #### Core Settings
 
-| Variable              | Description               | Default                              | Used By                |
-| --------------------- | ------------------------- | ------------------------------------ | ---------------------- |
-| `AMQP_CONNECTION`     | RabbitMQ URL              | `amqp://guest:guest@localhost:5672/` | All services           |
-| `DISCOGS_ROOT`        | Data storage path         | `/discogs-data`                      | Python/Rust Extractors |
-| `PERIODIC_CHECK_DAYS` | Update check interval     | `15`                                 | Python/Rust Extractors |
-| `PYTHON_VERSION`      | Python version for builds | `3.13`                               | Docker, CI/CD          |
-| `LOG_LEVEL`           | Logging verbosity         | `INFO`                               | All services           |
+| Variable              | Description               | Default                              | Used By        |
+| --------------------- | ------------------------- | ------------------------------------ | -------------- |
+| `AMQP_CONNECTION`     | RabbitMQ URL              | `amqp://guest:guest@localhost:5672/` | All services   |
+| `DISCOGS_ROOT`        | Data storage path         | `/discogs-data`                      | Rust Extractor |
+| `PERIODIC_CHECK_DAYS` | Update check interval     | `15`                                 | Rust Extractor |
+| `PYTHON_VERSION`      | Python version for builds | `3.13`                               | Docker, CI/CD  |
+| `LOG_LEVEL`           | Logging verbosity         | `INFO`                               | All services   |
 
 > **📝 Note**: `LOG_LEVEL` supports standard Python log levels: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. When set to `DEBUG`, services output detailed diagnostic information including database queries. See [Logging Configuration](docs/logging-configuration.md) for details.
 
 #### Database Connections
 
-| Variable            | Description          | Default                 | Used By                           |
-| ------------------- | -------------------- | ----------------------- | --------------------------------- |
-| `NEO4J_ADDRESS`     | Neo4j bolt URL       | `bolt://localhost:7687` | Graphinator, Dashboard, Discovery |
-| `NEO4J_USERNAME`    | Neo4j username       | `neo4j`                 | Graphinator, Dashboard, Discovery |
-| `NEO4J_PASSWORD`    | Neo4j password       | Required                | Graphinator, Dashboard, Discovery |
-| `POSTGRES_ADDRESS`  | PostgreSQL host:port | `localhost:5432`        | Tableinator, Dashboard, Discovery |
-| `POSTGRES_USERNAME` | PostgreSQL username  | `postgres`              | Tableinator, Dashboard, Discovery |
-| `POSTGRES_PASSWORD` | PostgreSQL password  | Required                | Tableinator, Dashboard, Discovery |
-| `POSTGRES_DATABASE` | Database name        | `discogsography`        | Tableinator, Dashboard, Discovery |
+| Variable            | Description          | Default                 | Used By                |
+| ------------------- | -------------------- | ----------------------- | ---------------------- |
+| `NEO4J_ADDRESS`     | Neo4j bolt URL       | `bolt://localhost:7687` | Graphinator, Dashboard |
+| `NEO4J_USERNAME`    | Neo4j username       | `neo4j`                 | Graphinator, Dashboard |
+| `NEO4J_PASSWORD`    | Neo4j password       | Required                | Graphinator, Dashboard |
+| `POSTGRES_ADDRESS`  | PostgreSQL host:port | `localhost:5432`        | Tableinator, Dashboard |
+| `POSTGRES_USERNAME` | PostgreSQL username  | `postgres`              | Tableinator, Dashboard |
+| `POSTGRES_PASSWORD` | PostgreSQL password  | Required                | Tableinator, Dashboard |
+| `POSTGRES_DATABASE` | Database name        | `discogsography`        | Tableinator, Dashboard |
 
 #### Consumer Management Settings
 
@@ -351,22 +324,11 @@ cp .env.example .env
 >
 > Typical performance gains: 3-5x faster write throughput with batch processing enabled.
 
-#### Discovery Service & ML Configuration
+#### Cache Configuration
 
-| Variable                     | Description                           | Default                         | Used By              |
-| ---------------------------- | ------------------------------------- | ------------------------------- | -------------------- |
-| `REDIS_URL`                  | Redis cache connection URL            | `redis://localhost:6379/0`      | Discovery, Dashboard |
-| `HF_HOME`                    | Hugging Face models cache directory   | `/models/huggingface`           | Discovery            |
-| `SENTENCE_TRANSFORMERS_HOME` | Sentence transformers cache directory | `/models/sentence-transformers` | Discovery            |
-| `EMBEDDINGS_CACHE_DIR`       | Embeddings cache directory            | `/tmp/embeddings_cache`         | Discovery            |
-| `XDG_CACHE_HOME`             | General cache directory               | `/tmp/.cache`                   | Discovery            |
-
-> **📝 Note**: The Discovery service uses several cache directories for ML models and embeddings:
->
-> - **HF_HOME**: Primary cache for Hugging Face transformers models (replaces deprecated `TRANSFORMERS_CACHE`)
-> - **SENTENCE_TRANSFORMERS_HOME**: Specific cache for sentence transformer models
-> - **EMBEDDINGS_CACHE_DIR**: Configurable cache for generated embeddings
-> - All cache directories must be writable by the service user (UID 1000)
+| Variable    | Description                | Default                    | Used By   |
+| ----------- | -------------------------- | -------------------------- | --------- |
+| `REDIS_URL` | Redis cache connection URL | `redis://localhost:6379/0` | Dashboard |
 
 ### 💿 Dataset Scale
 
@@ -737,12 +699,11 @@ CREATE INDEX idx_releases_gin ON releases USING GIN (data);
 
 Typical processing rates on modern hardware:
 
-| Service                 | Records/Second  | Bottleneck               |
-| ----------------------- | --------------- | ------------------------ |
-| 📥 **Python Extractor** | 5,000-10,000    | XML parsing, I/O         |
-| ⚡ **Rust Extractor**   | 20,000-400,000+ | Network I/O (Rust-based) |
-| 🔗 **Graphinator**      | 1,000-2,000     | Neo4j transactions       |
-| 🐘 **Tableinator**      | 3,000-5,000     | PostgreSQL inserts       |
+| Service                | Records/Second  | Bottleneck               |
+| ---------------------- | --------------- | ------------------------ |
+| ⚡ **Rust Extractor**  | 20,000-400,000+ | Network I/O (Rust-based) |
+| 🔗 **Graphinator**     | 1,000-2,000     | Neo4j transactions       |
+| 🐘 **Tableinator**     | 3,000-5,000     | PostgreSQL inserts       |
 
 ### 💻 Hardware Requirements
 
@@ -801,7 +762,7 @@ PREFETCH_COUNT: 100  # Adjust based on processing speed
 
 ### ❌ Common Issues & Solutions
 
-#### Python/Rust Extractor Download Failures
+#### Rust Extractor Download Failures
 
 ```bash
 # Check connectivity
@@ -865,11 +826,10 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
 1. **📋 Check Service Health**
 
    ```bash
-   curl http://localhost:8000/health  # Python/Rust Extractor
+   curl http://localhost:8000/health  # Rust Extractor
    curl http://localhost:8001/health  # Graphinator
    curl http://localhost:8002/health  # Tableinator
    curl http://localhost:8003/health  # Dashboard
-   curl http://localhost:8004/health  # Discovery
    curl http://localhost:8007/health  # Explore
    ```
 
@@ -881,7 +841,7 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
    docker-compose up -d
 
    # Or for a specific service
-   LOG_LEVEL=DEBUG uv run python discovery/discovery.py
+   LOG_LEVEL=DEBUG uv run python dashboard/dashboard.py
 
    # DEBUG level includes:
    # - Database query logging with parameters
@@ -897,14 +857,13 @@ PGPASSWORD=discogsography psql -h localhost -U discogsography -d discogsography 
    uv run task logs
 
    # Specific service
-   docker-compose logs -f extractor-python  # For Python Extractor
-   docker-compose logs -f extractor-rust    # For Rust Extractor
+   docker-compose logs -f extractor-rust
 
    # Filter for errors only
-   docker-compose logs discovery | grep "❌"
+   docker-compose logs dashboard | grep "❌"
 
    # Filter for Neo4j queries (when LOG_LEVEL=DEBUG)
-   docker-compose logs discovery | grep "🔍 Executing Neo4j query"
+   docker-compose logs dashboard | grep "🔍 Executing Neo4j query"
    ```
 
 1. **🔍 Analyze Errors**

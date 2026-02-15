@@ -87,7 +87,7 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 | `DISCOGS_ROOT`        | Data storage path     | `/discogs-data` | Yes      |
 | `PERIODIC_CHECK_DAYS` | Update check interval | `15`            | No       |
 
-**Used By**: Python Extractor, Rust Extractor
+**Used By**: Rust Extractor
 
 **DISCOGS_ROOT Details**:
 
@@ -129,7 +129,7 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 | `NEO4J_USERNAME` | Neo4j username | `neo4j`                 | Yes      |
 | `NEO4J_PASSWORD` | Neo4j password | (none)                  | Yes      |
 
-**Used By**: Graphinator, Dashboard, Discovery
+**Used By**: Graphinator, Dashboard, Explore
 
 **Connection Details**:
 
@@ -174,7 +174,7 @@ NEO4J_PASSWORD="your-secure-password"
 | `POSTGRES_PASSWORD` | PostgreSQL password  | (none)           | Yes      |
 | `POSTGRES_DATABASE` | Database name        | `discogsography` | Yes      |
 
-**Used By**: Tableinator, Dashboard, Discovery
+**Used By**: Tableinator, Dashboard
 
 **Connection Details**:
 
@@ -217,11 +217,11 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ### Redis Configuration
 
-| Variable    | Description          | Default                    | Required                   |
-| ----------- | -------------------- | -------------------------- | -------------------------- |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` | Yes (Discovery, Dashboard) |
+| Variable    | Description          | Default                    | Required         |
+| ----------- | -------------------- | -------------------------- | ---------------- |
+| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` | Yes (Dashboard) |
 
-**Used By**: Discovery, Dashboard
+**Used By**: Dashboard
 
 **Connection Details**:
 
@@ -410,52 +410,6 @@ Batch processing logs provide visibility into performance:
 
 See [Performance Guide](performance-guide.md) for detailed optimization strategies.
 
-## Machine Learning & Discovery
-
-| Variable                     | Description                 | Default                         | Required        |
-| ---------------------------- | --------------------------- | ------------------------------- | --------------- |
-| `HF_HOME`                    | Hugging Face models cache   | `/models/huggingface`           | Yes (Discovery) |
-| `SENTENCE_TRANSFORMERS_HOME` | Sentence transformers cache | `/models/sentence-transformers` | Yes (Discovery) |
-| `EMBEDDINGS_CACHE_DIR`       | Embeddings cache directory  | `/tmp/embeddings_cache`         | Yes (Discovery) |
-| `XDG_CACHE_HOME`             | General cache directory     | `/tmp/.cache`                   | No              |
-
-**Used By**: Discovery service
-
-**Purpose**: Cache ML models and embeddings to avoid re-downloading
-
-**Cache Directory Requirements**:
-
-- Must be writable by service user (UID 1000)
-- Recommended: Mount as Docker volume for persistence
-- Size requirements:
-  - HF_HOME: ~1-2GB (sentence transformer models)
-  - SENTENCE_TRANSFORMERS_HOME: ~500MB
-  - EMBEDDINGS_CACHE_DIR: ~100MB per processed genre/artist
-
-**Examples**:
-
-```bash
-# Development (local paths)
-HF_HOME="/Users/username/.cache/huggingface"
-SENTENCE_TRANSFORMERS_HOME="/Users/username/.cache/sentence_transformers"
-EMBEDDINGS_CACHE_DIR="/tmp/embeddings_cache"
-
-# Docker (volumes)
-HF_HOME="/models/huggingface"
-SENTENCE_TRANSFORMERS_HOME="/models/sentence-transformers"
-EMBEDDINGS_CACHE_DIR="/models/embeddings"
-
-# Shared cache (multiple services)
-HF_HOME="/mnt/shared/ml_models/huggingface"
-SENTENCE_TRANSFORMERS_HOME="/mnt/shared/ml_models/transformers"
-```
-
-**Performance Impact**:
-
-- First run: Downloads models (~2GB, one-time)
-- Subsequent runs: Loads from cache (instant)
-- Embeddings cached per query for fast retrieval
-
 ## Python Version
 
 | Variable         | Description               | Default | Used By       |
@@ -474,20 +428,6 @@ SENTENCE_TRANSFORMERS_HOME="/mnt/shared/ml_models/transformers"
 
 ## Service-Specific Settings
 
-### Python Extractor
-
-```bash
-# Required
-AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
-DISCOGS_ROOT="/discogs-data"
-
-# Optional
-PERIODIC_CHECK_DAYS=15
-LOG_LEVEL=INFO
-```
-
-Health check: http://localhost:8000/health
-
 ### Rust Extractor
 
 ```bash
@@ -501,8 +441,6 @@ LOG_LEVEL=INFO
 ```
 
 Health check: http://localhost:8000/health
-
-**Note**: Rust Extractor uses same environment variables as Python Extractor
 
 ### Graphinator
 
@@ -553,30 +491,6 @@ LOG_LEVEL=INFO
 
 Health check: http://localhost:8002/health
 
-### Discovery
-
-```bash
-# Required
-NEO4J_ADDRESS="bolt://localhost:7687"
-NEO4J_USERNAME="neo4j"
-NEO4J_PASSWORD="discogsography"
-POSTGRES_ADDRESS="localhost:5433"
-POSTGRES_USERNAME="discogsography"
-POSTGRES_PASSWORD="discogsography"
-POSTGRES_DATABASE="discogsography"
-REDIS_URL="redis://localhost:6379/0"
-
-# ML Model Caching
-HF_HOME="/models/huggingface"
-SENTENCE_TRANSFORMERS_HOME="/models/sentence-transformers"
-EMBEDDINGS_CACHE_DIR="/tmp/embeddings_cache"
-
-# Optional
-LOG_LEVEL=INFO
-```
-
-Health check: http://localhost:8004/health
-
 ### Explore
 
 ```bash
@@ -589,7 +503,7 @@ NEO4J_PASSWORD="discogsography"
 LOG_LEVEL=INFO
 ```
 
-Health check: http://localhost:8006/health (service), http://localhost:8007/health (internal)
+Health check: http://localhost:8006/health (service), http://localhost:8007/health (health check port)
 
 ### Dashboard
 

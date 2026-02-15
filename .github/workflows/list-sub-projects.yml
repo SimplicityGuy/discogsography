@@ -28,13 +28,10 @@ jobs:
         id: set-matrix
         run: |
           # Define sub-projects with their properties
-          # Note: discovery image is >3GB and often fails with cache actions
           cat << "EOF" > projects.json
           [
             {"name": "dashboard", "use_cache": true},
-            {"name": "discovery", "use_cache": false},
             {"name": "explore", "use_cache": true},
-            {"name": "extractor/pyextractor", "use_cache": true},
             {"name": "extractor/rustextractor", "use_cache": true},
             {"name": "graphinator", "use_cache": true},
             {"name": "tableinator", "use_cache": true}

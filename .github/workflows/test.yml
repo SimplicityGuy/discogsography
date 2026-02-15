@@ -114,40 +114,6 @@ jobs:
           name: dashboard-tests
 
   # ============================================================================
-  # DISCOVERY SERVICE TESTS - Runs in parallel with all other test jobs
-  # ============================================================================
-  test-discovery:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
-
-      - name: 🔧 Setup Python and UV
-        uses: ./.github/actions/setup-python-uv
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: 🔧 Setup Just
-        uses: ./.github/actions/setup-just
-
-      - name: 📦 Install dependencies
-        run: just install
-
-      - name: 🧪 Run discovery tests
-        run: just test-discovery
-
-      - name: 📊 Upload coverage (discovery)
-        if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          flags: discovery
-          name: discovery-tests
-
-  # ============================================================================
   # EXPLORE SERVICE TESTS - Runs in parallel with all other test jobs
   # ============================================================================
   test-explore:
@@ -201,40 +167,6 @@ jobs:
           flags: explore
           name: explore-tests
           fail_ci_if_error: false
-
-  # ============================================================================
-  # PYTHON EXTRACTOR TESTS - Runs in parallel with all other test jobs
-  # ============================================================================
-  test-pyextractor:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
-
-      - name: 🔧 Setup Python and UV
-        uses: ./.github/actions/setup-python-uv
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: 🔧 Setup Just
-        uses: ./.github/actions/setup-just
-
-      - name: 📦 Install dependencies
-        run: just install
-
-      - name: 🧪 Run Python extractor tests
-        run: just test-pyextractor
-
-      - name: 📊 Upload coverage (pyextractor)
-        if: always()
-        uses: codecov/codecov-action@v5
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          files: ./coverage.xml
-          flags: pyextractor
-          name: pyextractor-tests
 
   # ============================================================================
   # GRAPHINATOR SERVICE TESTS - Runs in parallel with all other test jobs
@@ -388,9 +320,7 @@ jobs:
     needs:
       - test-common
       - test-dashboard
-      - test-discovery
       - test-explore
-      - test-pyextractor
       - test-graphinator
       - test-tableinator
       - test-rustextractor
@@ -402,9 +332,7 @@ jobs:
           echo "Test Results Summary:"
           echo "  Common: ${{ needs.test-common.result }}"
           echo "  Dashboard: ${{ needs.test-dashboard.result }}"
-          echo "  Discovery: ${{ needs.test-discovery.result }}"
           echo "  Explore: ${{ needs.test-explore.result }}"
-          echo "  PyExtractor: ${{ needs.test-pyextractor.result }}"
           echo "  Graphinator: ${{ needs.test-graphinator.result }}"
           echo "  Tableinator: ${{ needs.test-tableinator.result }}"
           echo "  RustExtractor: ${{ needs.test-rustextractor.result }}"
@@ -412,9 +340,7 @@ jobs:
           # Check if any test job failed
           if [[ "${{ needs.test-common.result }}" == "failure" ]] || \
              [[ "${{ needs.test-dashboard.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-discovery.result }}" == "failure" ]] || \
              [[ "${{ needs.test-explore.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-pyextractor.result }}" == "failure" ]] || \
              [[ "${{ needs.test-graphinator.result }}" == "failure" ]] || \
              [[ "${{ needs.test-tableinator.result }}" == "failure" ]] || \
              [[ "${{ needs.test-rustextractor.result }}" == "failure" ]]; then

@@ -293,7 +293,6 @@ uv run ruff format .
 
 # Run a service locally
 uv run python dashboard/dashboard.py
-uv run python discovery/discovery.py
 
 # Run pre-commit hooks
 uv run pre-commit run --all-files
@@ -304,7 +303,6 @@ just typecheck
 just lint
 just format
 just dashboard
-just discovery
 ```
 
 ### Service Management (Docker)
@@ -349,11 +347,10 @@ http://localhost:8000/api/health
 
 - Dashboard: 8003
 - Explore: 8006 (service), 8007 (health)
-- Discovery: 8005 (service), 8004 (health)
 - Neo4j: 7474 (browser), 7687 (bolt)
 - PostgreSQL: 5433 (mapped from 5432)
 - RabbitMQ: 5672 (AMQP), 15672 (management)
-- Extractor: 8000 (health)
+- Rust Extractor: 8000 (health)
 - Graphinator: 8001 (health)
 - Tableinator: 8002 (health)
 

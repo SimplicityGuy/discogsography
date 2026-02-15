@@ -16,15 +16,13 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### ⚙️ Service Components
 
-| Service                                                       | Purpose                                          | Key Technologies                              | Port(s)       |
-| ------------------------------------------------------------- | ------------------------------------------------ | --------------------------------------------- | ------------- |
-| **[📥](emoji-guide.md#service-identifiers) Python Extractor** | Downloads & processes Discogs XML dumps (Python) | `asyncio`, `orjson`, `aio-pika`               | 8000 (health) |
-| **[⚡](emoji-guide.md#service-identifiers) Rust Extractor**   | High-performance Rust-based extractor            | `tokio`, `quick-xml`, `lapin`                 | 8000 (health) |
-| **[🔗](emoji-guide.md#service-identifiers) Graphinator**      | Builds Neo4j knowledge graphs                    | `neo4j-driver`, graph algorithms              | 8001 (health) |
-| **[🐘](emoji-guide.md#service-identifiers) Tableinator**      | Creates PostgreSQL analytics tables              | `psycopg3`, JSONB, full-text search           | 8002 (health) |
-| **[🎵](emoji-guide.md#service-identifiers) Discovery**        | AI-powered music intelligence                    | `sentence-transformers`, `plotly`, `networkx` | 8005, 8004    |
-| **[🔍](emoji-guide.md#service-identifiers) Explore**          | Interactive graph exploration & trends            | `FastAPI`, `neo4j-driver`, `orjson`           | 8006, 8007    |
-| **[📊](emoji-guide.md#service-identifiers) Dashboard**        | Real-time system monitoring                      | `FastAPI`, WebSocket, reactive UI             | 8003          |
+| Service                                                     | Purpose                             | Key Technologies                   | Port(s)       |
+| ----------------------------------------------------------- | ----------------------------------- | ---------------------------------- | ------------- |
+| **[⚡](emoji-guide.md#service-identifiers) Rust Extractor** | High-performance Rust-based extractor | `tokio`, `quick-xml`, `lapin`      | 8000 (health) |
+| **[🔗](emoji-guide.md#service-identifiers) Graphinator**    | Builds Neo4j knowledge graphs       | `neo4j-driver`, graph algorithms   | 8001 (health) |
+| **[🐘](emoji-guide.md#service-identifiers) Tableinator**    | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search | 8002 (health) |
+| **[🔍](emoji-guide.md#service-identifiers) Explore**        | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson` | 8006, 8007    |
+| **[📊](emoji-guide.md#service-identifiers) Dashboard**      | Real-time system monitoring         | `FastAPI`, WebSocket, reactive UI  | 8003          |
 
 ### Infrastructure Components
 
@@ -40,40 +38,29 @@ Discogsography is built as a microservices platform that processes large-scale m
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
-    PYEXT[["📥 Python Extractor<br/>XML → JSON<br/>Deduplication"]]
     RSEXT[["⚡ Rust Extractor<br/>High-Performance<br/>XML Processing"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>8 Queues + DLQs"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
-    REDIS[("🔴 Redis<br/>Cache Layer<br/>Query & ML Cache")]
+    REDIS[("🔴 Redis<br/>Cache Layer<br/>Query Cache")]
     GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
-    DISCO[["🎵 Discovery<br/>AI Engine<br/>ML Models"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
 
-    S3 -->|1a. Download & Parse| PYEXT
-    S3 -->|1b. Download & Parse| RSEXT
-    PYEXT -->|2. Publish Messages| RMQ
+    S3 -->|1. Download & Parse| RSEXT
     RSEXT -->|2. Publish Messages| RMQ
     RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
     RMQ -->|3b. Artists/Labels/Releases/Masters| TABLE
     GRAPH -->|4a. Build Graph| NEO4J
     TABLE -->|4b. Store Data| PG
 
-    DISCO -.->|Query| NEO4J
-    DISCO -.->|Query via asyncpg| PG
-    DISCO -.->|Cache| REDIS
-    DISCO -.->|Analyze| DISCO
-
     EXPLORE -.->|Query Graph| NEO4J
     EXPLORE -.->|Explore Paths| NEO4J
 
-    DASH -.->|Monitor| PYEXT
     DASH -.->|Monitor| RSEXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
-    DASH -.->|Monitor| DISCO
     DASH -.->|Monitor| EXPLORE
     DASH -.->|Cache| REDIS
     DASH -.->|Stats| RMQ
@@ -81,15 +68,13 @@ graph TD
     DASH -.->|Stats| PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    style PYEXT fill:#fff9c4,stroke:#f57c00,stroke-width:2px
     style RSEXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
     style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
     style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style DISCO fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
-    style EXPLORE fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
     style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
 ```
@@ -98,19 +83,12 @@ graph TD
 
 ### 1. Data Extraction Phase
 
-**Python Extractor** (Default):
+**Rust Extractor**:
 
 - Downloads XML dumps from Discogs S3 bucket
-- Parses XML using streaming parser (5,000-10,000 records/sec)
+- High-performance XML parsing (20,000-400,000+ records/sec)
 - SHA256 hash-based deduplication
 - Publishes JSON messages to RabbitMQ queues
-
-**Rust Extractor** (High-Performance Option):
-
-- High-performance alternative to Python Extractor
-- Processes 20,000-400,000+ records/sec
-- Same deduplication and messaging logic
-- Switch using `./scripts/switch-extractor.sh rust`
 
 ### 2. Message Distribution Phase
 
@@ -149,12 +127,12 @@ graph TD
 
 ### 4. Query and Analytics Phase
 
-**Discovery Service**:
+**Explore Service**:
 
-- AI-powered music recommendations
-- Semantic search using sentence transformers
-- Graph algorithms: PageRank, community detection
-- Results cached in Redis for performance
+- Interactive graph exploration
+- Trend analysis and pattern discovery
+- Path finding and relationship queries
+- D3.js and Plotly.js visualizations
 
 **Dashboard Service**:
 
@@ -165,19 +143,21 @@ graph TD
 
 ## Component Details
 
-### Python Extractor
+### Rust Extractor
 
 **Responsibilities**:
 
 - Download Discogs XML dumps from S3
 - Validate checksums and metadata
-- Parse XML using streaming parser
+- Parse XML using high-performance streaming parser
 - Deduplicate records using SHA256 hashing
 - Publish to RabbitMQ queues
 
 **Key Features**:
 
-- Async I/O for optimal performance
+- Async Rust with Tokio runtime
+- 20,000-400,000+ records/sec processing
+- Memory-efficient streaming parser
 - Periodic update checks (configurable interval)
 - Smart file completion tracking
 - Automatic retry with exponential backoff
@@ -187,33 +167,6 @@ graph TD
 - `DISCOGS_ROOT`: Data storage directory
 - `PERIODIC_CHECK_DAYS`: Update check interval
 - `AMQP_CONNECTION`: RabbitMQ connection string
-
-See [Extractor README](../extractor/pyextractor/README.md) for details.
-
-### Rust Extractor
-
-**Responsibilities**:
-
-- High-performance alternative to Python Extractor
-- Same functionality with dramatically improved throughput
-- Optimized for large-scale data processing
-
-**Key Features**:
-
-- Async Rust with Tokio runtime
-- 20,000-400,000+ records/sec processing
-- Memory-efficient streaming parser
-- Compatible with existing infrastructure
-
-**Switching Extractors**:
-
-```bash
-# Switch to Rust Extractor
-./scripts/switch-extractor.sh rust
-
-# Switch back to Python Extractor
-./scripts/switch-extractor.sh python
-```
 
 See [Rust Extractor README](../extractor/rustextractor/README.md) for details.
 
@@ -265,30 +218,28 @@ See [Graphinator README](../graphinator/README.md) for details.
 
 See [Tableinator README](../tableinator/README.md) for details.
 
-### Discovery Service
+### Explore Service
 
 **Responsibilities**:
 
-- AI-powered music discovery and recommendations
-- Semantic search using ML models
-- Graph analysis and visualization
-- Industry analytics and insights
+- Interactive graph exploration
+- Trend analysis and visualization
+- Path finding and relationship queries
+- Genre and style analysis
 
 **Key Features**:
 
-- Sentence transformers for embeddings
-- Redis caching for query performance
-- Interactive Plotly visualizations
-- Network graph rendering with vis.js
+- FastAPI backend with Neo4j integration
+- D3.js and Plotly.js visualizations
+- Real-time graph queries
+- Responsive web interface
 
 **Configuration**:
 
-- `REDIS_URL`: Redis cache connection
-- `HF_HOME`: Hugging Face model cache
-- `SENTENCE_TRANSFORMERS_HOME`: Transformer cache
-- Database connection settings
+- `NEO4J_ADDRESS`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
+- Service and health check ports
 
-See [Discovery README](../discovery/README.md) for details.
+See [Explore README](../explore/README.md) for details.
 
 ### Dashboard
 
@@ -321,7 +272,6 @@ See [Dashboard README](../dashboard/README.md) for details.
 ```mermaid
 graph LR
     subgraph Producers
-        PYEXT[Python Extractor]
         RSEXT[Rust Extractor]
     end
 
@@ -337,11 +287,6 @@ graph LR
         TABLE[Tableinator]
     end
 
-    PYEXT --> AQ
-    PYEXT --> LQ
-    PYEXT --> RQ
-    PYEXT --> MQ
-
     RSEXT --> AQ
     RSEXT --> LQ
     RSEXT --> RQ
@@ -356,7 +301,6 @@ graph LR
     MQ --> GRAPH
     MQ --> TABLE
 
-    style PYEXT fill:#fff9c4,stroke:#f57c00
     style RSEXT fill:#ffccbc,stroke:#d84315
     style GRAPH fill:#f3e5f5,stroke:#4a148c
     style TABLE fill:#e8f5e9,stroke:#1b5e20
@@ -475,11 +419,11 @@ See [Docker Security](docker-security.md) for details.
 All services expose HTTP health endpoints:
 
 ```bash
-curl http://localhost:8000/health  # Extractor (Python or Rust)
+curl http://localhost:8000/health  # Rust Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
-curl http://localhost:8004/health  # Discovery
+curl http://localhost:8007/health  # Explore
 ```
 
 ### Logging
@@ -507,11 +451,10 @@ See [Monitoring](monitoring.md) for details.
 
 **Stateless Services** (can scale horizontally):
 
-- Python Extractor (one instance per data type)
 - Rust Extractor (one instance per data type)
 - Graphinator (multiple consumers per queue)
 - Tableinator (multiple consumers per queue)
-- Discovery (load balanced)
+- Explore (load balanced)
 - Dashboard (load balanced)
 
 **Stateful Services** (scale vertically):

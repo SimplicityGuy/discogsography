@@ -119,14 +119,8 @@ test-parallel:
     uv run pytest tests/dashboard/ -v > /tmp/test-dashboard.log 2>&1 &
     pid_dashboard=$!
 
-    uv run pytest tests/discovery/ -m 'not e2e' -v > /tmp/test-discovery.log 2>&1 &
-    pid_discovery=$!
-
     uv run pytest tests/explore/ -m 'not e2e' -v > /tmp/test-explore.log 2>&1 &
     pid_explore=$!
-
-    uv run pytest tests/extractor/ -v > /tmp/test-pyextractor.log 2>&1 &
-    pid_pyextractor=$!
 
     uv run pytest tests/graphinator/ -v > /tmp/test-graphinator.log 2>&1 &
     pid_graphinator=$!
@@ -144,9 +138,7 @@ test-parallel:
 
     wait $pid_common || { echo "❌ Common tests failed"; cat /tmp/test-common.log; failed=1; }
     wait $pid_dashboard || { echo "❌ Dashboard tests failed"; cat /tmp/test-dashboard.log; failed=1; }
-    wait $pid_discovery || { echo "❌ Discovery tests failed"; cat /tmp/test-discovery.log; failed=1; }
     wait $pid_explore || { echo "❌ Explore tests failed"; cat /tmp/test-explore.log; failed=1; }
-    wait $pid_pyextractor || { echo "❌ PyExtractor tests failed"; cat /tmp/test-pyextractor.log; failed=1; }
     wait $pid_graphinator || { echo "❌ Graphinator tests failed"; cat /tmp/test-graphinator.log; failed=1; }
     wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
 
@@ -159,7 +151,7 @@ test-parallel:
         # Show summary
         echo ""
         echo "📊 Test Summary:"
-        grep -h "passed" /tmp/test-*.log | tail -7
+        grep -h "passed" /tmp/test-*.log | tail -6
     else
         echo "❌ Some tests failed. Check logs above for details."
         exit 1
@@ -179,20 +171,10 @@ test-common:
 test-dashboard:
     uv run pytest tests/dashboard/ -v
 
-# Run discovery service tests
-[group('test')]
-test-discovery:
-    uv run pytest tests/discovery/ -m 'not e2e' -v
-
 # Run explore service tests
 [group('test')]
 test-explore:
     uv run pytest tests/explore/ -m 'not e2e' -v
-
-# Run Python extractor tests
-[group('test')]
-test-pyextractor:
-    uv run pytest tests/extractor/ -v
 
 # Run Rust extractor tests (same as rustextractor-test)
 [group('test')]
@@ -222,21 +204,6 @@ dashboard:
 [group('services')]
 explore:
     uv run python -m explore.explore
-
-# Run the discovery service (AI-powered music intelligence)
-[group('services')]
-discovery:
-    uv run python discovery/discovery.py
-
-# Run the Python extractor service
-[group('services')]
-pyextractor:
-    uv run python extractor/pyextractor/extractor.py
-
-# Run the Python extractor service (alias for backwards compatibility)
-[group('services')]
-extractor:
-    uv run python extractor/pyextractor/extractor.py
 
 # Run the graphinator service (Neo4j graph builder)
 [group('services')]
@@ -325,9 +292,7 @@ rebuild:
 build:
     docker-compose build \
         dashboard \
-        discovery \
         explore \
-        pyextractor \
         rustextractor \
         graphinator \
         tableinator

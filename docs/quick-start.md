@@ -66,44 +66,31 @@ See [Configuration Guide](configuration.md) for all available settings.
 ### Step 3: Start All Services
 
 ```bash
-# Start all services with Python Extractor (default)
+# Start all services
 docker-compose up -d
 
 # View logs to monitor progress
 docker-compose logs -f
 ```
 
-### Step 4: (Optional) Use Rust Extractor
-
-For significantly better performance, switch to the Rust-based extractor:
-
-```bash
-# Switch to Rust Extractor (20,000-400,000+ records/sec)
-./scripts/switch-extractor.sh rust
-
-# Switch back to Python Extractor if needed
-./scripts/switch-extractor.sh python
-```
-
-### Step 5: Access the Services
+### Step 4: Access the Services
 
 Open your browser and visit:
 
 - **Dashboard**: http://localhost:8003 (System monitoring)
-- **Discovery**: http://localhost:8005 (AI music discovery)
-- **Neo4j Browser**: http://localhost:7474 (Graph exploration)
+- **Explore**: http://localhost:8006 (Graph exploration & trends)
+- **Neo4j Browser**: http://localhost:7474 (Graph database UI)
 - **RabbitMQ Management**: http://localhost:15672 (Queue monitoring)
 
 ### Service Access Details
 
-| Service           | URL                    | Default Credentials                 | Purpose               |
-| ----------------- | ---------------------- | ----------------------------------- | --------------------- |
-| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring     |
-| 🎵 **Discovery**  | http://localhost:8005  | None                                | AI music discovery    |
-| 🔍 **Explore**    | http://localhost:8006  | None                                | Graph exploration     |
-| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management      |
-| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph database UI     |
-| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access       |
+| Service           | URL                    | Default Credentials                 | Purpose            |
+| ----------------- | ---------------------- | ----------------------------------- | ------------------ |
+| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring  |
+| 🔍 **Explore**    | http://localhost:8006  | None                                | Graph exploration  |
+| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management   |
+| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph database UI  |
+| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access    |
 
 ## 💻 Local Development Setup
 
@@ -205,11 +192,8 @@ Run any service using just commands:
 # Dashboard (monitoring UI)
 just dashboard
 
-# Discovery (AI service)
-just discovery
-
-# Python Extractor (data ingestion)
-just pyextractor
+# Explore (graph exploration)
+just explore
 
 # Rust Extractor (high-performance ingestion, requires Rust)
 just rustextractor-run
@@ -227,11 +211,8 @@ Or run services directly with Python:
 # Dashboard
 uv run python dashboard/dashboard.py
 
-# Discovery
-uv run python discovery/discovery.py
-
-# Python Extractor
-uv run python extractor/pyextractor/extractor.py
+# Explore
+uv run python explore/explore.py
 
 # Graphinator
 uv run python graphinator/graphinator.py
@@ -248,11 +229,11 @@ All services expose health endpoints:
 
 ```bash
 # Check each service
-curl http://localhost:8000/health  # Extractor (Python or Rust)
+curl http://localhost:8000/health  # Rust Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
-curl http://localhost:8004/health  # Discovery
+curl http://localhost:8007/health  # Explore
 ```
 
 Expected response:
@@ -270,7 +251,7 @@ Watch the logs to see data processing:
 docker-compose logs -f
 
 # Specific service
-docker-compose logs -f extractor-python  # or extractor-rust
+docker-compose logs -f extractor-rust
 docker-compose logs -f graphinator
 docker-compose logs -f tableinator
 ```
@@ -351,14 +332,14 @@ docker-compose logs [service-name]
 docker-compose restart [service-name]
 ```
 
-### Python/Rust Extractor Not Downloading Data
+### Rust Extractor Not Downloading Data
 
 ```bash
 # Check internet connectivity
 curl -I https://discogs-data-dumps.s3.us-west-2.amazonaws.com
 
 # Check extractor logs
-docker-compose logs extractor-python  # or extractor-rust
+docker-compose logs extractor-rust
 
 # Verify DISCOGS_ROOT permissions
 ls -la /discogs-data  # or your configured path
@@ -382,11 +363,11 @@ Now that you have Discogsography running:
    - PostgreSQL analytics
    - Full-text search
 
-1. **Use Discovery Service**: http://localhost:8005
+1. **Use Explore Service**: http://localhost:8006
 
-   - AI-powered music recommendations
-   - Semantic search
-   - Industry analytics
+   - Interactive graph exploration
+   - Trend analysis and visualizations
+   - Path finding and relationship queries
 
 1. **Learn the Architecture**: Read [Architecture Guide](architecture.md)
 

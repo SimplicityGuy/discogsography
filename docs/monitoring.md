@@ -37,12 +37,11 @@ open http://localhost:8003
 
 **Services Monitored**:
 
-- Python/Rust Extractor (http://localhost:8000/health)
+- Rust Extractor (http://localhost:8000/health)
 - Graphinator (http://localhost:8001/health)
 - Tableinator (http://localhost:8002/health)
 - Dashboard (http://localhost:8003/health)
-- Discovery (http://localhost:8004/health, http://localhost:8005)
-- Explore (http://localhost:8006/health, http://localhost:8007)
+- Explore (http://localhost:8006/health, http://localhost:8007/health)
 
 #### Queue Metrics Panel
 
@@ -181,10 +180,9 @@ uv run task logs
 docker-compose logs -f
 
 # Specific service
-docker-compose logs -f extractor-python  # or extractor-rust
+docker-compose logs -f extractor-rust
 docker-compose logs -f graphinator
 docker-compose logs -f tableinator
-docker-compose logs -f discovery
 docker-compose logs -f dashboard
 ```
 
@@ -203,7 +201,7 @@ docker-compose logs | grep -E "(⚠️|❌)"
 docker-compose logs | grep "✅"
 
 # Database queries (DEBUG level only)
-docker-compose logs discovery | grep "🔍 Executing"
+docker-compose logs dashboard | grep "🔍 Executing"
 ```
 
 ## 📈 Metrics
@@ -370,7 +368,7 @@ TTL discovery:genre_trends:Jazz
 All services expose HTTP health check endpoints:
 
 ```bash
-# Extractor (Python or Rust)
+# Rust Extractor
 curl http://localhost:8000/health
 # Response: {"status": "healthy"}
 
@@ -386,8 +384,8 @@ curl http://localhost:8002/health
 curl http://localhost:8003/health
 # Response: {"status": "healthy"}
 
-# Discovery
-curl http://localhost:8004/health
+# Explore
+curl http://localhost:8007/health
 # Response: {"status": "healthy"}
 ```
 
@@ -398,11 +396,11 @@ curl http://localhost:8004/health
 # check-all-health.sh
 
 services=(
-  "Extractor:8000"
+  "Rust Extractor:8000"
   "Graphinator:8001"
   "Tableinator:8002"
   "Dashboard:8003"
-  "Discovery:8004"
+  "Explore:8007"
 )
 
 for service in "${services[@]}"; do
@@ -507,12 +505,10 @@ async def check_custom_condition():
 ./scripts/check-all-health.sh
 
 # Or individually
-curl http://localhost:8000/health  # Extractor
+curl http://localhost:8000/health  # Rust Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
-curl http://localhost:8004/health  # Discovery (health check port)
-curl http://localhost:8005/health  # Discovery (service port)
 curl http://localhost:8006/health  # Explore (service port)
 curl http://localhost:8007/health  # Explore (health check port)
 ```
@@ -528,7 +524,7 @@ docker-compose down
 docker-compose up -d
 
 # Or for specific service
-LOG_LEVEL=DEBUG uv run python discovery/discovery.py
+LOG_LEVEL=DEBUG uv run python dashboard/dashboard.py
 ```
 
 **Debug Level Includes**:
@@ -637,7 +633,6 @@ Track records/second for each service:
 docker-compose logs -f | grep "📊"
 
 # Expected rates
-# - Python Extractor: 5,000-10,000 records/s
 # - Rust Extractor: 20,000-400,000+ records/s
 # - Graphinator: 1,000-2,000 records/s
 # - Tableinator: 3,000-5,000 records/s

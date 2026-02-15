@@ -61,12 +61,27 @@ Extractor → Exchange → [Classic Queues] → Consumers
 ```
 
 **After:**
-```
-                    ┌─→ Quorum Queue (graphinator-artists) ─→ Consumer
-                    │   └─→ DLQ (after 20 retries)
-Extractor → Exchange┼─→ Quorum Queue (graphinator-labels) ─→ Consumer
-                    │   └─→ DLQ (after 20 retries)
-                    └─→ ... (8 total queues + 8 DLQs)
+```mermaid
+graph LR
+    EXT[Extractor] --> EXCH{Exchange}
+    EXCH --> Q1[Quorum Queue<br/>graphinator-artists]
+    EXCH --> Q2[Quorum Queue<br/>graphinator-labels]
+    EXCH --> Q3[...]
+    Q1 --> C1[Consumer]
+    Q2 --> C2[Consumer]
+    Q3 --> C3[Consumer]
+    Q1 -.->|after 20 retries| DLQ1[DLQ]
+    Q2 -.->|after 20 retries| DLQ2[DLQ]
+    Q3 -.->|8 total queues + 8 DLQs| DLQ3[DLQ]
+
+    style EXT fill:#fff9c4,stroke:#f57c00
+    style EXCH fill:#fff3e0,stroke:#e65100
+    style Q1 fill:#e0f2f1,stroke:#004d40
+    style Q2 fill:#e0f2f1,stroke:#004d40
+    style Q3 fill:#e0f2f1,stroke:#004d40
+    style DLQ1 fill:#ffebee,stroke:#b71c1c
+    style DLQ2 fill:#ffebee,stroke:#b71c1c
+    style DLQ3 fill:#ffebee,stroke:#b71c1c
 ```
 
 ### 3. Queue Declaration Changes

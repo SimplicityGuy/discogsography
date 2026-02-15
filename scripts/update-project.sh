@@ -597,16 +597,12 @@ update_python_packages() {
         backup_file "pyproject.toml"
 
         # Backup all pyproject.toml files including nested ones
-        for service in common dashboard discovery explore graphinator tableinator; do
+        for service in common dashboard explore graphinator tableinator; do
             if [[ -f "$service/pyproject.toml" ]]; then
                 backup_file "$service/pyproject.toml"
             fi
         done
 
-        # Backup extractor subdirectories
-        if [[ -f "extractor/pyextractor/pyproject.toml" ]]; then
-            backup_file "extractor/pyextractor/pyproject.toml"
-        fi
         # Note: extractor/rustextractor is a Rust project, skip Python backups
     fi
 
@@ -844,9 +840,9 @@ show_verification_steps() {
     echo ""
     echo "3. 🔍 Smoke tests:"
     echo "   # Check dashboard"
-    echo "   curl -f http://localhost:8000/health"
-    echo "   # Check discovery service"
-    echo "   curl -f http://localhost:8001/health"
+    echo "   curl -f http://localhost:8003/health"
+    echo "   # Check explore service"
+    echo "   curl -f http://localhost:8006/health"
     echo ""
     echo "4. 📊 Review dependency changes:"
     echo "   # Check for security advisories"
@@ -875,9 +871,7 @@ show_file_report() {
     echo "  ✓ pyproject.toml (root)"
     echo "  ✓ common/pyproject.toml"
     echo "  ✓ dashboard/pyproject.toml"
-    echo "  ✓ discovery/pyproject.toml"
     echo "  ✓ explore/pyproject.toml"
-    echo "  ✓ extractor/pyextractor/pyproject.toml"
     echo "  ✓ extractor/rustextractor/pyproject.toml (tools only - Rust project)"
     echo "  ✓ graphinator/pyproject.toml"
     echo "  ✓ tableinator/pyproject.toml"
@@ -888,9 +882,7 @@ show_file_report() {
     # Docker files
     echo "🐳 Docker Configuration:"
     echo "  ✓ dashboard/Dockerfile"
-    echo "  ✓ discovery/Dockerfile"
     echo "  ✓ explore/Dockerfile"
-    echo "  ✓ extractor/pyextractor/Dockerfile"
     echo "  ✓ extractor/rustextractor/Dockerfile"
     echo "  ✓ graphinator/Dockerfile"
     echo "  ✓ tableinator/Dockerfile"
@@ -940,9 +932,7 @@ verify_components() {
         "pyproject.toml"
         "common/pyproject.toml"
         "dashboard/pyproject.toml"
-        "discovery/pyproject.toml"
         "explore/pyproject.toml"
-        "extractor/pyextractor/pyproject.toml"
         "extractor/rustextractor/pyproject.toml"
         "graphinator/pyproject.toml"
         "tableinator/pyproject.toml"
@@ -961,9 +951,7 @@ verify_components() {
     print_info "Checking Dockerfiles..."
     local dockerfile_list=(
         "dashboard/Dockerfile"
-        "discovery/Dockerfile"
         "explore/Dockerfile"
-        "extractor/pyextractor/Dockerfile"
         "extractor/rustextractor/Dockerfile"
         "graphinator/Dockerfile"
         "tableinator/Dockerfile"

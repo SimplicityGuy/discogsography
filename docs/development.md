@@ -52,21 +52,17 @@ discogsography/
 │   │   └── app.js
 │   ├── README.md
 │   └── __init__.py
-├── 🎵 discovery/           # AI-powered music discovery service
-│   ├── discovery.py        # Main service implementation
-│   ├── README.md
-│   └── __init__.py
 ├── 📥 extractor/           # Data extraction services
-│   ├── pyextractor/        # Python-based Discogs data ingestion
-│   │   ├── extractor.py    # Main processing logic
-│   │   ├── discogs.py      # S3 download and validation
-│   │   ├── README.md
-│   │   └── __init__.py
 │   └── rustextractor/      # Rust-based high-performance extractor
 │       ├── src/
 │       │   └── main.rs     # Rust processing logic
 │       ├── Cargo.toml      # Rust dependencies
 │       └── README.md
+├── 🔍 explore/             # Interactive graph exploration & trends
+│   ├── explore.py          # FastAPI backend with Neo4j queries
+│   ├── static/             # Frontend HTML/CSS/JS
+│   ├── README.md
+│   └── __init__.py
 ├── 🔗 graphinator/         # Neo4j graph database service
 │   ├── graphinator.py      # Graph relationship builder
 │   ├── README.md
@@ -83,8 +79,8 @@ discogsography/
 ├── 🧪 tests/               # Comprehensive test suite
 │   ├── common/             # Common module tests
 │   ├── dashboard/          # Dashboard tests (including E2E)
-│   ├── discovery/          # Discovery service tests
-│   ├── extractor/          # Extractor tests
+│   ├── explore/            # Explore service tests
+│   ├── extractor/          # Extractor tests (Rust)
 │   ├── graphinator/        # Graphinator tests
 │   └── tableinator/        # Tableinator tests
 ├── 📝 docs/                # Documentation

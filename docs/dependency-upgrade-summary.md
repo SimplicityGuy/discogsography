@@ -139,17 +139,26 @@ The `optimum[onnxruntime]` package is used for ONNX optimization of HuggingFace 
 
 ### Constraint Visualization
 
-```
-discogsography[discovery]
-└── sentence-transformers[onnx]>=2.2.0
-    ├── transformers>=4.41.0,<6.0.0  ✅ Allows 5.x
-    └── huggingface-hub>=0.20.0      ✅ Allows 1.x
+```mermaid
+graph TD
+    DISCO1[discogsography discovery]
+    DISCO2[discogsography discovery]
 
-discogsography[discovery]
-└── optimum[onnxruntime]>=1.13.0
-    └── optimum-onnx<=0.1.0
-        └── transformers>=4.36,<4.58.0  ❌ Blocks 5.x
-            └── huggingface-hub>=0.34.0,<1.0  ❌ Blocks 1.x
+    DISCO1 --> ST[sentence-transformers onnx >=2.2.0]
+    ST --> T1[transformers >=4.41.0, <6.0.0<br/>✅ Allows 5.x]
+    ST --> HF1[huggingface-hub >=0.20.0<br/>✅ Allows 1.x]
+
+    DISCO2 --> OPT[optimum onnxruntime >=1.13.0]
+    OPT --> OPTONNX[optimum-onnx <=0.1.0]
+    OPTONNX --> T2[transformers >=4.36, <4.58.0<br/>❌ Blocks 5.x]
+    T2 --> HF2[huggingface-hub >=0.34.0, <1.0<br/>❌ Blocks 1.x]
+
+    style T1 fill:#e8f5e9,stroke:#1b5e20
+    style HF1 fill:#e8f5e9,stroke:#1b5e20
+    style T2 fill:#ffebee,stroke:#b71c1c
+    style HF2 fill:#ffebee,stroke:#b71c1c
+    style OPT fill:#fff3e0,stroke:#e65100
+    style OPTONNX fill:#fff3e0,stroke:#e65100
 ```
 
 ### Update Strategy

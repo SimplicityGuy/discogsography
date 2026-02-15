@@ -1,6 +1,0 @@
-boto3
-dict-hash
-orjson
-pika
-tqdm
-xmltodict
