@@ -255,6 +255,12 @@ extractor-fmt:
     cd extractor && \
     cargo fmt
 
+# Check Rust code formatting (for CI/pre-commit)
+[group('rust')]
+extractor-fmt-check:
+    cd extractor && \
+    cargo fmt --check
+
 # Clean Rust build artifacts
 [group('rust')]
 extractor-clean:
