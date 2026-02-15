@@ -1,0 +1,10 @@
+# Cargo workspace configuration
+# This file defines the workspace structure for the Rust components
+
+[workspace]
+members = ["extractor"]
+resolver = "2"
+
+# Workspace-wide lint configuration
+[workspace.lints.rust]
+warnings = "deny"
