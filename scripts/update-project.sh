@@ -534,9 +534,10 @@ update_rust_crates() {
             # Update ALL dependencies (main, dev, build, target-specific)
             local upgrade_cmd="cargo upgrade"
             if [[ "$MAJOR_UPGRADES" == true ]]; then
-                print_info "Including major version upgrades for ALL Rust dependencies"
+                upgrade_cmd="$upgrade_cmd --breaking"
+                print_info "Including major version upgrades for ALL Rust dependencies (--breaking)"
             else
-                print_info "Updating to latest compatible versions (respecting semver)"
+                print_info "Updating to latest compatible versions (respecting semver, no --breaking)"
             fi
 
             # Update all dependencies (main, dev, build, target-specific)
@@ -552,6 +553,9 @@ update_rust_crates() {
             if cargo install cargo-edit; then
                 # Try again after installation (updates all dependency types)
                 local upgrade_cmd="cargo upgrade"
+                if [[ "$MAJOR_UPGRADES" == true ]]; then
+                    upgrade_cmd="$upgrade_cmd --breaking"
+                fi
 
                 if $upgrade_cmd; then
                     print_success "Updated all dependency versions"
@@ -625,13 +629,13 @@ update_python_packages() {
     print_info "  • Dev dependencies ([dependency-groups])"
     print_info "  • Build dependencies ([build-system])"
 
-    local uv_cmd="uv lock"
+    local uv_cmd="uv lock --upgrade"
     if [[ "$MAJOR_UPGRADES" == true ]]; then
-        uv_cmd="$uv_cmd --upgrade"
         print_info "Including major version upgrades for ALL dependencies"
+        print_info "Note: uv respects version constraints in pyproject.toml (>=x.y.z allows major upgrades)"
     else
-        uv_cmd="$uv_cmd --upgrade"
-        print_info "Upgrading ALL dependencies to latest minor/patch versions"
+        print_info "Upgrading ALL dependencies to latest versions (respecting >= constraints)"
+        print_info "Note: With >= constraints, this includes major upgrades. Use specific version pins to restrict."
     fi
 
     if [[ "$DRY_RUN" == true ]]; then
