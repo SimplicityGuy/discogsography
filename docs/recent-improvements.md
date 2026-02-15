@@ -35,7 +35,6 @@ development experience enhancements.
 - ✅ Poison message handling prevents infinite retries
 - ✅ Better data safety for critical music metadata
 
-**See**: [RabbitMQ 4.x Migration Guide](rabbitmq-4-migration.md)
 
 #### Neo4j 2026 Upgrade
 
@@ -52,7 +51,6 @@ development experience enhancements.
 - ✅ Better APOC plugin compatibility
 - ✅ Future-proofed for 2026 releases
 
-**See**: [Neo4j 2026 Migration Guide](neo4j-2026-migration.md)
 
 #### PostgreSQL 18 Upgrade
 
@@ -71,7 +69,6 @@ development experience enhancements.
 - ✅ 20-30% faster VACUUM operations
 - ✅ **Zero code changes required** - psycopg3 is fully compatible
 
-**See**: [PostgreSQL 18 Migration Guide](postgresql-18-migration.md)
 
 #### Migration Summary
 
@@ -84,9 +81,6 @@ development experience enhancements.
 **Total Documentation**: 3 comprehensive migration guides created (one per service)
 
 **Migration Guides**:
-- [RabbitMQ 4.x Migration Guide](rabbitmq-4-migration.md)
-- [Neo4j 2026 Migration Guide](neo4j-2026-migration.md)
-- [PostgreSQL 18 Migration Guide](postgresql-18-migration.md)
 
 ---
 
