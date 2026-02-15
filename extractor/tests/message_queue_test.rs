@@ -1,6 +1,6 @@
 // Integration tests for message queue module
 
-use rust_extractor::types::{DataMessage, DataType, FileCompleteMessage, Message};
+use extractor::types::{DataMessage, DataType, FileCompleteMessage, Message};
 use serde_json::json;
 
 #[test]

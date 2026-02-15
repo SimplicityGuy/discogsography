@@ -9,7 +9,7 @@ This document describes the implementation of periodic state marker updates in t
 Prior to this fix:
 - **extractor**: Only saved state marker when file processing started (0 records) and completed (final count)
 - **Previous implementation**: The Python extractor had periodic saves every 5,000 records
-- **Impact**: Rustextractor could lose hours of progress if it crashed or was restarted
+- **Impact**: Extractor could lose hours of progress if it crashed or was restarted
 
 ## Solution
 
@@ -24,7 +24,7 @@ Added `state_save_interval` configuration parameter:
 
 ### Implementation Details
 
-#### Rustextractor Changes
+#### Extractor Changes
 
 1. **Config Update** (`config.rs`):
    - Added `state_save_interval: usize` field
@@ -100,7 +100,7 @@ If the extractor crashes or is restarted:
 
 ## Testing
 
-### Rustextractor Tests
+### Extractor Tests
 
 All tests pass (125 total):
 ```bash
@@ -112,10 +112,6 @@ Key tests for periodic saves:
 - `test_message_batcher_basic` - Verifies state marker integration
 - `test_message_batcher_respects_batch_size` - Batch size handling
 - `test_message_batcher_timeout_flush` - Timeout flush behavior
-
-### Pyextractor Tests
-
-Existing tests already cover periodic save behavior in `tests/extractor/`.
 
 ## Performance Impact
 

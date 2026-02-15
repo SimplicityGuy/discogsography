@@ -37,7 +37,7 @@ flags:
     carryforward: true
   rust:
     paths:
-      - "extractor/rustextractor/**/*.rs"
+      - "extractor/**/*.rs"
     carryforward: true
   e2e:
     paths:

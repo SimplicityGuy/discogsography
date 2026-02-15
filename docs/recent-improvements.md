@@ -137,7 +137,7 @@ See **[State Marker System](state-marker-system.md)** for complete documentation
 
 ### 💾 State Marker Periodic Updates
 
-**Problem**: Rustextractor only saved state at file boundaries (start/complete), meaning a crash during processing could lose hours of progress. State files showed 0 records even after hours of processing.
+**Problem**: Extractor only saved state at file boundaries (start/complete), meaning a crash during processing could lose hours of progress. State files showed 0 records even after hours of processing.
 
 **Solution**: Implemented periodic state marker updates every 5,000 records in extractor's existing behavior.
 

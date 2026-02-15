@@ -172,7 +172,7 @@ let rust_level = match log_level.as_str() {
 {
   "timestamp": "2024-01-15T10:30:45.123456Z",
   "level": "INFO",
-  "target": "rust_extractor",
+  "target": "extractor",
   "message": "🚀 Starting Rust-based Discogs data extractor with high performance",
   "line": 59
 }
@@ -534,7 +534,7 @@ logger.info("🚀 🔧 Starting and configuring")
 
 ```yaml
 environment:
-  RUST_LOG: rust_extractor=info,lapin=warn
+  RUST_LOG: extractor=info,lapin=warn
 ```
 
 **New**:

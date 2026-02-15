@@ -334,7 +334,7 @@ Both extractors save state periodically during file processing to enable crash r
 
 ### Implementation
 
-**Rustextractor** (`extractor.rs`):
+**Extractor** (`extractor.rs`):
 ```rust
 // In message_batcher function
 if total_records % state_save_interval as u64 == 0 {

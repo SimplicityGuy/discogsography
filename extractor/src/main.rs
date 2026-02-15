@@ -150,7 +150,7 @@ fn map_log_level(level: &str) -> &'static str {
 /// Build tracing filter string
 fn build_tracing_filter(rust_level: &str) -> String {
     let lapin_level = if rust_level == "debug" { "info" } else { "warn" };
-    format!("rust_extractor={},lapin={}", rust_level, lapin_level)
+    format!("extractor={},lapin={}", rust_level, lapin_level)
 }
 
 #[cfg(test)]
@@ -198,25 +198,25 @@ mod tests {
     #[test]
     fn test_build_tracing_filter_debug() {
         let filter = build_tracing_filter("debug");
-        assert_eq!(filter, "rust_extractor=debug,lapin=info");
+        assert_eq!(filter, "extractor=debug,lapin=info");
     }
 
     #[test]
     fn test_build_tracing_filter_info() {
         let filter = build_tracing_filter("info");
-        assert_eq!(filter, "rust_extractor=info,lapin=warn");
+        assert_eq!(filter, "extractor=info,lapin=warn");
     }
 
     #[test]
     fn test_build_tracing_filter_warn() {
         let filter = build_tracing_filter("warn");
-        assert_eq!(filter, "rust_extractor=warn,lapin=warn");
+        assert_eq!(filter, "extractor=warn,lapin=warn");
     }
 
     #[test]
     fn test_build_tracing_filter_error() {
         let filter = build_tracing_filter("error");
-        assert_eq!(filter, "rust_extractor=error,lapin=warn");
+        assert_eq!(filter, "extractor=error,lapin=warn");
     }
 
     #[tokio::test]

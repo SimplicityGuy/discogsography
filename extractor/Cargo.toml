@@ -1,11 +1,15 @@
 [package]
-name = "rust_extractor"
+name = "extractor"
 version = "0.1.0"
 edition = "2024"
 authors = ["Robert Wlodarczyk <robert@simplicityguy.com>"]
 license = "MIT"
 description = "High-performance Rust-based Discogs data extractor"
 repository = "https://github.com/SimplicityGuy/discogsography"
+
+[[bin]]
+name = "extractor"
+path = "src/main.rs"
 
 [dependencies]
 # Core async runtime

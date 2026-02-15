@@ -1,9 +1,9 @@
 // Integration tests for extractor module
 // Focus on testing the extraction workflow with mocked dependencies
 
-use rust_extractor::extractor::ExtractorState;
-use rust_extractor::state_marker::StateMarker;
-use rust_extractor::types::{DataType, DataMessage};
+use extractor::extractor::ExtractorState;
+use extractor::state_marker::StateMarker;
+use extractor::types::{DataType, DataMessage};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -346,7 +346,7 @@ fn test_data_type_all_conversions() {
 
 #[test]
 fn test_extraction_progress_default() {
-    use rust_extractor::types::ExtractionProgress;
+    use extractor::types::ExtractionProgress;
 
     let progress = ExtractionProgress::default();
     assert_eq!(progress.artists, 0);
@@ -358,7 +358,7 @@ fn test_extraction_progress_default() {
 
 #[test]
 fn test_extraction_progress_increment_all_types() {
-    use rust_extractor::types::ExtractionProgress;
+    use extractor::types::ExtractionProgress;
 
     let mut progress = ExtractionProgress::default();
 
@@ -438,7 +438,7 @@ async fn test_message_batcher_empty_batch() {
     drop(parse_sender);
 
     let batcher_handle = tokio::spawn(async move {
-        use rust_extractor::extractor::message_batcher;
+        use extractor::extractor::message_batcher;
         message_batcher(
             parse_receiver,
             batch_sender,
@@ -486,7 +486,7 @@ async fn test_message_batcher_single_message() {
     drop(parse_sender);
 
     let batcher_handle = tokio::spawn(async move {
-        use rust_extractor::extractor::message_batcher;
+        use extractor::extractor::message_batcher;
         message_batcher(
             parse_receiver,
             batch_sender,
@@ -535,7 +535,7 @@ async fn test_message_batcher_multiple_batches() {
     drop(parse_sender);
 
     let batcher_handle = tokio::spawn(async move {
-        use rust_extractor::extractor::message_batcher;
+        use extractor::extractor::message_batcher;
         message_batcher(
             parse_receiver,
             batch_sender,

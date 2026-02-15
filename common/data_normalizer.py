@@ -1,7 +1,7 @@
 """Data normalization utilities for Discogs data.
 
 This module provides functions to normalize data from different extractors
-(pyextractor using xmltodict, rustextractor using quick-xml) into a consistent
+(pyextractor using xmltodict, extractor using quick-xml) into a consistent
 format for processing by graphinator and tableinator.
 
 The normalized format ensures:
@@ -33,7 +33,7 @@ def normalize_id(obj: Any) -> str | None:
     if isinstance(obj, str):
         return obj
     if isinstance(obj, dict):
-        # Try 'id' first (rustextractor format), then '@id' (xmltodict format)
+        # Try 'id' first (extractor format), then '@id' (xmltodict format)
         return obj.get("id") or obj.get("@id")
     return None
 
@@ -77,9 +77,9 @@ def normalize_nested_list(container: Any, key: str) -> list[Any]:
     """Extract and normalize a nested list from a container.
 
     Handles formats like:
-    - {"artist": [{"id": "1", "name": "..."}]}  (xmltodict/rustextractor)
+    - {"artist": [{"id": "1", "name": "..."}]}  (xmltodict/extractor)
     - {"artist": {"id": "1", "name": "..."}}    (single item)
-    - ["name1", "name2"]                         (flat list - old rustextractor)
+    - ["name1", "name2"]                         (flat list - old extractor)
 
     Args:
         container: The container dict (e.g., release["artists"])
@@ -91,7 +91,7 @@ def normalize_nested_list(container: Any, key: str) -> list[Any]:
     if container is None:
         return []
 
-    # If container is already a list (old rustextractor format), return as-is
+    # If container is already a list (old extractor format), return as-is
     if isinstance(container, list):
         return container
 

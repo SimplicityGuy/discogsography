@@ -95,7 +95,7 @@ class TestNormalizeNestedList:
         assert result == [{"id": "1"}]
 
     def test_flat_list_format(self) -> None:
-        """Test flat list format (old rustextractor)."""
+        """Test flat list format (old extractor)."""
         container = ["Artist 1", "Artist 2"]
         result = normalize_nested_list(container, "artist")
         assert result == ["Artist 1", "Artist 2"]

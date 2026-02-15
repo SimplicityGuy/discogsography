@@ -1,8 +1,8 @@
 // Additional integration tests for downloader module
 // Tests S3 file listing, metadata handling, and download logic
 
-use rust_extractor::downloader::Downloader;
-use rust_extractor::types::{LocalFileInfo, S3FileInfo};
+use extractor::downloader::Downloader;
+use extractor::types::{LocalFileInfo, S3FileInfo};
 use std::collections::HashMap;
 use tempfile::TempDir;
 use tokio::fs;

@@ -98,9 +98,9 @@ fn test_filter_format() {
     // Test that the tracing filter is formatted correctly
     let rust_level = "info";
     let lapin_level = "warn";
-    let filter = format!("rust_extractor={},lapin={}", rust_level, lapin_level);
+    let filter = format!("extractor={},lapin={}", rust_level, lapin_level);
 
-    assert_eq!(filter, "rust_extractor=info,lapin=warn");
+    assert_eq!(filter, "extractor=info,lapin=warn");
 }
 
 #[test]

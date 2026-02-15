@@ -6,7 +6,7 @@ async fn test_config_from_env() {
     }
 
     // This should not panic
-    let _config = rust_extractor::config::ExtractorConfig::from_env();
+    let _config = extractor::config::ExtractorConfig::from_env();
 
     // Clean up
     unsafe {
@@ -16,7 +16,7 @@ async fn test_config_from_env() {
 
 #[tokio::test]
 async fn test_data_type_conversion() {
-    use rust_extractor::types::DataType;
+    use extractor::types::DataType;
     use std::str::FromStr;
 
     assert_eq!(DataType::from_str("artists"), Ok(DataType::Artists));
@@ -28,7 +28,7 @@ async fn test_data_type_conversion() {
 
 #[tokio::test]
 async fn test_extraction_progress() {
-    use rust_extractor::types::{DataType, ExtractionProgress};
+    use extractor::types::{DataType, ExtractionProgress};
 
     let mut progress = ExtractionProgress::default();
     assert_eq!(progress.total(), 0);

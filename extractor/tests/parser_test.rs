@@ -1,8 +1,8 @@
 // Additional integration tests for parser module
 // Tests edge cases, error handling, and complex XML structures
 
-use rust_extractor::parser::XmlParser;
-use rust_extractor::types::DataType;
+use extractor::parser::XmlParser;
+use extractor::types::DataType;
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use serde_json::json;

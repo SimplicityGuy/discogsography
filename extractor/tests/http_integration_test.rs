@@ -2,8 +2,8 @@
 // Tests web scraping and HTTP download functionality with mocked responses
 
 use mockito::Server;
-use rust_extractor::downloader::Downloader;
-use rust_extractor::types::S3FileInfo;
+use extractor::downloader::Downloader;
+use extractor::types::S3FileInfo;
 use tempfile::TempDir;
 use tokio::fs;
 

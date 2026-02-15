@@ -1,4 +1,4 @@
-# Rust formatter configuration for rustextractor
+# Rust formatter configuration for extractor
 
 # Line length configuration (stable features only)
 max_width = 150

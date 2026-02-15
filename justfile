@@ -143,7 +143,7 @@ test-parallel:
     wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
 
     if [ -n "$pid_extractor" ]; then
-        wait $pid_extractor || { echo "❌ RustExtractor tests failed"; cat /tmp/test-extractor.log; failed=1; }
+        wait $pid_extractor || { echo "❌ Extractor tests failed"; cat /tmp/test-extractor.log; failed=1; }
     fi
 
     if [ $failed -eq 0 ]; then

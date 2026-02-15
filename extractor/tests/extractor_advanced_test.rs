@@ -1,6 +1,6 @@
 // Advanced tests for extractor module
 
-use rust_extractor::types::{DataType, ExtractionProgress};
+use extractor::types::{DataType, ExtractionProgress};
 use std::str::FromStr;
 
 #[test]

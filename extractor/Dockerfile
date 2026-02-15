@@ -11,9 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Create app directory
 WORKDIR /app
 
-# Copy Cargo files from extractor/rustextractor subdirectory
-COPY extractor/rustextractor/Cargo.toml ./
-COPY extractor/rustextractor/benches ./benches
+# Copy Cargo files from extractor subdirectory
+COPY extractor/Cargo.toml ./
+COPY extractor/benches ./benches
 
 # Create dummy main to cache dependencies
 RUN mkdir src && \
@@ -21,8 +21,8 @@ RUN mkdir src && \
     cargo build --release && \
     rm -rf src
 
-# Copy actual source code from extractor/rustextractor subdirectory
-COPY extractor/rustextractor/src ./src
+# Copy actual source code from extractor subdirectory
+COPY extractor/src ./src
 
 # Build the application
 RUN touch src/main.rs && \
@@ -40,17 +40,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN groupadd -r rustextractor && useradd -r -g rustextractor rustextractor
+RUN groupadd -r extractor && useradd -r -g extractor extractor
 
 # Create necessary directories
 RUN mkdir -p /discogs-data /logs && \
-    chown -R rustextractor:rustextractor /discogs-data /logs
+    chown -R extractor:extractor /discogs-data /logs
 
 # Copy binary from builder
-COPY --from=builder /app/target/release/rust_extractor /usr/local/bin/rustextractor
+COPY --from=builder /app/target/release/extractor /usr/local/bin/extractor
 
 # Switch to non-root user
-USER rustextractor
+USER extractor
 
 # Set environment variables
 ENV LOG_LEVEL=INFO
@@ -64,4 +64,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
 EXPOSE 8000
 
 # Run the application
-CMD ["rustextractor"]
+CMD ["extractor"]
