@@ -4,7 +4,6 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-import logging
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +11,7 @@ from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.staticfiles import StaticFiles
+import structlog
 
 from common import (
     AsyncResilientNeo4jDriver,
@@ -29,7 +29,7 @@ from explore.neo4j_queries import (
 )
 
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Module-level state
 neo4j_driver: AsyncResilientNeo4jDriver | None = None
@@ -48,50 +48,45 @@ def get_health_data() -> dict[str, Any]:
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifecycle."""
-    # fmt: off
-    print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗               ")
-    print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝               ")
-    print("██║  ██║██║███████╗██║     ██║   ██║██║  ███╗███████╗               ")
-    print("██║  ██║██║╚════██║██║     ██║   ██║██║   ██║╚════██║               ")
-    print("██████╔╝██║███████║╚██████╗╚██████╔╝╚██████╔╝███████║               ")
-    print("╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝               ")
-    print("                                                                     ")
-    print("███████╗██╗  ██╗██████╗ ██╗      ██████╗ ██████╗ ███████╗            ")
-    print("██╔════╝╚██╗██╔╝██╔══██╗██║     ██╔═══██╗██╔══██╗██╔════╝            ")
-    print("█████╗   ╚███╔╝ ██████╔╝██║     ██║   ██║██████╔╝█████╗              ")
-    print("██╔══╝   ██╔██╗ ██╔═══╝ ██║     ██║   ██║██╔══██╗██╔══╝              ")
-    print("███████╗██╔╝ ██╗██║     ███████╗╚██████╔╝██║  ██║███████╗            ")
-    print("╚══════╝╚═╝  ╚═╝╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝            ")
-    print()
-    # fmt: on
-
-    logger.info("🚀 Starting Explore service...")
+    logger.info("🚀 Starting Explore service")
 
     global neo4j_driver, config
     config = ExploreConfig.from_env()
+    logger.info("📋 Configuration loaded from environment")
 
     # Start health server on separate port
     health_server = HealthServer(8007, get_health_data)
     health_server.start_background()
+    logger.info("🏥 Health server started on port 8007")
 
     # Initialize Neo4j driver
-    neo4j_driver = AsyncResilientNeo4jDriver(
-        uri=config.neo4j_address,
-        auth=(config.neo4j_username, config.neo4j_password),
-        max_retries=5,
-        encrypted=False,
-    )
-    logger.info("🔗 Connected to Neo4j with resilient driver")
+    try:
+        neo4j_driver = AsyncResilientNeo4jDriver(
+            uri=config.neo4j_address,
+            auth=(config.neo4j_username, config.neo4j_password),
+            max_retries=5,
+            encrypted=False,
+        )
+        logger.info("🔗 Connected to Neo4j with resilient driver")
+    except Exception as e:
+        logger.error("❌ Failed to connect to Neo4j: e", e=e)
+        raise
 
     # Create indexes
-    await create_all_indexes(config.neo4j_address, config.neo4j_username, config.neo4j_password)
+    try:
+        await create_all_indexes(config.neo4j_address, config.neo4j_username, config.neo4j_password)
+        logger.info("📑 Neo4j indexes created/verified")
+    except Exception as e:
+        logger.warning("⚠️ Failed to create Neo4j indexes: e", e=e)
 
     logger.info("✅ Explore service ready")
     yield
 
     # Shutdown
+    logger.info("🛑 Shutting down Explore service")
     if neo4j_driver:
         await neo4j_driver.close()
+        logger.info("🔌 Neo4j connection closed")
     health_server.stop()
     logger.info("✅ Explore service shutdown complete")
 
@@ -309,6 +304,23 @@ if __name__ == "__main__":
     import uvicorn
 
     setup_logging("explore", log_file=Path("/logs/explore.log"))
+
+    # fmt: off
+    print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗               ")
+    print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝               ")
+    print("██║  ██║██║███████╗██║     ██║   ██║██║  ███╗███████╗               ")
+    print("██║  ██║██║╚════██║██║     ██║   ██║██║   ██║╚════██║               ")
+    print("██████╔╝██║███████║╚██████╗╚██████╔╝╚██████╔╝███████║               ")
+    print("╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝               ")
+    print("                                                                     ")
+    print("███████╗██╗  ██╗██████╗ ██╗      ██████╗ ██████╗ ███████╗            ")
+    print("██╔════╝╚██╗██╔╝██╔══██╗██║     ██╔═══██╗██╔══██╗██╔════╝            ")
+    print("█████╗   ╚███╔╝ ██████╔╝██║     ██║   ██║██████╔╝█████╗              ")
+    print("██╔══╝   ██╔██╗ ██╔═══╝ ██║     ██║   ██║██╔══██╗██╔══╝              ")
+    print("███████╗██╔╝ ██╗██║     ███████╗╚██████╔╝██║  ██║███████╗            ")
+    print("╚══════╝╚═╝  ╚═╝╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝            ")
+    print()
+    # fmt: on
 
     uvicorn.run(
         "explore.explore:app",

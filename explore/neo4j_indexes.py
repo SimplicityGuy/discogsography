@@ -121,7 +121,7 @@ async def create_index(driver: AsyncDriver, index_def: dict[str, Any]) -> bool:
                 """
 
             await session.run(query)
-            logger.info(f"✅ Created index: {name} ({index_def['description']})")
+            logger.info(f"✅ Created index: {name}")
             return True
 
     except Exception as e:
