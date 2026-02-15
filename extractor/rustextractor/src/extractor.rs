@@ -380,7 +380,7 @@ pub async fn message_batcher(
                 // Channel closed, send remaining messages
                 if !batch.is_empty() {
                     sender.send(batch).await?;
-                    total_batches += 1;
+                    // Note: total_batches is not incremented here as it's not used after loop exit
                 }
                 break;
             }

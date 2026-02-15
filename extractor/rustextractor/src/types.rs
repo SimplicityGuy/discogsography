@@ -125,10 +125,12 @@ pub struct ProcessingState {
 }
 
 impl ProcessingState {
+    #[allow(dead_code)]
     pub fn is_processed(&self, file: &str) -> bool {
         self.files.get(file).copied().unwrap_or(false)
     }
 
+    #[allow(dead_code)]
     pub fn mark_processed(&mut self, file: &str) {
         self.files.insert(file.to_string(), true);
     }

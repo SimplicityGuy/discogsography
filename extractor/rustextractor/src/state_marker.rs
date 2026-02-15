@@ -335,6 +335,7 @@ impl StateMarker {
     }
 
     /// Mark download phase as failed
+    #[allow(dead_code)]
     pub fn fail_download(&mut self, error: String) {
         self.download_phase.status = PhaseStatus::Failed;
         self.download_phase.errors.push(error);
@@ -462,6 +463,7 @@ impl StateMarker {
     }
 
     /// Mark processing phase as failed
+    #[allow(dead_code)]
     pub fn fail_processing(&mut self, error: String) {
         self.processing_phase.status = PhaseStatus::Failed;
         self.processing_phase.errors.push(error);
@@ -469,6 +471,7 @@ impl StateMarker {
     }
 
     /// Update publishing metrics
+    #[allow(dead_code)]
     pub fn update_publishing(&mut self, messages: u64, batches: u64) {
         self.publishing_phase.status = PhaseStatus::InProgress;
         self.publishing_phase.messages_published += messages;
@@ -477,6 +480,7 @@ impl StateMarker {
     }
 
     /// Mark publishing as failed
+    #[allow(dead_code)]
     pub fn fail_publishing(&mut self, error: String) {
         self.publishing_phase.status = PhaseStatus::Failed;
         self.publishing_phase.errors.push(error);
