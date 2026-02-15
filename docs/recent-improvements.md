@@ -24,65 +24,68 @@ development experience enhancements.
 **Upgrade**: RabbitMQ 3.13-management → 4-management (4.2.3)
 
 **Key Changes**:
+
 - **Quorum Queues**: Migrated all 8 message queues from classic to quorum type for improved data safety and replication
 - **Dead-Letter Exchange (DLX)**: Implemented `discogsography.dlx` exchange with 8 dead-letter queues for poison message handling
 - **Delivery Limit**: Set to 20 retries before routing to DLQ, preventing infinite retry loops
 - **Files Modified**: docker-compose.yml, extractor.py, graphinator.py, tableinator.py, message_queue.rs
 
 **Benefits**:
+
 - ✅ High availability with Raft consensus
 - ✅ Automatic data replication across cluster nodes
 - ✅ Poison message handling prevents infinite retries
 - ✅ Better data safety for critical music metadata
-
 
 #### Neo4j 2026 Upgrade
 
 **Upgrade**: Neo4j 5.25-community → 2026-community (calendar versioning)
 
 **Key Changes**:
+
 - **Calendar Versioning**: Switched from semantic versioning (5.x) to calendar versioning (YYYY.MM.PATCH)
 - **Python Driver**: Upgraded neo4j driver from 5.x → 6.1.x across all services
 - **Files Modified**: docker-compose.yml + 6 pyproject.toml files (root, common, graphinator, dashboard, explore)
 
 **Benefits**:
+
 - ✅ Access to latest Neo4j features and optimizations
 - ✅ Improved graph query performance
 - ✅ Better APOC plugin compatibility
 - ✅ Future-proofed for 2026 releases
-
 
 #### PostgreSQL 18 Upgrade
 
 **Upgrade**: PostgreSQL 16-alpine → 18-alpine
 
 **Key Changes**:
+
 - **JSONB Performance**: 10-15% faster JSONB operations (heavily used in tableinator)
 - **Data Checksums**: Enabled by default for automatic corruption detection
 - **GIN Indexes**: Improved query planning for JSONB GIN indexes
 - **Files Modified**: docker-compose.yml only (psycopg3 already compatible!)
 
 **Benefits**:
+
 - ✅ 10-15% faster JSONB queries (used extensively in releases, artists, labels, masters tables)
 - ✅ Improved GIN index performance for containment queries
 - ✅ Data integrity with automatic checksums
 - ✅ 20-30% faster VACUUM operations
 - ✅ **Zero code changes required** - psycopg3 is fully compatible
 
-
 #### Migration Summary
 
-| Component | Old Version | New Version | Code Changes |
-|-----------|-------------|-------------|--------------|
-| **RabbitMQ** | 3.13-management | 4-management | 5 files (queue declarations) |
-| **Neo4j** | 5.25-community | 2026-community | 7 files (driver version bumps) |
-| **PostgreSQL** | 16-alpine | 18-alpine | 0 files (fully compatible!) |
+| Component      | Old Version     | New Version    | Code Changes                   |
+| -------------- | --------------- | -------------- | ------------------------------ |
+| **RabbitMQ**   | 3.13-management | 4-management   | 5 files (queue declarations)   |
+| **Neo4j**      | 5.25-community  | 2026-community | 7 files (driver version bumps) |
+| **PostgreSQL** | 16-alpine       | 18-alpine      | 0 files (fully compatible!)    |
 
 **Total Documentation**: 3 comprehensive migration guides created (one per service)
 
 **Migration Guides**:
 
----
+______________________________________________________________________
 
 ### 📋 State Marker System
 
@@ -127,11 +130,11 @@ development experience enhancements.
 
 #### Processing Decisions
 
-| Scenario | Decision | Action |
-|----------|----------|--------|
-| Download failed | **Reprocess** | Re-download everything |
-| Processing in progress | **Continue** | Resume unfinished files |
-| All completed | **Skip** | Wait for next check |
+| Scenario               | Decision      | Action                  |
+| ---------------------- | ------------- | ----------------------- |
+| Download failed        | **Reprocess** | Re-download everything  |
+| Processing in progress | **Continue**  | Resume unfinished files |
+| All completed          | **Skip**      | Wait for next check     |
 
 See **[State Marker System](state-marker-system.md)** for complete documentation.
 
@@ -157,10 +160,10 @@ See **[State Marker System](state-marker-system.md)** for complete documentation
 
 #### Performance Impact
 
-| File | Records | Saves | Overhead |
-|------|---------|-------|----------|
-| Masters | 2.9M | ~580 | <2s |
-| Releases | 20M | ~4,000 | <10s |
+| File     | Records | Saves  | Overhead |
+| -------- | ------- | ------ | -------- |
+| Masters  | 2.9M    | ~580   | \<2s     |
+| Releases | 20M     | ~4,000 | \<10s    |
 
 See **[State Marker Periodic Updates](state-marker-periodic-updates.md)** for implementation details.
 

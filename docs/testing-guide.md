@@ -476,18 +476,21 @@ class TestArtistProcessor:
 ### Best Practices
 
 **File-Level Isolation (`loadfile` strategy)**:
+
 - All tests in the same file run in the same worker
 - Provides better isolation than round-robin (`load`)
 - Prevents cross-file global state pollution
 - Recommended for most use cases
 
 **Test Independence**:
+
 - Each test should be fully independent
 - Global state is reset between tests via `conftest.py` fixtures
 - Module-level variables are reset automatically
 - Database connections and event loops are properly isolated
 
 **When to Use Sequential Execution**:
+
 - Debugging specific test failures
 - Profiling test performance
 - Investigating race conditions

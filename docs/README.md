@@ -29,13 +29,13 @@
 
 ### 👨‍💻 Development
 
-| Document                                                      | Description                                        |
-| ------------------------------------------------------------- | -------------------------------------------------- |
-| **[Development Guide](development.md)**                       | 💻 Complete developer setup and workflow guide     |
-| **[Contributing Guide](contributing.md)**                     | 🤝 How to contribute to the project                |
-| **[Testing Guide](testing-guide.md)**                         | 🧪 Comprehensive testing strategies and patterns   |
+| Document                                                      | Description                                          |
+| ------------------------------------------------------------- | ---------------------------------------------------- |
+| **[Development Guide](development.md)**                       | 💻 Complete developer setup and workflow guide       |
+| **[Contributing Guide](contributing.md)**                     | 🤝 How to contribute to the project                  |
+| **[Testing Guide](testing-guide.md)**                         | 🧪 Comprehensive testing strategies and patterns     |
 | **[Logging Guide](logging-guide.md)**                         | 📊 Complete logging configuration and best practices |
-| **[Python Version Management](python-version-management.md)** | 🐍 Managing Python 3.13+ across the project        |
+| **[Python Version Management](python-version-management.md)** | 🐍 Managing Python 3.13+ across the project          |
 
 ### 🚀 Operations & Infrastructure
 
@@ -47,7 +47,6 @@
 | **[Performance Guide](performance-guide.md)**       | ⚡ Performance optimization strategies           |
 | **[Maintenance Guide](maintenance.md)**             | 🔧 Keeping the system up-to-date and healthy     |
 
-
 ### ⚙️ Workflow & Automation
 
 | Document                                            | Description                                          |
@@ -58,16 +57,16 @@
 
 ### 📋 Reference Guides
 
-| Document                                                         | Description                                              |
-| ---------------------------------------------------------------- | -------------------------------------------------------- |
-| **[State Marker System](state-marker-system.md)**                | 📋 Extraction progress tracking and recovery system      |
+| Document                                                              | Description                                               |
+| --------------------------------------------------------------------- | --------------------------------------------------------- |
+| **[State Marker System](state-marker-system.md)**                     | 📋 Extraction progress tracking and recovery system       |
 | **[State Marker Periodic Updates](state-marker-periodic-updates.md)** | 💾 Periodic state saves implementation and crash recovery |
-| **[Emoji Guide](emoji-guide.md)**                                | 📋 Standardized emoji usage across the project           |
-| **[Consumer Cancellation](consumer-cancellation.md)**       | 🔄 File completion and consumer lifecycle management     |
-| **[File Completion Tracking](file-completion-tracking.md)** | 📊 Intelligent completion tracking and stalled detection |
-| **[Platform Targeting](platform-targeting.md)**             | 🎯 Cross-platform compatibility guidelines               |
-| **[Neo4j Indexing](neo4j-indexing.md)**                     | 🔗 Advanced Neo4j indexing strategies                    |
-| **[Performance Benchmarks](performance-benchmarks.md)**     | 📈 Performance benchmarks and tuning results             |
+| **[Emoji Guide](emoji-guide.md)**                                     | 📋 Standardized emoji usage across the project            |
+| **[Consumer Cancellation](consumer-cancellation.md)**                 | 🔄 File completion and consumer lifecycle management      |
+| **[File Completion Tracking](file-completion-tracking.md)**           | 📊 Intelligent completion tracking and stalled detection  |
+| **[Platform Targeting](platform-targeting.md)**                       | 🎯 Cross-platform compatibility guidelines                |
+| **[Neo4j Indexing](neo4j-indexing.md)**                               | 🔗 Advanced Neo4j indexing strategies                     |
+| **[Performance Benchmarks](performance-benchmarks.md)**               | 📈 Performance benchmarks and tuning results              |
 
 ## 🎯 Documentation by Role
 

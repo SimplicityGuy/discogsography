@@ -70,48 +70,56 @@ This works with synchronous `with` but doesn't require `async with await`.
 **8 new tests** that verify async patterns:
 
 ✅ **Test async context manager**
+
 ```python
 async def test_session_is_async_context_manager():
     """Verifies: async with await driver.session()"""
 ```
 
 ✅ **Test async method calls**
+
 ```python
 async def test_session_run_is_async():
     """Verifies: result = await session.run()"""
 ```
 
 ✅ **Test async iteration**
+
 ```python
 async def test_result_iteration_is_async():
     """Verifies: async for record in result"""
 ```
 
 ✅ **Test transaction async calls**
+
 ```python
 async def test_transaction_function_is_async():
     """Verifies: await tx.run() in transactions"""
 ```
 
 ✅ **Test all data types**
+
 ```python
 async def test_all_data_types_use_async_correctly():
     """Verifies: artists, labels, masters, releases all use async"""
 ```
 
 ✅ **Test error handling**
+
 ```python
 async def test_async_context_manager_cleanup_on_error():
     """Verifies: __aexit__ called even on errors"""
 ```
 
 ✅ **Test exception propagation**
+
 ```python
 async def test_async_exception_propagation():
     """Verifies: async exceptions caught and handled"""
 ```
 
 ✅ **Test complete workflow**
+
 ```python
 async def test_full_batch_processing_workflow():
     """Verifies: end-to-end async batch processing"""
@@ -145,12 +153,14 @@ def realistic_async_driver():
 ## Test Results
 
 ### Before Fix
+
 ```
 13 failed, 21 passed in batch_processor tests
 Error: 'coroutine' object does not support the context manager protocol
 ```
 
 ### After Fix
+
 ```
 ✅ 8/8 integration tests passed
 ✅ 25/34 batch_processor unit tests passed
@@ -173,32 +183,33 @@ For all async code going forward:
 ## Action Items
 
 1. ✅ Fix the async bug
-2. ✅ Add integration tests
-3. ✅ Document lessons learned
-4. ⬜ Enable batch mode in subset of existing tests
-5. ⬜ Add mypy strict async checking
-6. ⬜ Create pre-commit hook for async patterns
-7. ⬜ Update CONTRIBUTING.md with async testing standards
+1. ✅ Add integration tests
+1. ✅ Document lessons learned
+1. ⬜ Enable batch mode in subset of existing tests
+1. ⬜ Add mypy strict async checking
+1. ⬜ Create pre-commit hook for async patterns
+1. ⬜ Update CONTRIBUTING.md with async testing standards
 
 ## Metrics
 
-| Metric | Before | After |
-|--------|--------|-------|
-| Batch processor test coverage | 0% | ~80% |
-| Integration tests | 0 | 8 |
-| Async pattern tests | 0 | 5 |
-| Documentation | 0 pages | 2 pages |
+| Metric                        | Before  | After   |
+| ----------------------------- | ------- | ------- |
+| Batch processor test coverage | 0%      | ~80%    |
+| Integration tests             | 0       | 8       |
+| Async pattern tests           | 0       | 5       |
+| Documentation                 | 0 pages | 2 pages |
 
 ## Conclusion
 
 This bug demonstrates the importance of:
 
 1. **Testing what you ship** - Don't disable production code paths
-2. **Realistic mocks** - Mocks must enforce the same contracts as real code
-3. **Integration tests** - Unit tests with mocks aren't sufficient for async code
-4. **Documentation** - Share lessons to prevent future issues
+1. **Realistic mocks** - Mocks must enforce the same contracts as real code
+1. **Integration tests** - Unit tests with mocks aren't sufficient for async code
+1. **Documentation** - Share lessons to prevent future issues
 
 These integration tests would have caught the bug immediately by failing with:
+
 ```
 TypeError: object MagicMock can't be used in 'await' expression
 ```

@@ -105,6 +105,7 @@ setup_logging("service_name", log_file=Path("/logs/service.log"))
 ```
 
 **Features**:
+
 - Structured JSON logging with emoji indicators
 - Correlation IDs from contextvars
 - Service-specific context (name, environment)
@@ -458,13 +459,13 @@ class JSONFormatter(logging.Formatter):
    docker exec <container> printenv LOG_LEVEL
    ```
 
-2. **Verify service startup logs**:
+1. **Verify service startup logs**:
 
    ```bash
    docker logs <container> | head -20
    ```
 
-3. **Check for explicit level parameter** (Python):
+1. **Check for explicit level parameter** (Python):
 
    ```python
    # This overrides LOG_LEVEL
@@ -474,13 +475,13 @@ class JSONFormatter(logging.Formatter):
 ### Too much logging in production
 
 1. Set `LOG_LEVEL=WARNING` or `LOG_LEVEL=ERROR`
-2. Check third-party library log levels are suppressed (handled automatically)
+1. Check third-party library log levels are suppressed (handled automatically)
 
 ### Not enough logging for debugging
 
 1. Set `LOG_LEVEL=DEBUG`
-2. Restart the service
-3. Monitor logs: `docker logs -f <container>`
+1. Restart the service
+1. Monitor logs: `docker logs -f <container>`
 
 ## 📊 Log Analysis
 
@@ -561,12 +562,12 @@ LOG_LEVEL=DEBUG cargo run
 ## 📝 Best Practices Summary
 
 1. **Development**: Use `DEBUG` for detailed diagnostic information
-2. **Staging**: Use `INFO` to match production behavior
-3. **Production**: Use `INFO` or `WARNING` depending on volume
-4. **Incident Response**: Temporarily set to `DEBUG` for affected services
-5. **Case Insensitive**: LOG_LEVEL values are case-insensitive (`debug` == `DEBUG`)
-6. **Container Logs**: All logs go to stdout/stderr for container orchestration
-7. **File Logs**: Python services also write to `/logs/<service>.log` inside containers
+1. **Staging**: Use `INFO` to match production behavior
+1. **Production**: Use `INFO` or `WARNING` depending on volume
+1. **Incident Response**: Temporarily set to `DEBUG` for affected services
+1. **Case Insensitive**: LOG_LEVEL values are case-insensitive (`debug` == `DEBUG`)
+1. **Container Logs**: All logs go to stdout/stderr for container orchestration
+1. **File Logs**: Python services also write to `/logs/<service>.log` inside containers
 
 ## 📚 Quick Reference Card
 
@@ -588,7 +589,7 @@ Services:  🐰 RabbitMQ | 🔗 Neo4j | 🐘 PostgreSQL | 🌐 Network
 - [Troubleshooting Guide](troubleshooting.md) - Common issues and solutions
 - [Configuration Guide](configuration.md) - Complete environment variable reference
 
----
+______________________________________________________________________
 
 <div align="center">
 

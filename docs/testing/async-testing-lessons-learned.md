@@ -71,6 +71,7 @@ mock_driver.session = AsyncMock(return_value=mock_session_context)
 #### 3. **No Integration Tests**
 
 The codebase had:
+
 - ❌ No integration tests with real async drivers
 - ❌ No E2E tests that exercise batch processing
 - ❌ No tests that verify async patterns are used correctly
@@ -84,6 +85,7 @@ The codebase had:
 **Rule**: If code exists in production, it must be tested.
 
 **Implementation**:
+
 - ✅ Create separate test files for batch mode (`test_batch_processor_integration.py`)
 - ✅ Use parameterized tests to test both batch and non-batch modes
 - ✅ Add coverage tracking to ensure all code paths are tested
@@ -130,6 +132,7 @@ def create_async_session_mock():
 **What to Test**:
 
 ✅ **Context Manager Behavior**
+
 ```python
 @pytest.mark.asyncio
 async def test_session_is_async_context_manager():
@@ -140,6 +143,7 @@ async def test_session_is_async_context_manager():
 ```
 
 ✅ **Async Method Calls**
+
 ```python
 @pytest.mark.asyncio
 async def test_methods_are_awaited():
@@ -148,6 +152,7 @@ async def test_methods_are_awaited():
 ```
 
 ✅ **Async Iteration**
+
 ```python
 @pytest.mark.asyncio
 async def test_async_iteration():
@@ -275,8 +280,8 @@ class TestAsyncFeature:
 ## Action Items
 
 1. ✅ Add integration tests for batch processor async patterns
-2. ⬜ Enable batch mode in a subset of existing tests
-3. ⬜ Add mypy strict async checking to CI/CD
-4. ⬜ Create shared async driver fixtures for all services
-5. ⬜ Add pre-commit hook for async pattern checking
-6. ⬜ Document async testing standards in CONTRIBUTING.md
+1. ⬜ Enable batch mode in a subset of existing tests
+1. ⬜ Add mypy strict async checking to CI/CD
+1. ⬜ Create shared async driver fixtures for all services
+1. ⬜ Add pre-commit hook for async pattern checking
+1. ⬜ Document async testing standards in CONTRIBUTING.md

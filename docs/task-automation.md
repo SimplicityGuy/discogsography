@@ -66,8 +66,8 @@ Tasks are organized into logical groups for easier navigation:
 
 ### 🦀 Rust Group
 
-| Task                  | Description                          |
-| --------------------- | ------------------------------------ |
+| Task              | Description                          |
+| ----------------- | ------------------------------------ |
 | `extractor-build` | Build Rust extractor in release mode |
 | `extractor-test`  | Run Rust extractor tests             |
 | `extractor-bench` | Run Rust extractor benchmarks        |

@@ -458,7 +458,7 @@ dev = [
     { name = "black", specifier = ">=24.0.0" },
     { name = "isort", specifier = ">=5.13.0" },
     { name = "locust", specifier = ">=2.0.0" },
-    { name = "mdformat", specifier = ">=0.7.22" },
+    { name = "mdformat", specifier = ">=1.0.0" },
     { name = "mdformat-gfm", specifier = ">=1.0.0" },
     { name = "mypy", specifier = ">=1.8.0" },
     { name = "pre-commit", specifier = ">=3.5.0" },

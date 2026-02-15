@@ -72,14 +72,14 @@ The Explore service connects to **Neo4j only** - no RabbitMQ, PostgreSQL, or Red
 
 ## 📡 API Endpoints
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check (also available on port 8007) |
-| GET | `/api/autocomplete` | Search entities with autocomplete |
-| GET | `/api/explore` | Get center node with category counts |
-| GET | `/api/expand` | Expand a category node to get children |
-| GET | `/api/node/{node_id}` | Get full details for a node |
-| GET | `/api/trends` | Get time-series release counts |
+| Method | Path                  | Description                                |
+| ------ | --------------------- | ------------------------------------------ |
+| GET    | `/health`             | Health check (also available on port 8007) |
+| GET    | `/api/autocomplete`   | Search entities with autocomplete          |
+| GET    | `/api/explore`        | Get center node with category counts       |
+| GET    | `/api/expand`         | Expand a category node to get children     |
+| GET    | `/api/node/{node_id}` | Get full details for a node                |
+| GET    | `/api/trends`         | Get time-series release counts             |
 
 ### Autocomplete
 
@@ -88,6 +88,7 @@ GET /api/autocomplete?q=radio&type=artist&limit=10
 ```
 
 Parameters:
+
 - `q` (required, min 2 chars): Search query
 - `type` (default: "artist"): Entity type - artist, genre, or label
 - `limit` (default: 10, max: 50): Maximum results
@@ -107,6 +108,7 @@ GET /api/expand?node_id=Radiohead&type=artist&category=releases&limit=50
 ```
 
 Expands a category node to return its children. Valid categories per type:
+
 - **artist**: releases, labels, aliases
 - **genre**: artists, labels, styles
 - **label**: releases, artists
@@ -129,18 +131,18 @@ Returns year-by-year release counts for the given entity.
 
 ## ⚙️ Configuration
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `NEO4J_ADDRESS` | Neo4j bolt connection URL | Required |
-| `NEO4J_USERNAME` | Neo4j username | Required |
-| `NEO4J_PASSWORD` | Neo4j password | Required |
+| Variable         | Description               | Default  |
+| ---------------- | ------------------------- | -------- |
+| `NEO4J_ADDRESS`  | Neo4j bolt connection URL | Required |
+| `NEO4J_USERNAME` | Neo4j username            | Required |
+| `NEO4J_PASSWORD` | Neo4j password            | Required |
 
 ## 🔌 Ports
 
-| Port | Purpose |
-|------|---------|
+| Port | Purpose                           |
+| ---- | --------------------------------- |
 | 8006 | Main service (API + static files) |
-| 8007 | Health check endpoint |
+| 8007 | Health check endpoint             |
 
 ## 🧪 Testing
 

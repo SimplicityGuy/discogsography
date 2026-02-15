@@ -217,8 +217,8 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ### Redis Configuration
 
-| Variable    | Description          | Default                    | Required         |
-| ----------- | -------------------- | -------------------------- | ---------------- |
+| Variable    | Description          | Default                    | Required        |
+| ----------- | -------------------- | -------------------------- | --------------- |
 | `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` | Yes (Dashboard) |
 
 **Used By**: Dashboard

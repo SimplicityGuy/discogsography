@@ -40,13 +40,13 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 ### ⚙️ Core Services
 
-| Service                                                      | Purpose                           | Key Technologies                   |
-| ------------------------------------------------------------ | --------------------------------- | ---------------------------------- |
-| **[⚡](docs/emoji-guide.md#service-identifiers) Extractor** | High-performance Rust-based extractor | `tokio`, `quick-xml`, `lapin`      |
-| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator**    | Builds Neo4j knowledge graphs     | `neo4j-driver`, graph algorithms   |
-| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator**    | Creates PostgreSQL analytics tables | `psycopg3`, JSONB, full-text search |
-| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**        | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j |
-| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**      | Real-time system monitoring       | `FastAPI`, WebSocket, reactive UI  |
+| Service                                                       | Purpose                                | Key Technologies                       |
+| ------------------------------------------------------------- | -------------------------------------- | -------------------------------------- |
+| **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`          |
+| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms       |
+| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search    |
+| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j |
+| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI      |
 
 ### 📐 System Architecture
 
@@ -156,14 +156,14 @@ graph TD
 
 ### 📋 Features & References
 
-| Document                                                   | Purpose                                   |
-| ---------------------------------------------------------- | ----------------------------------------- |
+| Document                                                   | Purpose                                    |
+| ---------------------------------------------------------- | ------------------------------------------ |
 | **[State Marker System](docs/state-marker-system.md)**     | 📋 Extraction progress tracking & recovery |
-| **[Consumer Cancellation](docs/consumer-cancellation.md)** | 🔄 File completion and consumer lifecycle |
-| **[Platform Targeting](docs/platform-targeting.md)**       | 🎯 Cross-platform compatibility           |
-| **[Emoji Guide](docs/emoji-guide.md)**                     | 📋 Standardized emoji usage               |
-| **[Recent Improvements](docs/recent-improvements.md)**     | 🚀 Latest platform enhancements           |
-| **Service Guides**                                         | 📚 Individual README for each service     |
+| **[Consumer Cancellation](docs/consumer-cancellation.md)** | 🔄 File completion and consumer lifecycle  |
+| **[Platform Targeting](docs/platform-targeting.md)**       | 🎯 Cross-platform compatibility            |
+| **[Emoji Guide](docs/emoji-guide.md)**                     | 📋 Standardized emoji usage                |
+| **[Recent Improvements](docs/recent-improvements.md)**     | 🚀 Latest platform enhancements            |
+| **Service Guides**                                         | 📚 Individual README for each service      |
 
 ## 🚀 Quick Start
 
@@ -695,11 +695,11 @@ CREATE INDEX idx_releases_gin ON releases USING GIN (data);
 
 Typical processing rates on modern hardware:
 
-| Service             | Records/Second  | Bottleneck               |
-| ------------------- | --------------- | ------------------------ |
-| ⚡ **Extractor**    | 20,000-400,000+ | Network I/O (Rust-based) |
-| 🔗 **Graphinator**  | 1,000-2,000     | Neo4j transactions       |
-| 🐘 **Tableinator**  | 3,000-5,000     | PostgreSQL inserts       |
+| Service            | Records/Second  | Bottleneck               |
+| ------------------ | --------------- | ------------------------ |
+| ⚡ **Extractor**   | 20,000-400,000+ | Network I/O (Rust-based) |
+| 🔗 **Graphinator** | 1,000-2,000     | Neo4j transactions       |
+| 🐘 **Tableinator** | 3,000-5,000     | PostgreSQL inserts       |
 
 ### 💻 Hardware Requirements
 

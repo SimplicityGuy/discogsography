@@ -7,9 +7,9 @@ The state marker system tracks extraction progress across all phases, allowing t
 Each Discogs data version (e.g., `20260101`) has its own state marker file (`.extraction_status_20260101.json`) that tracks:
 
 1. **Download Phase** - File downloads and checksums
-2. **Processing Phase** - Which files are being/have been processed
-3. **Publishing Phase** - Messages sent to RabbitMQ
-4. **Overall Status** - Decision logic for restart behavior
+1. **Processing Phase** - Which files are being/have been processed
+1. **Publishing Phase** - Messages sent to RabbitMQ
+1. **Overall Status** - Decision logic for restart behavior
 
 ## File Structure
 
@@ -98,11 +98,13 @@ When the extractor restarts, it checks the state marker and makes one of three d
 ### 1. Reprocess (Start Over)
 
 **Triggered when:**
+
 - Download phase failed
 - State marker is corrupted
 - Force reprocess flag is set
 
 **Action:**
+
 - Delete old files
 - Re-download all data
 - Re-process from scratch
@@ -110,10 +112,12 @@ When the extractor restarts, it checks the state marker and makes one of three d
 ### 2. Continue (Resume)
 
 **Triggered when:**
+
 - Processing phase is `in_progress`
 - Processing phase `failed` but can recover
 
 **Action:**
+
 - Skip completed files
 - Resume processing unfinished files
 - Continue from last checkpoint
@@ -121,11 +125,13 @@ When the extractor restarts, it checks the state marker and makes one of three d
 ### 3. Skip (Already Complete)
 
 **Triggered when:**
+
 - Overall status is `completed`
 - All files successfully processed
 - No new version available
 
 **Action:**
+
 - Log "already processed" message
 - Wait for next periodic check
 - No processing occurs
@@ -255,10 +261,10 @@ marker.save(marker_path)
 ## Benefits
 
 1. **Resilience** - Survive restarts without losing progress
-2. **Efficiency** - Don't re-process already completed files
-3. **Observability** - Clear view of extraction status
-4. **Debugging** - Detailed error tracking per phase
-5. **Idempotency** - Safe to restart at any time
+1. **Efficiency** - Don't re-process already completed files
+1. **Observability** - Clear view of extraction status
+1. **Debugging** - Detailed error tracking per phase
+1. **Idempotency** - Safe to restart at any time
 
 ## File Locations
 
@@ -284,6 +290,7 @@ Each Discogs version gets its own state marker:
 - `.extraction_status_20251101.json` - November 2025 data
 
 This allows:
+
 - Multiple versions to coexist
 - Easy cleanup of old versions
 - Clear version history
@@ -293,17 +300,17 @@ This allows:
 The new state marker system works alongside existing tracking:
 
 1. `.discogs_metadata.json` - Still used for download checksums
-2. `.processing_state.json` - Deprecated, replaced by state marker
-3. `.extraction_status_*.json` - New comprehensive tracking
+1. `.processing_state.json` - Deprecated, replaced by state marker
+1. `.extraction_status_*.json` - New comprehensive tracking
 
 ## Error Handling
 
 If a state marker file is corrupted:
 
 1. Log warning
-2. Return `None` from load
-3. Create new marker
-4. Continue processing
+1. Return `None` from load
+1. Create new marker
+1. Continue processing
 
 This ensures the system is always resilient to state corruption.
 
@@ -312,12 +319,14 @@ This ensures the system is always resilient to state corruption.
 Both Rust and Python implementations have comprehensive tests:
 
 **Rust:**
+
 ```bash
 cd extractor/extractor
 cargo test state_marker
 ```
 
 **Python:**
+
 ```bash
 uv run pytest tests/common/test_state_marker.py -v
 ```
@@ -335,6 +344,7 @@ Both extractors save state periodically during file processing to enable crash r
 ### Implementation
 
 **Extractor** (`extractor.rs`):
+
 ```rust
 // In message_batcher function
 if total_records % state_save_interval as u64 == 0 {
@@ -345,6 +355,7 @@ if total_records % state_save_interval as u64 == 0 {
 ```
 
 **Pyextractor** (`extractor.py`):
+
 ```python
 # In __queue_record method
 if self.total_count % self.state_save_interval == 0:
@@ -360,9 +371,9 @@ if self.total_count % self.state_save_interval == 0:
 ### Benefits
 
 1. **Crash Recovery**: Resume from last checkpoint (every 5,000 records)
-2. **Progress Monitoring**: Real-time progress visibility in state file
-3. **Minimal Overhead**: ~1-2ms per save, negligible performance impact
-4. **Production-Ready**: Tested with multi-million record files
+1. **Progress Monitoring**: Real-time progress visibility in state file
+1. **Minimal Overhead**: ~1-2ms per save, negligible performance impact
+1. **Production-Ready**: Tested with multi-million record files
 
 For implementation details, see [State Marker Periodic Updates](state-marker-periodic-updates.md).
 
@@ -371,7 +382,7 @@ For implementation details, see [State Marker Periodic Updates](state-marker-per
 Potential improvements:
 
 1. **Resume Within File** - Resume from exact position within very large files (>50M records)
-2. **Metrics** - Track processing speed over time
-3. **Alerts** - Notify on phase failures
-4. **Cleanup** - Auto-remove old state markers
-5. **Compression** - Gzip state markers for large extractions
+1. **Metrics** - Track processing speed over time
+1. **Alerts** - Notify on phase failures
+1. **Cleanup** - Auto-remove old state markers
+1. **Compression** - Gzip state markers for large extractions

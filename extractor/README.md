@@ -129,6 +129,7 @@ Extractor uses a version-specific state marker system to track extraction progre
 Location: `/discogs-data/.extraction_status_<version>.json`
 
 Example:
+
 ```json
 {
   "current_version": "20260101",
@@ -158,11 +159,11 @@ Example:
 
 When the extractor restarts, it checks the state marker and decides:
 
-| Scenario | Decision | Action |
-|----------|----------|--------|
-| Download failed | **Reprocess** | Re-download everything |
-| Processing in progress | **Continue** | Resume unfinished files |
-| All completed | **Skip** | Wait for next check |
+| Scenario               | Decision      | Action                  |
+| ---------------------- | ------------- | ----------------------- |
+| Download failed        | **Reprocess** | Re-download everything  |
+| Processing in progress | **Continue**  | Resume unfinished files |
+| All completed          | **Skip**      | Wait for next check     |
 
 See **[State Marker System](../../docs/state-marker-system.md)** for complete documentation.
 

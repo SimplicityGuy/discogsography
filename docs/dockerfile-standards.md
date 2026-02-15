@@ -242,12 +242,15 @@ Additional volumes:
 ### Dashboard
 
 - Standard configuration
+
 - Expose port 8003
+
 - All database connections in environment
 
-
 - Install gcc/g++ for ML libraries
+
 - Expose ports 8004 and 8005
+
 - All database connections in environment
 
 ### Python Extractor (extractor)
