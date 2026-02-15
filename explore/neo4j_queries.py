@@ -1,6 +1,15 @@
 """Neo4j Cypher queries for Explore service.
 
 All database queries are defined here to keep the API layer thin.
+
+Graph model reference:
+  (Release)-[:BY]->(Artist)         Release is by Artist
+  (Release)-[:ON]->(Label)          Release is on Label
+  (Release)-[:IS]->(Genre)          Release is genre
+  (Release)-[:IS]->(Style)          Release is style
+  (Release)-[:DERIVED_FROM]->(Master)  Release derived from Master (Master has year)
+  (Artist)-[:ALIAS_OF]->(Artist)    Artist alias
+  (Artist)-[:MEMBER_OF]->(Artist)   Artist is member of group
 """
 
 from functools import lru_cache
@@ -61,16 +70,18 @@ async def explore_artist(driver: AsyncResilientNeo4jDriver, name: str) -> dict[s
     """Get artist center node with category counts."""
     cypher = """
     MATCH (a:Artist {name: $name})
-    OPTIONAL MATCH (a)-[:BY]->(r:Release)
+    OPTIONAL MATCH (r:Release)-[:BY]->(a)
     WITH a, count(DISTINCT r) AS release_count
-    OPTIONAL MATCH (a)-[:BY]->(r2:Release)-[:ON]->(l:Label)
+    OPTIONAL MATCH (r2:Release)-[:BY]->(a), (r2)-[:ON]->(l:Label)
     WITH a, release_count, count(DISTINCT l) AS label_count
-    OPTIONAL MATCH (a)-[:MEMBER_OF]->(g:Artist)
-    WITH a, release_count, label_count, count(DISTINCT g) AS alias_count
-    OPTIONAL MATCH (a2:Artist)-[:MEMBER_OF]->(a)
-    WITH a, release_count, label_count, alias_count + count(DISTINCT a2) AS alias_count
+    OPTIONAL MATCH (a)-[:ALIAS_OF]->(alias:Artist)
+    WITH a, release_count, label_count, count(DISTINCT alias) AS alias_count
+    OPTIONAL MATCH (a)-[:MEMBER_OF]->(grp:Artist)
+    WITH a, release_count, label_count, alias_count, count(DISTINCT grp) AS group_count
+    OPTIONAL MATCH (m:Artist)-[:MEMBER_OF]->(a)
+    WITH a, release_count, label_count, alias_count, group_count, count(DISTINCT m) AS member_count
     RETURN a.id AS id, a.name AS name,
-           release_count, label_count, alias_count
+           release_count, label_count, alias_count + group_count + member_count AS alias_count
     """
     async with await driver.session() as session:
         result = await session.run(cypher, name=name)
@@ -84,11 +95,11 @@ async def explore_genre(driver: AsyncResilientNeo4jDriver, name: str) -> dict[st
     """Get genre center node with category counts."""
     cypher = """
     MATCH (g:Genre {name: $name})
-    OPTIONAL MATCH (a:Artist)-[:IS]->(g)
+    OPTIONAL MATCH (r:Release)-[:IS]->(g), (r)-[:BY]->(a:Artist)
     WITH g, count(DISTINCT a) AS artist_count
-    OPTIONAL MATCH (a2:Artist)-[:IS]->(g), (a2)-[:BY]->(r:Release)-[:ON]->(l:Label)
+    OPTIONAL MATCH (r2:Release)-[:IS]->(g), (r2)-[:ON]->(l:Label)
     WITH g, artist_count, count(DISTINCT l) AS label_count
-    OPTIONAL MATCH (a3:Artist)-[:IS]->(g), (a3)-[:IS]->(s:Style)
+    OPTIONAL MATCH (r3:Release)-[:IS]->(g), (r3)-[:IS]->(s:Style)
     WITH g, artist_count, label_count, count(DISTINCT s) AS style_count
     RETURN g.name AS id, g.name AS name,
            artist_count, label_count, style_count
@@ -107,7 +118,7 @@ async def explore_label(driver: AsyncResilientNeo4jDriver, name: str) -> dict[st
     MATCH (l:Label {name: $name})
     OPTIONAL MATCH (r:Release)-[:ON]->(l)
     WITH l, count(DISTINCT r) AS release_count
-    OPTIONAL MATCH (a:Artist)-[:BY]->(r2:Release)-[:ON]->(l)
+    OPTIONAL MATCH (r2:Release)-[:ON]->(l), (r2)-[:BY]->(a:Artist)
     WITH l, release_count, count(DISTINCT a) AS artist_count
     RETURN l.id AS id, l.name AS name,
            release_count, artist_count
@@ -126,9 +137,12 @@ async def explore_label(driver: AsyncResilientNeo4jDriver, name: str) -> dict[st
 async def expand_artist_releases(driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get releases by an artist."""
     cypher = """
-    MATCH (a:Artist {name: $name})-[:BY]->(r:Release)
-    RETURN r.id AS id, r.title AS name, 'release' AS type, r.year AS year
-    ORDER BY r.year DESC
+    MATCH (r:Release)-[:BY]->(a:Artist {name: $name})
+    OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)
+    WITH r, m.year AS year
+    RETURN r.id AS id, r.title AS name, 'release' AS type,
+           CASE WHEN toInteger(year) > 0 THEN toInteger(year) ELSE null END AS year
+    ORDER BY year DESC
     LIMIT $limit
     """
     async with await driver.session() as session:
@@ -139,8 +153,8 @@ async def expand_artist_releases(driver: AsyncResilientNeo4jDriver, artist_name:
 async def expand_artist_labels(driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get labels associated with an artist via their releases."""
     cypher = """
-    MATCH (a:Artist {name: $name})-[:BY]->(r:Release)-[:ON]->(l:Label)
-    RETURN DISTINCT l.id AS id, l.name AS name, 'label' AS type, count(r) AS release_count
+    MATCH (r:Release)-[:BY]->(a:Artist {name: $name}), (r)-[:ON]->(l:Label)
+    RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
     ORDER BY release_count DESC
     LIMIT $limit
     """
@@ -150,15 +164,18 @@ async def expand_artist_labels(driver: AsyncResilientNeo4jDriver, artist_name: s
 
 
 async def expand_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50) -> list[dict[str, Any]]:
-    """Get aliases and group memberships for an artist."""
+    """Get aliases, group memberships, and members for an artist."""
     cypher = """
     MATCH (a:Artist {name: $name})
-    OPTIONAL MATCH (a)-[:MEMBER_OF]->(g:Artist)
-    WITH a, collect(DISTINCT {id: g.id, name: g.name, type: 'artist'}) AS groups
+    OPTIONAL MATCH (a)-[:ALIAS_OF]->(alias:Artist)
+    WITH a, collect(DISTINCT {id: alias.id, name: alias.name, type: 'artist'}) AS aliases
+    OPTIONAL MATCH (a)-[:MEMBER_OF]->(grp:Artist)
+    WITH a, aliases, collect(DISTINCT {id: grp.id, name: grp.name, type: 'artist'}) AS groups
     OPTIONAL MATCH (m:Artist)-[:MEMBER_OF]->(a)
-    WITH groups, collect(DISTINCT {id: m.id, name: m.name, type: 'artist'}) AS members
-    UNWIND (groups + members) AS alias
-    RETURN DISTINCT alias.id AS id, alias.name AS name, alias.type AS type
+    WITH aliases, groups, collect(DISTINCT {id: m.id, name: m.name, type: 'artist'}) AS members
+    UNWIND (aliases + groups + members) AS item
+    WITH item WHERE item.id IS NOT NULL
+    RETURN DISTINCT item.id AS id, item.name AS name, item.type AS type
     LIMIT $limit
     """
     async with await driver.session() as session:
@@ -167,9 +184,9 @@ async def expand_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: 
 
 
 async def expand_genre_artists(driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50) -> list[dict[str, Any]]:
-    """Get artists in a genre."""
+    """Get artists in a genre (via releases)."""
     cypher = """
-    MATCH (a:Artist)-[:IS]->(g:Genre {name: $name})
+    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}), (r)-[:BY]->(a:Artist)
     RETURN DISTINCT a.id AS id, a.name AS name, 'artist' AS type
     ORDER BY a.name
     LIMIT $limit
@@ -180,11 +197,10 @@ async def expand_genre_artists(driver: AsyncResilientNeo4jDriver, genre_name: st
 
 
 async def expand_genre_labels(driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50) -> list[dict[str, Any]]:
-    """Get labels associated with a genre via artists and releases."""
+    """Get labels associated with a genre via releases."""
     cypher = """
-    MATCH (a:Artist)-[:IS]->(g:Genre {name: $name}),
-          (a)-[:BY]->(r:Release)-[:ON]->(l:Label)
-    RETURN DISTINCT l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
+    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}), (r)-[:ON]->(l:Label)
+    RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
     ORDER BY release_count DESC
     LIMIT $limit
     """
@@ -194,12 +210,11 @@ async def expand_genre_labels(driver: AsyncResilientNeo4jDriver, genre_name: str
 
 
 async def expand_genre_styles(driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50) -> list[dict[str, Any]]:
-    """Get styles (subgenres) associated with a genre."""
+    """Get styles (subgenres) associated with a genre via releases."""
     cypher = """
-    MATCH (a:Artist)-[:IS]->(g:Genre {name: $name}),
-          (a)-[:IS]->(s:Style)
-    RETURN DISTINCT s.name AS id, s.name AS name, 'style' AS type, count(DISTINCT a) AS artist_count
-    ORDER BY artist_count DESC
+    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}), (r)-[:IS]->(s:Style)
+    RETURN s.name AS id, s.name AS name, 'style' AS type, count(DISTINCT r) AS release_count
+    ORDER BY release_count DESC
     LIMIT $limit
     """
     async with await driver.session() as session:
@@ -211,8 +226,11 @@ async def expand_label_releases(driver: AsyncResilientNeo4jDriver, label_name: s
     """Get releases on a label."""
     cypher = """
     MATCH (r:Release)-[:ON]->(l:Label {name: $name})
-    RETURN r.id AS id, r.title AS name, 'release' AS type, r.year AS year
-    ORDER BY r.year DESC
+    OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)
+    WITH r, m.year AS year
+    RETURN r.id AS id, r.title AS name, 'release' AS type,
+           CASE WHEN toInteger(year) > 0 THEN toInteger(year) ELSE null END AS year
+    ORDER BY year DESC
     LIMIT $limit
     """
     async with await driver.session() as session:
@@ -223,8 +241,8 @@ async def expand_label_releases(driver: AsyncResilientNeo4jDriver, label_name: s
 async def expand_label_artists(driver: AsyncResilientNeo4jDriver, label_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get artists on a label."""
     cypher = """
-    MATCH (a:Artist)-[:BY]->(r:Release)-[:ON]->(l:Label {name: $name})
-    RETURN DISTINCT a.id AS id, a.name AS name, 'artist' AS type, count(DISTINCT r) AS release_count
+    MATCH (r:Release)-[:ON]->(l:Label {name: $name}), (r)-[:BY]->(a:Artist)
+    RETURN a.id AS id, a.name AS name, 'artist' AS type, count(DISTINCT r) AS release_count
     ORDER BY release_count DESC
     LIMIT $limit
     """
@@ -240,12 +258,12 @@ async def get_artist_details(driver: AsyncResilientNeo4jDriver, node_id: str) ->
     """Get full details for an artist node."""
     cypher = """
     MATCH (a:Artist) WHERE a.id = $id OR a.name = $id
-    OPTIONAL MATCH (a)-[:IS]->(g:Genre)
+    OPTIONAL MATCH (r:Release)-[:BY]->(a), (r)-[:IS]->(g:Genre)
     WITH a, collect(DISTINCT g.name) AS genres
-    OPTIONAL MATCH (a)-[:IS]->(s:Style)
+    OPTIONAL MATCH (r2:Release)-[:BY]->(a), (r2)-[:IS]->(s:Style)
     WITH a, genres, collect(DISTINCT s.name) AS styles
-    OPTIONAL MATCH (a)-[:BY]->(r:Release)
-    WITH a, genres, styles, count(DISTINCT r) AS release_count
+    OPTIONAL MATCH (r3:Release)-[:BY]->(a)
+    WITH a, genres, styles, count(DISTINCT r3) AS release_count
     OPTIONAL MATCH (a)-[:MEMBER_OF]->(grp:Artist)
     WITH a, genres, styles, release_count, collect(DISTINCT grp.name) AS groups
     RETURN a.id AS id, a.name AS name, genres, styles, release_count, groups
@@ -262,15 +280,18 @@ async def get_release_details(driver: AsyncResilientNeo4jDriver, node_id: str) -
     """Get full details for a release node."""
     cypher = """
     MATCH (r:Release) WHERE r.id = $id OR r.title = $id
-    OPTIONAL MATCH (a:Artist)-[:BY]->(r)
+    OPTIONAL MATCH (r)-[:BY]->(a:Artist)
     WITH r, collect(DISTINCT a.name) AS artists
     OPTIONAL MATCH (r)-[:ON]->(l:Label)
     WITH r, artists, collect(DISTINCT l.name) AS labels
-    OPTIONAL MATCH (r)-[:HAS_GENRE]->(g:Genre)
+    OPTIONAL MATCH (r)-[:IS]->(g:Genre)
     WITH r, artists, labels, collect(DISTINCT g.name) AS genres
-    OPTIONAL MATCH (r)-[:HAS_STYLE]->(s:Style)
+    OPTIONAL MATCH (r)-[:IS]->(s:Style)
     WITH r, artists, labels, genres, collect(DISTINCT s.name) AS styles
-    RETURN r.id AS id, r.title AS name, r.year AS year, r.country AS country,
+    OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)
+    WITH r, artists, labels, genres, styles,
+         CASE WHEN toInteger(m.year) > 0 THEN toInteger(m.year) ELSE null END AS year
+    RETURN r.id AS id, r.title AS name, year,
            artists, labels, genres, styles
     """
     async with await driver.session() as session:
@@ -301,7 +322,7 @@ async def get_genre_details(driver: AsyncResilientNeo4jDriver, node_id: str) -> 
     """Get full details for a genre node."""
     cypher = """
     MATCH (g:Genre {name: $id})
-    OPTIONAL MATCH (a:Artist)-[:IS]->(g)
+    OPTIONAL MATCH (r:Release)-[:IS]->(g), (r)-[:BY]->(a:Artist)
     WITH g, count(DISTINCT a) AS artist_count
     RETURN g.name AS id, g.name AS name, artist_count
     """
@@ -317,12 +338,14 @@ async def get_genre_details(driver: AsyncResilientNeo4jDriver, node_id: str) -> 
 
 
 async def trends_artist(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
-    """Get release count by year for an artist."""
+    """Get release count by year for an artist (year from Master)."""
     cypher = """
-    MATCH (a:Artist {name: $name})-[:BY]->(r:Release)
-    WHERE r.year IS NOT NULL AND r.year > 0
-    RETURN r.year AS year, count(r) AS count
-    ORDER BY r.year
+    MATCH (r:Release)-[:BY]->(a:Artist {name: $name}),
+          (r)-[:DERIVED_FROM]->(m:Master)
+    WHERE toInteger(m.year) > 0
+    WITH toInteger(m.year) AS year, count(DISTINCT r) AS count
+    RETURN year, count
+    ORDER BY year
     """
     async with await driver.session() as session:
         result = await session.run(cypher, name=name)
@@ -330,12 +353,14 @@ async def trends_artist(driver: AsyncResilientNeo4jDriver, name: str) -> list[di
 
 
 async def trends_genre(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
-    """Get release count by year for a genre."""
+    """Get release count by year for a genre (year from Master)."""
     cypher = """
-    MATCH (r:Release)-[:HAS_GENRE]->(g:Genre {name: $name})
-    WHERE r.year IS NOT NULL AND r.year > 0
-    RETURN r.year AS year, count(r) AS count
-    ORDER BY r.year
+    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}),
+          (r)-[:DERIVED_FROM]->(m:Master)
+    WHERE toInteger(m.year) > 0
+    WITH toInteger(m.year) AS year, count(DISTINCT r) AS count
+    RETURN year, count
+    ORDER BY year
     """
     async with await driver.session() as session:
         result = await session.run(cypher, name=name)
@@ -343,12 +368,14 @@ async def trends_genre(driver: AsyncResilientNeo4jDriver, name: str) -> list[dic
 
 
 async def trends_label(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
-    """Get release count by year for a label."""
+    """Get release count by year for a label (year from Master)."""
     cypher = """
-    MATCH (r:Release)-[:ON]->(l:Label {name: $name})
-    WHERE r.year IS NOT NULL AND r.year > 0
-    RETURN r.year AS year, count(r) AS count
-    ORDER BY r.year
+    MATCH (r:Release)-[:ON]->(l:Label {name: $name}),
+          (r)-[:DERIVED_FROM]->(m:Master)
+    WHERE toInteger(m.year) > 0
+    WITH toInteger(m.year) AS year, count(DISTINCT r) AS count
+    RETURN year, count
+    ORDER BY year
     """
     async with await driver.session() as session:
         result = await session.run(cypher, name=name)

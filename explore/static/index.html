@@ -65,6 +65,24 @@
                     <div class="legend-item"><span class="legend-dot" style="background:#ffc107"></span>Genre/Style</div>
                     <div class="legend-item"><span class="legend-dot legend-rect" style="background:#4A90D9"></span>Category</div>
                 </div>
+                <div class="graph-controls" id="graphControls">
+                    <button class="graph-control-btn" id="zoomInBtn" title="Zoom in">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                    <button class="graph-control-btn" id="zoomOutBtn" title="Zoom out">
+                        <i class="fas fa-minus"></i>
+                    </button>
+                    <button class="graph-control-btn" id="zoomResetBtn" title="Reset zoom">
+                        <i class="fas fa-compress-arrows-alt"></i>
+                    </button>
+                    <button class="graph-control-btn" id="fullscreenBtn" title="Fullscreen">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                </div>
+                <div class="loading-overlay" id="graphLoading">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted">Loading graph...</p>
+                </div>
                 <div class="graph-placeholder" id="graphPlaceholder">
                     <i class="fas fa-project-diagram fa-3x mb-3 text-muted"></i>
                     <p class="text-muted">Search for an artist, genre, or label to start exploring</p>
@@ -88,6 +106,10 @@
         <div class="pane" id="trendsPane">
             <div class="trends-container">
                 <div id="trendsChart"></div>
+                <div class="loading-overlay" id="trendsLoading">
+                    <div class="spinner-border text-primary" role="status"></div>
+                    <p class="mt-2 text-muted">Loading trends...</p>
+                </div>
                 <div class="trends-placeholder" id="trendsPlaceholder">
                     <i class="fas fa-chart-line fa-3x mb-3 text-muted"></i>
                     <p class="text-muted">Search for an entity to see release trends over time</p>

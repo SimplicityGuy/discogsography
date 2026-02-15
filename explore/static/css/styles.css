@@ -145,6 +145,67 @@ body {
     display: none;
 }
 
+/* Loading overlay */
+.loading-overlay {
+    display: none;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(10, 14, 39, 0.85);
+    z-index: 15;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+}
+
+.loading-overlay.active {
+    display: flex;
+}
+
+/* Graph controls */
+.graph-controls {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 10;
+}
+
+.graph-control-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: rgba(30, 33, 57, 0.9);
+    color: var(--text-primary);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    transition: background-color 0.15s, border-color 0.15s;
+}
+
+.graph-control-btn:hover {
+    background-color: var(--bg-card);
+    border-color: var(--accent-blue);
+}
+
+/* Fullscreen mode */
+.graph-container.fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 2000;
+    background-color: var(--bg-primary);
+}
+
 /* Graph legend */
 .graph-legend {
     position: absolute;

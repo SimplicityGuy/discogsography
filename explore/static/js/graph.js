@@ -15,6 +15,10 @@ class GraphVisualization {
 
         // Track expanded categories
         this.expandedCategories = new Set();
+        this._pendingExpands = 0;
+
+        // Debounce render
+        this._renderTimeout = null;
 
         // Current center entity
         this.centerName = null;
@@ -22,8 +26,11 @@ class GraphVisualization {
 
         // Callbacks
         this.onNodeClick = null;
+        this.onNodeExpand = null;
+        this.onExpandsComplete = null;
 
         this._initSvg();
+        this._initControls();
     }
 
     _initSvg() {
@@ -63,6 +70,39 @@ class GraphVisualization {
         window.addEventListener('resize', () => this._onResize());
     }
 
+    _initControls() {
+        document.getElementById('zoomInBtn').addEventListener('click', () => this.zoomIn());
+        document.getElementById('zoomOutBtn').addEventListener('click', () => this.zoomOut());
+        document.getElementById('zoomResetBtn').addEventListener('click', () => this.zoomReset());
+        document.getElementById('fullscreenBtn').addEventListener('click', () => this.toggleFullscreen());
+
+        // Escape key exits fullscreen
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && this.container.classList.contains('fullscreen')) {
+                this.toggleFullscreen();
+            }
+        });
+    }
+
+    zoomIn() {
+        this.svg.transition().duration(300).call(this.zoom.scaleBy, 1.4);
+    }
+
+    zoomOut() {
+        this.svg.transition().duration(300).call(this.zoom.scaleBy, 0.7);
+    }
+
+    zoomReset() {
+        this.svg.transition().duration(300).call(this.zoom.transform, d3.zoomIdentity);
+    }
+
+    toggleFullscreen() {
+        const isFullscreen = this.container.classList.toggle('fullscreen');
+        const icon = document.querySelector('#fullscreenBtn i');
+        icon.className = isFullscreen ? 'fas fa-compress' : 'fas fa-expand';
+        setTimeout(() => this._onResize(), 50);
+    }
+
     _onResize() {
         const width = this.container.clientWidth;
         const height = this.container.clientHeight;
@@ -70,18 +110,6 @@ class GraphVisualization {
         if (this.simulation) {
             this.simulation.force('center', d3.forceCenter(width / 2, height / 2));
             this.simulation.alpha(0.3).restart();
-        }
-    }
-
-    _getNodeColor(node) {
-        if (node.isCategory) return 'var(--node-category)';
-        switch (node.type) {
-            case 'artist': return 'var(--node-artist)';
-            case 'release': return 'var(--node-release)';
-            case 'label': return 'var(--node-label)';
-            case 'genre':
-            case 'style': return 'var(--node-genre)';
-            default: return '#888';
         }
     }
 
@@ -93,16 +121,30 @@ class GraphVisualization {
 
     /**
      * Set explore data (center + categories).
+     * Returns a promise that resolves when all expansions are complete.
      */
     setExploreData(data) {
+        // Stop any existing simulation
+        if (this.simulation) {
+            this.simulation.stop();
+            this.simulation = null;
+        }
+
         this.placeholder.classList.add('hidden');
         this.nodes = [];
         this.links = [];
         this.expandedCategories.clear();
+        this._pendingExpands = 0;
+
+        // Reset zoom to identity
+        this.svg.call(this.zoom.transform, d3.zoomIdentity);
 
         const center = data.center;
         this.centerName = center.name;
         this.centerType = center.type;
+
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
 
         // Center node
         const centerNode = {
@@ -111,12 +153,13 @@ class GraphVisualization {
             type: center.type,
             isCenter: true,
             isCategory: false,
-            fx: this.container.clientWidth / 2,
-            fy: this.container.clientHeight / 2,
+            fx: width / 2,
+            fy: height / 2,
         };
         this.nodes.push(centerNode);
 
         // Category nodes
+        const expandable = [];
         data.categories.forEach(cat => {
             const catNode = {
                 id: cat.id,
@@ -132,51 +175,84 @@ class GraphVisualization {
             };
             this.nodes.push(catNode);
             this.links.push({ source: centerNode.id, target: catNode.id });
+            if (cat.count > 0) {
+                expandable.push(cat);
+            }
         });
 
-        this._render();
+        if (expandable.length === 0) {
+            // Nothing to expand, render immediately
+            this._render();
+            return;
+        }
 
-        // Auto-expand categories
-        data.categories.forEach(cat => {
-            if (cat.count > 0) {
-                this._expandCategory(cat.id, center.name, center.type, cat.category);
-            }
+        // Expand all categories concurrently, render once when all are done
+        this._pendingExpands = expandable.length;
+        expandable.forEach(cat => {
+            this._expandCategory(cat.id, center.name, center.type, cat.category);
         });
     }
 
     async _expandCategory(categoryId, parentName, parentType, category) {
-        if (this.expandedCategories.has(categoryId)) return;
+        if (this.expandedCategories.has(categoryId)) {
+            this._pendingExpands--;
+            this._checkExpandsDone();
+            return;
+        }
         this.expandedCategories.add(categoryId);
 
-        const children = await window.apiClient.expand(parentName, parentType, category, 30);
+        try {
+            const children = await window.apiClient.expand(parentName, parentType, category, 30);
 
-        children.forEach(child => {
-            const childId = `child-${child.type}-${child.id}`;
-            // Avoid duplicate nodes
-            if (this.nodes.find(n => n.id === childId)) return;
+            children.forEach(child => {
+                const childId = `child-${child.type}-${child.id}`;
+                if (this.nodes.find(n => n.id === childId)) return;
 
-            this.nodes.push({
-                id: childId,
-                name: child.name,
-                type: child.type,
-                isCenter: false,
-                isCategory: false,
-                nodeId: String(child.id),
+                this.nodes.push({
+                    id: childId,
+                    name: child.name,
+                    type: child.type,
+                    isCenter: false,
+                    isCategory: false,
+                    nodeId: String(child.id),
+                });
+                this.links.push({ source: categoryId, target: childId });
             });
-            this.links.push({ source: categoryId, target: childId });
-        });
+        } finally {
+            this._pendingExpands--;
+            this._checkExpandsDone();
+        }
+    }
 
-        this._render();
+    _checkExpandsDone() {
+        if (this._pendingExpands <= 0) {
+            this._render();
+            if (this.onExpandsComplete) {
+                this.onExpandsComplete();
+            }
+        }
     }
 
     _render() {
+        // Cancel any pending debounced render
+        if (this._renderTimeout) {
+            clearTimeout(this._renderTimeout);
+            this._renderTimeout = null;
+        }
+
+        // Stop old simulation
+        if (this.simulation) {
+            this.simulation.stop();
+        }
+
         const width = this.container.clientWidth;
         const height = this.container.clientHeight;
 
-        // Clear previous
+        // Clear previous elements
         this.g.selectAll('*').remove();
 
-        // Create simulation
+        // Create fresh link/node data copies for D3
+        // (D3 mutates these objects, so use the existing arrays directly)
         this.simulation = d3.forceSimulation(this.nodes)
             .force('link', d3.forceLink(this.links).id(d => d.id).distance(d => {
                 if (d.source.isCenter || d.target.isCenter) return 120;
@@ -209,7 +285,8 @@ class GraphVisualization {
                 .on('start', (event, d) => this._dragStarted(event, d))
                 .on('drag', (event, d) => this._dragged(event, d))
                 .on('end', (event, d) => this._dragEnded(event, d)))
-            .on('click', (event, d) => this._onNodeClicked(event, d));
+            .on('click', (event, d) => this._onNodeClicked(event, d))
+            .on('dblclick', (event, d) => this._onNodeDblClicked(event, d));
 
         // Node shapes
         node.each(function(d) {
@@ -217,7 +294,6 @@ class GraphVisualization {
             const radius = d.isCenter ? 28 : d.isCategory ? 22 : 14;
 
             if (d.isCategory) {
-                // Rounded rectangle for category nodes
                 el.append('rect')
                     .attr('x', -radius)
                     .attr('y', -radius * 0.7)
@@ -229,7 +305,6 @@ class GraphVisualization {
                     .attr('stroke', '#fff')
                     .attr('stroke-width', 1.5);
             } else {
-                // Circle for regular nodes
                 el.append('circle')
                     .attr('r', radius)
                     .attr('fill', d.isCenter ? 'var(--node-' + d.type + ')' :
@@ -286,7 +361,6 @@ class GraphVisualization {
 
     _onNodeClicked(event, d) {
         event.stopPropagation();
-
         if (d.isCategory) return;
 
         if (this.onNodeClick) {
@@ -295,12 +369,25 @@ class GraphVisualization {
         }
     }
 
+    _onNodeDblClicked(event, d) {
+        event.stopPropagation();
+        event.preventDefault();
+        if (d.isCategory || d.isCenter) return;
+
+        if (this.onNodeExpand) {
+            this.onNodeExpand(d.name, d.type);
+        }
+    }
+
     clear() {
         this.nodes = [];
         this.links = [];
         this.expandedCategories.clear();
         this.g.selectAll('*').remove();
-        if (this.simulation) this.simulation.stop();
+        if (this.simulation) {
+            this.simulation.stop();
+            this.simulation = null;
+        }
         this.placeholder.classList.remove('hidden');
     }
 }

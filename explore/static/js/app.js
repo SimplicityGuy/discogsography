@@ -16,6 +16,7 @@ class ExploreApp {
         // Wire up callbacks
         this.autocomplete.onSelect = (name) => this._onSearch(name);
         this.graph.onNodeClick = (nodeId, type) => this._onNodeClick(nodeId, type);
+        this.graph.onNodeExpand = (name, type) => this._onNodeExpand(name, type);
 
         this._bindEvents();
     }
@@ -93,16 +94,40 @@ class ExploreApp {
     }
 
     async _loadExplore(name, type) {
-        const data = await window.apiClient.explore(name, type);
-        if (data) {
-            this.graph.setExploreData(data);
+        const loading = document.getElementById('graphLoading');
+        loading.classList.add('active');
+        try {
+            const data = await window.apiClient.explore(name, type);
+            if (data) {
+                // Wait for all category expansions to complete before hiding loader
+                await new Promise((resolve) => {
+                    this.graph.onExpandsComplete = () => {
+                        this.graph.onExpandsComplete = null;
+                        resolve();
+                    };
+                    this.graph.setExploreData(data);
+                    // If no expansions were needed, resolve immediately
+                    if (this.graph._pendingExpands <= 0) {
+                        this.graph.onExpandsComplete = null;
+                        resolve();
+                    }
+                });
+            }
+        } finally {
+            loading.classList.remove('active');
         }
     }
 
     async _loadTrends(name, type) {
-        const data = await window.apiClient.getTrends(name, type);
-        if (data) {
-            this.trends.render(data);
+        const loading = document.getElementById('trendsLoading');
+        loading.classList.add('active');
+        try {
+            const data = await window.apiClient.getTrends(name, type);
+            if (data) {
+                this.trends.render(data);
+            }
+        } finally {
+            loading.classList.remove('active');
         }
     }
 
@@ -122,10 +147,43 @@ class ExploreApp {
 
         title.textContent = details.name || nodeId;
         body.innerHTML = this._renderDetails(details, type);
+
+        // Wire up the explore button if present
+        const exploreBtn = body.querySelector('.explore-node-btn');
+        if (exploreBtn) {
+            exploreBtn.addEventListener('click', () => {
+                const exploreName = exploreBtn.dataset.name;
+                const exploreType = exploreBtn.dataset.type;
+                this._onNodeExpand(exploreName, exploreType);
+                panel.classList.remove('open');
+            });
+        }
+    }
+
+    async _onNodeExpand(name, type) {
+        // Only artist, genre, label are explorable
+        const explorableTypes = ['artist', 'genre', 'label'];
+        if (!explorableTypes.includes(type)) return;
+
+        // Update search type to match
+        this._setSearchType(type);
+        this.currentQuery = name;
+
+        // Update search input
+        document.getElementById('searchInput').value = name;
+
+        // Load explore data for this node
+        await this._loadExplore(name, type);
     }
 
     _renderDetails(details, type) {
         let html = '';
+
+        // Explore button for navigable types
+        const explorableTypes = ['artist', 'genre', 'label'];
+        if (explorableTypes.includes(type)) {
+            html += `<button class="btn btn-sm btn-outline-primary w-100 mb-3 explore-node-btn" data-name="${this._escapeAttr(details.name)}" data-type="${type}"><i class="fas fa-project-diagram me-1"></i>Explore ${details.name}</button>`;
+        }
 
         if (type === 'artist') {
             html += this._detailStat('Releases', details.release_count || 0);
@@ -163,7 +221,7 @@ class ExploreApp {
     }
 
     _detailStat(label, value) {
-        return `<div class="detail-stat"><span class="label">${label}</span><span class="value">${typeof value === 'number' ? value.toLocaleString() : value}</span></div>`;
+        return `<div class="detail-stat"><span class="label">${label}</span><span class="value">${label === 'Year' ? value : (typeof value === 'number' ? value.toLocaleString() : value)}</span></div>`;
     }
 
     _detailTags(label, tags) {
@@ -175,6 +233,10 @@ class ExploreApp {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    }
+
+    _escapeAttr(text) {
+        return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
 }
 
