@@ -15,6 +15,7 @@ from explore.neo4j_queries import (
     autocomplete_artist,
     autocomplete_genre,
     autocomplete_label,
+    autocomplete_style,
     expand_artist_aliases,
     expand_artist_labels,
     expand_artist_releases,
@@ -23,9 +24,13 @@ from explore.neo4j_queries import (
     expand_genre_styles,
     expand_label_artists,
     expand_label_releases,
+    expand_style_artists,
+    expand_style_genres,
+    expand_style_labels,
     explore_artist,
     explore_genre,
     explore_label,
+    explore_style,
     get_artist_details,
     get_genre_details,
     get_label_details,
@@ -79,32 +84,35 @@ class TestDispatchTables:
     """Test that dispatch tables are properly configured."""
 
     def test_autocomplete_dispatch_keys(self) -> None:
-        assert set(AUTOCOMPLETE_DISPATCH.keys()) == {"artist", "genre", "label"}
+        assert set(AUTOCOMPLETE_DISPATCH.keys()) == {"artist", "genre", "label", "style"}
 
     def test_explore_dispatch_keys(self) -> None:
-        assert set(EXPLORE_DISPATCH.keys()) == {"artist", "genre", "label"}
+        assert set(EXPLORE_DISPATCH.keys()) == {"artist", "genre", "label", "style"}
 
     def test_expand_dispatch_keys(self) -> None:
-        assert set(EXPAND_DISPATCH.keys()) == {"artist", "genre", "label"}
+        assert set(EXPAND_DISPATCH.keys()) == {"artist", "genre", "label", "style"}
         assert set(EXPAND_DISPATCH["artist"].keys()) == {"releases", "labels", "aliases"}
         assert set(EXPAND_DISPATCH["genre"].keys()) == {"artists", "labels", "styles"}
         assert set(EXPAND_DISPATCH["label"].keys()) == {"releases", "artists"}
+        assert set(EXPAND_DISPATCH["style"].keys()) == {"artists", "labels", "genres"}
 
     def test_details_dispatch_keys(self) -> None:
         assert set(DETAILS_DISPATCH.keys()) == {"artist", "release", "label", "genre", "style"}
 
     def test_trends_dispatch_keys(self) -> None:
-        assert set(TRENDS_DISPATCH.keys()) == {"artist", "genre", "label"}
+        assert set(TRENDS_DISPATCH.keys()) == {"artist", "genre", "label", "style"}
 
     def test_autocomplete_dispatch_functions(self) -> None:
         assert AUTOCOMPLETE_DISPATCH["artist"] is autocomplete_artist
         assert AUTOCOMPLETE_DISPATCH["genre"] is autocomplete_genre
         assert AUTOCOMPLETE_DISPATCH["label"] is autocomplete_label
+        assert AUTOCOMPLETE_DISPATCH["style"] is autocomplete_style
 
     def test_explore_dispatch_functions(self) -> None:
         assert EXPLORE_DISPATCH["artist"] is explore_artist
         assert EXPLORE_DISPATCH["genre"] is explore_genre
         assert EXPLORE_DISPATCH["label"] is explore_label
+        assert EXPLORE_DISPATCH["style"] is explore_style
 
     def test_expand_dispatch_functions(self) -> None:
         assert EXPAND_DISPATCH["artist"]["releases"] is expand_artist_releases
@@ -115,6 +123,9 @@ class TestDispatchTables:
         assert EXPAND_DISPATCH["genre"]["styles"] is expand_genre_styles
         assert EXPAND_DISPATCH["label"]["releases"] is expand_label_releases
         assert EXPAND_DISPATCH["label"]["artists"] is expand_label_artists
+        assert EXPAND_DISPATCH["style"]["artists"] is expand_style_artists
+        assert EXPAND_DISPATCH["style"]["labels"] is expand_style_labels
+        assert EXPAND_DISPATCH["style"]["genres"] is expand_style_genres
 
 
 class TestAutocompleteQueries:

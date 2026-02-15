@@ -134,7 +134,7 @@ async def health_check() -> ORJSONResponse:
 @app.get("/api/autocomplete")
 async def autocomplete(
     q: str = Query(..., min_length=2, description="Search query"),
-    type: str = Query("artist", description="Entity type: artist, genre, label"),
+    type: str = Query("artist", description="Entity type: artist, genre, label, style"),
     limit: int = Query(10, ge=1, le=50, description="Max results"),
 ) -> ORJSONResponse:
     """Autocomplete search for entities."""
@@ -143,7 +143,7 @@ async def autocomplete(
 
     entity_type = type.lower()
     if entity_type not in AUTOCOMPLETE_DISPATCH:
-        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, or label"}, status_code=400)
+        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
 
     # Check cache
     cache_key = _get_cache_key(q, entity_type, limit)
@@ -167,7 +167,7 @@ async def autocomplete(
 @app.get("/api/explore")
 async def explore(
     name: str = Query(..., description="Entity name to explore"),
-    type: str = Query("artist", description="Entity type: artist, genre, label"),
+    type: str = Query("artist", description="Entity type: artist, genre, label, style"),
 ) -> ORJSONResponse:
     """Get center node with category counts for graph exploration."""
     if not neo4j_driver:
@@ -175,7 +175,7 @@ async def explore(
 
     entity_type = type.lower()
     if entity_type not in EXPLORE_DISPATCH:
-        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, or label"}, status_code=400)
+        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
 
     query_func = EXPLORE_DISPATCH[entity_type]
     result = await query_func(neo4j_driver, name)
@@ -215,6 +215,12 @@ def _build_categories(entity_type: str, result: dict[str, Any]) -> list[dict[str
             {"id": "cat-releases", "name": "Releases", "category": "releases", "count": result.get("release_count", 0)},
             {"id": "cat-artists", "name": "Artists", "category": "artists", "count": result.get("artist_count", 0)},
         ]
+    elif entity_type == "style":
+        categories = [
+            {"id": "cat-artists", "name": "Artists", "category": "artists", "count": result.get("artist_count", 0)},
+            {"id": "cat-labels", "name": "Labels", "category": "labels", "count": result.get("label_count", 0)},
+            {"id": "cat-genres", "name": "Genres", "category": "genres", "count": result.get("genre_count", 0)},
+        ]
 
     return categories
 
@@ -222,8 +228,8 @@ def _build_categories(entity_type: str, result: dict[str, Any]) -> list[dict[str
 @app.get("/api/expand")
 async def expand(
     node_id: str = Query(..., description="Parent entity name"),
-    type: str = Query(..., description="Parent entity type: artist, genre, label"),
-    category: str = Query(..., description="Category to expand: releases, labels, aliases, artists, styles"),
+    type: str = Query(..., description="Parent entity type: artist, genre, label, style"),
+    category: str = Query(..., description="Category to expand: releases, labels, aliases, artists, styles, genres"),
     limit: int = Query(50, ge=1, le=200, description="Max results"),
 ) -> ORJSONResponse:
     """Expand a category node to get its children."""
@@ -272,7 +278,7 @@ async def get_node_details(
 @app.get("/api/trends")
 async def get_trends(
     name: str = Query(..., description="Entity name"),
-    type: str = Query("artist", description="Entity type: artist, genre, label"),
+    type: str = Query("artist", description="Entity type: artist, genre, label, style"),
 ) -> ORJSONResponse:
     """Get time-series release counts for an entity."""
     if not neo4j_driver:
@@ -280,7 +286,7 @@ async def get_trends(
 
     entity_type = type.lower()
     if entity_type not in TRENDS_DISPATCH:
-        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, or label"}, status_code=400)
+        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
 
     query_func = TRENDS_DISPATCH[entity_type]
     results = await query_func(neo4j_driver, name)

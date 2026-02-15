@@ -5,7 +5,7 @@ class ApiClient {
     /**
      * Autocomplete search.
      * @param {string} query - Search query
-     * @param {string} type - Entity type (artist, genre, label)
+     * @param {string} type - Entity type (artist, genre, label, style)
      * @param {number} limit - Max results
      * @returns {Promise<Array>} Search results
      */

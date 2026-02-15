@@ -63,6 +63,20 @@ async def autocomplete_genre(driver: AsyncResilientNeo4jDriver, query: str, limi
         return [dict(record) async for record in result]
 
 
+async def autocomplete_style(driver: AsyncResilientNeo4jDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
+    """Search styles by name prefix."""
+    cypher = """
+    MATCH (s:Style)
+    WHERE toLower(s.name) STARTS WITH toLower($query)
+    RETURN s.name AS id, s.name AS name, 1.0 AS score
+    ORDER BY s.name
+    LIMIT $limit
+    """
+    async with await driver.session() as session:
+        result = await session.run(cypher, parameters={"query": query, "limit": limit})
+        return [dict(record) async for record in result]
+
+
 # --- Explore (center node + category nodes) ---
 
 
@@ -122,6 +136,27 @@ async def explore_label(driver: AsyncResilientNeo4jDriver, name: str) -> dict[st
     WITH l, release_count, count(DISTINCT a) AS artist_count
     RETURN l.id AS id, l.name AS name,
            release_count, artist_count
+    """
+    async with await driver.session() as session:
+        result = await session.run(cypher, name=name)
+        record = await result.single()
+        if not record:
+            return None
+        return dict(record)
+
+
+async def explore_style(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
+    """Get style center node with category counts."""
+    cypher = """
+    MATCH (s:Style {name: $name})
+    OPTIONAL MATCH (r:Release)-[:IS]->(s), (r)-[:BY]->(a:Artist)
+    WITH s, count(DISTINCT a) AS artist_count
+    OPTIONAL MATCH (r2:Release)-[:IS]->(s), (r2)-[:ON]->(l:Label)
+    WITH s, artist_count, count(DISTINCT l) AS label_count
+    OPTIONAL MATCH (r3:Release)-[:IS]->(s), (r3)-[:IS]->(g:Genre)
+    WITH s, artist_count, label_count, count(DISTINCT g) AS genre_count
+    RETURN s.name AS id, s.name AS name,
+           artist_count, label_count, genre_count
     """
     async with await driver.session() as session:
         result = await session.run(cypher, name=name)
@@ -251,6 +286,45 @@ async def expand_label_artists(driver: AsyncResilientNeo4jDriver, label_name: st
         return [dict(record) async for record in result]
 
 
+async def expand_style_artists(driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50) -> list[dict[str, Any]]:
+    """Get artists in a style (via releases)."""
+    cypher = """
+    MATCH (r:Release)-[:IS]->(s:Style {name: $name}), (r)-[:BY]->(a:Artist)
+    RETURN DISTINCT a.id AS id, a.name AS name, 'artist' AS type
+    ORDER BY a.name
+    LIMIT $limit
+    """
+    async with await driver.session() as session:
+        result = await session.run(cypher, name=style_name, limit=limit)
+        return [dict(record) async for record in result]
+
+
+async def expand_style_labels(driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50) -> list[dict[str, Any]]:
+    """Get labels associated with a style via releases."""
+    cypher = """
+    MATCH (r:Release)-[:IS]->(s:Style {name: $name}), (r)-[:ON]->(l:Label)
+    RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
+    ORDER BY release_count DESC
+    LIMIT $limit
+    """
+    async with await driver.session() as session:
+        result = await session.run(cypher, name=style_name, limit=limit)
+        return [dict(record) async for record in result]
+
+
+async def expand_style_genres(driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50) -> list[dict[str, Any]]:
+    """Get genres associated with a style via releases."""
+    cypher = """
+    MATCH (r:Release)-[:IS]->(s:Style {name: $name}), (r)-[:IS]->(g:Genre)
+    RETURN g.name AS id, g.name AS name, 'genre' AS type, count(DISTINCT r) AS release_count
+    ORDER BY release_count DESC
+    LIMIT $limit
+    """
+    async with await driver.session() as session:
+        result = await session.run(cypher, name=style_name, limit=limit)
+        return [dict(record) async for record in result]
+
+
 # --- Node Details ---
 
 
@@ -334,6 +408,22 @@ async def get_genre_details(driver: AsyncResilientNeo4jDriver, node_id: str) -> 
         return dict(record)
 
 
+async def get_style_details(driver: AsyncResilientNeo4jDriver, node_id: str) -> dict[str, Any] | None:
+    """Get full details for a style node."""
+    cypher = """
+    MATCH (s:Style {name: $id})
+    OPTIONAL MATCH (r:Release)-[:IS]->(s), (r)-[:BY]->(a:Artist)
+    WITH s, count(DISTINCT a) AS artist_count
+    RETURN s.name AS id, s.name AS name, artist_count
+    """
+    async with await driver.session() as session:
+        result = await session.run(cypher, id=node_id)
+        record = await result.single()
+        if not record:
+            return None
+        return dict(record)
+
+
 # --- Trends (time-series) ---
 
 
@@ -382,6 +472,21 @@ async def trends_label(driver: AsyncResilientNeo4jDriver, name: str) -> list[dic
         return [dict(record) async for record in result]
 
 
+async def trends_style(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
+    """Get release count by year for a style (year from Master)."""
+    cypher = """
+    MATCH (r:Release)-[:IS]->(s:Style {name: $name}),
+          (r)-[:DERIVED_FROM]->(m:Master)
+    WHERE toInteger(m.year) > 0
+    WITH toInteger(m.year) AS year, count(DISTINCT r) AS count
+    RETURN year, count
+    ORDER BY year
+    """
+    async with await driver.session() as session:
+        result = await session.run(cypher, name=name)
+        return [dict(record) async for record in result]
+
+
 # --- Dispatch helpers ---
 
 # LRU cache for autocomplete results
@@ -398,12 +503,14 @@ EXPLORE_DISPATCH: dict[str, Any] = {
     "artist": explore_artist,
     "genre": explore_genre,
     "label": explore_label,
+    "style": explore_style,
 }
 
 AUTOCOMPLETE_DISPATCH: dict[str, Any] = {
     "artist": autocomplete_artist,
     "genre": autocomplete_genre,
     "label": autocomplete_label,
+    "style": autocomplete_style,
 }
 
 EXPAND_DISPATCH: dict[str, dict[str, Any]] = {
@@ -421,6 +528,11 @@ EXPAND_DISPATCH: dict[str, dict[str, Any]] = {
         "releases": expand_label_releases,
         "artists": expand_label_artists,
     },
+    "style": {
+        "artists": expand_style_artists,
+        "labels": expand_style_labels,
+        "genres": expand_style_genres,
+    },
 }
 
 DETAILS_DISPATCH: dict[str, Any] = {
@@ -428,11 +540,12 @@ DETAILS_DISPATCH: dict[str, Any] = {
     "release": get_release_details,
     "label": get_label_details,
     "genre": get_genre_details,
-    "style": get_genre_details,
+    "style": get_style_details,
 }
 
 TRENDS_DISPATCH: dict[str, Any] = {
     "artist": trends_artist,
     "genre": trends_genre,
     "label": trends_label,
+    "style": trends_style,
 }
