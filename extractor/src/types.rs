@@ -296,11 +296,7 @@ mod tests {
 
     #[test]
     fn test_message_serialization() {
-        let data_msg = DataMessage {
-            id: "123".to_string(),
-            sha256: "abc".to_string(),
-            data: serde_json::json!({"test": "value"}),
-        };
+        let data_msg = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: serde_json::json!({"test": "value"}) };
 
         let serialized = serde_json::to_string(&data_msg).unwrap();
         let deserialized: DataMessage = serde_json::from_str(&serialized).unwrap();
@@ -311,12 +307,8 @@ mod tests {
 
     #[test]
     fn test_file_complete_message() {
-        let msg = FileCompleteMessage {
-            data_type: "artists".to_string(),
-            timestamp: Utc::now(),
-            total_processed: 1000,
-            file: "test.xml".to_string(),
-        };
+        let msg =
+            FileCompleteMessage { data_type: "artists".to_string(), timestamp: Utc::now(), total_processed: 1000, file: "test.xml".to_string() };
 
         assert_eq!(msg.data_type, "artists");
         assert_eq!(msg.total_processed, 1000);
@@ -325,11 +317,7 @@ mod tests {
 
     #[test]
     fn test_message_enum_data() {
-        let data_msg = DataMessage {
-            id: "1".to_string(),
-            sha256: "hash".to_string(),
-            data: serde_json::json!({}),
-        };
+        let data_msg = DataMessage { id: "1".to_string(), sha256: "hash".to_string(), data: serde_json::json!({}) };
 
         let message = Message::Data(data_msg);
         match message {
@@ -340,12 +328,8 @@ mod tests {
 
     #[test]
     fn test_message_enum_file_complete() {
-        let file_msg = FileCompleteMessage {
-            data_type: "labels".to_string(),
-            timestamp: Utc::now(),
-            total_processed: 500,
-            file: "test.xml".to_string(),
-        };
+        let file_msg =
+            FileCompleteMessage { data_type: "labels".to_string(), timestamp: Utc::now(), total_processed: 500, file: "test.xml".to_string() };
 
         let message = Message::FileComplete(file_msg);
         match message {

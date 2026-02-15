@@ -8,20 +8,11 @@ mod message_queue_unit_tests {
 
     // Helper to create test messages
     fn create_test_data_message(id: &str) -> DataMessage {
-        DataMessage {
-            id: id.to_string(),
-            sha256: format!("sha_{}", id),
-            data: json!({"name": format!("Test {}", id)}),
-        }
+        DataMessage { id: id.to_string(), sha256: format!("sha_{}", id), data: json!({"name": format!("Test {}", id)}) }
     }
 
     fn create_test_file_complete() -> FileCompleteMessage {
-        FileCompleteMessage {
-            data_type: "artists".to_string(),
-            timestamp: chrono::Utc::now(),
-            total_processed: 100,
-            file: "test.xml.gz".to_string(),
-        }
+        FileCompleteMessage { data_type: "artists".to_string(), timestamp: chrono::Utc::now(), total_processed: 100, file: "test.xml.gz".to_string() }
     }
 
     #[test]
@@ -100,11 +91,7 @@ mod message_queue_unit_tests {
 
     #[test]
     fn test_data_message_with_empty_data() {
-        let msg = DataMessage {
-            id: "empty".to_string(),
-            sha256: "hash".to_string(),
-            data: json!({}),
-        };
+        let msg = DataMessage { id: "empty".to_string(), sha256: "hash".to_string(), data: json!({}) };
 
         let serialized = serde_json::to_string(&msg).unwrap();
         assert!(serialized.contains("\"id\":\"empty\""));
@@ -191,11 +178,7 @@ mod message_queue_unit_tests {
             }
         });
 
-        let msg = DataMessage {
-            id: "large".to_string(),
-            sha256: "hash".to_string(),
-            data: large_data,
-        };
+        let msg = DataMessage { id: "large".to_string(), sha256: "hash".to_string(), data: large_data };
 
         let serialized = serde_json::to_string(&msg).unwrap();
         assert!(serialized.len() > 5000); // Should be large

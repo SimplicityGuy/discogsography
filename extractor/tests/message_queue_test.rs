@@ -5,11 +5,7 @@ use serde_json::json;
 
 #[test]
 fn test_data_message_serialization() {
-    let message = DataMessage {
-        id: "123".to_string(),
-        sha256: "abc123".to_string(),
-        data: json!({"name": "Test Artist"}),
-    };
+    let message = DataMessage { id: "123".to_string(), sha256: "abc123".to_string(), data: json!({"name": "Test Artist"}) };
 
     let serialized = serde_json::to_string(&message).unwrap();
     assert!(serialized.contains("\"id\":\"123\""));
@@ -43,11 +39,7 @@ fn test_file_complete_message_serialization() {
 
 #[test]
 fn test_message_enum_data_variant() {
-    let data_msg = DataMessage {
-        id: "123".to_string(),
-        sha256: "abc".to_string(),
-        data: json!({"test": "value"}),
-    };
+    let data_msg = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({"test": "value"}) };
 
     let message = Message::Data(data_msg);
     let serialized = serde_json::to_string(&message).unwrap();
@@ -57,12 +49,8 @@ fn test_message_enum_data_variant() {
 
 #[test]
 fn test_message_enum_file_complete_variant() {
-    let fc_msg = FileCompleteMessage {
-        data_type: "artists".to_string(),
-        timestamp: chrono::Utc::now(),
-        total_processed: 50,
-        file: "test.xml".to_string(),
-    };
+    let fc_msg =
+        FileCompleteMessage { data_type: "artists".to_string(), timestamp: chrono::Utc::now(), total_processed: 50, file: "test.xml".to_string() };
 
     let message = Message::FileComplete(fc_msg);
     let serialized = serde_json::to_string(&message).unwrap();
@@ -80,11 +68,7 @@ fn test_data_type_routing_key() {
 
 #[test]
 fn test_message_serialization_round_trip() {
-    let data_msg = DataMessage {
-        id: "test-id".to_string(),
-        sha256: "test-sha".to_string(),
-        data: json!({"field": "value"}),
-    };
+    let data_msg = DataMessage { id: "test-id".to_string(), sha256: "test-sha".to_string(), data: json!({"field": "value"}) };
 
     let message = Message::Data(data_msg);
     let serialized = serde_json::to_string(&message).unwrap();
@@ -110,11 +94,7 @@ fn test_data_message_with_complex_data() {
         "array": [1, 2, 3]
     });
 
-    let message = DataMessage {
-        id: "complex".to_string(),
-        sha256: "hash".to_string(),
-        data: complex_data,
-    };
+    let message = DataMessage { id: "complex".to_string(), sha256: "hash".to_string(), data: complex_data };
 
     let serialized = serde_json::to_string(&message).unwrap();
     let deserialized: DataMessage = serde_json::from_str(&serialized).unwrap();
@@ -129,12 +109,7 @@ fn test_file_complete_message_timestamp() {
     use chrono::Utc;
 
     let now = Utc::now();
-    let message = FileCompleteMessage {
-        data_type: "test".to_string(),
-        timestamp: now,
-        total_processed: 42,
-        file: "file.xml".to_string(),
-    };
+    let message = FileCompleteMessage { data_type: "test".to_string(), timestamp: now, total_processed: 42, file: "file.xml".to_string() };
 
     let serialized = serde_json::to_string(&message).unwrap();
     let deserialized: FileCompleteMessage = serde_json::from_str(&serialized).unwrap();
@@ -146,11 +121,7 @@ fn test_file_complete_message_timestamp() {
 
 #[test]
 fn test_message_type_tag() {
-    let data_msg = DataMessage {
-        id: "1".to_string(),
-        sha256: "hash".to_string(),
-        data: json!({}),
-    };
+    let data_msg = DataMessage { id: "1".to_string(), sha256: "hash".to_string(), data: json!({}) };
 
     let message = Message::Data(data_msg);
     let json_value = serde_json::to_value(&message).unwrap();
@@ -161,11 +132,7 @@ fn test_message_type_tag() {
 #[test]
 fn test_data_message_flattened_data() {
     // The data field is flattened, so it should be at the same level as id and sha256
-    let message = DataMessage {
-        id: "123".to_string(),
-        sha256: "abc".to_string(),
-        data: json!({"custom_field": "custom_value"}),
-    };
+    let message = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({"custom_field": "custom_value"}) };
 
     let json_value = serde_json::to_value(&message).unwrap();
 
@@ -212,21 +179,13 @@ fn test_data_type_from_str() {
 #[test]
 fn test_message_enum_tagged() {
     // Test that Message enum uses tagged format
-    let data_msg = DataMessage {
-        id: "123".to_string(),
-        sha256: "abc".to_string(),
-        data: json!({}),
-    };
+    let data_msg = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({}) };
     let message = Message::Data(data_msg);
     let json_str = serde_json::to_string(&message).unwrap();
     assert!(json_str.contains("\"type\":\"data\""));
 
-    let fc_msg = FileCompleteMessage {
-        data_type: "test".to_string(),
-        timestamp: chrono::Utc::now(),
-        total_processed: 1,
-        file: "test.xml".to_string(),
-    };
+    let fc_msg =
+        FileCompleteMessage { data_type: "test".to_string(), timestamp: chrono::Utc::now(), total_processed: 1, file: "test.xml".to_string() };
     let message = Message::FileComplete(fc_msg);
     let json_str = serde_json::to_string(&message).unwrap();
     assert!(json_str.contains("\"type\":\"file_complete\""));
@@ -234,11 +193,7 @@ fn test_message_enum_tagged() {
 
 #[test]
 fn test_data_message_with_empty_data() {
-    let message = DataMessage {
-        id: "123".to_string(),
-        sha256: "abc".to_string(),
-        data: json!({}),
-    };
+    let message = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({}) };
 
     let serialized = serde_json::to_string(&message).unwrap();
     let deserialized: DataMessage = serde_json::from_str(&serialized).unwrap();
@@ -278,11 +233,7 @@ fn test_data_message_large_data() {
         }
     });
 
-    let message = DataMessage {
-        id: "large_test".to_string(),
-        sha256: "hash123".to_string(),
-        data: large_data.clone(),
-    };
+    let message = DataMessage { id: "large_test".to_string(), sha256: "hash123".to_string(), data: large_data.clone() };
 
     let serialized = serde_json::to_string(&message).unwrap();
     let deserialized: DataMessage = serde_json::from_str(&serialized).unwrap();
@@ -298,29 +249,14 @@ fn test_data_message_large_data() {
 
 #[test]
 fn test_message_batch_serialization() {
-    let messages = vec![
-        DataMessage {
-            id: "1".to_string(),
-            sha256: "hash1".to_string(),
-            data: json!({"field": "value1"}),
-        },
-        DataMessage {
-            id: "2".to_string(),
-            sha256: "hash2".to_string(),
-            data: json!({"field": "value2"}),
-        },
-        DataMessage {
-            id: "3".to_string(),
-            sha256: "hash3".to_string(),
-            data: json!({"field": "value3"}),
-        },
+    let messages = [
+        DataMessage { id: "1".to_string(), sha256: "hash1".to_string(), data: json!({"field": "value1"}) },
+        DataMessage { id: "2".to_string(), sha256: "hash2".to_string(), data: json!({"field": "value2"}) },
+        DataMessage { id: "3".to_string(), sha256: "hash3".to_string(), data: json!({"field": "value3"}) },
     ];
 
     // Serialize batch
-    let serialized: Vec<String> = messages
-        .iter()
-        .map(|m| serde_json::to_string(&Message::Data(m.clone())).unwrap())
-        .collect();
+    let serialized: Vec<String> = messages.iter().map(|m| serde_json::to_string(&Message::Data(m.clone())).unwrap()).collect();
 
     assert_eq!(serialized.len(), 3);
     for json_str in &serialized {
@@ -360,12 +296,8 @@ fn test_message_size_estimation() {
 
 #[test]
 fn test_file_complete_message_with_zero_processed() {
-    let msg = FileCompleteMessage {
-        data_type: "artists".to_string(),
-        timestamp: chrono::Utc::now(),
-        total_processed: 0,
-        file: "empty.xml".to_string(),
-    };
+    let msg =
+        FileCompleteMessage { data_type: "artists".to_string(), timestamp: chrono::Utc::now(), total_processed: 0, file: "empty.xml".to_string() };
 
     let serialized = serde_json::to_string(&msg).unwrap();
     let deserialized: FileCompleteMessage = serde_json::from_str(&serialized).unwrap();

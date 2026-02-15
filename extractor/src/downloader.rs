@@ -33,13 +33,7 @@ impl Downloader {
     pub async fn new_with_base_url(output_directory: PathBuf, base_url: String) -> Result<Self> {
         let metadata = load_metadata(&output_directory)?;
 
-        Ok(Self {
-            output_directory,
-            metadata,
-            base_url,
-            state_marker: None,
-            marker_path: None,
-        })
+        Ok(Self { output_directory, metadata, base_url, state_marker: None, marker_path: None })
     }
 
     /// Set the state marker for tracking download progress
@@ -80,10 +74,7 @@ impl Downloader {
         let mut downloaded_files = Vec::new();
 
         for file_info in &latest_files {
-            let filename = std::path::Path::new(&file_info.name)
-                .file_name()
-                .and_then(|name| name.to_str())
-                .unwrap_or("unknown_file");
+            let filename = std::path::Path::new(&file_info.name).file_name().and_then(|name| name.to_str()).unwrap_or("unknown_file");
 
             if self.should_download(file_info).await? {
                 // Start tracking file download
@@ -119,10 +110,7 @@ impl Downloader {
                 if let Some(ref mut marker) = self.state_marker {
                     let local_path = self.output_directory.join(filename);
                     let file_size = if local_path.exists() {
-                        tokio::fs::metadata(&local_path)
-                            .await
-                            .map(|m| m.len())
-                            .unwrap_or(0)
+                        tokio::fs::metadata(&local_path).await.map(|m| m.len()).unwrap_or(0)
                     } else {
                         0
                     };
@@ -154,20 +142,14 @@ impl Downloader {
         info!("🌐 Fetching file list from Discogs website...");
 
         // Step 1: Fetch the main page to get available years
-        let response = reqwest::get(&self.base_url)
-            .await
-            .context("Failed to fetch Discogs website")?;
+        let response = reqwest::get(&self.base_url).await.context("Failed to fetch Discogs website")?;
 
         let html = response.text().await.context("Failed to read HTML response")?;
 
         // Extract year directories (e.g., 2026/, 2025/, etc.)
-        let year_pattern = Regex::new(r#"href="\?prefix=data%2F(\d{4})%2F""#)
-            .context("Failed to compile year regex")?;
+        let year_pattern = Regex::new(r#"href="\?prefix=data%2F(\d{4})%2F""#).context("Failed to compile year regex")?;
 
-        let mut years: Vec<String> = year_pattern
-            .captures_iter(&html)
-            .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
-            .collect();
+        let mut years: Vec<String> = year_pattern.captures_iter(&html).filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string())).collect();
 
         if years.is_empty() {
             return Err(anyhow::anyhow!("No year directories found on Discogs website"));
@@ -182,8 +164,7 @@ impl Downloader {
 
         // Compile regex once outside the loop
         // Pattern matches: ?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz
-        let file_pattern = Regex::new(r#"\?download=data%2F\d{4}%2F(discogs_(\d{8})_[^"]+)"#)
-            .context("Failed to compile file regex")?;
+        let file_pattern = Regex::new(r#"\?download=data%2F\d{4}%2F(discogs_(\d{8})_[^"]+)"#).context("Failed to compile file regex")?;
 
         for year in years.iter().take(2) {
             let year_url = format!("{}?prefix=data%2F{}%2F", self.base_url, year);
@@ -198,16 +179,12 @@ impl Downloader {
                                 let version_id = version_match.as_str();
 
                                 // URL decode the filename
-                                let decoded_filename = urlencoding::decode(filename)
-                                    .context("Failed to URL decode filename")?
-                                    .to_string();
+                                let decoded_filename = urlencoding::decode(filename).context("Failed to URL decode filename")?.to_string();
 
                                 // Construct full S3 key
                                 let s3_key = format!("data/{}/{}", year, decoded_filename);
 
-                                ids.entry(version_id.to_string())
-                                    .or_default()
-                                    .push(S3FileInfo { name: s3_key, size: 0 });
+                                ids.entry(version_id.to_string()).or_default().push(S3FileInfo { name: s3_key, size: 0 });
 
                                 file_count += 1;
                             }
@@ -242,10 +219,7 @@ impl Downloader {
         let ids_map = self.scrape_file_list_from_discogs().await?;
 
         // Flatten the map into a single list of files for compatibility
-        let files: Vec<S3FileInfo> = ids_map
-            .into_values()
-            .flat_map(|files| files.into_iter())
-            .collect();
+        let files: Vec<S3FileInfo> = ids_map.into_values().flat_map(|files| files.into_iter()).collect();
 
         info!("Found {} relevant files from website", files.len());
         Ok(files)
@@ -350,16 +324,10 @@ impl Downloader {
 
         // Create progress bar (unknown size from scraping)
         let pb = ProgressBar::new_spinner();
-        pb.set_style(
-            ProgressStyle::default_spinner()
-                .template("{spinner:.green} [{elapsed_precise}] {bytes} ({bytes_per_sec})")
-                .unwrap(),
-        );
+        pb.set_style(ProgressStyle::default_spinner().template("{spinner:.green} [{elapsed_precise}] {bytes} ({bytes_per_sec})").unwrap());
 
         // Download using reqwest with streaming
-        let response = reqwest::get(&download_url)
-            .await
-            .with_context(|| format!("Failed to start HTTP download from: {}", download_url))?;
+        let response = reqwest::get(&download_url).await.with_context(|| format!("Failed to start HTTP download from: {}", download_url))?;
 
         if !response.status().is_success() {
             return Err(anyhow::anyhow!("HTTP error: {}", response.status()));
@@ -506,12 +474,7 @@ mod tests {
         let mut test_metadata = HashMap::new();
         test_metadata.insert(
             "test.xml.gz".to_string(),
-            LocalFileInfo {
-                path: "/tmp/test.xml.gz".to_string(),
-                checksum: "abc123".to_string(),
-                version: "202412".to_string(),
-                size: 1024,
-            },
+            LocalFileInfo { path: "/tmp/test.xml.gz".to_string(), checksum: "abc123".to_string(), version: "202412".to_string(), size: 1024 },
         );
 
         let json = serde_json::to_string_pretty(&test_metadata).unwrap();
@@ -591,12 +554,7 @@ mod tests {
 
         downloader.metadata.insert(
             "test.xml.gz".to_string(),
-            LocalFileInfo {
-                path: "/tmp/test.xml.gz".to_string(),
-                checksum: "abc123".to_string(),
-                version: "202412".to_string(),
-                size: 1024,
-            },
+            LocalFileInfo { path: "/tmp/test.xml.gz".to_string(), checksum: "abc123".to_string(), version: "202412".to_string(), size: 1024 },
         );
 
         let result = downloader.save_metadata();
@@ -614,10 +572,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let downloader = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap();
 
-        let file_info = S3FileInfo {
-            name: "discogs_20241201_artists.xml.gz".to_string(),
-            size: 1024,
-        };
+        let file_info = S3FileInfo { name: "discogs_20241201_artists.xml.gz".to_string(), size: 1024 };
 
         let should_download = downloader.should_download(&file_info).await.unwrap();
         assert!(should_download);
@@ -675,10 +630,7 @@ mod tests {
             },
         );
 
-        let file_info = S3FileInfo {
-            name: filename.to_string(),
-            size: content.len() as u64,
-        };
+        let file_info = S3FileInfo { name: filename.to_string(), size: content.len() as u64 };
 
         let should_download = downloader.should_download(&file_info).await.unwrap();
         assert!(should_download);
@@ -708,10 +660,7 @@ mod tests {
             },
         );
 
-        let file_info = S3FileInfo {
-            name: filename.to_string(),
-            size: content.len() as u64,
-        };
+        let file_info = S3FileInfo { name: filename.to_string(), size: content.len() as u64 };
 
         let should_download = downloader.should_download(&file_info).await.unwrap();
         assert!(!should_download);
@@ -720,10 +669,7 @@ mod tests {
     #[test]
     fn test_get_latest_monthly_files_no_complete_set() {
         let temp_dir = TempDir::new().unwrap();
-        let downloader = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(Downloader::new(temp_dir.path().to_path_buf()))
-            .unwrap();
+        let downloader = tokio::runtime::Runtime::new().unwrap().block_on(Downloader::new(temp_dir.path().to_path_buf())).unwrap();
 
         // Only 3 files instead of required 4 data files + 1 checksum
         let files = vec![
@@ -739,10 +685,7 @@ mod tests {
     #[test]
     fn test_get_latest_monthly_files_complete_set() {
         let temp_dir = TempDir::new().unwrap();
-        let downloader = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(Downloader::new(temp_dir.path().to_path_buf()))
-            .unwrap();
+        let downloader = tokio::runtime::Runtime::new().unwrap().block_on(Downloader::new(temp_dir.path().to_path_buf())).unwrap();
 
         // Complete set: 4 data files + 1 checksum
         let files = vec![
@@ -763,10 +706,7 @@ mod tests {
     #[test]
     fn test_get_latest_monthly_files_multiple_versions() {
         let temp_dir = TempDir::new().unwrap();
-        let downloader = tokio::runtime::Runtime::new()
-            .unwrap()
-            .block_on(Downloader::new(temp_dir.path().to_path_buf()))
-            .unwrap();
+        let downloader = tokio::runtime::Runtime::new().unwrap().block_on(Downloader::new(temp_dir.path().to_path_buf())).unwrap();
 
         // Multiple versions - should pick the latest (20241215)
         let files = vec![

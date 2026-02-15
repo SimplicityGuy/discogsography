@@ -1,9 +1,9 @@
 // HTTP Integration tests for downloader module
 // Tests web scraping and HTTP download functionality with mocked responses
 
-use mockito::Server;
 use extractor::downloader::Downloader;
 use extractor::types::S3FileInfo;
+use mockito::Server;
 use tempfile::TempDir;
 use tokio::fs;
 
@@ -26,10 +26,7 @@ fn create_main_page_html(years: &[&str]) -> String {
 fn create_year_page_html(year: &str, files: &[(&str, &str)]) -> String {
     let mut html = String::from("<html><body>");
     for (version, file_type) in files {
-        html.push_str(&format!(
-            r#"<a href="?download=data%2F{}%2Fdiscogs_{}_{}">discogs_{}_{}</a>"#,
-            year, version, file_type, version, file_type
-        ));
+        html.push_str(&format!(r#"<a href="?download=data%2F{}%2Fdiscogs_{}_{}">discogs_{}_{}</a>"#, year, version, file_type, version, file_type));
     }
     html.push_str("</body></html>");
     html
@@ -41,12 +38,7 @@ async fn test_successful_web_scraping() {
     let temp_dir = TempDir::new().unwrap();
 
     // Mock main page response
-    let _m1 = server
-        .mock("GET", "/")
-        .with_status(200)
-        .with_body(create_main_page_html(&["2026", "2025"]))
-        .create_async()
-        .await;
+    let _m1 = server.mock("GET", "/").with_status(200).with_body(create_main_page_html(&["2026", "2025"])).create_async().await;
 
     // Mock year directory pages
     let _m2 = server
@@ -65,10 +57,7 @@ async fn test_successful_web_scraping() {
         .create_async()
         .await;
 
-    let downloader =
-        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url()))
-            .await
-            .unwrap();
+    let downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
     // Test scraping (using private method through download_discogs_data)
     // We can't test scrape_file_list_from_discogs directly as it's private,
@@ -85,17 +74,9 @@ async fn test_empty_website_response() {
     let temp_dir = TempDir::new().unwrap();
 
     // Mock empty main page
-    let _m = server
-        .mock("GET", "/")
-        .with_status(200)
-        .with_body("<html><body></body></html>")
-        .create_async()
-        .await;
+    let _m = server.mock("GET", "/").with_status(200).with_body("<html><body></body></html>").create_async().await;
 
-    let mut downloader =
-        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url()))
-            .await
-            .unwrap();
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
     // Attempt to download should fail due to no files found
     let result = downloader.download_discogs_data().await;
@@ -124,12 +105,7 @@ async fn test_incomplete_file_set() {
     let temp_dir = TempDir::new().unwrap();
 
     // Mock main page
-    let _m1 = server
-        .mock("GET", "/")
-        .with_status(200)
-        .with_body(create_main_page_html(&["2026"]))
-        .create_async()
-        .await;
+    let _m1 = server.mock("GET", "/").with_status(200).with_body(create_main_page_html(&["2026"])).create_async().await;
 
     // Mock year page with incomplete set (missing some files)
     let _m2 = server
@@ -146,10 +122,7 @@ async fn test_incomplete_file_set() {
         .create_async()
         .await;
 
-    let mut downloader =
-        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url()))
-            .await
-            .unwrap();
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
     let result = downloader.download_discogs_data().await;
     // Should return empty or error due to incomplete set
@@ -164,23 +137,12 @@ async fn test_http_download_success() {
     let test_content = b"test file content for download";
 
     // Mock download endpoint
-    let _m = server
-        .mock("GET", "/?download=data%2Ftest_file.xml.gz")
-        .with_status(200)
-        .with_body(test_content)
-        .create_async()
-        .await;
+    let _m = server.mock("GET", "/?download=data%2Ftest_file.xml.gz").with_status(200).with_body(test_content).create_async().await;
 
-    let mut downloader =
-        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url()))
-            .await
-            .unwrap();
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
     // Create a file info for testing
-    let file_info = S3FileInfo {
-        name: "test_file.xml.gz".to_string(),
-        size: test_content.len() as u64,
-    };
+    let file_info = S3FileInfo { name: "test_file.xml.gz".to_string(), size: test_content.len() as u64 };
 
     // Download the file
     let result = downloader.download_file(&file_info).await;
@@ -208,15 +170,9 @@ async fn test_http_download_failure() {
         .create_async()
         .await;
 
-    let mut downloader =
-        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url()))
-            .await
-            .unwrap();
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo {
-        name: "failed_file.xml.gz".to_string(),
-        size: 1024,
-    };
+    let file_info = S3FileInfo { name: "failed_file.xml.gz".to_string(), size: 1024 };
 
     // Download should fail
     let result = downloader.download_file(&file_info).await;
@@ -229,22 +185,11 @@ async fn test_http_download_404() {
     let temp_dir = TempDir::new().unwrap();
 
     // Mock download endpoint with 404
-    let _m = server
-        .mock("GET", "/?download=data%2Fnonexistent.xml.gz")
-        .with_status(404)
-        .with_body("Not Found")
-        .create_async()
-        .await;
+    let _m = server.mock("GET", "/?download=data%2Fnonexistent.xml.gz").with_status(404).with_body("Not Found").create_async().await;
 
-    let mut downloader =
-        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url()))
-            .await
-            .unwrap();
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo {
-        name: "nonexistent.xml.gz".to_string(),
-        size: 1024,
-    };
+    let file_info = S3FileInfo { name: "nonexistent.xml.gz".to_string(), size: 1024 };
 
     let result = downloader.download_file(&file_info).await;
     assert!(result.is_err());
@@ -265,15 +210,9 @@ async fn test_checksum_calculation_during_download() {
         .create_async()
         .await;
 
-    let mut downloader =
-        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url()))
-            .await
-            .unwrap();
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo {
-        name: "checksum_test.xml.gz".to_string(),
-        size: test_content.len() as u64,
-    };
+    let file_info = S3FileInfo { name: "checksum_test.xml.gz".to_string(), size: test_content.len() as u64 };
 
     downloader.download_file(&file_info).await.unwrap();
 
@@ -332,10 +271,7 @@ async fn test_concurrent_year_scraping() {
         .create_async()
         .await;
 
-    let downloader =
-        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url()))
-            .await
-            .unwrap();
+    let downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
     // Verify downloader creation succeeds
     assert!(downloader.metadata.is_empty());
@@ -354,15 +290,9 @@ async fn test_url_encoding_in_download() {
         .create_async()
         .await;
 
-    let mut downloader =
-        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url()))
-            .await
-            .unwrap();
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo {
-        name: "file with spaces.xml.gz".to_string(),
-        size: 7,
-    };
+    let file_info = S3FileInfo { name: "file with spaces.xml.gz".to_string(), size: 7 };
 
     let result = downloader.download_file(&file_info).await;
     assert!(result.is_ok());
@@ -376,22 +306,11 @@ async fn test_large_file_streaming() {
     // Create a larger test content (256KB - large enough to test streaming, small enough for mockito)
     let test_content = vec![b'x'; 256 * 1024];
 
-    let _m = server
-        .mock("GET", "/?download=data%2Flarge_file.xml.gz")
-        .with_status(200)
-        .with_body(&test_content)
-        .create_async()
-        .await;
+    let _m = server.mock("GET", "/?download=data%2Flarge_file.xml.gz").with_status(200).with_body(&test_content).create_async().await;
 
-    let mut downloader =
-        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url()))
-            .await
-            .unwrap();
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo {
-        name: "large_file.xml.gz".to_string(),
-        size: test_content.len() as u64,
-    };
+    let file_info = S3FileInfo { name: "large_file.xml.gz".to_string(), size: test_content.len() as u64 };
 
     let result = downloader.download_file(&file_info).await;
     assert!(result.is_ok());

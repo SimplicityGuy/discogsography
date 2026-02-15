@@ -399,11 +399,7 @@ mod tests {
 
     #[test]
     fn test_message_serialization_data() {
-        let data_msg = DataMessage {
-            id: "123".to_string(),
-            sha256: "abc".to_string(),
-            data: serde_json::json!({"key": "value"}),
-        };
+        let data_msg = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: serde_json::json!({"key": "value"}) };
 
         let message = Message::Data(data_msg);
         let serialized = serde_json::to_vec(&message).unwrap();

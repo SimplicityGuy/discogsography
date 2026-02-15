@@ -6,7 +6,6 @@ use std::path::{Path, PathBuf};
 use tokio::fs;
 use tracing::{debug, info, warn};
 
-
 /// Phase status for tracking progress
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -28,12 +27,7 @@ pub struct FileDownloadStatus {
 
 impl Default for FileDownloadStatus {
     fn default() -> Self {
-        Self {
-            status: PhaseStatus::Pending,
-            bytes_downloaded: 0,
-            started_at: None,
-            completed_at: None,
-        }
+        Self { status: PhaseStatus::Pending, bytes_downloaded: 0, started_at: None, completed_at: None }
     }
 }
 
@@ -78,14 +72,7 @@ pub struct FileProcessingStatus {
 
 impl Default for FileProcessingStatus {
     fn default() -> Self {
-        Self {
-            status: PhaseStatus::Pending,
-            records_extracted: 0,
-            messages_published: 0,
-            batches_sent: 0,
-            started_at: None,
-            completed_at: None,
-        }
+        Self { status: PhaseStatus::Pending, records_extracted: 0, messages_published: 0, batches_sent: 0, started_at: None, completed_at: None }
     }
 }
 
@@ -131,13 +118,7 @@ pub struct PublishingPhase {
 
 impl Default for PublishingPhase {
     fn default() -> Self {
-        Self {
-            status: PhaseStatus::Pending,
-            messages_published: 0,
-            batches_sent: 0,
-            errors: Vec::new(),
-            last_amqp_heartbeat: None,
-        }
+        Self { status: PhaseStatus::Pending, messages_published: 0, batches_sent: 0, errors: Vec::new(), last_amqp_heartbeat: None }
     }
 }
 
@@ -151,11 +132,7 @@ pub struct ExtractionSummary {
 
 impl Default for ExtractionSummary {
     fn default() -> Self {
-        Self {
-            overall_status: PhaseStatus::Pending,
-            total_duration_seconds: None,
-            files_by_type: HashMap::new(),
-        }
+        Self { overall_status: PhaseStatus::Pending, total_duration_seconds: None, files_by_type: HashMap::new() }
     }
 }
 
@@ -231,12 +208,9 @@ impl StateMarker {
     pub async fn save(&mut self, path: &Path) -> Result<()> {
         self.last_updated = Utc::now();
 
-        let json = serde_json::to_string_pretty(self)
-            .context("Failed to serialize state marker")?;
+        let json = serde_json::to_string_pretty(self).context("Failed to serialize state marker")?;
 
-        fs::write(path, json)
-            .await
-            .context("Failed to write state marker file")?;
+        fs::write(path, json).await.context("Failed to write state marker file")?;
 
         debug!("💾 Saved state marker to: {}", path.display());
         Ok(())
@@ -288,11 +262,7 @@ impl StateMarker {
 
     /// Mark a file download as started
     pub fn start_file_download(&mut self, filename: &str) {
-        let status = FileDownloadStatus {
-            status: PhaseStatus::InProgress,
-            started_at: Some(Utc::now()),
-            ..Default::default()
-        };
+        let status = FileDownloadStatus { status: PhaseStatus::InProgress, started_at: Some(Utc::now()), ..Default::default() };
         self.download_phase.downloads_by_file.insert(filename.to_string(), status);
     }
 
@@ -317,21 +287,14 @@ impl StateMarker {
 
         self.download_phase.files_downloaded += 1;
         // Recalculate total bytes from all files
-        self.download_phase.bytes_downloaded = self
-            .download_phase
-            .downloads_by_file
-            .values()
-            .map(|s| s.bytes_downloaded)
-            .sum();
+        self.download_phase.bytes_downloaded = self.download_phase.downloads_by_file.values().map(|s| s.bytes_downloaded).sum();
     }
 
     /// Mark download phase as completed
     pub fn complete_download(&mut self) {
         self.download_phase.status = PhaseStatus::Completed;
         self.download_phase.completed_at = Some(Utc::now());
-        info!("✅ Download phase completed: {} files, {} bytes",
-              self.download_phase.files_downloaded,
-              self.download_phase.bytes_downloaded);
+        info!("✅ Download phase completed: {} files, {} bytes", self.download_phase.files_downloaded, self.download_phase.bytes_downloaded);
     }
 
     /// Mark download phase as failed
@@ -357,11 +320,7 @@ impl StateMarker {
     pub fn start_file_processing(&mut self, filename: &str) {
         self.processing_phase.current_file = Some(filename.to_string());
 
-        let status = FileProcessingStatus {
-            status: PhaseStatus::InProgress,
-            started_at: Some(Utc::now()),
-            ..Default::default()
-        };
+        let status = FileProcessingStatus { status: PhaseStatus::InProgress, started_at: Some(Utc::now()), ..Default::default() };
 
         self.processing_phase.progress_by_file.insert(filename.to_string(), status);
 
@@ -380,26 +339,11 @@ impl StateMarker {
         }
 
         // Update processing phase totals by summing all file progress
-        self.processing_phase.records_extracted = self
-            .processing_phase
-            .progress_by_file
-            .values()
-            .map(|s| s.records_extracted)
-            .sum();
+        self.processing_phase.records_extracted = self.processing_phase.progress_by_file.values().map(|s| s.records_extracted).sum();
 
         // Update publishing phase totals by summing from all files
-        self.publishing_phase.messages_published = self
-            .processing_phase
-            .progress_by_file
-            .values()
-            .map(|s| s.messages_published)
-            .sum();
-        self.publishing_phase.batches_sent = self
-            .processing_phase
-            .progress_by_file
-            .values()
-            .map(|s| s.batches_sent)
-            .sum();
+        self.publishing_phase.messages_published = self.processing_phase.progress_by_file.values().map(|s| s.messages_published).sum();
+        self.publishing_phase.batches_sent = self.processing_phase.progress_by_file.values().map(|s| s.batches_sent).sum();
 
         // Update publishing phase status if any messages have been published
         if self.publishing_phase.messages_published > 0 {
@@ -424,26 +368,11 @@ impl StateMarker {
 
         // Update total records by summing from all files (same as update_file_progress)
         // This ensures we don't double-count since we're already tracking in progress_by_file
-        self.processing_phase.records_extracted = self
-            .processing_phase
-            .progress_by_file
-            .values()
-            .map(|s| s.records_extracted)
-            .sum();
+        self.processing_phase.records_extracted = self.processing_phase.progress_by_file.values().map(|s| s.records_extracted).sum();
 
         // Update publishing phase totals by summing from all files
-        self.publishing_phase.messages_published = self
-            .processing_phase
-            .progress_by_file
-            .values()
-            .map(|s| s.messages_published)
-            .sum();
-        self.publishing_phase.batches_sent = self
-            .processing_phase
-            .progress_by_file
-            .values()
-            .map(|s| s.batches_sent)
-            .sum();
+        self.publishing_phase.messages_published = self.processing_phase.progress_by_file.values().map(|s| s.messages_published).sum();
+        self.publishing_phase.batches_sent = self.processing_phase.progress_by_file.values().map(|s| s.batches_sent).sum();
 
         // Update summary
         if let Some(data_type) = extract_data_type(filename) {
@@ -457,9 +386,7 @@ impl StateMarker {
         self.processing_phase.completed_at = Some(Utc::now());
         self.processing_phase.current_file = None;
 
-        info!("✅ Processing phase completed: {} files, {} records",
-              self.processing_phase.files_processed,
-              self.processing_phase.records_extracted);
+        info!("✅ Processing phase completed: {} files, {} records", self.processing_phase.files_processed, self.processing_phase.records_extracted);
     }
 
     /// Mark processing phase as failed
@@ -492,10 +419,7 @@ impl StateMarker {
         self.summary.overall_status = PhaseStatus::Completed;
 
         // Calculate total duration
-        if let (Some(start), Some(end)) = (
-            self.download_phase.started_at,
-            self.processing_phase.completed_at,
-        ) {
+        if let (Some(start), Some(end)) = (self.download_phase.started_at, self.processing_phase.completed_at) {
             self.summary.total_duration_seconds = Some((end - start).num_seconds() as f64);
         }
 
@@ -506,13 +430,7 @@ impl StateMarker {
     pub fn pending_files(&self, all_files: &[String]) -> Vec<String> {
         all_files
             .iter()
-            .filter(|f| {
-                self.processing_phase
-                    .progress_by_file
-                    .get(*f)
-                    .map(|status| status.status != PhaseStatus::Completed)
-                    .unwrap_or(true)
-            })
+            .filter(|f| self.processing_phase.progress_by_file.get(*f).map(|status| status.status != PhaseStatus::Completed).unwrap_or(true))
             .cloned()
             .collect()
     }
@@ -531,11 +449,7 @@ pub enum ProcessingDecision {
 
 /// Extract data type from filename (e.g., "discogs_20260101_artists.xml.gz" -> "artists")
 fn extract_data_type(filename: &str) -> Option<String> {
-    filename
-        .split('_')
-        .nth(2)
-        .and_then(|s| s.split('.').next())
-        .map(|s| s.to_string())
+    filename.split('_').nth(2).and_then(|s| s.split('.').next()).map(|s| s.to_string())
 }
 
 #[cfg(test)]
@@ -803,11 +717,7 @@ mod tests {
         marker.complete_file_processing("discogs_20260101_artists.xml.gz", final_records);
 
         // Verify both records and messages are set to the final count
-        let status = marker
-            .processing_phase
-            .progress_by_file
-            .get("discogs_20260101_artists.xml.gz")
-            .unwrap();
+        let status = marker.processing_phase.progress_by_file.get("discogs_20260101_artists.xml.gz").unwrap();
         assert_eq!(status.records_extracted, final_records);
         assert_eq!(status.messages_published, final_records, "messages_published should match records_extracted on completion");
     }
@@ -827,18 +737,10 @@ mod tests {
         marker.file_downloaded("discogs_20260101_labels.xml.gz", 86848860);
 
         // Verify individual file byte counts
-        let artists_status = marker
-            .download_phase
-            .downloads_by_file
-            .get("discogs_20260101_artists.xml.gz")
-            .unwrap();
+        let artists_status = marker.download_phase.downloads_by_file.get("discogs_20260101_artists.xml.gz").unwrap();
         assert_eq!(artists_status.bytes_downloaded, 480351382, "artists file should track actual bytes downloaded");
 
-        let labels_status = marker
-            .download_phase
-            .downloads_by_file
-            .get("discogs_20260101_labels.xml.gz")
-            .unwrap();
+        let labels_status = marker.download_phase.downloads_by_file.get("discogs_20260101_labels.xml.gz").unwrap();
         assert_eq!(labels_status.bytes_downloaded, 86848860, "labels file should track actual bytes downloaded");
 
         // Verify total bytes downloaded

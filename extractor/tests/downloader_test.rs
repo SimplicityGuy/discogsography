@@ -43,22 +43,12 @@ async fn test_metadata_persistence() {
     // Add some metadata
     downloader.metadata.insert(
         "test1.xml.gz".to_string(),
-        LocalFileInfo {
-            path: "/tmp/test1.xml.gz".to_string(),
-            checksum: "abc123".to_string(),
-            version: "202412".to_string(),
-            size: 1024,
-        },
+        LocalFileInfo { path: "/tmp/test1.xml.gz".to_string(), checksum: "abc123".to_string(), version: "202412".to_string(), size: 1024 },
     );
 
     downloader.metadata.insert(
         "test2.xml.gz".to_string(),
-        LocalFileInfo {
-            path: "/tmp/test2.xml.gz".to_string(),
-            checksum: "def456".to_string(),
-            version: "202412".to_string(),
-            size: 2048,
-        },
+        LocalFileInfo { path: "/tmp/test2.xml.gz".to_string(), checksum: "def456".to_string(), version: "202412".to_string(), size: 2048 },
     );
 
     // Save metadata
@@ -78,10 +68,7 @@ async fn test_should_download_missing_file() {
     let temp_dir = TempDir::new().unwrap();
     let downloader = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap();
 
-    let file_info = S3FileInfo {
-        name: "nonexistent.xml.gz".to_string(),
-        size: 1024,
-    };
+    let file_info = S3FileInfo { name: "nonexistent.xml.gz".to_string(), size: 1024 };
 
     let result = downloader.should_download(&file_info).await.unwrap();
     assert!(result, "Should download missing file");
@@ -117,10 +104,7 @@ async fn test_should_not_download_up_to_date_file() {
         },
     );
 
-    let file_info = S3FileInfo {
-        name: filename.to_string(),
-        size: content.len() as u64,
-    };
+    let file_info = S3FileInfo { name: filename.to_string(), size: content.len() as u64 };
 
     let result = downloader.should_download(&file_info).await.unwrap();
     assert!(!result, "Should not download up-to-date file");
@@ -178,10 +162,7 @@ async fn test_should_download_when_checksum_differs() {
         },
     );
 
-    let file_info = S3FileInfo {
-        name: filename.to_string(),
-        size: content.len() as u64,
-    };
+    let file_info = S3FileInfo { name: filename.to_string(), size: content.len() as u64 };
 
     let result = downloader.should_download(&file_info).await.unwrap();
     assert!(result, "Should download when checksum differs");
@@ -198,18 +179,9 @@ async fn test_get_latest_monthly_files_incomplete_set() {
 
     // Only 3 files instead of required 5 (4 data + 1 checksum)
     let files = vec![
-        S3FileInfo {
-            name: "data/discogs_20241201_artists.xml.gz".to_string(),
-            size: 1024,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241201_labels.xml.gz".to_string(),
-            size: 1024,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241201_CHECKSUM.txt".to_string(),
-            size: 100,
-        },
+        S3FileInfo { name: "data/discogs_20241201_artists.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/discogs_20241201_labels.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/discogs_20241201_CHECKSUM.txt".to_string(), size: 100 },
     ];
 
     let result = downloader.get_latest_monthly_files(&files).unwrap();
@@ -223,26 +195,11 @@ async fn test_get_latest_monthly_files_complete_set() {
 
     // Complete set: 4 data files + 1 checksum
     let files = vec![
-        S3FileInfo {
-            name: "data/discogs_20241201_artists.xml.gz".to_string(),
-            size: 1024,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241201_labels.xml.gz".to_string(),
-            size: 1024,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241201_masters.xml.gz".to_string(),
-            size: 1024,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241201_releases.xml.gz".to_string(),
-            size: 1024,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241201_CHECKSUM.txt".to_string(),
-            size: 100,
-        },
+        S3FileInfo { name: "data/discogs_20241201_artists.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/discogs_20241201_labels.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/discogs_20241201_masters.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/discogs_20241201_releases.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/discogs_20241201_CHECKSUM.txt".to_string(), size: 100 },
     ];
 
     let result = downloader.get_latest_monthly_files(&files).unwrap();
@@ -262,47 +219,17 @@ async fn test_get_latest_monthly_files_selects_newest() {
     // Two complete sets, different dates
     let files = vec![
         // Older version (20241201)
-        S3FileInfo {
-            name: "data/discogs_20241201_artists.xml.gz".to_string(),
-            size: 1024,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241201_labels.xml.gz".to_string(),
-            size: 1024,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241201_masters.xml.gz".to_string(),
-            size: 1024,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241201_releases.xml.gz".to_string(),
-            size: 1024,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241201_CHECKSUM.txt".to_string(),
-            size: 100,
-        },
+        S3FileInfo { name: "data/discogs_20241201_artists.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/discogs_20241201_labels.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/discogs_20241201_masters.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/discogs_20241201_releases.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/discogs_20241201_CHECKSUM.txt".to_string(), size: 100 },
         // Newer version (20241215)
-        S3FileInfo {
-            name: "data/discogs_20241215_artists.xml.gz".to_string(),
-            size: 2048,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241215_labels.xml.gz".to_string(),
-            size: 2048,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241215_masters.xml.gz".to_string(),
-            size: 2048,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241215_releases.xml.gz".to_string(),
-            size: 2048,
-        },
-        S3FileInfo {
-            name: "data/discogs_20241215_CHECKSUM.txt".to_string(),
-            size: 100,
-        },
+        S3FileInfo { name: "data/discogs_20241215_artists.xml.gz".to_string(), size: 2048 },
+        S3FileInfo { name: "data/discogs_20241215_labels.xml.gz".to_string(), size: 2048 },
+        S3FileInfo { name: "data/discogs_20241215_masters.xml.gz".to_string(), size: 2048 },
+        S3FileInfo { name: "data/discogs_20241215_releases.xml.gz".to_string(), size: 2048 },
+        S3FileInfo { name: "data/discogs_20241215_CHECKSUM.txt".to_string(), size: 100 },
     ];
 
     let result = downloader.get_latest_monthly_files(&files).unwrap();
@@ -321,12 +248,7 @@ async fn test_metadata_file_location() {
 
     downloader.metadata.insert(
         "test.xml.gz".to_string(),
-        LocalFileInfo {
-            path: "/tmp/test.xml.gz".to_string(),
-            checksum: "hash".to_string(),
-            version: "202412".to_string(),
-            size: 100,
-        },
+        LocalFileInfo { path: "/tmp/test.xml.gz".to_string(), checksum: "hash".to_string(), version: "202412".to_string(), size: 100 },
     );
 
     downloader.save_metadata().unwrap();
@@ -405,10 +327,7 @@ async fn test_metadata_with_multiple_versions() {
 
 #[tokio::test]
 async fn test_s3_file_info_structure() {
-    let file_info = S3FileInfo {
-        name: "test.xml.gz".to_string(),
-        size: 12345,
-    };
+    let file_info = S3FileInfo { name: "test.xml.gz".to_string(), size: 12345 };
 
     assert_eq!(file_info.name, "test.xml.gz");
     assert_eq!(file_info.size, 12345);
@@ -416,12 +335,7 @@ async fn test_s3_file_info_structure() {
 
 #[tokio::test]
 async fn test_local_file_info_structure() {
-    let file_info = LocalFileInfo {
-        path: "/tmp/test.xml.gz".to_string(),
-        checksum: "abc123".to_string(),
-        version: "202412".to_string(),
-        size: 1024,
-    };
+    let file_info = LocalFileInfo { path: "/tmp/test.xml.gz".to_string(), checksum: "abc123".to_string(), version: "202412".to_string(), size: 1024 };
 
     assert_eq!(file_info.path, "/tmp/test.xml.gz");
     assert_eq!(file_info.checksum, "abc123");
@@ -439,12 +353,7 @@ async fn test_metadata_json_format() {
 
     downloader.metadata.insert(
         "test.xml.gz".to_string(),
-        LocalFileInfo {
-            path: "/tmp/test.xml.gz".to_string(),
-            checksum: "abc123def456".to_string(),
-            version: "202412".to_string(),
-            size: 9876,
-        },
+        LocalFileInfo { path: "/tmp/test.xml.gz".to_string(), checksum: "abc123def456".to_string(), version: "202412".to_string(), size: 9876 },
     );
 
     downloader.save_metadata().unwrap();

@@ -69,12 +69,7 @@ fn test_extraction_progress_large_numbers() {
 
 #[test]
 fn test_data_type_all_variants_unique() {
-    let types = [
-        DataType::Artists,
-        DataType::Labels,
-        DataType::Masters,
-        DataType::Releases,
-    ];
+    let types = [DataType::Artists, DataType::Labels, DataType::Masters, DataType::Releases];
 
     // All routing keys should be different
     let keys: Vec<_> = types.iter().map(|t| t.routing_key()).collect();

@@ -33,10 +33,10 @@ fn test_log_level_mapping() {
 fn test_lapin_level_selection() {
     // Test that lapin log level is set correctly based on main log level
     let test_cases = vec![
-        ("debug", "info"),  // Debug mode -> lapin at info
-        ("info", "warn"),   // Info mode -> lapin at warn
-        ("warn", "warn"),   // Warn mode -> lapin at warn
-        ("error", "warn"),  // Error mode -> lapin at warn
+        ("debug", "info"), // Debug mode -> lapin at info
+        ("info", "warn"),  // Info mode -> lapin at warn
+        ("warn", "warn"),  // Warn mode -> lapin at warn
+        ("error", "warn"), // Error mode -> lapin at warn
     ];
 
     for (rust_level, expected_lapin) in test_cases {
@@ -105,11 +105,7 @@ fn test_filter_format() {
 #[test]
 fn test_log_level_case_insensitive() {
     // Test that log level is case-insensitive
-    let test_cases = vec![
-        ("debug", "DEBUG", "Debug"),
-        ("info", "INFO", "Info"),
-        ("warning", "WARNING", "Warning"),
-    ];
+    let test_cases = vec![("debug", "DEBUG", "Debug"), ("info", "INFO", "Info"), ("warning", "WARNING", "Warning")];
 
     for (lower, upper, title) in test_cases {
         assert_eq!(lower.to_uppercase(), upper);
@@ -133,10 +129,7 @@ async fn test_shutdown_signal_handler() {
     });
 
     // Wait for shutdown signal with timeout
-    let result = tokio::time::timeout(
-        tokio::time::Duration::from_secs(1),
-        shutdown.notified()
-    ).await;
+    let result = tokio::time::timeout(tokio::time::Duration::from_secs(1), shutdown.notified()).await;
 
     assert!(result.is_ok(), "Shutdown signal should be received");
 }
@@ -153,10 +146,7 @@ fn test_config_path_default() {
 #[test]
 fn test_force_reprocess_flag() {
     // Test force_reprocess flag behavior
-    let test_cases = vec![
-        (true, "should reprocess"),
-        (false, "should not reprocess"),
-    ];
+    let test_cases = vec![(true, "should reprocess"), (false, "should not reprocess")];
 
     for (force_reprocess, description) in test_cases {
         if force_reprocess {

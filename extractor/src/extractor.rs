@@ -63,8 +63,7 @@ pub async fn process_discogs_data(
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
-    let version = extract_version_from_filename(first_filename)
-        .ok_or_else(|| anyhow::anyhow!("Could not extract version from filename"))?;
+    let version = extract_version_from_filename(first_filename).ok_or_else(|| anyhow::anyhow!("Could not extract version from filename"))?;
 
     info!("📋 Detected Discogs data version: {}", version);
 
@@ -74,9 +73,7 @@ pub async fn process_discogs_data(
         info!("🔄 Force reprocess requested, creating new state marker");
         StateMarker::new(version.clone())
     } else {
-        StateMarker::load(&marker_path)
-            .await?
-            .unwrap_or_else(|| StateMarker::new(version.clone()))
+        StateMarker::load(&marker_path).await?.unwrap_or_else(|| StateMarker::new(version.clone()))
     };
 
     // Check what to do based on state marker
@@ -131,12 +128,7 @@ pub async fn process_discogs_data(
         return Ok(true);
     }
 
-    info!(
-        "📋 Files to process: total={}, pending={}, completed={}",
-        data_files.len(),
-        pending_files.len(),
-        data_files.len() - pending_files.len()
-    );
+    info!("📋 Files to process: total={}, pending={}, completed={}", data_files.len(), pending_files.len(), data_files.len() - pending_files.len());
 
     debug!("📋 Pending files list: {:?}", pending_files);
 
@@ -272,14 +264,7 @@ async fn process_single_file(
             file_name: file_name.to_string(),
             state_save_interval: config.state_save_interval,
         };
-        async move {
-            message_batcher(
-                parse_receiver,
-                batch_sender,
-                batcher_config,
-            )
-            .await
-        }
+        async move { message_batcher(parse_receiver, batch_sender, batcher_config).await }
     });
 
     let publisher_handle = tokio::spawn({
@@ -330,20 +315,8 @@ pub struct BatcherConfig {
 }
 
 /// Batch messages for efficient publishing
-pub async fn message_batcher(
-    mut receiver: mpsc::Receiver<DataMessage>,
-    sender: mpsc::Sender<Vec<DataMessage>>,
-    config: BatcherConfig,
-) -> Result<()> {
-    let BatcherConfig {
-        batch_size,
-        data_type,
-        state,
-        state_marker,
-        marker_path,
-        file_name,
-        state_save_interval,
-    } = config;
+pub async fn message_batcher(mut receiver: mpsc::Receiver<DataMessage>, sender: mpsc::Sender<Vec<DataMessage>>, config: BatcherConfig) -> Result<()> {
+    let BatcherConfig { batch_size, data_type, state, state_marker, marker_path, file_name, state_save_interval } = config;
     let mut batch = Vec::with_capacity(batch_size);
     let mut last_flush = Instant::now();
     let mut total_records = 0u64;
@@ -365,17 +338,14 @@ pub async fn message_batcher(
                 }
 
                 // Save state marker periodically
-                if total_records % state_save_interval as u64 == 0 && total_records != last_state_save {
+                if total_records.is_multiple_of(state_save_interval as u64) && total_records != last_state_save {
                     last_state_save = total_records;
                     let mut marker = state_marker.lock().await;
                     marker.update_file_progress(&file_name, total_records, total_records, total_batches);
                     if let Err(e) = marker.save(&marker_path).await {
                         warn!("⚠️ Failed to save state marker progress: {}", e);
                     } else {
-                        debug!(
-                            "💾 Saved state marker progress: {} records, {} batches for {}",
-                            total_records, total_batches, file_name
-                        );
+                        debug!("💾 Saved state marker progress: {} records, {} batches for {}", total_records, total_batches, file_name);
                     }
                 }
 
@@ -498,13 +468,8 @@ fn extract_data_type(filename: &str) -> Option<DataType> {
 /// Extract version from filename (e.g., "discogs_20260101_artists.xml.gz" -> "20260101")
 fn extract_version_from_filename(filename: &str) -> Option<String> {
     let parts: Vec<&str> = filename.split('_').collect();
-    if parts.len() >= 2 {
-        Some(parts[1].to_string())
-    } else {
-        None
-    }
+    if parts.len() >= 2 { Some(parts[1].to_string()) } else { None }
 }
-
 
 /// Main extraction loop with periodic checks
 pub async fn run_extraction_loop(
@@ -588,7 +553,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_state_marker_file_tracking() {
-        use crate::state_marker::{StateMarker, PhaseStatus};
+        use crate::state_marker::{PhaseStatus, StateMarker};
         use tempfile::TempDir;
 
         let _temp_dir = TempDir::new().unwrap();
@@ -596,17 +561,11 @@ mod tests {
 
         // Test file start tracking
         marker.start_file_processing("discogs_20230101_artists.xml.gz");
-        assert_eq!(
-            marker.processing_phase.current_file,
-            Some("discogs_20230101_artists.xml.gz".to_string())
-        );
+        assert_eq!(marker.processing_phase.current_file, Some("discogs_20230101_artists.xml.gz".to_string()));
 
         // Test file completion
         marker.complete_file_processing("discogs_20230101_artists.xml.gz", 1000);
-        let file_progress = marker
-            .processing_phase
-            .progress_by_file
-            .get("discogs_20230101_artists.xml.gz");
+        let file_progress = marker.processing_phase.progress_by_file.get("discogs_20230101_artists.xml.gz");
         assert!(file_progress.is_some());
         let progress = file_progress.unwrap();
         assert_eq!(progress.status, PhaseStatus::Completed);
@@ -625,10 +584,7 @@ mod tests {
             marker.update_file_progress("discogs_20230101_artists.xml.gz", i * 1000, i * 1000, i * 10);
         }
 
-        let file_progress = marker
-            .processing_phase
-            .progress_by_file
-            .get("discogs_20230101_artists.xml.gz");
+        let file_progress = marker.processing_phase.progress_by_file.get("discogs_20230101_artists.xml.gz");
         assert!(file_progress.is_some());
         assert_eq!(file_progress.unwrap().records_extracted, 3000);
     }
@@ -652,10 +608,7 @@ mod tests {
         assert!(loaded.is_some());
         let loaded = loaded.unwrap();
         assert_eq!(loaded.current_version, "20230101");
-        let file_progress = loaded
-            .processing_phase
-            .progress_by_file
-            .get("discogs_20230101_artists.xml.gz");
+        let file_progress = loaded.processing_phase.progress_by_file.get("discogs_20230101_artists.xml.gz");
         assert!(file_progress.is_some());
         assert_eq!(file_progress.unwrap().records_extracted, 1500);
     }
@@ -688,11 +641,7 @@ mod tests {
 
         // Send some test messages
         for i in 0..5 {
-            let message = DataMessage {
-                sha256: format!("sha{}", i),
-                data: serde_json::json!({ "test": format!("test{}", i) }),
-                id: i.to_string(),
-            };
+            let message = DataMessage { sha256: format!("sha{}", i), data: serde_json::json!({ "test": format!("test{}", i) }), id: i.to_string() };
             parse_sender.send(message).await.unwrap();
         }
         drop(parse_sender);
@@ -707,11 +656,7 @@ mod tests {
             file_name: "test_file.xml.gz".to_string(),
             state_save_interval: 5000,
         };
-        let batcher = message_batcher(
-            parse_receiver,
-            batch_sender,
-            batcher_config,
-        );
+        let batcher = message_batcher(parse_receiver, batch_sender, batcher_config);
 
         // Spawn batcher task
         tokio::spawn(batcher);
@@ -745,11 +690,7 @@ mod tests {
         // Send exactly batch_size messages
         let batch_size = 10;
         for i in 0..batch_size {
-            let message = DataMessage {
-                sha256: format!("sha{}", i),
-                data: serde_json::json!({ "test": format!("test{}", i) }),
-                id: i.to_string(),
-            };
+            let message = DataMessage { sha256: format!("sha{}", i), data: serde_json::json!({ "test": format!("test{}", i) }), id: i.to_string() };
             parse_sender.send(message).await.unwrap();
         }
         drop(parse_sender);
@@ -764,11 +705,7 @@ mod tests {
             file_name: "test_file.xml.gz".to_string(),
             state_save_interval: 5000,
         };
-        let batcher = message_batcher(
-            parse_receiver,
-            batch_sender,
-            batcher_config,
-        );
+        let batcher = message_batcher(parse_receiver, batch_sender, batcher_config);
         tokio::spawn(batcher);
 
         // Get first batch
@@ -792,11 +729,7 @@ mod tests {
 
         // Send fewer messages than batch size
         for i in 0..3 {
-            let message = DataMessage {
-                sha256: format!("sha{}", i),
-                data: serde_json::json!({ "test": format!("test{}", i) }),
-                id: i.to_string(),
-            };
+            let message = DataMessage { sha256: format!("sha{}", i), data: serde_json::json!({ "test": format!("test{}", i) }), id: i.to_string() };
             parse_sender.send(message).await.unwrap();
         }
 
@@ -810,11 +743,7 @@ mod tests {
             file_name: "test_file.xml.gz".to_string(),
             state_save_interval: 5000,
         };
-        let batcher = message_batcher(
-            parse_receiver,
-            batch_sender,
-            batcher_config,
-        );
+        let batcher = message_batcher(parse_receiver, batch_sender, batcher_config);
         let batcher_handle = tokio::spawn(batcher);
 
         // Wait a bit for timeout flush

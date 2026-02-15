@@ -21,10 +21,7 @@ impl Default for MockMessageQueue {
 
 impl MockMessageQueue {
     pub fn new() -> Self {
-        Self {
-            published_messages: Arc::new(Mutex::new(Vec::new())),
-            should_fail: Arc::new(Mutex::new(false)),
-        }
+        Self { published_messages: Arc::new(Mutex::new(Vec::new())), should_fail: Arc::new(Mutex::new(false)) }
     }
 
     pub fn set_should_fail(&self, should_fail: bool) {
@@ -40,10 +37,7 @@ impl MockMessageQueue {
             return Err(anyhow::anyhow!("Mock failure"));
         }
 
-        self.published_messages
-            .lock()
-            .unwrap()
-            .push((routing_key.to_string(), payload));
+        self.published_messages.lock().unwrap().push((routing_key.to_string(), payload));
 
         Ok(())
     }
@@ -62,9 +56,7 @@ impl Default for MockDownloader {
 
 impl MockDownloader {
     pub fn new() -> Self {
-        Self {
-            files: Arc::new(Mutex::new(HashMap::new())),
-        }
+        Self { files: Arc::new(Mutex::new(HashMap::new())) }
     }
 
     pub fn add_file(&self, path: &str, content: Vec<u8>) {
@@ -72,12 +64,7 @@ impl MockDownloader {
     }
 
     pub async fn download(&self, path: &str) -> anyhow::Result<Vec<u8>> {
-        self.files
-            .lock()
-            .unwrap()
-            .get(path)
-            .cloned()
-            .ok_or_else(|| anyhow::anyhow!("File not found"))
+        self.files.lock().unwrap().get(path).cloned().ok_or_else(|| anyhow::anyhow!("File not found"))
     }
 }
 

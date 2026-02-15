@@ -2,9 +2,9 @@ use anyhow::{Context, Result};
 use flate2::read::GzDecoder;
 use quick_xml::Reader;
 use quick_xml::events::Event;
-use serde_json::{Map, Value};
 #[cfg(test)]
 use serde_json::json;
+use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 use std::fs::File;
 use std::io::BufReader;
@@ -24,11 +24,7 @@ struct ElementContext {
 
 impl ElementContext {
     fn new() -> Self {
-        Self {
-            attributes: Map::new(),
-            children: Map::new(),
-            text_content: String::new(),
-        }
+        Self { attributes: Map::new(), children: Map::new(), text_content: String::new() }
     }
 
     /// Convert this element to a JSON value, combining attributes, text, and children
@@ -168,10 +164,7 @@ impl XmlParser {
                         // Send immediately since it's self-closing
                         let record = context.into_value();
                         if let Value::Object(ref obj) = record {
-                            let id = obj.get("id")
-                                .and_then(|v| v.as_str())
-                                .unwrap_or("unknown")
-                                .to_string();
+                            let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
                             let sha256 = calculate_record_hash(&record);
                             let message = DataMessage { id, sha256, data: record.clone() };
 
@@ -206,74 +199,60 @@ impl XmlParser {
                 Ok(Event::End(e)) => {
                     let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
 
-                    if in_target_element
-                        && let Some(context) = element_stack.pop()
-                    {
+                    if in_target_element && let Some(context) = element_stack.pop() {
                         let element_value = context.into_value();
 
-                            if name == target_element && depth == 2 {
-                                // End of record, send it
-                                if let Value::Object(obj) = element_value {
-                                    // Get ID - try @id first (attribute), then id (child element)
-                                    let id = obj.get("@id")
-                                        .or_else(|| obj.get("id"))
-                                        .and_then(|v| v.as_str())
-                                        .unwrap_or("unknown")
-                                        .to_string();
+                        if name == target_element && depth == 2 {
+                            // End of record, send it
+                            if let Value::Object(obj) = element_value {
+                                // Get ID - try @id first (attribute), then id (child element)
+                                let id = obj.get("@id").or_else(|| obj.get("id")).and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
 
-                                    // For releases and masters, pyextractor adds a plain 'id' field
-                                    // in addition to @id (see pyextractor.py line 536)
-                                    let mut final_obj = obj;
-                                    if matches!(self.data_type, DataType::Releases | DataType::Masters)
-                                        && final_obj.get("@id").is_some()
-                                        && final_obj.get("id").is_none()
-                                    {
-                                        final_obj.insert("id".to_string(), Value::String(id.clone()));
-                                    }
-
-                                    let final_value = Value::Object(final_obj);
-                                    let sha256 = calculate_record_hash(&final_value);
-                                    let message = DataMessage {
-                                        id: id.clone(),
-                                        sha256,
-                                        data: final_value,
-                                    };
-
-                                    if self.sender.send(message).await.is_err() {
-                                        warn!("⚠️ Receiver dropped, stopping parsing");
-                                        break;
-                                    }
-
-                                    record_count += 1;
-                                    if record_count % 1000 == 0 {
-                                        debug!("📊 Parsed {} {} records", record_count, self.data_type);
-                                    }
+                                // For releases and masters, pyextractor adds a plain 'id' field
+                                // in addition to @id (see pyextractor.py line 536)
+                                let mut final_obj = obj;
+                                if matches!(self.data_type, DataType::Releases | DataType::Masters)
+                                    && final_obj.get("@id").is_some()
+                                    && final_obj.get("id").is_none()
+                                {
+                                    final_obj.insert("id".to_string(), Value::String(id.clone()));
                                 }
 
-                                in_target_element = false;
-                            } else {
-                                // End of child element, add to parent
-                                if let Some(parent) = element_stack.last_mut() {
-                                    parent.add_child(name, element_value);
+                                let final_value = Value::Object(final_obj);
+                                let sha256 = calculate_record_hash(&final_value);
+                                let message = DataMessage { id: id.clone(), sha256, data: final_value };
+
+                                if self.sender.send(message).await.is_err() {
+                                    warn!("⚠️ Receiver dropped, stopping parsing");
+                                    break;
+                                }
+
+                                record_count += 1;
+                                if record_count.is_multiple_of(1000) {
+                                    debug!("📊 Parsed {} {} records", record_count, self.data_type);
                                 }
                             }
+
+                            in_target_element = false;
+                        } else {
+                            // End of child element, add to parent
+                            if let Some(parent) = element_stack.last_mut() {
+                                parent.add_child(name, element_value);
+                            }
+                        }
                     }
 
                     depth -= 1;
                 }
 
                 Ok(Event::Text(e)) => {
-                    if in_target_element
-                        && let Some(context) = element_stack.last_mut()
-                    {
+                    if in_target_element && let Some(context) = element_stack.last_mut() {
                         context.text_content.push_str(&e.unescape().unwrap_or_default());
                     }
                 }
 
                 Ok(Event::CData(e)) => {
-                    if in_target_element
-                        && let Some(context) = element_stack.last_mut()
-                    {
+                    if in_target_element && let Some(context) = element_stack.last_mut() {
                         context.text_content.push_str(&String::from_utf8_lossy(&e));
                     }
                 }

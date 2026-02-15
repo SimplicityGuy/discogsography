@@ -3,7 +3,7 @@
 
 use extractor::extractor::ExtractorState;
 use extractor::state_marker::StateMarker;
-use extractor::types::{DataType, DataMessage};
+use extractor::types::{DataMessage, DataType};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -266,12 +266,7 @@ async fn test_extractor_state_memory_cleanup() {
 
 #[test]
 fn test_data_type_all_variants() {
-    let types = vec![
-        DataType::Artists,
-        DataType::Labels,
-        DataType::Masters,
-        DataType::Releases,
-    ];
+    let types = vec![DataType::Artists, DataType::Labels, DataType::Masters, DataType::Releases];
 
     for data_type in types {
         // Test Display trait
@@ -293,12 +288,7 @@ fn test_data_type_all_variants() {
 async fn test_state_progress_tracking_accuracy() {
     let state = Arc::new(RwLock::new(ExtractorState::default()));
 
-    let expected_counts = vec![
-        (DataType::Artists, 123),
-        (DataType::Labels, 456),
-        (DataType::Masters, 789),
-        (DataType::Releases, 101112),
-    ];
+    let expected_counts = vec![(DataType::Artists, 123), (DataType::Labels, 456), (DataType::Masters, 789), (DataType::Releases, 101112)];
 
     {
         let mut s = state.write().await;
@@ -327,12 +317,7 @@ async fn test_state_progress_tracking_accuracy() {
 fn test_data_type_all_conversions() {
     use std::str::FromStr;
 
-    let all_types = [
-        DataType::Artists,
-        DataType::Labels,
-        DataType::Masters,
-        DataType::Releases,
-    ];
+    let all_types = [DataType::Artists, DataType::Labels, DataType::Masters, DataType::Releases];
 
     for data_type in all_types {
         let as_str = data_type.to_string();
@@ -438,24 +423,14 @@ async fn test_message_batcher_empty_batch() {
     drop(parse_sender);
 
     let batcher_handle = tokio::spawn(async move {
-        use extractor::extractor::{message_batcher, BatcherConfig};
-        let batcher_config = BatcherConfig {
-            batch_size: 10,
-            data_type: DataType::Artists,
-            state,
-            state_marker,
-            marker_path,
-            file_name,
-            state_save_interval,
-        };
+        use extractor::extractor::{BatcherConfig, message_batcher};
+        let batcher_config =
+            BatcherConfig { batch_size: 10, data_type: DataType::Artists, state, state_marker, marker_path, file_name, state_save_interval };
         message_batcher(parse_receiver, batch_sender, batcher_config).await
     });
 
     // Should not receive any batches
-    let result = tokio::time::timeout(
-        tokio::time::Duration::from_millis(100),
-        batch_receiver.recv()
-    ).await;
+    let result = tokio::time::timeout(tokio::time::Duration::from_millis(100), batch_receiver.recv()).await;
 
     assert!(result.is_err() || result.unwrap().is_none());
 
@@ -475,25 +450,14 @@ async fn test_message_batcher_single_message() {
     let state_save_interval = 1000;
 
     // Send one message
-    let msg = DataMessage {
-        id: "1".to_string(),
-        sha256: "hash1".to_string(),
-        data: serde_json::json!({"test": "value"}),
-    };
+    let msg = DataMessage { id: "1".to_string(), sha256: "hash1".to_string(), data: serde_json::json!({"test": "value"}) };
     parse_sender.send(msg).await.unwrap();
     drop(parse_sender);
 
     let batcher_handle = tokio::spawn(async move {
-        use extractor::extractor::{message_batcher, BatcherConfig};
-        let batcher_config = BatcherConfig {
-            batch_size: 10,
-            data_type: DataType::Labels,
-            state,
-            state_marker,
-            marker_path,
-            file_name,
-            state_save_interval,
-        };
+        use extractor::extractor::{BatcherConfig, message_batcher};
+        let batcher_config =
+            BatcherConfig { batch_size: 10, data_type: DataType::Labels, state, state_marker, marker_path, file_name, state_save_interval };
         message_batcher(parse_receiver, batch_sender, batcher_config).await
     });
 
@@ -521,26 +485,15 @@ async fn test_message_batcher_multiple_batches() {
 
     // Send exactly 2 full batches worth of messages
     for i in 0..(batch_size * 2) {
-        let msg = DataMessage {
-            id: format!("{}", i),
-            sha256: format!("hash{}", i),
-            data: serde_json::json!({"test": format!("value{}", i)}),
-        };
+        let msg = DataMessage { id: format!("{}", i), sha256: format!("hash{}", i), data: serde_json::json!({"test": format!("value{}", i)}) };
         parse_sender.send(msg).await.unwrap();
     }
     drop(parse_sender);
 
     let batcher_handle = tokio::spawn(async move {
-        use extractor::extractor::{message_batcher, BatcherConfig};
-        let batcher_config = BatcherConfig {
-            batch_size,
-            data_type: DataType::Masters,
-            state,
-            state_marker,
-            marker_path,
-            file_name,
-            state_save_interval,
-        };
+        use extractor::extractor::{BatcherConfig, message_batcher};
+        let batcher_config =
+            BatcherConfig { batch_size, data_type: DataType::Masters, state, state_marker, marker_path, file_name, state_save_interval };
         message_batcher(parse_receiver, batch_sender, batcher_config).await
     });
 

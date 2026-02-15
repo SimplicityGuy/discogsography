@@ -37,8 +37,7 @@ async fn main() -> Result<()> {
 
     // Initialize tracing with LOG_LEVEL environment variable
     // Supports: DEBUG, INFO, WARNING, ERROR, CRITICAL (maps to Rust's trace, debug, info, warn, error)
-    let log_level = std::env::var("LOG_LEVEL")
-        .unwrap_or_else(|_| "INFO".to_string());
+    let log_level = std::env::var("LOG_LEVEL").unwrap_or_else(|_| "INFO".to_string());
 
     // Map Python log levels to Rust tracing levels
     let rust_level = map_log_level(&log_level);

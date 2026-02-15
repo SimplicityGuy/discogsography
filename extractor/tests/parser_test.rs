@@ -30,10 +30,7 @@ async fn test_parse_empty_xml() {
     assert_eq!(count, 0);
 
     // Should not receive any messages
-    let result = tokio::time::timeout(
-        tokio::time::Duration::from_millis(100),
-        receiver.recv()
-    ).await;
+    let result = tokio::time::timeout(tokio::time::Duration::from_millis(100), receiver.recv()).await;
     assert!(result.is_err()); // Timeout, no message received
 }
 
@@ -61,10 +58,7 @@ async fn test_parse_multiple_records() {
 
     // Collect all messages
     let mut messages = Vec::new();
-    while let Ok(msg) = tokio::time::timeout(
-        tokio::time::Duration::from_millis(100),
-        receiver.recv()
-    ).await {
+    while let Ok(msg) = tokio::time::timeout(tokio::time::Duration::from_millis(100), receiver.recv()).await {
         if let Some(m) = msg {
             messages.push(m);
         }
@@ -462,14 +456,13 @@ async fn test_parse_channel_closed_gracefully() {
 #[tokio::test]
 async fn test_parse_large_batch() {
     // Generate XML with many records
-    let mut xml_content = String::from(r#"<?xml version="1.0" encoding="UTF-8"?>
-<artists>"#);
+    let mut xml_content = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>"#,
+    );
 
     for i in 1..=100 {
-        xml_content.push_str(&format!(
-            r#"<artist id="{}"><name>Artist {}</name></artist>"#,
-            i, i
-        ));
+        xml_content.push_str(&format!(r#"<artist id="{}"><name>Artist {}</name></artist>"#, i, i));
     }
 
     xml_content.push_str("</artists>");
@@ -489,10 +482,7 @@ async fn test_parse_large_batch() {
 
     // Verify we can receive all messages
     let mut received_count = 0;
-    while let Ok(Some(_)) = tokio::time::timeout(
-        tokio::time::Duration::from_millis(100),
-        receiver.recv()
-    ).await {
+    while let Ok(Some(_)) = tokio::time::timeout(tokio::time::Duration::from_millis(100), receiver.recv()).await {
         received_count += 1;
     }
 
