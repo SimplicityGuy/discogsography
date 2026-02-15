@@ -6,13 +6,13 @@ All database queries are defined here to keep the API layer thin.
 from functools import lru_cache
 from typing import Any
 
-from neo4j import AsyncDriver
+from common import AsyncResilientNeo4jDriver
 
 
 # --- Autocomplete ---
 
 
-async def autocomplete_artist(driver: AsyncDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
+async def autocomplete_artist(driver: AsyncResilientNeo4jDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search artists by name using fulltext index."""
     cypher = """
     CALL db.index.fulltext.queryNodes('artist_name_fulltext', $query + '*')
@@ -21,12 +21,12 @@ async def autocomplete_artist(driver: AsyncDriver, query: str, limit: int = 10) 
     ORDER BY score DESC
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, parameters={"query": query, "limit": limit})
         return [dict(record) async for record in result]
 
 
-async def autocomplete_label(driver: AsyncDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
+async def autocomplete_label(driver: AsyncResilientNeo4jDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search labels by name using fulltext index."""
     cypher = """
     CALL db.index.fulltext.queryNodes('label_name_fulltext', $query + '*')
@@ -35,12 +35,12 @@ async def autocomplete_label(driver: AsyncDriver, query: str, limit: int = 10) -
     ORDER BY score DESC
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, parameters={"query": query, "limit": limit})
         return [dict(record) async for record in result]
 
 
-async def autocomplete_genre(driver: AsyncDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
+async def autocomplete_genre(driver: AsyncResilientNeo4jDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search genres by name prefix."""
     cypher = """
     MATCH (g:Genre)
@@ -49,7 +49,7 @@ async def autocomplete_genre(driver: AsyncDriver, query: str, limit: int = 10) -
     ORDER BY g.name
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, parameters={"query": query, "limit": limit})
         return [dict(record) async for record in result]
 
@@ -57,7 +57,7 @@ async def autocomplete_genre(driver: AsyncDriver, query: str, limit: int = 10) -
 # --- Explore (center node + category nodes) ---
 
 
-async def explore_artist(driver: AsyncDriver, name: str) -> dict[str, Any] | None:
+async def explore_artist(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
     """Get artist center node with category counts."""
     cypher = """
     MATCH (a:Artist {name: $name})
@@ -72,7 +72,7 @@ async def explore_artist(driver: AsyncDriver, name: str) -> dict[str, Any] | Non
     RETURN a.id AS id, a.name AS name,
            release_count, label_count, alias_count
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=name)
         record = await result.single()
         if not record:
@@ -80,7 +80,7 @@ async def explore_artist(driver: AsyncDriver, name: str) -> dict[str, Any] | Non
         return dict(record)
 
 
-async def explore_genre(driver: AsyncDriver, name: str) -> dict[str, Any] | None:
+async def explore_genre(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
     """Get genre center node with category counts."""
     cypher = """
     MATCH (g:Genre {name: $name})
@@ -93,7 +93,7 @@ async def explore_genre(driver: AsyncDriver, name: str) -> dict[str, Any] | None
     RETURN g.name AS id, g.name AS name,
            artist_count, label_count, style_count
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=name)
         record = await result.single()
         if not record:
@@ -101,7 +101,7 @@ async def explore_genre(driver: AsyncDriver, name: str) -> dict[str, Any] | None
         return dict(record)
 
 
-async def explore_label(driver: AsyncDriver, name: str) -> dict[str, Any] | None:
+async def explore_label(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
     """Get label center node with category counts."""
     cypher = """
     MATCH (l:Label {name: $name})
@@ -112,7 +112,7 @@ async def explore_label(driver: AsyncDriver, name: str) -> dict[str, Any] | None
     RETURN l.id AS id, l.name AS name,
            release_count, artist_count
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=name)
         record = await result.single()
         if not record:
@@ -123,7 +123,7 @@ async def explore_label(driver: AsyncDriver, name: str) -> dict[str, Any] | None
 # --- Expand (populate category children) ---
 
 
-async def expand_artist_releases(driver: AsyncDriver, artist_name: str, limit: int = 50) -> list[dict[str, Any]]:
+async def expand_artist_releases(driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get releases by an artist."""
     cypher = """
     MATCH (a:Artist {name: $name})-[:BY]->(r:Release)
@@ -131,12 +131,12 @@ async def expand_artist_releases(driver: AsyncDriver, artist_name: str, limit: i
     ORDER BY r.year DESC
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=artist_name, limit=limit)
         return [dict(record) async for record in result]
 
 
-async def expand_artist_labels(driver: AsyncDriver, artist_name: str, limit: int = 50) -> list[dict[str, Any]]:
+async def expand_artist_labels(driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get labels associated with an artist via their releases."""
     cypher = """
     MATCH (a:Artist {name: $name})-[:BY]->(r:Release)-[:ON]->(l:Label)
@@ -144,12 +144,12 @@ async def expand_artist_labels(driver: AsyncDriver, artist_name: str, limit: int
     ORDER BY release_count DESC
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=artist_name, limit=limit)
         return [dict(record) async for record in result]
 
 
-async def expand_artist_aliases(driver: AsyncDriver, artist_name: str, limit: int = 50) -> list[dict[str, Any]]:
+async def expand_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get aliases and group memberships for an artist."""
     cypher = """
     MATCH (a:Artist {name: $name})
@@ -161,12 +161,12 @@ async def expand_artist_aliases(driver: AsyncDriver, artist_name: str, limit: in
     RETURN DISTINCT alias.id AS id, alias.name AS name, alias.type AS type
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=artist_name, limit=limit)
         return [dict(record) async for record in result]
 
 
-async def expand_genre_artists(driver: AsyncDriver, genre_name: str, limit: int = 50) -> list[dict[str, Any]]:
+async def expand_genre_artists(driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get artists in a genre."""
     cypher = """
     MATCH (a:Artist)-[:IS]->(g:Genre {name: $name})
@@ -174,12 +174,12 @@ async def expand_genre_artists(driver: AsyncDriver, genre_name: str, limit: int 
     ORDER BY a.name
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=genre_name, limit=limit)
         return [dict(record) async for record in result]
 
 
-async def expand_genre_labels(driver: AsyncDriver, genre_name: str, limit: int = 50) -> list[dict[str, Any]]:
+async def expand_genre_labels(driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get labels associated with a genre via artists and releases."""
     cypher = """
     MATCH (a:Artist)-[:IS]->(g:Genre {name: $name}),
@@ -188,12 +188,12 @@ async def expand_genre_labels(driver: AsyncDriver, genre_name: str, limit: int =
     ORDER BY release_count DESC
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=genre_name, limit=limit)
         return [dict(record) async for record in result]
 
 
-async def expand_genre_styles(driver: AsyncDriver, genre_name: str, limit: int = 50) -> list[dict[str, Any]]:
+async def expand_genre_styles(driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get styles (subgenres) associated with a genre."""
     cypher = """
     MATCH (a:Artist)-[:IS]->(g:Genre {name: $name}),
@@ -202,12 +202,12 @@ async def expand_genre_styles(driver: AsyncDriver, genre_name: str, limit: int =
     ORDER BY artist_count DESC
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=genre_name, limit=limit)
         return [dict(record) async for record in result]
 
 
-async def expand_label_releases(driver: AsyncDriver, label_name: str, limit: int = 50) -> list[dict[str, Any]]:
+async def expand_label_releases(driver: AsyncResilientNeo4jDriver, label_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get releases on a label."""
     cypher = """
     MATCH (r:Release)-[:ON]->(l:Label {name: $name})
@@ -215,12 +215,12 @@ async def expand_label_releases(driver: AsyncDriver, label_name: str, limit: int
     ORDER BY r.year DESC
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=label_name, limit=limit)
         return [dict(record) async for record in result]
 
 
-async def expand_label_artists(driver: AsyncDriver, label_name: str, limit: int = 50) -> list[dict[str, Any]]:
+async def expand_label_artists(driver: AsyncResilientNeo4jDriver, label_name: str, limit: int = 50) -> list[dict[str, Any]]:
     """Get artists on a label."""
     cypher = """
     MATCH (a:Artist)-[:BY]->(r:Release)-[:ON]->(l:Label {name: $name})
@@ -228,7 +228,7 @@ async def expand_label_artists(driver: AsyncDriver, label_name: str, limit: int 
     ORDER BY release_count DESC
     LIMIT $limit
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=label_name, limit=limit)
         return [dict(record) async for record in result]
 
@@ -236,7 +236,7 @@ async def expand_label_artists(driver: AsyncDriver, label_name: str, limit: int 
 # --- Node Details ---
 
 
-async def get_artist_details(driver: AsyncDriver, node_id: str) -> dict[str, Any] | None:
+async def get_artist_details(driver: AsyncResilientNeo4jDriver, node_id: str) -> dict[str, Any] | None:
     """Get full details for an artist node."""
     cypher = """
     MATCH (a:Artist) WHERE a.id = $id OR a.name = $id
@@ -250,7 +250,7 @@ async def get_artist_details(driver: AsyncDriver, node_id: str) -> dict[str, Any
     WITH a, genres, styles, release_count, collect(DISTINCT grp.name) AS groups
     RETURN a.id AS id, a.name AS name, genres, styles, release_count, groups
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, id=node_id)
         record = await result.single()
         if not record:
@@ -258,7 +258,7 @@ async def get_artist_details(driver: AsyncDriver, node_id: str) -> dict[str, Any
         return dict(record)
 
 
-async def get_release_details(driver: AsyncDriver, node_id: str) -> dict[str, Any] | None:
+async def get_release_details(driver: AsyncResilientNeo4jDriver, node_id: str) -> dict[str, Any] | None:
     """Get full details for a release node."""
     cypher = """
     MATCH (r:Release) WHERE r.id = $id OR r.title = $id
@@ -273,7 +273,7 @@ async def get_release_details(driver: AsyncDriver, node_id: str) -> dict[str, An
     RETURN r.id AS id, r.title AS name, r.year AS year, r.country AS country,
            artists, labels, genres, styles
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, id=node_id)
         record = await result.single()
         if not record:
@@ -281,7 +281,7 @@ async def get_release_details(driver: AsyncDriver, node_id: str) -> dict[str, An
         return dict(record)
 
 
-async def get_label_details(driver: AsyncDriver, node_id: str) -> dict[str, Any] | None:
+async def get_label_details(driver: AsyncResilientNeo4jDriver, node_id: str) -> dict[str, Any] | None:
     """Get full details for a label node."""
     cypher = """
     MATCH (l:Label) WHERE l.id = $id OR l.name = $id
@@ -289,7 +289,7 @@ async def get_label_details(driver: AsyncDriver, node_id: str) -> dict[str, Any]
     WITH l, count(DISTINCT r) AS release_count
     RETURN l.id AS id, l.name AS name, release_count
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, id=node_id)
         record = await result.single()
         if not record:
@@ -297,7 +297,7 @@ async def get_label_details(driver: AsyncDriver, node_id: str) -> dict[str, Any]
         return dict(record)
 
 
-async def get_genre_details(driver: AsyncDriver, node_id: str) -> dict[str, Any] | None:
+async def get_genre_details(driver: AsyncResilientNeo4jDriver, node_id: str) -> dict[str, Any] | None:
     """Get full details for a genre node."""
     cypher = """
     MATCH (g:Genre {name: $id})
@@ -305,7 +305,7 @@ async def get_genre_details(driver: AsyncDriver, node_id: str) -> dict[str, Any]
     WITH g, count(DISTINCT a) AS artist_count
     RETURN g.name AS id, g.name AS name, artist_count
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, id=node_id)
         record = await result.single()
         if not record:
@@ -316,7 +316,7 @@ async def get_genre_details(driver: AsyncDriver, node_id: str) -> dict[str, Any]
 # --- Trends (time-series) ---
 
 
-async def trends_artist(driver: AsyncDriver, name: str) -> list[dict[str, Any]]:
+async def trends_artist(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
     """Get release count by year for an artist."""
     cypher = """
     MATCH (a:Artist {name: $name})-[:BY]->(r:Release)
@@ -324,12 +324,12 @@ async def trends_artist(driver: AsyncDriver, name: str) -> list[dict[str, Any]]:
     RETURN r.year AS year, count(r) AS count
     ORDER BY r.year
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=name)
         return [dict(record) async for record in result]
 
 
-async def trends_genre(driver: AsyncDriver, name: str) -> list[dict[str, Any]]:
+async def trends_genre(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
     """Get release count by year for a genre."""
     cypher = """
     MATCH (r:Release)-[:HAS_GENRE]->(g:Genre {name: $name})
@@ -337,12 +337,12 @@ async def trends_genre(driver: AsyncDriver, name: str) -> list[dict[str, Any]]:
     RETURN r.year AS year, count(r) AS count
     ORDER BY r.year
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=name)
         return [dict(record) async for record in result]
 
 
-async def trends_label(driver: AsyncDriver, name: str) -> list[dict[str, Any]]:
+async def trends_label(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
     """Get release count by year for a label."""
     cypher = """
     MATCH (r:Release)-[:ON]->(l:Label {name: $name})
@@ -350,7 +350,7 @@ async def trends_label(driver: AsyncDriver, name: str) -> list[dict[str, Any]]:
     RETURN r.year AS year, count(r) AS count
     ORDER BY r.year
     """
-    async with driver.session() as session:
+    async with await driver.session() as session:
         result = await session.run(cypher, name=name)
         return [dict(record) async for record in result]
 
