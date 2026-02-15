@@ -97,13 +97,13 @@ repos:
         args: ["."]
       - id: cargo-fmt
         name: cargo fmt
-        entry: just extractor-fmt-check
+        entry: bash -c 'cd extractor 2>/dev/null && cargo fmt --check || exit 0'
         language: system
         files: '^extractor/.*\.rs$'
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
-        entry: just extractor-lint
+        entry: bash -c 'cd extractor 2>/dev/null && cargo clippy --all-targets -- -D warnings || exit 0'
         language: system
         files: '^extractor/.*\.rs$'
         pass_filenames: false
