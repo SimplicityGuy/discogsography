@@ -98,13 +98,13 @@ repos:
         args: ["."]
       - id: cargo-fmt
         name: cargo fmt
-        entry: bash -c 'cd extractor/rustextractor 2>/dev/null && cargo fmt --check || exit 0'
+        entry: bash -c 'cd extractor 2>/dev/null && cargo fmt --check || exit 0'
         language: system
-        files: '^extractor/rustextractor/.*\.rs$'
+        files: '^extractor/.*\.rs$'
         pass_filenames: false
       - id: cargo-clippy
         name: cargo clippy
-        entry: bash -c 'cd extractor/rustextractor 2>/dev/null && cargo clippy -- -D warnings || exit 0'
+        entry: bash -c 'cd extractor 2>/dev/null && cargo clippy -- -D warnings || exit 0'
         language: system
-        files: '^extractor/rustextractor/.*\.rs$'
+        files: '^extractor/.*\.rs$'
         pass_filenames: false
