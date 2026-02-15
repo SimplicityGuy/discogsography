@@ -401,7 +401,7 @@ async def _recover_consumers() -> None:
             )
 
             # Set QoS - must match batch_size for efficient batch processing
-            await active_channel.set_qos(prefetch_count=200, global_=True)
+            await active_channel.set_qos(prefetch_count=200)
 
             # Queue arguments for quorum queues with DLX
             queue_args = {
@@ -1465,17 +1465,17 @@ async def main() -> None:
             for label, prop in indexes_to_check:
                 try:
                     # Get all indexes for this label and property (any type)
-                    result = session.run(
+                    result = await session.run(
                         "SHOW INDEXES YIELD name, labelsOrTypes, properties "
                         "WHERE $label IN labelsOrTypes AND $prop IN properties "
                         "RETURN name",
                         label=label,
                         prop=prop,
                     )
-                    for record in result:
+                    async for record in result:
                         index_name = record["name"]
                         try:
-                            session.run(f"DROP INDEX {index_name} IF EXISTS")
+                            await session.run(f"DROP INDEX {index_name} IF EXISTS")
                             logger.info(f"🗑️ Dropped existing index: {index_name}")
                         except Exception as drop_error:
                             logger.debug(
@@ -1500,7 +1500,7 @@ async def main() -> None:
 
             for constraint in constraints_to_create:
                 try:
-                    session.run(constraint)
+                    await session.run(constraint)
                     logger.info(
                         f"✅ Created/verified constraint: {constraint.split('FOR')[1].split('REQUIRE')[0].strip()}"
                     )
@@ -1520,7 +1520,7 @@ async def main() -> None:
 
             for index in indexes_to_create:
                 try:
-                    session.run(index)
+                    await session.run(index)
                 except Exception as index_error:
                     logger.warning(
                         "⚠️ Index creation note",
@@ -1611,7 +1611,7 @@ async def main() -> None:
         # Set QoS to allow concurrent batch processing for better throughput
         # prefetch_count must be >= batch_size to allow batches to fill before flushing
         # With batch_size=100 (default), we use 200 to allow 2 batches in parallel
-        await channel.set_qos(prefetch_count=200, global_=True)
+        await channel.set_qos(prefetch_count=200)
 
         # Declare the shared exchange (must match extractor)
         exchange = await channel.declare_exchange(
