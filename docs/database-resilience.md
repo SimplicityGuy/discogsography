@@ -172,7 +172,6 @@ Each service exposes health data including connection status:
 - Graphinator: `http://localhost:8001/health`
 - Tableinator: `http://localhost:8002/health`
 - Dashboard: `http://localhost:8003/health`
-- Discovery: `http://localhost:8004/health`
 
 ### Logging
 

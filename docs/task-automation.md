@@ -60,8 +60,6 @@ Tasks are organized into logical groups for easier navigation:
 | Task          | Description                                                | Port |
 | ------------- | ---------------------------------------------------------- | ---- |
 | `dashboard`   | Run the dashboard service (monitoring UI)                  | 8000 |
-| `discovery`   | Run the discovery service (AI-powered music intelligence)  | 8001 |
-| `pyextractor` | Run the Python extractor service                           | -    |
 | `extractor`   | Run the Python extractor service (backwards compatibility) | -    |
 | `graphinator` | Run the graphinator service (Neo4j graph builder)          | -    |
 | `tableinator` | Run the tableinator service (PostgreSQL table builder)     | -    |
@@ -168,7 +166,7 @@ just logs
 
 # Or run individual services
 just dashboard    # Terminal 1
-just pyextractor  # Terminal 2
+just explore      # Terminal 2
 just graphinator  # Terminal 3
 just tableinator  # Terminal 4
 ```

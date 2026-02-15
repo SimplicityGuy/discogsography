@@ -209,7 +209,7 @@ POSTGRES_DATABASE="discogsography_prod"
 **Performance Tuning**:
 
 ```bash
-# For services using asyncpg (Discovery)
+# For services using asyncpg
 POSTGRES_POOL_MIN=10
 POSTGRES_POOL_MAX=20
 POSTGRES_COMMAND_TIMEOUT=30
@@ -639,7 +639,7 @@ POSTGRES_USERNAME=postgres
 
 # ✅ GOOD - dedicated service accounts
 NEO4J_USERNAME=discogsography_app
-POSTGRES_USERNAME=discogsography_readonly  # for Discovery
+POSTGRES_USERNAME=discogsography_app
 ```
 
 ## Validation and Testing
@@ -664,7 +664,7 @@ curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
-curl http://localhost:8004/health  # Discovery
+curl http://localhost:8007/health  # Explore
 ```
 
 Expected response for all:

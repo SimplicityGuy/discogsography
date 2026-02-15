@@ -96,14 +96,14 @@ ORDER BY r.year
 
 ### Automatic Creation
 
-Indexes are automatically created during Discovery service startup via `discovery/neo4j_indexes.py`.
+Indexes are automatically created during Explore service startup via `explore/neo4j_indexes.py`.
 
 ### Manual Management
 
 Create all indexes manually:
 
 ```bash
-cd discovery
+cd explore
 python -m neo4j_indexes
 ```
 
@@ -135,7 +135,7 @@ Look for `NodeIndexSeek` or `NodeIndexSeekByRange` in the execution plan.
 
 ## Index Definitions
 
-All index definitions are maintained in `discovery/neo4j_indexes.py` in the `INDEXES` list. Each definition includes:
+All index definitions are maintained in `explore/neo4j_indexes.py` in the `INDEXES` list. Each definition includes:
 
 - `name`: Unique index identifier
 - `type`: `fulltext` or `range`

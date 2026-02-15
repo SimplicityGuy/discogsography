@@ -557,7 +557,7 @@ curl "http://localhost:8005/api/label-stats?label=Blue%20Note"
 
 For best results, use both databases together:
 
-**Neo4j**: Relationship discovery and graph algorithms
+**Neo4j**: Graph relationships and algorithms
 **PostgreSQL**: Fast filtering and aggregation
 
 ### Example Workflow

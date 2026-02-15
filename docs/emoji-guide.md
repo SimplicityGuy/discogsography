@@ -16,15 +16,14 @@ Emojis in Discogsography serve to:
 
 ### Service Identifiers
 
-| Emoji | Service          | Usage                                          |
-| ----- | ---------------- | ---------------------------------------------- |
-| 📥    | Python Extractor | Python-based data extraction service           |
-| ⚡    | Extractor   | Rust-based high-performance extraction service |
-| 🔗    | Graphinator      | Neo4j graph service                            |
-| 🐘    | Tableinator      | PostgreSQL service                             |
-| 🎵    | Discovery        | Music discovery service                        |
-| 📊    | Dashboard        | Analytics dashboard                            |
-| 🐰    | RabbitMQ         | Message broker                                 |
+| Emoji | Service      | Usage                                          |
+| ----- | ------------ | ---------------------------------------------- |
+| ⚡    | Extractor    | Rust-based high-performance extraction service |
+| 🔗    | Graphinator  | Neo4j graph service                            |
+| 🐘    | Tableinator  | PostgreSQL service                             |
+| 🔍    | Explore      | Interactive graph exploration & trends         |
+| 📊    | Dashboard    | Analytics dashboard                            |
+| 🐰    | RabbitMQ     | Message broker                                 |
 
 ### Status Indicators
 

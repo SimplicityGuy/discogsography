@@ -44,7 +44,7 @@ development experience enhancements.
 **Key Changes**:
 - **Calendar Versioning**: Switched from semantic versioning (5.x) to calendar versioning (YYYY.MM.PATCH)
 - **Python Driver**: Upgraded neo4j driver from 5.x → 6.1.x across all services
-- **Files Modified**: docker-compose.yml + 6 pyproject.toml files (root, common, graphinator, dashboard, explore, discovery)
+- **Files Modified**: docker-compose.yml + 6 pyproject.toml files (root, common, graphinator, dashboard, explore)
 
 **Benefits**:
 - ✅ Access to latest Neo4j features and optimizations
@@ -145,7 +145,7 @@ See **[State Marker System](state-marker-system.md)** for complete documentation
 
 **Problem**: Rustextractor only saved state at file boundaries (start/complete), meaning a crash during processing could lose hours of progress. State files showed 0 records even after hours of processing.
 
-**Solution**: Implemented periodic state marker updates every 5,000 records in extractor, matching pyextractor's existing behavior.
+**Solution**: Implemented periodic state marker updates every 5,000 records in extractor's existing behavior.
 
 #### Key Changes
 

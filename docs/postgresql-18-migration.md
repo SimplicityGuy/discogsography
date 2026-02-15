@@ -246,7 +246,7 @@ ls -lh backup_pg16_*.dump
 docker exec discogsography-postgres psql -U postgres -c "SELECT pg_size_pretty(pg_database_size('discogsography'));"
 
 # 4. Stop all application services (keep postgres running)
-docker-compose stop extractor graphinator tableinator dashboard explore discovery
+docker-compose stop extractor graphinator tableinator dashboard explore
 ```
 
 **Step 2: Perform Upgrade**

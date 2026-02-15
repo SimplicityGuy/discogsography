@@ -85,7 +85,6 @@ discogsography/
 │   └── tableinator/        # Tableinator tests
 ├── 📝 docs/                # Documentation
 ├── 📜 scripts/             # Utility scripts
-│   ├── switch-extractor.sh # Switch between Python/Rust extractors
 │   ├── upgrade-packages.sh # Dependency upgrade automation
 │   └── README.md
 ├── 🐋 docker-compose.yml   # Container orchestration
@@ -168,11 +167,11 @@ See [Configuration Guide](configuration.md) for all environment variables.
 # Dashboard (monitoring UI)
 just dashboard
 
-# Discovery (AI service)
-just discovery
+# Explore (graph exploration & trends)
+just explore
 
-# Python Extractor (data ingestion)
-just pyextractor
+# Extractor (Rust-based data ingestion - requires cargo)
+just extractor-run
 
 # Graphinator (Neo4j builder)
 just graphinator
@@ -249,8 +248,8 @@ tests/
 ├── common/           # Common module tests
 ├── dashboard/        # Dashboard tests
 │   └── test_dashboard_ui.py  # E2E tests with Playwright
-├── discovery/        # Discovery service tests
-├── extractor/        # Extractor tests
+├── explore/          # Explore service tests
+├── extractor/        # Extractor tests (Rust)
 ├── graphinator/      # Graphinator tests
 └── tableinator/      # Tableinator tests
 ```

@@ -56,8 +56,6 @@ tests/
 │   ├── test_dashboard_api_integration.py
 │   └── test_dashboard_ui.py      # E2E tests
 │
-├── discovery/
-│   ├── test_discovery.py         # Service tests
 │   ├── test_recommender.py       # AI component tests
 │   ├── test_analytics.py         # Analytics tests
 │   └── test_graph_explorer.py    # Graph tests
@@ -363,9 +361,9 @@ async def test_dashboard_navigation(page: Page, test_server):
     await page.click("button.menu-toggle")
     await page.wait_for_selector("nav.menu", state="visible")
 
-    # Navigate to discovery
+    # Navigate to explore
     await page.click("text=AI Discovery")
-    await page.wait_for_url("**/discovery")
+    await page.wait_for_url("**/explore")
 
     # Verify page loaded
     assert await page.title() == "Music Discovery - Discogsography"
@@ -598,7 +596,7 @@ open htmlcov/index.html
 ```toml
 # pyproject.toml
 [tool.coverage.run]
-source = ["dashboard", "discovery", "extractor", "graphinator", "tableinator", "common"]
+source = ["dashboard", "explore", "extractor", "graphinator", "tableinator", "common"]
 omit = ["*/tests/*", "*/__pycache__/*", "*/static/*"]
 
 [tool.coverage.report]

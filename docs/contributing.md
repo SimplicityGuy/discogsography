@@ -212,7 +212,7 @@ git commit -m "feat: add amazing feature"
 git commit -m "feat: add artist similarity search"
 git commit -m "fix: correct Neo4j connection retry logic"
 git commit -m "docs: update quick start guide"
-git commit -m "test: add tests for discovery service"
+git commit -m "test: add tests for dashboard service"
 ```
 
 ### 8. Push to Your Fork

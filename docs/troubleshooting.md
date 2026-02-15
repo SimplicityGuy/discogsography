@@ -417,7 +417,7 @@ docker-compose down
 docker-compose up -d
 
 # Or for specific service
-LOG_LEVEL=DEBUG uv run python discovery/discovery.py
+LOG_LEVEL=DEBUG uv run python explore/explore.py
 ```
 
 **DEBUG level includes**:
@@ -443,7 +443,7 @@ docker-compose logs -f --timestamps graphinator
 docker-compose logs -f | grep -E "(ERROR|❌)"
 
 # Filter for Neo4j queries (DEBUG mode)
-docker-compose logs -f discovery | grep "🔍 Executing Neo4j query"
+docker-compose logs -f explore | grep "🔍 Executing Neo4j query"
 ```
 
 ### Step 4: Check Queue Status
@@ -590,8 +590,8 @@ ModuleNotFoundError: No module named 'asyncpg'
 **Solution**:
 
 ```bash
-docker-compose build discovery
-docker-compose up -d discovery
+docker-compose build explore
+docker-compose up -d explore
 ```
 
 #### Cache Directory Permission Errors
@@ -607,7 +607,7 @@ Ensure cache directories are writable by UID 1000:
 
 ```bash
 # Verify cache directories
-docker exec -it discogsography-discovery ls -la /tmp/
+docker exec -it discogsography-explore ls -la /tmp/
 
 # Fix permissions if needed
 sudo chown -R 1000:1000 /models
@@ -628,9 +628,9 @@ FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated. Use `HF_HOME` instead.
 # Update to latest code
 git pull
 
-# Rebuild discovery service
-docker-compose build discovery
-docker-compose up -d discovery
+# Rebuild explore service
+docker-compose build explore
+docker-compose up -d explore
 ```
 
 ### Dashboard Issues
@@ -784,93 +784,3 @@ docker stats
 
 # Limit service memory in docker-compose.yml
 services:
-  discovery:
-    deploy:
-      resources:
-        limits:
-          memory: 2G
-
-# Restart with new limits
-docker-compose up -d
-```
-
-## 🔧 Development Issues
-
-### Pre-commit Hooks Failing
-
-**Symptom**:
-
-- Commits blocked by pre-commit
-- Linting or formatting errors
-
-**Solution**:
-
-```bash
-# Auto-fix issues
-just format
-just lint
-
-# Run all checks
-uv run pre-commit run --all-files
-
-# Update hooks
-uv run pre-commit autoupdate
-```
-
-### Tests Failing
-
-**Symptom**:
-
-- Test suite fails
-- CI/CD pipeline broken
-
-**Solution**:
-
-```bash
-# Run tests with verbose output
-uv run pytest -vv
-
-# Run specific test
-uv run pytest tests/path/to/test.py::test_name
-
-# Debug with pdb
-uv run pytest --pdb
-
-# Check coverage
-uv run pytest --cov
-```
-
-## 📚 Additional Resources
-
-- [Monitoring Guide](monitoring.md) - Real-time monitoring and debugging
-- [Configuration Guide](configuration.md) - Environment variables
-- [Development Guide](development.md) - Development setup
-- [Performance Guide](performance-guide.md) - Optimization strategies
-- [Database Resilience](database-resilience.md) - Connection patterns
-
-## 💬 Getting Help
-
-If you encounter issues not covered here:
-
-1. **Check logs** for specific error messages
-
-   ```bash
-   docker-compose logs -f [service]
-   uv run task check-errors
-   ```
-
-1. **Search GitHub issues**: https://github.com/simplicityguy/discogsography/issues
-
-1. **Create a new issue** with:
-
-   - Service name and version
-   - Full error message and stack trace
-   - Steps to reproduce
-   - Docker/system environment details
-   - Relevant logs
-
-1. **Ask in Discussions**: https://github.com/simplicityguy/discogsography/discussions
-
-______________________________________________________________________
-
-**Last Updated**: 2025-01-15

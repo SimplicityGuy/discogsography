@@ -141,8 +141,6 @@ The `optimum[onnxruntime]` package is used for ONNX optimization of HuggingFace 
 
 ```mermaid
 graph TD
-    DISCO1[discogsography discovery]
-    DISCO2[discogsography discovery]
 
     DISCO1 --> ST[sentence-transformers onnx >=2.2.0]
     ST --> T1[transformers >=4.41.0, <6.0.0<br/>✅ Allows 5.x]

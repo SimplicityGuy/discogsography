@@ -191,7 +191,6 @@ image: neo4j:2026.01-community
 - `dashboard/pyproject.toml`
 - `graphinator/pyproject.toml`
 - `explore/pyproject.toml`
-- `discovery/pyproject.toml`
 - `common/pyproject.toml`
 
 **Change:**
@@ -219,7 +218,6 @@ image: neo4j:2026.01-community
 - `graphinator/batch_processor.py`
 - `dashboard/dashboard.py`
 - `explore/explore.py`
-- `discovery/*.py`
 
 ### 4. Cypher Query Audit
 
@@ -227,10 +225,6 @@ image: neo4j:2026.01-community
 
 **High Priority** (Complex queries):
 - `graphinator/batch_processor.py` - Batch MERGE operations
-- `discovery/recommender.py` - Recommendation algorithms
-- `discovery/graph_explorer.py` - Graph traversal
-- `discovery/analytics.py` - Analytics queries
-- `discovery/community_detection.py` - Graph algorithms
 
 **Medium Priority** (Standard queries):
 - `explore/neo4j_queries.py` - Exploration queries
@@ -383,7 +377,7 @@ Expected: List of APOC metadata procedures.
 docker-compose up -d
 
 # Monitor logs
-docker-compose logs -f graphinator dashboard explore discovery
+docker-compose logs -f graphinator dashboard explore
 ```
 
 ---
@@ -462,7 +456,7 @@ curl http://localhost:8005/api/similar/artist/12345
 uv run pytest tests/test_neo4j*.py -v
 uv run pytest tests/graphinator/ -v
 uv run pytest tests/explore/ -v
-uv run pytest tests/discovery/ -v
+uv run pytest tests/explore/ -v
 ```
 
 ---

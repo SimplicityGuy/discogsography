@@ -25,7 +25,7 @@ docker-compose up -d
 docker-compose ps
 
 # Check service logs
-docker-compose logs -f discovery
+docker-compose logs -f explore
 ```
 
 Required services:
@@ -230,7 +230,7 @@ watch -n 5 'curl -s http://localhost:8005/api/cache/stats | jq'
 watch -n 5 'curl -s http://localhost:8005/api/db/pool/stats | jq'
 
 # Prometheus metrics
-watch -n 5 'curl -s http://localhost:8005/metrics | grep "discovery_"'
+watch -n 5 'curl -s http://localhost:8003/metrics | grep "dashboard_"'
 ```
 
 ### Docker Statistics
@@ -239,10 +239,10 @@ Monitor container resource usage:
 
 ```bash
 # Real-time stats
-docker stats discovery neo4j postgres redis rabbitmq
+docker stats dashboard explore neo4j postgres redis rabbitmq
 
 # One-time snapshot
-docker stats --no-stream discovery neo4j postgres redis rabbitmq
+docker stats --no-stream dashboard explore neo4j postgres redis rabbitmq
 ```
 
 ### Database Monitoring
@@ -397,7 +397,7 @@ If RPS is below targets:
 
    - Check pool statistics endpoint
    - Increase pool sizes if exhausted
-   - See `discovery/db_pool_metrics.py`
+   - See `dashboard/dashboard.py` (metrics endpoint)
 
 1. **Enable Async Processing**:
 
@@ -416,7 +416,7 @@ If error rates exceed 1%:
 1. **Check Error Logs**:
 
    ```bash
-   docker-compose logs -f discovery | grep ERROR
+   docker-compose logs -f explore | grep ERROR
    ```
 
 1. **Database Connection Errors**:
@@ -556,7 +556,7 @@ Document performance metrics for each release:
 
 **Investigation**:
 
-1. Monitor container memory: `docker stats discovery`
+1. Monitor container memory: `docker stats dashboard`
 1. Check Python object references
 1. Review cache eviction policies
 

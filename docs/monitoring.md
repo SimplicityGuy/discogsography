@@ -357,8 +357,8 @@ MONITOR
 DBSIZE
 
 # Check specific keys
-KEYS discovery:*
-TTL discovery:genre_trends:Jazz
+KEYS dashboard:*
+TTL dashboard:service_health
 ```
 
 ## 🔧 Health Checks

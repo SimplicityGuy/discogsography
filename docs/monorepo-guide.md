@@ -21,14 +21,11 @@ graph TD
     Dashboard[dashboard/<br/>Monitoring Service]
     DashFiles[dashboard.py<br/>static/]
 
-    Discovery[discovery/<br/>AI Service]
-    DiscFiles[discovery.py]
-
     Extractor[extractor/<br/>Data Extraction]
-    PyExtractor[pyextractor/<br/>Python Service]
-    PyExtFiles[extractor.py<br/>discogs.py]
-    RustExtractor[extractor/<br/>Rust Service]
-    RustExtFiles[src/main.rs<br/>Cargo.toml]
+    ExtractorFiles[src/main.rs<br/>Cargo.toml]
+
+    Explore[explore/<br/>Graph Exploration]
+    ExploreFiles[explore.py]
 
     Graphinator[graphinator/<br/>Neo4j Service]
     GraphFiles[graphinator.py]
@@ -39,28 +36,23 @@ graph TD
     Root --> RootFiles
     Root --> Common
     Root --> Dashboard
-    Root --> Discovery
     Root --> Extractor
+    Root --> Explore
     Root --> Graphinator
     Root --> Tableinator
 
     Common --> CommonFiles
     Dashboard --> DashFiles
-    Discovery --> DiscFiles
-    Extractor --> PyExtractor
-    Extractor --> RustExtractor
-    PyExtractor --> PyExtFiles
-    RustExtractor --> RustExtFiles
+    Extractor --> ExtractorFiles
+    Explore --> ExploreFiles
     Graphinator --> GraphFiles
     Tableinator --> TableFiles
 
     style Root fill:#f3e5f5,stroke:#9c27b0,stroke-width:3px
     style Common fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
     style Dashboard fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
-    style Discovery fill:#fce4ec,stroke:#e91e63,stroke-width:2px
-    style Extractor fill:#fff3e0,stroke:#ff9800,stroke-width:3px
-    style PyExtractor fill:#fff9c4,stroke:#f57c00,stroke-width:2px
-    style RustExtractor fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style Extractor fill:#fff3e0,stroke:#ff9800,stroke-width:2px
+    style Explore fill:#fce4ec,stroke:#e91e63,stroke-width:2px
     style Graphinator fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
     style Tableinator fill:#e0f2f1,stroke:#009688,stroke-width:2px
 ```
@@ -84,18 +76,14 @@ discogsography/                    # Root workspace
 │   ├── dashboard.py             # Service entry point
 │   └── static/                  # Service assets
 │
-├── discovery/                     # Service (workspace member)
-│   ├── pyproject.toml           # AI/ML dependencies
-│   └── discovery.py
+├── extractor/                     # Data extraction service
+│   ├── Cargo.toml                # Rust dependencies
+│   └── src/
+│       └── main.rs              # Rust entry point
 │
-├── extractor/                     # Data extraction services
-│   ├── pyextractor/              # Python extraction service
-│   │   ├── pyproject.toml       # Python dependencies
-│   │   └── extractor.py         # Python entry point
-│   └── extractor/            # Rust extraction service
-│       ├── Cargo.toml           # Rust dependencies
-│       └── src/
-│           └── main.rs          # Rust entry point
+├── explore/                       # Graph exploration service
+│   ├── pyproject.toml            # Service dependencies
+│   └── explore.py                # Service entry point
 │
 ├── graphinator/                   # Service (workspace member)
 │   ├── pyproject.toml           # Neo4j dependencies
@@ -138,8 +126,8 @@ The root `pyproject.toml` defines:
 members = [
     "common",
     "dashboard",
-    "discovery",
-    "extractor/pyextractor",
+
+    "extractor",
     "graphinator",
     "tableinator"
 ]
@@ -169,7 +157,7 @@ uv sync --all-extras
 
 # Install specific service dependencies
 uv sync --extra dashboard
-uv sync --extra discovery
+uv sync --extra dashboard
 
 # Install only dev dependencies
 uv sync --extra dev
@@ -194,7 +182,7 @@ uv add "neo4j>=5.15.0"
 ```bash
 # From project root (recommended)
 uv run python dashboard/dashboard.py
-uv run python extractor/pyextractor/extractor.py
+uv run python explore/explore.py
 
 # Using task commands
 uv run task dashboard
@@ -208,6 +196,9 @@ uv run task extractor
 from common.config import Config
 from common.health_server import HealthServer
 
+
+# Or from explore
+from common.health_server import HealthServer
 # But NOT from other services (bad practice)
 # from dashboard.something import thing  # ❌ Don't do this
 ```
@@ -261,7 +252,7 @@ uv sync
 uv run pytest tests/dashboard/
 
 # Test with coverage
-uv run pytest tests/extractor/pyextractor/ --cov=extractor.pyextractor
+uv run pytest tests/dashboard/ --cov=dashboard
 
 # Test everything
 just test
@@ -295,7 +286,7 @@ uv add package-name
 ```python
 # ❌ Bad: Services importing from each other
 # dashboard/dashboard.py
-from extractor.pyextractor.something import thing
+from dashboard.something import thing
 
 # ✅ Good: Only import from common
 from common.config import Config

@@ -2,25 +2,25 @@
 
 ## Overview
 
-This document describes the implementation of periodic state marker updates in both the extractor and pyextractor to enable crash recovery and progress monitoring.
+This document describes the implementation of periodic state marker updates in the extractor to enable crash recovery and progress monitoring.
 
 ## Problem Statement
 
 Prior to this fix:
 - **extractor**: Only saved state marker when file processing started (0 records) and completed (final count)
-- **pyextractor**: Already had periodic saves every 5,000 records
+- **Previous implementation**: The Python extractor had periodic saves every 5,000 records
 - **Impact**: Rustextractor could lose hours of progress if it crashed or was restarted
 
 ## Solution
 
-Implemented periodic state marker updates in extractor to match pyextractor behavior.
+Implemented periodic state marker updates in extractor for crash recovery.
 
 ### Configuration
 
 Added `state_save_interval` configuration parameter:
 - **Default**: 5,000 records
 - **Location**: `ExtractorConfig` struct in `config.rs`
-- **Matches**: pyextractor's `state_save_interval`
+- **Default interval**: 5,000 records
 
 ### Implementation Details
 
@@ -59,30 +59,12 @@ Added `state_save_interval` configuration parameter:
    - Updated all `message_batcher` tests to include new parameters
    - All 125 tests pass successfully
 
-#### Pyextractor Status
-
-The pyextractor already has correct periodic save implementation:
-- **Location**: `extractor.py` lines 696-716
-- **Interval**: 5,000 records (`state_save_interval = 5000`)
-- **Implementation**:
-  ```python
-  if self.total_count % self.state_save_interval == 0:
-      self.state_marker.update_file_progress(
-          self.input_file,
-          self.total_count,
-          self.total_count // self.batch_size,
-      )
-      marker_path = StateMarker.file_path(
-          Path(self.config.discogs_root), self.state_marker.current_version
-      )
-      self.state_marker.save(marker_path)
-  ```
 
 ## Benefits
 
 1. **Crash Recovery**: Both extractors can now resume from last saved state
 2. **Progress Monitoring**: Users can check progress by reading state file
-3. **Consistency**: Both extractors behave identically
+3. **Consistency**: Consistent behavior across extraction runs
 4. **Minimal Performance Impact**: Saves only every 5,000 records
 5. **Graceful Error Handling**: Save failures don't stop processing
 
@@ -122,7 +104,7 @@ If the extractor crashes or is restarted:
 
 All tests pass (125 total):
 ```bash
-cd extractor/extractor
+cd extractor
 cargo test --lib
 ```
 
@@ -146,7 +128,7 @@ Existing tests already cover periodic save behavior in `tests/extractor/`.
 
 ## Configuration
 
-Both extractors use the same default:
+The extractor uses:
 - `state_save_interval = 5000` records
 
 Can be adjusted if needed, but 5,000 provides good balance between:

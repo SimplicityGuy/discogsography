@@ -150,7 +150,6 @@ RUN apt-get update && \
 
 Service-specific additions:
 
-- **discovery**: Add `gcc g++` for numpy/pandas compilation
 - **tableinator**: Add `libpq5` for PostgreSQL client libraries
 
 ### 4. User and Directory Creation
@@ -167,8 +166,8 @@ RUN groupadd -r -g ${GID} discogsography && \
 
 Additional directories:
 
-- **extractor/pyextractor**: Add `/discogs-data` directory
-- **extractor/extractor**: Add `/discogs-data` directory
+- **extractor**: Add `/discogs-data` directory
+- **extractor**: Add `/discogs-data` directory
 
 ### 5. Startup Script
 
@@ -214,9 +213,8 @@ ENV HOME=/home/discogsography \
 Service-specific additions:
 
 - **dashboard**: All database connections
-- **discovery**: All database connections
-- **extractor/pyextractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
-- **extractor/extractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
+- **extractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
+- **extractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
 - **graphinator**: Neo4j connections
 - **tableinator**: PostgreSQL connections
 
@@ -225,7 +223,6 @@ Service-specific additions:
 Only expose ports for services with HTTP endpoints:
 
 - **dashboard**: `EXPOSE 8003`
-- **discovery**: `EXPOSE 8004 8005`
 
 ### 9. Volume Declaration
 
@@ -237,8 +234,8 @@ VOLUME ["/logs"]
 
 Additional volumes:
 
-- **extractor/pyextractor**: Add `"/discogs-data"`
-- **extractor/extractor**: Add `"/discogs-data"`
+- **extractor**: Add `"/discogs-data"`
+- **extractor**: Add `"/discogs-data"`
 
 ## 🔧 Service-Specific Requirements
 
@@ -248,19 +245,18 @@ Additional volumes:
 - Expose port 8003
 - All database connections in environment
 
-### Discovery
 
 - Install gcc/g++ for ML libraries
 - Expose ports 8004 and 8005
 - All database connections in environment
 
-### Python Extractor (extractor/pyextractor)
+### Python Extractor (extractor)
 
 - Create /discogs-data directory
 - Add /discogs-data volume
 - Special environment variables for Discogs configuration
 
-### Extractor (extractor/extractor)
+### Extractor (extractor)
 
 - Rust-based container using multi-stage build
 - Create /discogs-data directory

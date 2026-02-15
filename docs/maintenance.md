@@ -354,8 +354,6 @@ FLUSHDB
 FLUSHALL
 
 # Check specific key
-TTL discovery:genre_trends:Jazz
-GET discovery:artist_network:Miles_Davis
 ```
 
 ## 🐋 Docker Maintenance
@@ -473,7 +471,6 @@ services=(
   "Graphinator:8001"
   "Tableinator:8002"
   "Dashboard:8003"
-  "Discovery:8004"
 )
 
 all_healthy=true

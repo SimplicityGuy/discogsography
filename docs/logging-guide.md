@@ -95,7 +95,7 @@ docker run -e LOG_LEVEL=DEBUG discogsography/service:latest
 
 #### Python Services
 
-All Python services (extractor, graphinator, tableinator, dashboard, discovery) use the `setup_logging()` function from `common/config.py`:
+All Python services (graphinator, tableinator, dashboard, explore) use the `setup_logging()` function from `common/config.py`:
 
 ```python
 from common import setup_logging
