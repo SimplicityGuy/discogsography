@@ -246,20 +246,17 @@ extractor-run:
 # Lint Rust code with clippy (treats warnings as errors)
 [group('rust')]
 extractor-lint:
-    cd extractor && \
-    cargo clippy --all-targets -- -D warnings
+    cargo clippy --manifest-path extractor/Cargo.toml --all-targets -- -D warnings
 
 # Format Rust code
 [group('rust')]
 extractor-fmt:
-    cd extractor && \
-    cargo fmt
+    cargo fmt --manifest-path extractor/Cargo.toml
 
 # Check Rust code formatting (for CI/pre-commit)
 [group('rust')]
 extractor-fmt-check:
-    cd extractor && \
-    cargo fmt --check
+    cargo fmt --manifest-path extractor/Cargo.toml --check
 
 # Clean Rust build artifacts
 [group('rust')]
