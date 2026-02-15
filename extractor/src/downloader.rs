@@ -180,17 +180,17 @@ impl Downloader {
         // Step 2: Fetch files from recent years (check last 2 years)
         let mut ids: HashMap<String, Vec<S3FileInfo>> = HashMap::new();
 
+        // Compile regex once outside the loop
+        // Pattern matches: ?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz
+        let file_pattern = Regex::new(r#"\?download=data%2F\d{4}%2F(discogs_(\d{8})_[^"]+)"#)
+            .context("Failed to compile file regex")?;
+
         for year in years.iter().take(2) {
             let year_url = format!("{}?prefix=data%2F{}%2F", self.base_url, year);
 
             match reqwest::get(&year_url).await {
                 Ok(year_response) => {
                     if let Ok(year_html) = year_response.text().await {
-                        // Extract file links from year directory
-                        // Pattern matches: ?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz
-                        let file_pattern = Regex::new(r#"\?download=data%2F\d{4}%2F(discogs_(\d{8})_[^"]+)"#)
-                            .context("Failed to compile file regex")?;
-
                         let mut file_count = 0;
                         for cap in file_pattern.captures_iter(&year_html) {
                             if let (Some(filename_match), Some(version_match)) = (cap.get(1), cap.get(2)) {

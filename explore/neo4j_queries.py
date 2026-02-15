@@ -12,11 +12,12 @@ Graph model reference:
   (Artist)-[:MEMBER_OF]->(Artist)   Artist is member of group
 """
 
-import re
 from functools import lru_cache
+import re
 from typing import Any
 
 from common import AsyncResilientNeo4jDriver
+
 
 # Lucene special characters that must be escaped in fulltext queries
 _LUCENE_SPECIAL_RE = re.compile(r'([+\-&|!(){}[\]^"~*?:\\/ ])')

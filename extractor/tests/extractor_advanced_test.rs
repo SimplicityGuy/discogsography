@@ -69,7 +69,7 @@ fn test_extraction_progress_large_numbers() {
 
 #[test]
 fn test_data_type_all_variants_unique() {
-    let types = vec![
+    let types = [
         DataType::Artists,
         DataType::Labels,
         DataType::Masters,

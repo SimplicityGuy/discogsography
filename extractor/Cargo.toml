@@ -91,3 +91,9 @@ strip = true
 [profile.dev]
 opt-level = 0
 debug = true
+
+# Lint configuration - treat all warnings as errors
+# This is equivalent to running: cargo clippy -- -D warnings
+# Ensures no warnings can slip through in development or CI
+[lints.rust]
+warnings = "deny"  # Treat all Rust compiler warnings as errors

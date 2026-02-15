@@ -263,23 +263,20 @@ async fn process_single_file(
     });
 
     let batcher_handle = tokio::spawn({
-        let batch_size = config.batch_size;
-        let state_save_interval = config.state_save_interval;
-        let state = state.clone();
-        let state_marker = state_marker.clone();
-        let marker_path = marker_path.clone();
-        let file_name = file_name.to_string();
+        let batcher_config = BatcherConfig {
+            batch_size: config.batch_size,
+            data_type,
+            state: state.clone(),
+            state_marker: state_marker.clone(),
+            marker_path: marker_path.clone(),
+            file_name: file_name.to_string(),
+            state_save_interval: config.state_save_interval,
+        };
         async move {
             message_batcher(
                 parse_receiver,
                 batch_sender,
-                batch_size,
-                data_type,
-                state,
-                state_marker,
-                marker_path,
-                file_name,
-                state_save_interval,
+                batcher_config,
             )
             .await
         }
@@ -321,18 +318,32 @@ async fn process_single_file(
     Ok(())
 }
 
+/// Configuration for message batcher
+pub struct BatcherConfig {
+    pub batch_size: usize,
+    pub data_type: DataType,
+    pub state: Arc<RwLock<ExtractorState>>,
+    pub state_marker: Arc<tokio::sync::Mutex<StateMarker>>,
+    pub marker_path: PathBuf,
+    pub file_name: String,
+    pub state_save_interval: usize,
+}
+
 /// Batch messages for efficient publishing
 pub async fn message_batcher(
     mut receiver: mpsc::Receiver<DataMessage>,
     sender: mpsc::Sender<Vec<DataMessage>>,
-    batch_size: usize,
-    data_type: DataType,
-    state: Arc<RwLock<ExtractorState>>,
-    state_marker: Arc<tokio::sync::Mutex<StateMarker>>,
-    marker_path: PathBuf,
-    file_name: String,
-    state_save_interval: usize,
+    config: BatcherConfig,
 ) -> Result<()> {
+    let BatcherConfig {
+        batch_size,
+        data_type,
+        state,
+        state_marker,
+        marker_path,
+        file_name,
+        state_save_interval,
+    } = config;
     let mut batch = Vec::with_capacity(batch_size);
     let mut last_flush = Instant::now();
     let mut total_records = 0u64;
@@ -549,7 +560,6 @@ pub async fn run_extraction_loop(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
 
     #[test]
     fn test_extract_data_type() {
@@ -688,16 +698,19 @@ mod tests {
         drop(parse_sender);
 
         // Run batcher
+        let batcher_config = BatcherConfig {
+            batch_size: 3,
+            data_type: DataType::Artists,
+            state: state.clone(),
+            state_marker,
+            marker_path,
+            file_name: "test_file.xml.gz".to_string(),
+            state_save_interval: 5000,
+        };
         let batcher = message_batcher(
             parse_receiver,
             batch_sender,
-            3,
-            DataType::Artists,
-            state.clone(),
-            state_marker,
-            marker_path,
-            "test_file.xml.gz".to_string(),
-            5000,
+            batcher_config,
         );
 
         // Spawn batcher task
@@ -742,16 +755,19 @@ mod tests {
         drop(parse_sender);
 
         // Run batcher
+        let batcher_config = BatcherConfig {
+            batch_size,
+            data_type: DataType::Labels,
+            state: state.clone(),
+            state_marker,
+            marker_path,
+            file_name: "test_file.xml.gz".to_string(),
+            state_save_interval: 5000,
+        };
         let batcher = message_batcher(
             parse_receiver,
             batch_sender,
-            batch_size,
-            DataType::Labels,
-            state.clone(),
-            state_marker,
-            marker_path,
-            "test_file.xml.gz".to_string(),
-            5000,
+            batcher_config,
         );
         tokio::spawn(batcher);
 
@@ -785,16 +801,19 @@ mod tests {
         }
 
         // Run batcher with large batch size
+        let batcher_config = BatcherConfig {
+            batch_size: 100,
+            data_type: DataType::Masters,
+            state: state.clone(),
+            state_marker,
+            marker_path,
+            file_name: "test_file.xml.gz".to_string(),
+            state_save_interval: 5000,
+        };
         let batcher = message_batcher(
             parse_receiver,
             batch_sender,
-            100,
-            DataType::Masters,
-            state.clone(),
-            state_marker,
-            marker_path,
-            "test_file.xml.gz".to_string(),
-            5000,
+            batcher_config,
         );
         let batcher_handle = tokio::spawn(batcher);
 

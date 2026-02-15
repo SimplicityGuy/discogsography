@@ -438,19 +438,17 @@ async fn test_message_batcher_empty_batch() {
     drop(parse_sender);
 
     let batcher_handle = tokio::spawn(async move {
-        use extractor::extractor::message_batcher;
-        message_batcher(
-            parse_receiver,
-            batch_sender,
-            10,
-            DataType::Artists,
+        use extractor::extractor::{message_batcher, BatcherConfig};
+        let batcher_config = BatcherConfig {
+            batch_size: 10,
+            data_type: DataType::Artists,
             state,
             state_marker,
             marker_path,
             file_name,
             state_save_interval,
-        )
-        .await
+        };
+        message_batcher(parse_receiver, batch_sender, batcher_config).await
     });
 
     // Should not receive any batches
@@ -486,19 +484,17 @@ async fn test_message_batcher_single_message() {
     drop(parse_sender);
 
     let batcher_handle = tokio::spawn(async move {
-        use extractor::extractor::message_batcher;
-        message_batcher(
-            parse_receiver,
-            batch_sender,
-            10,
-            DataType::Labels,
+        use extractor::extractor::{message_batcher, BatcherConfig};
+        let batcher_config = BatcherConfig {
+            batch_size: 10,
+            data_type: DataType::Labels,
             state,
             state_marker,
             marker_path,
             file_name,
             state_save_interval,
-        )
-        .await
+        };
+        message_batcher(parse_receiver, batch_sender, batcher_config).await
     });
 
     // Should receive one batch with one message
@@ -535,19 +531,17 @@ async fn test_message_batcher_multiple_batches() {
     drop(parse_sender);
 
     let batcher_handle = tokio::spawn(async move {
-        use extractor::extractor::message_batcher;
-        message_batcher(
-            parse_receiver,
-            batch_sender,
+        use extractor::extractor::{message_batcher, BatcherConfig};
+        let batcher_config = BatcherConfig {
             batch_size,
-            DataType::Masters,
+            data_type: DataType::Masters,
             state,
             state_marker,
             marker_path,
             file_name,
             state_save_interval,
-        )
-        .await
+        };
+        message_batcher(parse_receiver, batch_sender, batcher_config).await
     });
 
     // Should receive two batches
@@ -594,6 +588,6 @@ async fn test_extractor_state_active_connections_removal() {
 
     let s = state.read().await;
     assert_eq!(s.active_connections.len(), 1);
-    assert!(s.active_connections.get(&DataType::Labels).is_some());
-    assert!(s.active_connections.get(&DataType::Artists).is_none());
+    assert!(s.active_connections.contains_key(&DataType::Labels));
+    assert!(!s.active_connections.contains_key(&DataType::Artists));
 }

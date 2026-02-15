@@ -243,11 +243,11 @@ extractor-run:
     cd extractor && \
     cargo run --release
 
-# Lint Rust code with clippy
+# Lint Rust code with clippy (treats warnings as errors)
 [group('rust')]
 extractor-lint:
     cd extractor && \
-    cargo clippy -- -D warnings
+    cargo clippy --all-targets -- -D warnings
 
 # Format Rust code
 [group('rust')]

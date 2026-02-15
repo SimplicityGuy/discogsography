@@ -1,12 +1,12 @@
-use criterion::{Criterion, black_box, criterion_group, criterion_main};
-use std::hint::black_box as hint_black_box;
+use criterion::{Criterion, criterion_group, criterion_main};
+use std::hint::black_box;
 
 fn parse_xml_benchmark(c: &mut Criterion) {
     c.bench_function("parse_small_xml", |b| {
         b.iter(|| {
             // Benchmark XML parsing performance
             // This would parse actual XML in a real benchmark
-            let result = hint_black_box(42);
+            let result = black_box(42);
             black_box(result);
         });
     });

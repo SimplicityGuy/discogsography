@@ -3,11 +3,20 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 
+/// Type alias for published messages storage
+type PublishedMessages = Arc<Mutex<Vec<(String, Vec<u8>)>>>;
+
 /// Mock message queue for testing
 #[derive(Clone)]
 pub struct MockMessageQueue {
-    pub published_messages: Arc<Mutex<Vec<(String, Vec<u8>)>>>,
+    pub published_messages: PublishedMessages,
     pub should_fail: Arc<Mutex<bool>>,
+}
+
+impl Default for MockMessageQueue {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockMessageQueue {
@@ -43,6 +52,12 @@ impl MockMessageQueue {
 /// Mock downloader for testing
 pub struct MockDownloader {
     pub files: Arc<Mutex<HashMap<String, Vec<u8>>>>,
+}
+
+impl Default for MockDownloader {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl MockDownloader {

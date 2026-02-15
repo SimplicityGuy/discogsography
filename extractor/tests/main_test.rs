@@ -68,7 +68,6 @@ async fn test_ascii_art_generation() {
     assert!(ascii_art.contains("██"));
     assert!(ascii_art.contains("╗"));
     assert!(ascii_art.contains("╚"));
-    assert!(!ascii_art.is_empty());
     assert!(ascii_art.len() > 100); // Should be substantial
 }
 

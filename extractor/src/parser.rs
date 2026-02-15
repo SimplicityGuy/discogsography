@@ -32,7 +32,7 @@ impl ElementContext {
     }
 
     /// Convert this element to a JSON value, combining attributes, text, and children
-    fn to_value(self) -> Value {
+    fn into_value(self) -> Value {
         let mut result = Map::new();
 
         // Add attributes with @ prefix (matching xmltodict behavior exactly)
@@ -166,7 +166,7 @@ impl XmlParser {
                         }
 
                         // Send immediately since it's self-closing
-                        let record = context.to_value();
+                        let record = context.into_value();
                         if let Value::Object(ref obj) = record {
                             let id = obj.get("id")
                                 .and_then(|v| v.as_str())
@@ -192,7 +192,7 @@ impl XmlParser {
                             context.attributes.insert(key, Value::String(value));
                         }
 
-                        let child_value = context.to_value();
+                        let child_value = context.into_value();
 
                         // Add to parent if we have one
                         if let Some(parent) = element_stack.last_mut() {
@@ -206,9 +206,10 @@ impl XmlParser {
                 Ok(Event::End(e)) => {
                     let name = String::from_utf8_lossy(e.name().as_ref()).to_string();
 
-                    if in_target_element {
-                        if let Some(context) = element_stack.pop() {
-                            let element_value = context.to_value();
+                    if in_target_element
+                        && let Some(context) = element_stack.pop()
+                    {
+                        let element_value = context.into_value();
 
                             if name == target_element && depth == 2 {
                                 // End of record, send it
@@ -223,10 +224,11 @@ impl XmlParser {
                                     // For releases and masters, pyextractor adds a plain 'id' field
                                     // in addition to @id (see pyextractor.py line 536)
                                     let mut final_obj = obj;
-                                    if matches!(self.data_type, DataType::Releases | DataType::Masters) {
-                                        if final_obj.get("@id").is_some() && final_obj.get("id").is_none() {
-                                            final_obj.insert("id".to_string(), Value::String(id.clone()));
-                                        }
+                                    if matches!(self.data_type, DataType::Releases | DataType::Masters)
+                                        && final_obj.get("@id").is_some()
+                                        && final_obj.get("id").is_none()
+                                    {
+                                        final_obj.insert("id".to_string(), Value::String(id.clone()));
                                     }
 
                                     let final_value = Value::Object(final_obj);
@@ -255,25 +257,24 @@ impl XmlParser {
                                     parent.add_child(name, element_value);
                                 }
                             }
-                        }
                     }
 
                     depth -= 1;
                 }
 
                 Ok(Event::Text(e)) => {
-                    if in_target_element {
-                        if let Some(context) = element_stack.last_mut() {
-                            context.text_content.push_str(&e.unescape().unwrap_or_default());
-                        }
+                    if in_target_element
+                        && let Some(context) = element_stack.last_mut()
+                    {
+                        context.text_content.push_str(&e.unescape().unwrap_or_default());
                     }
                 }
 
                 Ok(Event::CData(e)) => {
-                    if in_target_element {
-                        if let Some(context) = element_stack.last_mut() {
-                            context.text_content.push_str(&String::from_utf8_lossy(&e));
-                        }
+                    if in_target_element
+                        && let Some(context) = element_stack.last_mut()
+                    {
+                        context.text_content.push_str(&String::from_utf8_lossy(&e));
                     }
                 }
 
@@ -542,7 +543,7 @@ mod tests {
     #[test]
     fn test_element_context_to_value_empty() {
         let context = ElementContext::new();
-        let value = context.to_value();
+        let value = context.into_value();
         assert_eq!(value, Value::Null);
     }
 
@@ -550,7 +551,7 @@ mod tests {
     fn test_element_context_to_value_text_only() {
         let mut context = ElementContext::new();
         context.text_content = "  Test text  ".to_string();
-        let value = context.to_value();
+        let value = context.into_value();
         assert_eq!(value, Value::String("Test text".to_string()));
     }
 
@@ -558,7 +559,7 @@ mod tests {
     fn test_element_context_to_value_attributes_only() {
         let mut context = ElementContext::new();
         context.attributes.insert("id".to_string(), Value::String("123".to_string()));
-        let value = context.to_value();
+        let value = context.into_value();
         assert!(value.is_object());
         let obj = value.as_object().unwrap();
         assert_eq!(obj.get("@id"), Some(&Value::String("123".to_string())));
@@ -569,7 +570,7 @@ mod tests {
         let mut context = ElementContext::new();
         context.attributes.insert("id".to_string(), Value::String("123".to_string()));
         context.text_content = "Text content".to_string();
-        let value = context.to_value();
+        let value = context.into_value();
         assert!(value.is_object());
         let obj = value.as_object().unwrap();
         assert_eq!(obj.get("@id"), Some(&Value::String("123".to_string())));

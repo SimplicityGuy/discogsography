@@ -3,7 +3,6 @@
 
 #[cfg(test)]
 mod message_queue_unit_tests {
-    use crate::message_queue::MessageQueue;
     use crate::types::{DataMessage, DataType, FileCompleteMessage, Message};
     use serde_json::json;
 
