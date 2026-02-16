@@ -183,7 +183,7 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
             if data_type in consumer_tags:
                 consumer_tag = consumer_tags[data_type]
                 logger.info(
-                    "🔌 Canceling consumer for data_type after CONSUMER_CANCEL_DELAYs grace period",
+                    f"🔌 Canceling consumer for {data_type} after {CONSUMER_CANCEL_DELAY}s grace period",
                     data_type=data_type,
                     CONSUMER_CANCEL_DELAY=CONSUMER_CANCEL_DELAY,
                 )
@@ -195,7 +195,7 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
                 del consumer_tags[data_type]
 
                 logger.info(
-                    "✅ Consumer for data_type successfully canceled",
+                    f"✅ Consumer for {data_type} successfully canceled",
                     data_type=data_type,
                 )
 
@@ -242,7 +242,7 @@ async def close_rabbitmq_connection() -> None:
             active_connection = None
 
         logger.info(
-            "✅ RabbitMQ connection closed. Will check for new messages every QUEUE_CHECK_INTERVALs",
+            f"✅ RabbitMQ connection closed. Will check for new messages every {QUEUE_CHECK_INTERVAL}s",
             QUEUE_CHECK_INTERVAL=QUEUE_CHECK_INTERVAL,
         )
     except Exception as e:
@@ -440,7 +440,7 @@ async def _recover_consumers() -> None:
                     completed_files.discard(data_type)
                     last_message_time[data_type] = time.time()
                     logger.info(
-                        "✅ Started consumer for data_type",
+                        f"✅ Started consumer for {data_type}",
                         data_type=data_type,
                         pending_messages=msg_count,
                     )
@@ -639,7 +639,7 @@ async def main() -> None:
     startup_delay = int(os.environ.get("STARTUP_DELAY", "5"))
     if startup_delay > 0:
         logger.info(
-            "⏳ Waiting startup_delay seconds for dependent services to start...",
+            f"⏳ Waiting {startup_delay} seconds for dependent services to start...",
             startup_delay=startup_delay,
         )
         await asyncio.sleep(startup_delay)
@@ -698,12 +698,12 @@ async def main() -> None:
                         )
                     )
                     logger.info(
-                        "✅ Database 'postgres_database' created",
+                        f"✅ Database '{config.postgres_database}' created",
                         postgres_database=config.postgres_database,
                     )
                 else:
                     logger.info(
-                        "✅ Database 'postgres_database' already exists",
+                        f"✅ Database '{config.postgres_database}' already exists",
                         postgres_database=config.postgres_database,
                     )
     except Exception as e:
@@ -1024,7 +1024,7 @@ async def main() -> None:
                         if lt > 0 and 5 < current_time - lt < 120
                     ]
                     logger.warning(
-                        "⚠️ Slow consumers detected: slow_consumers",
+                        f"⚠️ Slow consumers detected: {slow_consumers}",
                         slow_consumers=slow_consumers,
                     )
 
@@ -1038,12 +1038,12 @@ async def main() -> None:
 
                 if canceled_consumers:
                     logger.info(
-                        "🔌 Canceled consumers: canceled_consumers",
+                        f"🔌 Canceled consumers: {canceled_consumers}",
                         canceled_consumers=canceled_consumers,
                     )
                 if active_consumers:
                     logger.info(
-                        "✅ Active consumers: active_consumers",
+                        f"✅ Active consumers: {active_consumers}",
                         active_consumers=active_consumers,
                     )
 
@@ -1052,7 +1052,7 @@ async def main() -> None:
         # Start periodic queue checker task
         connection_check_task = asyncio.create_task(periodic_queue_checker())
         logger.info(
-            "🔄 Started periodic queue checker (interval: QUEUE_CHECK_INTERVALs)",
+            f"🔄 Started periodic queue checker (interval: {QUEUE_CHECK_INTERVAL}s)",
             QUEUE_CHECK_INTERVAL=QUEUE_CHECK_INTERVAL,
         )
 
