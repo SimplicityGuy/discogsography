@@ -1464,10 +1464,11 @@ async def main() -> None:
 
             for label, prop in indexes_to_check:
                 try:
-                    # Get all indexes for this label and property (any type)
+                    # Get standalone indexes (not constraint-backed) for this label and property
                     result = await session.run(
-                        "SHOW INDEXES YIELD name, labelsOrTypes, properties "
+                        "SHOW INDEXES YIELD name, labelsOrTypes, properties, owningConstraint "
                         "WHERE $label IN labelsOrTypes AND $prop IN properties "
+                        "AND owningConstraint IS NULL "
                         "RETURN name",
                         label=label,
                         prop=prop,
@@ -1488,6 +1489,37 @@ async def main() -> None:
                         f"Could not check indexes for {label}.{prop}", error=str(e)
                     )
 
+            # Deduplicate nodes before creating constraints to avoid failures
+            for label, prop in indexes_to_check:
+                try:
+                    dedup_query = (
+                        f"MATCH (n:{label}) "
+                        f"WITH n.{prop} AS val, collect(n) AS nodes "
+                        "WHERE size(nodes) > 1 "
+                        "WITH nodes[0] AS keep, nodes[1..] AS duplicates "
+                        "UNWIND duplicates AS dup "
+                        "CALL { WITH dup, keep "
+                        "  MATCH (dup)-[r]->() DELETE r "
+                        "  WITH dup, keep "
+                        "  MATCH (dup)<-[r]-() DELETE r "
+                        "  DELETE dup "
+                        "} "
+                        "RETURN count(dup) AS removed"
+                    )
+                    result = await session.run(dedup_query)
+                    record = await result.single()
+                    removed = record["removed"] if record else 0
+                    if removed > 0:
+                        logger.info(
+                            f"🧹 Deduplicated {label}.{prop}: "
+                            f"removed {removed} duplicate nodes"
+                        )
+                except Exception as dedup_error:
+                    logger.debug(
+                        f"Could not deduplicate {label}.{prop}",
+                        error=str(dedup_error),
+                    )
+
             # Now create constraints (which will create their own indexes)
             constraints_to_create = [
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (a:Artist) REQUIRE a.id IS UNIQUE",
@@ -1505,8 +1537,13 @@ async def main() -> None:
                         f"✅ Created/verified constraint: {constraint.split('FOR')[1].split('REQUIRE')[0].strip()}"
                     )
                 except Exception as constraint_error:
-                    logger.warning(
-                        "⚠️ Constraint creation note",
+                    constraint_label = (
+                        constraint.split("FOR")[1].split("REQUIRE")[0].strip()
+                    )
+                    logger.error(
+                        f"❌ Failed to create constraint for {constraint_label}. "
+                        "This likely means duplicate nodes still exist. "
+                        "Manual deduplication may be required via Neo4j Browser.",
                         constraint_error=str(constraint_error),
                     )
 
