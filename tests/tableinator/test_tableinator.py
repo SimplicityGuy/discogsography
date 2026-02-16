@@ -747,6 +747,25 @@ class TestOnDataMessageExtended:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_handles_no_connection_pool(self) -> None:
+        """Test handling when connection pool is not initialized."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.connection_pool = None
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        valid_data = {"id": "123", "name": "Test Artist"}
+        mock_message.body = json.dumps(valid_data).encode()
+        mock_message.routing_key = "artists"
+
+        with patch("tableinator.tableinator.logger"):
+            await on_data_message(mock_message)
+
+        # Should nack with requeue when connection pool not initialized
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_processes_label_record_name(
         self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock, mock_async_pool: Any
     ) -> None:
@@ -1455,6 +1474,32 @@ class TestGetHealthData:
 
         # Should show None when no consumers are active
         assert result["current_task"] is None
+
+    def test_unhealthy_status_when_stuck_state(self) -> None:
+        """Test that get_health_data returns 'unhealthy' and stuck message when in stuck state."""
+        from unittest.mock import MagicMock
+
+        import tableinator.tableinator
+
+        # Set up stuck state: no consumers but files not completed, some messages processed
+        tableinator.tableinator.connection_pool = MagicMock()  # Pool exists
+        tableinator.tableinator.consumer_tags = {}  # No active consumers
+        tableinator.tableinator.completed_files = set()  # No files completed
+        tableinator.tableinator.message_counts = {
+            "artists": 50,  # Some messages processed
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+
+        result = get_health_data()
+
+        # Should be unhealthy due to stuck state
+        assert result["status"] == "unhealthy"
+        assert result["current_task"] == "STUCK - consumers died, awaiting recovery"
+
+        # Clean up
+        tableinator.tableinator.connection_pool = None
 
 
 class TestCloseRabbitMQConnectionOuterException:

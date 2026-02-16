@@ -488,3 +488,94 @@ async fn test_parse_large_batch() {
 
     assert_eq!(received_count, 100);
 }
+
+#[tokio::test]
+async fn test_parse_element_with_text_only() {
+    // Test element that has text content but no child elements (covers line 57)
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Simple Name</name>
+        <description>Just a simple text description</description>
+    </artist>
+</artists>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+
+    let message = receiver.recv().await.unwrap();
+    assert_eq!(message.data["name"], json!("Simple Name"));
+    assert_eq!(message.data["description"], json!("Just a simple text description"));
+}
+
+#[tokio::test]
+async fn test_parse_large_batch_with_logging() {
+    // Test with >1000 records to trigger debug logging (covers line 232)
+    let mut xml_content = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>"#,
+    );
+
+    // Create 1500 records to ensure we hit the 1000-record logging threshold
+    for i in 1..=1500 {
+        xml_content.push_str(&format!(r#"<artist id="{}"><name>Artist {}</name></artist>"#, i, i));
+    }
+
+    xml_content.push_str("</artists>");
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(2000);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1500);
+
+    // Drain the receiver
+    let mut received_count = 0;
+    while let Ok(Some(_)) = tokio::time::timeout(tokio::time::Duration::from_millis(100), receiver.recv()).await {
+        received_count += 1;
+    }
+
+    assert_eq!(received_count, 1500);
+}
+
+#[tokio::test]
+async fn test_parse_malformed_xml() {
+    // Test XML parsing error handling (covers lines 262-264)
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Unclosed tag
+    </artist>
+</artists>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, _receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let result = parser.parse_file(temp_file.path()).await;
+
+    // Should return an error for malformed XML
+    assert!(result.is_err());
+}
