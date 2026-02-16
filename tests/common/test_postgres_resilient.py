@@ -1134,7 +1134,7 @@ class TestAsyncPostgreSQLPool:
 
     @pytest.mark.asyncio
     @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
-    async def test_pool_full_on_return(self, mock_connect: Mock, connection_params: dict, _mock_async_connection: AsyncMock) -> None:
+    async def test_pool_full_on_return(self, mock_connect: Mock, connection_params: dict) -> None:
         """Test connection closure when pool is full on return."""
 
         # Create multiple mock connections
