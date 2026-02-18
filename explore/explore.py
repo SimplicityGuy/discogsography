@@ -200,6 +200,7 @@ def _build_categories(entity_type: str, result: dict[str, Any]) -> list[dict[str
         ]
     elif entity_type == "genre":
         categories = [
+            {"id": "cat-releases", "name": "Releases", "category": "releases", "count": result.get("release_count", 0)},
             {"id": "cat-artists", "name": "Artists", "category": "artists", "count": result.get("artist_count", 0)},
             {"id": "cat-labels", "name": "Labels", "category": "labels", "count": result.get("label_count", 0)},
             {"id": "cat-styles", "name": "Styles", "category": "styles", "count": result.get("style_count", 0)},
@@ -208,9 +209,11 @@ def _build_categories(entity_type: str, result: dict[str, Any]) -> list[dict[str
         categories = [
             {"id": "cat-releases", "name": "Releases", "category": "releases", "count": result.get("release_count", 0)},
             {"id": "cat-artists", "name": "Artists", "category": "artists", "count": result.get("artist_count", 0)},
+            {"id": "cat-genres", "name": "Genres", "category": "genres", "count": result.get("genre_count", 0)},
         ]
     elif entity_type == "style":
         categories = [
+            {"id": "cat-releases", "name": "Releases", "category": "releases", "count": result.get("release_count", 0)},
             {"id": "cat-artists", "name": "Artists", "category": "artists", "count": result.get("artist_count", 0)},
             {"id": "cat-labels", "name": "Labels", "category": "labels", "count": result.get("label_count", 0)},
             {"id": "cat-genres", "name": "Genres", "category": "genres", "count": result.get("genre_count", 0)},
