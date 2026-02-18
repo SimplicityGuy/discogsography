@@ -3,14 +3,14 @@
     ".",
     "common",
     "dashboard",
-    "extractor",
+    "explore",
     "graphinator",
     "tableinator"
   ],
   "include": [
     "common",
     "dashboard",
-    "extractor",
+    "explore",
     "graphinator",
     "tableinator",
     "utilities",
