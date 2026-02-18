@@ -110,6 +110,7 @@ def sample_explore_genre() -> dict[str, Any]:
     return {
         "id": "Rock",
         "name": "Rock",
+        "release_count": 5000,
         "artist_count": 1000,
         "label_count": 200,
         "style_count": 50,
@@ -124,6 +125,20 @@ def sample_explore_label() -> dict[str, Any]:
         "name": "Warp Records",
         "release_count": 500,
         "artist_count": 120,
+        "genre_count": 8,
+    }
+
+
+@pytest.fixture
+def sample_explore_style() -> dict[str, Any]:
+    """Sample explore result for a style."""
+    return {
+        "id": "Alternative Rock",
+        "name": "Alternative Rock",
+        "release_count": 2000,
+        "artist_count": 400,
+        "label_count": 100,
+        "genre_count": 3,
     }
 
 

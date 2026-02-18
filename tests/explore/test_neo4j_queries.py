@@ -11,7 +11,6 @@ from explore.neo4j_queries import (
     EXPAND_DISPATCH,
     EXPLORE_DISPATCH,
     TRENDS_DISPATCH,
-    _autocomplete_cache_key,
     autocomplete_artist,
     autocomplete_genre,
     autocomplete_label,
@@ -21,12 +20,15 @@ from explore.neo4j_queries import (
     expand_artist_releases,
     expand_genre_artists,
     expand_genre_labels,
+    expand_genre_releases,
     expand_genre_styles,
     expand_label_artists,
+    expand_label_genres,
     expand_label_releases,
     expand_style_artists,
     expand_style_genres,
     expand_style_labels,
+    expand_style_releases,
     explore_artist,
     explore_genre,
     explore_label,
@@ -35,9 +37,11 @@ from explore.neo4j_queries import (
     get_genre_details,
     get_label_details,
     get_release_details,
+    get_style_details,
     trends_artist,
     trends_genre,
     trends_label,
+    trends_style,
 )
 
 
@@ -92,9 +96,9 @@ class TestDispatchTables:
     def test_expand_dispatch_keys(self) -> None:
         assert set(EXPAND_DISPATCH.keys()) == {"artist", "genre", "label", "style"}
         assert set(EXPAND_DISPATCH["artist"].keys()) == {"releases", "labels", "aliases"}
-        assert set(EXPAND_DISPATCH["genre"].keys()) == {"artists", "labels", "styles"}
-        assert set(EXPAND_DISPATCH["label"].keys()) == {"releases", "artists"}
-        assert set(EXPAND_DISPATCH["style"].keys()) == {"artists", "labels", "genres"}
+        assert set(EXPAND_DISPATCH["genre"].keys()) == {"releases", "artists", "labels", "styles"}
+        assert set(EXPAND_DISPATCH["label"].keys()) == {"releases", "artists", "genres"}
+        assert set(EXPAND_DISPATCH["style"].keys()) == {"releases", "artists", "labels", "genres"}
 
     def test_details_dispatch_keys(self) -> None:
         assert set(DETAILS_DISPATCH.keys()) == {"artist", "release", "label", "genre", "style"}
@@ -118,11 +122,14 @@ class TestDispatchTables:
         assert EXPAND_DISPATCH["artist"]["releases"] is expand_artist_releases
         assert EXPAND_DISPATCH["artist"]["labels"] is expand_artist_labels
         assert EXPAND_DISPATCH["artist"]["aliases"] is expand_artist_aliases
+        assert EXPAND_DISPATCH["genre"]["releases"] is expand_genre_releases
         assert EXPAND_DISPATCH["genre"]["artists"] is expand_genre_artists
         assert EXPAND_DISPATCH["genre"]["labels"] is expand_genre_labels
         assert EXPAND_DISPATCH["genre"]["styles"] is expand_genre_styles
         assert EXPAND_DISPATCH["label"]["releases"] is expand_label_releases
         assert EXPAND_DISPATCH["label"]["artists"] is expand_label_artists
+        assert EXPAND_DISPATCH["label"]["genres"] is expand_label_genres
+        assert EXPAND_DISPATCH["style"]["releases"] is expand_style_releases
         assert EXPAND_DISPATCH["style"]["artists"] is expand_style_artists
         assert EXPAND_DISPATCH["style"]["labels"] is expand_style_labels
         assert EXPAND_DISPATCH["style"]["genres"] is expand_style_genres
@@ -238,6 +245,37 @@ class TestExploreQueries:
         result = await explore_label(mock_driver, "NonExistent")
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_explore_style(self, mock_driver: MagicMock) -> None:
+        expected = {
+            "id": "Alternative Rock",
+            "name": "Alternative Rock",
+            "release_count": 2000,
+            "artist_count": 400,
+            "label_count": 100,
+            "genre_count": 3,
+        }
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=expected)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await explore_style(mock_driver, "Alternative Rock")
+        assert result is not None
+        assert result["artist_count"] == 400
+        assert result["release_count"] == 2000
+        assert result["genre_count"] == 3
+
+    @pytest.mark.asyncio
+    async def test_explore_style_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await explore_style(mock_driver, "NonExistent")
+        assert result is None
+
 
 class TestExpandQueries:
     """Test expand query functions."""
@@ -315,6 +353,64 @@ class TestExpandQueries:
 
         results = await expand_label_artists(mock_driver, "Parlophone", 50)
         assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_expand_label_genres(self, mock_driver: MagicMock) -> None:
+        expected = [{"id": "Rock", "name": "Rock", "type": "genre", "release_count": 200}]
+        mock_session = mock_driver.session.return_value
+        mock_session.run = AsyncMock(return_value=_make_async_iterable(expected))
+
+        results = await expand_label_genres(mock_driver, "Parlophone", 50)
+        assert len(results) == 1
+        assert results[0]["type"] == "genre"
+
+    @pytest.mark.asyncio
+    async def test_expand_genre_releases(self, mock_driver: MagicMock) -> None:
+        expected = [{"id": "10", "name": "OK Computer", "type": "release", "year": 1997}]
+        mock_session = mock_driver.session.return_value
+        mock_session.run = AsyncMock(return_value=_make_async_iterable(expected))
+
+        results = await expand_genre_releases(mock_driver, "Rock", 50)
+        assert len(results) == 1
+        assert results[0]["type"] == "release"
+
+    @pytest.mark.asyncio
+    async def test_expand_style_artists(self, mock_driver: MagicMock) -> None:
+        expected = [{"id": "1", "name": "Radiohead", "type": "artist"}]
+        mock_session = mock_driver.session.return_value
+        mock_session.run = AsyncMock(return_value=_make_async_iterable(expected))
+
+        results = await expand_style_artists(mock_driver, "Alternative Rock", 50)
+        assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_expand_style_labels(self, mock_driver: MagicMock) -> None:
+        expected = [{"id": "100", "name": "Parlophone", "type": "label", "release_count": 15}]
+        mock_session = mock_driver.session.return_value
+        mock_session.run = AsyncMock(return_value=_make_async_iterable(expected))
+
+        results = await expand_style_labels(mock_driver, "Alternative Rock", 50)
+        assert len(results) == 1
+
+    @pytest.mark.asyncio
+    async def test_expand_style_genres(self, mock_driver: MagicMock) -> None:
+        expected = [{"id": "Rock", "name": "Rock", "type": "genre", "release_count": 500}]
+        mock_session = mock_driver.session.return_value
+        mock_session.run = AsyncMock(return_value=_make_async_iterable(expected))
+
+        results = await expand_style_genres(mock_driver, "Alternative Rock", 50)
+        assert len(results) == 1
+        assert results[0]["type"] == "genre"
+
+    @pytest.mark.asyncio
+    async def test_expand_style_releases(self, mock_driver: MagicMock) -> None:
+        expected = [{"id": "10", "name": "OK Computer", "type": "release", "year": 1997}]
+        mock_session = mock_driver.session.return_value
+        mock_session.run = AsyncMock(return_value=_make_async_iterable(expected))
+
+        results = await expand_style_releases(mock_driver, "Alternative Rock", 50)
+        assert len(results) == 1
+        assert results[0]["type"] == "release"
 
 
 class TestNodeDetailsQueries:
@@ -425,6 +521,28 @@ class TestNodeDetailsQueries:
         result = await get_genre_details(mock_driver, "nonexistent")
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_get_style_details(self, mock_driver: MagicMock) -> None:
+        expected = {"id": "Alternative Rock", "name": "Alternative Rock", "artist_count": 400}
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=expected)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await get_style_details(mock_driver, "Alternative Rock")
+        assert result is not None
+        assert result["artist_count"] == 400
+
+    @pytest.mark.asyncio
+    async def test_get_style_details_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await get_style_details(mock_driver, "nonexistent")
+        assert result is None
+
 
 class TestTrendsQueries:
     """Test trends query functions."""
@@ -468,19 +586,12 @@ class TestTrendsQueries:
         results = await trends_artist(mock_driver, "Unknown")
         assert results == []
 
+    @pytest.mark.asyncio
+    async def test_trends_style(self, mock_driver: MagicMock) -> None:
+        expected = [{"year": 1991, "count": 5}, {"year": 1994, "count": 20}]
+        mock_session = mock_driver.session.return_value
+        mock_session.run = AsyncMock(return_value=_make_async_iterable(expected))
 
-class TestAutocompleteCacheKey:
-    """Test the _autocomplete_cache_key helper."""
-
-    def test_cache_key_lowercases_query(self) -> None:
-        result = _autocomplete_cache_key("Radiohead", "artist", 10)
-        assert result == ("radiohead", "artist", 10)
-
-    def test_cache_key_preserves_type_and_limit(self) -> None:
-        result = _autocomplete_cache_key("rock", "genre", 25)
-        assert result == ("rock", "genre", 25)
-
-    def test_cache_key_same_inputs_same_output(self) -> None:
-        result1 = _autocomplete_cache_key("test", "label", 5)
-        result2 = _autocomplete_cache_key("test", "label", 5)
-        assert result1 == result2
+        results = await trends_style(mock_driver, "Alternative Rock")
+        assert len(results) == 2
+        assert results[0]["year"] == 1991

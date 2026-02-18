@@ -155,7 +155,7 @@ class TestExploreEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["center"]["name"] == "Rock"
-        assert len(data["categories"]) == 3  # artists, labels, styles
+        assert len(data["categories"]) == 4  # releases, artists, labels, styles
 
     def test_explore_label_success(
         self,
@@ -170,7 +170,23 @@ class TestExploreEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert data["center"]["name"] == "Warp Records"
-        assert len(data["categories"]) == 2  # releases, artists
+        assert len(data["categories"]) == 3  # releases, artists, genres
+
+    def test_explore_style_success(
+        self,
+        test_client: TestClient,
+        sample_explore_style: dict[str, Any],
+    ) -> None:
+        mock_func = AsyncMock(return_value=sample_explore_style)
+
+        with patch.dict("explore.explore.EXPLORE_DISPATCH", {"style": mock_func}):
+            response = test_client.get("/api/explore?name=Alternative+Rock&type=style")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["center"]["name"] == "Alternative Rock"
+        assert data["center"]["type"] == "style"
+        assert len(data["categories"]) == 4  # releases, artists, labels, genres
 
     def test_explore_not_found(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=None)
@@ -458,13 +474,15 @@ class TestBuildCategories:
         result = {
             "id": "Rock",
             "name": "Rock",
+            "release_count": 5000,
             "artist_count": 500,
             "label_count": 100,
             "style_count": 25,
         }
         categories = _build_categories("genre", result)
-        assert len(categories) == 3
+        assert len(categories) == 4
         cat_map = {c["category"]: c for c in categories}
+        assert cat_map["releases"]["count"] == 5000
         assert cat_map["artists"]["count"] == 500
         assert cat_map["styles"]["count"] == 25
 
@@ -476,9 +494,29 @@ class TestBuildCategories:
             "name": "Test Label",
             "release_count": 200,
             "artist_count": 50,
+            "genre_count": 8,
         }
         categories = _build_categories("label", result)
-        assert len(categories) == 2
+        assert len(categories) == 3
+        cat_map = {c["category"]: c for c in categories}
+        assert cat_map["genres"]["count"] == 8
+
+    def test_build_style_categories(self) -> None:
+        from explore.explore import _build_categories
+
+        result = {
+            "id": "Alternative Rock",
+            "name": "Alternative Rock",
+            "release_count": 2000,
+            "artist_count": 400,
+            "label_count": 100,
+            "genre_count": 3,
+        }
+        categories = _build_categories("style", result)
+        assert len(categories) == 4
+        cat_map = {c["category"]: c for c in categories}
+        assert cat_map["releases"]["count"] == 2000
+        assert cat_map["genres"]["count"] == 3
 
     def test_build_unknown_type(self) -> None:
         from explore.explore import _build_categories
