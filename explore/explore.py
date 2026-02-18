@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Explore service for interactive graph exploration of Discogs data."""
 
+from collections import OrderedDict
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -69,7 +70,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         )
         logger.info("🔗 Connected to Neo4j with resilient driver")
     except Exception as e:
-        logger.error("❌ Failed to connect to Neo4j: e", e=e)
+        logger.error("❌ Failed to connect to Neo4j", error=str(e))
         raise
 
     # Create indexes
@@ -77,7 +78,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await create_all_indexes(config.neo4j_address, config.neo4j_username, config.neo4j_password)
         logger.info("📑 Neo4j indexes created/verified")
     except Exception as e:
-        logger.warning("⚠️ Failed to create Neo4j indexes: e", e=e)
+        logger.warning("⚠️ Failed to create Neo4j indexes", error=str(e))
 
     logger.info("✅ Explore service ready")
     yield
@@ -101,7 +102,6 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -109,7 +109,7 @@ app.add_middleware(
 
 # --- Autocomplete cache ---
 
-_autocomplete_cache: dict[tuple[str, str, int], list[dict[str, Any]]] = {}
+_autocomplete_cache: OrderedDict[tuple[str, str, int], list[dict[str, Any]]] = OrderedDict()
 _AUTOCOMPLETE_CACHE_MAX = 512
 
 
@@ -148,12 +148,11 @@ async def autocomplete(
     query_func = AUTOCOMPLETE_DISPATCH[entity_type]
     results = await query_func(neo4j_driver, q, limit)
 
-    # Cache result (simple bounded cache)
+    # Cache result (FIFO eviction using OrderedDict)
     if len(_autocomplete_cache) >= _AUTOCOMPLETE_CACHE_MAX:
-        # Remove oldest quarter of entries
-        keys_to_remove = list(_autocomplete_cache.keys())[: _AUTOCOMPLETE_CACHE_MAX // 4]
-        for k in keys_to_remove:
-            del _autocomplete_cache[k]
+        evict_count = _AUTOCOMPLETE_CACHE_MAX // 4
+        for _ in range(evict_count):
+            _autocomplete_cache.popitem(last=False)
     _autocomplete_cache[cache_key] = results
 
     return ORJSONResponse(content={"results": results})

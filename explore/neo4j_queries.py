@@ -12,7 +12,6 @@ Graph model reference:
   (Artist)-[:MEMBER_OF]->(Artist)   Artist is member of group
 """
 
-from functools import lru_cache
 import re
 from typing import Any
 
@@ -500,16 +499,6 @@ async def trends_style(driver: AsyncResilientNeo4jDriver, name: str) -> list[dic
 
 
 # --- Dispatch helpers ---
-
-# LRU cache for autocomplete results
-_autocomplete_cache_size = 256
-
-
-@lru_cache(maxsize=_autocomplete_cache_size)
-def _autocomplete_cache_key(query: str, entity_type: str, limit: int) -> tuple[str, str, int]:
-    """Create a hashable cache key for autocomplete (used by the caller for LRU)."""
-    return (query.lower(), entity_type, limit)
-
 
 EXPLORE_DISPATCH: dict[str, Any] = {
     "artist": explore_artist,
