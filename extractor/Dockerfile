@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.89-slim AS builder
+FROM rust:1.93-slim AS builder
 
 # Install build dependencies
 # hadolint ignore=DL3008
@@ -29,7 +29,7 @@ RUN touch src/main.rs && \
     cargo build --release
 
 # Runtime stage
-FROM rust:1.89-slim
+FROM rust:1.93-slim
 
 # Install runtime dependencies
 # hadolint ignore=DL3008
