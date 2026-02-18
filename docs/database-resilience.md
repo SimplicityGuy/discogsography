@@ -121,7 +121,7 @@ POSTGRES_USERNAME=postgres
 POSTGRES_PASSWORD=postgres
 
 # RabbitMQ
-AMQP_CONNECTION=amqp://guest:guest@rabbitmq:5672/
+AMQP_CONNECTION=amqp://discogsography:discogsography@rabbitmq:5672//
 ```
 
 ### Tuning Parameters

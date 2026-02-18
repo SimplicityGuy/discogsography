@@ -55,7 +55,7 @@ When upgrading packages:
 
 ```bash
 # The platform restrictions are automatically applied
-./scripts/upgrade-packages.sh
+./scripts/update-project.sh
 ```
 
 Or when manually updating the lock file:

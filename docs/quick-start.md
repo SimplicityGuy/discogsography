@@ -164,7 +164,7 @@ Create a `.env` file or export variables:
 
 ```bash
 # Core connections
-export AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
+export AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 
 # Neo4j settings
 export NEO4J_ADDRESS="bolt://localhost:7687"
@@ -408,4 +408,4 @@ See [Development Guide](development.md) and [Contributing Guide](contributing.md
 
 ______________________________________________________________________
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2026-02-18

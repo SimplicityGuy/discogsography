@@ -59,7 +59,7 @@ Tasks are organized into logical groups for easier navigation:
 
 | Task          | Description                                                | Port |
 | ------------- | ---------------------------------------------------------- | ---- |
-| `dashboard`   | Run the dashboard service (monitoring UI)                  | 8000 |
+| `dashboard`   | Run the dashboard service (monitoring UI)                  | 8003 |
 | `extractor`   | Run the Python extractor service (backwards compatibility) | -    |
 | `graphinator` | Run the graphinator service (Neo4j graph builder)          | -    |
 | `tableinator` | Run the tableinator service (PostgreSQL table builder)     | -    |
