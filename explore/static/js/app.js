@@ -8,6 +8,10 @@ class ExploreApp {
         this.currentQuery = '';
         this.activePane = 'explore';
 
+        // Trends comparison state
+        this.compareMode = false;
+        this.primaryTrendsData = null;
+
         // Initialize components
         this.autocomplete = new Autocomplete();
         this.graph = new GraphVisualization('graphContainer');
@@ -19,6 +23,7 @@ class ExploreApp {
         this.graph.onNodeExpand = (name, type) => this._onNodeExpand(name, type);
 
         this._bindEvents();
+        this._restoreFromUrl();
     }
 
     _bindEvents() {
@@ -42,6 +47,10 @@ class ExploreApp {
         document.getElementById('closePanelBtn').addEventListener('click', () => {
             document.getElementById('infoPanel').classList.remove('open');
         });
+
+        // Trends comparison controls
+        document.getElementById('compareBtn').addEventListener('click', () => this._enableCompareMode());
+        document.getElementById('clearCompareBtn').addEventListener('click', () => this._clearComparison());
     }
 
     _switchPane(pane) {
@@ -85,6 +94,7 @@ class ExploreApp {
 
     async _onSearch(name) {
         this.currentQuery = name;
+        this._pushState(name, this.searchType);
 
         if (this.activePane === 'explore') {
             await this._loadExplore(name, this.searchType);
@@ -124,10 +134,56 @@ class ExploreApp {
         try {
             const data = await window.apiClient.getTrends(name, type);
             if (data) {
-                this.trends.render(data);
+                if (this.compareMode && this.primaryTrendsData) {
+                    // Overlay comparison trace on existing chart
+                    this.trends.addComparison(data);
+                    document.getElementById('compareBadge').textContent = `vs ${data.name}`;
+                    document.getElementById('compareInfo').classList.remove('d-none');
+                    document.getElementById('compareHint').classList.add('d-none');
+                    this.compareMode = false;
+                } else {
+                    // Replace primary trace and reset comparison state
+                    this.primaryTrendsData = data;
+                    this.trends.render(data);
+                    document.getElementById('compareBtn').classList.remove('d-none');
+                    document.getElementById('compareHint').classList.add('d-none');
+                    document.getElementById('compareInfo').classList.add('d-none');
+                    this.compareMode = false;
+                }
             }
         } finally {
             loading.classList.remove('active');
+        }
+    }
+
+    _enableCompareMode() {
+        if (!this.primaryTrendsData) return;
+        this.compareMode = true;
+        document.getElementById('compareBtn').classList.add('d-none');
+        document.getElementById('compareHint').classList.remove('d-none');
+    }
+
+    _clearComparison() {
+        this.compareMode = false;
+        this.trends.clearComparison();
+        document.getElementById('compareBtn').classList.remove('d-none');
+        document.getElementById('compareHint').classList.add('d-none');
+        document.getElementById('compareInfo').classList.add('d-none');
+    }
+
+    _pushState(name, type) {
+        const params = new URLSearchParams({ name, type });
+        history.pushState({ name, type }, '', `?${params}`);
+    }
+
+    _restoreFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const name = params.get('name');
+        const type = params.get('type');
+        if (name && type) {
+            this._setSearchType(type);
+            document.getElementById('searchInput').value = name;
+            this._onSearch(name);
         }
     }
 
@@ -161,8 +217,7 @@ class ExploreApp {
     }
 
     async _onNodeExpand(name, type) {
-        // Only artist, genre, label are explorable
-        const explorableTypes = ['artist', 'genre', 'label'];
+        const explorableTypes = ['artist', 'genre', 'label', 'style'];
         if (!explorableTypes.includes(type)) return;
 
         // Update search type to match
@@ -180,7 +235,7 @@ class ExploreApp {
         let html = '';
 
         // Explore button for navigable types
-        const explorableTypes = ['artist', 'genre', 'label'];
+        const explorableTypes = ['artist', 'genre', 'label', 'style'];
         if (explorableTypes.includes(type)) {
             html += `<button class="btn btn-sm btn-outline-primary w-100 mb-3 explore-node-btn" data-name="${this._escapeAttr(details.name)}" data-type="${type}"><i class="fas fa-project-diagram me-1"></i>Explore ${details.name}</button>`;
         }
@@ -198,7 +253,6 @@ class ExploreApp {
             }
         } else if (type === 'release') {
             if (details.year) html += this._detailStat('Year', details.year);
-            if (details.country) html += this._detailStat('Country', details.country);
             if (details.artists && details.artists.length) {
                 html += this._detailTags('Artists', details.artists);
             }

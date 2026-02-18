@@ -317,6 +317,16 @@ class GraphVisualization {
             }
         });
 
+        // Tooltips (SVG native — shown on hover by browser)
+        node.append('title').text(d => {
+            if (d.isCenter) return `${d.name} [${d.type}]`;
+            if (d.isCategory) return `${d.displayName || d.name}\n${d.count || 0} items`;
+            const explorableTypes = ['artist', 'genre', 'label', 'style'];
+            const hints = ['Click for details'];
+            if (explorableTypes.includes(d.type)) hints.push('double-click to explore');
+            return `${d.name} [${d.type}]\n${hints.join(', ')}`;
+        });
+
         // Labels
         node.append('text')
             .attr('class', 'node-label')
