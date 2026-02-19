@@ -77,6 +77,33 @@ class ApiClient {
         if (!response.ok) return null;
         return response.json();
     }
+
+    /**
+     * Save a graph snapshot.
+     * @param {Array<{id: string, type: string}>} nodes - Node list
+     * @param {{id: string, type: string}} center - Center node
+     * @returns {Promise<Object|null>} Snapshot response with token and url
+     */
+    async saveSnapshot(nodes, center) {
+        const response = await fetch('/api/snapshot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ nodes, center }),
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    /**
+     * Restore a graph snapshot by token.
+     * @param {string} token - Snapshot token
+     * @returns {Promise<Object|null>} Snapshot restore response
+     */
+    async restoreSnapshot(token) {
+        const response = await fetch(`/api/snapshot/${encodeURIComponent(token)}`);
+        if (!response.ok) return null;
+        return response.json();
+    }
 }
 
 // Global instance

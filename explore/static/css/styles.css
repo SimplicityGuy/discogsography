@@ -371,6 +371,37 @@ body {
     stroke-opacity: 0.6;
 }
 
+/* Share toast notification */
+.share-toast {
+    display: none;
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--accent-green);
+    color: #000;
+    font-weight: 600;
+    font-size: 14px;
+    padding: 8px 20px;
+    border-radius: 20px;
+    z-index: 20;
+    pointer-events: none;
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.share-toast.show {
+    display: block;
+    animation: toast-fade 2.5s ease forwards;
+}
+
+@keyframes toast-fade {
+    0%   { opacity: 0; transform: translateX(-50%) translateY(6px); }
+    15%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+    75%  { opacity: 1; }
+    100% { opacity: 0; }
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .search-container {

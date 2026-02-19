@@ -512,4 +512,57 @@ class GraphVisualization {
         }
         this.placeholder.classList.remove('hidden');
     }
+
+    /**
+     * Restore graph state from a snapshot node list and center.
+     * @param {Array<{id: string, type: string}>} snapshotNodes
+     * @param {{id: string, type: string}} center
+     */
+    restoreSnapshot(snapshotNodes, center) {
+        if (this.simulation) {
+            this.simulation.stop();
+            this.simulation = null;
+        }
+
+        this.placeholder.classList.add('hidden');
+        this.nodes = [];
+        this.links = [];
+        this.expandedCategories.clear();
+        this._pendingExpands = 0;
+
+        this.svg.call(this.zoom.transform, d3.zoomIdentity);
+
+        this.centerName = center.id;
+        this.centerType = center.type;
+
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
+
+        const centerNode = {
+            id: `snapshot-center-${center.id}`,
+            name: center.id,
+            type: center.type,
+            isCenter: true,
+            isCategory: false,
+            fx: width / 2,
+            fy: height / 2,
+        };
+        this.nodes.push(centerNode);
+
+        snapshotNodes.forEach(n => {
+            if (n.id === center.id && n.type === center.type) return;
+            const nodeId = `snapshot-${n.type}-${n.id}`;
+            this.nodes.push({
+                id: nodeId,
+                name: n.id,
+                type: n.type,
+                isCenter: false,
+                isCategory: false,
+                nodeId: n.id,
+            });
+            this.links.push({ source: centerNode.id, target: nodeId });
+        });
+
+        this._render();
+    }
 }
