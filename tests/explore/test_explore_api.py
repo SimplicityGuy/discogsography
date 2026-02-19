@@ -237,14 +237,89 @@ class TestExpandEndpoint:
         sample_expand_releases: list[dict[str, Any]],
     ) -> None:
         mock_func = AsyncMock(return_value=sample_expand_releases)
+        mock_count = AsyncMock(return_value=3)
 
-        with patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}):
+        with (
+            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+        ):
             response = test_client.get("/api/expand?node_id=Radiohead&type=artist&category=releases")
 
         assert response.status_code == 200
         data = response.json()
         assert "children" in data
         assert len(data["children"]) == 3
+
+    def test_expand_response_includes_pagination_fields(
+        self,
+        test_client: TestClient,
+        sample_expand_releases: list[dict[str, Any]],
+    ) -> None:
+        mock_func = AsyncMock(return_value=sample_expand_releases)
+        mock_count = AsyncMock(return_value=3)
+
+        with (
+            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+        ):
+            response = test_client.get("/api/expand?node_id=Radiohead&type=artist&category=releases")
+
+        data = response.json()
+        assert "total" in data
+        assert "offset" in data
+        assert "limit" in data
+        assert "has_more" in data
+        assert data["total"] == 3
+        assert data["offset"] == 0
+        assert data["has_more"] is False  # 3 items == total 3
+
+    def test_expand_has_more_true_when_more_exist(self, test_client: TestClient) -> None:
+        mock_func = AsyncMock(return_value=[{"id": "1", "name": "X", "type": "release"}])
+        mock_count = AsyncMock(return_value=100)
+
+        with (
+            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+        ):
+            response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases")
+
+        data = response.json()
+        assert data["has_more"] is True
+        assert data["total"] == 100
+
+    def test_expand_last_page_has_more_false(self, test_client: TestClient) -> None:
+        mock_func = AsyncMock(return_value=[{"id": "1", "name": "X", "type": "release"}])
+        mock_count = AsyncMock(return_value=1)
+
+        with (
+            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+        ):
+            response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases")
+
+        data = response.json()
+        assert data["has_more"] is False
+
+    def test_expand_with_offset(self, test_client: TestClient) -> None:
+        mock_func = AsyncMock(return_value=[{"id": "51", "name": "Y", "type": "release"}])
+        mock_count = AsyncMock(return_value=100)
+
+        with (
+            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+        ):
+            response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases&limit=50&offset=50")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["offset"] == 50
+        # Verify offset was passed to the query function
+        call_args = mock_func.call_args
+        assert call_args[0][3] == 50  # offset is 4th positional arg
+
+    def test_expand_invalid_offset(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases&offset=-1")
+        assert response.status_code == 422  # FastAPI validation error
 
     def test_expand_invalid_type(self, test_client: TestClient) -> None:
         response = test_client.get("/api/expand?node_id=Test&type=invalid&category=releases")
@@ -272,8 +347,12 @@ class TestExpandEndpoint:
 
     def test_expand_genre_artists(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[{"id": "1", "name": "Radiohead", "type": "artist"}])
+        mock_count = AsyncMock(return_value=1)
 
-        with patch.dict("explore.explore.EXPAND_DISPATCH", {"genre": {"artists": mock_func}}):
+        with (
+            patch.dict("explore.explore.EXPAND_DISPATCH", {"genre": {"artists": mock_func}}),
+            patch.dict("explore.explore.COUNT_DISPATCH", {"genre": {"artists": mock_count}}),
+        ):
             response = test_client.get("/api/expand?node_id=Rock&type=genre&category=artists")
 
         assert response.status_code == 200
@@ -282,24 +361,33 @@ class TestExpandEndpoint:
 
     def test_expand_label_releases(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[{"id": "10", "name": "OK Computer", "type": "release", "year": 1997}])
+        mock_count = AsyncMock(return_value=1)
 
-        with patch.dict("explore.explore.EXPAND_DISPATCH", {"label": {"releases": mock_func}}):
+        with (
+            patch.dict("explore.explore.EXPAND_DISPATCH", {"label": {"releases": mock_func}}),
+            patch.dict("explore.explore.COUNT_DISPATCH", {"label": {"releases": mock_count}}),
+        ):
             response = test_client.get("/api/expand?node_id=Parlophone&type=label&category=releases")
 
         assert response.status_code == 200
 
     def test_expand_with_limit(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[])
+        mock_count = AsyncMock(return_value=0)
 
-        with patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}):
+        with (
+            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+        ):
             response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases&limit=5")
 
         assert response.status_code == 200
         mock_func.assert_called_once()
-        # Verify the limit was passed
+        # Verify limit and offset were passed correctly
         call_args = mock_func.call_args
         assert call_args[0][1] == "Test"
-        assert call_args[0][2] == 5
+        assert call_args[0][2] == 5  # limit
+        assert call_args[0][3] == 0  # offset (default)
 
 
 class TestNodeDetailsEndpoint:

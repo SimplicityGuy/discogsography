@@ -7,6 +7,7 @@ import pytest
 
 from explore.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
+    COUNT_DISPATCH,
     DETAILS_DISPATCH,
     EXPAND_DISPATCH,
     EXPLORE_DISPATCH,
@@ -15,6 +16,20 @@ from explore.neo4j_queries import (
     autocomplete_genre,
     autocomplete_label,
     autocomplete_style,
+    count_artist_aliases,
+    count_artist_labels,
+    count_artist_releases,
+    count_genre_artists,
+    count_genre_labels,
+    count_genre_releases,
+    count_genre_styles,
+    count_label_artists,
+    count_label_genres,
+    count_label_releases,
+    count_style_artists,
+    count_style_genres,
+    count_style_labels,
+    count_style_releases,
     expand_artist_aliases,
     expand_artist_labels,
     expand_artist_releases,
@@ -106,6 +121,13 @@ class TestDispatchTables:
     def test_trends_dispatch_keys(self) -> None:
         assert set(TRENDS_DISPATCH.keys()) == {"artist", "genre", "label", "style"}
 
+    def test_count_dispatch_keys(self) -> None:
+        assert set(COUNT_DISPATCH.keys()) == {"artist", "genre", "label", "style"}
+        assert set(COUNT_DISPATCH["artist"].keys()) == {"releases", "labels", "aliases"}
+        assert set(COUNT_DISPATCH["genre"].keys()) == {"releases", "artists", "labels", "styles"}
+        assert set(COUNT_DISPATCH["label"].keys()) == {"releases", "artists", "genres"}
+        assert set(COUNT_DISPATCH["style"].keys()) == {"releases", "artists", "labels", "genres"}
+
     def test_autocomplete_dispatch_functions(self) -> None:
         assert AUTOCOMPLETE_DISPATCH["artist"] is autocomplete_artist
         assert AUTOCOMPLETE_DISPATCH["genre"] is autocomplete_genre
@@ -133,6 +155,22 @@ class TestDispatchTables:
         assert EXPAND_DISPATCH["style"]["artists"] is expand_style_artists
         assert EXPAND_DISPATCH["style"]["labels"] is expand_style_labels
         assert EXPAND_DISPATCH["style"]["genres"] is expand_style_genres
+
+    def test_count_dispatch_functions(self) -> None:
+        assert COUNT_DISPATCH["artist"]["releases"] is count_artist_releases
+        assert COUNT_DISPATCH["artist"]["labels"] is count_artist_labels
+        assert COUNT_DISPATCH["artist"]["aliases"] is count_artist_aliases
+        assert COUNT_DISPATCH["genre"]["releases"] is count_genre_releases
+        assert COUNT_DISPATCH["genre"]["artists"] is count_genre_artists
+        assert COUNT_DISPATCH["genre"]["labels"] is count_genre_labels
+        assert COUNT_DISPATCH["genre"]["styles"] is count_genre_styles
+        assert COUNT_DISPATCH["label"]["releases"] is count_label_releases
+        assert COUNT_DISPATCH["label"]["artists"] is count_label_artists
+        assert COUNT_DISPATCH["label"]["genres"] is count_label_genres
+        assert COUNT_DISPATCH["style"]["releases"] is count_style_releases
+        assert COUNT_DISPATCH["style"]["artists"] is count_style_artists
+        assert COUNT_DISPATCH["style"]["labels"] is count_style_labels
+        assert COUNT_DISPATCH["style"]["genres"] is count_style_genres
 
 
 class TestAutocompleteQueries:
@@ -595,3 +633,287 @@ class TestTrendsQueries:
         results = await trends_style(mock_driver, "Alternative Rock")
         assert len(results) == 2
         assert results[0]["year"] == 1991
+
+
+class TestCountQueries:
+    """Test count query functions (used for pagination totals)."""
+
+    @pytest.mark.asyncio
+    async def test_count_artist_releases(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 42})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_artist_releases(mock_driver, "Radiohead")
+        assert result == 42
+
+    @pytest.mark.asyncio
+    async def test_count_artist_releases_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_artist_releases(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_artist_labels(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 5})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_artist_labels(mock_driver, "Radiohead")
+        assert result == 5
+
+    @pytest.mark.asyncio
+    async def test_count_artist_labels_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_artist_labels(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_artist_aliases(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 3})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_artist_aliases(mock_driver, "Radiohead")
+        assert result == 3
+
+    @pytest.mark.asyncio
+    async def test_count_artist_aliases_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_artist_aliases(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_genre_artists(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 1000})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_genre_artists(mock_driver, "Rock")
+        assert result == 1000
+
+    @pytest.mark.asyncio
+    async def test_count_genre_artists_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_genre_artists(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_genre_labels(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 200})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_genre_labels(mock_driver, "Rock")
+        assert result == 200
+
+    @pytest.mark.asyncio
+    async def test_count_genre_labels_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_genre_labels(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_genre_styles(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 50})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_genre_styles(mock_driver, "Rock")
+        assert result == 50
+
+    @pytest.mark.asyncio
+    async def test_count_genre_styles_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_genre_styles(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_genre_releases(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 5000})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_genre_releases(mock_driver, "Rock")
+        assert result == 5000
+
+    @pytest.mark.asyncio
+    async def test_count_genre_releases_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_genre_releases(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_label_releases(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 500})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_label_releases(mock_driver, "Warp Records")
+        assert result == 500
+
+    @pytest.mark.asyncio
+    async def test_count_label_releases_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_label_releases(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_label_artists(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 120})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_label_artists(mock_driver, "Warp Records")
+        assert result == 120
+
+    @pytest.mark.asyncio
+    async def test_count_label_artists_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_label_artists(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_label_genres(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 8})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_label_genres(mock_driver, "Warp Records")
+        assert result == 8
+
+    @pytest.mark.asyncio
+    async def test_count_label_genres_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_label_genres(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_style_artists(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 400})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_style_artists(mock_driver, "Alternative Rock")
+        assert result == 400
+
+    @pytest.mark.asyncio
+    async def test_count_style_artists_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_style_artists(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_style_labels(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 75})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_style_labels(mock_driver, "Alternative Rock")
+        assert result == 75
+
+    @pytest.mark.asyncio
+    async def test_count_style_labels_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_style_labels(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_style_genres(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 3})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_style_genres(mock_driver, "Alternative Rock")
+        assert result == 3
+
+    @pytest.mark.asyncio
+    async def test_count_style_genres_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_style_genres(mock_driver, "NonExistent")
+        assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_count_style_releases(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"total": 2000})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_style_releases(mock_driver, "Alternative Rock")
+        assert result == 2000
+
+    @pytest.mark.asyncio
+    async def test_count_style_releases_not_found(self, mock_driver: MagicMock) -> None:
+        mock_session = mock_driver.session.return_value
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        result = await count_style_releases(mock_driver, "NonExistent")
+        assert result == 0

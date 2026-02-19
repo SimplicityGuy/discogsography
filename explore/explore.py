@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Explore service for interactive graph exploration of Discogs data."""
 
+import asyncio
 from collections import OrderedDict
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -23,6 +24,7 @@ from common import (
 from explore.neo4j_indexes import create_all_indexes
 from explore.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
+    COUNT_DISPATCH,
     DETAILS_DISPATCH,
     EXPAND_DISPATCH,
     EXPLORE_DISPATCH,
@@ -227,9 +229,10 @@ async def expand(
     node_id: str = Query(..., description="Parent entity name"),
     type: str = Query(..., description="Parent entity type: artist, genre, label, style"),
     category: str = Query(..., description="Category to expand: releases, labels, aliases, artists, styles, genres"),
-    limit: int = Query(50, ge=1, le=200, description="Max results"),
+    limit: int = Query(50, ge=1, le=200, description="Max results per page"),
+    offset: int = Query(0, ge=0, description="Number of results to skip (for pagination)"),
 ) -> ORJSONResponse:
-    """Expand a category node to get its children."""
+    """Expand a category node to get its children, with pagination."""
     if not neo4j_driver:
         return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
 
@@ -245,9 +248,22 @@ async def expand(
         return ORJSONResponse(content={"error": f"Invalid category '{category}' for type '{type}'. Valid: {valid}"}, status_code=400)
 
     query_func = type_categories[category_lower]
-    results = await query_func(neo4j_driver, node_id, limit)
+    count_func = COUNT_DISPATCH[entity_type][category_lower]
 
-    return ORJSONResponse(content={"children": results})
+    results, total = await asyncio.gather(
+        query_func(neo4j_driver, node_id, limit, offset),
+        count_func(neo4j_driver, node_id),
+    )
+
+    return ORJSONResponse(
+        content={
+            "children": results,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(results) < total,
+        }
+    )
 
 
 @app.get("/api/node/{node_id}")

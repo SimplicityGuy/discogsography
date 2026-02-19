@@ -31,24 +31,25 @@ class ApiClient {
     }
 
     /**
-     * Expand a category to get child nodes.
+     * Expand a category to get child nodes (paginated).
      * @param {string} nodeId - Parent entity name
      * @param {string} type - Parent entity type
      * @param {string} category - Category to expand
-     * @param {number} limit - Max results
-     * @returns {Promise<Array>} Child nodes
+     * @param {number} limit - Max results per page
+     * @param {number} offset - Number of results to skip
+     * @returns {Promise<{children: Array, total: number, offset: number, limit: number, has_more: boolean}>}
      */
-    async expand(nodeId, type, category, limit = 50) {
+    async expand(nodeId, type, category, limit = 50, offset = 0) {
         const params = new URLSearchParams({
             node_id: nodeId,
             type,
             category,
             limit: String(limit),
+            offset: String(offset),
         });
         const response = await fetch(`/api/expand?${params}`);
-        if (!response.ok) return [];
-        const data = await response.json();
-        return data.children || [];
+        if (!response.ok) return { children: [], total: 0, offset, limit, has_more: false };
+        return response.json();
     }
 
     /**
