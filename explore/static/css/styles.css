@@ -14,6 +14,9 @@
     --node-label: #6c757d;
     --node-genre: #ffc107;
     --node-category: #4A90D9;
+    --node-load-more: #2d3051;
+    --node-load-more-border: #6c8ebf;
+    --node-load-more-text: #a8c4e8;
 }
 
 body {
