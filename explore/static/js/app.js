@@ -51,6 +51,9 @@ class ExploreApp {
         // Trends comparison controls
         document.getElementById('compareBtn').addEventListener('click', () => this._enableCompareMode());
         document.getElementById('clearCompareBtn').addEventListener('click', () => this._clearComparison());
+
+        // Share button
+        document.getElementById('shareBtn').addEventListener('click', () => this._shareSnapshot());
     }
 
     _switchPane(pane) {
@@ -176,8 +179,13 @@ class ExploreApp {
         history.pushState({ name, type }, '', `?${params}`);
     }
 
-    _restoreFromUrl() {
+    async _restoreFromUrl() {
         const params = new URLSearchParams(window.location.search);
+        const snapshotToken = params.get('snapshot');
+        if (snapshotToken) {
+            await this._loadSnapshot(snapshotToken);
+            return;
+        }
         const name = params.get('name');
         const type = params.get('type');
         if (name && type) {
@@ -185,6 +193,51 @@ class ExploreApp {
             document.getElementById('searchInput').value = name;
             this._onSearch(name);
         }
+    }
+
+    async _loadSnapshot(token) {
+        const loading = document.getElementById('graphLoading');
+        loading.classList.add('active');
+        try {
+            const data = await window.apiClient.restoreSnapshot(token);
+            if (data) {
+                this.graph.restoreSnapshot(data.nodes, data.center);
+            }
+        } finally {
+            loading.classList.remove('active');
+        }
+    }
+
+    async _shareSnapshot() {
+        const nodes = this.graph.nodes
+            .filter(n => !n.isCategory)
+            .map(n => ({ id: n.nodeId || n.name, type: n.type }));
+        const centerName = this.graph.centerName;
+        const centerType = this.graph.centerType;
+
+        if (!centerName || nodes.length === 0) return;
+
+        const center = { id: centerName, type: centerType };
+        const result = await window.apiClient.saveSnapshot(nodes, center);
+        if (!result) return;
+
+        const url = `${window.location.origin}/?snapshot=${result.token}`;
+        try {
+            await navigator.clipboard.writeText(url);
+        } catch {
+            // Fallback for environments without clipboard API
+            prompt('Copy this link:', url);
+            return;
+        }
+        this._showToast('Link copied!');
+    }
+
+    _showToast(message) {
+        const toast = document.getElementById('shareToast');
+        const toastMsg = document.getElementById('shareToastMsg');
+        toastMsg.textContent = message;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2500);
     }
 
     async _onNodeClick(nodeId, type) {

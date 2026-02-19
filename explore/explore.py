@@ -20,6 +20,7 @@ from common import (
     HealthServer,
     setup_logging,
 )
+from explore.models import SnapshotRequest, SnapshotResponse, SnapshotRestoreResponse
 from explore.neo4j_indexes import create_all_indexes
 from explore.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
@@ -28,6 +29,7 @@ from explore.neo4j_queries import (
     EXPLORE_DISPATCH,
     TRENDS_DISPATCH,
 )
+from explore.snapshot_store import SnapshotStore
 
 
 logger = structlog.get_logger(__name__)
@@ -35,6 +37,7 @@ logger = structlog.get_logger(__name__)
 # Module-level state
 neo4j_driver: AsyncResilientNeo4jDriver | None = None
 config: ExploreConfig | None = None
+snapshot_store: SnapshotStore = SnapshotStore()
 
 
 def get_health_data() -> dict[str, Any]:
@@ -295,6 +298,42 @@ async def get_trends(
             "data": results,
         }
     )
+
+
+@app.post("/api/snapshot", status_code=201)
+async def save_snapshot(body: SnapshotRequest) -> ORJSONResponse:
+    """Save a graph snapshot and return a shareable token."""
+    if len(body.nodes) > snapshot_store.max_nodes:
+        return ORJSONResponse(
+            content={"error": f"Too many nodes: maximum is {snapshot_store.max_nodes}"},
+            status_code=422,
+        )
+
+    nodes = [n.model_dump() for n in body.nodes]
+    center = body.center.model_dump()
+    token, expires_at = snapshot_store.save(nodes, center)
+
+    response = SnapshotResponse(
+        token=token,
+        url=f"/snapshot/{token}",
+        expires_at=expires_at.isoformat(),
+    )
+    return ORJSONResponse(content=response.model_dump(), status_code=201)
+
+
+@app.get("/api/snapshot/{token}")
+async def restore_snapshot(token: str) -> ORJSONResponse:
+    """Restore a graph snapshot by token."""
+    entry = snapshot_store.load(token)
+    if entry is None:
+        return ORJSONResponse(content={"error": "Snapshot not found or expired"}, status_code=404)
+
+    response = SnapshotRestoreResponse(
+        nodes=entry["nodes"],
+        center=entry["center"],
+        created_at=entry["created_at"],
+    )
+    return ORJSONResponse(content=response.model_dump())
 
 
 # Mount static files for the UI
