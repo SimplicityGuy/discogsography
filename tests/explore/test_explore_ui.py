@@ -140,7 +140,7 @@ class TestExploreAPIEndpoints:
         assert response.ok
         data = response.json()
         assert data["center"]["type"] == "genre"
-        assert len(data["categories"]) == 3  # artists, labels, styles
+        assert len(data["categories"]) == 4  # releases, artists, labels, styles
 
     def test_explore_label_endpoint(self, page: Page, test_server: str) -> None:
         """Test the explore API returns label graph data."""
@@ -148,7 +148,7 @@ class TestExploreAPIEndpoints:
         assert response.ok
         data = response.json()
         assert data["center"]["type"] == "label"
-        assert len(data["categories"]) == 2  # releases, artists
+        assert len(data["categories"]) == 3  # releases, artists, genres
 
     def test_expand_endpoint(self, page: Page, test_server: str) -> None:
         """Test the expand API returns child nodes."""

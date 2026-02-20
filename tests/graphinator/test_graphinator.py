@@ -186,6 +186,97 @@ class TestOnArtistMessage:
         # Should nack with requeue
         mock_message.nack.assert_called_once_with(requeue=True)
 
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_handle_neo4j_connection_error_with_raise(self, sample_artist_data: dict[str, Any]) -> None:
+        """Test handling Neo4j connection errors that get raised."""
+        from neo4j.exceptions import ServiceUnavailable
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+
+        with patch("graphinator.graphinator.graph") as mock_graph:
+            # Make session raise ServiceUnavailable
+            mock_graph.session.side_effect = ServiceUnavailable("Connection lost")
+
+            await on_artist_message(mock_message)
+
+        # Should nack with requeue
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_handle_session_expired_error(self, sample_artist_data: dict[str, Any]) -> None:
+        """Test handling SessionExpired errors."""
+        from neo4j.exceptions import SessionExpired
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+
+        with patch("graphinator.graphinator.graph") as mock_graph:
+            # Make session raise SessionExpired
+            mock_graph.session.side_effect = SessionExpired("Session expired")
+
+            await on_artist_message(mock_message)
+
+        # Should nack with requeue
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_handle_nack_failure_on_service_unavailable(self, sample_artist_data: dict[str, Any]) -> None:
+        """Test handling nack failure when Neo4j is unavailable."""
+        from neo4j.exceptions import ServiceUnavailable
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.nack.side_effect = Exception("Nack failed")
+
+        with patch("graphinator.graphinator.graph") as mock_graph, patch("graphinator.graphinator.logger"):
+            mock_graph.session.side_effect = ServiceUnavailable("Connection lost")
+
+            # Should not raise exception
+            await on_artist_message(mock_message)
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_handle_general_exception_with_nack_failure(self, sample_artist_data: dict[str, Any]) -> None:
+        """Test handling general exception with nack failure."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(sample_artist_data).encode()
+        mock_message.nack.side_effect = Exception("Nack failed")
+
+        with patch("graphinator.graphinator.graph") as mock_graph, patch("graphinator.graphinator.logger"):
+            mock_graph.session.side_effect = RuntimeError("Unexpected error")
+
+            # Should not raise exception
+            await on_artist_message(mock_message)
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_handle_file_completion_message(self) -> None:
+        """Test handling file completion message in artist handler."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.completed_files = set()
+        graphinator.graphinator.queues = {}
+
+        completion_data = {
+            "type": "file_complete",
+            "total_processed": 100,
+        }
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(completion_data).encode()
+
+        await on_artist_message(mock_message)
+
+        # Should acknowledge the message
+        mock_message.ack.assert_called_once()
+
+        # Should mark file as completed
+        assert "artists" in graphinator.graphinator.completed_files
+
 
 class TestOnLabelMessage:
     """Test on_label_message handler."""
@@ -207,6 +298,17 @@ class TestOnLabelMessage:
 
         mock_message.ack.assert_called_once()
         mock_session.execute_write.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", True)
+    async def test_reject_on_shutdown(self) -> None:
+        """Test label message rejection during shutdown."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+
+        await on_label_message(mock_message)
+
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.ack.assert_not_called()
 
 
 class TestOnMasterMessage:
@@ -251,6 +353,52 @@ class TestOnReleaseMessage:
 
         mock_message.ack.assert_called_once()
         mock_session.execute_write.assert_called()
+
+
+class TestCheckConsumersUnexpectedlyDead:
+    """Test check_consumers_unexpectedly_dead function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_true_when_consumers_dead(self) -> None:
+        """Test returns True when consumers have died unexpectedly."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = {"artists"}  # Not all complete
+        graphinator.graphinator.message_counts = {"artists": 10, "labels": 0, "masters": 0, "releases": 0}
+
+        from graphinator.graphinator import check_consumers_unexpectedly_dead
+
+        result = await check_consumers_unexpectedly_dead()
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_consumers_active(self) -> None:
+        """Test returns False when consumers are still active."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.consumer_tags = {"artists": "tag123"}
+        graphinator.graphinator.completed_files = {"artists"}
+        graphinator.graphinator.message_counts = {"artists": 10, "labels": 0, "masters": 0, "releases": 0}
+
+        from graphinator.graphinator import check_consumers_unexpectedly_dead
+
+        result = await check_consumers_unexpectedly_dead()
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_returns_false_when_no_messages_processed(self) -> None:
+        """Test returns False when no messages have been processed yet."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = set()
+        graphinator.graphinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+
+        from graphinator.graphinator import check_consumers_unexpectedly_dead
+
+        result = await check_consumers_unexpectedly_dead()
+        assert result is False
 
 
 class TestMain:

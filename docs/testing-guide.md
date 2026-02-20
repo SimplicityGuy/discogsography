@@ -46,29 +46,50 @@ graph BT
 
 ```
 tests/
-├── conftest.py                    # Shared fixtures
-├── test_config.py                 # Configuration tests
-├── test_integration.py            # Cross-service tests
+├── conftest.py                          # Shared fixtures
+├── test_batch_performance.py            # Batch performance benchmarks
+├── test_config.py                       # Configuration tests
+├── test_file_completion.py              # File completion tracking tests
+├── test_health_server.py                # Health server tests
+├── test_integration.py                  # Cross-service integration tests
+│
+├── common/                              # Shared module tests
+│   ├── test_data_normalizer.py
+│   ├── test_db_resilience.py
+│   ├── test_neo4j_resilient.py
+│   ├── test_postgres_resilient.py
+│   ├── test_rabbitmq_resilient.py
+│   └── test_state_marker.py
 │
 ├── dashboard/
-│   ├── conftest.py               # Dashboard fixtures
-│   ├── test_dashboard_api.py     # API unit tests
-│   ├── test_dashboard_api_integration.py
-│   └── test_dashboard_ui.py      # E2E tests
+│   ├── conftest.py                      # Dashboard fixtures
+│   ├── test_dashboard_api.py            # API unit tests
+│   ├── test_dashboard_api_integration.py # Integration tests
+│   ├── test_dashboard_app.py            # App-level tests
+│   └── test_dashboard_ui.py             # E2E tests (playwright, @pytest.mark.e2e)
 │
-│   ├── test_recommender.py       # AI component tests
-│   ├── test_analytics.py         # Analytics tests
-│   └── test_graph_explorer.py    # Graph tests
-│
-├── extractor/
-│   ├── test_extractor.py         # Processing tests
-│   └── test_discogs.py           # Download tests
+├── explore/
+│   ├── conftest.py
+│   ├── test_explore_api.py              # API unit tests
+│   ├── test_explore_ui.py               # E2E tests (playwright, @pytest.mark.e2e)
+│   ├── test_neo4j_indexes.py
+│   └── test_neo4j_queries.py
 │
 ├── graphinator/
-│   └── test_graphinator.py       # Neo4j tests
+│   ├── conftest.py
+│   ├── test_batch_processor.py
+│   ├── test_batch_processor_integration.py
+│   └── test_graphinator.py
+│
+├── load/                                # Load tests (Locust)
+│   ├── locustfile.py
+│   ├── scenarios.py
+│   └── README.md
 │
 └── tableinator/
-    └── test_tableinator.py       # PostgreSQL tests
+    ├── conftest.py
+    ├── test_batch_processor.py
+    └── test_tableinator.py
 ```
 
 ## 📝 Writing Tests
@@ -106,8 +127,9 @@ class TestArtistProcessor:
 
 ### Integration Test Pattern
 
+Integration tests are identified by their filename convention (`*_integration.py`) rather than a pytest marker. They test service interactions with real or mock external dependencies.
+
 ```python
-@pytest.mark.integration
 class TestServiceIntegration:
     """Test service interactions."""
 
@@ -245,8 +267,8 @@ flowchart TD
 
     Start --> Type{Test Type?}
 
-    Type -->|Unit| Unit[pytest -m 'not integration and not e2e']
-    Type -->|Integration| Integration[pytest -m integration]
+    Type -->|Unit| Unit[pytest -m 'not e2e and not benchmark']
+    Type -->|Integration| Integration[pytest tests/**/test_*_integration.py]
     Type -->|E2E| E2E[pytest -m e2e]
     Type -->|All| All[pytest]
 
@@ -291,11 +313,11 @@ just test-cov
 uv run pytest tests/dashboard/
 uv run pytest tests/extractor/
 
-# Run only unit tests (parallel)
-uv run pytest -m "not integration and not e2e"
+# Run only unit tests (parallel, exclude E2E and benchmarks)
+uv run pytest -m "not e2e and not benchmark"
 
-# Run only integration tests (parallel)
-uv run pytest -m integration
+# Run only integration tests (by filename convention)
+uv run pytest tests/graphinator/test_batch_processor_integration.py tests/dashboard/test_dashboard_api_integration.py
 
 # Run E2E tests
 just test-e2e

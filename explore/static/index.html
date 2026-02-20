@@ -79,6 +79,12 @@
                     <button class="graph-control-btn" id="fullscreenBtn" title="Fullscreen">
                         <i class="fas fa-expand"></i>
                     </button>
+                    <button class="graph-control-btn" id="shareBtn" title="Share graph">
+                        <i class="fas fa-share-alt"></i>
+                    </button>
+                </div>
+                <div class="share-toast" id="shareToast">
+                    <span id="shareToastMsg">Link copied!</span>
                 </div>
                 <div class="loading-overlay" id="graphLoading">
                     <div class="spinner-border text-primary" role="status"></div>
@@ -106,6 +112,18 @@
         <!-- Trends pane -->
         <div class="pane" id="trendsPane">
             <div class="trends-container">
+                <div class="trends-toolbar">
+                    <button class="btn btn-sm btn-outline-secondary" id="compareBtn">
+                        <i class="fas fa-plus me-1"></i>Compare
+                    </button>
+                    <span class="text-muted small ms-2 d-none" id="compareHint">Search for another entity to overlay on the chart</span>
+                    <span class="d-none" id="compareInfo">
+                        <span class="badge bg-secondary" id="compareBadge"></span>
+                        <button class="btn btn-sm btn-outline-danger ms-2" id="clearCompareBtn">
+                            <i class="fas fa-times me-1"></i>Clear
+                        </button>
+                    </span>
+                </div>
                 <div id="trendsChart"></div>
                 <div class="loading-overlay" id="trendsLoading">
                     <div class="spinner-border text-primary" role="status"></div>

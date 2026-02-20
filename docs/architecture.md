@@ -445,6 +445,21 @@ See [Logging Guide](logging-guide.md) for details.
 
 See [Monitoring](monitoring.md) for details.
 
+## 💿 Dataset Scale
+
+<div align="center">
+
+|                      Data Type                      | Record Count | XML Size | Processing Time |
+| :-------------------------------------------------: | :----------: | :------: | :-------------: |
+| [📀](emoji-guide.md#music-domain) **Releases** | ~15 million  |  ~40GB   |    1-3 hours    |
+| [🎤](emoji-guide.md#music-domain) **Artists**  |  ~2 million  |   ~5GB   |   15-30 mins    |
+| [🎵](emoji-guide.md#music-domain) **Masters**  |  ~2 million  |   ~3GB   |   10-20 mins    |
+|                    🏢 **Labels**                    | ~1.5 million |   ~2GB   |   10-15 mins    |
+
+**📊 Total: ~20 million records • 50GB compressed • 100GB processed**
+
+</div>
+
 ## Scalability Considerations
 
 ### Horizontal Scaling

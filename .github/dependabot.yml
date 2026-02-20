@@ -26,7 +26,7 @@ updates:
   - package-ecosystem: "docker"
     directories:
       - "/dashboard"
-      - "/discovery"
+      - "/explore"
       - "/extractor"
       - "/graphinator"
       - "/tableinator"
@@ -55,7 +55,7 @@ updates:
       - "/"  # Root project
       - "/common"
       - "/dashboard"
-      - "/discovery"
+      - "/explore"
       - "/extractor"
       - "/graphinator"
       - "/tableinator"

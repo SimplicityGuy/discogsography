@@ -31,7 +31,7 @@ nano .env
 Export variables in your shell:
 
 ```bash
-export AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
+export AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 export NEO4J_ADDRESS="bolt://localhost:7687"
 # ... other variables
 ```
@@ -52,9 +52,9 @@ services:
 
 ### RabbitMQ Configuration
 
-| Variable          | Description             | Default                              | Required |
-| ----------------- | ----------------------- | ------------------------------------ | -------- |
-| `AMQP_CONNECTION` | RabbitMQ connection URL | `amqp://guest:guest@localhost:5672/` | Yes      |
+| Variable          | Description             | Default                                             | Required |
+| ----------------- | ----------------------- | --------------------------------------------------- | -------- |
+| `AMQP_CONNECTION` | RabbitMQ connection URL | `amqp://discogsography:discogsography@localhost:5672/` | Yes      |
 
 **Used By**: All services
 
@@ -63,11 +63,11 @@ services:
 **Examples**:
 
 ```bash
-# Local development
-AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
+# Local development (matches docker-compose default credentials)
+AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 
 # Docker Compose (internal network)
-AMQP_CONNECTION="amqp://discogsography:discogsography@rabbitmq:5672/"
+AMQP_CONNECTION="amqp://discogsography:discogsography@rabbitmq:5672//"
 
 # Remote server with vhost
 AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
@@ -301,6 +301,7 @@ See [Logging Guide](logging-guide.md) for detailed logging information.
 | ----------------------- | --------------------------------------- | ------------- | --------- |
 | `CONSUMER_CANCEL_DELAY` | Seconds before canceling idle consumers | `300` (5 min) | 60-3600   |
 | `QUEUE_CHECK_INTERVAL`  | Seconds between queue checks when idle  | `3600` (1 hr) | 300-86400 |
+| `STUCK_CHECK_INTERVAL`  | Seconds between stuck-state checks      | `30`          | 5-300     |
 
 **Used By**: Graphinator, Tableinator
 
@@ -345,11 +346,11 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 | Variable                        | Description                              | Default | Range      |
 | ------------------------------- | ---------------------------------------- | ------- | ---------- |
 | `NEO4J_BATCH_MODE`              | Enable batch processing for Neo4j writes | `true`  | true/false |
-| `NEO4J_BATCH_SIZE`              | Records per batch for Neo4j              | `100`   | 10-1000    |
-| `NEO4J_BATCH_FLUSH_INTERVAL`    | Seconds between automatic flushes        | `5.0`   | 1.0-60.0   |
+| `NEO4J_BATCH_SIZE`              | Records per batch for Neo4j              | `500`   | 10-1000    |
+| `NEO4J_BATCH_FLUSH_INTERVAL`    | Seconds between automatic flushes        | `2.0`   | 1.0-60.0   |
 | `POSTGRES_BATCH_MODE`           | Enable batch processing for PostgreSQL   | `true`  | true/false |
-| `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL         | `100`   | 10-1000    |
-| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes        | `5.0`   | 1.0-60.0   |
+| `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL         | `500`   | 10-1000    |
+| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes        | `2.0`   | 1.0-60.0   |
 
 **Used By**: Graphinator (Neo4j), Tableinator (PostgreSQL)
 
@@ -403,12 +404,30 @@ NEO4J_BATCH_MODE=false
 Batch processing logs provide visibility into performance:
 
 ```
-🚀 Batch processing enabled (batch_size=100, flush_interval=5.0)
-📦 Flushing batch for artists (size=100)
-✅ Batch flushed successfully (artists: 100 records in 0.45s)
+🚀 Batch processing enabled (batch_size=500, flush_interval=2.0)
+📦 Flushing batch for artists (size=500)
+✅ Batch flushed successfully (artists: 500 records in 0.45s)
 ```
 
 See [Performance Guide](performance-guide.md) for detailed optimization strategies.
+
+## Dashboard Configuration
+
+| Variable                      | Description                                  | Default           | Required        |
+| ----------------------------- | -------------------------------------------- | ----------------- | --------------- |
+| `RABBITMQ_MANAGEMENT_USER`    | RabbitMQ management API username             | `discogsography`  | No              |
+| `RABBITMQ_MANAGEMENT_PASSWORD`| RabbitMQ management API password             | `discogsography`  | No              |
+| `CORS_ORIGINS`                | Comma-separated list of allowed CORS origins | (none — disabled) | No              |
+| `CACHE_WARMING_ENABLED`       | Pre-warm cache on startup                    | `true`            | No              |
+| `CACHE_WEBHOOK_SECRET`        | Secret for cache invalidation webhooks       | (none — disabled) | No              |
+
+**Used By**: Dashboard only
+
+**Notes**:
+
+- `RABBITMQ_MANAGEMENT_USER` / `RABBITMQ_MANAGEMENT_PASSWORD` must match the credentials set in RabbitMQ for the management plugin
+- `CORS_ORIGINS` is optional; omit it to restrict cross-origin access
+- `CACHE_WEBHOOK_SECRET` enables an authenticated endpoint to invalidate cached queries
 
 ## Python Version
 
@@ -432,7 +451,7 @@ See [Performance Guide](performance-guide.md) for detailed optimization strategi
 
 ```bash
 # Required
-AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
+AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 DISCOGS_ROOT="/discogs-data"
 
 # Optional
@@ -446,7 +465,7 @@ Health check: http://localhost:8000/health
 
 ```bash
 # Required
-AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
+AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 NEO4J_ADDRESS="bolt://localhost:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
@@ -454,11 +473,12 @@ NEO4J_PASSWORD="discogsography"
 # Optional - Consumer Management
 CONSUMER_CANCEL_DELAY=300
 QUEUE_CHECK_INTERVAL=3600
+STUCK_CHECK_INTERVAL=30    # Seconds between stuck-state checks
 
 # Optional - Batch Processing (enabled by default)
 NEO4J_BATCH_MODE=true
-NEO4J_BATCH_SIZE=100
-NEO4J_BATCH_FLUSH_INTERVAL=5.0
+NEO4J_BATCH_SIZE=500
+NEO4J_BATCH_FLUSH_INTERVAL=2.0
 
 # Optional - Logging
 LOG_LEVEL=INFO
@@ -470,7 +490,7 @@ Health check: http://localhost:8001/health
 
 ```bash
 # Required
-AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
+AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 POSTGRES_ADDRESS="localhost:5433"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
@@ -479,11 +499,12 @@ POSTGRES_DATABASE="discogsography"
 # Optional - Consumer Management
 CONSUMER_CANCEL_DELAY=300
 QUEUE_CHECK_INTERVAL=3600
+STUCK_CHECK_INTERVAL=30    # Seconds between stuck-state checks
 
 # Optional - Batch Processing (enabled by default)
 POSTGRES_BATCH_MODE=true
-POSTGRES_BATCH_SIZE=100
-POSTGRES_BATCH_FLUSH_INTERVAL=5.0
+POSTGRES_BATCH_SIZE=500
+POSTGRES_BATCH_FLUSH_INTERVAL=2.0
 
 # Optional - Logging
 LOG_LEVEL=INFO
@@ -509,7 +530,7 @@ Health check: http://localhost:8006/health (service), http://localhost:8007/heal
 
 ```bash
 # Required
-AMQP_CONNECTION="amqp://guest:guest@localhost:5672/"
+AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 NEO4J_ADDRESS="bolt://localhost:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
@@ -519,7 +540,18 @@ POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
 REDIS_URL="redis://localhost:6379/0"
 
-# Optional
+# Optional - RabbitMQ Management API access
+RABBITMQ_MANAGEMENT_USER=discogsography
+RABBITMQ_MANAGEMENT_PASSWORD=discogsography
+
+# Optional - CORS
+CORS_ORIGINS="http://localhost:8003,http://localhost:8006"  # comma-separated origins
+
+# Optional - Cache
+CACHE_WARMING_ENABLED=true         # Pre-warm cache on startup
+CACHE_WEBHOOK_SECRET=              # Secret for cache invalidation webhooks
+
+# Optional - Logging
 LOG_LEVEL=INFO
 ```
 
@@ -531,7 +563,7 @@ Health check: http://localhost:8003/health
 
 ```bash
 # RabbitMQ
-AMQP_CONNECTION=amqp://guest:guest@localhost:5672/
+AMQP_CONNECTION=amqp://discogsography:discogsography@localhost:5672/
 
 # Neo4j
 NEO4J_ADDRESS=bolt://localhost:7687
@@ -715,4 +747,4 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-01-15 (Added batch processing configuration)
+**Last Updated**: 2026-02-18

@@ -43,15 +43,16 @@ Represents musicians, bands, producers, and other music industry individuals.
   namevariations: [String]?, # Alternative names
   urls: [String]?,         # Associated URLs
   members: [String]?,      # Band members (if group)
-  groups: [String]?        # Groups this artist belongs to
+  groups: [String]?,       # Groups this artist belongs to
+  sha256: String           # SHA256 hash of record content (for deduplication)
 })
 ```
 
-**Indexes**:
+**Constraints & Indexes**:
 
 ```cypher
-CREATE INDEX artist_id IF NOT EXISTS FOR (a:Artist) ON (a.id);
-CREATE INDEX artist_name IF NOT EXISTS FOR (a:Artist) ON (a.name);
+CREATE CONSTRAINT IF NOT EXISTS FOR (a:Artist) REQUIRE a.id IS UNIQUE;
+CREATE INDEX artist_sha256 IF NOT EXISTS FOR (a:Artist) ON (a.sha256);
 ```
 
 #### Label Node
@@ -66,15 +67,16 @@ Represents record labels and their imprints.
   contact_info: String?,   # Contact information
   parent_label: String?,   # Parent label (if sublabel)
   sublabels: [String]?,    # Sublabels
-  urls: [String]?          # Associated URLs
+  urls: [String]?,         # Associated URLs
+  sha256: String           # SHA256 hash of record content (for deduplication)
 })
 ```
 
-**Indexes**:
+**Constraints & Indexes**:
 
 ```cypher
-CREATE INDEX label_id IF NOT EXISTS FOR (l:Label) ON (l.id);
-CREATE INDEX label_name IF NOT EXISTS FOR (l:Label) ON (l.name);
+CREATE CONSTRAINT IF NOT EXISTS FOR (l:Label) REQUIRE l.id IS UNIQUE;
+CREATE INDEX label_sha256 IF NOT EXISTS FOR (l:Label) ON (l.sha256);
 ```
 
 #### Master Node
@@ -90,16 +92,16 @@ Represents master recordings (the original recordings from which releases are de
   data_quality: String?,   # Data quality indicator
   genres: [String]?,       # Musical genres
   styles: [String]?,       # Musical styles
-  artists: [String]?       # Primary artists
+  artists: [String]?,      # Primary artists
+  sha256: String           # SHA256 hash of record content (for deduplication)
 })
 ```
 
-**Indexes**:
+**Constraints & Indexes**:
 
 ```cypher
-CREATE INDEX master_id IF NOT EXISTS FOR (m:Master) ON (m.id);
-CREATE INDEX master_title IF NOT EXISTS FOR (m:Master) ON (m.title);
-CREATE INDEX master_year IF NOT EXISTS FOR (m:Master) ON (m.year);
+CREATE CONSTRAINT IF NOT EXISTS FOR (m:Master) REQUIRE m.id IS UNIQUE;
+CREATE INDEX master_sha256 IF NOT EXISTS FOR (m:Master) ON (m.sha256);
 ```
 
 #### Release Node
@@ -119,17 +121,16 @@ Represents physical or digital releases (albums, singles, etc.).
   styles: [String]?,       # Musical styles
   artists: [String]?,      # Primary artists
   labels: [String]?,       # Release labels
-  tracklist: [Object]?     # Track information
+  tracklist: [Object]?,    # Track information
+  sha256: String           # SHA256 hash of record content (for deduplication)
 })
 ```
 
-**Indexes**:
+**Constraints & Indexes**:
 
 ```cypher
-CREATE INDEX release_id IF NOT EXISTS FOR (r:Release) ON (r.id);
-CREATE INDEX release_title IF NOT EXISTS FOR (r:Release) ON (r.title);
-CREATE INDEX release_year IF NOT EXISTS FOR (r:Release) ON (r.year);
-CREATE INDEX release_country IF NOT EXISTS FOR (r:Release) ON (r.country);
+CREATE CONSTRAINT IF NOT EXISTS FOR (r:Release) REQUIRE r.id IS UNIQUE;
+CREATE INDEX release_sha256 IF NOT EXISTS FOR (r:Release) ON (r.sha256);
 ```
 
 #### Genre Node
@@ -142,10 +143,10 @@ Represents musical genres.
 })
 ```
 
-**Indexes**:
+**Constraints**:
 
 ```cypher
-CREATE INDEX genre_name IF NOT EXISTS FOR (g:Genre) ON (g.name);
+CREATE CONSTRAINT IF NOT EXISTS FOR (g:Genre) REQUIRE g.name IS UNIQUE;
 ```
 
 #### Style Node
@@ -158,10 +159,10 @@ Represents musical styles (sub-genres).
 })
 ```
 
-**Indexes**:
+**Constraints**:
 
 ```cypher
-CREATE INDEX style_name IF NOT EXISTS FOR (s:Style) ON (s.name);
+CREATE CONSTRAINT IF NOT EXISTS FOR (s:Style) REQUIRE s.name IS UNIQUE;
 ```
 
 ### Relationships
@@ -727,4 +728,4 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 
 ______________________________________________________________________
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2026-02-18

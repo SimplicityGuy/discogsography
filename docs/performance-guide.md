@@ -287,10 +287,10 @@ POSTGRES_BATCH_SIZE=10
 POSTGRES_BATCH_FLUSH_INTERVAL=1.0
 
 # Balanced (default - good for most use cases)
-NEO4J_BATCH_SIZE=100
-NEO4J_BATCH_FLUSH_INTERVAL=5.0
-POSTGRES_BATCH_SIZE=100
-POSTGRES_BATCH_FLUSH_INTERVAL=5.0
+NEO4J_BATCH_SIZE=500
+NEO4J_BATCH_FLUSH_INTERVAL=2.0
+POSTGRES_BATCH_SIZE=500
+POSTGRES_BATCH_FLUSH_INTERVAL=2.0
 ```
 
 See [Configuration Guide](configuration.md#batch-processing-configuration) for complete details.
@@ -315,11 +315,11 @@ async def batch_create_nodes(tx, nodes: list[dict], batch_size: int = 1000):
         await tx.run(query, batch=batch)
 
 
-# 2. Index optimization
+# 2. Constraint/index optimization
 CREATE_INDEXES = [
-    "CREATE INDEX artist_id IF NOT EXISTS FOR (a:Artist) ON (a.id)",
-    "CREATE INDEX release_id IF NOT EXISTS FOR (r:Release) ON (r.id)",
-    "CREATE INDEX label_id IF NOT EXISTS FOR (l:Label) ON (l.id)",
+    "CREATE CONSTRAINT artist_id IF NOT EXISTS FOR (a:Artist) REQUIRE a.id IS UNIQUE",
+    "CREATE CONSTRAINT release_id IF NOT EXISTS FOR (r:Release) REQUIRE r.id IS UNIQUE",
+    "CREATE CONSTRAINT label_id IF NOT EXISTS FOR (l:Label) REQUIRE l.id IS UNIQUE",
 ]
 
 # 3. Connection pooling
@@ -593,7 +593,7 @@ Before deployment, ensure:
 
 - [ ] XML parsing achieves >5000 records/second
 - [ ] Message processing handles >3000 messages/second
-- [x] **Database writes are batched** (✅ enabled by default with 100 records/batch)
+- [x] **Database writes are batched** (✅ enabled by default with 500 records/batch)
 - [x] **Batch processing configured** for Neo4j and PostgreSQL
 - [ ] Connection pooling is configured for all services
 - [x] **SHA256 hash indexes created** for all tables (✅ automatic on startup)

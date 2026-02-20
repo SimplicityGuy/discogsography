@@ -86,10 +86,10 @@ component_management:
       name: Dashboard
       paths:
         - "dashboard/**"
-    - component_id: discovery
-      name: Discovery
+    - component_id: explore
+      name: Explore
       paths:
-        - "discovery/**"
+        - "explore/**"
     - component_id: extractor
       name: Extractor
       paths:

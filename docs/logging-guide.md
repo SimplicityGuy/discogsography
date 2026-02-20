@@ -95,13 +95,18 @@ docker run -e LOG_LEVEL=DEBUG discogsography/service:latest
 
 #### Python Services
 
-All Python services (graphinator, tableinator, dashboard, explore) use the `setup_logging()` function from `common/config.py`:
+All Python services (graphinator, tableinator, dashboard, explore) use **[structlog](https://www.structlog.org/)** configured via `setup_logging()` from `common/config.py`. Use `structlog.get_logger()` — **not** `logging.getLogger()`:
 
 ```python
+import structlog
 from common import setup_logging
 
-# Reads from LOG_LEVEL environment variable, defaults to INFO
+# Call once at service startup — reads LOG_LEVEL from environment, defaults to INFO
 setup_logging("service_name", log_file=Path("/logs/service.log"))
+
+# Get a logger in any module
+logger = structlog.get_logger(__name__)
+logger.info("🚀 Service starting...")
 ```
 
 **Features**:
@@ -236,21 +241,22 @@ let rust_level = match log_level.as_str() {
 
 ### 🔗 Service Connections
 
-| Emoji | Usage       | Example                                         |
-| ----- | ----------- | ----------------------------------------------- |
-| 🐰    | RabbitMQ    | `logger.info("🐰 Connected to RabbitMQ")`       |
-| 🔗    | Neo4j       | `logger.info("🔗 Connected to Neo4j database")` |
-| 🐘    | PostgreSQL  | `logger.info("🐘 Connected to PostgreSQL")`     |
-| 🌐    | Network/API | `logger.info("🌐 Fetching from Discogs API")`   |
+| Emoji | Usage                  | Example                                                          |
+| ----- | ---------------------- | ---------------------------------------------------------------- |
+| 🐰    | RabbitMQ               | `logger.info("🐰 Connected to RabbitMQ")`                       |
+| 🔗    | Neo4j                  | `logger.info("🔗 Connected to Neo4j database")`                 |
+| 🐘    | PostgreSQL             | `logger.info("🐘 Connected to PostgreSQL")`                     |
+| 🌐    | Network/API            | `logger.info("🌐 Fetching from Discogs API")`                   |
+| 📑    | Database index setup   | `logger.info("📑 Neo4j indexes created/verified")`              |
 
 ## 💻 Implementation Examples
 
 ### Basic Service Startup
 
 ```python
-import logging
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)  # Use structlog, not logging.getLogger()
 
 
 async def start_service():
@@ -409,24 +415,21 @@ except Exception as e:
 
 ### Basic Setup
 
+All services use `setup_logging()` from `common.config`, which configures structlog with JSON output, reads `LOG_LEVEL` from the environment, and sets up file + console handlers:
+
 ```python
-import logging
-import sys
+import structlog
+from pathlib import Path
+from common import setup_logging
 
-# Configure logging format
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler(f"/logs/{service_name}.log"),
-    ],
-)
+# Call once at service startup
+setup_logging("service_name", log_file=Path("/logs/service_name.log"))
 
-logger = logging.getLogger(__name__)
+# Get a logger in each module
+logger = structlog.get_logger(__name__)
 ```
 
-> **💡 Tip**: Use the `setup_logging()` function from `common.config` instead of manual configuration. It automatically reads `LOG_LEVEL` from the environment and provides structured JSON logging.
+> **💡 Tip**: Never call `logging.basicConfig()` directly in a service — `setup_logging()` handles everything including structlog configuration, third-party log suppression, and log file rotation.
 
 ### JSON Logging (Production)
 

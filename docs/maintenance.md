@@ -20,18 +20,18 @@ Keep dependencies up-to-date with the provided upgrade script:
 
 ```bash
 # Safely upgrade all dependencies (minor/patch versions)
-./scripts/upgrade-packages.sh
+./scripts/update-project.sh
 
 # Preview what would be upgraded (dry run)
-./scripts/upgrade-packages.sh --dry-run
+./scripts/update-project.sh --dry-run
 
 # Include major version upgrades
-./scripts/upgrade-packages.sh --major
+./scripts/update-project.sh --major
 ```
 
 ### Upgrade Script Features
 
-The `upgrade-packages.sh` script provides:
+The `update-project.sh` script provides:
 
 #### Safety Features
 
@@ -119,7 +119,7 @@ uv add "package-name>=new.version"
 # Or update to latest
 uv lock --upgrade-package package-name
 
-# Rust package (in extractor/extractor/)
+# Rust package (in extractor/)
 cargo update -p package-name
 ```
 
@@ -699,4 +699,4 @@ just test-e2e
 
 ______________________________________________________________________
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2026-02-18

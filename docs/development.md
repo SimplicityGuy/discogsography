@@ -52,12 +52,13 @@ discogsography/
 │   │   └── app.js
 │   ├── README.md
 │   └── __init__.py
-├── 📥 extractor/           # Data extraction services
-│   └── extractor/      # Rust-based high-performance extractor
-│       ├── src/
-│       │   └── main.rs     # Rust processing logic
-│       ├── Cargo.toml      # Rust dependencies
-│       └── README.md
+├── 📥 extractor/           # Rust-based high-performance extractor
+│   ├── src/
+│   │   └── main.rs         # Rust processing logic
+│   ├── benches/            # Rust benchmarks
+│   ├── tests/              # Rust unit tests
+│   ├── Cargo.toml          # Rust dependencies
+│   └── README.md
 ├── 🔍 explore/             # Interactive graph exploration & trends
 │   ├── explore.py          # FastAPI backend with Neo4j queries
 │   ├── static/             # Frontend HTML/CSS/JS
@@ -80,12 +81,12 @@ discogsography/
 │   ├── common/             # Common module tests
 │   ├── dashboard/          # Dashboard tests (including E2E)
 │   ├── explore/            # Explore service tests
-│   ├── extractor/          # Extractor tests (Rust)
 │   ├── graphinator/        # Graphinator tests
+│   ├── load/               # Load tests (Locust)
 │   └── tableinator/        # Tableinator tests
 ├── 📝 docs/                # Documentation
 ├── 📜 scripts/             # Utility scripts
-│   ├── upgrade-packages.sh # Dependency upgrade automation
+│   ├── update-project.sh   # Dependency upgrade automation
 │   └── README.md
 ├── 🐋 docker-compose.yml   # Container orchestration
 ├── 📄 .env.example         # Environment variable template
@@ -256,11 +257,13 @@ tests/
 
 ### Running Tests
 
+Tests run in **parallel by default** using `pytest-xdist` (`-n auto --dist loadfile` is set in `pyproject.toml`). This reduces the full suite from ~15 minutes to ~5 minutes.
+
 ```bash
-# All tests (excluding E2E)
+# All tests (excluding E2E) — runs in parallel automatically
 just test
 
-# With coverage report
+# With coverage report (parallel)
 just test-cov
 
 # Specific test file
@@ -269,11 +272,11 @@ uv run pytest tests/extractor/test_extractor.py
 # Specific test function
 uv run pytest tests/extractor/test_extractor.py::test_parse_artist
 
+# Sequential execution (for debugging, shows cleaner output)
+uv run pytest -n 0 -s
+
 # With verbose output
 uv run pytest -v
-
-# With output (show print statements)
-uv run pytest -s
 ```
 
 ### E2E Testing with Playwright
@@ -357,12 +360,12 @@ def calculate_similarity(artist1: str, artist2: str) -> float:
 
 ### Logging
 
-**Use emoji-prefixed logging** for consistency:
+**Use emoji-prefixed logging** for consistency (with structlog — see [Logging Guide](logging-guide.md)):
 
 ```python
-import logging
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # Startup
 logger.info("🚀 Starting service...")
@@ -526,7 +529,7 @@ uv run bandit -r . -ll
 uv run pip-audit
 
 # Update dependencies
-./scripts/upgrade-packages.sh
+./scripts/update-project.sh
 ```
 
 ## 📚 Documentation
@@ -663,4 +666,4 @@ uv run pytest --pdb
 
 ______________________________________________________________________
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2026-02-18

@@ -17,6 +17,9 @@ class GraphVisualization {
         this.expandedCategories = new Set();
         this._pendingExpands = 0;
 
+        // Track per-category pagination state: categoryId → {offset, limit, total, parentName, parentType, category}
+        this._categoryMeta = new Map();
+
         // Debounce render
         this._renderTimeout = null;
 
@@ -116,6 +119,7 @@ class GraphVisualization {
     _getNodeRadius(node) {
         if (node.isCenter) return 28;
         if (node.isCategory) return 22;
+        if (node.isLoadMore) return 11;
         return 14;
     }
 
@@ -135,6 +139,7 @@ class GraphVisualization {
         this.links = [];
         this.expandedCategories.clear();
         this._pendingExpands = 0;
+        this._categoryMeta.clear();
 
         // Reset zoom to identity
         this.svg.call(this.zoom.transform, d3.zoomIdentity);
@@ -202,7 +207,18 @@ class GraphVisualization {
         this.expandedCategories.add(categoryId);
 
         try {
-            const children = await window.apiClient.expand(parentName, parentType, category, 30);
+            const data = await window.apiClient.expand(parentName, parentType, category, 30, 0);
+            const { children, total, limit, has_more } = data;
+
+            // Store pagination state for this category
+            this._categoryMeta.set(categoryId, {
+                parentName,
+                parentType,
+                category,
+                offset: children.length,
+                limit,
+                total,
+            });
 
             children.forEach(child => {
                 const childId = `child-${child.type}-${child.id}`;
@@ -218,10 +234,84 @@ class GraphVisualization {
                 });
                 this.links.push({ source: categoryId, target: childId });
             });
+
+            if (has_more) {
+                this._addLoadMoreNode(categoryId, total - children.length);
+            }
         } finally {
             this._pendingExpands--;
             this._checkExpandsDone();
         }
+    }
+
+    _addLoadMoreNode(categoryId, remaining) {
+        const loadMoreId = `load-more-${categoryId}`;
+        // Remove existing load-more node for this category if present
+        this.nodes = this.nodes.filter(n => n.id !== loadMoreId);
+        this.links = this.links.filter(l => {
+            const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+            const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+            return srcId !== loadMoreId && tgtId !== loadMoreId;
+        });
+
+        this.nodes.push({
+            id: loadMoreId,
+            name: `Load ${remaining} more…`,
+            type: 'load-more',
+            isCenter: false,
+            isCategory: false,
+            isLoadMore: true,
+            categoryId,
+        });
+        this.links.push({ source: categoryId, target: loadMoreId });
+    }
+
+    async _loadMoreCategory(d) {
+        const meta = this._categoryMeta.get(d.categoryId);
+        if (!meta) return;
+
+        const { parentName, parentType, category, offset, limit, total } = meta;
+        const data = await window.apiClient.expand(parentName, parentType, category, limit, offset);
+        const { children, has_more } = data;
+
+        // Remove the load-more node and its link
+        this.nodes = this.nodes.filter(n => n.id !== d.id);
+        this.links = this.links.filter(l => {
+            const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+            const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+            return srcId !== d.id && tgtId !== d.id;
+        });
+
+        // Append new child nodes
+        children.forEach(child => {
+            const childId = `child-${child.type}-${child.id}`;
+            if (this.nodes.find(n => n.id === childId)) return;
+
+            this.nodes.push({
+                id: childId,
+                name: child.name,
+                type: child.type,
+                isCenter: false,
+                isCategory: false,
+                nodeId: String(child.id),
+            });
+            this.links.push({ source: d.categoryId, target: childId });
+        });
+
+        // Update category label to reflect loaded count
+        const catNode = this.nodes.find(n => n.id === d.categoryId);
+        if (catNode) {
+            const newOffset = offset + children.length;
+            this._categoryMeta.set(d.categoryId, { ...meta, offset: newOffset });
+            catNode.name = `${catNode.displayName || catNode.name.replace(/ \(\d+\)$/, '')} (${newOffset} / ${total})`;
+        }
+
+        if (has_more) {
+            const remaining = total - (offset + children.length);
+            this._addLoadMoreNode(d.categoryId, remaining);
+        }
+
+        this._render();
     }
 
     _checkExpandsDone() {
@@ -304,6 +394,19 @@ class GraphVisualization {
                     .attr('fill', 'var(--node-category)')
                     .attr('stroke', '#fff')
                     .attr('stroke-width', 1.5);
+            } else if (d.isLoadMore) {
+                const w = 56, h = 22;
+                el.append('rect')
+                    .attr('x', -w / 2)
+                    .attr('y', -h / 2)
+                    .attr('width', w)
+                    .attr('height', h)
+                    .attr('rx', 11)
+                    .attr('ry', 11)
+                    .attr('fill', 'var(--node-load-more)')
+                    .attr('stroke', 'var(--node-load-more-border)')
+                    .attr('stroke-width', 1.5)
+                    .attr('stroke-dasharray', '4 2');
             } else {
                 el.append('circle')
                     .attr('r', radius)
@@ -317,16 +420,29 @@ class GraphVisualization {
             }
         });
 
+        // Tooltips (SVG native — shown on hover by browser)
+        node.append('title').text(d => {
+            if (d.isCenter) return `${d.name} [${d.type}]`;
+            if (d.isCategory) return `${d.displayName || d.name}\n${d.count || 0} items`;
+            if (d.isLoadMore) return `${d.name}\nClick to load more`;
+            const explorableTypes = ['artist', 'genre', 'label', 'style'];
+            const hints = ['Click for details'];
+            if (explorableTypes.includes(d.type)) hints.push('double-click to explore');
+            return `${d.name} [${d.type}]\n${hints.join(', ')}`;
+        });
+
         // Labels
         node.append('text')
             .attr('class', 'node-label')
-            .attr('dy', d => d.isCategory ? 0 : this._getNodeRadius(d) + 14)
+            .attr('dy', d => (d.isCategory || d.isLoadMore) ? 0 : this._getNodeRadius(d) + 14)
             .text(d => {
                 const name = d.displayName || d.name;
+                if (d.isLoadMore) return name.length > 18 ? name.substring(0, 16) + '…' : name;
                 return name.length > 20 ? name.substring(0, 18) + '...' : name;
             })
-            .style('font-size', d => d.isCenter ? '13px' : d.isCategory ? '11px' : '10px')
-            .style('font-weight', d => d.isCenter ? '700' : '400');
+            .style('font-size', d => d.isCenter ? '13px' : (d.isCategory || d.isLoadMore) ? '11px' : '10px')
+            .style('font-weight', d => d.isCenter ? '700' : '400')
+            .style('fill', d => d.isLoadMore ? 'var(--node-load-more-text)' : null);
 
         // Simulation tick
         this.simulation.on('tick', () => {
@@ -363,6 +479,11 @@ class GraphVisualization {
         event.stopPropagation();
         if (d.isCategory) return;
 
+        if (d.isLoadMore) {
+            this._loadMoreCategory(d);
+            return;
+        }
+
         if (this.onNodeClick) {
             const nodeId = d.nodeId || d.name;
             this.onNodeClick(nodeId, d.type);
@@ -383,11 +504,65 @@ class GraphVisualization {
         this.nodes = [];
         this.links = [];
         this.expandedCategories.clear();
+        this._categoryMeta.clear();
         this.g.selectAll('*').remove();
         if (this.simulation) {
             this.simulation.stop();
             this.simulation = null;
         }
         this.placeholder.classList.remove('hidden');
+    }
+
+    /**
+     * Restore graph state from a snapshot node list and center.
+     * @param {Array<{id: string, type: string}>} snapshotNodes
+     * @param {{id: string, type: string}} center
+     */
+    restoreSnapshot(snapshotNodes, center) {
+        if (this.simulation) {
+            this.simulation.stop();
+            this.simulation = null;
+        }
+
+        this.placeholder.classList.add('hidden');
+        this.nodes = [];
+        this.links = [];
+        this.expandedCategories.clear();
+        this._pendingExpands = 0;
+
+        this.svg.call(this.zoom.transform, d3.zoomIdentity);
+
+        this.centerName = center.id;
+        this.centerType = center.type;
+
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
+
+        const centerNode = {
+            id: `snapshot-center-${center.id}`,
+            name: center.id,
+            type: center.type,
+            isCenter: true,
+            isCategory: false,
+            fx: width / 2,
+            fy: height / 2,
+        };
+        this.nodes.push(centerNode);
+
+        snapshotNodes.forEach(n => {
+            if (n.id === center.id && n.type === center.type) return;
+            const nodeId = `snapshot-${n.type}-${n.id}`;
+            this.nodes.push({
+                id: nodeId,
+                name: n.id,
+                type: n.type,
+                isCenter: false,
+                isCategory: false,
+                nodeId: n.id,
+            });
+            this.links.push({ source: centerNode.id, target: nodeId });
+        });
+
+        this._render();
     }
 }

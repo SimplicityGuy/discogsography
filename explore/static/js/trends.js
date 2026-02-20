@@ -6,6 +6,7 @@ class TrendsChart {
         this.container = document.getElementById(containerId);
         this.placeholder = document.getElementById('trendsPlaceholder');
         this.hasData = false;
+        this.hasComparison = false;
     }
 
     /**
@@ -81,9 +82,43 @@ class TrendsChart {
         Plotly.newPlot(this.container, [trace], layout, config);
     }
 
+    /**
+     * Add a comparison trace to the existing chart.
+     * @param {Object} data - Trends response { name, type, data: [{year, count}] }
+     */
+    addComparison(data) {
+        if (!data || !data.data || data.data.length === 0 || !this.hasData) return;
+
+        const trace = {
+            x: data.data.map(d => d.year),
+            y: data.data.map(d => d.count),
+            type: 'scatter',
+            mode: 'lines+markers',
+            name: `${data.name} releases`,
+            line: { color: '#42b883', width: 2 },
+            marker: { color: '#42b883', size: 6 },
+            fill: 'tozeroy',
+            fillcolor: 'rgba(66, 184, 131, 0.1)',
+        };
+
+        Plotly.addTraces(this.container, trace);
+        this.hasComparison = true;
+    }
+
+    /**
+     * Remove the comparison trace, keeping the primary trace.
+     */
+    clearComparison() {
+        if (this.hasComparison) {
+            Plotly.deleteTraces(this.container, -1);
+            this.hasComparison = false;
+        }
+    }
+
     clear() {
         Plotly.purge(this.container);
         this.placeholder.classList.remove('hidden');
         this.hasData = false;
+        this.hasComparison = false;
     }
 }
