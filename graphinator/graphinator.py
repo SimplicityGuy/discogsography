@@ -1448,20 +1448,21 @@ async def main() -> None:
             await result.single()
             logger.info("✅ Neo4j connectivity verified (async)")
 
-            # Create indexes for better performance
-            logger.info("🔧 Creating Neo4j constraints and indexes...")
+        # Create indexes for better performance
+        logger.info("🔧 Creating Neo4j constraints and indexes...")
 
-            # First, drop any existing indexes that would conflict with constraints
-            # Constraints create their own indexes, so we need to remove plain indexes first
-            indexes_to_check = [
-                ("Artist", "id"),
-                ("Label", "id"),
-                ("Master", "id"),
-                ("Release", "id"),
-                ("Genre", "name"),
-                ("Style", "name"),
-            ]
+        indexes_to_check = [
+            ("Artist", "id"),
+            ("Label", "id"),
+            ("Master", "id"),
+            ("Release", "id"),
+            ("Genre", "name"),
+            ("Style", "name"),
+        ]
 
+        # First, drop any existing indexes that would conflict with constraints
+        # Constraints create their own indexes, so we need to remove plain indexes first
+        async with await graph.session(database="neo4j") as session:
             for label, prop in indexes_to_check:
                 try:
                     # Get standalone indexes (not constraint-backed) for this label and property
@@ -1489,9 +1490,11 @@ async def main() -> None:
                         f"Could not check indexes for {label}.{prop}", error=str(e)
                     )
 
-            # Deduplicate nodes before creating constraints to avoid failures
-            for label, prop in indexes_to_check:
-                try:
+        # Deduplicate nodes before creating constraints to avoid failures
+        # Use a separate session per dedup query since these can be long-running
+        for label, prop in indexes_to_check:
+            try:
+                async with await graph.session(database="neo4j") as session:
                     dedup_query = (
                         f"MATCH (n:{label}) "
                         f"WITH n.{prop} AS val, collect(n) AS nodes "
@@ -1514,13 +1517,14 @@ async def main() -> None:
                             f"🧹 Deduplicated {label}.{prop}: "
                             f"removed {removed} duplicate nodes"
                         )
-                except Exception as dedup_error:
-                    logger.debug(
-                        f"Could not deduplicate {label}.{prop}",
-                        error=str(dedup_error),
-                    )
+            except Exception as dedup_error:
+                logger.debug(
+                    f"Could not deduplicate {label}.{prop}",
+                    error=str(dedup_error),
+                )
 
-            # Now create constraints (which will create their own indexes)
+        # Now create constraints (which will create their own indexes)
+        async with await graph.session(database="neo4j") as session:
             constraints_to_create = [
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (a:Artist) REQUIRE a.id IS UNIQUE",
                 "CREATE CONSTRAINT IF NOT EXISTS FOR (l:Label) REQUIRE l.id IS UNIQUE",
@@ -1787,7 +1791,7 @@ async def main() -> None:
                         if lt > 0 and 5 < current_time - lt < 120
                     ]
                     logger.warning(
-                        "⚠️ Slow consumers detected: slow_consumers",
+                        f"⚠️ Slow consumers detected: {slow_consumers}",
                         slow_consumers=slow_consumers,
                     )
 
@@ -1801,12 +1805,12 @@ async def main() -> None:
 
                 if canceled_consumers:
                     logger.info(
-                        "🔌 Canceled consumers: canceled_consumers",
+                        f"🔌 Canceled consumers: {canceled_consumers}",
                         canceled_consumers=canceled_consumers,
                     )
                 if active_consumers:
                     logger.info(
-                        "✅ Active consumers: active_consumers",
+                        f"✅ Active consumers: {active_consumers}",
                         active_consumers=active_consumers,
                     )
 
