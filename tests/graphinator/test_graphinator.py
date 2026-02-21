@@ -392,7 +392,7 @@ class TestMain:
 
             with patch("asyncio.create_task", side_effect=mock_create_task):
                 # Make the main loop exit after setup
-                async def mock_wait_for(_coro: Any, _timeout: float) -> None:
+                async def mock_wait_for(_coro: Any, **_kwargs: Any) -> None:
                     # First call times out, second call sets shutdown_requested
                     import graphinator.graphinator
 
@@ -2681,7 +2681,7 @@ class TestMainBatchProcessorFlushError:
                 patch("asyncio.create_task", side_effect=mock_create_task),
             ):
 
-                async def mock_wait_for(_coro: Any, _timeout: float) -> None:
+                async def mock_wait_for(_coro: Any, **_kwargs: Any) -> None:
                     import graphinator.graphinator as _gm
 
                     _gm.shutdown_requested = True
@@ -2801,7 +2801,7 @@ class TestMainNeo4jCloseError:
                 patch("asyncio.create_task", side_effect=mock_create_task),
             ):
 
-                async def mock_wait_for(_coro: Any, _timeout: float) -> None:
+                async def mock_wait_for(_coro: Any, **_kwargs: Any) -> None:
                     import graphinator.graphinator as _gm
 
                     _gm.shutdown_requested = True
