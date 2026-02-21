@@ -198,6 +198,44 @@ jobs:
           verbose: false
 
   # ============================================================================
+  # SCHEMA-INIT SERVICE TESTS - Runs in parallel with all other test jobs
+  # ============================================================================
+  test-schema-init:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔧 Setup Python and UV
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 🔧 Setup Just
+        uses: ./.github/actions/setup-just
+
+      - name: 📦 Install dependencies
+        run: just install
+
+      - name: 🧪 Run schema-init tests
+        run: just test-schema-init
+
+      - name: 📊 Upload coverage (schema-init)
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./coverage.xml
+          flags: schema-init
+          name: schema-init-tests
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
+
+  # ============================================================================
   # TABLEINATOR SERVICE TESTS - Runs in parallel with all other test jobs
   # ============================================================================
   test-tableinator:
@@ -323,6 +361,7 @@ jobs:
       - test-dashboard
       - test-explore
       - test-graphinator
+      - test-schema-init
       - test-tableinator
       - test-extractor
     if: always()
@@ -335,6 +374,7 @@ jobs:
           echo "  Dashboard: ${{ needs.test-dashboard.result }}"
           echo "  Explore: ${{ needs.test-explore.result }}"
           echo "  Graphinator: ${{ needs.test-graphinator.result }}"
+          echo "  Schema-Init: ${{ needs.test-schema-init.result }}"
           echo "  Tableinator: ${{ needs.test-tableinator.result }}"
           echo "  Extractor: ${{ needs.test-extractor.result }}"
 
@@ -343,6 +383,7 @@ jobs:
              [[ "${{ needs.test-dashboard.result }}" == "failure" ]] || \
              [[ "${{ needs.test-explore.result }}" == "failure" ]] || \
              [[ "${{ needs.test-graphinator.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-schema-init.result }}" == "failure" ]] || \
              [[ "${{ needs.test-tableinator.result }}" == "failure" ]] || \
              [[ "${{ needs.test-extractor.result }}" == "failure" ]]; then
             echo "❌ One or more test jobs failed"

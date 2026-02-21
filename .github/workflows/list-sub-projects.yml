@@ -34,6 +34,7 @@ jobs:
             {"name": "explore", "use_cache": true},
             {"name": "extractor", "use_cache": true},
             {"name": "graphinator", "use_cache": true},
+            {"name": "schema-init", "use_cache": true},
             {"name": "tableinator", "use_cache": true}
           ]
           EOF

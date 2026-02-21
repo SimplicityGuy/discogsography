@@ -392,7 +392,7 @@ class TestMain:
 
             with patch("asyncio.create_task", side_effect=mock_create_task):
                 # Make the main loop exit after setup
-                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+                async def mock_wait_for(_coro: Any, _timeout: float) -> None:
                     # First call times out, second call sets shutdown_requested
                     import graphinator.graphinator
 
@@ -2577,126 +2577,6 @@ class TestMainNeo4jFailure:
         assert "Neo4j" in error_calls or "Failed" in error_calls
 
 
-class TestMainNeo4jSetupDetails:
-    """Test Neo4j setup block: dedup logging, constraint error, index error (lines 1292-1357)."""
-
-    @pytest.mark.asyncio
-    @patch("graphinator.graphinator.signal.signal")
-    @patch("graphinator.graphinator.setup_logging")
-    @patch("graphinator.graphinator.HealthServer")
-    @patch("graphinator.graphinator.GraphinatorConfig.from_env")
-    @patch("graphinator.graphinator.AsyncResilientNeo4jDriver")
-    @patch("graphinator.graphinator.AsyncResilientRabbitMQ")
-    async def test_dedup_removed_constraint_index_errors(
-        self,
-        mock_rabbitmq_class: MagicMock,
-        mock_neo4j_class: MagicMock,
-        mock_from_env: MagicMock,
-        mock_health_server: MagicMock,
-        _mock_setup_logging: MagicMock,
-        _mock_signal: MagicMock,
-    ) -> None:
-        """Cover dedup >0 info log (1292-1293), constraint error log (1320-1324), index error log (1342-1343)."""
-        mock_health_instance = MagicMock()
-        mock_health_server.return_value = mock_health_instance
-
-        mock_config = MagicMock()
-        mock_config.neo4j_address = "bolt://localhost:7687"
-        mock_config.neo4j_username = "neo4j"
-        mock_config.neo4j_password = "password"
-        mock_config.amqp_connection = "amqp://guest:guest@localhost/"
-        mock_from_env.return_value = mock_config
-
-        mock_neo4j_instance = MagicMock()
-        mock_neo4j_class.return_value = mock_neo4j_instance
-        mock_neo4j_instance.close = AsyncMock()
-
-        call_index = 0
-
-        async def mock_session_factory(*_args: Any, **_kwargs: Any) -> Any:
-            nonlocal call_index
-            call_index += 1
-            mock_session = AsyncMock()
-
-            if call_index == 1:
-                # Connectivity test
-                result = AsyncMock()
-                result.single = AsyncMock(return_value={"test": 1})
-                mock_session.run = AsyncMock(return_value=result)
-            elif call_index == 2:
-                # SHOW INDEXES session - return empty async iterators
-                async def empty_run_indexes(*_a: Any, **_kw: Any) -> AsyncMock:
-                    result = AsyncMock()
-
-                    async def empty_aiter() -> Any:
-                        return
-                        yield  # noqa: unreachable
-
-                    result.__aiter__ = lambda _: empty_aiter()
-                    return result
-
-                mock_session.run = empty_run_indexes
-            elif call_index == 3:
-                # First dedup session - removed=5 triggers info log (lines 1292-1293)
-                result = AsyncMock()
-                result.single = AsyncMock(return_value={"removed": 5})
-                mock_session.run = AsyncMock(return_value=result)
-            elif call_index <= 8:
-                # Remaining dedup sessions - removed=0
-                result = AsyncMock()
-                result.single = AsyncMock(return_value={"removed": 0})
-                mock_session.run = AsyncMock(return_value=result)
-            else:
-                # Constraint/index session - raise on first constraint and sha256 index
-                constraint_call_count = 0
-
-                async def mixed_run(*args: Any, **_kw: Any) -> AsyncMock:
-                    nonlocal constraint_call_count
-                    constraint_call_count += 1
-                    query = args[0] if args else ""
-                    if "CONSTRAINT" in str(query) and constraint_call_count <= 1:
-                        raise Exception("Constraint already exists with different type")
-                    if "sha256" in str(query):
-                        raise Exception("Index already exists")
-                    result = AsyncMock()
-                    result.single = AsyncMock(return_value=None)
-                    return result
-
-                mock_session.run = mixed_run
-
-            ctx = AsyncMock()
-            ctx.__aenter__ = AsyncMock(return_value=mock_session)
-            ctx.__aexit__ = AsyncMock(return_value=None)
-            return ctx
-
-        mock_neo4j_instance.session = MagicMock(side_effect=mock_session_factory)
-
-        # AMQP fails immediately so main() exits after Neo4j setup completes
-        mock_rabbitmq_instance = AsyncMock()
-        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
-        mock_rabbitmq_instance.connect = AsyncMock(side_effect=Exception("AMQP unavailable"))
-
-        import graphinator.graphinator as gm
-
-        original_shutdown = gm.shutdown_requested
-        try:
-            with (
-                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
-                patch("graphinator.graphinator.BATCH_MODE", False),
-                patch("graphinator.graphinator.logger") as mock_logger,
-            ):
-                await main()
-
-            # Verify dedup logging (lines 1292-1293)
-            all_info_calls = str(mock_logger.info.call_args_list)
-            assert "Deduplicated" in all_info_calls
-            # Verify constraint error was logged (lines 1320-1324)
-            all_error_calls = str(mock_logger.error.call_args_list)
-            assert "constraint" in all_error_calls.lower() or "Failed" in all_error_calls
-        finally:
-            gm.shutdown_requested = original_shutdown
-
-
 class TestMainBatchProcessorFlushError:
     """Test batch flush error in finally block (lines 1536-1541)."""
 
@@ -2801,7 +2681,7 @@ class TestMainBatchProcessorFlushError:
                 patch("asyncio.create_task", side_effect=mock_create_task),
             ):
 
-                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+                async def mock_wait_for(_coro: Any, _timeout: float) -> None:
                     import graphinator.graphinator as _gm
 
                     _gm.shutdown_requested = True
@@ -2921,7 +2801,7 @@ class TestMainNeo4jCloseError:
                 patch("asyncio.create_task", side_effect=mock_create_task),
             ):
 
-                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+                async def mock_wait_for(_coro: Any, _timeout: float) -> None:
                     import graphinator.graphinator as _gm
 
                     _gm.shutdown_requested = True

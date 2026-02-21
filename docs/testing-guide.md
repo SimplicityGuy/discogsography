@@ -72,7 +72,6 @@ tests/
 │   ├── conftest.py
 │   ├── test_explore_api.py              # API unit tests
 │   ├── test_explore_ui.py               # E2E tests (playwright, @pytest.mark.e2e)
-│   ├── test_neo4j_indexes.py
 │   └── test_neo4j_queries.py
 │
 ├── graphinator/
@@ -85,6 +84,12 @@ tests/
 │   ├── locustfile.py
 │   ├── scenarios.py
 │   └── README.md
+│
+├── schema-init/
+│   ├── conftest.py                      # Adds schema-init/ to sys.path
+│   ├── test_neo4j_schema.py             # Neo4j schema statements & creation
+│   ├── test_postgres_schema.py          # PostgreSQL schema statements & creation
+│   └── test_schema_init.py              # Main init logic, settings, startup
 │
 └── tableinator/
     ├── conftest.py
@@ -621,7 +626,7 @@ open htmlcov/index.html
 ```toml
 # pyproject.toml
 [tool.coverage.run]
-source = ["dashboard", "explore", "extractor", "graphinator", "tableinator", "common"]
+source = ["common", "dashboard", "explore", "graphinator", "schema-init", "tableinator"]
 omit = ["*/tests/*", "*/__pycache__/*", "*/static/*"]
 
 [tool.coverage.report]

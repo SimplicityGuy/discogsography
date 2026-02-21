@@ -6,9 +6,8 @@ import time
 from asyncio import run
 from datetime import datetime
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
-import psycopg
 import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
@@ -811,43 +810,6 @@ async def main() -> None:
         "password": str(config.postgres_password),
     }
 
-    # First, ensure the database exists
-    try:
-        # Connect to default 'postgres' database to create our database if needed
-        admin_params = connection_params.copy()
-        admin_params["dbname"] = "postgres"
-
-        with psycopg.connect(**admin_params) as admin_conn:
-            admin_conn.autocommit = True
-            with admin_conn.cursor() as cursor:
-                # Check if database exists
-                cursor.execute(
-                    "SELECT 1 FROM pg_database WHERE datname = %s",
-                    (config.postgres_database,),
-                )
-                if not cursor.fetchone():
-                    logger.info(
-                        "🔧 Creating database 'postgres_database'...",
-                        postgres_database=config.postgres_database,
-                    )
-                    cursor.execute(
-                        sql.SQL("CREATE DATABASE {}").format(
-                            sql.Identifier(config.postgres_database)
-                        )
-                    )
-                    logger.info(
-                        f"✅ Database '{config.postgres_database}' created",
-                        postgres_database=config.postgres_database,
-                    )
-                else:
-                    logger.info(
-                        f"✅ Database '{config.postgres_database}' already exists",
-                        postgres_database=config.postgres_database,
-                    )
-    except Exception as e:
-        logger.error("❌ Failed to ensure database exists", error=str(e))
-        return
-
     # Initialize async resilient connection pool for concurrent access
     # Increased from max=20 to max=50 to match prefetch_count for better throughput
     try:
@@ -865,87 +827,6 @@ async def main() -> None:
         )
     except Exception as e:
         logger.error("❌ Failed to initialize connection pool", error=str(e))
-        return
-
-    # Initialize database tables and indexes using async operations
-    try:
-        async with connection_pool.connection() as conn:
-            # psycopg async cursor types are not fully inferred by mypy
-            async with conn.cursor() as cursor_cm:
-                # Cast to Any to work around mypy's limited psycopg async type inference
-                cursor = cast(Any, cursor_cm)
-                for table_name in ["artists", "labels", "masters", "releases"]:
-                    # Create table
-                    await cursor.execute(
-                        sql.SQL(
-                            """
-                                CREATE TABLE IF NOT EXISTS {table} (
-                                    data_id VARCHAR PRIMARY KEY,
-                                    hash VARCHAR NOT NULL,
-                                    data JSONB NOT NULL
-                                )
-                            """
-                        ).format(table=sql.Identifier(table_name))
-                    )
-                    # Create index on hash for faster hash lookups (used in batch processing)
-                    await cursor.execute(
-                        sql.SQL(
-                            "CREATE INDEX IF NOT EXISTS {index} ON {table} (hash)"
-                        ).format(
-                            index=sql.Identifier(f"idx_{table_name}_hash"),
-                            table=sql.Identifier(table_name),
-                        )
-                    )
-                    # Create GIN index on JSONB data for containment queries
-                    await cursor.execute(
-                        sql.SQL(
-                            "CREATE INDEX IF NOT EXISTS {index} ON {table} USING GIN (data)"
-                        ).format(
-                            index=sql.Identifier(f"idx_{table_name}_gin"),
-                            table=sql.Identifier(table_name),
-                        )
-                    )
-
-                # Create table-specific indexes for common query patterns
-                # Artists: name lookup
-                await cursor.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_artists_name ON artists ((data->>'name'))"
-                )
-                # Labels: name lookup
-                await cursor.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_labels_name ON labels ((data->>'name'))"
-                )
-                # Masters: title and year lookups
-                await cursor.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_masters_title ON masters ((data->>'title'))"
-                )
-                await cursor.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_masters_year ON masters ((data->>'year'))"
-                )
-                # Releases: title, year, and artist lookups
-                await cursor.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_releases_title ON releases ((data->>'title'))"
-                )
-                await cursor.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_releases_year ON releases ((data->>'year'))"
-                )
-                await cursor.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_releases_country ON releases ((data->>'country'))"
-                )
-                # GIN indexes on array fields for releases
-                await cursor.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases USING GIN ((data->'genres'))"
-                )
-                await cursor.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_releases_labels ON releases USING GIN ((data->'labels'))"
-                )
-
-                # Autocommit is enabled, so tables are created immediately
-        logger.info("✅ Database tables and indexes created/verified")
-    except Exception as e:
-        logger.error("❌ Failed to initialize database", error=str(e))
-        if connection_pool:
-            await connection_pool.close()
         return
 
     # Initialize async batch processor if enabled

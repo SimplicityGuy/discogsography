@@ -126,6 +126,9 @@ test-parallel:
     uv run pytest tests/graphinator/ -v > /tmp/test-graphinator.log 2>&1 &
     pid_graphinator=$!
 
+    uv run pytest tests/schema-init/ -v > /tmp/test-schema-init.log 2>&1 &
+    pid_schema_init=$!
+
     uv run pytest tests/tableinator/ -v > /tmp/test-tableinator.log 2>&1 &
     pid_tableinator=$!
 
@@ -141,6 +144,7 @@ test-parallel:
     wait $pid_dashboard || { echo "❌ Dashboard tests failed"; cat /tmp/test-dashboard.log; failed=1; }
     wait $pid_explore || { echo "❌ Explore tests failed"; cat /tmp/test-explore.log; failed=1; }
     wait $pid_graphinator || { echo "❌ Graphinator tests failed"; cat /tmp/test-graphinator.log; failed=1; }
+    wait $pid_schema_init || { echo "❌ Schema-init tests failed"; cat /tmp/test-schema-init.log; failed=1; }
     wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
 
     if [ -n "$pid_extractor" ]; then
@@ -152,7 +156,7 @@ test-parallel:
         # Show summary
         echo ""
         echo "📊 Test Summary:"
-        grep -h "passed" /tmp/test-*.log | tail -6
+        grep -h "passed" /tmp/test-*.log | tail -7
     else
         echo "❌ Some tests failed. Check logs above for details."
         exit 1
@@ -196,6 +200,12 @@ test-extractor-cov:
 test-graphinator:
     uv run pytest tests/graphinator/ -v \
         --cov=graphinator --cov-report=xml --cov-report=json --cov-report=term
+
+# Run schema-init service tests with coverage
+[group('test')]
+test-schema-init:
+    uv run pytest tests/schema-init/ -v \
+        --cov=schema-init --cov-report=xml --cov-report=json --cov-report=term
 
 # Run tableinator service tests with coverage
 [group('test')]
@@ -360,6 +370,7 @@ build:
         explore \
         extractor \
         graphinator \
+        schema-init \
         tableinator
 
 # Build production Docker images
@@ -427,12 +438,31 @@ clean:
     @if [ -d 'extractor/target' ]; then \
         rm -rf extractor/target; \
     fi
+    @if [ -d 'extractor/.bin' ]; then \
+        rm -rf extractor/.bin; \
+    fi
     @if [ -d '.hypothesis' ]; then \
         rm -rf .hypothesis; \
     fi
     @if [ -d '.benchmarks' ]; then \
         rm -rf .benchmarks; \
     fi
+    @if [ -d '.venv' ]; then \
+        rm -rf .venv; \
+    fi
+    @if [ -d 'target' ]; then \
+        rm -rf target; \
+    fi
+    @if [ -d 'rust-version/target' ]; then \
+        rm -rf rust-version/target; \
+    fi
+    @if [ -d 'data' ]; then \
+        rm -rf data; \
+    fi
+    @find . -type f -name '.coverage' ! -path './.claude/*' -delete 2>/dev/null || true
+    @find . -type f -name 'coverage.xml' ! -path './.claude/*' -delete 2>/dev/null || true
+    @find . -type f -name 'coverage.json' ! -path './.claude/*' -delete 2>/dev/null || true
+    @find . -type f -name 'lcov.info' ! -path './.claude/*' -delete 2>/dev/null || true
     @echo '✅ Project cleaned!'
     @echo '📁 Preserved: .claude, .git, uv.lock'
 

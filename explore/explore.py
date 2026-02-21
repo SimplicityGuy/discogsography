@@ -22,7 +22,6 @@ from common import (
     setup_logging,
 )
 from explore.models import SnapshotRequest, SnapshotResponse, SnapshotRestoreResponse
-from explore.neo4j_indexes import create_all_indexes
 from explore.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
     COUNT_DISPATCH,
@@ -77,13 +76,6 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     except Exception as e:
         logger.error("❌ Failed to connect to Neo4j", error=str(e))
         raise
-
-    # Create indexes
-    try:
-        await create_all_indexes(config.neo4j_address, config.neo4j_username, config.neo4j_password)
-        logger.info("📑 Neo4j indexes created/verified")
-    except Exception as e:
-        logger.warning("⚠️ Failed to create Neo4j indexes", error=str(e))
 
     logger.info("✅ Explore service ready")
     yield

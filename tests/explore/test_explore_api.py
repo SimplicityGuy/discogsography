@@ -690,7 +690,6 @@ class TestLifespan:
             patch("explore.explore.ExploreConfig") as mock_config_class,
             patch("explore.explore.HealthServer") as mock_health_server_class,
             patch("explore.explore.AsyncResilientNeo4jDriver", return_value=mock_driver),
-            patch("explore.explore.create_all_indexes", new_callable=AsyncMock),
         ):
             mock_config = MagicMock()
             mock_config.neo4j_address = "bolt://localhost:7687"

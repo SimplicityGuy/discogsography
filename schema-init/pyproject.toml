@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "discogsography-schema-init"
+version = "0.1.0"
+description = "One-shot schema initializer for Neo4j and PostgreSQL"
+authors = [{name = "Robert Wlodarczyk", email = "robert@simplicityguy.com"}]
+readme = "README.md"
+requires-python = ">=3.13"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
+license = {text = "MIT"}
+dependencies = [
+    "neo4j>=6.1.0",
+    "psycopg[binary]>=3.1.0",
+    "structlog>=24.0.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+# Tool configurations inherit from root pyproject.toml
+# Only service-specific overrides are defined here
+
+[tool.ruff.lint.per-file-ignores]
+"schema_init.py" = ["T201"]    # Allow print statements for ASCII art
+
+[[tool.mypy.overrides]]
+module = [
+    "neo4j.*",
+    "psycopg.*",
+]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["schema-init"]
+
+[tool.pytest.ini_options]
+testpaths = ["../tests/schema-init"]

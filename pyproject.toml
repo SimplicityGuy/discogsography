@@ -78,8 +78,13 @@ explore = [
     "structlog>=24.0.0",
     "uvicorn[standard]>=0.34.0",
 ]
+schema-init = [
+    "neo4j>=6.1.0",
+    "psycopg[binary]>=3.1.0",
+    "structlog>=24.0.0",
+]
 all = [
-    "discogsography[dashboard,explore,graphinator,tableinator,dev,utilities]",
+    "discogsography[dashboard,explore,graphinator,schema-init,tableinator,dev,utilities]",
 ]
 
 [tool.ruff.format]
@@ -94,7 +99,7 @@ docstring-code-line-length = "dynamic"
 lines-after-imports = 2
 combine-as-imports = true
 split-on-trailing-comma = true
-known-first-party = ["common", "dashboard", "explore", "graphinator", "tableinator"]
+known-first-party = ["common", "dashboard", "explore", "graphinator", "neo4j_schema", "postgres_schema", "schema_init", "tableinator"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 force-sort-within-sections = true
 
@@ -132,9 +137,10 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"*/explore.py" = ["T201"]      # Allow print statements for ASCII art
-"*/graphinator.py" = ["T201"]  # Allow print statements for ASCII art
-"*/tableinator.py" = ["T201"]  # Allow print statements for ASCII art
+"*/explore.py" = ["T201"]       # Allow print statements for ASCII art
+"*/graphinator.py" = ["T201"]   # Allow print statements for ASCII art
+"*/schema_init.py" = ["T201"]   # Allow print statements for ASCII art
+"*/tableinator.py" = ["T201"]   # Allow print statements for ASCII art
 "tests/**/*.py" = ["S105"]  # Test files can have hardcoded passwords
 "tests/load/*.py" = ["S311"]  # Load tests use random for test data selection, not cryptography
 
@@ -193,7 +199,7 @@ module = [
 disallow_untyped_decorators = false
 
 [tool.coverage.run]
-source = ["common", "dashboard", "explore", "graphinator", "tableinator"]
+source = ["common", "dashboard", "explore", "graphinator", "schema-init", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
 relative_files = true
 
@@ -215,7 +221,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
-pythonpath = ["."]
+pythonpath = [".", "schema-init"]
 timeout = 60
 timeout_method = "thread"
 markers = [
@@ -273,7 +279,7 @@ split_on_trailing_comma = true
 
 # uv workspace configuration
 [tool.uv.workspace]
-members = ["common", "dashboard", "explore", "graphinator", "tableinator"]
+members = ["common", "dashboard", "explore", "graphinator", "schema-init", "tableinator"]
 
 # Environment restrictions for uv to avoid iOS and other incompatible platforms
 [tool.uv]

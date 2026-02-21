@@ -162,11 +162,9 @@ class TestMain:
     @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
     @patch("tableinator.tableinator.AsyncPostgreSQLPool")
-    @patch("tableinator.tableinator.psycopg.connect")
     @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_main_execution(
         self,
-        mock_psycopg_connect: Mock,
         mock_pool_class: Mock,
         mock_rabbitmq_class: AsyncMock,
         mock_health_server: Mock,
@@ -176,14 +174,6 @@ class TestMain:
         # Mock health server
         mock_health_instance = MagicMock()
         mock_health_server.return_value = mock_health_instance
-
-        # Mock database existence check connection
-        mock_admin_conn = MagicMock()
-        mock_admin_cursor = MagicMock()
-        mock_admin_cursor.fetchone.return_value = ("discogsography",)  # Database exists
-        mock_admin_conn.cursor.return_value.__enter__.return_value = mock_admin_cursor
-        mock_admin_conn.__enter__.return_value = mock_admin_conn
-        mock_psycopg_connect.return_value = mock_admin_conn
 
         # Setup mocks with async connection support
         mock_pool = MagicMock()
@@ -258,18 +248,12 @@ class TestMain:
         assert call_args[1]["min_connections"] == 5
         mock_rabbitmq_class.assert_called_once()
 
-        # The test exits early due to our mock, so some operations might not complete
-        # Verify database check was attempted
-        assert mock_admin_cursor.execute.call_count >= 1
-
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.setup_logging")
     @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.AsyncPostgreSQLPool")
-    @patch("tableinator.tableinator.psycopg.connect")
     async def test_main_pool_initialization_failure(
         self,
-        mock_psycopg_connect: Mock,
         mock_pool_class: Mock,
         mock_health_server: Mock,
         _mock_setup_logging: Mock,
@@ -278,14 +262,6 @@ class TestMain:
         # Mock health server
         mock_health_instance = MagicMock()
         mock_health_server.return_value = mock_health_instance
-
-        # Mock database existence check
-        mock_admin_conn = MagicMock()
-        mock_admin_cursor = MagicMock()
-        mock_admin_cursor.fetchone.return_value = ("discogsography",)  # Database exists
-        mock_admin_conn.cursor.return_value.__enter__.return_value = mock_admin_cursor
-        mock_admin_conn.__enter__.return_value = mock_admin_conn
-        mock_psycopg_connect.return_value = mock_admin_conn
 
         # Make pool initialization fail
         mock_pool_class.side_effect = Exception("Cannot create pool")
@@ -298,10 +274,8 @@ class TestMain:
     @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
     @patch("tableinator.tableinator.AsyncPostgreSQLPool")
-    @patch("tableinator.tableinator.psycopg.connect")
     async def test_main_amqp_connection_failure(
         self,
-        mock_psycopg_connect: Mock,
         mock_pool_class: Mock,
         mock_rabbitmq_class: AsyncMock,
         mock_health_server: Mock,
@@ -311,14 +285,6 @@ class TestMain:
         # Mock health server
         mock_health_instance = MagicMock()
         mock_health_server.return_value = mock_health_instance
-
-        # Mock database existence check
-        mock_admin_conn = MagicMock()
-        mock_admin_cursor = MagicMock()
-        mock_admin_cursor.fetchone.return_value = ("discogsography",)  # Database exists
-        mock_admin_conn.cursor.return_value.__enter__.return_value = mock_admin_cursor
-        mock_admin_conn.__enter__.return_value = mock_admin_conn
-        mock_psycopg_connect.return_value = mock_admin_conn
 
         # Setup pool success with async connection support
         mock_pool = MagicMock()
@@ -348,143 +314,6 @@ class TestMain:
 
         # In the current implementation, the pool might not be closed if AMQP fails early
         # This is acceptable behavior as the process will exit anyway
-
-    @pytest.mark.asyncio
-    @patch("tableinator.tableinator.setup_logging")
-    @patch("tableinator.tableinator.HealthServer")
-    @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
-    @patch("tableinator.tableinator.AsyncPostgreSQLPool")
-    @patch("tableinator.tableinator.psycopg.connect")
-    async def test_main_table_creation_failure(
-        self,
-        mock_psycopg_connect: Mock,
-        mock_pool_class: Mock,
-        _mock_rabbitmq_class: AsyncMock,
-        mock_health_server: Mock,
-        _mock_setup_logging: Mock,
-    ) -> None:
-        """Test main when table creation fails."""
-        # Mock health server
-        mock_health_instance = MagicMock()
-        mock_health_server.return_value = mock_health_instance
-
-        # Mock database existence check
-        mock_admin_conn = MagicMock()
-        mock_admin_cursor = MagicMock()
-        mock_admin_cursor.fetchone.return_value = ("discogsography",)  # Database exists
-        mock_admin_conn.cursor.return_value.__enter__.return_value = mock_admin_cursor
-        mock_admin_conn.__enter__.return_value = mock_admin_conn
-        mock_psycopg_connect.return_value = mock_admin_conn
-
-        # Setup pool with async connection that fails
-        mock_pool = MagicMock()
-        mock_pool_class.return_value = mock_pool
-        mock_pool.initialize = AsyncMock()  # Mock async initialize method
-        mock_pool.close = AsyncMock()
-
-        # Make table creation fail by raising exception in async connection factory
-        async def mock_connection_factory_fail(*_args: Any, **_kwargs: Any) -> Any:
-            raise Exception("Cannot create tables")
-
-        mock_pool.connection = MagicMock(side_effect=mock_connection_factory_fail)
-
-        # Should complete without raising
-        await main()
-
-        # Pool should be closed
-        mock_pool.close.assert_called_once()
-
-    @pytest.mark.asyncio
-    @patch("tableinator.tableinator.setup_logging")
-    @patch("tableinator.tableinator.HealthServer")
-    @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
-    @patch("tableinator.tableinator.AsyncPostgreSQLPool")
-    @patch("tableinator.tableinator.psycopg.connect")
-    @patch("tableinator.tableinator.shutdown_requested", False)
-    async def test_main_database_creation(
-        self,
-        mock_psycopg_connect: Mock,
-        mock_pool_class: Mock,
-        mock_rabbitmq_class: AsyncMock,
-        mock_health_server: Mock,
-        _mock_setup_logging: Mock,
-    ) -> None:
-        """Test main when database needs to be created."""
-        # Mock health server
-        mock_health_instance = MagicMock()
-        mock_health_server.return_value = mock_health_instance
-
-        # Mock database existence check - database doesn't exist
-        mock_admin_conn = MagicMock()
-        mock_admin_cursor = MagicMock()
-        mock_admin_cursor.fetchone.return_value = None  # Database doesn't exist
-        mock_admin_conn.cursor.return_value.__enter__.return_value = mock_admin_cursor
-        mock_admin_conn.__enter__.return_value = mock_admin_conn
-        mock_psycopg_connect.return_value = mock_admin_conn
-
-        # Setup mocks
-        mock_pool = MagicMock()
-        mock_pool_class.return_value = mock_pool
-
-        mock_conn = MagicMock()
-        mock_cursor = MagicMock()
-        mock_pool.connection.return_value.__enter__.return_value = mock_conn
-        mock_conn.cursor.return_value.__enter__.return_value = mock_cursor
-
-        # Mock resilient RabbitMQ connection
-        mock_rabbitmq_instance = AsyncMock()
-        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
-
-        # Mock the connect method to return a connection
-        mock_connection = AsyncMock()
-        mock_rabbitmq_instance.connect.return_value = mock_connection
-
-        # Mock the channel method
-        mock_channel = AsyncMock()
-        mock_rabbitmq_instance.channel.return_value = mock_channel
-
-        # Mock queue setup
-        mock_queue = AsyncMock()
-        mock_channel.declare_queue.return_value = mock_queue
-
-        # Simulate shutdown by setting shutdown_requested
-        with patch("tableinator.tableinator.shutdown_requested", False):
-            # Track created tasks
-            created_tasks = []
-
-            # Mock create_task to capture and return real tasks
-            original_create_task = asyncio.create_task
-
-            def mock_create_task(coro: Any) -> asyncio.Task[Any]:
-                task = original_create_task(coro)
-                created_tasks.append(task)
-                return task
-
-            with patch("asyncio.create_task", side_effect=mock_create_task):
-                # Make the main loop exit after setup
-                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
-                    # Set shutdown_requested to exit the loop
-                    import tableinator.tableinator
-
-                    tableinator.tableinator.shutdown_requested = True
-                    raise TimeoutError()
-
-                with patch("asyncio.wait_for", mock_wait_for):
-                    await main()
-
-            # Clean up any created tasks
-            for task in created_tasks:
-                if not task.done():
-                    task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await task
-
-        # Verify database was created
-        assert mock_admin_cursor.execute.call_count == 2  # 1 check + 1 CREATE DATABASE
-
-        # Verify CREATE DATABASE was called
-        create_db_call = mock_admin_cursor.execute.call_args_list[1]
-        assert "CREATE DATABASE" in str(create_db_call)
 
 
 class TestSignalHandler:
@@ -1779,13 +1608,11 @@ class TestMainBatchProcessor:
     @patch("tableinator.tableinator.HealthServer")
     @patch("tableinator.tableinator.AsyncResilientRabbitMQ")
     @patch("tableinator.tableinator.AsyncPostgreSQLPool")
-    @patch("tableinator.tableinator.psycopg.connect")
     @patch("tableinator.tableinator.BATCH_MODE", True)
     @patch("tableinator.tableinator.BATCH_SIZE", 50)
     @patch("tableinator.tableinator.BATCH_FLUSH_INTERVAL", 2.0)
     async def test_main_initializes_batch_processor(
         self,
-        mock_psycopg_connect: Mock,
         mock_pool_class: Mock,
         mock_rabbitmq_class: AsyncMock,
         mock_health_server: Mock,
@@ -1795,14 +1622,6 @@ class TestMainBatchProcessor:
         # Mock health server
         mock_health_instance = MagicMock()
         mock_health_server.return_value = mock_health_instance
-
-        # Mock database existence check
-        mock_admin_conn = MagicMock()
-        mock_admin_cursor = MagicMock()
-        mock_admin_cursor.fetchone.return_value = ("discogsography",)
-        mock_admin_conn.cursor.return_value.__enter__.return_value = mock_admin_cursor
-        mock_admin_conn.__enter__.return_value = mock_admin_conn
-        mock_psycopg_connect.return_value = mock_admin_conn
 
         # Setup pool with async support
         mock_pool = MagicMock()
@@ -1919,74 +1738,6 @@ class TestMainEnvironmentVariables:
 
         # Should log error and return
         mock_logger.error.assert_called()
-
-
-class TestMainDatabaseSetup:
-    """Test main() database setup logic."""
-
-    @pytest.mark.asyncio
-    @patch("tableinator.tableinator.setup_logging")
-    @patch("tableinator.tableinator.HealthServer")
-    @patch("tableinator.tableinator.psycopg.connect")
-    async def test_main_handles_database_creation_error(
-        self,
-        mock_psycopg_connect: Mock,
-        mock_health_server: Mock,
-        _mock_setup_logging: Mock,
-    ) -> None:
-        """Test main handles database creation errors."""
-        mock_health_instance = MagicMock()
-        mock_health_server.return_value = mock_health_instance
-
-        # Make database check fail
-        mock_psycopg_connect.side_effect = Exception("Connection failed")
-
-        with patch("tableinator.tableinator.logger") as mock_logger:
-            await main()
-
-        # Should log error and return
-        mock_logger.error.assert_called()
-
-    @pytest.mark.asyncio
-    @patch("tableinator.tableinator.setup_logging")
-    @patch("tableinator.tableinator.HealthServer")
-    @patch("tableinator.tableinator.AsyncPostgreSQLPool")
-    @patch("tableinator.tableinator.psycopg.connect")
-    async def test_main_closes_pool_on_table_creation_error(
-        self,
-        mock_psycopg_connect: Mock,
-        mock_pool_class: Mock,
-        mock_health_server: Mock,
-        _mock_setup_logging: Mock,
-    ) -> None:
-        """Test that pool is closed when table creation fails."""
-        mock_health_instance = MagicMock()
-        mock_health_server.return_value = mock_health_instance
-
-        # Mock database check success
-        mock_admin_conn = MagicMock()
-        mock_admin_cursor = MagicMock()
-        mock_admin_cursor.fetchone.return_value = ("discogsography",)
-        mock_admin_conn.cursor.return_value.__enter__.return_value = mock_admin_cursor
-        mock_admin_conn.__enter__.return_value = mock_admin_conn
-        mock_psycopg_connect.return_value = mock_admin_conn
-
-        # Setup pool with async support
-        mock_pool = MagicMock()
-        mock_pool_class.return_value = mock_pool
-        mock_pool.initialize = AsyncMock()
-        mock_pool.close = AsyncMock()
-
-        # Make table creation fail by raising exception in async connection factory
-        async def mock_connection_factory_fail(*_args: Any, **_kwargs: Any) -> Any:
-            raise Exception("Table creation failed")
-
-        mock_pool.connection = MagicMock(side_effect=mock_connection_factory_fail)
-
-        await main()
-
-        # Pool should be closed
-        mock_pool.close.assert_called_once()
 
 
 class TestScheduleConsumerCancellationDetailed:

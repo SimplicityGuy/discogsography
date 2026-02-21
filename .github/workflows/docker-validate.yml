@@ -90,7 +90,7 @@ jobs:
       - name: 🔍 Check docker-compose services
         run: |
           services=$(docker-compose config --services | sort | tr "\n" " " | sed "s/ $//")
-          expected="dashboard explore extractor graphinator neo4j postgres rabbitmq redis tableinator"
+          expected="dashboard explore extractor graphinator neo4j postgres rabbitmq redis schema-init tableinator"
 
           if [ "$services" != "$expected" ]; then
             echo "❌ Service mismatch!"
@@ -104,8 +104,8 @@ jobs:
         run: |
           # Check that services have correct dependencies
           deps=$(docker-compose config | yq eval '.services.dashboard.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j postgres rabbitmq redis" ]; then
-            echo "❌ Dashboard should depend on neo4j, postgres, rabbitmq, and redis"
+          if [ "$deps" != "neo4j postgres rabbitmq redis schema-init" ]; then
+            echo "❌ Dashboard should depend on neo4j, postgres, rabbitmq, redis, and schema-init"
             exit 1
           fi
 
@@ -116,20 +116,26 @@ jobs:
           fi
 
           deps=$(docker-compose config | yq eval '.services.graphinator.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j rabbitmq" ]; then
-            echo "❌ Graphinator should depend on neo4j and rabbitmq"
+          if [ "$deps" != "neo4j rabbitmq schema-init" ]; then
+            echo "❌ Graphinator should depend on neo4j, rabbitmq, and schema-init"
             exit 1
           fi
 
-          deps=$(docker-compose config | yq eval '.services.explore.depends_on | keys | .[]' -)
-          if [ "$deps" != "neo4j" ]; then
-            echo "❌ Explore should only depend on neo4j"
+          deps=$(docker-compose config | yq eval '.services.explore.depends_on | keys | sort | join(" ")' -)
+          if [ "$deps" != "neo4j schema-init" ]; then
+            echo "❌ Explore should depend on neo4j and schema-init"
             exit 1
           fi
 
           deps=$(docker-compose config | yq eval '.services.tableinator.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "postgres rabbitmq" ]; then
-            echo "❌ Tableinator should depend on postgres and rabbitmq"
+          if [ "$deps" != "postgres rabbitmq schema-init" ]; then
+            echo "❌ Tableinator should depend on postgres, rabbitmq, and schema-init"
+            exit 1
+          fi
+
+          deps=$(docker-compose config | yq eval '.services.schema-init.depends_on | keys | sort | join(" ")' -)
+          if [ "$deps" != "neo4j postgres" ]; then
+            echo "❌ Schema-init should depend on neo4j and postgres"
             exit 1
           fi
 
@@ -138,7 +144,7 @@ jobs:
       - name: 🛡️ Check for security best practices
         run: |
           # Check that services run as non-root user
-          for service in dashboard explore extractor graphinator tableinator; do
+          for service in dashboard explore extractor graphinator schema-init tableinator; do
             user=$(docker-compose config | yq eval ".services.$service.user" -)
             if [ "$user" != "1000:1000" ]; then
               echo "❌ $service should run as user 1000:1000"
@@ -148,7 +154,7 @@ jobs:
           echo "✅ All services run as non-root user"
 
           # Check security options
-          for service in dashboard explore extractor graphinator tableinator; do
+          for service in dashboard explore extractor graphinator schema-init tableinator; do
             security_opt=$(docker-compose config | yq eval ".services.$service.security_opt[]" - | grep "no-new-privileges:true" || true)
             if [ -z "$security_opt" ]; then
               echo "❌ $service should have no-new-privileges security option"

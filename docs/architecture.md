@@ -16,13 +16,14 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### ⚙️ Service Components
 
-| Service                                                  | Purpose                                | Key Technologies                    | Port(s)       |
-| -------------------------------------------------------- | -------------------------------------- | ----------------------------------- | ------------- |
-| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`       | 8000 (health) |
-| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms    | 8001 (health) |
-| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search | 8002 (health) |
-| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson` | 8006, 8007    |
-| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI   | 8003          |
+| Service                                                     | Purpose                                | Key Technologies                    | Port(s)       |
+| ----------------------------------------------------------- | -------------------------------------- | ----------------------------------- | ------------- |
+| **[⚡](emoji-guide.md#service-identifiers) Extractor**      | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`       | 8000 (health) |
+| **[🔧](emoji-guide.md#service-identifiers) Schema-Init**    | One-shot DB schema initialiser         | `neo4j-driver`, `psycopg3`          | —             |
+| **[🔗](emoji-guide.md#service-identifiers) Graphinator**    | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms    | 8001 (health) |
+| **[🐘](emoji-guide.md#service-identifiers) Tableinator**    | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search | 8002 (health) |
+| **[🔍](emoji-guide.md#service-identifiers) Explore**        | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson` | 8006, 8007    |
+| **[📊](emoji-guide.md#service-identifiers) Dashboard**      | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI   | 8003          |
 
 ### Infrastructure Components
 
@@ -39,6 +40,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
     EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
+    SCHEMA[["🔧 Schema-Init<br/>One-Shot DB<br/>Schema Initialiser"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>8 Queues + DLQs"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
@@ -48,6 +50,8 @@ graph TD
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
 
+    SCHEMA -->|0. Create schemas| NEO4J
+    SCHEMA -->|0. Create schemas| PG
     S3 -->|1. Download & Parse| EXT
     EXT -->|2. Publish Messages| RMQ
     RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
@@ -69,6 +73,7 @@ graph TD
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style SCHEMA fill:#f9fbe7,stroke:#827717,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
@@ -169,6 +174,28 @@ graph TD
 - `AMQP_CONNECTION`: RabbitMQ connection string
 
 See [Extractor README](../extractor/README.md) for details.
+
+### Schema-Init
+
+**Responsibilities**:
+
+- Create all Neo4j constraints and indexes on first run
+- Create all PostgreSQL tables and indexes on first run
+- Run as a one-shot init container before any other service starts
+- All DDL uses `IF NOT EXISTS` — safe to re-run, never drops schema objects
+
+**Key Features**:
+
+- Idempotent: re-running on an already-initialised database is a no-op
+- Single source of truth for both Neo4j and PostgreSQL schema definitions
+- Schema definitions live in `schema-init/neo4j_schema.py` and `schema-init/postgres_schema.py`
+- Parallel initialisation: Neo4j and PostgreSQL schema creation run concurrently
+- Exits 0 on success, 1 on any failure (so dependent services will not start)
+
+**Configuration**:
+
+- `NEO4J_ADDRESS`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
+- `POSTGRES_ADDRESS`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`: PostgreSQL connection
 
 ### Graphinator
 

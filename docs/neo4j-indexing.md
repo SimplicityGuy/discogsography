@@ -96,15 +96,20 @@ ORDER BY r.year
 
 ### Automatic Creation
 
-Indexes are automatically created during Explore service startup via `explore/neo4j_indexes.py`.
+Indexes are automatically created at startup by both graphinator and explore via `common/neo4j_schema.py`. All statements use `IF NOT EXISTS`, so they are safe to run from multiple services — subsequent calls are no-ops.
 
 ### Manual Management
 
-Create all indexes manually:
+Create all schema objects manually:
 
 ```bash
-cd explore
-python -m neo4j_indexes
+python -c "
+import asyncio
+from common.neo4j_schema import create_neo4j_schema
+from common import AsyncResilientNeo4jDriver
+driver = AsyncResilientNeo4jDriver('bolt://localhost:7687', auth=('neo4j', 'password'))
+asyncio.run(create_neo4j_schema(driver))
+"
 ```
 
 List existing indexes:
@@ -135,13 +140,7 @@ Look for `NodeIndexSeek` or `NodeIndexSeekByRange` in the execution plan.
 
 ## Index Definitions
 
-All index definitions are maintained in `explore/neo4j_indexes.py` in the `INDEXES` list. Each definition includes:
-
-- `name`: Unique index identifier
-- `type`: `fulltext` or `range`
-- `label`: Node label to index
-- `properties`: List of properties to index
-- `description`: Usage description and endpoint reference
+All schema objects are defined in `common/neo4j_schema.py` in the `SCHEMA_STATEMENTS` list. Each entry is a `(name, cypher)` tuple where the Cypher string uses `IF NOT EXISTS` for idempotency.
 
 ## Future Optimizations
 

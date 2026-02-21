@@ -15,6 +15,15 @@ Discogsography uses two complementary database systems:
 - **Neo4j**: Graph database for complex relationship queries
 - **PostgreSQL**: Relational database for fast analytics and full-text search
 
+### Schema Ownership
+
+All schema definitions are owned exclusively by the **`schema-init`** service, which runs as a one-shot init container before any other service starts:
+
+- **`schema-init/neo4j_schema.py`**: All Neo4j constraints and indexes
+- **`schema-init/postgres_schema.py`**: All PostgreSQL tables and indexes
+
+All DDL statements use `IF NOT EXISTS` — the schema is never dropped and is safe to re-run on every startup. Graphinator and Tableinator only write data; they rely on schema-init to have prepared the database beforehand.
+
 ## 🔗 Neo4j Graph Database
 
 ### Purpose
@@ -623,10 +632,11 @@ graph TD
 
 ### Data Flow
 
+1. **Schema-Init** creates all constraints, indexes, and tables in Neo4j and PostgreSQL (before any other service starts)
 1. Extractor parses XML and computes SHA256 hash
 1. Message published to RabbitMQ with data + hash
-1. Graphinator checks hash in Neo4j, skips if exists
-1. Tableinator checks hash in PostgreSQL, skips if exists
+1. Graphinator writes nodes and relationships to Neo4j (schema already exists)
+1. Tableinator writes JSONB records to PostgreSQL (schema already exists)
 1. New/changed records inserted/updated in both databases
 
 ## 📊 Performance Considerations

@@ -1225,142 +1225,20 @@ async def main() -> None:
             await result.single()
             logger.info("✅ Neo4j connectivity verified (async)")
 
-        # Create indexes for better performance
-        logger.info("🔧 Creating Neo4j constraints and indexes...")
-
-        indexes_to_check = [
-            ("Artist", "id"),
-            ("Label", "id"),
-            ("Master", "id"),
-            ("Release", "id"),
-            ("Genre", "name"),
-            ("Style", "name"),
-        ]
-
-        # First, drop any existing indexes that would conflict with constraints
-        # Constraints create their own indexes, so we need to remove plain indexes first
-        async with await graph.session(database="neo4j") as session:
-            for label, prop in indexes_to_check:
-                try:
-                    # Get standalone indexes (not constraint-backed) for this label and property
-                    result = await session.run(
-                        "SHOW INDEXES YIELD name, labelsOrTypes, properties, owningConstraint "
-                        "WHERE $label IN labelsOrTypes AND $prop IN properties "
-                        "AND owningConstraint IS NULL "
-                        "RETURN name",
-                        label=label,
-                        prop=prop,
-                    )
-                    async for record in result:
-                        index_name = record["name"]
-                        try:
-                            await session.run(f"DROP INDEX {index_name} IF EXISTS")
-                            logger.info(f"🗑️ Dropped existing index: {index_name}")
-                        except Exception as drop_error:
-                            logger.debug(
-                                f"Could not drop index {index_name}",
-                                error=str(drop_error),
-                            )
-                except Exception as e:
-                    # SHOW INDEXES might not be supported in older Neo4j versions, continue anyway
-                    logger.debug(
-                        f"Could not check indexes for {label}.{prop}", error=str(e)
-                    )
-
-        # Deduplicate nodes before creating constraints to avoid failures
-        # Use a separate session per dedup query since these can be long-running
-        for label, prop in indexes_to_check:
-            try:
-                async with await graph.session(database="neo4j") as session:
-                    dedup_query = (
-                        f"MATCH (n:{label}) "
-                        f"WITH n.{prop} AS val, collect(n) AS nodes "
-                        "WHERE size(nodes) > 1 "
-                        "WITH nodes[0] AS keep, nodes[1..] AS duplicates "
-                        "UNWIND duplicates AS dup "
-                        "CALL { WITH dup, keep "
-                        "  MATCH (dup)-[r]->() DELETE r "
-                        "  WITH dup, keep "
-                        "  MATCH (dup)<-[r]-() DELETE r "
-                        "  DELETE dup "
-                        "} "
-                        "RETURN count(dup) AS removed"
-                    )
-                    result = await session.run(dedup_query)
-                    record = await result.single()
-                    removed = record["removed"] if record else 0
-                    if removed > 0:
-                        logger.info(
-                            f"🧹 Deduplicated {label}.{prop}: "
-                            f"removed {removed} duplicate nodes"
-                        )
-            except Exception as dedup_error:
-                logger.debug(
-                    f"Could not deduplicate {label}.{prop}",
-                    error=str(dedup_error),
-                )
-
-        # Now create constraints (which will create their own indexes)
-        async with await graph.session(database="neo4j") as session:
-            constraints_to_create = [
-                "CREATE CONSTRAINT IF NOT EXISTS FOR (a:Artist) REQUIRE a.id IS UNIQUE",
-                "CREATE CONSTRAINT IF NOT EXISTS FOR (l:Label) REQUIRE l.id IS UNIQUE",
-                "CREATE CONSTRAINT IF NOT EXISTS FOR (m:Master) REQUIRE m.id IS UNIQUE",
-                "CREATE CONSTRAINT IF NOT EXISTS FOR (r:Release) REQUIRE r.id IS UNIQUE",
-                "CREATE CONSTRAINT IF NOT EXISTS FOR (g:Genre) REQUIRE g.name IS UNIQUE",
-                "CREATE CONSTRAINT IF NOT EXISTS FOR (s:Style) REQUIRE s.name IS UNIQUE",
-            ]
-
-            for constraint in constraints_to_create:
-                try:
-                    await session.run(constraint)
-                    logger.info(
-                        f"✅ Created/verified constraint: {constraint.split('FOR')[1].split('REQUIRE')[0].strip()}"
-                    )
-                except Exception as constraint_error:
-                    constraint_label = (
-                        constraint.split("FOR")[1].split("REQUIRE")[0].strip()
-                    )
-                    logger.error(
-                        f"❌ Failed to create constraint for {constraint_label}. "
-                        "This likely means duplicate nodes still exist. "
-                        "Manual deduplication may be required via Neo4j Browser.",
-                        constraint_error=str(constraint_error),
-                    )
-
-            # Create indexes on sha256 for faster hash lookups during batch processing
-            indexes_to_create = [
-                "CREATE INDEX artist_sha256 IF NOT EXISTS FOR (a:Artist) ON (a.sha256)",
-                "CREATE INDEX label_sha256 IF NOT EXISTS FOR (l:Label) ON (l.sha256)",
-                "CREATE INDEX master_sha256 IF NOT EXISTS FOR (m:Master) ON (m.sha256)",
-                "CREATE INDEX release_sha256 IF NOT EXISTS FOR (r:Release) ON (r.sha256)",
-            ]
-
-            for index in indexes_to_create:
-                try:
-                    await session.run(index)
-                except Exception as index_error:
-                    logger.warning(
-                        "⚠️ Index creation note",
-                        error=str(index_error),
-                    )
-
-            logger.info("✅ Neo4j indexes setup complete")
-
-            # Initialize batch processor if enabled
-            if BATCH_MODE:
-                batch_config = BatchConfig(
-                    batch_size=BATCH_SIZE,
-                    flush_interval=BATCH_FLUSH_INTERVAL,
-                )
-                batch_processor = Neo4jBatchProcessor(graph, batch_config)
-                logger.info(
-                    "🚀 Batch processing enabled",
-                    batch_size=BATCH_SIZE,
-                    flush_interval=BATCH_FLUSH_INTERVAL,
-                )
-            else:
-                logger.info("📝 Using per-message processing (batch mode disabled)")
+        # Initialize batch processor if enabled
+        if BATCH_MODE:
+            batch_config = BatchConfig(
+                batch_size=BATCH_SIZE,
+                flush_interval=BATCH_FLUSH_INTERVAL,
+            )
+            batch_processor = Neo4jBatchProcessor(graph, batch_config)
+            logger.info(
+                "🚀 Batch processing enabled",
+                batch_size=BATCH_SIZE,
+                flush_interval=BATCH_FLUSH_INTERVAL,
+            )
+        else:
+            logger.info("📝 Using per-message processing (batch mode disabled)")
 
     except Exception as e:
         logger.error("❌ Failed to connect to Neo4j", error=str(e))
