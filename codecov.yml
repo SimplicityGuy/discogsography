@@ -42,26 +42,31 @@ flags:
   e2e-chromium:
     paths:
       - "dashboard/**/*.py"
+      - "explore/**/*.py"
       - "common/**/*.py"
     carryforward: true
   e2e-firefox:
     paths:
       - "dashboard/**/*.py"
+      - "explore/**/*.py"
       - "common/**/*.py"
     carryforward: true
   e2e-webkit:
     paths:
       - "dashboard/**/*.py"
+      - "explore/**/*.py"
       - "common/**/*.py"
     carryforward: true
   e2e-iphone-15:
     paths:
       - "dashboard/**/*.py"
+      - "explore/**/*.py"
       - "common/**/*.py"
     carryforward: true
   e2e-ipad-pro-11:
     paths:
       - "dashboard/**/*.py"
+      - "explore/**/*.py"
       - "common/**/*.py"
     carryforward: true
 
@@ -105,6 +110,10 @@ ignore:
   - "**/.venv/**"
   - "**/venv/**"
   - "**/*.pyc"
+  # Removed modules - carried-forward reports reference these old paths
+  - "discovery/**"
+  - "extractor/pyextractor/**"
+  - "extractor/rustextractor/**"
 
 # Parsers configuration - disable unused parsers to prevent warnings
 parsers:
