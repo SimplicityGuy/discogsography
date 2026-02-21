@@ -234,7 +234,30 @@ impl XmlParser {
 
                 Ok(Event::Text(e)) => {
                     if in_target_element && let Some(context) = element_stack.last_mut() {
-                        context.text_content.push_str(&e.unescape().unwrap_or_default());
+                        if let Ok(text) = e.decode() {
+                            context.text_content.push_str(&text);
+                        }
+                    }
+                }
+
+                // In quick-xml 0.39+, entity references (&amp; &lt; etc.) are emitted as
+                // separate GeneralRef events rather than being included in Event::Text bytes.
+                Ok(Event::GeneralRef(e)) => {
+                    if in_target_element && let Some(context) = element_stack.last_mut() {
+                        if e.is_char_ref() {
+                            if let Ok(Some(ch)) = e.resolve_char_ref() {
+                                context.text_content.push(ch);
+                            }
+                        } else if let Ok(name) = e.decode() {
+                            match name.as_ref() {
+                                "amp" => context.text_content.push('&'),
+                                "lt" => context.text_content.push('<'),
+                                "gt" => context.text_content.push('>'),
+                                "apos" => context.text_content.push('\''),
+                                "quot" => context.text_content.push('"'),
+                                _ => {}
+                            }
+                        }
                     }
                 }
 

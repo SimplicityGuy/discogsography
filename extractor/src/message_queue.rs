@@ -82,8 +82,7 @@ impl MessageQueue {
     async fn try_connect(&self) -> Result<()> {
         let conn = Connection::connect(
             &self.url,
-            ConnectionProperties::default().with_connection_name("rust-extractor".into()),
-            // Note: heartbeat is configured differently in newer lapin versions
+            ConnectionProperties::default(),
         )
         .await
         .context("Failed to establish AMQP connection")?;
@@ -99,7 +98,7 @@ impl MessageQueue {
         // Declare exchange
         channel
             .exchange_declare(
-                AMQP_EXCHANGE,
+                AMQP_EXCHANGE.into(),
                 AMQP_EXCHANGE_TYPE,
                 ExchangeDeclareOptions { durable: true, auto_delete: false, ..Default::default() },
                 FieldTable::default(),
@@ -120,7 +119,7 @@ impl MessageQueue {
         let dlx_exchange = format!("{}.dlx", AMQP_EXCHANGE);
         channel
             .exchange_declare(
-                &dlx_exchange,
+                dlx_exchange.as_str().into(),
                 AMQP_EXCHANGE_TYPE,
                 ExchangeDeclareOptions { durable: true, auto_delete: false, ..Default::default() },
                 FieldTable::default(),
@@ -144,23 +143,23 @@ impl MessageQueue {
 
             // Declare and bind DLQ
             channel
-                .queue_declare(&dlq_name, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, dlq_args.clone())
+                .queue_declare(dlq_name.as_str().into(), QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, dlq_args.clone())
                 .await
                 .context(format!("Failed to declare {} DLQ", prefix))?;
 
             channel
-                .queue_bind(&dlq_name, &dlx_exchange, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
+                .queue_bind(dlq_name.as_str().into(), dlx_exchange.as_str().into(), data_type.routing_key().into(), QueueBindOptions::default(), FieldTable::default())
                 .await
                 .context(format!("Failed to bind {} DLQ", prefix))?;
 
             // Declare and bind main queue (quorum)
             channel
-                .queue_declare(&queue_name, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, queue_args.clone())
+                .queue_declare(queue_name.as_str().into(), QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, queue_args.clone())
                 .await
                 .context(format!("Failed to declare {} queue", prefix))?;
 
             channel
-                .queue_bind(&queue_name, AMQP_EXCHANGE, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
+                .queue_bind(queue_name.as_str().into(), AMQP_EXCHANGE.into(), data_type.routing_key().into(), QueueBindOptions::default(), FieldTable::default())
                 .await
                 .context(format!("Failed to bind {} queue", prefix))?;
         }
@@ -183,8 +182,8 @@ impl MessageQueue {
 
         let confirm = channel
             .basic_publish(
-                AMQP_EXCHANGE,
-                data_type.routing_key(),
+                AMQP_EXCHANGE.into(),
+                data_type.routing_key().into(),
                 BasicPublishOptions { mandatory: true, ..Default::default() },
                 &payload,
                 Self::message_properties(),
@@ -209,8 +208,8 @@ impl MessageQueue {
 
             let confirm = channel
                 .basic_publish(
-                    AMQP_EXCHANGE,
-                    data_type.routing_key(),
+                    AMQP_EXCHANGE.into(),
+                    data_type.routing_key().into(),
                     BasicPublishOptions { mandatory: true, ..Default::default() },
                     &payload,
                     Self::message_properties(),
@@ -259,11 +258,11 @@ impl MessageQueue {
 
     pub async fn close(&self) -> Result<()> {
         if let Some(channel) = self.channel.write().await.take() {
-            channel.close(200, "Normal shutdown").await?;
+            channel.close(200, "Normal shutdown".into()).await?;
         }
 
         if let Some(conn) = self.connection.write().await.take() {
-            conn.close(200, "Normal shutdown").await?;
+            conn.close(200, "Normal shutdown".into()).await?;
         }
 
         info!("🔌 AMQP connection closed");
