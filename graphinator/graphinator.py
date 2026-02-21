@@ -22,7 +22,7 @@ from common import (
     HealthServer,
     setup_logging,
 )
-from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from orjson import loads
 
 from graphinator.batch_processor import BatchConfig, Neo4jBatchProcessor
@@ -153,41 +153,8 @@ def get_health_data() -> dict[str, Any]:
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    logger.info(
-        "🛑 Received signal signum, initiating graceful shutdown...", signum=signum
-    )
+    logger.info("🛑 Received signal, initiating graceful shutdown...", signum=signum)
     shutdown_requested = True
-
-
-def get_existing_hash(session: Any, node_type: str, node_id: str) -> str | None:
-    """Get existing hash for a node to check if update is needed."""
-    try:
-        result = session.run(
-            f"MATCH (n:{node_type} {{id: $id}}) RETURN n.sha256 AS hash", id=node_id
-        )
-        record = result.single()
-        return record["hash"] if record else None
-    except Exception as e:
-        logger.warning(
-            "⚠️ Error checking existing hash for node_type node_id: e",
-            node_type=node_type,
-            node_id=node_id,
-            e=e,
-        )
-        return None
-
-
-def safe_execute_query(session: Any, query: str, parameters: dict[str, Any]) -> bool:
-    """Execute a Neo4j query with error handling."""
-    try:
-        session.run(query, parameters)
-        return True
-    except Neo4jError as e:
-        logger.error("❌ Neo4j error executing query: e", e=e)
-        return False
-    except Exception as e:
-        logger.error("❌ Unexpected error executing query: e", e=e)
-        return False
 
 
 async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
@@ -210,7 +177,7 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
                 del consumer_tags[data_type]
 
                 logger.info(
-                    "✅ Consumer for data_type successfully canceled",
+                    "✅ Consumer successfully canceled",
                     data_type=data_type,
                 )
 
@@ -220,9 +187,9 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
                     await close_rabbitmq_connection()
         except Exception as e:
             logger.error(
-                "❌ Failed to cancel consumer for data_type: e",
+                "❌ Failed to cancel consumer",
                 data_type=data_type,
-                e=e,
+                error=str(e),
             )
         finally:
             # Clean up the task reference
@@ -449,17 +416,7 @@ async def _recover_consumers() -> None:
             # Start consumers for queues with messages
             for data_type, msg_count in queues_with_messages:
                 if data_type in queues and data_type not in consumer_tags:
-                    # Get appropriate handler for this data type
-                    handler = None
-                    if data_type == "artists":
-                        handler = on_artist_message
-                    elif data_type == "labels":
-                        handler = on_label_message
-                    elif data_type == "masters":
-                        handler = on_master_message
-                    elif data_type == "releases":
-                        handler = on_release_message
-
+                    handler = HANDLERS.get(data_type)
                     if handler:
                         consumer_tag = await queues[data_type].consume(
                             handler, consumer_tag=f"graphinator-{data_type}"
@@ -516,895 +473,702 @@ async def check_file_completion(
     return False
 
 
-async def on_artist_message(message: AbstractIncomingMessage) -> None:
-    if shutdown_requested:
-        logger.info("🛑 Shutdown requested, rejecting new messages")
-        await message.nack(requeue=True)
-        return
+def process_artist(tx: Any, record: dict[str, Any]) -> bool:
+    """Process artist within a single transaction for atomicity."""
+    existing_result = tx.run(
+        "MATCH (a:Artist {id: $id}) RETURN a.sha256 AS hash",
+        id=record["id"],
+    )
+    existing_record = existing_result.single()
+    if existing_record and existing_record["hash"] == record["sha256"]:
+        return False  # No update needed
 
-    try:
-        logger.debug("📥 Received artist message")
-        artist: dict[str, Any] = loads(message.body)
+    resources: str = f"https://api.discogs.com/artists/{record['id']}"
+    releases: str = f"{resources}/releases"
 
-        # Check if this is a file completion message
-        if await check_file_completion(artist, "artists", message):
-            return
+    tx.run(
+        "MERGE (a:Artist {id: $id}) "
+        "ON CREATE SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url, a.sha256 = $sha256 "
+        "ON MATCH SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url, a.sha256 = $sha256",
+        id=record["id"],
+        name=record.get("name", "Unknown Artist"),
+        resource_url=resources,
+        releases_url=releases,
+        sha256=record["sha256"],
+    )
 
-        # Use batch processor if enabled
-        if BATCH_MODE and batch_processor is not None:
-            await batch_processor.add_message(
-                "artists",
-                artist,
-                message.ack,
-                lambda: message.nack(requeue=True),
+    # Handle members
+    members: dict[str, Any] | None = record.get("members")
+    if members is not None:
+        members_list = (
+            members["name"] if isinstance(members["name"], list) else [members["name"]]
+        )
+        if members_list:
+            valid_members = []
+            for member in members_list:
+                if isinstance(member, str):
+                    member_id = member
+                else:
+                    member_id = member.get("@id") or member.get("id")
+                if member_id:
+                    valid_members.append({"id": member_id})
+                else:
+                    logger.warning(
+                        f"⚠️ Skipping member without ID in artist {record['id']}: {member}"
+                    )
+            if valid_members:
+                tx.run(
+                    "UNWIND $members AS member "
+                    "MATCH (a:Artist {id: $artist_id}) "
+                    "MERGE (m_a:Artist {id: member.id}) "
+                    "MERGE (m_a)-[:MEMBER_OF]->(a)",
+                    members=valid_members,
+                    artist_id=record["id"],
+                )
+
+    # Handle groups
+    groups: dict[str, Any] | None = record.get("groups")
+    if groups is not None:
+        groups_list = (
+            groups["name"] if isinstance(groups["name"], list) else [groups["name"]]
+        )
+        if groups_list:
+            valid_groups = []
+            for group in groups_list:
+                if isinstance(group, str):
+                    group_id = group
+                else:
+                    group_id = group.get("@id") or group.get("id")
+                if group_id:
+                    valid_groups.append({"id": group_id})
+                else:
+                    logger.warning(
+                        f"⚠️ Skipping group without ID in artist {record['id']}: {group}"
+                    )
+            if valid_groups:
+                tx.run(
+                    "UNWIND $groups AS group "
+                    "MATCH (a:Artist {id: $artist_id}) "
+                    "MERGE (g_a:Artist {id: group.id}) "
+                    "MERGE (a)-[:MEMBER_OF]->(g_a)",
+                    groups=valid_groups,
+                    artist_id=record["id"],
+                )
+
+    # Handle aliases
+    aliases: dict[str, Any] | None = record.get("aliases")
+    if aliases is not None:
+        aliases_list = (
+            aliases["name"] if isinstance(aliases["name"], list) else [aliases["name"]]
+        )
+        if aliases_list:
+            valid_aliases = []
+            for alias in aliases_list:
+                if isinstance(alias, str):
+                    alias_id = alias
+                else:
+                    alias_id = alias.get("@id") or alias.get("id")
+                if alias_id:
+                    valid_aliases.append({"id": alias_id})
+                else:
+                    logger.warning(
+                        f"⚠️ Skipping alias without ID in artist {record['id']}: {alias}"
+                    )
+            if valid_aliases:
+                tx.run(
+                    "UNWIND $aliases AS alias "
+                    "MATCH (a:Artist {id: $artist_id}) "
+                    "MERGE (a_a:Artist {id: alias.id}) "
+                    "MERGE (a_a)-[:ALIAS_OF]->(a)",
+                    aliases=valid_aliases,
+                    artist_id=record["id"],
+                )
+
+    return True  # Updated successfully
+
+
+def process_label(tx: Any, record: dict[str, Any]) -> bool:
+    """Process label within a single transaction for atomicity."""
+    existing_result = tx.run(
+        "MATCH (l:Label {id: $id}) RETURN l.sha256 AS hash", id=record["id"]
+    )
+    existing_record = existing_result.single()
+    if existing_record and existing_record["hash"] == record["sha256"]:
+        return False  # No update needed
+
+    tx.run(
+        "MERGE (l:Label {id: $id}) "
+        "ON CREATE SET l.name = $name, l.sha256 = $sha256 "
+        "ON MATCH SET l.name = $name, l.sha256 = $sha256",
+        id=record["id"],
+        name=record.get("name", "Unknown Label"),
+        sha256=record["sha256"],
+    )
+
+    # Handle parent label relationship
+    parent: dict[str, Any] | str | None = record.get("parentLabel")
+    if parent is not None:
+        parent_id: str | None
+        if isinstance(parent, str):
+            parent_id = parent
+        else:
+            parent_id = parent.get("@id") or parent.get("id")
+
+        if parent_id:
+            tx.run(
+                "MATCH (l:Label {id: $id}) "
+                "MERGE (p_l:Label {id: $p_id}) "
+                "MERGE (l)-[:SUBLABEL_OF]->(p_l)",
+                id=record["id"],
+                p_id=parent_id,
             )
-            message_counts["artists"] += 1
-            last_message_time["artists"] = time.time()
-            return
-
-        artist_id = artist.get("id", "unknown")
-        artist_name = artist.get("name", "Unknown Artist")
-
-        # Increment counter and log progress
-        message_counts["artists"] += 1
-        last_message_time["artists"] = time.time()
-        if message_counts["artists"] % progress_interval == 0:
-            logger.info(
-                "📊 Processed message_counts artists in Neo4j",
-                message_counts=message_counts["artists"],
+        else:
+            logger.warning(
+                f"⚠️ Skipping parent label without ID in label {record['id']}: {parent}"
             )
 
-        logger.debug(
-            "🔄 Received artist message ID=artist_id: artist_name",
-            artist_id=artist_id,
-            artist_name=artist_name,
+    # Handle sublabels in batch
+    sublabels: dict[str, Any] | list[Any] | str | None = record.get("sublabels")
+    if sublabels is not None:
+        sublabels_list: list[Any] = []
+        if isinstance(sublabels, str):
+            sublabels_list = [sublabels]
+        elif isinstance(sublabels, list):
+            sublabels_list = sublabels
+        elif isinstance(sublabels, dict) and "label" in sublabels:
+            sublabels_list = (
+                sublabels["label"]
+                if isinstance(sublabels["label"], list)
+                else [sublabels["label"]]
+            )
+
+        if sublabels_list:
+            valid_sublabels = []
+            for sublabel in sublabels_list:
+                if isinstance(sublabel, str):
+                    sublabel_id = sublabel
+                else:
+                    sublabel_id = sublabel.get("@id") or sublabel.get("id")
+                if sublabel_id:
+                    valid_sublabels.append({"id": sublabel_id})
+                else:
+                    logger.warning(
+                        f"⚠️ Skipping sublabel without ID in label {record['id']}: {sublabel}"
+                    )
+            if valid_sublabels:
+                tx.run(
+                    "UNWIND $sublabels AS sublabel "
+                    "MATCH (l:Label {id: $label_id}) "
+                    "MERGE (s_l:Label {id: sublabel.id}) "
+                    "MERGE (s_l)-[:SUBLABEL_OF]->(l)",
+                    sublabels=valid_sublabels,
+                    label_id=record["id"],
+                )
+
+    return True  # Updated successfully
+
+
+def process_master(tx: Any, record: dict[str, Any]) -> bool:
+    """Process master within a single transaction for atomicity."""
+    existing_result = tx.run(
+        "MATCH (m:Master {id: $id}) RETURN m.sha256 AS hash",
+        id=record["id"],
+    )
+    existing_record = existing_result.single()
+    if existing_record and existing_record["hash"] == record["sha256"]:
+        return False  # No update needed
+
+    tx.run(
+        "MERGE (m:Master {id: $id}) "
+        "ON CREATE SET m.title = $title, m.year = $year, m.sha256 = $sha256 "
+        "ON MATCH SET m.title = $title, m.year = $year, m.sha256 = $sha256",
+        id=record["id"],
+        title=record.get("title", "Unknown Master"),
+        year=record.get("year", 0),
+        sha256=record["sha256"],
+    )
+
+    # Handle artist relationships in batch
+    artists: dict[str, Any] | None = record.get("artists")
+    if artists is not None:
+        artists_list = (
+            artists["artist"]
+            if isinstance(artists["artist"], list)
+            else [artists["artist"]]
+        )
+        if artists_list:
+            valid_artists = []
+            for artist in artists_list:
+                if isinstance(artist, str):
+                    artist_id = artist
+                else:
+                    artist_id = artist.get("id") or artist.get("@id")
+                if artist_id:
+                    valid_artists.append({"id": artist_id})
+                else:
+                    logger.warning(
+                        f"⚠️ Skipping artist without ID in master {record['id']}: {artist}"
+                    )
+            if valid_artists:
+                tx.run(
+                    "UNWIND $artists AS artist "
+                    "MATCH (m:Master {id: $master_id}) "
+                    "MERGE (a_m:Artist {id: artist.id}) "
+                    "MERGE (m)-[:BY]->(a_m)",
+                    artists=valid_artists,
+                    master_id=record["id"],
+                )
+
+    # Handle genres and styles
+    genres: dict[str, Any] | None = record.get("genres")
+    genres_list: list[str] = []
+    if genres is not None:
+        genres_list = (
+            genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
+        )
+        if genres_list:
+            tx.run(
+                "UNWIND $genres AS genre "
+                "MATCH (m:Master {id: $master_id}) "
+                "MERGE (g:Genre {name: genre.name}) "
+                "MERGE (m)-[:IS]->(g)",
+                genres=[{"name": genre} for genre in genres_list],
+                master_id=record["id"],
+            )
+
+    styles: dict[str, Any] | None = record.get("styles")
+    styles_list: list[str] = []
+    if styles is not None:
+        styles_list = (
+            styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
+        )
+        if styles_list:
+            tx.run(
+                "UNWIND $styles AS style "
+                "MATCH (m:Master {id: $master_id}) "
+                "MERGE (s:Style {name: style.name}) "
+                "MERGE (m)-[:IS]->(s)",
+                styles=[{"name": style} for style in styles_list],
+                master_id=record["id"],
+            )
+
+    # Connect styles to genres if both exist
+    if genres_list and styles_list:
+        tx.run(
+            "UNWIND $genre_style_pairs AS pair "
+            "MERGE (g:Genre {name: pair.genre}) "
+            "MERGE (s:Style {name: pair.style}) "
+            "MERGE (s)-[:PART_OF]->(g)",
+            genre_style_pairs=[
+                {"genre": genre, "style": style}
+                for genre in genres_list
+                for style in styles_list
+            ],
         )
 
-        # Process entire artist in a single session with proper transaction handling
-        try:
-            logger.debug(
-                "🔄 Starting transaction for artist ID=artist_id", artist_id=artist_id
+    return True  # Updated successfully
+
+
+def process_release(tx: Any, record: dict[str, Any]) -> bool:
+    """Process release within a single transaction for atomicity."""
+    existing_result = tx.run(
+        "MATCH (r:Release {id: $id}) RETURN r.sha256 AS hash",
+        id=record["id"],
+    )
+    existing_record = existing_result.single()
+    if existing_record and existing_record["hash"] == record["sha256"]:
+        return False  # No update needed
+
+    tx.run(
+        "MERGE (r:Release {id: $id}) "
+        "ON CREATE SET r.title = $title, r.sha256 = $sha256 "
+        "ON MATCH SET r.title = $title, r.sha256 = $sha256",
+        id=record["id"],
+        title=record.get("title", "Unknown Release"),
+        sha256=record["sha256"],
+    )
+
+    # Handle artist relationships
+    artists: dict[str, Any] | None = record.get("artists")
+    if artists is not None:
+        artists_list = (
+            artists["artist"]
+            if isinstance(artists["artist"], list)
+            else [artists["artist"]]
+        )
+        if artists_list:
+            valid_artists = []
+            for artist in artists_list:
+                if isinstance(artist, str):
+                    artist_id = artist
+                else:
+                    artist_id = artist.get("id") or artist.get("@id")
+                if artist_id:
+                    valid_artists.append({"id": artist_id})
+                else:
+                    logger.warning(
+                        f"⚠️ Skipping artist without ID in release {record['id']}: {artist}"
+                    )
+            if valid_artists:
+                tx.run(
+                    "UNWIND $artists AS artist "
+                    "MATCH (r:Release {id: $release_id}) "
+                    "MERGE (a_r:Artist {id: artist.id}) "
+                    "MERGE (r)-[:BY]->(a_r)",
+                    artists=valid_artists,
+                    release_id=record["id"],
+                )
+
+    # Handle label relationships
+    labels: dict[str, Any] | None = record.get("labels")
+    if labels is not None:
+        labels_list = (
+            labels["label"] if isinstance(labels["label"], list) else [labels["label"]]
+        )
+        if labels_list:
+            valid_labels = []
+            for label in labels_list:
+                if isinstance(label, str):
+                    label_id = label
+                else:
+                    label_id = label.get("@id") or label.get("id")
+                if label_id:
+                    valid_labels.append({"id": label_id})
+                else:
+                    logger.warning(
+                        f"⚠️ Skipping label without ID in release {record['id']}: {label}"
+                    )
+            if valid_labels:
+                tx.run(
+                    "UNWIND $labels AS label "
+                    "MATCH (r:Release {id: $release_id}) "
+                    "MERGE (l_r:Label {id: label.id}) "
+                    "MERGE (r)-[:ON]->(l_r)",
+                    labels=valid_labels,
+                    release_id=record["id"],
+                )
+
+    # Handle master relationship
+    master_id: dict[str, Any] | None = record.get("master_id")
+    if master_id is not None:
+        m_id = master_id.get("#text") if isinstance(master_id, dict) else master_id
+        if m_id:
+            tx.run(
+                "MATCH (r:Release {id: $id}),(m_r:Master {id: $m_id}) "
+                "MERGE (r)-[:DERIVED_FROM]->(m_r)",
+                id=record["id"],
+                m_id=m_id,
             )
-            # Get async session from resilient driver
+        else:
+            logger.warning(
+                f"⚠️ Skipping master relationship without valid ID in release {record['id']}: {master_id}"
+            )
+
+    # Handle genres and styles in batch
+    genres: dict[str, Any] | None = record.get("genres")
+    genres_list: list[str] = []
+    if genres is not None:
+        genres_list = (
+            genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
+        )
+        if genres_list:
+            tx.run(
+                "UNWIND $genres AS genre "
+                "MATCH (r:Release {id: $release_id}) "
+                "MERGE (g:Genre {name: genre.name}) "
+                "MERGE (r)-[:IS]->(g)",
+                genres=[{"name": genre} for genre in genres_list],
+                release_id=record["id"],
+            )
+
+    styles: dict[str, Any] | None = record.get("styles")
+    styles_list: list[str] = []
+    if styles is not None:
+        styles_list = (
+            styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
+        )
+        if styles_list:
+            tx.run(
+                "UNWIND $styles AS style "
+                "MATCH (r:Release {id: $release_id}) "
+                "MERGE (s:Style {name: style.name}) "
+                "MERGE (r)-[:IS]->(s)",
+                styles=[{"name": style} for style in styles_list],
+                release_id=record["id"],
+            )
+
+    # Connect styles to genres if both exist
+    if genres_list and styles_list:
+        tx.run(
+            "UNWIND $genre_style_pairs AS pair "
+            "MERGE (g:Genre {name: pair.genre}) "
+            "MERGE (s:Style {name: pair.style}) "
+            "MERGE (s)-[:PART_OF]->(g)",
+            genre_style_pairs=[
+                {"genre": genre, "style": style}
+                for genre in genres_list
+                for style in styles_list
+            ],
+        )
+
+    return True  # Updated successfully
+
+
+def make_message_handler(
+    data_type: str,
+    name_field: str,
+    default_name: str,
+    process_fn: Any,
+) -> Any:
+    """Create a RabbitMQ message handler for the given data type."""
+
+    async def handler(message: AbstractIncomingMessage) -> None:
+        if shutdown_requested:
+            logger.info("🛑 Shutdown requested, rejecting new messages")
+            await message.nack(requeue=True)
+            return
+
+        record_id = "unknown"
+        try:
+            logger.debug(f"📥 Received {data_type[:-1]} message")
+            record: dict[str, Any] = loads(message.body)
+
+            if await check_file_completion(record, data_type, message):
+                return
+
+            if BATCH_MODE and batch_processor is not None:
+                await batch_processor.add_message(
+                    data_type,
+                    record,
+                    message.ack,
+                    lambda: message.nack(requeue=True),
+                )
+                message_counts[data_type] += 1
+                last_message_time[data_type] = time.time()
+                return
+
+            record_id = record.get("id", "unknown")
+            record_name = record.get(name_field, default_name)
+
+            message_counts[data_type] += 1
+            last_message_time[data_type] = time.time()
+            if message_counts[data_type] % progress_interval == 0:
+                logger.info(
+                    f"📊 Processed {data_type} in Neo4j",
+                    message_counts=message_counts[data_type],
+                )
+
+            logger.debug(
+                f"🔄 Processing {data_type[:-1]}",
+                record_id=record_id,
+                record_name=record_name,
+            )
+
             if graph is None:
                 raise RuntimeError("Neo4j driver not initialized")
+
             async with await graph.session(database="neo4j") as session:
 
-                def process_artist_tx(tx: Any) -> bool:
-                    """Process artist within a single transaction for atomicity."""
-                    # Check if update is needed by comparing hashes
-                    existing_result = tx.run(
-                        "MATCH (a:Artist {id: $id}) RETURN a.sha256 AS hash",
-                        id=artist["id"],
-                    )
-                    existing_record = existing_result.single()
-                    if existing_record and existing_record["hash"] == artist["sha256"]:
-                        return False  # No update needed
+                def tx_fn(tx: Any) -> bool:
+                    return bool(process_fn(tx, record))
 
-                    # Create/update the main artist node
-                    resources: str = f"https://api.discogs.com/artists/{artist['id']}"
-                    releases: str = f"{resources}/releases"
-
-                    tx.run(
-                        "MERGE (a:Artist {id: $id}) "
-                        "ON CREATE SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url, a.sha256 = $sha256 "
-                        "ON MATCH SET a.name = $name, a.resource_url = $resource_url, a.releases_url = $releases_url, a.sha256 = $sha256",
-                        id=artist["id"],
-                        name=artist.get("name", "Unknown Artist"),
-                        resource_url=resources,
-                        releases_url=releases,
-                        sha256=artist["sha256"],
-                    )
-
-                    # Process relationships in batches for better performance
-                    # Handle members
-                    members: dict[str, Any] | None = artist.get("members")
-                    if members is not None:
-                        members_list = (
-                            members["name"]
-                            if isinstance(members["name"], list)
-                            else [members["name"]]
-                        )
-                        if members_list:
-                            # Filter and log members without IDs
-                            valid_members = []
-                            for member in members_list:
-                                # Handle both string ID and dict with @id/id fields
-                                if isinstance(member, str):
-                                    member_id = member
-                                else:
-                                    member_id = member.get("@id") or member.get("id")
-
-                                if member_id:
-                                    valid_members.append({"id": member_id})
-                                else:
-                                    logger.warning(
-                                        f"⚠️ Skipping member without ID in artist {artist['id']}: {member}"
-                                    )
-
-                            # Batch create member relationships
-                            if valid_members:
-                                tx.run(
-                                    "UNWIND $members AS member "
-                                    "MATCH (a:Artist {id: $artist_id}) "
-                                    "MERGE (m_a:Artist {id: member.id}) "
-                                    "MERGE (m_a)-[:MEMBER_OF]->(a)",
-                                    members=valid_members,
-                                    artist_id=artist["id"],
-                                )
-
-                    # Handle groups
-                    groups: dict[str, Any] | None = artist.get("groups")
-                    if groups is not None:
-                        groups_list = (
-                            groups["name"]
-                            if isinstance(groups["name"], list)
-                            else [groups["name"]]
-                        )
-                        if groups_list:
-                            # Filter and log groups without IDs
-                            valid_groups = []
-                            for group in groups_list:
-                                # Handle both string ID and dict with @id/id fields
-                                if isinstance(group, str):
-                                    group_id = group
-                                else:
-                                    group_id = group.get("@id") or group.get("id")
-
-                                if group_id:
-                                    valid_groups.append({"id": group_id})
-                                else:
-                                    logger.warning(
-                                        f"⚠️ Skipping group without ID in artist {artist['id']}: {group}"
-                                    )
-
-                            # Batch create group relationships
-                            if valid_groups:
-                                tx.run(
-                                    "UNWIND $groups AS group "
-                                    "MATCH (a:Artist {id: $artist_id}) "
-                                    "MERGE (g_a:Artist {id: group.id}) "
-                                    "MERGE (a)-[:MEMBER_OF]->(g_a)",
-                                    groups=valid_groups,
-                                    artist_id=artist["id"],
-                                )
-
-                    # Handle aliases
-                    aliases: dict[str, Any] | None = artist.get("aliases")
-                    if aliases is not None:
-                        aliases_list = (
-                            aliases["name"]
-                            if isinstance(aliases["name"], list)
-                            else [aliases["name"]]
-                        )
-                        if aliases_list:
-                            # Filter and log aliases without IDs
-                            valid_aliases = []
-                            for alias in aliases_list:
-                                # Handle both string ID and dict with @id/id fields
-                                if isinstance(alias, str):
-                                    alias_id = alias
-                                else:
-                                    alias_id = alias.get("@id") or alias.get("id")
-
-                                if alias_id:
-                                    valid_aliases.append({"id": alias_id})
-                                else:
-                                    logger.warning(
-                                        f"⚠️ Skipping alias without ID in artist {artist['id']}: {alias}"
-                                    )
-
-                            # Batch create alias relationships
-                            if valid_aliases:
-                                tx.run(
-                                    "UNWIND $aliases AS alias "
-                                    "MATCH (a:Artist {id: $artist_id}) "
-                                    "MERGE (a_a:Artist {id: alias.id}) "
-                                    "MERGE (a_a)-[:ALIAS_OF]->(a)",
-                                    aliases=valid_aliases,
-                                    artist_id=artist["id"],
-                                )
-
-                    return True  # Updated successfully
-
-                # Execute the transaction with explicit timeout
-                logger.debug(
-                    "🔄 Executing transaction for artist ID=artist_id",
-                    artist_id=artist_id,
-                )
-                # Session configuration is done at creation time
-                updated = await session.execute_write(process_artist_tx)
-                logger.debug(
-                    "✅ Async transaction completed for artist ID=artist_id",
-                    artist_id=artist_id,
-                )
-
-                if updated:
-                    logger.debug(
-                        "💾 Updated artist ID=artist_id in Neo4j", artist_id=artist_id
-                    )
-                else:
-                    logger.debug(
-                        f"⏩ Skipped artist ID={artist_id} (no changes needed)"
-                    )
-        except (ServiceUnavailable, SessionExpired) as neo4j_error:
-            logger.error(
-                f"❌ Neo4j connection error processing artist ID={artist_id}: {neo4j_error}"
-            )
-            raise
-        except Exception as neo4j_error:
-            logger.error(
-                f"❌ Neo4j error processing artist ID={artist_id}: {neo4j_error}"
-            )
-            raise
-
-        logger.debug(
-            "✅ Acknowledging artist message ID=artist_id", artist_id=artist_id
-        )
-        await message.ack()
-        logger.debug("✅ Completed artist message ID=artist_id", artist_id=artist_id)
-    except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning("⚠️ Neo4j unavailable, will retry artist message: e", e=e)
-        try:
-            await message.nack(requeue=True)
-        except Exception as nack_error:
-            logger.warning(
-                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
-            )
-    except Exception as e:
-        logger.error("❌ Failed to process artist message: e", e=e)
-        try:
-            await message.nack(requeue=True)
-        except Exception as nack_error:
-            logger.warning(
-                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
-            )
-
-
-async def on_label_message(message: AbstractIncomingMessage) -> None:
-    if shutdown_requested:
-        logger.info("🛑 Shutdown requested, rejecting new messages")
-        await message.nack(requeue=True)
-        return
-
-    try:
-        logger.debug("📥 Received label message")
-        label: dict[str, Any] = loads(message.body)
-
-        # Check if this is a file completion message
-        if await check_file_completion(label, "labels", message):
-            return
-
-        # Use batch processor if enabled
-        if BATCH_MODE and batch_processor is not None:
-            await batch_processor.add_message(
-                "labels",
-                label,
-                message.ack,
-                lambda: message.nack(requeue=True),
-            )
-            message_counts["labels"] += 1
-            last_message_time["labels"] = time.time()
-            return
-
-        label_id = label.get("id", "unknown")
-        label_name = label.get("name", "Unknown Label")
-
-        # Increment counter and log progress
-        message_counts["labels"] += 1
-        last_message_time["labels"] = time.time()
-        if message_counts["labels"] % progress_interval == 0:
-            logger.info(
-                "📊 Processed message_counts labels in Neo4j",
-                message_counts=message_counts["labels"],
-            )
-
-        logger.debug(
-            "🔄 Processing label ID=label_id: label_name",
-            label_id=label_id,
-            label_name=label_name,
-        )
-
-        # Process entire label in a single session with proper transaction handling
-        if graph is None:
-            raise RuntimeError("Neo4j driver not initialized")
-        async with await graph.session(database="neo4j") as session:
-
-            def process_label_tx(tx: Any) -> bool:
-                """Process label within a single transaction for atomicity."""
-                # Check if update is needed by comparing hashes
-                existing_result = tx.run(
-                    "MATCH (l:Label {id: $id}) RETURN l.sha256 AS hash", id=label["id"]
-                )
-                existing_record = existing_result.single()
-                if existing_record and existing_record["hash"] == label["sha256"]:
-                    return False  # No update needed
-
-                # Create/update the main label node
-                tx.run(
-                    "MERGE (l:Label {id: $id}) "
-                    "ON CREATE SET l.name = $name, l.sha256 = $sha256 "
-                    "ON MATCH SET l.name = $name, l.sha256 = $sha256",
-                    id=label["id"],
-                    name=label.get("name", "Unknown Label"),
-                    sha256=label["sha256"],
-                )
-
-                # Handle parent label relationship
-                parent: dict[str, Any] | str | None = label.get("parentLabel")
-                if parent is not None:
-                    # Handle both string ID and dict with @id/id fields
-                    parent_id: str | None
-                    if isinstance(parent, str):
-                        parent_id = parent
-                    else:
-                        parent_id = parent.get("@id") or parent.get("id")
-
-                    if parent_id:
-                        tx.run(
-                            "MATCH (l:Label {id: $id}) "
-                            "MERGE (p_l:Label {id: $p_id}) "
-                            "MERGE (l)-[:SUBLABEL_OF]->(p_l)",
-                            id=label["id"],
-                            p_id=parent_id,
-                        )
-                    else:
-                        logger.warning(
-                            f"⚠️ Skipping parent label without ID in label {label['id']}: {parent}"
-                        )
-
-                # Handle sublabels in batch
-                sublabels: dict[str, Any] | list[Any] | str | None = label.get(
-                    "sublabels"
-                )
-                if sublabels is not None:
-                    # Handle different sublabel formats
-                    sublabels_list: list[Any] = []
-                    if isinstance(sublabels, str):
-                        # Single string ID
-                        sublabels_list = [sublabels]
-                    elif isinstance(sublabels, list):
-                        # Direct list of items
-                        sublabels_list = sublabels
-                    elif isinstance(sublabels, dict) and "label" in sublabels:
-                        # Nested dict with "label" key
-                        sublabels_list = (
-                            sublabels["label"]
-                            if isinstance(sublabels["label"], list)
-                            else [sublabels["label"]]
-                        )
-
-                    if sublabels_list:
-                        # Filter and log sublabels without IDs
-                        valid_sublabels = []
-                        for sublabel in sublabels_list:
-                            # Handle both string ID and dict with @id/id fields
-                            if isinstance(sublabel, str):
-                                sublabel_id = sublabel
-                            else:
-                                sublabel_id = sublabel.get("@id") or sublabel.get("id")
-
-                            if sublabel_id:
-                                valid_sublabels.append({"id": sublabel_id})
-                            else:
-                                logger.warning(
-                                    f"⚠️ Skipping sublabel without ID in label {label['id']}: {sublabel}"
-                                )
-
-                        # Batch create sublabel relationships
-                        if valid_sublabels:
-                            tx.run(
-                                "UNWIND $sublabels AS sublabel "
-                                "MATCH (l:Label {id: $label_id}) "
-                                "MERGE (s_l:Label {id: sublabel.id}) "
-                                "MERGE (s_l)-[:SUBLABEL_OF]->(l)",
-                                sublabels=valid_sublabels,
-                                label_id=label["id"],
-                            )
-
-                return True  # Updated successfully
-
-            # Execute the async transaction with timeout
-            # Session configuration is done at creation time
-            updated = await session.execute_write(process_label_tx)
-
-            if updated:
-                logger.debug("💾 Updated label ID=label_id in Neo4j", label_id=label_id)
-            else:
-                logger.debug(
-                    "⏩ Skipped label ID=label_id (no changes needed)",
-                    label_id=label_id,
-                )
-
-        await message.ack()
-    except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning("⚠️ Neo4j unavailable, will retry label message: e", e=e)
-        try:
-            await message.nack(requeue=True)
-        except Exception as nack_error:
-            logger.warning(
-                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
-            )
-    except Exception as e:
-        logger.error("❌ Failed to process label message: e", e=e)
-        try:
-            await message.nack(requeue=True)
-        except Exception as nack_error:
-            logger.warning(
-                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
-            )
-
-
-async def on_master_message(message: AbstractIncomingMessage) -> None:
-    if shutdown_requested:
-        logger.info("🛑 Shutdown requested, rejecting new messages")
-        await message.nack(requeue=True)
-        return
-
-    try:
-        logger.debug("📥 Received master message")
-        master: dict[str, Any] = loads(message.body)
-
-        # Check if this is a file completion message
-        if await check_file_completion(master, "masters", message):
-            return
-
-        # Use batch processor if enabled
-        if BATCH_MODE and batch_processor is not None:
-            await batch_processor.add_message(
-                "masters",
-                master,
-                message.ack,
-                lambda: message.nack(requeue=True),
-            )
-            message_counts["masters"] += 1
-            last_message_time["masters"] = time.time()
-            return
-
-        master_id = master.get("id", "unknown")
-        master_title = master.get("title", "Unknown Master")
-
-        # Increment counter and log progress
-        message_counts["masters"] += 1
-        last_message_time["masters"] = time.time()
-        if message_counts["masters"] % progress_interval == 0:
-            logger.info(
-                "📊 Processed message_counts masters in Neo4j",
-                message_counts=message_counts["masters"],
-            )
-
-        logger.debug(
-            "🔄 Processing master ID=master_id: master_title",
-            master_id=master_id,
-            master_title=master_title,
-        )
-
-        # Process entire master in a single session with proper transaction handling
-        if graph is None:
-            raise RuntimeError("Neo4j driver not initialized")
-        async with await graph.session(database="neo4j") as session:
-
-            def process_master_tx(tx: Any) -> bool:
-                """Process master within a single transaction for atomicity."""
-                # Check if update is needed by comparing hashes
-                existing_result = tx.run(
-                    "MATCH (m:Master {id: $id}) RETURN m.sha256 AS hash",
-                    id=master["id"],
-                )
-                existing_record = existing_result.single()
-                if existing_record and existing_record["hash"] == master["sha256"]:
-                    return False  # No update needed
-
-                # Create/update the main master node
-                tx.run(
-                    "MERGE (m:Master {id: $id}) "
-                    "ON CREATE SET m.title = $title, m.year = $year, m.sha256 = $sha256 "
-                    "ON MATCH SET m.title = $title, m.year = $year, m.sha256 = $sha256",
-                    id=master["id"],
-                    title=master.get("title", "Unknown Master"),
-                    year=master.get("year", 0),
-                    sha256=master["sha256"],
-                )
-
-                # Handle artist relationships in batch
-                artists: dict[str, Any] | None = master.get("artists")
-                if artists is not None:
-                    artists_list = (
-                        artists["artist"]
-                        if isinstance(artists["artist"], list)
-                        else [artists["artist"]]
-                    )
-                    if artists_list:
-                        # Filter and log artists without IDs
-                        valid_artists = []
-                        for artist in artists_list:
-                            # Handle both string ID and dict with @id/id fields
-                            if isinstance(artist, str):
-                                artist_id = artist
-                            else:
-                                artist_id = artist.get("id") or artist.get("@id")
-
-                            if artist_id:
-                                valid_artists.append({"id": artist_id})
-                            else:
-                                logger.warning(
-                                    f"⚠️ Skipping artist without ID in master {master['id']}: {artist}"
-                                )
-
-                        if valid_artists:
-                            tx.run(
-                                "UNWIND $artists AS artist "
-                                "MATCH (m:Master {id: $master_id}) "
-                                "MERGE (a_m:Artist {id: artist.id}) "
-                                "MERGE (m)-[:BY]->(a_m)",
-                                artists=valid_artists,
-                                master_id=master["id"],
-                            )
-
-                # Handle genres and styles
-                genres: dict[str, Any] | None = master.get("genres")
-                genres_list: list[str] = []
-                if genres is not None:
-                    genres_list = (
-                        genres["genre"]
-                        if isinstance(genres["genre"], list)
-                        else [genres["genre"]]
-                    )
-                    if genres_list:
-                        tx.run(
-                            "UNWIND $genres AS genre "
-                            "MATCH (m:Master {id: $master_id}) "
-                            "MERGE (g:Genre {name: genre.name}) "
-                            "MERGE (m)-[:IS]->(g)",
-                            genres=[{"name": genre} for genre in genres_list],
-                            master_id=master["id"],
-                        )
-
-                styles: dict[str, Any] | None = master.get("styles")
-                styles_list: list[str] = []
-                if styles is not None:
-                    styles_list = (
-                        styles["style"]
-                        if isinstance(styles["style"], list)
-                        else [styles["style"]]
-                    )
-                    if styles_list:
-                        tx.run(
-                            "UNWIND $styles AS style "
-                            "MATCH (m:Master {id: $master_id}) "
-                            "MERGE (s:Style {name: style.name}) "
-                            "MERGE (m)-[:IS]->(s)",
-                            styles=[{"name": style} for style in styles_list],
-                            master_id=master["id"],
-                        )
-
-                # Connect styles to genres if both exist
-                if genres_list and styles_list:
-                    tx.run(
-                        "UNWIND $genre_style_pairs AS pair "
-                        "MERGE (g:Genre {name: pair.genre}) "
-                        "MERGE (s:Style {name: pair.style}) "
-                        "MERGE (s)-[:PART_OF]->(g)",
-                        genre_style_pairs=[
-                            {"genre": genre, "style": style}
-                            for genre in genres_list
-                            for style in styles_list
-                        ],
-                    )
-
-                return True  # Updated successfully
-
-            # Execute the async transaction with timeout
-            # Session configuration is done at creation time
-            updated = await session.execute_write(process_master_tx)
+                updated = await session.execute_write(tx_fn)
 
             if updated:
                 logger.debug(
-                    "💾 Updated master ID=master_id in Neo4j", master_id=master_id
+                    f"💾 Updated {data_type[:-1]} in Neo4j",
+                    record_id=record_id,
                 )
             else:
                 logger.debug(
-                    "⏩ Skipped master ID=master_id (no changes needed)",
-                    master_id=master_id,
+                    f"⏩ Skipped {data_type[:-1]} (no changes needed)",
+                    record_id=record_id,
                 )
 
-        await message.ack()
-    except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning("⚠️ Neo4j unavailable, will retry master message: e", e=e)
-        try:
-            await message.nack(requeue=True)
-        except Exception as nack_error:
+            await message.ack()
+        except (ServiceUnavailable, SessionExpired) as e:
             logger.warning(
-                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+                f"⚠️ Neo4j unavailable, will retry {data_type[:-1]} message",
+                error=str(e),
             )
-    except Exception as e:
-        # Include more context in error message
-        error_context = (
-            f"master_id={master_id if 'master_id' in locals() else 'unknown'}"
-        )
-        error_type = type(e).__name__
-        if error_type == "KeyError" and str(e) == "'id'":
+            try:
+                await message.nack(requeue=True)
+            except Exception as nack_error:
+                logger.warning("⚠️ Failed to nack message", error=str(nack_error))
+        except Exception as e:
             logger.error(
-                f"❌ Failed to process master message ({error_context}): "
-                f"Missing 'id' field in nested object. This typically occurs when artist objects "
-                f"within the master don't have an 'id' field. Error: {error_type}: {e}"
+                f"❌ Failed to process {data_type[:-1]} message",
+                record_id=record_id,
+                error=str(e),
             )
+            try:
+                await message.nack(requeue=True)
+            except Exception as nack_error:
+                logger.warning("⚠️ Failed to nack message", error=str(nack_error))
+
+    return handler
+
+
+on_artist_message = make_message_handler(
+    "artists", "name", "Unknown Artist", process_artist
+)
+on_label_message = make_message_handler(
+    "labels", "name", "Unknown Label", process_label
+)
+on_master_message = make_message_handler(
+    "masters", "title", "Unknown Master", process_master
+)
+on_release_message = make_message_handler(
+    "releases", "title", "Unknown Release", process_release
+)
+
+# Handler lookup by data type for consumer registration and recovery
+HANDLERS: dict[str, Any] = {
+    "artists": on_artist_message,
+    "labels": on_label_message,
+    "masters": on_master_message,
+    "releases": on_release_message,
+}
+
+
+async def progress_reporter() -> None:
+    """Periodically report processing progress and manage idle mode."""
+    global idle_mode
+
+    report_count = 0
+    startup_time = time.time()
+    last_idle_log = 0.0
+
+    while not shutdown_requested:
+        # More frequent reports initially, then every 30 seconds
+        if report_count < 3:
+            await asyncio.sleep(10)  # First 3 reports every 10 seconds
         else:
-            logger.error(
-                f"❌ Failed to process master message ({error_context}): {error_type}: {e}"
-            )
-        try:
-            await message.nack(requeue=True)
-        except Exception as nack_error:
-            logger.warning(
-                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
-            )
+            await asyncio.sleep(30)  # Then every 30 seconds
+        report_count += 1
 
+        # Skip all logging if all files are complete
+        if len(completed_files) == len(DATA_TYPES):
+            continue
 
-async def on_release_message(message: AbstractIncomingMessage) -> None:
-    if shutdown_requested:
-        logger.info("🛑 Shutdown requested, rejecting new messages")
-        await message.nack(requeue=True)
-        return
+        total = sum(message_counts.values())
+        current_time = time.time()
 
-    try:
-        logger.debug("📥 Received release message")
-        release: dict[str, Any] = loads(message.body)
+        # Idle mode detection: no messages received after STARTUP_IDLE_TIMEOUT
+        if (
+            not idle_mode
+            and total == 0
+            and (current_time - startup_time) >= STARTUP_IDLE_TIMEOUT
+        ):
+            idle_mode = True
+            last_idle_log = current_time
 
-        # Check if this is a file completion message
-        if await check_file_completion(release, "releases", message):
-            return
-
-        # Use batch processor if enabled
-        if BATCH_MODE and batch_processor is not None:
-            await batch_processor.add_message(
-                "releases",
-                release,
-                message.ack,
-                lambda: message.nack(requeue=True),
-            )
-            message_counts["releases"] += 1
-            last_message_time["releases"] = time.time()
-            return
-
-        release_id = release.get("id", "unknown")
-        release_title = release.get("title", "Unknown Release")
-
-        # Increment counter and log progress
-        message_counts["releases"] += 1
-        last_message_time["releases"] = time.time()
-        if message_counts["releases"] % progress_interval == 0:
-            logger.info(
-                "📊 Processed message_counts releases in Neo4j",
-                message_counts=message_counts["releases"],
-            )
-
-        logger.debug(
-            "🔄 Processing release ID=release_id: release_title",
-            release_id=release_id,
-            release_title=release_title,
-        )
-
-        # Process entire release in a single session with proper transaction handling
-        if graph is None:
-            raise RuntimeError("Neo4j driver not initialized")
-        async with await graph.session(database="neo4j") as session:
-
-            def process_release_tx(tx: Any) -> bool:
-                """Process release within a single transaction for atomicity."""
-                # Check if update is needed by comparing hashes
-                existing_result = tx.run(
-                    "MATCH (r:Release {id: $id}) RETURN r.sha256 AS hash",
-                    id=release["id"],
-                )
-                existing_record = existing_result.single()
-                if existing_record and existing_record["hash"] == release["sha256"]:
-                    return False  # No update needed
-
-                # Create/update the main release node
-                tx.run(
-                    "MERGE (r:Release {id: $id}) "
-                    "ON CREATE SET r.title = $title, r.sha256 = $sha256 "
-                    "ON MATCH SET r.title = $title, r.sha256 = $sha256",
-                    id=release["id"],
-                    title=release.get("title", "Unknown Release"),
-                    sha256=release["sha256"],
-                )
-
-                # Handle artist relationships
-                artists: dict[str, Any] | None = release.get("artists")
-                if artists is not None:
-                    artists_list = (
-                        artists["artist"]
-                        if isinstance(artists["artist"], list)
-                        else [artists["artist"]]
-                    )
-                    if artists_list:
-                        # Filter and log artists without IDs
-                        valid_artists = []
-                        for artist in artists_list:
-                            # Handle both string ID and dict with @id/id fields
-                            if isinstance(artist, str):
-                                artist_id = artist
-                            else:
-                                artist_id = artist.get("id") or artist.get("@id")
-
-                            if artist_id:
-                                valid_artists.append({"id": artist_id})
-                            else:
-                                logger.warning(
-                                    f"⚠️ Skipping artist without ID in release {release['id']}: {artist}"
-                                )
-
-                        # Use batch processing for better performance
-                        if valid_artists:
-                            tx.run(
-                                "UNWIND $artists AS artist "
-                                "MATCH (r:Release {id: $release_id}) "
-                                "MERGE (a_r:Artist {id: artist.id}) "
-                                "MERGE (r)-[:BY]->(a_r)",
-                                artists=valid_artists,
-                                release_id=release["id"],
-                            )
-
-                # Handle label relationships
-                labels: dict[str, Any] | None = release.get("labels")
-                if labels is not None:
-                    labels_list = (
-                        labels["label"]
-                        if isinstance(labels["label"], list)
-                        else [labels["label"]]
-                    )
-                    if labels_list:
-                        # Filter and log labels without IDs
-                        valid_labels = []
-                        for label in labels_list:
-                            # Handle both string ID and dict with @id/id fields
-                            if isinstance(label, str):
-                                label_id = label
-                            else:
-                                label_id = label.get("@id") or label.get("id")
-
-                            if label_id:
-                                valid_labels.append({"id": label_id})
-                            else:
-                                logger.warning(
-                                    f"⚠️ Skipping label without ID in release {release['id']}: {label}"
-                                )
-
-                        if valid_labels:
-                            tx.run(
-                                "UNWIND $labels AS label "
-                                "MATCH (r:Release {id: $release_id}) "
-                                "MERGE (l_r:Label {id: label.id}) "
-                                "MERGE (r)-[:ON]->(l_r)",
-                                labels=valid_labels,
-                                release_id=release["id"],
-                            )
-
-                # Handle master relationship
-                master_id: dict[str, Any] | None = release.get("master_id")
-                if master_id is not None:
-                    # master_id is typically a dict with "#text" containing the actual ID
-                    m_id = (
-                        master_id.get("#text")
-                        if isinstance(master_id, dict)
-                        else master_id
-                    )
-                    if m_id:
-                        tx.run(
-                            "MATCH (r:Release {id: $id}),(m_r:Master {id: $m_id}) "
-                            "MERGE (r)-[:DERIVED_FROM]->(m_r)",
-                            id=release["id"],
-                            m_id=m_id,
-                        )
-                    else:
+            # Cancel all active consumers and close connection
+            for dt in list(consumer_tags.keys()):
+                if dt in queues:
+                    try:
+                        await queues[dt].cancel(consumer_tags[dt], nowait=True)
+                    except Exception as e:
                         logger.warning(
-                            f"⚠️ Skipping master relationship without valid ID in release {release['id']}: {master_id}"
+                            "⚠️ Error canceling consumer during idle transition",
+                            data_type=dt,
+                            error=str(e),
                         )
+                del consumer_tags[dt]
 
-                # Handle genres and styles in batch
-                genres: dict[str, Any] | None = release.get("genres")
-                genres_list: list[str] = []
-                if genres is not None:
-                    genres_list = (
-                        genres["genre"]
-                        if isinstance(genres["genre"], list)
-                        else [genres["genre"]]
-                    )
-                    if genres_list:
-                        tx.run(
-                            "UNWIND $genres AS genre "
-                            "MATCH (r:Release {id: $release_id}) "
-                            "MERGE (g:Genre {name: genre.name}) "
-                            "MERGE (r)-[:IS]->(g)",
-                            genres=[{"name": genre} for genre in genres_list],
-                            release_id=release["id"],
-                        )
+            await close_rabbitmq_connection()
 
-                styles: dict[str, Any] | None = release.get("styles")
-                styles_list: list[str] = []
-                if styles is not None:
-                    styles_list = (
-                        styles["style"]
-                        if isinstance(styles["style"], list)
-                        else [styles["style"]]
-                    )
-                    if styles_list:
-                        tx.run(
-                            "UNWIND $styles AS style "
-                            "MATCH (r:Release {id: $release_id}) "
-                            "MERGE (s:Style {name: style.name}) "
-                            "MERGE (r)-[:IS]->(s)",
-                            styles=[{"name": style} for style in styles_list],
-                            release_id=release["id"],
-                        )
-
-                # Connect styles to genres if both exist
-                if genres_list and styles_list:
-                    tx.run(
-                        "UNWIND $genre_style_pairs AS pair "
-                        "MERGE (g:Genre {name: pair.genre}) "
-                        "MERGE (s:Style {name: pair.style}) "
-                        "MERGE (s)-[:PART_OF]->(g)",
-                        genre_style_pairs=[
-                            {"genre": genre, "style": style}
-                            for genre in genres_list
-                            for style in styles_list
-                        ],
-                    )
-
-                # Handle tracklist (simplified to avoid complex nested transactions)
-                # Note: Skipping detailed track processing to avoid deadlocks
-                # This can be re-added later if needed
-
-                return True  # Updated successfully
-
-            # Execute the async transaction with timeout
-            # Session configuration is done at creation time
-            updated = await session.execute_write(process_release_tx)
-
-            if updated:
-                logger.debug(
-                    "💾 Updated release ID=release_id in Neo4j", release_id=release_id
-                )
-            else:
-                logger.debug(
-                    "⏩ Skipped release ID=release_id (no changes needed)",
-                    release_id=release_id,
-                )
-
-        await message.ack()
-        logger.debug("💾 Stored release ID=release_id in Neo4j", release_id=release_id)
-    except (ServiceUnavailable, SessionExpired) as e:
-        logger.warning("⚠️ Neo4j unavailable, will retry release message: e", e=e)
-        try:
-            await message.nack(requeue=True)
-        except Exception as nack_error:
-            logger.warning(
-                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+            logger.info(
+                f"😴 No messages received after {STARTUP_IDLE_TIMEOUT}s, entering idle mode. "
+                f"Will check queues every {QUEUE_CHECK_INTERVAL}s",
+                startup_idle_timeout=STARTUP_IDLE_TIMEOUT,
+                queue_check_interval=QUEUE_CHECK_INTERVAL,
             )
-    except Exception as e:
-        # Include more context in error message
-        error_context = (
-            f"release_id={release_id if 'release_id' in locals() else 'unknown'}"
+            continue
+
+        # While in idle mode, only log briefly every IDLE_LOG_INTERVAL
+        if idle_mode:
+            if total > 0:
+                # Messages started flowing, exit idle mode
+                idle_mode = False
+                logger.info("🔄 Messages detected, resuming normal operation")
+            elif (current_time - last_idle_log) >= IDLE_LOG_INTERVAL:
+                last_idle_log = current_time
+                logger.info(
+                    "😴 Idle mode - no messages received. "
+                    f"Next queue check in ≤{QUEUE_CHECK_INTERVAL}s",
+                    queue_check_interval=QUEUE_CHECK_INTERVAL,
+                )
+            continue
+
+        # Check for stalled consumers (skip completed files)
+        stalled_consumers = []
+        for data_type, last_time in last_message_time.items():
+            if (
+                data_type not in completed_files
+                and last_time > 0
+                and (current_time - last_time) > 120
+            ):  # No messages for 2 minutes
+                stalled_consumers.append(data_type)
+
+        if stalled_consumers:
+            logger.error(
+                f"⚠️ Stalled consumers detected: {stalled_consumers}. "
+                f"No messages processed for >2 minutes."
+            )
+
+        # Always show progress, even if no messages processed yet
+        # Build progress string with completion emojis
+        progress_parts = []
+        for data_type in ["artists", "labels", "masters", "releases"]:
+            emoji = "🎉 " if data_type in completed_files else ""
+            progress_parts.append(
+                f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}"
+            )
+
+        logger.info(
+            f"📊 Neo4j Progress: {total} total messages processed "
+            f"({', '.join(progress_parts)})"
         )
-        error_type = type(e).__name__
-        if error_type == "KeyError" and str(e) == "'id'":
-            logger.error(
-                f"❌ Failed to process release message ({error_context}): "
-                f"Missing 'id' field in nested object. This typically occurs when artist/label objects "
-                f"within the release don't have an 'id' field. Error: {error_type}: {e}"
-            )
-        else:
-            logger.error(
-                f"❌ Failed to process release message ({error_context}): {error_type}: {e}"
-            )
-        try:
-            await message.nack(requeue=True)
-        except Exception as nack_error:
+
+        # Log current processing state
+        if total == 0:
+            logger.info("⏳ Waiting for messages to process...")
+        elif all(
+            current_time - last_time < 5
+            for last_time in last_message_time.values()
+            if last_time > 0
+        ):
+            logger.info("✅ All consumers actively processing")
+        elif any(
+            last_time > 0 and 5 < current_time - last_time < 120
+            for last_time in last_message_time.values()
+        ):
+            slow_consumers = [
+                dt
+                for dt, lt in last_message_time.items()
+                if lt > 0 and 5 < current_time - lt < 120
+            ]
             logger.warning(
-                "⚠️ Failed to nack message: nack_error", nack_error=nack_error
+                f"⚠️ Slow consumers detected: {slow_consumers}",
+                slow_consumers=slow_consumers,
+            )
+
+        # Log consumer status
+        active_consumers = list(consumer_tags.keys())
+        canceled_consumers = [
+            dt for dt in DATA_TYPES if dt not in consumer_tags and dt in completed_files
+        ]
+
+        if canceled_consumers:
+            logger.info(
+                f"🔌 Canceled consumers: {canceled_consumers}",
+                canceled_consumers=canceled_consumers,
+            )
+        if active_consumers:
+            logger.info(
+                f"✅ Active consumers: {active_consumers}",
+                active_consumers=active_consumers,
             )
 
 
@@ -1443,7 +1207,7 @@ async def main() -> None:
     try:
         config = GraphinatorConfig.from_env()
     except ValueError as e:
-        logger.error("❌ Configuration error: e", e=e)
+        logger.error("❌ Configuration error", error=str(e))
         return
 
     # Initialize async resilient Neo4j driver
@@ -1599,7 +1363,7 @@ async def main() -> None:
                 logger.info("📝 Using per-message processing (batch mode disabled)")
 
     except Exception as e:
-        logger.error("❌ Failed to connect to Neo4j: e", e=e)
+        logger.error("❌ Failed to connect to Neo4j", error=str(e))
         return
     # fmt: off
     print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗                                   ")
@@ -1710,170 +1474,17 @@ async def main() -> None:
             await queue.bind(exchange, routing_key=data_type)
             queues[data_type] = queue
 
-        # Map queues to their respective message handlers
-        artists_queue = queues["artists"]
-        labels_queue = queues["labels"]
-        masters_queue = queues["masters"]
-        releases_queue = queues["releases"]
-
-        # Start consumers and store their tags
-        consumer_tags["artists"] = await artists_queue.consume(
-            on_artist_message, consumer_tag="graphinator-artists"
-        )
-        consumer_tags["labels"] = await labels_queue.consume(
-            on_label_message, consumer_tag="graphinator-labels"
-        )
-        consumer_tags["masters"] = await masters_queue.consume(
-            on_master_message, consumer_tag="graphinator-masters"
-        )
-        consumer_tags["releases"] = await releases_queue.consume(
-            on_release_message, consumer_tag="graphinator-releases"
-        )
+        # Start consumers for all data types
+        for data_type, handler in HANDLERS.items():
+            consumer_tags[data_type] = await queues[data_type].consume(
+                handler, consumer_tag=f"graphinator-{data_type}"
+            )
 
         logger.info(
             f"🚀 Graphinator started! Connected to AMQP broker (exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE}). "
             f"Consuming from {len(DATA_TYPES)} queues. "
             "Ready to process messages into Neo4j. Press CTRL+C to exit"
         )
-
-        # Start periodic progress reporting and consumer health monitoring
-        async def progress_reporter() -> None:
-            global idle_mode
-
-            report_count = 0
-            startup_time = time.time()
-            last_idle_log = 0.0
-
-            while not shutdown_requested:
-                # More frequent reports initially, then every 30 seconds
-                if report_count < 3:
-                    await asyncio.sleep(10)  # First 3 reports every 10 seconds
-                else:
-                    await asyncio.sleep(30)  # Then every 30 seconds
-                report_count += 1
-
-                # Skip all logging if all files are complete
-                if len(completed_files) == len(DATA_TYPES):
-                    continue
-
-                total = sum(message_counts.values())
-                current_time = time.time()
-
-                # Idle mode detection: no messages received after STARTUP_IDLE_TIMEOUT
-                if not idle_mode and total == 0 and (current_time - startup_time) >= STARTUP_IDLE_TIMEOUT:
-                    idle_mode = True
-                    last_idle_log = current_time
-
-                    # Cancel all active consumers and close connection
-                    for dt in list(consumer_tags.keys()):
-                        if dt in queues:
-                            try:
-                                await queues[dt].cancel(consumer_tags[dt], nowait=True)
-                            except Exception as e:
-                                logger.warning(
-                                    "⚠️ Error canceling consumer during idle transition",
-                                    data_type=dt,
-                                    error=str(e),
-                                )
-                        del consumer_tags[dt]
-
-                    await close_rabbitmq_connection()
-
-                    logger.info(
-                        f"😴 No messages received after {STARTUP_IDLE_TIMEOUT}s, entering idle mode. "
-                        f"Will check queues every {QUEUE_CHECK_INTERVAL}s",
-                        startup_idle_timeout=STARTUP_IDLE_TIMEOUT,
-                        queue_check_interval=QUEUE_CHECK_INTERVAL,
-                    )
-                    continue
-
-                # While in idle mode, only log briefly every IDLE_LOG_INTERVAL
-                if idle_mode:
-                    if total > 0:
-                        # Messages started flowing, exit idle mode
-                        idle_mode = False
-                        logger.info("🔄 Messages detected, resuming normal operation")
-                    elif (current_time - last_idle_log) >= IDLE_LOG_INTERVAL:
-                        last_idle_log = current_time
-                        logger.info(
-                            "😴 Idle mode - no messages received. "
-                            f"Next queue check in ≤{QUEUE_CHECK_INTERVAL}s",
-                            queue_check_interval=QUEUE_CHECK_INTERVAL,
-                        )
-                    continue
-
-                # Check for stalled consumers (skip completed files)
-                stalled_consumers = []
-                for data_type, last_time in last_message_time.items():
-                    if (
-                        data_type not in completed_files
-                        and last_time > 0
-                        and (current_time - last_time) > 120
-                    ):  # No messages for 2 minutes
-                        stalled_consumers.append(data_type)
-
-                if stalled_consumers:
-                    logger.error(
-                        f"⚠️ Stalled consumers detected: {stalled_consumers}. "
-                        f"No messages processed for >2 minutes."
-                    )
-                    # The resilient driver will handle reconnection automatically
-
-                # Always show progress, even if no messages processed yet
-                # Build progress string with completion emojis
-                progress_parts = []
-                for data_type in ["artists", "labels", "masters", "releases"]:
-                    emoji = "🎉 " if data_type in completed_files else ""
-                    progress_parts.append(
-                        f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}"
-                    )
-
-                logger.info(
-                    f"📊 Neo4j Progress: {total} total messages processed "
-                    f"({', '.join(progress_parts)})"
-                )
-
-                # Log current processing state
-                if total == 0:
-                    logger.info("⏳ Waiting for messages to process...")
-                elif all(
-                    current_time - last_time < 5
-                    for last_time in last_message_time.values()
-                    if last_time > 0
-                ):
-                    logger.info("✅ All consumers actively processing")
-                elif any(
-                    last_time > 0 and 5 < current_time - last_time < 120
-                    for last_time in last_message_time.values()
-                ):
-                    slow_consumers = [
-                        dt
-                        for dt, lt in last_message_time.items()
-                        if lt > 0 and 5 < current_time - lt < 120
-                    ]
-                    logger.warning(
-                        f"⚠️ Slow consumers detected: {slow_consumers}",
-                        slow_consumers=slow_consumers,
-                    )
-
-                # Log consumer status
-                active_consumers = list(consumer_tags.keys())
-                canceled_consumers = [
-                    dt
-                    for dt in DATA_TYPES
-                    if dt not in consumer_tags and dt in completed_files
-                ]
-
-                if canceled_consumers:
-                    logger.info(
-                        f"🔌 Canceled consumers: {canceled_consumers}",
-                        canceled_consumers=canceled_consumers,
-                    )
-                if active_consumers:
-                    logger.info(
-                        f"✅ Active consumers: {active_consumers}",
-                        active_consumers=active_consumers,
-                    )
 
         progress_task = asyncio.create_task(progress_reporter())
 
@@ -1941,7 +1552,7 @@ async def main() -> None:
                 await graph.close()
                 logger.info("✅ Async Neo4j driver closed")
             except Exception as e:
-                logger.warning("⚠️ Error closing Neo4j driver: e", e=e)
+                logger.warning("⚠️ Error closing Neo4j driver", error=str(e))
 
         # Stop health server
         health_server.stop()
@@ -1953,6 +1564,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         logger.info("⚠️ Application interrupted")
     except Exception as e:
-        logger.error("❌ Application error: e", e=e)
+        logger.error("❌ Application error", error=str(e))
     finally:
         logger.info("✅ Graphinator service shutdown complete")

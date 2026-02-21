@@ -25,7 +25,7 @@ from common import (
 )
 from orjson import loads
 from psycopg import sql
-from psycopg.errors import DatabaseError, InterfaceError, OperationalError
+from psycopg.errors import InterfaceError, OperationalError
 from psycopg.types.json import Jsonb
 
 from tableinator.batch_processor import BatchConfig, PostgreSQLBatchProcessor
@@ -157,9 +157,7 @@ shutdown_requested = False
 def signal_handler(signum: int, _frame: Any) -> None:
     """Handle shutdown signals gracefully."""
     global shutdown_requested
-    logger.info(
-        "🛑 Received signal signum, initiating graceful shutdown...", signum=signum
-    )
+    logger.info("🛑 Received signal, initiating graceful shutdown...", signum=signum)
     shutdown_requested = True
 
 
@@ -169,19 +167,6 @@ def get_connection() -> Any:
         raise RuntimeError("Connection pool not initialized")
 
     return connection_pool.connection()
-
-
-def safe_execute_query(cursor: Any, query: Any, parameters: tuple[Any, ...]) -> bool:
-    """Execute a PostgreSQL query with error handling."""
-    try:
-        cursor.execute(query, parameters)
-        return True
-    except DatabaseError as e:
-        logger.error("❌ Database error executing query", error=str(e))
-        return False
-    except Exception as e:
-        logger.error("❌ Unexpected error executing query", error=str(e))
-        return False
 
 
 async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
@@ -629,6 +614,146 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             logger.warning("⚠️ Failed to nack message", error=str(nack_error))
 
 
+async def progress_reporter() -> None:
+    global idle_mode
+
+    report_count = 0
+    startup_time = time.time()
+    last_idle_log = 0.0
+
+    while not shutdown_requested:
+        # More frequent reports initially, then every 30 seconds
+        if report_count < 3:
+            await asyncio.sleep(10)  # First 3 reports every 10 seconds
+        else:
+            await asyncio.sleep(30)  # Then every 30 seconds
+        report_count += 1
+
+        # Skip all logging if all files are complete
+        if len(completed_files) == len(DATA_TYPES):
+            continue
+
+        total = sum(message_counts.values())
+        current_time = time.time()
+
+        # Idle mode detection: no messages received after STARTUP_IDLE_TIMEOUT
+        if (
+            not idle_mode
+            and total == 0
+            and (current_time - startup_time) >= STARTUP_IDLE_TIMEOUT
+        ):
+            idle_mode = True
+            last_idle_log = current_time
+
+            # Cancel all active consumers and close connection
+            for dt in list(consumer_tags.keys()):
+                if dt in queues:
+                    try:
+                        await queues[dt].cancel(consumer_tags[dt], nowait=True)
+                    except Exception as e:
+                        logger.warning(
+                            "⚠️ Error canceling consumer during idle transition",
+                            data_type=dt,
+                            error=str(e),
+                        )
+                del consumer_tags[dt]
+
+            await close_rabbitmq_connection()
+
+            logger.info(
+                f"😴 No messages received after {STARTUP_IDLE_TIMEOUT}s, entering idle mode. "
+                f"Will check queues every {QUEUE_CHECK_INTERVAL}s",
+                startup_idle_timeout=STARTUP_IDLE_TIMEOUT,
+                queue_check_interval=QUEUE_CHECK_INTERVAL,
+            )
+            continue
+
+        # While in idle mode, only log briefly every IDLE_LOG_INTERVAL
+        if idle_mode:
+            if total > 0:
+                # Messages started flowing, exit idle mode
+                idle_mode = False
+                logger.info("🔄 Messages detected, resuming normal operation")
+            elif (current_time - last_idle_log) >= IDLE_LOG_INTERVAL:
+                last_idle_log = current_time
+                logger.info(
+                    "😴 Idle mode - no messages received. "
+                    f"Next queue check in ≤{QUEUE_CHECK_INTERVAL}s",
+                    queue_check_interval=QUEUE_CHECK_INTERVAL,
+                )
+            continue
+
+        # Check for stalled consumers (skip completed files)
+        stalled_consumers = []
+        for data_type, last_time in last_message_time.items():
+            if (
+                data_type not in completed_files
+                and last_time > 0
+                and (current_time - last_time) > 120
+            ):  # No messages for 2 minutes
+                stalled_consumers.append(data_type)
+
+        if stalled_consumers:
+            logger.error(
+                f"⚠️ Stalled consumers detected: {stalled_consumers}. "
+                f"No messages processed for >2 minutes."
+            )
+
+        # Always show progress, even if no messages processed yet
+        # Build progress string with completion emojis
+        progress_parts = []
+        for data_type in ["artists", "labels", "masters", "releases"]:
+            emoji = "🎉 " if data_type in completed_files else ""
+            progress_parts.append(
+                f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}"
+            )
+
+        logger.info(
+            f"📊 PostgreSQL Progress: {total} total messages processed "
+            f"({', '.join(progress_parts)})"
+        )
+
+        # Log current processing state
+        if total == 0:
+            logger.info("⏳ Waiting for messages to process...")
+        elif all(
+            current_time - last_time < 5
+            for last_time in last_message_time.values()
+            if last_time > 0
+        ):
+            logger.info("✅ All consumers actively processing")
+        elif any(
+            last_time > 0 and 5 < current_time - last_time < 120
+            for last_time in last_message_time.values()
+        ):
+            slow_consumers = [
+                dt
+                for dt, lt in last_message_time.items()
+                if lt > 0 and 5 < current_time - lt < 120
+            ]
+            logger.warning(
+                f"⚠️ Slow consumers detected: {slow_consumers}",
+                slow_consumers=slow_consumers,
+            )
+
+        # Log consumer status
+        active_consumers = list(consumer_tags.keys())
+        canceled_consumers = [
+            dt for dt in DATA_TYPES if dt not in consumer_tags and dt in completed_files
+        ]
+
+        if canceled_consumers:
+            logger.info(
+                f"🔌 Canceled consumers: {canceled_consumers}",
+                canceled_consumers=canceled_consumers,
+            )
+        if active_consumers:
+            logger.info(
+                f"✅ Active consumers: {active_consumers}",
+                active_consumers=active_consumers,
+            )
+
+
 async def main() -> None:
     global \
         connection_pool, \
@@ -952,161 +1077,15 @@ async def main() -> None:
             await queue.bind(exchange, routing_key=data_type)
             queues[data_type] = queue
 
-        # Map queues to their respective message handlers (all use same handler)
-        artists_queue = queues["artists"]
-        labels_queue = queues["labels"]
-        masters_queue = queues["masters"]
-        releases_queue = queues["releases"]
-
-        # Start consumers and store their tags
-        consumer_tags["artists"] = await artists_queue.consume(on_data_message)
-        consumer_tags["labels"] = await labels_queue.consume(on_data_message)
-        consumer_tags["masters"] = await masters_queue.consume(on_data_message)
-        consumer_tags["releases"] = await releases_queue.consume(on_data_message)
+        # Start consumers for all data types
+        for data_type in DATA_TYPES:
+            consumer_tags[data_type] = await queues[data_type].consume(on_data_message)
 
         logger.info(
             f"🚀 Tableinator started! Connected to AMQP broker (exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE}). "
             f"Consuming from {len(DATA_TYPES)} queues with connection pool (max 20 connections). "
             "Ready to process messages into PostgreSQL. Press CTRL+C to exit"
         )
-
-        # Start periodic progress reporting and consumer health monitoring
-        async def progress_reporter() -> None:
-            global idle_mode
-
-            report_count = 0
-            startup_time = time.time()
-            last_idle_log = 0.0
-
-            while not shutdown_requested:
-                # More frequent reports initially, then every 30 seconds
-                if report_count < 3:
-                    await asyncio.sleep(10)  # First 3 reports every 10 seconds
-                else:
-                    await asyncio.sleep(30)  # Then every 30 seconds
-                report_count += 1
-
-                # Skip all logging if all files are complete
-                if len(completed_files) == len(DATA_TYPES):
-                    continue
-
-                total = sum(message_counts.values())
-                current_time = time.time()
-
-                # Idle mode detection: no messages received after STARTUP_IDLE_TIMEOUT
-                if not idle_mode and total == 0 and (current_time - startup_time) >= STARTUP_IDLE_TIMEOUT:
-                    idle_mode = True
-                    last_idle_log = current_time
-
-                    # Cancel all active consumers and close connection
-                    for dt in list(consumer_tags.keys()):
-                        if dt in queues:
-                            try:
-                                await queues[dt].cancel(consumer_tags[dt], nowait=True)
-                            except Exception as e:
-                                logger.warning(
-                                    "⚠️ Error canceling consumer during idle transition",
-                                    data_type=dt,
-                                    error=str(e),
-                                )
-                        del consumer_tags[dt]
-
-                    await close_rabbitmq_connection()
-
-                    logger.info(
-                        f"😴 No messages received after {STARTUP_IDLE_TIMEOUT}s, entering idle mode. "
-                        f"Will check queues every {QUEUE_CHECK_INTERVAL}s",
-                        startup_idle_timeout=STARTUP_IDLE_TIMEOUT,
-                        queue_check_interval=QUEUE_CHECK_INTERVAL,
-                    )
-                    continue
-
-                # While in idle mode, only log briefly every IDLE_LOG_INTERVAL
-                if idle_mode:
-                    if total > 0:
-                        # Messages started flowing, exit idle mode
-                        idle_mode = False
-                        logger.info("🔄 Messages detected, resuming normal operation")
-                    elif (current_time - last_idle_log) >= IDLE_LOG_INTERVAL:
-                        last_idle_log = current_time
-                        logger.info(
-                            "😴 Idle mode - no messages received. "
-                            f"Next queue check in ≤{QUEUE_CHECK_INTERVAL}s",
-                            queue_check_interval=QUEUE_CHECK_INTERVAL,
-                        )
-                    continue
-
-                # Check for stalled consumers (skip completed files)
-                stalled_consumers = []
-                for data_type, last_time in last_message_time.items():
-                    if (
-                        data_type not in completed_files
-                        and last_time > 0
-                        and (current_time - last_time) > 120
-                    ):  # No messages for 2 minutes
-                        stalled_consumers.append(data_type)
-
-                if stalled_consumers:
-                    logger.error(
-                        f"⚠️ Stalled consumers detected: {stalled_consumers}. "
-                        f"No messages processed for >2 minutes."
-                    )
-
-                # Always show progress, even if no messages processed yet
-                # Build progress string with completion emojis
-                progress_parts = []
-                for data_type in ["artists", "labels", "masters", "releases"]:
-                    emoji = "🎉 " if data_type in completed_files else ""
-                    progress_parts.append(
-                        f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}"
-                    )
-
-                logger.info(
-                    f"📊 PostgreSQL Progress: {total} total messages processed "
-                    f"({', '.join(progress_parts)})"
-                )
-
-                # Log current processing state
-                if total == 0:
-                    logger.info("⏳ Waiting for messages to process...")
-                elif all(
-                    current_time - last_time < 5
-                    for last_time in last_message_time.values()
-                    if last_time > 0
-                ):
-                    logger.info("✅ All consumers actively processing")
-                elif any(
-                    last_time > 0 and 5 < current_time - last_time < 120
-                    for last_time in last_message_time.values()
-                ):
-                    slow_consumers = [
-                        dt
-                        for dt, lt in last_message_time.items()
-                        if lt > 0 and 5 < current_time - lt < 120
-                    ]
-                    logger.warning(
-                        f"⚠️ Slow consumers detected: {slow_consumers}",
-                        slow_consumers=slow_consumers,
-                    )
-
-                # Log consumer status
-                active_consumers = list(consumer_tags.keys())
-                canceled_consumers = [
-                    dt
-                    for dt in DATA_TYPES
-                    if dt not in consumer_tags and dt in completed_files
-                ]
-
-                if canceled_consumers:
-                    logger.info(
-                        f"🔌 Canceled consumers: {canceled_consumers}",
-                        canceled_consumers=canceled_consumers,
-                    )
-                if active_consumers:
-                    logger.info(
-                        f"✅ Active consumers: {active_consumers}",
-                        active_consumers=active_consumers,
-                    )
 
         progress_task = asyncio.create_task(progress_reporter())
 

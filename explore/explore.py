@@ -195,36 +195,33 @@ async def explore(
 
 def _build_categories(entity_type: str, result: dict[str, Any]) -> list[dict[str, Any]]:
     """Build artificial category nodes from explore result."""
-    categories = []
-
     if entity_type == "artist":
-        categories = [
+        return [
             {"id": "cat-releases", "name": "Releases", "category": "releases", "count": result.get("release_count", 0)},
             {"id": "cat-labels", "name": "Labels", "category": "labels", "count": result.get("label_count", 0)},
             {"id": "cat-aliases", "name": "Aliases & Members", "category": "aliases", "count": result.get("alias_count", 0)},
         ]
-    elif entity_type == "genre":
-        categories = [
+    if entity_type == "genre":
+        return [
             {"id": "cat-releases", "name": "Releases", "category": "releases", "count": result.get("release_count", 0)},
             {"id": "cat-artists", "name": "Artists", "category": "artists", "count": result.get("artist_count", 0)},
             {"id": "cat-labels", "name": "Labels", "category": "labels", "count": result.get("label_count", 0)},
             {"id": "cat-styles", "name": "Styles", "category": "styles", "count": result.get("style_count", 0)},
         ]
-    elif entity_type == "label":
-        categories = [
+    if entity_type == "label":
+        return [
             {"id": "cat-releases", "name": "Releases", "category": "releases", "count": result.get("release_count", 0)},
             {"id": "cat-artists", "name": "Artists", "category": "artists", "count": result.get("artist_count", 0)},
             {"id": "cat-genres", "name": "Genres", "category": "genres", "count": result.get("genre_count", 0)},
         ]
-    elif entity_type == "style":
-        categories = [
+    if entity_type == "style":
+        return [
             {"id": "cat-releases", "name": "Releases", "category": "releases", "count": result.get("release_count", 0)},
             {"id": "cat-artists", "name": "Artists", "category": "artists", "count": result.get("artist_count", 0)},
             {"id": "cat-labels", "name": "Labels", "category": "labels", "count": result.get("label_count", 0)},
             {"id": "cat-genres", "name": "Genres", "category": "genres", "count": result.get("genre_count", 0)},
         ]
-
-    return categories
+    return []
 
 
 @app.get("/api/expand")

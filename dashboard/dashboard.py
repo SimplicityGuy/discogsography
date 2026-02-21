@@ -30,26 +30,32 @@ from common import (
 
 logger = logging.getLogger(__name__)
 
-# Metrics
-try:
-    WEBSOCKET_CONNECTIONS = Gauge("dashboard_websocket_connections", "Number of active WebSocket connections")
-except ValueError:
-    # Metric already registered (happens during reload)
-    from typing import cast
 
-    from prometheus_client import REGISTRY
+# Metrics — guarded against duplicate registration on hot reload
+def _get_or_create_gauge(name: str, description: str) -> Gauge:
+    try:
+        return Gauge(name, description)
+    except ValueError:
+        from typing import cast
 
-    WEBSOCKET_CONNECTIONS = cast("Gauge", REGISTRY._names_to_collectors["dashboard_websocket_connections"])
+        from prometheus_client import REGISTRY
 
-try:
-    API_REQUESTS = Counter("dashboard_api_requests", "Total API requests", ["endpoint", "method"])
-except ValueError:
-    # Metric already registered (happens during reload)
-    from typing import cast
+        return cast("Gauge", REGISTRY._names_to_collectors[name])
 
-    from prometheus_client import REGISTRY
 
-    API_REQUESTS = cast("Counter", REGISTRY._names_to_collectors["dashboard_api_requests_total"])
+def _get_or_create_counter(name: str, description: str, labels: list[str]) -> Counter:
+    try:
+        return Counter(name, description, labels)
+    except ValueError:
+        from typing import cast
+
+        from prometheus_client import REGISTRY
+
+        return cast("Counter", REGISTRY._names_to_collectors[name + "_total"])
+
+
+WEBSOCKET_CONNECTIONS = _get_or_create_gauge("dashboard_websocket_connections", "Number of active WebSocket connections")
+API_REQUESTS = _get_or_create_counter("dashboard_api_requests", "Total API requests", ["endpoint", "method"])
 
 
 class ServiceStatus(BaseModel):
@@ -313,9 +319,15 @@ class DashboardApp:
 
         # Check PostgreSQL
         try:
+            if ":" in self.config.postgres_address:
+                pg_host, pg_port_str = self.config.postgres_address.split(":", 1)
+                pg_port = int(pg_port_str)
+            else:
+                pg_host = self.config.postgres_address
+                pg_port = 5432
             async with await psycopg.AsyncConnection.connect(
-                host=self.config.postgres_address.split(":")[0],
-                port=int(self.config.postgres_address.split(":")[1]),
+                host=pg_host,
+                port=pg_port,
                 dbname=self.config.postgres_database,
                 user=self.config.postgres_username,
                 password=self.config.postgres_password,
@@ -535,7 +547,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
     if dashboard:
         dashboard.websocket_connections.add(websocket)
-    WEBSOCKET_CONNECTIONS.inc()
+        WEBSOCKET_CONNECTIONS.set(len(dashboard.websocket_connections))
 
     try:
         # Send initial metrics
@@ -555,13 +567,13 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
     except WebSocketDisconnect:
         if dashboard:
-            dashboard.websocket_connections.remove(websocket)
-        WEBSOCKET_CONNECTIONS.dec()
+            dashboard.websocket_connections.discard(websocket)
+            WEBSOCKET_CONNECTIONS.set(len(dashboard.websocket_connections))
     except Exception as e:
         logger.error(f"❌ WebSocket error: {e}")
-        if dashboard and websocket in dashboard.websocket_connections:
-            dashboard.websocket_connections.remove(websocket)
-            WEBSOCKET_CONNECTIONS.dec()
+        if dashboard:
+            dashboard.websocket_connections.discard(websocket)
+            WEBSOCKET_CONNECTIONS.set(len(dashboard.websocket_connections))
 
 
 # Mount static files for the UI
