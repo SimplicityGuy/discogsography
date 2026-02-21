@@ -39,11 +39,6 @@ flags:
     paths:
       - "extractor/**/*.rs"
     carryforward: true
-  e2e:
-    paths:
-      - "dashboard/**/*.py"
-      - "common/**/*.py"
-    carryforward: true
   e2e-chromium:
     paths:
       - "dashboard/**/*.py"
@@ -59,17 +54,12 @@ flags:
       - "dashboard/**/*.py"
       - "common/**/*.py"
     carryforward: true
-  e2e-desktop:
+  e2e-iphone-15:
     paths:
       - "dashboard/**/*.py"
       - "common/**/*.py"
     carryforward: true
-  e2e-iPhone 15:
-    paths:
-      - "dashboard/**/*.py"
-      - "common/**/*.py"
-    carryforward: true
-  e2e-iPad Pro 11:
+  e2e-ipad-pro-11:
     paths:
       - "dashboard/**/*.py"
       - "common/**/*.py"

@@ -61,26 +61,31 @@ jobs:
           - os: ubuntu-latest
             browser: chromium
             browser-install: chromium
+            flag: e2e-chromium
 
           - os: ubuntu-latest
             browser: firefox
             browser-install: firefox
+            flag: e2e-firefox
 
           - os: macos-latest
             browser: webkit
             browser-install: webkit
+            flag: e2e-webkit
 
           # Mobile Safari on iPhone
           - os: macos-latest
             browser: webkit
             browser-install: webkit
             device: "iPhone 15"
+            flag: e2e-iphone-15
 
           # Mobile Safari on iPad
           - os: macos-latest
             browser: webkit
             browser-install: webkit
             device: "iPad Pro 11"
+            flag: e2e-ipad-pro-11
 
     steps:
       - name: 🔀 Checkout repository
@@ -232,7 +237,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
           files: ./coverage.xml
-          flags: e2e,e2e-${{ matrix.browser }},${{ matrix.device && format('e2e-{0}', matrix.device) || 'e2e-desktop' }}
+          flags: ${{ matrix.flag }}
           name: e2e-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}
           fail_ci_if_error: false
           disable_search: true
