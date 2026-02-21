@@ -27,6 +27,17 @@ impl ElementContext {
         Self { attributes: Map::new(), children: Map::new(), text_content: String::new() }
     }
 
+    /// Create a new element context, parsing attributes from an XML element
+    fn with_attributes(e: &quick_xml::events::BytesStart<'_>) -> Self {
+        let mut ctx = Self::new();
+        for attr in e.attributes().flatten() {
+            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
+            let value = String::from_utf8_lossy(&attr.value).to_string();
+            ctx.attributes.insert(key, Value::String(value));
+        }
+        ctx
+    }
+
     /// Convert this element to a JSON value, combining attributes, text, and children
     fn into_value(self) -> Value {
         let mut result = Map::new();
@@ -131,17 +142,7 @@ impl XmlParser {
                     }
 
                     if in_target_element {
-                        // Create new element context
-                        let mut context = ElementContext::new();
-
-                        // Parse all attributes
-                        for attr in e.attributes().flatten() {
-                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
-                            let value = String::from_utf8_lossy(&attr.value).to_string();
-                            context.attributes.insert(key, Value::String(value));
-                        }
-
-                        element_stack.push(context);
+                        element_stack.push(ElementContext::with_attributes(&e));
                     }
                 }
 
@@ -154,15 +155,8 @@ impl XmlParser {
                         // Self-closing target element (unlikely but handle it)
                         element_stack.clear();
 
-                        let mut context = ElementContext::new();
-                        for attr in e.attributes().flatten() {
-                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
-                            let value = String::from_utf8_lossy(&attr.value).to_string();
-                            context.attributes.insert(key, Value::String(value));
-                        }
-
                         // Send immediately since it's self-closing
-                        let record = context.into_value();
+                        let record = ElementContext::with_attributes(&e).into_value();
                         if let Value::Object(ref obj) = record {
                             let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
                             let sha256 = calculate_record_hash(&record);
@@ -178,14 +172,7 @@ impl XmlParser {
                         in_target_element = false;
                     } else if in_target_element {
                         // Self-closing child element
-                        let mut context = ElementContext::new();
-                        for attr in e.attributes().flatten() {
-                            let key = String::from_utf8_lossy(attr.key.as_ref()).to_string();
-                            let value = String::from_utf8_lossy(&attr.value).to_string();
-                            context.attributes.insert(key, Value::String(value));
-                        }
-
-                        let child_value = context.into_value();
+                        let child_value = ElementContext::with_attributes(&e).into_value();
 
                         // Add to parent if we have one
                         if let Some(parent) = element_stack.last_mut() {

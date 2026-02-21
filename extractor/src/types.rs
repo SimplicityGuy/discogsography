@@ -1,6 +1,5 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::fmt;
 use std::str::FromStr;
 
@@ -116,29 +115,6 @@ pub struct FileCompleteMessage {
     pub timestamp: DateTime<Utc>,
     pub total_processed: u64,
     pub file: String,
-}
-
-/// Processing state for tracking which files have been processed
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ProcessingState {
-    pub files: HashMap<String, bool>,
-}
-
-impl ProcessingState {
-    #[allow(dead_code)]
-    pub fn is_processed(&self, file: &str) -> bool {
-        self.files.get(file).copied().unwrap_or(false)
-    }
-
-    #[allow(dead_code)]
-    pub fn mark_processed(&mut self, file: &str) {
-        self.files.insert(file.to_string(), true);
-    }
-
-    #[allow(dead_code)]
-    pub fn clear(&mut self) {
-        self.files.clear();
-    }
 }
 
 /// File information from S3
@@ -260,38 +236,6 @@ mod tests {
         assert_eq!(progress.masters, 0);
         assert_eq!(progress.releases, 0);
         assert_eq!(progress.total(), 0);
-    }
-
-    #[test]
-    fn test_processing_state() {
-        let mut state = ProcessingState::default();
-        assert!(!state.is_processed("file1.xml"));
-
-        state.mark_processed("file1.xml");
-        assert!(state.is_processed("file1.xml"));
-
-        state.clear();
-        assert!(!state.is_processed("file1.xml"));
-    }
-
-    #[test]
-    fn test_processing_state_multiple_files() {
-        let mut state = ProcessingState::default();
-        state.mark_processed("file1.xml");
-        state.mark_processed("file2.xml");
-        state.mark_processed("file3.xml");
-
-        assert!(state.is_processed("file1.xml"));
-        assert!(state.is_processed("file2.xml"));
-        assert!(state.is_processed("file3.xml"));
-        assert!(!state.is_processed("file4.xml"));
-        assert_eq!(state.files.len(), 3);
-    }
-
-    #[test]
-    fn test_processing_state_default() {
-        let state = ProcessingState::default();
-        assert!(state.files.is_empty());
     }
 
     #[test]

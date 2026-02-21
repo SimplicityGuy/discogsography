@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-// use chrono::{DateTime, Utc}; // Not directly used in this module
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
@@ -7,7 +6,6 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::{RwLock, mpsc};
 use tokio::time::{Duration, sleep};
-// use tokio::select; // Not needed with current implementation
 use tracing::{debug, error, info, warn};
 
 use crate::config::ExtractorConfig;
@@ -20,10 +18,8 @@ use crate::types::{DataMessage, DataType, ExtractionProgress};
 /// State shared across the extractor
 #[derive(Debug, Default)]
 pub struct ExtractorState {
-    pub current_task: Option<String>,
-    pub current_progress: f64,
     pub extraction_progress: ExtractionProgress,
-    pub last_extraction_time: HashMap<DataType, f64>,
+    pub last_extraction_time: HashMap<DataType, Instant>,
     pub completed_files: HashSet<String>,
     pub active_connections: HashMap<DataType, String>,
     pub error_count: u64,
@@ -142,7 +138,6 @@ pub async fn process_discogs_data(
         let file = file.clone(); // Clone the filename string
         let config = config.clone();
         let state = state.clone();
-        let shutdown = shutdown.clone();
         let semaphore = semaphore.clone();
         let marker_path = marker_path.clone();
         let state_marker_arc = state_marker_arc.clone();
@@ -150,11 +145,7 @@ pub async fn process_discogs_data(
         let task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
 
-            // Check for shutdown - skip if notified
-            // For now, we'll skip the shutdown check here since tokio::sync::Notify
-            // doesn't have a non-consuming check method
-
-            process_single_file(&file, config, state, shutdown, state_marker_arc.clone(), marker_path.clone()).await?;
+            process_single_file(&file, config, state, state_marker_arc.clone(), marker_path.clone()).await?;
 
             info!("✅ Completed processing: {}", file);
             Ok(())
@@ -212,7 +203,6 @@ async fn process_single_file(
     file_name: &str,
     config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
-    _shutdown: Arc<tokio::sync::Notify>,
     state_marker: Arc<tokio::sync::Mutex<StateMarker>>,
     marker_path: PathBuf,
 ) -> Result<()> {
@@ -334,7 +324,7 @@ pub async fn message_batcher(mut receiver: mpsc::Receiver<DataMessage>, sender: 
                 {
                     let mut s = state.write().await;
                     s.extraction_progress.increment(data_type);
-                    s.last_extraction_time.insert(data_type, Instant::now().elapsed().as_secs_f64());
+                    s.last_extraction_time.insert(data_type, Instant::now());
                 }
 
                 // Save state marker periodically
@@ -424,11 +414,11 @@ async fn progress_reporter(state: Arc<RwLock<ExtractorState>>, shutdown: Arc<tok
         let total = s.extraction_progress.total();
 
         // Check for stalled extractors
-        let current_time = Instant::now().elapsed().as_secs_f64();
         let mut stalled = Vec::new();
 
         for (data_type, last_time) in &s.last_extraction_time {
-            if !s.completed_files.contains(&format!("discogs_*_{}.xml.gz", data_type)) && *last_time > 0.0 && (current_time - last_time) > 120.0 {
+            let is_completed = s.completed_files.iter().any(|f| f.contains(data_type.as_str()));
+            if !is_completed && last_time.elapsed() > Duration::from_secs(120) {
                 stalled.push(data_type.to_string());
             }
         }
@@ -617,8 +607,6 @@ mod tests {
     fn test_extractor_state_default() {
         let state = ExtractorState::default();
 
-        assert!(state.current_task.is_none());
-        assert_eq!(state.current_progress, 0.0);
         assert_eq!(state.extraction_progress.total(), 0);
         assert!(state.last_extraction_time.is_empty());
         assert!(state.completed_files.is_empty());
@@ -829,12 +817,12 @@ mod tests {
 
         {
             let mut s = state.write().await;
-            s.last_extraction_time.insert(DataType::Artists, 123.45);
-            s.last_extraction_time.insert(DataType::Labels, 678.90);
+            s.last_extraction_time.insert(DataType::Artists, Instant::now());
+            s.last_extraction_time.insert(DataType::Labels, Instant::now());
         }
 
         let s = state.read().await;
-        assert_eq!(s.last_extraction_time.get(&DataType::Artists), Some(&123.45));
-        assert_eq!(s.last_extraction_time.get(&DataType::Labels), Some(&678.90));
+        assert!(s.last_extraction_time.contains_key(&DataType::Artists));
+        assert!(s.last_extraction_time.contains_key(&DataType::Labels));
     }
 }

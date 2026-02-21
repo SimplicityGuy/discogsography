@@ -1,13 +1,11 @@
 use anyhow::{Context, Result};
-use config::{Config, File};
 use serde::{Deserialize, Serialize};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractorConfig {
     pub amqp_connection: String,
     pub discogs_root: PathBuf,
-    pub max_temp_size: u64,
     pub periodic_check_days: u64,
     pub health_port: u16,
     pub max_workers: usize,
@@ -15,8 +13,6 @@ pub struct ExtractorConfig {
     pub queue_size: usize,
     pub progress_log_interval: usize,
     pub state_save_interval: usize,
-    pub s3_bucket: String,
-    pub s3_region: String,
 }
 
 impl Default for ExtractorConfig {
@@ -24,7 +20,6 @@ impl Default for ExtractorConfig {
         Self {
             amqp_connection: "amqp://localhost:5672".to_string(),
             discogs_root: PathBuf::from("/discogs-data"),
-            max_temp_size: 1_000_000_000, // 1GB
             periodic_check_days: 15,
             health_port: 8000,
             max_workers: num_cpus::get(),
@@ -32,25 +27,11 @@ impl Default for ExtractorConfig {
             queue_size: 5000,
             progress_log_interval: 1000,
             state_save_interval: 5000,
-            s3_bucket: "discogs-data-dumps".to_string(),
-            s3_region: "us-west-2".to_string(),
         }
     }
 }
 
 impl ExtractorConfig {
-    /// Load configuration from file
-    #[allow(dead_code)]
-    pub fn from_file(path: &Path) -> Result<Self> {
-        let config = Config::builder()
-            .add_source(File::from(path).required(false))
-            .add_source(config::Environment::with_prefix("EXTRACTOR"))
-            .build()
-            .context("Failed to build configuration")?;
-
-        config.try_deserialize().context("Failed to deserialize configuration")
-    }
-
     /// Load configuration from environment variables (drop-in replacement for extractor)
     pub fn from_env() -> Result<Self> {
         // Use same environment variables as Python extractor for drop-in compatibility
@@ -60,35 +41,14 @@ impl ExtractorConfig {
 
         let periodic_check_days = std::env::var("PERIODIC_CHECK_DAYS").unwrap_or_else(|_| "15".to_string()).parse::<u64>().unwrap_or(15);
 
-        // Internal settings - use defaults for drop-in compatibility
         let max_workers = std::env::var("MAX_WORKERS")
             .unwrap_or_else(|_| num_cpus::get().to_string())
             .parse::<usize>()
             .unwrap_or_else(|_| num_cpus::get());
 
         let batch_size = std::env::var("BATCH_SIZE").unwrap_or_else(|_| "100".to_string()).parse::<usize>().unwrap_or(100);
-        let queue_size = 5000; // Fixed for compatibility
-        let progress_log_interval = 1000; // Fixed for compatibility
-        let state_save_interval = 5000; // Fixed for compatibility - matches pyextractor
-        let health_port = 8000; // Fixed port for drop-in replacement
 
-        let s3_bucket = "discogs-data-dumps".to_string();
-        let s3_region = "us-west-2".to_string();
-
-        Ok(Self {
-            amqp_connection,
-            discogs_root,
-            max_temp_size: 1_000_000_000,
-            periodic_check_days,
-            health_port,
-            max_workers,
-            batch_size,
-            queue_size,
-            progress_log_interval,
-            state_save_interval,
-            s3_bucket,
-            s3_region,
-        })
+        Ok(Self { amqp_connection, discogs_root, periodic_check_days, max_workers, batch_size, ..Default::default() })
     }
 }
 
@@ -107,11 +67,8 @@ mod tests {
         assert_eq!(config.progress_log_interval, 1000);
         assert_eq!(config.state_save_interval, 5000);
         assert_eq!(config.health_port, 8000);
-        assert_eq!(config.s3_bucket, "discogs-data-dumps");
-        assert_eq!(config.s3_region, "us-west-2");
         assert_eq!(config.amqp_connection, "amqp://localhost:5672");
         assert_eq!(config.discogs_root, PathBuf::from("/discogs-data"));
-        assert_eq!(config.max_temp_size, 1_000_000_000);
     }
 
     #[test]
@@ -246,8 +203,6 @@ mod tests {
         assert_eq!(config.progress_log_interval, 1000);
         assert_eq!(config.state_save_interval, 5000);
         assert_eq!(config.health_port, 8000);
-        assert_eq!(config.s3_bucket, "discogs-data-dumps");
-        assert_eq!(config.s3_region, "us-west-2");
 
         unsafe {
             env::remove_var("AMQP_CONNECTION");

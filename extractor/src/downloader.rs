@@ -43,6 +43,13 @@ impl Downloader {
         self
     }
 
+    /// Save state marker to disk if present
+    async fn save_state_marker(&mut self) {
+        if let (Some(marker), Some(path)) = (&mut self.state_marker, &self.marker_path) {
+            marker.save(path).await.ok();
+        }
+    }
+
     pub async fn download_discogs_data(&mut self) -> Result<Vec<String>> {
         info!("📥 Starting download of Discogs data dumps...");
 
@@ -66,10 +73,8 @@ impl Downloader {
         // Start download phase tracking if state marker is available
         if let Some(ref mut marker) = self.state_marker {
             marker.start_download(latest_files.len());
-            if let Some(ref marker_path) = self.marker_path {
-                marker.save(marker_path).await.ok();
-            }
         }
+        self.save_state_marker().await;
 
         let mut downloaded_files = Vec::new();
 
@@ -80,10 +85,8 @@ impl Downloader {
                 // Start tracking file download
                 if let Some(ref mut marker) = self.state_marker {
                     marker.start_file_download(filename);
-                    if let Some(ref marker_path) = self.marker_path {
-                        marker.save(marker_path).await.ok();
-                    }
                 }
+                self.save_state_marker().await;
 
                 match self.download_file(file_info).await {
                     Ok(downloaded_size) => {
@@ -92,10 +95,8 @@ impl Downloader {
                         // Track file download in state marker with actual downloaded size
                         if let Some(ref mut marker) = self.state_marker {
                             marker.file_downloaded(filename, downloaded_size);
-                            if let Some(ref marker_path) = self.marker_path {
-                                marker.save(marker_path).await.ok();
-                            }
                         }
+                        self.save_state_marker().await;
 
                         downloaded_files.push(filename.to_string());
                     }
@@ -109,16 +110,10 @@ impl Downloader {
                 // Track existing file in state marker with actual file size
                 if let Some(ref mut marker) = self.state_marker {
                     let local_path = self.output_directory.join(filename);
-                    let file_size = if local_path.exists() {
-                        tokio::fs::metadata(&local_path).await.map(|m| m.len()).unwrap_or(0)
-                    } else {
-                        0
-                    };
+                    let file_size = tokio::fs::metadata(&local_path).await.map(|m| m.len()).unwrap_or(0);
                     marker.file_downloaded(filename, file_size);
-                    if let Some(ref marker_path) = self.marker_path {
-                        marker.save(marker_path).await.ok();
-                    }
                 }
+                self.save_state_marker().await;
 
                 downloaded_files.push(filename.to_string());
             }
@@ -127,10 +122,8 @@ impl Downloader {
         // Complete download phase tracking if state marker is available
         if let Some(ref mut marker) = self.state_marker {
             marker.complete_download();
-            if let Some(ref marker_path) = self.marker_path {
-                marker.save(marker_path).await.ok();
-            }
         }
+        self.save_state_marker().await;
 
         // Save updated metadata
         self.save_metadata()?;
@@ -288,13 +281,11 @@ impl Downloader {
         // Check metadata
         if let Some(local_info) = self.metadata.get(filename) {
             // Note: file_info.size is 0 from scraping, so we can't compare sizes
-            // Instead, just validate checksum if file exists
-            if local_path.exists() {
-                let checksum = calculate_file_checksum(&local_path).await?;
-                if checksum != local_info.checksum {
-                    warn!("⚠️ Checksum mismatch for {}", file_info.name);
-                    return Ok(true);
-                }
+            // File exists (checked above), validate checksum
+            let checksum = calculate_file_checksum(&local_path).await?;
+            if checksum != local_info.checksum {
+                warn!("⚠️ Checksum mismatch for {}", file_info.name);
+                return Ok(true);
             }
 
             // File exists with correct checksum

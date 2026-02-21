@@ -3,14 +3,13 @@
 use extractor::extractor::ExtractorState;
 use extractor::types::DataType;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::RwLock;
 
 #[tokio::test]
 async fn test_extractor_state_initialization() {
     let state = ExtractorState::default();
 
-    assert_eq!(state.current_task, None);
-    assert_eq!(state.current_progress, 0.0);
     assert_eq!(state.extraction_progress.artists, 0);
     assert_eq!(state.extraction_progress.labels, 0);
     assert_eq!(state.extraction_progress.masters, 0);
@@ -27,14 +26,10 @@ async fn test_extractor_state_updates() {
 
     {
         let mut s = state.write().await;
-        s.current_task = Some("Processing artists".to_string());
-        s.current_progress = 0.5;
         s.extraction_progress.artists = 100;
     }
 
     let s = state.read().await;
-    assert_eq!(s.current_task, Some("Processing artists".to_string()));
-    assert_eq!(s.current_progress, 0.5);
     assert_eq!(s.extraction_progress.artists, 100);
 }
 
@@ -78,13 +73,14 @@ async fn test_extractor_state_last_extraction_time() {
 
     {
         let mut s = state.write().await;
-        s.last_extraction_time.insert(DataType::Artists, 1.5);
-        s.last_extraction_time.insert(DataType::Labels, 2.3);
+        s.last_extraction_time.insert(DataType::Artists, Instant::now());
+        s.last_extraction_time.insert(DataType::Labels, Instant::now());
     }
 
     let s = state.read().await;
-    assert_eq!(s.last_extraction_time.get(&DataType::Artists), Some(&1.5));
-    assert_eq!(s.last_extraction_time.get(&DataType::Labels), Some(&2.3));
+    assert!(s.last_extraction_time.contains_key(&DataType::Artists));
+    assert!(s.last_extraction_time.contains_key(&DataType::Labels));
+    assert!(!s.last_extraction_time.contains_key(&DataType::Masters));
 }
 
 #[tokio::test]
@@ -125,13 +121,11 @@ async fn test_extractor_state_reset() {
     // Populate state
     {
         let mut s = state.write().await;
-        s.current_task = Some("Task".to_string());
-        s.current_progress = 0.5;
         s.extraction_progress.artists = 100;
         s.error_count = 5;
         s.completed_files.insert("file.xml".to_string());
         s.active_connections.insert(DataType::Artists, "processing.xml".to_string());
-        s.last_extraction_time.insert(DataType::Artists, 1.5);
+        s.last_extraction_time.insert(DataType::Artists, Instant::now());
     }
 
     // Reset by creating new default
@@ -142,8 +136,6 @@ async fn test_extractor_state_reset() {
 
     // Verify reset
     let s = state.read().await;
-    assert_eq!(s.current_task, None);
-    assert_eq!(s.current_progress, 0.0);
     assert_eq!(s.extraction_progress.total(), 0);
     assert_eq!(s.error_count, 0);
     assert!(s.completed_files.is_empty());

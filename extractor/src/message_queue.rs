@@ -116,15 +116,12 @@ impl MessageQueue {
     pub async fn setup_queues(&self, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
 
-        let graphinator_queue = format!("{}-{}", AMQP_QUEUE_PREFIX_GRAPHINATOR, data_type);
-        let tableinator_queue = format!("{}-{}", AMQP_QUEUE_PREFIX_TABLEINATOR, data_type);
-
         // Declare dead-letter exchange for poison messages
         let dlx_exchange = format!("{}.dlx", AMQP_EXCHANGE);
         channel
             .exchange_declare(
                 &dlx_exchange,
-                lapin::ExchangeKind::Topic,
+                AMQP_EXCHANGE_TYPE,
                 ExchangeDeclareOptions { durable: true, auto_delete: false, ..Default::default() },
                 FieldTable::default(),
             )
@@ -141,65 +138,48 @@ impl MessageQueue {
         let mut dlq_args = FieldTable::default();
         dlq_args.insert("x-queue-type".into(), lapin::types::AMQPValue::LongString("classic".into()));
 
-        // Declare and bind graphinator DLQ
-        let graphinator_dlq = format!("{}.dlq", graphinator_queue);
-        channel
-            .queue_declare(&graphinator_dlq, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, dlq_args.clone())
-            .await
-            .context("Failed to declare graphinator DLQ")?;
+        for prefix in [AMQP_QUEUE_PREFIX_GRAPHINATOR, AMQP_QUEUE_PREFIX_TABLEINATOR] {
+            let queue_name = format!("{}-{}", prefix, data_type);
+            let dlq_name = format!("{}.dlq", queue_name);
 
-        channel
-            .queue_bind(&graphinator_dlq, &dlx_exchange, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
-            .await
-            .context("Failed to bind graphinator DLQ")?;
+            // Declare and bind DLQ
+            channel
+                .queue_declare(&dlq_name, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, dlq_args.clone())
+                .await
+                .context(format!("Failed to declare {} DLQ", prefix))?;
 
-        // Declare and bind tableinator DLQ
-        let tableinator_dlq = format!("{}.dlq", tableinator_queue);
-        channel
-            .queue_declare(&tableinator_dlq, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, dlq_args.clone())
-            .await
-            .context("Failed to declare tableinator DLQ")?;
+            channel
+                .queue_bind(&dlq_name, &dlx_exchange, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
+                .await
+                .context(format!("Failed to bind {} DLQ", prefix))?;
 
-        channel
-            .queue_bind(&tableinator_dlq, &dlx_exchange, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
-            .await
-            .context("Failed to bind tableinator DLQ")?;
+            // Declare and bind main queue (quorum)
+            channel
+                .queue_declare(&queue_name, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, queue_args.clone())
+                .await
+                .context(format!("Failed to declare {} queue", prefix))?;
 
-        // Declare and bind graphinator queue (quorum)
-        channel
-            .queue_declare(&graphinator_queue, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, queue_args.clone())
-            .await
-            .context("Failed to declare graphinator queue")?;
-
-        channel
-            .queue_bind(&graphinator_queue, AMQP_EXCHANGE, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
-            .await
-            .context("Failed to bind graphinator queue")?;
-
-        // Declare and bind tableinator queue (quorum)
-        channel
-            .queue_declare(&tableinator_queue, QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, queue_args.clone())
-            .await
-            .context("Failed to declare tableinator queue")?;
-
-        channel
-            .queue_bind(&tableinator_queue, AMQP_EXCHANGE, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
-            .await
-            .context("Failed to bind tableinator queue")?;
+            channel
+                .queue_bind(&queue_name, AMQP_EXCHANGE, data_type.routing_key(), QueueBindOptions::default(), FieldTable::default())
+                .await
+                .context(format!("Failed to bind {} queue", prefix))?;
+        }
 
         debug!("✅ Set up AMQP queues for {} (exchange: {}, type: quorum with DLX)", data_type, AMQP_EXCHANGE);
 
         Ok(())
     }
 
+    fn message_properties() -> BasicProperties {
+        BasicProperties::default()
+            .with_content_type("application/json".into())
+            .with_content_encoding("application/json".into())
+            .with_delivery_mode(2) // Persistent
+    }
+
     pub async fn publish(&self, message: Message, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
         let payload = serde_json::to_vec(&message).context("Failed to serialize message")?;
-
-        let properties = BasicProperties::default()
-            .with_content_type("application/json".into())
-            .with_content_encoding("application/json".into())
-            .with_delivery_mode(2); // Persistent
 
         let confirm = channel
             .basic_publish(
@@ -207,7 +187,7 @@ impl MessageQueue {
                 data_type.routing_key(),
                 BasicPublishOptions { mandatory: true, ..Default::default() },
                 &payload,
-                properties,
+                Self::message_properties(),
             )
             .await
             .context("Failed to publish message")?
@@ -224,11 +204,6 @@ impl MessageQueue {
     pub async fn publish_batch(&self, messages: Vec<DataMessage>, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
 
-        let properties = BasicProperties::default()
-            .with_content_type("application/json".into())
-            .with_content_encoding("application/json".into())
-            .with_delivery_mode(2); // Persistent
-
         for message in messages {
             let payload = serde_json::to_vec(&Message::Data(message)).context("Failed to serialize message")?;
 
@@ -238,7 +213,7 @@ impl MessageQueue {
                     data_type.routing_key(),
                     BasicPublishOptions { mandatory: true, ..Default::default() },
                     &payload,
-                    properties.clone(),
+                    Self::message_properties(),
                 )
                 .await
                 .context("Failed to publish message")?

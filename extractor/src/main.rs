@@ -1,6 +1,5 @@
 use anyhow::Result;
 use clap::Parser;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::signal;
 use tokio::sync::RwLock;
@@ -22,10 +21,6 @@ use health::HealthServer;
 #[derive(Parser, Debug)]
 #[clap(author, version, about, long_about = None)]
 struct Args {
-    /// Path to the configuration file
-    #[clap(short, long, env = "RUST_EXTRACTOR_CONFIG", default_value = "config.toml")]
-    config: PathBuf,
-
     /// Force reprocess all files
     #[clap(short, long, env = "FORCE_REPROCESS")]
     force_reprocess: bool,
@@ -38,12 +33,7 @@ async fn main() -> Result<()> {
     // Initialize tracing with LOG_LEVEL environment variable
     // Supports: DEBUG, INFO, WARNING, ERROR, CRITICAL (maps to Rust's trace, debug, info, warn, error)
     let log_level = std::env::var("LOG_LEVEL").unwrap_or_else(|_| "INFO".to_string());
-
-    // Map Python log levels to Rust tracing levels
-    let rust_level = map_log_level(&log_level);
-
-    // Build tracing filter
-    let filter = build_tracing_filter(rust_level);
+    let filter = build_tracing_filter(&log_level);
 
     tracing_subscriber::fmt()
         .with_env_filter(filter)
@@ -134,20 +124,16 @@ fn setup_shutdown_handler() -> Arc<tokio::sync::Notify> {
     shutdown
 }
 
-/// Map Python-style log level to Rust tracing level
-fn map_log_level(level: &str) -> &'static str {
-    match level.to_uppercase().as_str() {
+/// Build tracing filter string from Python-style log level
+fn build_tracing_filter(log_level: &str) -> String {
+    let rust_level = match log_level.to_uppercase().as_str() {
         "DEBUG" => "debug",
         "INFO" => "info",
         "WARNING" | "WARN" => "warn",
         "ERROR" => "error",
         "CRITICAL" => "error",
         _ => "info",
-    }
-}
-
-/// Build tracing filter string
-fn build_tracing_filter(rust_level: &str) -> String {
+    };
     let lapin_level = if rust_level == "debug" { "info" } else { "warn" };
     format!("extractor={},lapin={}", rust_level, lapin_level)
 }
@@ -155,44 +141,6 @@ fn build_tracing_filter(rust_level: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_map_log_level_debug() {
-        assert_eq!(map_log_level("DEBUG"), "debug");
-        assert_eq!(map_log_level("debug"), "debug");
-    }
-
-    #[test]
-    fn test_map_log_level_info() {
-        assert_eq!(map_log_level("INFO"), "info");
-        assert_eq!(map_log_level("info"), "info");
-    }
-
-    #[test]
-    fn test_map_log_level_warning() {
-        assert_eq!(map_log_level("WARNING"), "warn");
-        assert_eq!(map_log_level("WARN"), "warn");
-        assert_eq!(map_log_level("warn"), "warn");
-    }
-
-    #[test]
-    fn test_map_log_level_error() {
-        assert_eq!(map_log_level("ERROR"), "error");
-        assert_eq!(map_log_level("error"), "error");
-    }
-
-    #[test]
-    fn test_map_log_level_critical() {
-        assert_eq!(map_log_level("CRITICAL"), "error");
-        assert_eq!(map_log_level("critical"), "error");
-    }
-
-    #[test]
-    fn test_map_log_level_invalid() {
-        assert_eq!(map_log_level("INVALID"), "info");
-        assert_eq!(map_log_level(""), "info");
-        assert_eq!(map_log_level("xyz"), "info");
-    }
 
     #[test]
     fn test_build_tracing_filter_debug() {
@@ -216,6 +164,16 @@ mod tests {
     fn test_build_tracing_filter_error() {
         let filter = build_tracing_filter("error");
         assert_eq!(filter, "extractor=error,lapin=warn");
+    }
+
+    #[test]
+    fn test_build_tracing_filter_python_levels() {
+        assert_eq!(build_tracing_filter("DEBUG"), "extractor=debug,lapin=info");
+        assert_eq!(build_tracing_filter("INFO"), "extractor=info,lapin=warn");
+        assert_eq!(build_tracing_filter("WARNING"), "extractor=warn,lapin=warn");
+        assert_eq!(build_tracing_filter("CRITICAL"), "extractor=error,lapin=warn");
+        assert_eq!(build_tracing_filter("INVALID"), "extractor=info,lapin=warn");
+        assert_eq!(build_tracing_filter(""), "extractor=info,lapin=warn");
     }
 
     #[tokio::test]

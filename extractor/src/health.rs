@@ -46,8 +46,6 @@ async fn health_handler(State(state): State<Arc<RwLock<ExtractorState>>>) -> (St
     let health = json!({
         "status": "healthy",
         "service": "rust-extractor",
-        "current_task": state.current_task.as_deref(),
-        "progress": state.current_progress,
         "extraction_progress": {
             "artists": state.extraction_progress.artists,
             "labels": state.extraction_progress.labels,
@@ -56,10 +54,10 @@ async fn health_handler(State(state): State<Arc<RwLock<ExtractorState>>>) -> (St
             "total": state.extraction_progress.total(),
         },
         "last_extraction_time": {
-            "artists": state.last_extraction_time.get(&crate::types::DataType::Artists).copied().unwrap_or(0.0),
-            "labels": state.last_extraction_time.get(&crate::types::DataType::Labels).copied().unwrap_or(0.0),
-            "masters": state.last_extraction_time.get(&crate::types::DataType::Masters).copied().unwrap_or(0.0),
-            "releases": state.last_extraction_time.get(&crate::types::DataType::Releases).copied().unwrap_or(0.0),
+            "artists": state.last_extraction_time.get(&crate::types::DataType::Artists).map(|t| t.elapsed().as_secs_f64()),
+            "labels": state.last_extraction_time.get(&crate::types::DataType::Labels).map(|t| t.elapsed().as_secs_f64()),
+            "masters": state.last_extraction_time.get(&crate::types::DataType::Masters).map(|t| t.elapsed().as_secs_f64()),
+            "releases": state.last_extraction_time.get(&crate::types::DataType::Releases).map(|t| t.elapsed().as_secs_f64()),
         },
         "timestamp": Utc::now().to_rfc3339(),
     });
@@ -140,9 +138,9 @@ mod tests {
         let value = json.0;
         assert_eq!(value["status"], "healthy");
         assert_eq!(value["service"], "rust-extractor");
-        assert!(value["current_task"].is_null());
-        assert_eq!(value["progress"], 0.0);
         assert_eq!(value["extraction_progress"]["total"], 0);
+        // With no extraction activity, last_extraction_time values should be null
+        assert!(value["last_extraction_time"]["artists"].is_null());
     }
 
     #[tokio::test]
@@ -150,11 +148,9 @@ mod tests {
         let state = Arc::new(RwLock::new(ExtractorState::default()));
         {
             let mut s = state.write().await;
-            s.current_task = Some("Processing artists".to_string());
-            s.current_progress = 0.5;
             s.extraction_progress.artists = 100;
             s.extraction_progress.labels = 50;
-            s.last_extraction_time.insert(DataType::Artists, 1.5);
+            s.last_extraction_time.insert(DataType::Artists, std::time::Instant::now());
         }
 
         let (status, json) = health_handler(State(state)).await;
@@ -163,12 +159,12 @@ mod tests {
 
         let value = json.0;
         assert_eq!(value["status"], "healthy");
-        assert_eq!(value["current_task"], "Processing artists");
-        assert_eq!(value["progress"], 0.5);
         assert_eq!(value["extraction_progress"]["artists"], 100);
         assert_eq!(value["extraction_progress"]["labels"], 50);
         assert_eq!(value["extraction_progress"]["total"], 150);
-        assert_eq!(value["last_extraction_time"]["artists"], 1.5);
+        // Should be a small number of seconds elapsed since Instant::now()
+        assert!(value["last_extraction_time"]["artists"].is_number());
+        assert!(value["last_extraction_time"]["labels"].is_null());
     }
 
     #[tokio::test]
@@ -237,8 +233,6 @@ mod tests {
         // Verify JSON structure
         assert!(value.get("status").is_some());
         assert!(value.get("service").is_some());
-        assert!(value.get("current_task").is_some());
-        assert!(value.get("progress").is_some());
         assert!(value.get("extraction_progress").is_some());
         assert!(value.get("last_extraction_time").is_some());
         assert!(value.get("timestamp").is_some());

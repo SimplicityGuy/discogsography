@@ -297,14 +297,6 @@ impl StateMarker {
         info!("✅ Download phase completed: {} files, {} bytes", self.download_phase.files_downloaded, self.download_phase.bytes_downloaded);
     }
 
-    /// Mark download phase as failed
-    #[allow(dead_code)]
-    pub fn fail_download(&mut self, error: String) {
-        self.download_phase.status = PhaseStatus::Failed;
-        self.download_phase.errors.push(error);
-        self.summary.overall_status = PhaseStatus::Failed;
-    }
-
     /// Mark processing phase as started
     pub fn start_processing(&mut self, files_total: usize) {
         self.processing_phase.status = PhaseStatus::InProgress;
@@ -338,21 +330,13 @@ impl StateMarker {
             status.batches_sent = batches;
         }
 
-        // Update processing phase totals by summing all file progress
-        self.processing_phase.records_extracted = self.processing_phase.progress_by_file.values().map(|s| s.records_extracted).sum();
-
-        // Update publishing phase totals by summing from all files
-        self.publishing_phase.messages_published = self.processing_phase.progress_by_file.values().map(|s| s.messages_published).sum();
-        self.publishing_phase.batches_sent = self.processing_phase.progress_by_file.values().map(|s| s.batches_sent).sum();
+        self.sync_phase_totals();
 
         // Update publishing phase status if any messages have been published
         if self.publishing_phase.messages_published > 0 {
             self.publishing_phase.status = PhaseStatus::InProgress;
             self.publishing_phase.last_amqp_heartbeat = Some(Utc::now());
         }
-
-        // files_processed is only incremented when files complete, not during progress updates
-        // This is handled by complete_file_processing()
     }
 
     /// Mark a file processing as completed
@@ -365,19 +349,19 @@ impl StateMarker {
         }
 
         self.processing_phase.files_processed += 1;
-
-        // Update total records by summing from all files (same as update_file_progress)
-        // This ensures we don't double-count since we're already tracking in progress_by_file
-        self.processing_phase.records_extracted = self.processing_phase.progress_by_file.values().map(|s| s.records_extracted).sum();
-
-        // Update publishing phase totals by summing from all files
-        self.publishing_phase.messages_published = self.processing_phase.progress_by_file.values().map(|s| s.messages_published).sum();
-        self.publishing_phase.batches_sent = self.processing_phase.progress_by_file.values().map(|s| s.batches_sent).sum();
+        self.sync_phase_totals();
 
         // Update summary
         if let Some(data_type) = extract_data_type(filename) {
             self.summary.files_by_type.insert(data_type, PhaseStatus::Completed);
         }
+    }
+
+    /// Sync processing and publishing phase totals from per-file progress
+    fn sync_phase_totals(&mut self) {
+        self.processing_phase.records_extracted = self.processing_phase.progress_by_file.values().map(|s| s.records_extracted).sum();
+        self.publishing_phase.messages_published = self.processing_phase.progress_by_file.values().map(|s| s.messages_published).sum();
+        self.publishing_phase.batches_sent = self.processing_phase.progress_by_file.values().map(|s| s.batches_sent).sum();
     }
 
     /// Mark processing phase as completed
@@ -387,30 +371,6 @@ impl StateMarker {
         self.processing_phase.current_file = None;
 
         info!("✅ Processing phase completed: {} files, {} records", self.processing_phase.files_processed, self.processing_phase.records_extracted);
-    }
-
-    /// Mark processing phase as failed
-    #[allow(dead_code)]
-    pub fn fail_processing(&mut self, error: String) {
-        self.processing_phase.status = PhaseStatus::Failed;
-        self.processing_phase.errors.push(error);
-        self.summary.overall_status = PhaseStatus::Failed;
-    }
-
-    /// Update publishing metrics
-    #[allow(dead_code)]
-    pub fn update_publishing(&mut self, messages: u64, batches: u64) {
-        self.publishing_phase.status = PhaseStatus::InProgress;
-        self.publishing_phase.messages_published += messages;
-        self.publishing_phase.batches_sent += batches;
-        self.publishing_phase.last_amqp_heartbeat = Some(Utc::now());
-    }
-
-    /// Mark publishing as failed
-    #[allow(dead_code)]
-    pub fn fail_publishing(&mut self, error: String) {
-        self.publishing_phase.status = PhaseStatus::Failed;
-        self.publishing_phase.errors.push(error);
     }
 
     /// Mark entire extraction as completed
@@ -539,7 +499,7 @@ mod tests {
         assert_eq!(marker.should_process(), ProcessingDecision::Continue);
 
         // Failed download should reprocess
-        marker.fail_download("Test error".to_string());
+        marker.download_phase.status = PhaseStatus::Failed;
         assert_eq!(marker.should_process(), ProcessingDecision::Reprocess);
 
         // Reset and test in-progress processing
@@ -592,21 +552,6 @@ mod tests {
     }
 
     #[test]
-    fn test_publishing_updates() {
-        let mut marker = StateMarker::new("20260101".to_string());
-
-        marker.update_publishing(100, 1);
-        assert_eq!(marker.publishing_phase.status, PhaseStatus::InProgress);
-        assert_eq!(marker.publishing_phase.messages_published, 100);
-        assert_eq!(marker.publishing_phase.batches_sent, 1);
-        assert!(marker.publishing_phase.last_amqp_heartbeat.is_some());
-
-        marker.update_publishing(200, 2);
-        assert_eq!(marker.publishing_phase.messages_published, 300);
-        assert_eq!(marker.publishing_phase.batches_sent, 3);
-    }
-
-    #[test]
     fn test_complete_extraction() {
         let mut marker = StateMarker::new("20260101".to_string());
 
@@ -619,27 +564,6 @@ mod tests {
         assert_eq!(marker.summary.overall_status, PhaseStatus::Completed);
         assert_eq!(marker.publishing_phase.status, PhaseStatus::Completed);
         assert!(marker.summary.total_duration_seconds.is_some());
-    }
-
-    #[test]
-    fn test_error_tracking() {
-        let mut marker = StateMarker::new("20260101".to_string());
-
-        marker.fail_download("Download failed".to_string());
-        assert_eq!(marker.download_phase.status, PhaseStatus::Failed);
-        assert_eq!(marker.download_phase.errors.len(), 1);
-        assert_eq!(marker.summary.overall_status, PhaseStatus::Failed);
-
-        marker = StateMarker::new("20260101".to_string());
-        marker.fail_processing("Processing failed".to_string());
-        assert_eq!(marker.processing_phase.status, PhaseStatus::Failed);
-        assert_eq!(marker.processing_phase.errors.len(), 1);
-        assert_eq!(marker.summary.overall_status, PhaseStatus::Failed);
-
-        marker = StateMarker::new("20260101".to_string());
-        marker.fail_publishing("Publishing failed".to_string());
-        assert_eq!(marker.publishing_phase.status, PhaseStatus::Failed);
-        assert_eq!(marker.publishing_phase.errors.len(), 1);
     }
 
     #[tokio::test]
