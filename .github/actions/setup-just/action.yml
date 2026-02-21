@@ -42,12 +42,12 @@ runs:
         if [[ "${{ runner.os }}" == "Windows" ]]; then
           URL="https://github.com/casey/just/releases/download/${{ inputs.version }}/just-${{ inputs.version }}-${PLATFORM}.zip"
           curl -L -o just.zip "$URL"
-          unzip just.zip
+          unzip -p just.zip just.exe > just.exe
           mkdir -p "$HOME/.local/bin"
           mv just.exe "$HOME/.local/bin/"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
         else
-          curl -L "$URL" | tar xz
+          curl -L "$URL" | tar xz just
           chmod +x just
           sudo mv just /usr/local/bin/
         fi
