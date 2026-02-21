@@ -51,23 +51,6 @@ Extractor can be configured via environment variables or a TOML configuration fi
 - `BATCH_SIZE`: Message batch size for AMQP (default: 100)
 - `FORCE_REPROCESS`: Force reprocessing of all files (default: false)
 
-### Configuration File
-
-Create a `config.toml`:
-
-```toml
-amqp_connection = "amqp://localhost:5672"
-discogs_root = "/discogs-data"
-periodic_check_days = 15
-health_port = 8000
-max_workers = 8
-batch_size = 100
-queue_size = 5000
-progress_log_interval = 1000
-s3_bucket = "discogs-data-dumps"
-s3_region = "us-west-2"
-```
-
 ## Building
 
 ### Local Development

@@ -37,10 +37,10 @@ graph BT
 
 | Test Type   | Target Coverage | Current Status      |
 | ----------- | --------------- | ------------------- |
-| Unit Tests  | 80%+            | **86%** ✅          |
+| Unit Tests  | 80%+            | **94%** ✅          |
 | Integration | 70%+            | Core business logic |
 | E2E Tests   | Critical paths  | User workflows      |
-| **Overall** | **85%+**        | **86%** ✅          |
+| **Overall** | **85%+**        | **94%** ✅          |
 
 ## 🛠️ Test Structure
 

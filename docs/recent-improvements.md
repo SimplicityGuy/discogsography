@@ -15,6 +15,61 @@ development experience enhancements.
 
 ## 🆕 Latest Improvements (February 2026)
 
+### 🧹 Code Simplification & Test Coverage (February 2026)
+
+**Overview**: Simplified service code across all five components and improved test coverage from 92% to 94%.
+
+#### Code Simplification
+
+Reduced complexity and improved readability across all Python and Rust services without changing behaviour:
+
+**Dashboard** (`dashboard/dashboard.py`):
+- Extracted `_get_or_create_gauge()` and `_get_or_create_counter()` helpers to eliminate duplicate
+  Prometheus metric registration try/except blocks
+- Fixed WebSocket connection tracking to use `set.discard()` instead of `list.remove()` to avoid
+  `ValueError` on double-removal, and to track connection count accurately with `Gauge.set()`
+- Hardened PostgreSQL address parsing to handle addresses without an explicit port (defaults to 5432)
+
+**Explore** (`explore/explore.py`, `explore/neo4j_queries.py`):
+- Added `_run_query()`, `_run_single()`, and `_run_count()` helpers to eliminate ~20 repeated
+  `async with driver.session()` blocks across all query functions
+- Merged duplicate `autocomplete_genre()` and `autocomplete_style()` implementations into a single
+  `_autocomplete_prefix()` helper
+- Simplified `_build_categories()` using early returns instead of a mutable accumulator variable
+
+**Graphinator** (`graphinator/graphinator.py`):
+- Removed dead code branches and simplified control flow in message handlers
+- Consolidated repeated node-merge patterns and deduplication logic
+
+**Tableinator** (`tableinator/tableinator.py`):
+- Simplified batch processing logic and removed redundant state tracking
+- Consolidated repeated table and index creation patterns
+
+**Extractor** (Rust, `extractor/src/`):
+- Removed unused `types.rs` module entirely
+- Removed dead S3 configuration fields (`s3_bucket`, `s3_region`) and `max_temp_size`
+- Removed unused `from_file()` config loader (environment variables are the only supported method)
+- Simplified error handling and control flow across all modules
+
+#### Test Coverage Improvement
+
+Increased overall test coverage from **92% → 94%** (774 → 798 tests):
+
+| File | Coverage |
+| ---- | -------- |
+| `graphinator/graphinator.py` | 82% |
+| `common/postgres_resilient.py` | 90% |
+| `dashboard/dashboard.py` | 93% |
+| `tableinator/tableinator.py` | 96% |
+| `common/rabbitmq_resilient.py` | 92% |
+| `common/neo4j_resilient.py` | 98% |
+| `explore/explore.py` | 97% |
+
+New tests cover previously untested paths including: config errors and early returns, Neo4j and
+PostgreSQL connection failures, async queue edge cases (`QueueFull`/`QueueEmpty`), WebSocket
+exception cleanup, batch processor flush errors in finally blocks, and missing-ID edge cases in
+graph entity processing.
+
 ### 🚀 Infrastructure Upgrades (February 2026)
 
 **Overview**: Completed three major infrastructure upgrades to modernize the platform's core dependencies.
