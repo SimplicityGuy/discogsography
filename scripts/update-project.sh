@@ -4,11 +4,16 @@
 #
 # This script provides a safe and comprehensive way to update:
 # - Python version across all project files
-# - Python package dependencies (with detailed change tracking)
+# - Python package dependencies via uv (all version types)
 # - Rust crate dependencies in Rust extractor (main, dev, build)
 # - UV package manager version in Dockerfiles and GitHub workflows
 # - Pre-commit hooks to latest versions
 # - Docker base images to latest versions
+#
+# Ecosystem behavior:
+#   Python (uv):  uv lock --upgrade respects >=X.Y constraints (includes majors)
+#   Rust (cargo): minor/patch = cargo update (lock file only)
+#                 major (--major) = cargo upgrade --incompatible + cargo update
 #
 # Usage: ./scripts/update-project.sh [options]
 #
@@ -16,7 +21,7 @@
 #   --python VERSION    Update Python version (default: keep current)
 #   --no-backup        Skip creating backup files
 #   --dry-run          Show what would be updated without making changes
-#   --major            Include major version upgrades for packages
+#   --major            Include major version upgrades for all package managers
 #   --skip-tests       Skip running tests after updates
 #   --help             Show this help message
 
@@ -482,9 +487,11 @@ verify_dependency_updates() {
 
     # Rust dependencies
     if [[ -f "extractor/Cargo.toml" ]]; then
-        print_success "✓ Rust main dependencies ([dependencies])"
-        print_success "✓ Rust dev dependencies ([dev-dependencies])"
-        print_success "✓ Rust build dependencies ([build-dependencies])"
+        if [[ "$MAJOR_UPGRADES" == true ]]; then
+            print_success "✓ Rust dependencies (Cargo.toml + Cargo.lock, including major versions)"
+        else
+            print_success "✓ Rust dependencies (Cargo.lock updated within existing constraints)"
+        fi
     fi
 
     # Pre-commit hooks
@@ -498,92 +505,88 @@ verify_dependency_updates() {
         print_info "Run 'uv tree --outdated' to verify all Python packages are up to date"
 
         if [[ -f "extractor/Cargo.toml" ]]; then
-            print_info "Run 'cargo outdated' in extractor to verify Rust crates"
+            print_info "Run 'cd extractor && cargo update --dry-run' to verify Rust crates"
         fi
     fi
 }
 
-# Update Rust crates including ALL dependency types
+# Update Rust crates
+# - Minor/patch (default): cargo update - updates Cargo.lock within existing Cargo.toml constraints
+# - Major (--major): cargo upgrade --incompatible allow - updates Cargo.toml constraints too
 update_rust_crates() {
     if [[ ! -d "extractor" ]] || [[ ! -f "extractor/Cargo.toml" ]]; then
         print_info "No Rust extractor found, skipping Rust updates"
         return
     fi
 
-    print_section "🦀" "Updating ALL Rust Dependencies"
+    print_section "🦀" "Updating Rust Dependencies"
 
-    # Backup Cargo files
     if [[ "$BACKUP" == true ]] && [[ "$DRY_RUN" == false ]]; then
         backup_file "extractor/Cargo.toml"
         backup_file "extractor/Cargo.lock"
     fi
 
-    print_info "Updating ALL Rust dependency types:"
-    print_info "  • Main dependencies ([dependencies])"
-    print_info "  • Dev dependencies ([dev-dependencies])"
-    print_info "  • Build dependencies ([build-dependencies])"
-    print_info "  • Target-specific dependencies"
-
     if [[ "$DRY_RUN" == false ]]; then
         pushd extractor > /dev/null
 
-        # Check if cargo-edit is installed for updating Cargo.toml versions
-        if command -v cargo-upgrade &> /dev/null; then
-            print_info "Updating ALL dependency versions in Cargo.toml..."
+        if [[ "$MAJOR_UPGRADES" == true ]]; then
+            print_info "Major upgrades enabled: updating Cargo.toml version requirements..."
+            print_info "  Requires cargo-edit (cargo upgrade). Installing if not present..."
 
-            # Update ALL dependencies (main, dev, build, target-specific)
-            local upgrade_cmd="cargo upgrade"
-            if [[ "$MAJOR_UPGRADES" == true ]]; then
-                upgrade_cmd="$upgrade_cmd --breaking"
-                print_info "Including major version upgrades for ALL Rust dependencies (--breaking)"
+            # Ensure cargo-upgrade is available (part of cargo-edit crate)
+            local cargo_upgrade_bin=""
+            if command -v cargo-upgrade &> /dev/null; then
+                cargo_upgrade_bin="cargo-upgrade"
+            elif cargo bin cargo-upgrade &> /dev/null 2>&1; then
+                # Available via cargo-run-bin
+                cargo_upgrade_bin="cargo bin cargo-upgrade"
             else
-                print_info "Updating to latest compatible versions (respecting semver, no --breaking)"
+                # Install cargo-edit globally (cached by cargo after first run)
+                print_info "  Installing cargo-edit..."
+                if cargo install cargo-edit --quiet 2>/dev/null; then
+                    cargo_upgrade_bin="cargo-upgrade"
+                else
+                    print_warning "  Could not install cargo-edit - skipping Cargo.toml version updates"
+                    print_info "  Falling back to cargo update (lock file only)"
+                fi
             fi
 
-            # Update all dependencies (main, dev, build, target-specific)
-            # Note: cargo upgrade updates all dependency types by default
-            print_info "Updating all dependencies (main, dev, build, target-specific)..."
-            if $upgrade_cmd; then
-                print_success "Updated all dependency versions"
-                FILE_CHANGES+=("extractor/Cargo.toml: Updated all dependency versions")
-                CHANGES_MADE=true
+            if [[ -n "$cargo_upgrade_bin" ]]; then
+                # Try --incompatible (cargo-edit ≥0.12) then fall back to --breaking (≤0.11)
+                if $cargo_upgrade_bin --incompatible allow 2>/dev/null; then
+                    print_success "Cargo.toml updated with major version bumps (--incompatible allow)"
+                    FILE_CHANGES+=("extractor/Cargo.toml: Updated dependency version requirements (major)")
+                    CHANGES_MADE=true
+                elif $cargo_upgrade_bin --breaking 2>/dev/null; then
+                    print_success "Cargo.toml updated with major version bumps (--breaking)"
+                    FILE_CHANGES+=("extractor/Cargo.toml: Updated dependency version requirements (major)")
+                    CHANGES_MADE=true
+                else
+                    print_warning "cargo upgrade failed - Cargo.toml not changed"
+                fi
             fi
         else
-            print_info "Installing cargo-edit for comprehensive dependency updates..."
-            if cargo install cargo-edit; then
-                # Try again after installation (updates all dependency types)
-                local upgrade_cmd="cargo upgrade"
-                if [[ "$MAJOR_UPGRADES" == true ]]; then
-                    upgrade_cmd="$upgrade_cmd --breaking"
-                fi
-
-                if $upgrade_cmd; then
-                    print_success "Updated all dependency versions"
-                    FILE_CHANGES+=("extractor/Cargo.toml: Updated all dependency versions")
-                    CHANGES_MADE=true
-                fi
-            else
-                print_warning "Could not install cargo-edit, will use cargo update for lock file only"
-            fi
+            print_info "Updating Cargo.lock to latest compatible versions (within Cargo.toml constraints)"
+            print_info "  Run with --major to also update Cargo.toml version requirements"
         fi
 
-        # Update Cargo.lock with ALL the new versions
-        print_info "Updating Cargo.lock with ALL dependency changes..."
-        if cargo update; then
-            print_success "ALL Rust dependencies in lock file updated successfully"
-            FILE_CHANGES+=("extractor/Cargo.lock: Updated ALL Rust dependencies")
+        # Always update Cargo.lock to pick up latest compatible versions
+        print_info "Updating Cargo.lock..."
+        if cargo update 2>&1; then
+            print_success "Cargo.lock updated with latest compatible versions"
+            FILE_CHANGES+=("extractor/Cargo.lock: Updated to latest compatible versions")
             CHANGES_MADE=true
         else
-            print_warning "Failed to update Rust crates lock file"
+            print_warning "Failed to update Cargo.lock"
         fi
 
         popd > /dev/null
-
         print_success "Completed Rust dependency updates"
     else
-        print_info "[DRY RUN] Would update ALL Rust dependency types:"
-        print_info "[DRY RUN] Would run: cargo upgrade (all dependency types)"
-        print_info "[DRY RUN] Would run: cargo update (update lock file)"
+        if [[ "$MAJOR_UPGRADES" == true ]]; then
+            print_info "[DRY RUN] Would run: cargo upgrade --incompatible allow (updates Cargo.toml)"
+        fi
+        print_info "[DRY RUN] Would run: cargo update (updates Cargo.lock within constraints)"
     fi
 }
 
@@ -872,7 +875,6 @@ show_file_report() {
     echo "  ✓ common/pyproject.toml"
     echo "  ✓ dashboard/pyproject.toml"
     echo "  ✓ explore/pyproject.toml"
-    echo "  ✓ extractor/pyproject.toml (tools only - Rust project)"
     echo "  ✓ graphinator/pyproject.toml"
     echo "  ✓ tableinator/pyproject.toml"
     echo "  ✓ uv.lock (root)"
@@ -894,8 +896,12 @@ show_file_report() {
     # Rust files
     if [[ -f "extractor/Cargo.toml" ]]; then
         echo "🦀 Rust Configuration:"
-        echo "  ✓ extractor/Cargo.toml"
-        echo "  ✓ extractor/Cargo.lock"
+        if [[ "$MAJOR_UPGRADES" == true ]]; then
+            echo "  ✓ extractor/Cargo.toml (version requirements updated for major)"
+        else
+            echo "  ✓ extractor/Cargo.toml (constraints unchanged)"
+        fi
+        echo "  ✓ extractor/Cargo.lock (updated to latest compatible)"
         echo ""
     fi
 
@@ -933,7 +939,6 @@ verify_components() {
         "common/pyproject.toml"
         "dashboard/pyproject.toml"
         "explore/pyproject.toml"
-        "extractor/pyproject.toml"
         "graphinator/pyproject.toml"
         "tableinator/pyproject.toml"
     )
@@ -1024,7 +1029,7 @@ main() {
     # Update Python packages (ALL types: core, optional, dev, build)
     update_python_packages
 
-    # Update Rust crates (ALL types: main, dev, build)
+    # Update Rust crates (minor/patch via cargo update; major via cargo upgrade with --major)
     update_rust_crates
 
     # Verify all dependencies were updated
