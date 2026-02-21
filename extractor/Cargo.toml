@@ -16,13 +16,13 @@ path = "src/main.rs"
 tokio = { version = "1.49", features = ["full"] }
 
 # XML parsing (following disco-quick's approach)
-quick-xml = { version = "0.37", features = ["serialize"] }
+quick-xml = { version = "0.39", features = ["serialize"] }
 
 # Compression handling
 flate2 = "1.1"
 
 # Message queue (AMQP) - latest
-lapin = "3.7"
+lapin = "4.0"
 futures = "0.3"
 
 # Serialization
@@ -38,21 +38,21 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
 # Configuration
-config = "0.14"
+config = "0.15"
 dotenvy = "0.15"
 
 # Error handling
 anyhow = "1.0"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # HTTP client for downloads (replaces AWS S3 SDK)
-reqwest = { version = "0.12", features = ["stream", "rustls-tls"] }
+reqwest = { version = "0.13", features = ["stream", "rustls"] }
 bytes = "1.11"
 regex = "1.12"
 urlencoding = "2.1"
 
 # Progress tracking
-indicatif = "0.17"
+indicatif = "0.18"
 
 # Date/time handling
 chrono = { version = "0.4", features = ["serde"] }
@@ -75,7 +75,7 @@ url = "2.5"  # URL parsing for AMQP connection normalization
 tempfile = "3.25"
 mockito = "1.7"
 proptest = "1.10"
-criterion = "0.6"
+criterion = "0.8"
 serial_test = "3.3.1"
 
 [[bench]]
@@ -91,6 +91,13 @@ strip = true
 [profile.dev]
 opt-level = 0
 debug = true
+
+# Project-scoped cargo tools managed via cargo-run-bin
+# Install cargo-run-bin once: cargo install cargo-run-bin
+# Then install all tools: cargo bin --install
+# Run tools with: cargo bin <tool-name>
+[package.metadata.bin]
+cargo-outdated = { version = "0.17.0" }
 
 # Lint configuration - treat all warnings as errors
 # This is equivalent to running: cargo clippy -- -D warnings
