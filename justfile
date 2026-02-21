@@ -204,23 +204,25 @@ test-tableinator:
         --cov=tableinator --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: dashboard unit tests establishing coverage baseline
+# Uses --cov=. to produce a single <source> element with repo-root-relative
+# filenames (e.g. dashboard/dashboard.py), avoiding Codecov multi-source errors.
 [group('test')]
 test-e2e-unit-dashboard:
     uv run pytest tests/dashboard/ -v -m 'not e2e' \
-        --cov=dashboard --cov=explore --cov-report=xml --cov-report=json --cov-report=term
+        --cov=. --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: explore unit tests appending to coverage baseline
 [group('test')]
 test-e2e-unit-explore:
     uv run pytest tests/explore/ -v -m 'not e2e' \
-        --cov=dashboard --cov=explore --cov-append --cov-report=xml --cov-report=json --cov-report=term
+        --cov=. --cov-append --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: dashboard E2E tests for a given browser (desktop)
 [group('test')]
 test-e2e-dashboard browser:
     uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e \
         --browser {{ browser }} \
-        --cov=dashboard --cov=explore --cov-append \
+        --cov=. --cov-append \
         --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: dashboard E2E tests with mobile device emulation
@@ -229,7 +231,7 @@ test-e2e-dashboard-mobile browser device:
     uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e \
         --browser {{ browser }} \
         --device "{{ device }}" \
-        --cov=dashboard --cov=explore --cov-append \
+        --cov=. --cov-append \
         --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: explore E2E tests for a given browser (desktop)
@@ -237,7 +239,7 @@ test-e2e-dashboard-mobile browser device:
 test-e2e-explore browser:
     uv run pytest tests/explore/test_explore_ui.py -v -m e2e \
         --browser {{ browser }} \
-        --cov=dashboard --cov=explore --cov-append \
+        --cov=. --cov-append \
         --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: explore E2E tests with mobile device emulation
@@ -246,7 +248,7 @@ test-e2e-explore-mobile browser device:
     uv run pytest tests/explore/test_explore_ui.py -v -m e2e \
         --browser {{ browser }} \
         --device "{{ device }}" \
-        --cov=dashboard --cov=explore --cov-append \
+        --cov=. --cov-append \
         --cov-report=xml --cov-report=json --cov-report=term
 
 # ──────────────────────────────────────────────────────────────────────────────
