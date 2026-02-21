@@ -63,6 +63,17 @@ STUCK_CHECK_INTERVAL = int(
     os.environ.get("STUCK_CHECK_INTERVAL", "30")
 )  # Default 30 seconds - how often to check for stuck state
 
+# Idle mode settings - reduce log noise when no messages arrive after startup
+STARTUP_IDLE_TIMEOUT = int(
+    os.environ.get("STARTUP_IDLE_TIMEOUT", "60")
+)  # Seconds after startup with no messages before entering idle mode
+IDLE_LOG_INTERVAL = int(
+    os.environ.get("IDLE_LOG_INTERVAL", "300")
+)  # 5 min between idle status logs
+
+# Idle mode state
+idle_mode = False
+
 # Connection parameters will be initialized in main
 connection_params: dict[str, Any] = {}
 
@@ -309,8 +320,8 @@ async def periodic_queue_checker() -> None:
             if time_since_last_check < QUEUE_CHECK_INTERVAL:
                 continue
 
-            # Only do full queue check if all consumers are idle and connection is closed
-            if not await check_all_consumers_idle() or active_connection:
+            # Only do full queue check if no active consumers and connection is closed
+            if active_connection or len(consumer_tags) > 0:
                 continue
 
             last_full_check = current_time
@@ -332,7 +343,7 @@ async def _recover_consumers() -> None:
     - Normal recovery after idle period
     - Emergency recovery after unexpected consumer death
     """
-    global active_connection, active_channel, queues, consumer_tags
+    global active_connection, active_channel, queues, consumer_tags, idle_mode
 
     # Close any existing broken connection first
     if active_connection:
@@ -449,6 +460,8 @@ async def _recover_consumers() -> None:
                 "✅ Recovery complete - consumers restarted",
                 active_consumers=list(consumer_tags.keys()),
             )
+            # Clear idle mode since we have active consumers again
+            idle_mode = False
             # Don't close temp_connection since we're using it as active_connection
         else:
             logger.info("📭 No messages in any queue, connection remains closed")
@@ -959,7 +972,12 @@ async def main() -> None:
 
         # Start periodic progress reporting and consumer health monitoring
         async def progress_reporter() -> None:
+            global idle_mode
+
             report_count = 0
+            startup_time = time.time()
+            last_idle_log = 0.0
+
             while not shutdown_requested:
                 # More frequent reports initially, then every 30 seconds
                 if report_count < 3:
@@ -974,6 +992,49 @@ async def main() -> None:
 
                 total = sum(message_counts.values())
                 current_time = time.time()
+
+                # Idle mode detection: no messages received after STARTUP_IDLE_TIMEOUT
+                if not idle_mode and total == 0 and (current_time - startup_time) >= STARTUP_IDLE_TIMEOUT:
+                    idle_mode = True
+                    last_idle_log = current_time
+
+                    # Cancel all active consumers and close connection
+                    for dt in list(consumer_tags.keys()):
+                        if dt in queues:
+                            try:
+                                await queues[dt].cancel(consumer_tags[dt], nowait=True)
+                            except Exception as e:
+                                logger.warning(
+                                    "⚠️ Error canceling consumer during idle transition",
+                                    data_type=dt,
+                                    error=str(e),
+                                )
+                        del consumer_tags[dt]
+
+                    await close_rabbitmq_connection()
+
+                    logger.info(
+                        f"😴 No messages received after {STARTUP_IDLE_TIMEOUT}s, entering idle mode. "
+                        f"Will check queues every {QUEUE_CHECK_INTERVAL}s",
+                        startup_idle_timeout=STARTUP_IDLE_TIMEOUT,
+                        queue_check_interval=QUEUE_CHECK_INTERVAL,
+                    )
+                    continue
+
+                # While in idle mode, only log briefly every IDLE_LOG_INTERVAL
+                if idle_mode:
+                    if total > 0:
+                        # Messages started flowing, exit idle mode
+                        idle_mode = False
+                        logger.info("🔄 Messages detected, resuming normal operation")
+                    elif (current_time - last_idle_log) >= IDLE_LOG_INTERVAL:
+                        last_idle_log = current_time
+                        logger.info(
+                            "😴 Idle mode - no messages received. "
+                            f"Next queue check in ≤{QUEUE_CHECK_INTERVAL}s",
+                            queue_check_interval=QUEUE_CHECK_INTERVAL,
+                        )
+                    continue
 
                 # Check for stalled consumers (skip completed files)
                 stalled_consumers = []
