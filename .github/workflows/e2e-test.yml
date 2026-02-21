@@ -96,6 +96,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: 🔧 Setup Just
+        uses: ./.github/actions/setup-just
+
       # Test cache (pytest + playwright results + coverage)
       - name: 🧪 Cache test results
         uses: actions/cache@v5
@@ -141,54 +144,26 @@ jobs:
           uv run playwright install-deps ${{ matrix.browser-install }}
 
       - name: 🧪 Run dashboard unit tests (coverage baseline)
-        run: |
-          # Run unit tests first to establish coverage baseline for dashboard + explore
-          uv run pytest tests/dashboard/ -v -m 'not e2e' \
-            --cov=dashboard --cov=explore --cov-report=term
+        run: just test-e2e-unit-dashboard
 
       - name: 🧪 Run explore unit tests (coverage baseline)
-        run: |
-          # Append explore unit test coverage
-          uv run pytest tests/explore/ -v -m 'not e2e' \
-            --cov=dashboard --cov=explore --cov-append --cov-report=term
+        run: just test-e2e-unit-explore
 
       - name: 🧪 Run dashboard E2E tests (Desktop)
         if: matrix.device == null
-        run: |
-          # Run E2E tests with coverage - server is started automatically by pytest fixture
-          uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e \
-            --browser ${{ matrix.browser }} \
-            --cov=dashboard --cov=explore --cov-append \
-            --cov-report=xml --cov-report=json --cov-report=term
+        run: just test-e2e-dashboard ${{ matrix.browser }}
 
       - name: 📱 Run dashboard E2E tests (Mobile)
         if: matrix.device != null
-        run: |
-          # Run E2E tests with coverage and device emulation
-          uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e \
-            --browser ${{ matrix.browser }} \
-            --device "${{ matrix.device }}" \
-            --cov=dashboard --cov=explore --cov-append \
-            --cov-report=xml --cov-report=json --cov-report=term
+        run: just test-e2e-dashboard-mobile ${{ matrix.browser }} "${{ matrix.device }}"
 
       - name: 🔍 Run explore E2E tests (Desktop)
         if: matrix.device == null
-        run: |
-          # Run explore E2E tests with coverage - server is started automatically by pytest fixture
-          uv run pytest tests/explore/test_explore_ui.py -v -m e2e \
-            --browser ${{ matrix.browser }} \
-            --cov=dashboard --cov=explore --cov-append \
-            --cov-report=xml --cov-report=json --cov-report=term
+        run: just test-e2e-explore ${{ matrix.browser }}
 
       - name: 📱 Run explore E2E tests (Mobile)
         if: matrix.device != null
-        run: |
-          # Run explore E2E tests with coverage and device emulation
-          uv run pytest tests/explore/test_explore_ui.py -v -m e2e \
-            --browser ${{ matrix.browser }} \
-            --device "${{ matrix.device }}" \
-            --cov=dashboard --cov=explore --cov-append \
-            --cov-report=xml --cov-report=json --cov-report=term
+        run: just test-e2e-explore-mobile ${{ matrix.browser }} "${{ matrix.device }}"
 
       - name: 📋 Process E2E coverage reports
         id: coverage-setup

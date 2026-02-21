@@ -161,35 +161,92 @@ test-parallel:
 # Service-Specific Tests
 # ──────────────────────────────────────────────────────────────────────────────
 
-# Run common/shared library tests
+# Run common/shared library tests with coverage
 [group('test')]
 test-common:
-    uv run pytest tests/common/ -v
+    uv run pytest tests/common/ -v \
+        --cov=common --cov-report=xml --cov-report=json --cov-report=term
 
-# Run dashboard service tests (including E2E if --e2e flag used)
+# Run dashboard service tests with coverage
 [group('test')]
 test-dashboard:
-    uv run pytest tests/dashboard/ -v
+    uv run pytest tests/dashboard/ -v \
+        --cov=dashboard --cov-report=xml --cov-report=json --cov-report=term
 
-# Run explore service tests
+# Run explore service tests with coverage
 [group('test')]
 test-explore:
-    uv run pytest tests/explore/ -m 'not e2e' -v
+    uv run pytest tests/explore/ -m 'not e2e' -v \
+        --cov=explore --cov-report=xml --cov-report=json --cov-report=term
 
 # Run Rust extractor tests (same as extractor-test)
 [group('test')]
 test-extractor:
     cd extractor && cargo test
 
-# Run graphinator service tests
+# Run Rust extractor tests with coverage (requires cargo-llvm-cov)
+[group('test')]
+test-extractor-cov:
+    cd extractor && \
+    cargo llvm-cov test --verbose --lcov --output-path lcov.info
+
+# Run graphinator service tests with coverage
 [group('test')]
 test-graphinator:
-    uv run pytest tests/graphinator/ -v
+    uv run pytest tests/graphinator/ -v \
+        --cov=graphinator --cov-report=xml --cov-report=json --cov-report=term
 
-# Run tableinator service tests
+# Run tableinator service tests with coverage
 [group('test')]
 test-tableinator:
-    uv run pytest tests/tableinator/ -v
+    uv run pytest tests/tableinator/ -v \
+        --cov=tableinator --cov-report=xml --cov-report=json --cov-report=term
+
+# E2E workflow: dashboard unit tests establishing coverage baseline
+[group('test')]
+test-e2e-unit-dashboard:
+    uv run pytest tests/dashboard/ -v -m 'not e2e' \
+        --cov=dashboard --cov-report=xml --cov-report=json --cov-report=term
+
+# E2E workflow: explore unit tests appending to coverage baseline
+[group('test')]
+test-e2e-unit-explore:
+    uv run pytest tests/explore/ -v -m 'not e2e' \
+        --cov=explore --cov-append --cov-report=xml --cov-report=json --cov-report=term
+
+# E2E workflow: dashboard E2E tests for a given browser (desktop)
+[group('test')]
+test-e2e-dashboard browser:
+    uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e \
+        --browser {{ browser }} \
+        --cov=dashboard --cov=explore --cov-append \
+        --cov-report=xml --cov-report=json --cov-report=term
+
+# E2E workflow: dashboard E2E tests with mobile device emulation
+[group('test')]
+test-e2e-dashboard-mobile browser device:
+    uv run pytest tests/dashboard/test_dashboard_ui.py -v -m e2e \
+        --browser {{ browser }} \
+        --device "{{ device }}" \
+        --cov=dashboard --cov=explore --cov-append \
+        --cov-report=xml --cov-report=json --cov-report=term
+
+# E2E workflow: explore E2E tests for a given browser (desktop)
+[group('test')]
+test-e2e-explore browser:
+    uv run pytest tests/explore/test_explore_ui.py -v -m e2e \
+        --browser {{ browser }} \
+        --cov=dashboard --cov=explore --cov-append \
+        --cov-report=xml --cov-report=json --cov-report=term
+
+# E2E workflow: explore E2E tests with mobile device emulation
+[group('test')]
+test-e2e-explore-mobile browser device:
+    uv run pytest tests/explore/test_explore_ui.py -v -m e2e \
+        --browser {{ browser }} \
+        --device "{{ device }}" \
+        --cov=dashboard --cov=explore --cov-append \
+        --cov-report=xml --cov-report=json --cov-report=term
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Python Services

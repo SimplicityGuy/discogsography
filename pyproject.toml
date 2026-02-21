@@ -195,6 +195,7 @@ disallow_untyped_decorators = false
 [tool.coverage.run]
 source = ["common", "dashboard", "explore", "graphinator", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
+relative_files = true
 
 [tool.coverage.report]
 exclude_lines = [
