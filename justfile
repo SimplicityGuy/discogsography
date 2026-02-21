@@ -207,13 +207,13 @@ test-tableinator:
 [group('test')]
 test-e2e-unit-dashboard:
     uv run pytest tests/dashboard/ -v -m 'not e2e' \
-        --cov=dashboard --cov-report=xml --cov-report=json --cov-report=term
+        --cov=dashboard --cov=explore --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: explore unit tests appending to coverage baseline
 [group('test')]
 test-e2e-unit-explore:
     uv run pytest tests/explore/ -v -m 'not e2e' \
-        --cov=explore --cov-append --cov-report=xml --cov-report=json --cov-report=term
+        --cov=dashboard --cov=explore --cov-append --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: dashboard E2E tests for a given browser (desktop)
 [group('test')]
