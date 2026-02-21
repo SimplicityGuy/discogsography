@@ -14,6 +14,12 @@ use crate::types::{LocalFileInfo, S3FileInfo};
 
 const S3_PREFIX: &str = "data/";
 const DISCOGS_DATA_URL: &str = "https://data.discogs.com/";
+const MAX_DOWNLOAD_RETRIES: u32 = 3;
+
+#[cfg(not(test))]
+const RETRY_BASE_DELAY_MS: u64 = 2_000;
+#[cfg(test)]
+const RETRY_BASE_DELAY_MS: u64 = 10;
 
 pub struct Downloader {
     pub output_directory: PathBuf,
@@ -313,53 +319,97 @@ impl Downloader {
         // Construct Discogs download URL (URL encode the S3 key)
         let download_url = format!("{}?download={}", self.base_url, urlencoding::encode(&s3_key));
 
-        // Create progress bar (unknown size from scraping)
-        let pb = ProgressBar::new_spinner();
-        pb.set_style(ProgressStyle::default_spinner().template("{spinner:.green} [{elapsed_precise}] {bytes} ({bytes_per_sec})").unwrap());
+        let mut last_error: Option<anyhow::Error> = None;
 
-        // Download using reqwest with streaming
-        let response = reqwest::get(&download_url).await.with_context(|| format!("Failed to start HTTP download from: {}", download_url))?;
+        for attempt in 1..=MAX_DOWNLOAD_RETRIES {
+            if attempt > 1 {
+                // Remove any partial file left by the previous attempt
+                if local_path.exists() {
+                    if let Err(e) = fs::remove_file(&local_path).await {
+                        warn!("⚠️ Failed to remove partial file before retry: {}", e);
+                    }
+                }
+                let delay_ms = RETRY_BASE_DELAY_MS * (1u64 << (attempt - 2));
+                warn!("🔄 Retry {}/{} for {} (waiting {}ms)...", attempt - 1, MAX_DOWNLOAD_RETRIES - 1, filename, delay_ms);
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+            }
 
-        if !response.status().is_success() {
-            return Err(anyhow::anyhow!("HTTP error: {}", response.status()));
+            // Create progress bar (unknown size from scraping)
+            let pb = ProgressBar::new_spinner();
+            pb.set_style(ProgressStyle::default_spinner().template("{spinner:.green} [{elapsed_precise}] {bytes} ({bytes_per_sec})").unwrap());
+
+            // Download using reqwest with streaming
+            let response = match reqwest::get(&download_url).await {
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = format!("Failed to start HTTP download from {}: {}", download_url, e);
+                    warn!("⚠️ Attempt {}/{}: {}", attempt, MAX_DOWNLOAD_RETRIES, msg);
+                    last_error = Some(anyhow::anyhow!(msg));
+                    continue;
+                }
+            };
+
+            if !response.status().is_success() {
+                let msg = format!("HTTP error: {}", response.status());
+                warn!("⚠️ Attempt {}/{}: {}", attempt, MAX_DOWNLOAD_RETRIES, msg);
+                last_error = Some(anyhow::anyhow!(msg));
+                continue;
+            }
+
+            let mut file = File::create(&local_path).await.context("Failed to create local file")?;
+            let mut hasher = Sha256::new();
+            let mut downloaded: u64 = 0;
+
+            // Stream the response body
+            let mut stream = response.bytes_stream();
+            let mut stream_error: Option<anyhow::Error> = None;
+
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(chunk) => {
+                        hasher.update(&chunk);
+                        if let Err(e) = file.write_all(&chunk).await {
+                            stream_error = Some(anyhow::anyhow!("Failed to write chunk to file: {}", e));
+                            break;
+                        }
+                        downloaded += chunk.len() as u64;
+                        pb.set_position(downloaded);
+                    }
+                    Err(e) => {
+                        stream_error = Some(anyhow::anyhow!("Failed to read HTTP response chunk: {}", e));
+                        break;
+                    }
+                }
+            }
+
+            if let Some(err) = stream_error {
+                warn!("⚠️ Attempt {}/{} failed for {}: {}", attempt, MAX_DOWNLOAD_RETRIES, filename, err);
+                last_error = Some(err);
+                continue;
+            }
+
+            pb.finish_with_message("Download complete");
+
+            info!("✅ Downloaded {} ({:.2} MB)", filename, downloaded as f64 / 1_048_576.0);
+
+            // Calculate checksum
+            let checksum = format!("{:x}", hasher.finalize());
+
+            // Update metadata with actual downloaded size
+            self.metadata.insert(
+                filename.to_string(),
+                LocalFileInfo {
+                    path: local_path.to_string_lossy().to_string(),
+                    checksum,
+                    version: extract_month_from_filename(filename),
+                    size: downloaded,
+                },
+            );
+
+            return Ok(downloaded);
         }
 
-        let mut file = File::create(&local_path).await.context("Failed to create local file")?;
-        let mut hasher = Sha256::new();
-        let mut downloaded: u64 = 0;
-
-        // Stream the response body
-        let mut stream = response.bytes_stream();
-
-        while let Some(chunk_result) = stream.next().await {
-            let chunk = chunk_result.context("Failed to read HTTP response chunk")?;
-
-            hasher.update(&chunk);
-            file.write_all(&chunk).await.context("Failed to write chunk to file")?;
-
-            downloaded += chunk.len() as u64;
-            pb.set_position(downloaded);
-        }
-
-        pb.finish_with_message("Download complete");
-
-        info!("✅ Downloaded {} ({:.2} MB)", filename, downloaded as f64 / 1_048_576.0);
-
-        // Calculate checksum
-        let checksum = format!("{:x}", hasher.finalize());
-
-        // Update metadata with actual downloaded size
-        self.metadata.insert(
-            filename.to_string(),
-            LocalFileInfo {
-                path: local_path.to_string_lossy().to_string(),
-                checksum,
-                version: extract_month_from_filename(filename),
-                size: downloaded,
-            },
-        );
-
-        Ok(downloaded)
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Download failed after {} attempts", MAX_DOWNLOAD_RETRIES)))
     }
 
     pub fn save_metadata(&self) -> Result<()> {

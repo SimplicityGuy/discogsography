@@ -278,6 +278,91 @@ async fn test_concurrent_year_scraping() {
 }
 
 #[tokio::test]
+async fn test_http_download_retries_on_failure_then_succeeds() {
+    let mut server = Server::new_async().await;
+    let temp_dir = TempDir::new().unwrap();
+
+    let test_content = b"retry success content";
+
+    // Second call succeeds (created first = lower LIFO priority)
+    let _m_success = server
+        .mock("GET", "/?download=data%2Fretry_file.xml.gz")
+        .with_status(200)
+        .with_body(test_content)
+        .create_async()
+        .await;
+
+    // First call fails (created second = higher LIFO priority, exhausted after 1 hit)
+    let _m_fail = server
+        .mock("GET", "/?download=data%2Fretry_file.xml.gz")
+        .with_status(500)
+        .with_body("Server Error")
+        .expect(1)
+        .create_async()
+        .await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
+
+    let file_info = S3FileInfo { name: "retry_file.xml.gz".to_string(), size: test_content.len() as u64 };
+
+    let result = downloader.download_file(&file_info).await;
+    assert!(result.is_ok(), "Download should succeed after retry: {:?}", result.err());
+
+    let downloaded_path = temp_dir.path().join("retry_file.xml.gz");
+    assert!(downloaded_path.exists());
+
+    let content = fs::read(&downloaded_path).await.unwrap();
+    assert_eq!(content, test_content);
+}
+
+#[tokio::test]
+async fn test_http_download_exhausts_all_retries() {
+    let mut server = Server::new_async().await;
+    let temp_dir = TempDir::new().unwrap();
+
+    // All 3 attempts fail (MAX_DOWNLOAD_RETRIES = 3)
+    let _m = server
+        .mock("GET", "/?download=data%2Falways_fails.xml.gz")
+        .with_status(500)
+        .with_body("Server Error")
+        .expect(3)
+        .create_async()
+        .await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
+
+    let file_info = S3FileInfo { name: "always_fails.xml.gz".to_string(), size: 1024 };
+
+    let result = downloader.download_file(&file_info).await;
+    assert!(result.is_err(), "Download should fail after exhausting all retries");
+}
+
+#[tokio::test]
+async fn test_http_download_cleans_partial_file_on_retry() {
+    let mut server = Server::new_async().await;
+    let temp_dir = TempDir::new().unwrap();
+
+    // All attempts fail so we can verify the file is cleaned up
+    let _m = server
+        .mock("GET", "/?download=data%2Fpartial_file.xml.gz")
+        .with_status(500)
+        .with_body("Server Error")
+        .expect(3)
+        .create_async()
+        .await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
+
+    let file_info = S3FileInfo { name: "partial_file.xml.gz".to_string(), size: 1024 };
+
+    let _ = downloader.download_file(&file_info).await;
+
+    // No partial file should remain after failed download
+    let partial_path = temp_dir.path().join("partial_file.xml.gz");
+    assert!(!partial_path.exists(), "Partial file should be cleaned up after all retries fail");
+}
+
+#[tokio::test]
 async fn test_url_encoding_in_download() {
     let mut server = Server::new_async().await;
     let temp_dir = TempDir::new().unwrap();
