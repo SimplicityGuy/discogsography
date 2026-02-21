@@ -6,6 +6,7 @@
 [![Code Quality](https://github.com/SimplicityGuy/discogsography/actions/workflows/code-quality.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/code-quality.yml)
 [![Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml)
 [![E2E Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml)
+[![codecov](https://codecov.io/gh/SimplicityGuy/discogsography/branch/main/graph/badge.svg?token=K72AL2L2FY)](https://codecov.io/gh/SimplicityGuy/discogsography)
 ![License: MIT](https://img.shields.io/github/license/SimplicityGuy/discogsography)
 ![Python 3.13+](https://img.shields.io/badge/python-3.13+-blue.svg)
 ![Rust](https://img.shields.io/badge/rust-stable-orange.svg)
