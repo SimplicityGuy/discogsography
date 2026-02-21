@@ -150,7 +150,7 @@ AMQP_QUEUE_PREFIX_TABLEINATOR = "discogsography-tableinator"
 DATA_TYPES = ["artists", "labels", "masters", "releases"]
 
 
-def orjson_serializer(msg: dict[str, Any], **kwargs: Any) -> str:  # noqa: ARG001
+def orjson_serializer(msg: dict[str, Any], **_kwargs: Any) -> str:
     """Custom JSON serializer using orjson for consistency with Rust extractor.
 
     Handles non-serializable types like exceptions by converting them to strings.

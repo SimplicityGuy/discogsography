@@ -43,6 +43,7 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 | Service                                                       | Purpose                                | Key Technologies                       |
 | ------------------------------------------------------------- | -------------------------------------- | -------------------------------------- |
+| **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initialiser   | `neo4j-driver`, `psycopg3`             |
 | **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`          |
 | **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms       |
 | **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search    |
@@ -54,6 +55,7 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
+    SCHEMA[["🔧 Schema-Init<br/>One-shot DDL<br/>Initialiser"]]
     EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>8 Queues + DLQs"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
@@ -64,6 +66,8 @@ graph TD
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
 
+    SCHEMA -->|0. Create Indexes & Constraints| NEO4J
+    SCHEMA -->|0. Create Tables & Indexes| PG
     S3 -->|1. Download & Parse| EXT
     EXT -->|2. Publish Messages| RMQ
     RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
@@ -84,6 +88,7 @@ graph TD
     DASH -.->|Stats| PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style SCHEMA fill:#f9fbe7,stroke:#827717,stroke-width:2px
     style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px

@@ -239,6 +239,14 @@ Additional volumes:
 
 ## 🔧 Service-Specific Requirements
 
+### Schema-Init
+
+- One-shot init container — no health check port, no `restart: unless-stopped`
+- Docker Compose `restart: "no"` so it exits after completing
+- Neo4j and PostgreSQL connection environment variables
+- Read-only filesystem with `/tmp` tmpfs mount
+- `cap_drop: ALL` (no Linux capabilities needed)
+
 ### Dashboard
 
 - Standard configuration

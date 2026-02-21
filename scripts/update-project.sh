@@ -600,7 +600,7 @@ update_python_packages() {
         backup_file "pyproject.toml"
 
         # Backup all pyproject.toml files including nested ones
-        for service in common dashboard explore graphinator tableinator; do
+        for service in common dashboard explore graphinator schema-init tableinator; do
             if [[ -f "$service/pyproject.toml" ]]; then
                 backup_file "$service/pyproject.toml"
             fi
@@ -876,6 +876,7 @@ show_file_report() {
     echo "  ✓ dashboard/pyproject.toml"
     echo "  ✓ explore/pyproject.toml"
     echo "  ✓ graphinator/pyproject.toml"
+    echo "  ✓ schema-init/pyproject.toml"
     echo "  ✓ tableinator/pyproject.toml"
     echo "  ✓ uv.lock (root)"
     echo "  ✓ pyrightconfig.json"
@@ -887,6 +888,7 @@ show_file_report() {
     echo "  ✓ explore/Dockerfile"
     echo "  ✓ extractor/Dockerfile"
     echo "  ✓ graphinator/Dockerfile"
+    echo "  ✓ schema-init/Dockerfile"
     echo "  ✓ tableinator/Dockerfile"
     echo "  ✓ docs/dockerfile-standards.md"
     echo "  ✓ docker-compose.yml"
@@ -940,6 +942,7 @@ verify_components() {
         "dashboard/pyproject.toml"
         "explore/pyproject.toml"
         "graphinator/pyproject.toml"
+        "schema-init/pyproject.toml"
         "tableinator/pyproject.toml"
     )
 
@@ -959,6 +962,7 @@ verify_components() {
         "explore/Dockerfile"
         "extractor/Dockerfile"
         "graphinator/Dockerfile"
+        "schema-init/Dockerfile"
         "tableinator/Dockerfile"
     )
 

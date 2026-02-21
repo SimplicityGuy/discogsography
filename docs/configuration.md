@@ -447,6 +447,24 @@ See [Performance Guide](performance-guide.md) for detailed optimization strategi
 
 ## Service-Specific Settings
 
+### Schema-Init
+
+```bash
+# Required
+NEO4J_ADDRESS="bolt://localhost:7687"
+NEO4J_USERNAME="neo4j"
+NEO4J_PASSWORD="discogsography"
+POSTGRES_ADDRESS="localhost:5433"
+POSTGRES_USERNAME="discogsography"
+POSTGRES_PASSWORD="discogsography"
+POSTGRES_DATABASE="discogsography"
+
+# Optional
+LOG_LEVEL=INFO
+```
+
+**Notes**: Schema-init is a one-shot initialiser — it exits 0 on success and 1 on failure. It has no health check port. In Docker Compose, all dependent services use `condition: service_completed_successfully`. Re-running on an already-initialised database is a no-op (all DDL uses `IF NOT EXISTS`).
+
 ### Extractor
 
 ```bash

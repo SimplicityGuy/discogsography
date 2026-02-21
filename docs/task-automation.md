@@ -57,12 +57,13 @@ Tasks are organized into logical groups for easier navigation:
 
 ### 🚀 Services Group
 
-| Task          | Description                                                | Port |
-| ------------- | ---------------------------------------------------------- | ---- |
-| `dashboard`   | Run the dashboard service (monitoring UI)                  | 8003 |
-| `extractor`   | Run the Python extractor service (backwards compatibility) | -    |
-| `graphinator` | Run the graphinator service (Neo4j graph builder)          | -    |
-| `tableinator` | Run the tableinator service (PostgreSQL table builder)     | -    |
+| Task            | Description                                                | Port |
+| --------------- | ---------------------------------------------------------- | ---- |
+| `dashboard`     | Run the dashboard service (monitoring UI)                  | 8003 |
+| `extractor`     | Run the Python extractor service (backwards compatibility) | -    |
+| `graphinator`   | Run the graphinator service (Neo4j graph builder)          | -    |
+| `schema-init`   | Run the one-shot schema initialiser (exits after success)  | -    |
+| `tableinator`   | Run the tableinator service (PostgreSQL table builder)     | -    |
 
 ### 🦀 Rust Group
 
