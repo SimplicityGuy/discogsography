@@ -263,6 +263,10 @@ jobs:
           echo "::notice title=Rust Tests Skipped::No Rust extractor found in this branch"
           exit 0
 
+      - name: 🔧 Setup Just
+        if: steps.check-rust.outputs.exists == 'true'
+        uses: ./.github/actions/setup-just
+
       - name: 🦀 Setup Rust toolchain
         if: steps.check-rust.outputs.exists == 'true'
         uses: dtolnay/rust-toolchain@stable
