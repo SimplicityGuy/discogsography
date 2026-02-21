@@ -12,90 +12,12 @@ from orjson import dumps
 import pytest
 
 from graphinator.graphinator import (
-    get_existing_hash,
     main,
     on_artist_message,
     on_label_message,
     on_master_message,
     on_release_message,
-    safe_execute_query,
 )
-
-
-class TestGetExistingHash:
-    """Test get_existing_hash function."""
-
-    def test_get_existing_hash_found(self) -> None:
-        """Test getting hash when node exists."""
-        mock_session = MagicMock()
-        mock_result = MagicMock()
-        mock_result.single.return_value = {"hash": "abc123"}
-        mock_session.run.return_value = mock_result
-
-        result = get_existing_hash(mock_session, "Artist", "123")
-
-        assert result == "abc123"
-        mock_session.run.assert_called_once()
-
-    def test_get_existing_hash_not_found(self) -> None:
-        """Test getting hash when node doesn't exist."""
-        mock_session = MagicMock()
-        mock_result = MagicMock()
-        mock_result.single.return_value = None
-        mock_session.run.return_value = mock_result
-
-        result = get_existing_hash(mock_session, "Artist", "123")
-
-        assert result is None
-
-    def test_get_existing_hash_error(self) -> None:
-        """Test handling errors when getting hash."""
-        mock_session = MagicMock()
-        mock_session.run.side_effect = Exception("Database error")
-
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = get_existing_hash(mock_session, "Artist", "123")
-
-            assert result is None
-            mock_logger.warning.assert_called_once()
-
-
-class TestSafeExecuteQuery:
-    """Test safe_execute_query function."""
-
-    def test_successful_execution(self) -> None:
-        """Test successful query execution."""
-        mock_session = MagicMock()
-
-        result = safe_execute_query(mock_session, "MATCH (n) RETURN n", {"id": "123"})
-
-        assert result is True
-        mock_session.run.assert_called_once_with("MATCH (n) RETURN n", {"id": "123"})
-
-    def test_neo4j_error(self) -> None:
-        """Test handling Neo4j errors."""
-        mock_session = MagicMock()
-        mock_session.run.side_effect = Exception("Neo4j error")
-
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = safe_execute_query(mock_session, "MATCH (n) RETURN n", {})
-
-            assert result is False
-            mock_logger.error.assert_called()
-
-    def test_neo4j_specific_error(self) -> None:
-        """Test handling specific Neo4jError exceptions."""
-        from neo4j.exceptions import Neo4jError
-
-        mock_session = MagicMock()
-        mock_session.run.side_effect = Neo4jError("Database unavailable")
-
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = safe_execute_query(mock_session, "MATCH (n) RETURN n", {})
-
-            assert result is False
-            # Verify specific Neo4jError logging path
-            assert any("Neo4j error" in str(call) for call in mock_logger.error.call_args_list)
 
 
 class TestOnArtistMessage:
@@ -2097,3 +2019,1020 @@ class TestReleaseMessageErrorHandling:
 
             # Should have logged nack failure
             assert mock_logger.warning.called
+
+
+class TestGetHealthDataStuckState:
+    """Test get_health_data() stuck state detection."""
+
+    def test_stuck_state_with_graph_set(self) -> None:
+        """Test health data shows stuck+unhealthy when consumers dead but graph connected."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = {"artists"}  # only 1 of 4 complete
+        graphinator.graphinator.message_counts = {"artists": 100, "labels": 0, "masters": 0, "releases": 0}
+        graphinator.graphinator.last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+
+        from graphinator.graphinator import get_health_data
+
+        with patch("graphinator.graphinator.graph", MagicMock()):
+            result = get_health_data()
+
+        assert result["status"] == "unhealthy"
+        assert "STUCK" in result["current_task"]
+
+    def test_stuck_state_sets_active_task(self) -> None:
+        """Test that stuck state sets the STUCK active_task message (line 121)."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = set()
+        graphinator.graphinator.message_counts = {"artists": 50, "labels": 0, "masters": 0, "releases": 0}
+        graphinator.graphinator.last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+
+        from graphinator.graphinator import get_health_data
+
+        # With graph None and is_stuck True, status goes to unhealthy via the graph-is-None path
+        # but with graph not None, is_stuck causes both active_task and status = "unhealthy"
+        with patch("graphinator.graphinator.graph", MagicMock()):
+            result = get_health_data()
+
+        assert result["current_task"] == "STUCK - consumers died, awaiting recovery"
+        assert result["status"] == "unhealthy"
+
+
+class TestCloseRabbitMQConnectionErrors:
+    """Test close_rabbitmq_connection error handling."""
+
+    @pytest.mark.asyncio
+    async def test_close_connection_error_logged(self) -> None:
+        """Test that error closing connection is logged but does not raise (lines 231-232)."""
+        import graphinator.graphinator
+
+        mock_channel = AsyncMock()
+        mock_channel.close = AsyncMock()
+
+        mock_connection = AsyncMock()
+        mock_connection.close.side_effect = Exception("Connection close failed")
+
+        graphinator.graphinator.active_channel = mock_channel
+        graphinator.graphinator.active_connection = mock_connection
+
+        with patch("graphinator.graphinator.logger"):
+            from graphinator.graphinator import close_rabbitmq_connection
+
+            await close_rabbitmq_connection()
+
+        # Should not raise; connection should be set to None anyway
+        assert graphinator.graphinator.active_connection is None
+        assert graphinator.graphinator.active_channel is None
+
+
+class TestPeriodicQueueCheckerExceptions:
+    """Test periodic_queue_checker exception handling paths."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.STUCK_CHECK_INTERVAL", 0.01)
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_cancelled_error_breaks_loop(self) -> None:
+        """Test CancelledError breaks out of the queue checker loop (lines 303-305)."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = {"artists", "labels", "masters", "releases"}
+        graphinator.graphinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+
+        call_count = 0
+
+        async def raise_cancelled(*_args: object, **_kwargs: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            raise asyncio.CancelledError()
+
+        from graphinator.graphinator import periodic_queue_checker
+
+        with patch("asyncio.sleep", side_effect=raise_cancelled):
+            await periodic_queue_checker()
+
+        assert call_count == 1  # Broke out after first CancelledError
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.STUCK_CHECK_INTERVAL", 0.01)
+    async def test_general_exception_continues_loop(self) -> None:
+        """Test general exception is logged and loop continues (lines 306-308)."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = {"artists", "labels", "masters", "releases"}
+        graphinator.graphinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+
+        call_count = 0
+
+        async def raise_then_shutdown(*_args: object, **_kwargs: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("Test error in queue checker")
+            # Second call: set shutdown to exit loop
+            graphinator.graphinator.shutdown_requested = True
+
+        from graphinator.graphinator import periodic_queue_checker
+
+        graphinator.graphinator.shutdown_requested = False
+        with patch("asyncio.sleep", side_effect=raise_then_shutdown), patch("graphinator.graphinator.logger"):
+            await periodic_queue_checker()
+
+        assert call_count == 2  # Continued after exception, then stopped
+
+
+class TestRecoverConsumersEdgeCases:
+    """Test _recover_consumers edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_closes_existing_connection_before_recovery(self) -> None:
+        """Test that _recover_consumers closes existing connection first (lines 322-327)."""
+        import graphinator.graphinator
+
+        mock_existing_conn = AsyncMock()
+        graphinator.graphinator.active_connection = mock_existing_conn
+        graphinator.graphinator.active_channel = AsyncMock()
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_rabbitmq_manager.connect.side_effect = Exception("Can't reconnect")
+
+        with patch("graphinator.graphinator.rabbitmq_manager", mock_rabbitmq_manager), patch("graphinator.graphinator.logger"):
+            from graphinator.graphinator import _recover_consumers
+
+            await _recover_consumers()
+
+        mock_existing_conn.close.assert_called_once()
+        assert graphinator.graphinator.active_connection is None
+        assert graphinator.graphinator.active_channel is None
+
+    @pytest.mark.asyncio
+    async def test_returns_on_rabbitmq_connect_failure(self) -> None:
+        """Test that _recover_consumers returns early when RabbitMQ connect fails (lines 333-335)."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.active_connection = None
+        graphinator.graphinator.active_channel = None
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_rabbitmq_manager.connect.side_effect = Exception("RabbitMQ unavailable")
+
+        with patch("graphinator.graphinator.rabbitmq_manager", mock_rabbitmq_manager), patch("graphinator.graphinator.logger"):
+            from graphinator.graphinator import _recover_consumers
+
+            # Should return without raising
+            await _recover_consumers()
+
+        # No connection should be established
+        assert graphinator.graphinator.active_connection is None
+
+
+class TestProcessArtistEdgeCases:
+    """Test process_artist edge cases for string members/groups/aliases and missing IDs."""
+
+    def test_string_member_is_used_as_id(self) -> None:
+        """Test string member is treated as member ID directly (line 510)."""
+        from graphinator.graphinator import process_artist
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "artist-1",
+            "sha256": "newhash",
+            "name": "Test Artist",
+            "members": {"name": ["string-member-id"]},  # String, not dict
+        }
+
+        result = process_artist(mock_tx, record)
+        assert result is True
+        # Should run MEMBER_OF relationship with string-member-id
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert any("MEMBER_OF" in c for c in calls)
+
+    def test_member_without_id_logs_warning(self) -> None:
+        """Test member dict without @id or id logs a warning (lines 516-518)."""
+        from graphinator.graphinator import process_artist
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "artist-1",
+            "sha256": "newhash",
+            "name": "Test Artist",
+            "members": {"name": [{"#text": "No ID Member"}]},  # Dict without @id or id
+        }
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            result = process_artist(mock_tx, record)
+
+        assert result is True
+        mock_logger.warning.assert_called()
+        warning_msg = str(mock_logger.warning.call_args_list)
+        assert "Skipping member" in warning_msg
+
+    def test_string_group_is_used_as_id(self) -> None:
+        """Test string group is treated as group ID directly (line 539)."""
+        from graphinator.graphinator import process_artist
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "artist-1",
+            "sha256": "newhash",
+            "name": "Test Artist",
+            "groups": {"name": ["string-group-id"]},  # String, not dict
+        }
+
+        result = process_artist(mock_tx, record)
+        assert result is True
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert any("MEMBER_OF" in c for c in calls)
+
+    def test_group_without_id_logs_warning(self) -> None:
+        """Test group dict without @id or id logs a warning (lines 545-547)."""
+        from graphinator.graphinator import process_artist
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "artist-1",
+            "sha256": "newhash",
+            "name": "Test Artist",
+            "groups": {"name": [{"#text": "No ID Group"}]},
+        }
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            result = process_artist(mock_tx, record)
+
+        assert result is True
+        mock_logger.warning.assert_called()
+        warning_msg = str(mock_logger.warning.call_args_list)
+        assert "Skipping group" in warning_msg
+
+    def test_string_alias_is_used_as_id(self) -> None:
+        """Test string alias is treated as alias ID directly (line 568)."""
+        from graphinator.graphinator import process_artist
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "artist-1",
+            "sha256": "newhash",
+            "name": "Test Artist",
+            "aliases": {"name": ["string-alias-id"]},
+        }
+
+        result = process_artist(mock_tx, record)
+        assert result is True
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert any("ALIAS_OF" in c for c in calls)
+
+    def test_alias_without_id_logs_warning(self) -> None:
+        """Test alias dict without @id or id logs a warning (lines 574-576)."""
+        from graphinator.graphinator import process_artist
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "artist-1",
+            "sha256": "newhash",
+            "name": "Test Artist",
+            "aliases": {"name": [{"#text": "No ID Alias"}]},
+        }
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            result = process_artist(mock_tx, record)
+
+        assert result is True
+        mock_logger.warning.assert_called()
+        warning_msg = str(mock_logger.warning.call_args_list)
+        assert "Skipping alias" in warning_msg
+
+
+class TestProcessLabelEdgeCases:
+    """Test process_label edge cases."""
+
+    def test_sublabel_without_id_logs_warning(self) -> None:
+        """Test sublabel dict without @id or id logs a warning (line 635)."""
+        from graphinator.graphinator import process_label
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "label-1",
+            "sha256": "newhash",
+            "name": "Test Label",
+            "sublabels": {"label": [{"#text": "No ID Sublabel"}]},  # Dict without @id or id
+        }
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            result = process_label(mock_tx, record)
+
+        assert result is True
+        mock_logger.warning.assert_called()
+        warning_msg = str(mock_logger.warning.call_args_list)
+        assert "Skipping sublabel" in warning_msg
+
+    def test_parent_label_without_id_logs_warning(self) -> None:
+        """Test parent label dict without @id or id logs a warning."""
+        from graphinator.graphinator import process_label
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "label-1",
+            "sha256": "newhash",
+            "name": "Test Label",
+            "parentLabel": {"#text": "No ID Parent"},  # Dict without @id or id
+        }
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            result = process_label(mock_tx, record)
+
+        assert result is True
+        mock_logger.warning.assert_called()
+        warning_msg = str(mock_logger.warning.call_args_list)
+        assert "Skipping parent label" in warning_msg
+
+
+class TestProcessMasterEdgeCases:
+    """Test process_master edge cases."""
+
+    def test_artist_without_id_logs_warning(self) -> None:
+        """Test master artist dict without id or @id logs a warning (line 709)."""
+        from graphinator.graphinator import process_master
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "master-1",
+            "sha256": "newhash",
+            "title": "Test Master",
+            "year": 2023,
+            "artists": {"artist": [{"name": "Unknown Artist"}]},  # Dict without id or @id
+        }
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            result = process_master(mock_tx, record)
+
+        assert result is True
+        mock_logger.warning.assert_called()
+        warning_msg = str(mock_logger.warning.call_args_list)
+        assert "Skipping artist" in warning_msg
+
+
+class TestProcessLabelSublabelsString:
+    """Test process_label with sublabels as a bare string (line 635)."""
+
+    def test_sublabels_as_string_creates_single_item_list(self) -> None:
+        """Test sublabels as a bare string hits line 635: sublabels_list = [sublabels]."""
+        from graphinator.graphinator import process_label
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "label-str-1",
+            "sha256": "newhash",
+            "name": "Parent Label",
+            "sublabels": "SubLabel As String",  # bare string, not list or dict
+        }
+
+        with patch("graphinator.graphinator.logger"):
+            result = process_label(mock_tx, record)
+
+        assert result is True
+        mock_tx.run.assert_called()
+
+
+class TestProcessReleaseArtistNoId:
+    """Test process_release with artist dict missing both id and @id (line 809)."""
+
+    def test_artist_dict_missing_id_logs_warning(self) -> None:
+        """Test artist dict without id or @id key logs warning at line 809."""
+        from graphinator.graphinator import process_release
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "release-no-artist-id",
+            "sha256": "newhash",
+            "title": "Test Release",
+            "artists": {
+                "artist": [
+                    {"name": "Unknown Artist", "role": "Producer"},  # no id or @id
+                ]
+            },
+        }
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            result = process_release(mock_tx, record)
+
+        assert result is True
+        mock_logger.warning.assert_called()
+        warning_msg = str(mock_logger.warning.call_args_list)
+        assert "Skipping artist" in warning_msg
+
+
+class TestProcessReleaseLabelNoId:
+    """Test process_release with label dict missing both id and @id (line 838)."""
+
+    def test_label_dict_missing_id_logs_warning(self) -> None:
+        """Test label dict without @id or id key logs warning at line 838."""
+        from graphinator.graphinator import process_release
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "release-no-label-id",
+            "sha256": "newhash",
+            "title": "Test Release",
+            "labels": {
+                "label": [
+                    {"name": "Unknown Label", "catno": "CAT001"},  # no @id or id
+                ]
+            },
+        }
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            result = process_release(mock_tx, record)
+
+        assert result is True
+        mock_logger.warning.assert_called()
+        warning_msg = str(mock_logger.warning.call_args_list)
+        assert "Skipping label" in warning_msg
+
+
+class TestProcessReleaseMasterNoId:
+    """Test process_release with master_id dict missing text key (line 863)."""
+
+    def test_master_id_dict_without_text_logs_warning(self) -> None:
+        """Test master_id dict without the text key logs warning at line 863."""
+        from graphinator.graphinator import process_release
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "release-no-master-text",
+            "sha256": "newhash",
+            "title": "Test Release",
+            "master_id": {"other": "value"},  # dict without "#text"
+        }
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            result = process_release(mock_tx, record)
+
+        assert result is True
+        mock_logger.warning.assert_called()
+        warning_msg = str(mock_logger.warning.call_args_list)
+        assert "Skipping master" in warning_msg
+
+
+class TestMainConfigError:
+    """Test main() early return on GraphinatorConfig ValueError (lines 1209-1211)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.signal.signal")
+    @patch("graphinator.graphinator.setup_logging")
+    @patch("graphinator.graphinator.HealthServer")
+    @patch("graphinator.graphinator.GraphinatorConfig.from_env", side_effect=ValueError("bad config"))
+    async def test_main_returns_on_config_error(
+        self,
+        _mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test main() returns after logging error when config raises ValueError."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        with (
+            patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+            patch("graphinator.graphinator.logger") as mock_logger,
+        ):
+            await main()
+
+        error_calls = str(mock_logger.error.call_args_list)
+        assert "Configuration error" in error_calls or "bad config" in error_calls
+
+
+class TestMainNeo4jFailure:
+    """Test main() early return on Neo4j connection failure (lines 1365-1367)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.signal.signal")
+    @patch("graphinator.graphinator.setup_logging")
+    @patch("graphinator.graphinator.HealthServer")
+    @patch("graphinator.graphinator.GraphinatorConfig.from_env")
+    @patch("graphinator.graphinator.AsyncResilientNeo4jDriver")
+    async def test_main_returns_on_neo4j_error(
+        self,
+        mock_neo4j_class: MagicMock,
+        mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test main() returns after logging error when Neo4j session raises."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        mock_config = MagicMock()
+        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_username = "neo4j"
+        mock_config.neo4j_password = "password"
+        mock_from_env.return_value = mock_config
+
+        mock_neo4j_instance = MagicMock()
+        mock_neo4j_class.return_value = mock_neo4j_instance
+
+        async def failing_session(*_args: Any, **_kwargs: Any) -> Any:
+            raise Exception("Neo4j connection refused")
+
+        mock_neo4j_instance.session = MagicMock(side_effect=failing_session)
+
+        with (
+            patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+            patch("graphinator.graphinator.logger") as mock_logger,
+        ):
+            await main()
+
+        error_calls = str(mock_logger.error.call_args_list)
+        assert "Neo4j" in error_calls or "Failed" in error_calls
+
+
+class TestMainNeo4jSetupDetails:
+    """Test Neo4j setup block: dedup logging, constraint error, index error (lines 1292-1357)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.signal.signal")
+    @patch("graphinator.graphinator.setup_logging")
+    @patch("graphinator.graphinator.HealthServer")
+    @patch("graphinator.graphinator.GraphinatorConfig.from_env")
+    @patch("graphinator.graphinator.AsyncResilientNeo4jDriver")
+    @patch("graphinator.graphinator.AsyncResilientRabbitMQ")
+    async def test_dedup_removed_constraint_index_errors(
+        self,
+        mock_rabbitmq_class: MagicMock,
+        mock_neo4j_class: MagicMock,
+        mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Cover dedup >0 info log (1292-1293), constraint error log (1320-1324), index error log (1342-1343)."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        mock_config = MagicMock()
+        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_username = "neo4j"
+        mock_config.neo4j_password = "password"
+        mock_config.amqp_connection = "amqp://guest:guest@localhost/"
+        mock_from_env.return_value = mock_config
+
+        mock_neo4j_instance = MagicMock()
+        mock_neo4j_class.return_value = mock_neo4j_instance
+        mock_neo4j_instance.close = AsyncMock()
+
+        call_index = 0
+
+        async def mock_session_factory(*_args: Any, **_kwargs: Any) -> Any:
+            nonlocal call_index
+            call_index += 1
+            mock_session = AsyncMock()
+
+            if call_index == 1:
+                # Connectivity test
+                result = AsyncMock()
+                result.single = AsyncMock(return_value={"test": 1})
+                mock_session.run = AsyncMock(return_value=result)
+            elif call_index == 2:
+                # SHOW INDEXES session - return empty async iterators
+                async def empty_run_indexes(*_a: Any, **_kw: Any) -> AsyncMock:
+                    result = AsyncMock()
+
+                    async def empty_aiter() -> Any:
+                        return
+                        yield  # noqa: unreachable
+
+                    result.__aiter__ = lambda _: empty_aiter()
+                    return result
+
+                mock_session.run = empty_run_indexes
+            elif call_index == 3:
+                # First dedup session - removed=5 triggers info log (lines 1292-1293)
+                result = AsyncMock()
+                result.single = AsyncMock(return_value={"removed": 5})
+                mock_session.run = AsyncMock(return_value=result)
+            elif call_index <= 8:
+                # Remaining dedup sessions - removed=0
+                result = AsyncMock()
+                result.single = AsyncMock(return_value={"removed": 0})
+                mock_session.run = AsyncMock(return_value=result)
+            else:
+                # Constraint/index session - raise on first constraint and sha256 index
+                constraint_call_count = 0
+
+                async def mixed_run(*args: Any, **_kw: Any) -> AsyncMock:
+                    nonlocal constraint_call_count
+                    constraint_call_count += 1
+                    query = args[0] if args else ""
+                    if "CONSTRAINT" in str(query) and constraint_call_count <= 1:
+                        raise Exception("Constraint already exists with different type")
+                    if "sha256" in str(query):
+                        raise Exception("Index already exists")
+                    result = AsyncMock()
+                    result.single = AsyncMock(return_value=None)
+                    return result
+
+                mock_session.run = mixed_run
+
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            ctx.__aexit__ = AsyncMock(return_value=None)
+            return ctx
+
+        mock_neo4j_instance.session = MagicMock(side_effect=mock_session_factory)
+
+        # AMQP fails immediately so main() exits after Neo4j setup completes
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+        mock_rabbitmq_instance.connect = AsyncMock(side_effect=Exception("AMQP unavailable"))
+
+        import graphinator.graphinator as gm
+
+        original_shutdown = gm.shutdown_requested
+        try:
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("graphinator.graphinator.BATCH_MODE", False),
+                patch("graphinator.graphinator.logger") as mock_logger,
+            ):
+                await main()
+
+            # Verify dedup logging (lines 1292-1293)
+            all_info_calls = str(mock_logger.info.call_args_list)
+            assert "Deduplicated" in all_info_calls
+            # Verify constraint error was logged (lines 1320-1324)
+            all_error_calls = str(mock_logger.error.call_args_list)
+            assert "constraint" in all_error_calls.lower() or "Failed" in all_error_calls
+        finally:
+            gm.shutdown_requested = original_shutdown
+
+
+class TestMainBatchProcessorFlushError:
+    """Test batch flush error in finally block (lines 1536-1541)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.signal.signal")
+    @patch("graphinator.graphinator.setup_logging")
+    @patch("graphinator.graphinator.HealthServer")
+    @patch("graphinator.graphinator.GraphinatorConfig.from_env")
+    @patch("graphinator.graphinator.AsyncResilientNeo4jDriver")
+    @patch("graphinator.graphinator.AsyncResilientRabbitMQ")
+    async def test_batch_processor_flush_error_logs(
+        self,
+        mock_rabbitmq_class: MagicMock,
+        mock_neo4j_class: MagicMock,
+        mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test that batch_processor.flush_all() raising in finally block logs an error."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        mock_config = MagicMock()
+        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_username = "neo4j"
+        mock_config.neo4j_password = "password"
+        mock_config.amqp_connection = "amqp://guest:guest@localhost/"
+        mock_from_env.return_value = mock_config
+
+        mock_neo4j_instance = MagicMock()
+        mock_neo4j_class.return_value = mock_neo4j_instance
+        mock_neo4j_instance.close = AsyncMock()
+
+        mock_batch_proc = AsyncMock()
+        mock_batch_proc.shutdown = MagicMock()
+        mock_batch_proc.flush_all = AsyncMock(side_effect=Exception("flush failed"))
+
+        call_index = 0
+
+        async def mock_session_factory(*_args: Any, **_kwargs: Any) -> Any:
+            nonlocal call_index
+            call_index += 1
+            mock_session = AsyncMock()
+
+            if call_index == 1:
+                result = AsyncMock()
+                result.single = AsyncMock(return_value={"test": 1})
+                mock_session.run = AsyncMock(return_value=result)
+            else:
+
+                async def empty_run(*_a: Any, **_kw: Any) -> AsyncMock:
+                    result = AsyncMock()
+                    result.single = AsyncMock(return_value={"removed": 0})
+
+                    async def empty_aiter() -> Any:
+                        return
+                        yield  # noqa: unreachable
+
+                    result.__aiter__ = lambda _: empty_aiter()
+                    return result
+
+                mock_session.run = empty_run
+
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            ctx.__aexit__ = AsyncMock(return_value=None)
+            return ctx
+
+        mock_neo4j_instance.session = MagicMock(side_effect=mock_session_factory)
+
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_channel.set_qos = AsyncMock()
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.declare_queue = AsyncMock(return_value=AsyncMock())
+        mock_connection.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection.__aexit__ = AsyncMock(return_value=None)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+        mock_rabbitmq_instance.connect = AsyncMock(return_value=mock_connection)
+
+        import graphinator.graphinator as gm
+
+        original_shutdown = gm.shutdown_requested
+        created_tasks: list[asyncio.Task[Any]] = []
+
+        def mock_create_task(coro: Any) -> asyncio.Task[Any]:
+            task = asyncio.get_event_loop().create_task(coro)
+            created_tasks.append(task)
+            return task
+
+        try:
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("graphinator.graphinator.batch_processor", mock_batch_proc),
+                patch("graphinator.graphinator.BATCH_MODE", False),
+                patch("graphinator.graphinator.logger") as mock_logger,
+                patch("graphinator.graphinator.shutdown_requested", False),
+                patch("asyncio.create_task", side_effect=mock_create_task),
+            ):
+
+                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+                    import graphinator.graphinator as _gm
+
+                    _gm.shutdown_requested = True
+                    raise TimeoutError()
+
+                with patch("asyncio.wait_for", mock_wait_for):
+                    await main()
+
+            for task in created_tasks:
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+
+            error_calls = str(mock_logger.error.call_args_list)
+            assert "flush" in error_calls.lower() or "Error flushing" in error_calls or "batch" in error_calls.lower()
+        finally:
+            gm.shutdown_requested = original_shutdown
+
+
+class TestMainNeo4jCloseError:
+    """Test Neo4j driver close error in finally block (lines 1554-1555)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.signal.signal")
+    @patch("graphinator.graphinator.setup_logging")
+    @patch("graphinator.graphinator.HealthServer")
+    @patch("graphinator.graphinator.GraphinatorConfig.from_env")
+    @patch("graphinator.graphinator.AsyncResilientNeo4jDriver")
+    @patch("graphinator.graphinator.AsyncResilientRabbitMQ")
+    async def test_neo4j_close_error_logs_warning(
+        self,
+        mock_rabbitmq_class: MagicMock,
+        mock_neo4j_class: MagicMock,
+        mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test that graph.close() raising in finally block logs a warning."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        mock_config = MagicMock()
+        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_username = "neo4j"
+        mock_config.neo4j_password = "password"
+        mock_config.amqp_connection = "amqp://guest:guest@localhost/"
+        mock_from_env.return_value = mock_config
+
+        mock_neo4j_instance = MagicMock()
+        mock_neo4j_class.return_value = mock_neo4j_instance
+        mock_neo4j_instance.close = AsyncMock(side_effect=Exception("close failed"))
+
+        call_index = 0
+
+        async def mock_session_factory(*_args: Any, **_kwargs: Any) -> Any:
+            nonlocal call_index
+            call_index += 1
+            mock_session = AsyncMock()
+
+            if call_index == 1:
+                result = AsyncMock()
+                result.single = AsyncMock(return_value={"test": 1})
+                mock_session.run = AsyncMock(return_value=result)
+            else:
+
+                async def empty_run(*_a: Any, **_kw: Any) -> AsyncMock:
+                    result = AsyncMock()
+                    result.single = AsyncMock(return_value={"removed": 0})
+
+                    async def empty_aiter() -> Any:
+                        return
+                        yield  # noqa: unreachable
+
+                    result.__aiter__ = lambda _: empty_aiter()
+                    return result
+
+                mock_session.run = empty_run
+
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            ctx.__aexit__ = AsyncMock(return_value=None)
+            return ctx
+
+        mock_neo4j_instance.session = MagicMock(side_effect=mock_session_factory)
+
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_channel.set_qos = AsyncMock()
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.declare_queue = AsyncMock(return_value=AsyncMock())
+        mock_connection.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection.__aexit__ = AsyncMock(return_value=None)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+        mock_rabbitmq_instance.connect = AsyncMock(return_value=mock_connection)
+
+        import graphinator.graphinator as gm
+
+        original_shutdown = gm.shutdown_requested
+        created_tasks: list[asyncio.Task[Any]] = []
+
+        def mock_create_task(coro: Any) -> asyncio.Task[Any]:
+            task = asyncio.get_event_loop().create_task(coro)
+            created_tasks.append(task)
+            return task
+
+        try:
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("graphinator.graphinator.BATCH_MODE", False),
+                patch("graphinator.graphinator.logger") as mock_logger,
+                patch("graphinator.graphinator.shutdown_requested", False),
+                patch("asyncio.create_task", side_effect=mock_create_task),
+            ):
+
+                async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+                    import graphinator.graphinator as _gm
+
+                    _gm.shutdown_requested = True
+                    raise TimeoutError()
+
+                with patch("asyncio.wait_for", mock_wait_for):
+                    await main()
+
+            for task in created_tasks:
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+
+            warning_calls = str(mock_logger.warning.call_args_list)
+            assert "Neo4j" in warning_calls or "close" in warning_calls.lower() or "Error" in warning_calls
+        finally:
+            gm.shutdown_requested = original_shutdown
+
+
+class TestMainAmqpConnectionNone:
+    """Test main() returns when AMQP connection is None after retry loop exits (lines 1422-1423)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.signal.signal")
+    @patch("graphinator.graphinator.setup_logging")
+    @patch("graphinator.graphinator.HealthServer")
+    @patch("graphinator.graphinator.GraphinatorConfig.from_env")
+    @patch("graphinator.graphinator.AsyncResilientNeo4jDriver")
+    @patch("graphinator.graphinator.AsyncResilientRabbitMQ")
+    async def test_main_returns_when_amqp_connection_none(
+        self,
+        mock_rabbitmq_class: MagicMock,
+        mock_neo4j_class: MagicMock,
+        mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test main() logs error and returns when amqp_connection remains None.
+
+        Sets shutdown_requested=True before the AMQP retry loop so the while
+        condition fails immediately, amqp_connection stays None, and main()
+        hits the early-return path at lines 1422-1423.
+        """
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        mock_config = MagicMock()
+        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_username = "neo4j"
+        mock_config.neo4j_password = "password"
+        mock_config.amqp_connection = "amqp://guest:guest@localhost/"
+        mock_from_env.return_value = mock_config
+
+        mock_neo4j_instance = MagicMock()
+        mock_neo4j_class.return_value = mock_neo4j_instance
+        mock_neo4j_instance.close = AsyncMock()
+
+        call_index = 0
+
+        async def mock_session_factory(*_args: Any, **_kwargs: Any) -> Any:
+            nonlocal call_index
+            call_index += 1
+            mock_session = AsyncMock()
+
+            if call_index == 1:
+                result = AsyncMock()
+                result.single = AsyncMock(return_value={"test": 1})
+                mock_session.run = AsyncMock(return_value=result)
+            else:
+
+                async def empty_run(*_a: Any, **_kw: Any) -> AsyncMock:
+                    result = AsyncMock()
+                    result.single = AsyncMock(return_value={"removed": 0})
+
+                    async def empty_aiter() -> Any:
+                        return
+                        yield  # noqa: unreachable
+
+                    result.__aiter__ = lambda _: empty_aiter()
+                    return result
+
+                mock_session.run = empty_run
+
+            ctx = AsyncMock()
+            ctx.__aenter__ = AsyncMock(return_value=mock_session)
+            ctx.__aexit__ = AsyncMock(return_value=None)
+            return ctx
+
+        mock_neo4j_instance.session = MagicMock(side_effect=mock_session_factory)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+        mock_rabbitmq_instance.connect = AsyncMock(return_value=None)
+
+        import graphinator.graphinator as gm
+
+        original_shutdown = gm.shutdown_requested
+        try:
+            # Set shutdown_requested=True so the AMQP retry while-loop body never
+            # executes and amqp_connection stays None, triggering lines 1422-1423.
+            gm.shutdown_requested = True
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("graphinator.graphinator.BATCH_MODE", False),
+                patch("graphinator.graphinator.logger") as mock_logger,
+            ):
+                await main()
+
+            error_calls = str(mock_logger.error.call_args_list)
+            assert "AMQP" in error_calls or "amqp" in error_calls.lower() or "No AMQP" in error_calls
+        finally:
+            gm.shutdown_requested = original_shutdown

@@ -202,3 +202,175 @@ class TestSetupLogging:
 
         logger = logging.getLogger()
         assert logger.level == logging.ERROR
+
+
+class TestExtractorConfigEdgeCases:
+    """Test ExtractorConfig edge cases for PERIODIC_CHECK_DAYS validation."""
+
+    def test_periodic_check_days_zero_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test PERIODIC_CHECK_DAYS=0 is invalid and defaults to 15 (lines 46-49)."""
+        monkeypatch.setenv("PERIODIC_CHECK_DAYS", "0")
+
+        config = ExtractorConfig.from_env()
+        assert config.periodic_check_days == 15
+
+    def test_periodic_check_days_negative_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test negative PERIODIC_CHECK_DAYS defaults to 15 (lines 46-49)."""
+        monkeypatch.setenv("PERIODIC_CHECK_DAYS", "-5")
+
+        config = ExtractorConfig.from_env()
+        assert config.periodic_check_days == 15
+
+
+class TestGraphinatorConfigMissingVars:
+    """Test GraphinatorConfig individual missing variable branches."""
+
+    def test_missing_amqp_connection_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test AMQP_CONNECTION missing raises ValueError (line 81)."""
+        monkeypatch.delenv("AMQP_CONNECTION", raising=False)
+
+        with pytest.raises(ValueError, match="AMQP_CONNECTION"):
+            GraphinatorConfig.from_env()
+
+    def test_missing_neo4j_username_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test NEO4J_USERNAME missing raises ValueError (line 85)."""
+        monkeypatch.delenv("NEO4J_USERNAME", raising=False)
+
+        with pytest.raises(ValueError, match="NEO4J_USERNAME"):
+            GraphinatorConfig.from_env()
+
+    def test_missing_neo4j_password_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test NEO4J_PASSWORD missing raises ValueError (line 87)."""
+        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
+
+        with pytest.raises(ValueError, match="NEO4J_PASSWORD"):
+            GraphinatorConfig.from_env()
+
+
+class TestTableinatorConfigMissingVars:
+    """Test TableinatorConfig individual missing variable branches."""
+
+    def test_missing_amqp_connection(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test AMQP_CONNECTION missing raises ValueError (line 121)."""
+        monkeypatch.delenv("AMQP_CONNECTION", raising=False)
+
+        with pytest.raises(ValueError, match="AMQP_CONNECTION"):
+            TableinatorConfig.from_env()
+
+    def test_missing_postgres_username(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test POSTGRES_USERNAME missing raises ValueError (line 125)."""
+        monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
+
+        with pytest.raises(ValueError, match="POSTGRES_USERNAME"):
+            TableinatorConfig.from_env()
+
+    def test_missing_postgres_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test POSTGRES_PASSWORD missing raises ValueError (line 127)."""
+        monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+
+        with pytest.raises(ValueError, match="POSTGRES_PASSWORD"):
+            TableinatorConfig.from_env()
+
+    def test_missing_postgres_database(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test POSTGRES_DATABASE missing raises ValueError (line 129)."""
+        monkeypatch.delenv("POSTGRES_DATABASE", raising=False)
+
+        with pytest.raises(ValueError, match="POSTGRES_DATABASE"):
+            TableinatorConfig.from_env()
+
+
+class TestDashboardConfig:
+    """Test DashboardConfig from_env with optional settings."""
+
+    def test_cors_origins_parsed_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test CORS_ORIGINS is parsed as a comma-separated list (lines 326-328)."""
+        from common import DashboardConfig
+
+        monkeypatch.setenv("CORS_ORIGINS", "http://localhost:3000, https://example.com, https://app.example.com")
+
+        config = DashboardConfig.from_env()
+
+        assert config.cors_origins == ["http://localhost:3000", "https://example.com", "https://app.example.com"]
+
+    def test_cache_warming_disabled(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test CACHE_WARMING_ENABLED=false disables cache warming (line 331)."""
+        from common import DashboardConfig
+
+        monkeypatch.setenv("CACHE_WARMING_ENABLED", "false")
+
+        config = DashboardConfig.from_env()
+
+        assert config.cache_warming_enabled is False
+
+    def test_cache_webhook_secret_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test CACHE_WEBHOOK_SECRET is read from environment (line 334)."""
+        from common import DashboardConfig
+
+        monkeypatch.setenv("CACHE_WEBHOOK_SECRET", "mysecret123")
+
+        config = DashboardConfig.from_env()
+
+        assert config.cache_webhook_secret == "mysecret123"
+
+    def test_redis_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test custom REDIS_URL is read from environment (line 317)."""
+        from common import DashboardConfig
+
+        monkeypatch.setenv("REDIS_URL", "redis://myredis:6380/1")
+
+        config = DashboardConfig.from_env()
+
+        assert config.redis_url == "redis://myredis:6380/1"
+
+
+class TestExploreConfig:
+    """Test ExploreConfig from_env."""
+
+    def test_from_env_with_all_vars(self) -> None:
+        """Test ExploreConfig with all required vars."""
+        from common import ExploreConfig
+
+        config = ExploreConfig.from_env()
+
+        assert config.neo4j_address == "bolt://localhost:7687"
+        assert config.neo4j_username == "test"
+        assert config.neo4j_password == "test"
+
+    def test_missing_neo4j_address(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test NEO4J_ADDRESS missing raises ValueError (line 375)."""
+        from common import ExploreConfig
+
+        monkeypatch.delenv("NEO4J_ADDRESS", raising=False)
+
+        with pytest.raises(ValueError, match="NEO4J_ADDRESS"):
+            ExploreConfig.from_env()
+
+    def test_missing_neo4j_username(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test NEO4J_USERNAME missing raises ValueError (line 377)."""
+        from common import ExploreConfig
+
+        monkeypatch.delenv("NEO4J_USERNAME", raising=False)
+
+        with pytest.raises(ValueError, match="NEO4J_USERNAME"):
+            ExploreConfig.from_env()
+
+    def test_missing_neo4j_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test NEO4J_PASSWORD missing raises ValueError (line 379)."""
+        from common import ExploreConfig
+
+        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
+
+        with pytest.raises(ValueError, match="NEO4J_PASSWORD"):
+            ExploreConfig.from_env()
+
+
+class TestGetConfig:
+    """Test get_config() function."""
+
+    def test_get_config_returns_dashboard_config(self) -> None:
+        """Test that get_config() returns a DashboardConfig instance (line 396)."""
+        from common import DashboardConfig, get_config
+
+        config = get_config()
+
+        assert isinstance(config, DashboardConfig)

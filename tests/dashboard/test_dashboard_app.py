@@ -1127,3 +1127,63 @@ class TestPrometheusMetricsInitialization:
 
         # If we get here without exception, the error handling worked
         assert True
+
+
+class TestGetDatabaseInfoNoPort:
+    """Test get_database_info() when postgres_address has no port (lines 323-324)."""
+
+    @pytest.mark.asyncio
+    async def test_get_database_info_postgres_address_without_port(self) -> None:
+        """Test that get_database_info uses port 5432 when address has no colon."""
+        mock_config = Mock()
+        mock_config.postgres_address = "mydbhost"  # No port
+        mock_config.postgres_database = "testdb"
+        mock_config.postgres_username = "test"
+        mock_config.postgres_password = "test"
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+            app.neo4j_driver = None
+
+            connect_kwargs: dict[str, Any] = {}
+
+            async def capture_connect(**kwargs: Any) -> Any:
+                connect_kwargs.update(kwargs)
+                raise Exception("Connection refused")
+
+            with patch("psycopg.AsyncConnection.connect", side_effect=capture_connect):
+                databases = await app.get_database_info()
+
+            # Verify port defaulted to 5432 and host was used as-is
+            assert connect_kwargs.get("host") == "mydbhost"
+            assert connect_kwargs.get("port") == 5432
+            assert databases[0].name == "PostgreSQL"
+            assert databases[0].status == "unhealthy"
+
+
+class TestWebSocketGeneralException:
+    """Test WebSocket general exception handler (lines 569-573)."""
+
+    @pytest.mark.asyncio
+    async def test_websocket_general_exception_cleans_up(self) -> None:
+        """Test that a non-WebSocketDisconnect exception removes the connection."""
+        from dashboard.dashboard import websocket_endpoint
+
+        mock_ws = AsyncMock()
+        mock_ws.accept = AsyncMock()
+        mock_ws.send_text = AsyncMock()
+        # Make receive_text raise a generic exception (not WebSocketDisconnect)
+        mock_ws.receive_text = AsyncMock(side_effect=RuntimeError("network error"))
+
+        mock_dashboard_instance = Mock()
+        mock_dashboard_instance.websocket_connections = set()
+        mock_dashboard_instance.latest_metrics = None  # Skip initial send
+
+        with (
+            patch("dashboard.dashboard.dashboard", mock_dashboard_instance),
+            patch("dashboard.dashboard.logger"),
+        ):
+            await websocket_endpoint(mock_ws)
+
+        # After the RuntimeError, the connection should have been cleaned up
+        assert len(mock_dashboard_instance.websocket_connections) == 0

@@ -791,3 +791,189 @@ class TestBatchTransactionLogic:
 
         # Should have created artist node and all relationships
         assert len(executed_queries) >= 4  # Artist node + members + groups + aliases
+
+    @pytest.mark.asyncio
+    async def test_labels_batch_all_up_to_date_early_return(self) -> None:
+        """Test early return when all labels already have matching hashes (lines 378, 387-388)."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        # Return hash that matches the message hash - line 378 fires
+        mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [PendingMessage("labels", {"id": "1", "name": "Label 1", "sha256": "hash1"}, AsyncMock(), AsyncMock())]
+
+        await processor._process_labels_batch(messages)
+
+        # execute_write should NOT be called (returned early at line 388)
+        mock_session.execute_write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_labels_batch_transaction_executes_parent_and_sublabels(self) -> None:
+        """Test label batch_write closure executes parent and sublabel logic (lines 409, 416, 430-432, 439)."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        executed_queries: list[str] = []
+
+        async def track_query(query: str, **_params: Any) -> None:
+            executed_queries.append(query)
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = track_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage(
+                "labels",
+                {
+                    "id": "1",
+                    "name": "Label 1",
+                    "sha256": "hash1",
+                    "parentLabel": {"id": "2"},
+                    "sublabels": [{"id": "3"}, {"id": "4"}],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_labels_batch(messages)
+
+        # Should have executed label node + parent + sublabel queries
+        assert len(executed_queries) >= 3
+
+    @pytest.mark.asyncio
+    async def test_masters_batch_all_up_to_date_early_return(self) -> None:
+        """Test early return when all masters already have matching hashes (lines 467, 476-477)."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [PendingMessage("masters", {"id": "1", "title": "Master 1", "sha256": "hash1"}, AsyncMock(), AsyncMock())]
+
+        await processor._process_masters_batch(messages)
+
+        # execute_write should NOT be called (returned early at line 477)
+        mock_session.execute_write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_masters_batch_transaction_executes_all_relationships(self) -> None:
+        """Test master batch_write closure executes artist/genre/style logic (lines 498-500, 507, 521-523, 530, 544-546, 553, 569-571, 578)."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        executed_queries: list[str] = []
+
+        async def track_query(query: str, **_params: Any) -> None:
+            executed_queries.append(query)
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = track_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage(
+                "masters",
+                {
+                    "id": "1",
+                    "title": "Master 1",
+                    "year": 2023,
+                    "sha256": "hash1",
+                    "artists": [{"id": "A1"}],
+                    "genres": ["Rock"],
+                    "styles": ["Alternative"],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_masters_batch(messages)
+
+        # master node + artists + genres + styles + genre-style pairs
+        assert len(executed_queries) >= 5
+
+    @pytest.mark.asyncio
+    async def test_releases_batch_all_up_to_date_early_return(self) -> None:
+        """Test early return when all releases already have matching hashes (lines 606, 615-616)."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [PendingMessage("releases", {"id": "1", "title": "Release 1", "sha256": "hash1"}, AsyncMock(), AsyncMock())]
+
+        await processor._process_releases_batch(messages)
+
+        # execute_write should NOT be called (returned early at line 616)
+        mock_session.execute_write.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_releases_batch_transaction_executes_all_relationships(self) -> None:
+        """Test release batch_write closure executes artist/label/master/genre/style logic (lines 636-638, 645, 659-661, 668, 683, 690, 704-706, 713, 727-729, 736, 752-754, 761)."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        executed_queries: list[str] = []
+
+        async def track_query(query: str, **_params: Any) -> None:
+            executed_queries.append(query)
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = track_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage(
+                "releases",
+                {
+                    "id": "1",
+                    "title": "Release 1",
+                    "sha256": "hash1",
+                    "artists": [{"id": "A1"}],
+                    "labels": [{"id": "L1"}],
+                    "master_id": "M1",
+                    "genres": ["Rock"],
+                    "styles": ["Alternative"],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_releases_batch(messages)
+
+        # release node + artists + labels + master + genres + styles + genre-style pairs
+        assert len(executed_queries) >= 7

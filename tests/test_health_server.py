@@ -128,3 +128,75 @@ class TestHealthHandler:
         # This should not raise any exceptions and should do nothing
         handler.log_message("Test message: %s", "test")
         # If we get here without exception, the test passes
+
+
+class TestHealthHandlerDoGet:
+    """Test HealthHandler.do_GET for the 404 path (lines 28-30)."""
+
+    def test_do_get_returns_404_for_unknown_path(self) -> None:
+        """Test that do_GET sends 404 for paths other than /health (lines 28-30)."""
+        from common.health_server import HealthHandler
+
+        class TestHandler(HealthHandler):
+            def __init__(self) -> None:
+                # Don't call super().__init__ to avoid HTTP server setup
+                pass
+
+        handler = TestHandler()
+        handler.path = "/metrics"
+
+        mock_send_response = MagicMock()
+        mock_end_headers = MagicMock()
+        handler.send_response = mock_send_response
+        handler.end_headers = mock_end_headers
+
+        handler.do_GET()
+
+        mock_send_response.assert_called_once_with(404)
+        mock_end_headers.assert_called_once()
+
+    def test_do_get_returns_404_for_root_path(self) -> None:
+        """Test that do_GET sends 404 for root path."""
+        from common.health_server import HealthHandler
+
+        class TestHandler(HealthHandler):
+            def __init__(self) -> None:
+                pass
+
+        handler = TestHandler()
+        handler.path = "/"
+
+        mock_send_response = MagicMock()
+        mock_end_headers = MagicMock()
+        handler.send_response = mock_send_response
+        handler.end_headers = mock_end_headers
+
+        handler.do_GET()
+
+        mock_send_response.assert_called_once_with(404)
+
+    def test_do_get_returns_200_for_health_path(self) -> None:
+        """Test that do_GET sends 200 for /health path."""
+        from common.health_server import HealthHandler
+
+        class TestHandler(HealthHandler):
+            def __init__(self) -> None:
+                pass
+
+        handler = TestHandler()
+        handler.path = "/health"
+        handler.server = MagicMock()
+        handler.server.get_health_data.return_value = {"status": "healthy"}
+
+        mock_send_response = MagicMock()
+        mock_send_header = MagicMock()
+        mock_end_headers = MagicMock()
+        mock_wfile = MagicMock()
+        handler.send_response = mock_send_response
+        handler.send_header = mock_send_header
+        handler.end_headers = mock_end_headers
+        handler.wfile = mock_wfile
+
+        handler.do_GET()
+
+        mock_send_response.assert_called_once_with(200)

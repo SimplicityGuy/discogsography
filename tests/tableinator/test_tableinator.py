@@ -9,7 +9,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from aio_pika.abc import AbstractIncomingMessage
-from psycopg import DatabaseError
 import pytest
 
 from tableinator.tableinator import (
@@ -19,7 +18,6 @@ from tableinator.tableinator import (
     get_health_data,
     main,
     on_data_message,
-    safe_execute_query,
     schedule_consumer_cancellation,
     signal_handler,
 )
@@ -47,43 +45,6 @@ class TestGetConnection:
             pytest.raises(RuntimeError, match="Connection pool not initialized"),
         ):
             get_connection()
-
-
-class TestSafeExecuteQuery:
-    """Test safe_execute_query function."""
-
-    def test_successful_execution(self) -> None:
-        """Test successful query execution."""
-        mock_cursor = MagicMock()
-        query = "INSERT INTO test VALUES (%s)"
-        params = ("test_value",)
-
-        result = safe_execute_query(mock_cursor, query, params)
-
-        assert result is True
-        mock_cursor.execute.assert_called_once_with(query, params)
-
-    def test_database_error(self) -> None:
-        """Test handling database errors."""
-        mock_cursor = MagicMock()
-        mock_cursor.execute.side_effect = DatabaseError("Database error")
-
-        with patch("tableinator.tableinator.logger") as mock_logger:
-            result = safe_execute_query(mock_cursor, "SELECT 1", ())
-
-            assert result is False
-            mock_logger.error.assert_called()
-
-    def test_unexpected_error(self) -> None:
-        """Test handling unexpected errors."""
-        mock_cursor = MagicMock()
-        mock_cursor.execute.side_effect = Exception("Unexpected error")
-
-        with patch("tableinator.tableinator.logger") as mock_logger:
-            result = safe_execute_query(mock_cursor, "SELECT 1", ())
-
-            assert result is False
-            mock_logger.error.assert_called()
 
 
 class TestOnDataMessage:
@@ -1163,7 +1124,7 @@ class TestPeriodicQueueChecker:
         assert await check_consumers_unexpectedly_dead() is True
 
 
-class TestProgressReporter:
+class TestProgressReporterIdleMode:
     """Test progress_reporter nested function behavior."""
 
     @pytest.mark.asyncio
@@ -1469,10 +1430,12 @@ class TestGetHealthData:
         }
         # No active consumers
         tableinator.tableinator.consumer_tags = {}
+        # All files complete so stuck state is not triggered
+        tableinator.tableinator.completed_files = {"artists", "labels", "masters", "releases"}
 
         result = get_health_data()
 
-        # Should show None when no consumers are active
+        # Should show None when no consumers are active and all files complete
         assert result["current_task"] is None
 
     def test_unhealthy_status_when_stuck_state(self) -> None:
@@ -2072,3 +2035,567 @@ class TestScheduleConsumerCancellationDetailed:
 
         # Task reference should be cleaned up
         assert "artists" not in tableinator.tableinator.consumer_cancel_tasks
+
+
+class TestPeriodicQueueCheckerCancelledError:
+    """Test periodic_queue_checker CancelledError handling (lines 316-318)."""
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_breaks_loop(self) -> None:
+        """Test CancelledError breaks out of the queue checker loop."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.completed_files = {"artists", "labels", "masters", "releases"}
+        tableinator.tableinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def raise_cancelled(*_args: object, **_kwargs: object) -> None:
+            call_count[0] += 1
+            raise asyncio.CancelledError()
+
+        from tableinator.tableinator import periodic_queue_checker
+
+        with patch("asyncio.sleep", side_effect=raise_cancelled), patch("tableinator.tableinator.logger"):
+            await periodic_queue_checker()
+
+        assert call_count[0] == 1  # Broke out after first CancelledError
+
+    @pytest.mark.asyncio
+    async def test_general_exception_continues_loop(self) -> None:
+        """Test general exception is logged and loop continues (lines 319-321)."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.completed_files = {"artists", "labels", "masters", "releases"}
+        tableinator.tableinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.active_connection = MagicMock()  # prevents _recover_consumers
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def raise_then_shutdown(*_args: object, **_kwargs: object) -> None:
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("Test error in queue checker")
+            tableinator.tableinator.shutdown_requested = True
+
+        from tableinator.tableinator import periodic_queue_checker
+
+        with patch("asyncio.sleep", side_effect=raise_then_shutdown), patch("tableinator.tableinator.logger"):
+            await periodic_queue_checker()
+
+        assert call_count[0] == 2  # Continued after exception, then stopped
+
+
+class TestRecoverConsumersTableinator:
+    """Test tableinator _recover_consumers edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_closes_existing_connection_before_recovery(self) -> None:
+        """Test that _recover_consumers closes existing connection first (lines 334-340)."""
+        import tableinator.tableinator
+
+        mock_existing_conn = AsyncMock()
+        tableinator.tableinator.active_connection = mock_existing_conn
+        tableinator.tableinator.active_channel = AsyncMock()
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_rabbitmq_manager.connect.side_effect = Exception("Cannot reconnect")
+
+        with patch("tableinator.tableinator.rabbitmq_manager", mock_rabbitmq_manager), patch("tableinator.tableinator.logger"):
+            from tableinator.tableinator import _recover_consumers
+
+            await _recover_consumers()
+
+        mock_existing_conn.close.assert_called_once()
+        assert tableinator.tableinator.active_connection is None
+        assert tableinator.tableinator.active_channel is None
+
+    @pytest.mark.asyncio
+    async def test_no_messages_closes_temp_connection(self) -> None:
+        """Test that when no queue messages, temp connection is closed (lines 451-455)."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.active_connection = None
+        tableinator.tableinator.active_channel = None
+
+        mock_declared_queue = MagicMock()
+        mock_declared_queue.declaration_result.message_count = 0
+
+        mock_temp_channel = AsyncMock()
+        mock_temp_channel.declare_queue = AsyncMock(return_value=mock_declared_queue)
+        mock_temp_channel.close = AsyncMock()
+
+        mock_temp_connection = AsyncMock()
+        mock_temp_connection.channel = AsyncMock(return_value=mock_temp_channel)
+        mock_temp_connection.close = AsyncMock()
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_rabbitmq_manager.connect = AsyncMock(return_value=mock_temp_connection)
+
+        with patch("tableinator.tableinator.rabbitmq_manager", mock_rabbitmq_manager), patch("tableinator.tableinator.logger"):
+            from tableinator.tableinator import _recover_consumers
+
+            await _recover_consumers()
+
+        # Temp channel and connection should be closed since no messages
+        mock_temp_channel.close.assert_called_once()
+        mock_temp_connection.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_exception_during_recovery_closes_temp_connection(self) -> None:
+        """Test that exception during recovery closes temp connection (lines 457-464)."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.active_connection = None
+        tableinator.tableinator.active_channel = None
+
+        mock_temp_channel = AsyncMock()
+        mock_temp_channel.declare_queue = AsyncMock(side_effect=RuntimeError("Queue check failed"))
+        mock_temp_channel.close = AsyncMock()
+
+        mock_temp_connection = AsyncMock()
+        mock_temp_connection.channel = AsyncMock(return_value=mock_temp_channel)
+        mock_temp_connection.close = AsyncMock()
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_rabbitmq_manager.connect = AsyncMock(return_value=mock_temp_connection)
+
+        with patch("tableinator.tableinator.rabbitmq_manager", mock_rabbitmq_manager), patch("tableinator.tableinator.logger"):
+            from tableinator.tableinator import _recover_consumers
+
+            await _recover_consumers()
+
+        # Temp connection cleanup should have been attempted
+        mock_temp_channel.close.assert_called_once()
+        mock_temp_connection.close.assert_called_once()
+
+
+class TestProgressReporterCoverage:
+    """Test tableinator progress_reporter function coverage."""
+
+    @pytest.mark.asyncio
+    async def test_enters_idle_mode_after_timeout(self) -> None:
+        """Test that idle mode is entered when no messages arrive after timeout (lines 640-669)."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.idle_mode = False
+        tableinator.tableinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.queues = {}
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def mock_sleep(_delay: float) -> None:
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                tableinator.tableinator.shutdown_requested = True
+
+        with (
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            patch("tableinator.tableinator.close_rabbitmq_connection", AsyncMock()),
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.STARTUP_IDLE_TIMEOUT", 0),
+        ):
+            from tableinator.tableinator import progress_reporter
+
+            await progress_reporter()
+
+        assert tableinator.tableinator.idle_mode is True
+
+    @pytest.mark.asyncio
+    async def test_idle_mode_logs_periodically(self) -> None:
+        """Test that idle mode logs a brief message periodically (lines 671-684)."""
+
+        import tableinator.tableinator
+
+        tableinator.tableinator.idle_mode = True
+        tableinator.tableinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def mock_sleep(_delay: float) -> None:
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                tableinator.tableinator.shutdown_requested = True
+
+        with (
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            patch("tableinator.tableinator.logger") as mock_logger,
+            patch("tableinator.tableinator.IDLE_LOG_INTERVAL", 0),  # Log immediately
+        ):
+            from tableinator.tableinator import progress_reporter
+
+            await progress_reporter()
+
+        # Idle mode logging should have occurred
+        assert mock_logger.info.called
+
+    @pytest.mark.asyncio
+    async def test_progress_logging_with_active_consumers(self) -> None:
+        """Test normal progress logging with active consumers (lines 702-724)."""
+        import time
+
+        import tableinator.tableinator
+
+        tableinator.tableinator.idle_mode = False
+        tableinator.tableinator.message_counts = {"artists": 100, "labels": 50, "masters": 25, "releases": 200}
+        tableinator.tableinator.completed_files = {"artists"}
+        tableinator.tableinator.consumer_tags = {"labels": "tag-1"}
+        tableinator.tableinator.last_message_time = {
+            "artists": time.time(),
+            "labels": 0.0,
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def mock_sleep(_delay: float) -> None:
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                tableinator.tableinator.shutdown_requested = True
+
+        with (
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            patch("tableinator.tableinator.logger") as mock_logger,
+            patch("tableinator.tableinator.STARTUP_IDLE_TIMEOUT", 99999),  # Don't enter idle mode
+        ):
+            from tableinator.tableinator import progress_reporter
+
+            await progress_reporter()
+
+        # Progress info should have been logged
+        assert mock_logger.info.called
+
+    @pytest.mark.asyncio
+    async def test_stalled_consumer_logs_error(self) -> None:
+        """Test stalled consumer detection and error logging (lines 686-700)."""
+        import time
+
+        import tableinator.tableinator
+
+        tableinator.tableinator.idle_mode = False
+        tableinator.tableinator.message_counts = {"artists": 100, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.consumer_tags = {"artists": "tag-1"}
+        tableinator.tableinator.last_message_time = {
+            "artists": time.time() - 130,  # stalled: more than 120 seconds ago
+            "labels": 0.0,
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def mock_sleep(_delay: float) -> None:
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                tableinator.tableinator.shutdown_requested = True
+
+        with (
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            patch("tableinator.tableinator.logger") as mock_logger,
+            patch("tableinator.tableinator.STARTUP_IDLE_TIMEOUT", 99999),
+        ):
+            from tableinator.tableinator import progress_reporter
+
+            await progress_reporter()
+
+        # Error should have been logged for stalled consumer
+        error_calls = str(mock_logger.error.call_args_list)
+        assert "Stalled" in error_calls or "stalled" in error_calls.lower()
+
+    @pytest.mark.asyncio
+    async def test_messages_exit_idle_mode(self) -> None:
+        """Test that receiving messages exits idle mode (lines 673-676)."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.idle_mode = True
+        tableinator.tableinator.message_counts = {"artists": 50, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def mock_sleep(_delay: float) -> None:
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                tableinator.tableinator.shutdown_requested = True
+
+        with (
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.STARTUP_IDLE_TIMEOUT", 99999),
+        ):
+            from tableinator.tableinator import progress_reporter
+
+            await progress_reporter()
+
+        assert tableinator.tableinator.idle_mode is False
+
+
+class TestOnDataMessageNoRecordName:
+    """Test on_data_message with unknown data type (else branch at line 552)."""
+
+    @pytest.mark.asyncio
+    async def test_unknown_data_type_logs_without_record_name(self) -> None:
+        """Test that unknown data type logs debug without record_name (line 552)."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.shutdown_requested = False
+        tableinator.tableinator.connection_pool = None  # Will cause nack after logging
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps({"id": "test-id", "sha256": "abc123", "data": {}}).encode()
+        mock_message.routing_key = "unknown_type"  # Doesn't match any known data type
+        mock_message.nack = AsyncMock()
+
+        with patch("tableinator.tableinator.logger") as mock_logger:
+            await on_data_message(mock_message)
+
+        # Should have called debug log (else branch - no record_name)
+        debug_calls = [str(c) for c in mock_logger.debug.call_args_list]
+        assert any("Processing record" in c for c in debug_calls)
+        # Verify nack was called (connection_pool is None)
+        mock_message.nack.assert_called_once()
+
+
+class TestPeriodicQueueCheckerTimeNotExpired:
+    """Test periodic_queue_checker continue when time not expired (line 306)."""
+
+    @pytest.mark.asyncio
+    async def test_time_not_expired_hits_continue(self) -> None:
+        """Test that huge QUEUE_CHECK_INTERVAL triggers line 306 continue."""
+        import tableinator.tableinator
+
+        # is_stuck = False because message_counts all 0 (has_processed_messages = False)
+        tableinator.tableinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.active_connection = None
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def sleep_side_effect(_delay: float) -> None:
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                raise asyncio.CancelledError()
+
+        # With a huge QUEUE_CHECK_INTERVAL, time_since_last_check < interval → line 306 fires
+        with (
+            patch("asyncio.sleep", side_effect=sleep_side_effect),
+            patch("tableinator.tableinator.QUEUE_CHECK_INTERVAL", 10**18),
+            patch("tableinator.tableinator.logger"),
+        ):
+            from tableinator.tableinator import periodic_queue_checker
+
+            with contextlib.suppress(asyncio.CancelledError):
+                await periodic_queue_checker()
+
+        # 2 sleep calls: first hits line 306 continue, second raises CancelledError
+        assert call_count[0] == 2
+
+
+class TestRecoverConsumersExceptionHandling:
+    """Test _recover_consumers exception handling paths (lines 337-338, 463-464)."""
+
+    @pytest.mark.asyncio
+    async def test_active_connection_close_raises_exception(self) -> None:
+        """Test exception from active_connection.close() is suppressed (lines 337-338)."""
+        import tableinator.tableinator
+
+        mock_conn = AsyncMock()
+        mock_conn.close.side_effect = Exception("Close failed")
+        tableinator.tableinator.active_connection = mock_conn
+        tableinator.tableinator.active_channel = None
+
+        with (
+            patch("tableinator.tableinator.rabbitmq_manager") as mock_rm,
+            patch("tableinator.tableinator.logger"),
+        ):
+            mock_rm.connect = AsyncMock(side_effect=Exception("Connect failed"))
+            from tableinator.tableinator import _recover_consumers
+
+            await _recover_consumers()
+
+        # active_connection should be None even though close() raised
+        assert tableinator.tableinator.active_connection is None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_exception_suppressed_on_recovery_error(self) -> None:
+        """Test inner exception handler when cleanup raises (lines 463-464)."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.active_connection = None
+
+        mock_temp_conn = AsyncMock()
+        mock_temp_channel = AsyncMock()
+        mock_temp_conn.channel.return_value = mock_temp_channel
+        # declare_queue raises to trigger outer except at line 457
+        mock_temp_channel.declare_queue.side_effect = Exception("Queue declare failed")
+        # close() also raises to trigger inner except at line 463
+        mock_temp_channel.close.side_effect = Exception("Channel close also failed")
+        mock_temp_conn.close.side_effect = Exception("Conn close also failed")
+
+        with (
+            patch("tableinator.tableinator.rabbitmq_manager") as mock_rm,
+            patch("tableinator.tableinator.logger"),
+        ):
+            mock_rm.connect = AsyncMock(return_value=mock_temp_conn)
+            from tableinator.tableinator import _recover_consumers
+
+            # Should not raise - all exceptions suppressed
+            await _recover_consumers()
+
+
+class TestProgressReporterAdditionalPaths:
+    """Test additional progress_reporter code paths for coverage."""
+
+    @pytest.mark.asyncio
+    async def test_sleep_30_fires_after_3_reports(self) -> None:
+        """Test asyncio.sleep(30) fires when report_count >= 3 (line 629), and all-complete continue (line 634)."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.idle_mode = False
+        tableinator.tableinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.completed_files = {"artists", "labels", "masters", "releases"}
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.shutdown_requested = False
+
+        sleep_delays: list[float] = []
+
+        async def mock_sleep(delay: float) -> None:
+            sleep_delays.append(delay)
+            if len(sleep_delays) >= 4:
+                raise asyncio.CancelledError()
+
+        with (
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            patch("tableinator.tableinator.logger"),
+        ):
+            from tableinator.tableinator import progress_reporter
+
+            with contextlib.suppress(asyncio.CancelledError):
+                await progress_reporter()
+
+        # First 3 calls: sleep(10), 4th call: sleep(30) = line 629
+        assert sleep_delays[:3] == [10, 10, 10]
+        assert sleep_delays[3] == 30
+
+    @pytest.mark.asyncio
+    async def test_waiting_for_messages_when_total_zero(self) -> None:
+        """Test 'Waiting for messages' log when total == 0, not in idle mode (line 718)."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.idle_mode = False
+        tableinator.tableinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.last_message_time = {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0}
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def mock_sleep(_delay: float) -> None:
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                tableinator.tableinator.shutdown_requested = True
+
+        with (
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            patch("tableinator.tableinator.logger") as mock_logger,
+            patch("tableinator.tableinator.STARTUP_IDLE_TIMEOUT", 10**18),  # Never enter idle mode
+        ):
+            from tableinator.tableinator import progress_reporter
+
+            await progress_reporter()
+
+        # "Waiting for messages" should have been logged (line 718)
+        info_calls = str(mock_logger.info.call_args_list)
+        assert "Waiting" in info_calls
+
+    @pytest.mark.asyncio
+    async def test_slow_consumers_warning(self) -> None:
+        """Test slow consumer detection logs warning (lines 729-734): elapsed 5-120 seconds."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.idle_mode = False
+        tableinator.tableinator.message_counts = {"artists": 100, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.consumer_tags = {}
+        tableinator.tableinator.last_message_time = {
+            "artists": time.time() - 60,  # 60 seconds ago: slow (5 < 60 < 120)
+            "labels": 0.0,
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def mock_sleep(_delay: float) -> None:
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                tableinator.tableinator.shutdown_requested = True
+
+        with (
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            patch("tableinator.tableinator.logger") as mock_logger,
+            patch("tableinator.tableinator.STARTUP_IDLE_TIMEOUT", 10**18),
+        ):
+            from tableinator.tableinator import progress_reporter
+
+            await progress_reporter()
+
+        # Should have logged slow consumers warning (lines 729-734)
+        warning_calls = str(mock_logger.warning.call_args_list)
+        assert "slow" in warning_calls.lower() or "Slow" in warning_calls
+
+    @pytest.mark.asyncio
+    async def test_idle_mode_entry_cancels_consumers(self) -> None:
+        """Test idle mode entry cancels existing consumers (lines 650-659)."""
+        import tableinator.tableinator
+
+        mock_queue = AsyncMock()
+        mock_queue.cancel = AsyncMock()
+
+        tableinator.tableinator.idle_mode = False
+        tableinator.tableinator.message_counts = {"artists": 0, "labels": 0, "masters": 0, "releases": 0}
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.consumer_tags = {"artists": "tag-123"}
+        tableinator.tableinator.queues = {"artists": mock_queue}
+        tableinator.tableinator.shutdown_requested = False
+
+        call_count = [0]
+
+        async def mock_sleep(_delay: float) -> None:
+            call_count[0] += 1
+            if call_count[0] >= 2:
+                tableinator.tableinator.shutdown_requested = True
+
+        with (
+            patch("asyncio.sleep", side_effect=mock_sleep),
+            patch("tableinator.tableinator.close_rabbitmq_connection", AsyncMock()),
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.STARTUP_IDLE_TIMEOUT", 0),
+        ):
+            from tableinator.tableinator import progress_reporter
+
+            await progress_reporter()
+
+        # Consumer cancel should have been called (lines 650-659)
+        mock_queue.cancel.assert_called_once_with("tag-123", nowait=True)
+        assert tableinator.tableinator.consumer_tags == {}
