@@ -41,34 +41,34 @@ flags:
     carryforward: true
   e2e-chromium:
     paths:
-      - "dashboard/**/*.py"
-      - "explore/**/*.py"
-      - "common/**/*.py"
-    carryforward: true
+      - "dashboard/**"
+      - "explore/**"
+      - "common/**"
+    carryforward: false
   e2e-firefox:
     paths:
-      - "dashboard/**/*.py"
-      - "explore/**/*.py"
-      - "common/**/*.py"
-    carryforward: true
+      - "dashboard/**"
+      - "explore/**"
+      - "common/**"
+    carryforward: false
   e2e-webkit:
     paths:
-      - "dashboard/**/*.py"
-      - "explore/**/*.py"
-      - "common/**/*.py"
-    carryforward: true
+      - "dashboard/**"
+      - "explore/**"
+      - "common/**"
+    carryforward: false
   e2e-iphone-15:
     paths:
-      - "dashboard/**/*.py"
-      - "explore/**/*.py"
-      - "common/**/*.py"
-    carryforward: true
+      - "dashboard/**"
+      - "explore/**"
+      - "common/**"
+    carryforward: false
   e2e-ipad-pro-11:
     paths:
-      - "dashboard/**/*.py"
-      - "explore/**/*.py"
-      - "common/**/*.py"
-    carryforward: true
+      - "dashboard/**"
+      - "explore/**"
+      - "common/**"
+    carryforward: false
 
 # Component configuration
 component_management:
@@ -134,3 +134,6 @@ cli:
     use:
       - python
       - rust
+
+# Integrations
+slack_app: false

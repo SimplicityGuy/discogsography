@@ -204,8 +204,6 @@ test-tableinator:
         --cov=tableinator --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: dashboard unit tests establishing coverage baseline
-# Uses explicit sources to produce valid <source> elements in coverage XML.
-# --cov=. with relative_files=true generates empty <source> that Codecov rejects.
 [group('test')]
 test-e2e-unit-dashboard:
     uv run pytest tests/dashboard/ -v -m 'not e2e' \
