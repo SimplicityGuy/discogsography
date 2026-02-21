@@ -39,7 +39,8 @@ check-updates:
     @echo ''
     @echo '🦀 Rust dependency updates:'
     @if [ -d 'extractor' ]; then \
-        cd extractor && cargo outdated || echo 'cargo-outdated not installed. Install with: cargo install cargo-outdated'; \
+        cargo install cargo-run-bin --quiet 2>/dev/null || true; \
+        cd extractor && cargo bin --install --quiet 2>/dev/null || true && cargo bin cargo-outdated; \
     else \
         echo 'No Rust project found'; \
     fi
