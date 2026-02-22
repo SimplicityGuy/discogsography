@@ -21,11 +21,10 @@ import urllib.parse
 from uuid import UUID
 
 import httpx
-from neo4j import AsyncDriver
 from psycopg.rows import dict_row
 import structlog
 
-from common import AsyncPostgreSQLPool
+from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
 
 
 logger = structlog.get_logger(__name__)
@@ -101,7 +100,7 @@ async def sync_collection(
     token_secret: str,
     user_agent: str,
     pg_pool: AsyncPostgreSQLPool,
-    neo4j_driver: AsyncDriver,
+    neo4j_driver: AsyncResilientNeo4jDriver,
 ) -> int:
     """Sync user's Discogs collection to PostgreSQL and Neo4j.
 
@@ -232,15 +231,16 @@ async def sync_collection(
             ]
 
             if neo4j_releases:
-                await neo4j_driver.execute_query(
-                    cypher,
-                    {
-                        "user_id": str(user_uuid),
-                        "discogs_username": discogs_username,
-                        "releases": neo4j_releases,
-                        "synced_at": datetime.now(UTC).isoformat(),
-                    },
-                )
+                async with await neo4j_driver.session() as session:
+                    await session.run(
+                        cypher,
+                        {
+                            "user_id": str(user_uuid),
+                            "discogs_username": discogs_username,
+                            "releases": neo4j_releases,
+                            "synced_at": datetime.now(UTC).isoformat(),
+                        },
+                    )
 
             # Check if there are more pages
             pagination = data.get("pagination", {})
@@ -263,7 +263,7 @@ async def sync_wantlist(
     token_secret: str,
     user_agent: str,
     pg_pool: AsyncPostgreSQLPool,
-    neo4j_driver: AsyncDriver,
+    neo4j_driver: AsyncResilientNeo4jDriver,
 ) -> int:
     """Sync user's Discogs wantlist to PostgreSQL and Neo4j.
 
@@ -386,15 +386,16 @@ async def sync_wantlist(
             ]
 
             if neo4j_wants:
-                await neo4j_driver.execute_query(
-                    cypher,
-                    {
-                        "user_id": str(user_uuid),
-                        "discogs_username": discogs_username,
-                        "wants": neo4j_wants,
-                        "synced_at": datetime.now(UTC).isoformat(),
-                    },
-                )
+                async with await neo4j_driver.session() as session:
+                    await session.run(
+                        cypher,
+                        {
+                            "user_id": str(user_uuid),
+                            "discogs_username": discogs_username,
+                            "wants": neo4j_wants,
+                            "synced_at": datetime.now(UTC).isoformat(),
+                        },
+                    )
 
             pagination = data.get("pagination", {})
             if page >= pagination.get("pages", 1):
@@ -411,7 +412,7 @@ async def run_full_sync(
     user_uuid: UUID,
     sync_id: str,
     pg_pool: AsyncPostgreSQLPool,
-    neo4j_driver: AsyncDriver,
+    neo4j_driver: AsyncResilientNeo4jDriver,
     discogs_user_agent: str,
 ) -> dict[str, Any]:
     """Run a full collection + wantlist sync for a user.

@@ -252,7 +252,7 @@ async def trigger_sync(
             user_uuid=UUID(user_id),
             sync_id=sync_id,
             pg_pool=_pool,
-            neo4j_driver=_neo4j.driver,
+            neo4j_driver=_neo4j,
             discogs_user_agent=_config.discogs_user_agent,
         )
     )
