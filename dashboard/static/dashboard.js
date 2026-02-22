@@ -9,9 +9,15 @@ class Dashboard {
         this.CIRCUMFERENCE = 176;
 
         this.gaugeStats = {};
+        this.currentMaps = null;
 
         this.initializeWebSocket();
         this.fetchInitialData();
+
+        const dlqToggle = document.getElementById('dlq-toggle');
+        if (dlqToggle) {
+            dlqToggle.addEventListener('change', () => this._onDlqToggle());
+        }
     }
 
     // ─── WebSocket ────────────────────────────────────────────────────────────
@@ -167,30 +173,39 @@ class Dashboard {
     updateQueues(queues) {
         const TYPES = ['masters', 'releases', 'artists', 'labels'];
 
-        // Build per-service maps, excluding DLQs.
+        // Build per-service maps for both regular and dead-letter queues.
         // Queue naming convention: "discogsography-{service}-{type}" and
         // "discogsography-{service}-{type}.dlq" for dead-letter queues.
-        // The old single-map approach failed because DLQ names also contain the
-        // type string (e.g. "artists.dlq" includes "artists") and DLQs sort
-        // after their parent queues, so they silently overwrote real data with
-        // zeros.
-        const graphinatorMap = {};
-        const tableInatorMap  = {};
+        // Separate maps prevent DLQ entries from overwriting regular data.
+        const graphinatorMap    = {};
+        const tableInatorMap    = {};
+        const graphinatorDlqMap = {};
+        const tableInatorDlqMap = {};
 
         queues.forEach(queue => {
-            const name = queue.name.toLowerCase();
-            if (name.endsWith('.dlq')) return;  // skip dead-letter queues
+            const name  = queue.name.toLowerCase();
+            const isDlq = name.endsWith('.dlq');
 
             for (const type of TYPES) {
                 if (!name.includes(type)) continue;
-                if (name.includes('graphinator'))      graphinatorMap[type] = queue;
-                else if (name.includes('tableinator')) tableInatorMap[type] = queue;
+                if (name.includes('graphinator')) {
+                    if (isDlq) graphinatorDlqMap[type] = queue;
+                    else       graphinatorMap[type]    = queue;
+                } else if (name.includes('tableinator')) {
+                    if (isDlq) tableInatorDlqMap[type] = queue;
+                    else       tableInatorMap[type]    = queue;
+                }
                 break;
             }
         });
 
-        // Extractor card – queue state based on publish rate.
-        // Uses graphinator queues as reference (extractor publishes to all services).
+        this.currentMaps = { graphinatorMap, tableInatorMap, graphinatorDlqMap, tableInatorDlqMap };
+
+        const isDlq         = document.getElementById('dlq-toggle')?.checked ?? false;
+        const activeGraphMap = isDlq ? graphinatorDlqMap : graphinatorMap;
+        const activeTableMap = isDlq ? tableInatorDlqMap : tableInatorMap;
+
+        // Extractor card – queue state based on publish rate (always uses regular queues).
         TYPES.forEach(type => {
             const el = document.getElementById(`extractor-${type}-state`);
             if (!el) return;
@@ -205,28 +220,28 @@ class Dashboard {
             }
         });
 
-        // Graphinator card – total messages waiting in graphinator queues.
+        // Graphinator card – total messages in active queue set.
         TYPES.forEach(type => {
             const el = document.getElementById(`graphinator-${type}-count`);
             if (!el) return;
-            const q = graphinatorMap[type];
+            const q = activeGraphMap[type];
             el.textContent = q ? q.messages.toLocaleString() : '—';
         });
 
-        // Tableinator card – messages ready to process in tableinator queues.
+        // Tableinator card – messages in active queue set.
         TYPES.forEach(type => {
             const el = document.getElementById(`tableinator-${type}-count`);
             if (!el) return;
-            const q = tableInatorMap[type];
+            const q = activeTableMap[type];
             el.textContent = q ? q.messages_ready.toLocaleString() : '—';
         });
 
-        this._updateBarChart(graphinatorMap, tableInatorMap, TYPES);
+        this._updateBarChart(activeGraphMap, activeTableMap, TYPES, isDlq);
         this._updateRateCircles(graphinatorMap, tableInatorMap, TYPES);
 
-        // Log high message counts
+        // Log high message counts (regular queues only)
         queues.forEach(queue => {
-            if (queue.messages > 1000) {
+            if (!queue.name.toLowerCase().endsWith('.dlq') && queue.messages > 1000) {
                 this.addLogEntry(
                     `High message count in ${queue.name}: ${queue.messages.toLocaleString()}`,
                     'warning'
@@ -235,9 +250,38 @@ class Dashboard {
         });
     }
 
+    _onDlqToggle() {
+        if (!this.currentMaps) return;
+        const TYPES = ['masters', 'releases', 'artists', 'labels'];
+        const isDlq = document.getElementById('dlq-toggle')?.checked ?? false;
+        const { graphinatorMap, tableInatorMap, graphinatorDlqMap, tableInatorDlqMap } = this.currentMaps;
+        const activeGraphMap = isDlq ? graphinatorDlqMap : graphinatorMap;
+        const activeTableMap = isDlq ? tableInatorDlqMap : tableInatorMap;
+
+        TYPES.forEach(type => {
+            const gEl = document.getElementById(`graphinator-${type}-count`);
+            if (gEl) {
+                const q = activeGraphMap[type];
+                gEl.textContent = q ? q.messages.toLocaleString() : '—';
+            }
+            const tEl = document.getElementById(`tableinator-${type}-count`);
+            if (tEl) {
+                const q = activeTableMap[type];
+                tEl.textContent = q ? q.messages_ready.toLocaleString() : '—';
+            }
+        });
+
+        this._updateBarChart(activeGraphMap, activeTableMap, TYPES, isDlq);
+    }
+
     // ─── Bar chart (CSS height bars) ─────────────────────────────────────────
 
-    _updateBarChart(graphinatorMap, tableInatorMap, types) {
+    _updateBarChart(graphinatorMap, tableInatorMap, types, isDlq = false) {
+        const graphLegend = document.getElementById('chart-legend-graphinator');
+        const tableLegend = document.getElementById('chart-legend-tableinator');
+        if (graphLegend) graphLegend.textContent = isDlq ? 'Graphinator DLQ' : 'Graphinator';
+        if (tableLegend) tableLegend.textContent = isDlq ? 'Tableinator DLQ' : 'Tableinator';
+
         const allGraphinator = types.map(t => graphinatorMap[t]?.messages || 0);
         const allTableinator = types.map(t => tableInatorMap[t]?.messages || 0);
         const maxCount = Math.max(...allGraphinator, ...allTableinator, 1);
@@ -329,7 +373,7 @@ class Dashboard {
                 const relsEl  = document.getElementById('neo4j-relationships');
 
                 if (badge) {
-                    badge.textContent = db.status === 'healthy' ? 'Primary' : 'Unavailable';
+                    badge.textContent = db.status === 'healthy' ? 'Healthy' : 'Unavailable';
                     badge.className = `text-[10px] font-bold uppercase ${db.status === 'healthy' ? 'text-emerald-400' : 'text-red-400'}`;
                 }
 
