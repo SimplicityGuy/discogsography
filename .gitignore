@@ -252,6 +252,11 @@ tarpaulin-report.html
 Thumbs.db
 
 ###
+# Playwright MCP
+###
+.playwright-mcp/
+
+###
 # Temporary files
 ###
 *.tmp
