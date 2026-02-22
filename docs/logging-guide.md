@@ -241,13 +241,13 @@ let rust_level = match log_level.as_str() {
 
 ### 🔗 Service Connections
 
-| Emoji | Usage                  | Example                                                          |
-| ----- | ---------------------- | ---------------------------------------------------------------- |
-| 🐰    | RabbitMQ               | `logger.info("🐰 Connected to RabbitMQ")`                       |
-| 🔗    | Neo4j                  | `logger.info("🔗 Connected to Neo4j database")`                 |
-| 🐘    | PostgreSQL             | `logger.info("🐘 Connected to PostgreSQL")`                     |
-| 🌐    | Network/API            | `logger.info("🌐 Fetching from Discogs API")`                   |
-| 📑    | Database index setup   | `logger.info("📑 Neo4j indexes created/verified")`              |
+| Emoji | Usage                | Example                                            |
+| ----- | -------------------- | -------------------------------------------------- |
+| 🐰    | RabbitMQ             | `logger.info("🐰 Connected to RabbitMQ")`          |
+| 🔗    | Neo4j                | `logger.info("🔗 Connected to Neo4j database")`    |
+| 🐘    | PostgreSQL           | `logger.info("🐘 Connected to PostgreSQL")`        |
+| 🌐    | Network/API          | `logger.info("🌐 Fetching from Discogs API")`      |
+| 📑    | Database index setup | `logger.info("📑 Neo4j indexes created/verified")` |
 
 ## 💻 Implementation Examples
 

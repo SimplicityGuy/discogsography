@@ -16,14 +16,14 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### ⚙️ Service Components
 
-| Service                                                     | Purpose                                | Key Technologies                    | Port(s)       |
-| ----------------------------------------------------------- | -------------------------------------- | ----------------------------------- | ------------- |
-| **[⚡](emoji-guide.md#service-identifiers) Extractor**      | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`       | 8000 (health) |
-| **[🔧](emoji-guide.md#service-identifiers) Schema-Init**    | One-shot DB schema initialiser         | `neo4j-driver`, `psycopg3`          | —             |
-| **[🔗](emoji-guide.md#service-identifiers) Graphinator**    | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms    | 8001 (health) |
-| **[🐘](emoji-guide.md#service-identifiers) Tableinator**    | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search | 8002 (health) |
-| **[🔍](emoji-guide.md#service-identifiers) Explore**        | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson` | 8006, 8007    |
-| **[📊](emoji-guide.md#service-identifiers) Dashboard**      | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI   | 8003          |
+| Service                                                  | Purpose                                | Key Technologies                    | Port(s)       |
+| -------------------------------------------------------- | -------------------------------------- | ----------------------------------- | ------------- |
+| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`       | 8000 (health) |
+| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initialiser         | `neo4j-driver`, `psycopg3`          | —             |
+| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms    | 8001 (health) |
+| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search | 8002 (health) |
+| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson` | 8006, 8007    |
+| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI   | 8003          |
 
 ### Infrastructure Components
 
@@ -476,12 +476,12 @@ See [Monitoring](monitoring.md) for details.
 
 <div align="center">
 
-|                      Data Type                      | Record Count | XML Size | Processing Time |
-| :-------------------------------------------------: | :----------: | :------: | :-------------: |
+|                   Data Type                    | Record Count | XML Size | Processing Time |
+| :--------------------------------------------: | :----------: | :------: | :-------------: |
 | [📀](emoji-guide.md#music-domain) **Releases** | ~15 million  |  ~40GB   |    1-3 hours    |
 | [🎤](emoji-guide.md#music-domain) **Artists**  |  ~2 million  |   ~5GB   |   15-30 mins    |
 | [🎵](emoji-guide.md#music-domain) **Masters**  |  ~2 million  |   ~3GB   |   10-20 mins    |
-|                    🏢 **Labels**                    | ~1.5 million |   ~2GB   |   10-15 mins    |
+|                 🏢 **Labels**                  | ~1.5 million |   ~2GB   |   10-15 mins    |
 
 **📊 Total: ~20 million records • 50GB compressed • 100GB processed**
 

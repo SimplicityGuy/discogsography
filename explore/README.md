@@ -92,7 +92,7 @@ Parameters:
 
 | Parameter | Required | Default  | Description                                      |
 | --------- | -------- | -------- | ------------------------------------------------ |
-| `q`       | ✅        | —        | Search query (minimum 2 characters)              |
+| `q`       | ✅       | —        | Search query (minimum 2 characters)              |
 | `type`    |          | `artist` | Entity type: `artist`, `genre`, `label`, `style` |
 | `limit`   |          | `10`     | Maximum results (1–50)                           |
 
@@ -119,7 +119,7 @@ Parameters:
 
 | Parameter | Required | Default  | Description                                      |
 | --------- | -------- | -------- | ------------------------------------------------ |
-| `name`    | ✅        | —        | Entity name to explore                           |
+| `name`    | ✅       | —        | Entity name to explore                           |
 | `type`    |          | `artist` | Entity type: `artist`, `genre`, `label`, `style` |
 
 Example response:
@@ -145,13 +145,13 @@ Expands a category node to return its children. Supports **cursor-based paginati
 
 Parameters:
 
-| Parameter  | Required | Default | Description                                           |
-| ---------- | -------- | ------- | ----------------------------------------------------- |
-| `node_id`  | ✅        | —       | Parent entity name                                    |
-| `type`     | ✅        | —       | Parent entity type: `artist`, `genre`, `label`, `style` |
-| `category` | ✅        | —       | Category to expand (see table below)                  |
-| `limit`    |          | `50`    | Results per page (1–200)                              |
-| `offset`   |          | `0`     | Number of results to skip                             |
+| Parameter  | Required | Default | Description                                             |
+| ---------- | -------- | ------- | ------------------------------------------------------- |
+| `node_id`  | ✅       | —       | Parent entity name                                      |
+| `type`     | ✅       | —       | Parent entity type: `artist`, `genre`, `label`, `style` |
+| `category` | ✅       | —       | Category to expand (see table below)                    |
+| `limit`    |          | `50`    | Results per page (1–200)                                |
+| `offset`   |          | `0`     | Number of results to skip                               |
 
 Valid categories per entity type:
 
@@ -203,10 +203,10 @@ GET /api/node/1?type=artist
 
 Parameters:
 
-| Parameter | Required | Default  | Description                                                 |
-| --------- | -------- | -------- | ----------------------------------------------------------- |
-| `node_id` | ✅        | —        | Node ID (path parameter)                                    |
-| `type`    |          | `artist` | Node type: `artist`, `release`, `label`, `genre`, `style`   |
+| Parameter | Required | Default  | Description                                               |
+| --------- | -------- | -------- | --------------------------------------------------------- |
+| `node_id` | ✅       | —        | Node ID (path parameter)                                  |
+| `type`    |          | `artist` | Node type: `artist`, `release`, `label`, `genre`, `style` |
 
 Returns full details for a specific node.
 
@@ -220,7 +220,7 @@ Parameters:
 
 | Parameter | Required | Default  | Description                                      |
 | --------- | -------- | -------- | ------------------------------------------------ |
-| `name`    | ✅        | —        | Entity name                                      |
+| `name`    | ✅       | —        | Entity name                                      |
 | `type`    |          | `artist` | Entity type: `artist`, `genre`, `label`, `style` |
 
 Returns year-by-year release counts for the given entity.

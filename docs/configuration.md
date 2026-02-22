@@ -52,8 +52,8 @@ services:
 
 ### RabbitMQ Configuration
 
-| Variable          | Description             | Default                                             | Required |
-| ----------------- | ----------------------- | --------------------------------------------------- | -------- |
+| Variable          | Description             | Default                                                | Required |
+| ----------------- | ----------------------- | ------------------------------------------------------ | -------- |
 | `AMQP_CONNECTION` | RabbitMQ connection URL | `amqp://discogsography:discogsography@localhost:5672/` | Yes      |
 
 **Used By**: All services
@@ -413,13 +413,13 @@ See [Performance Guide](performance-guide.md) for detailed optimization strategi
 
 ## Dashboard Configuration
 
-| Variable                      | Description                                  | Default           | Required        |
-| ----------------------------- | -------------------------------------------- | ----------------- | --------------- |
-| `RABBITMQ_MANAGEMENT_USER`    | RabbitMQ management API username             | `discogsography`  | No              |
-| `RABBITMQ_MANAGEMENT_PASSWORD`| RabbitMQ management API password             | `discogsography`  | No              |
-| `CORS_ORIGINS`                | Comma-separated list of allowed CORS origins | (none — disabled) | No              |
-| `CACHE_WARMING_ENABLED`       | Pre-warm cache on startup                    | `true`            | No              |
-| `CACHE_WEBHOOK_SECRET`        | Secret for cache invalidation webhooks       | (none — disabled) | No              |
+| Variable                       | Description                                  | Default           | Required |
+| ------------------------------ | -------------------------------------------- | ----------------- | -------- |
+| `RABBITMQ_MANAGEMENT_USER`     | RabbitMQ management API username             | `discogsography`  | No       |
+| `RABBITMQ_MANAGEMENT_PASSWORD` | RabbitMQ management API password             | `discogsography`  | No       |
+| `CORS_ORIGINS`                 | Comma-separated list of allowed CORS origins | (none — disabled) | No       |
+| `CACHE_WARMING_ENABLED`        | Pre-warm cache on startup                    | `true`            | No       |
+| `CACHE_WEBHOOK_SECRET`         | Secret for cache invalidation webhooks       | (none — disabled) | No       |
 
 **Used By**: Dashboard only
 

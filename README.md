@@ -137,30 +137,30 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 
 ### 🚀 Getting Started
 
-| Document                                                 | Purpose                                                  |
-| -------------------------------------------------------- | -------------------------------------------------------- |
-| **[Quick Start Guide](docs/quick-start.md)**             | ⚡ Get Discogsography running in minutes                 |
-| **[Configuration Guide](docs/configuration.md)**         | ⚙️ Complete environment variable and settings reference  |
-| **[Architecture Overview](docs/architecture.md)**        | 🏛️ System architecture, components, data flow, and scale |
-| **[CLAUDE.md](CLAUDE.md)**                               | 🤖 Claude Code integration guide & development standards |
+| Document                                          | Purpose                                                  |
+| ------------------------------------------------- | -------------------------------------------------------- |
+| **[Quick Start Guide](docs/quick-start.md)**      | ⚡ Get Discogsography running in minutes                 |
+| **[Configuration Guide](docs/configuration.md)**  | ⚙️ Complete environment variable and settings reference  |
+| **[Architecture Overview](docs/architecture.md)** | 🏛️ System architecture, components, data flow, and scale |
+| **[CLAUDE.md](CLAUDE.md)**                        | 🤖 Claude Code integration guide & development standards |
 
 ### 💡 Usage & Data
 
-| Document                                             | Purpose                                                |
-| ---------------------------------------------------- | ------------------------------------------------------ |
-| **[Usage Examples](docs/usage-examples.md)**         | 💡 Neo4j Cypher and PostgreSQL query examples          |
-| **[Database Schema](docs/database-schema.md)**       | 🗄️ Complete Neo4j graph model and PostgreSQL schema    |
-| **[Monitoring Guide](docs/monitoring.md)**           | 📊 Real-time dashboard, metrics, and debug utilities   |
+| Document                                       | Purpose                                              |
+| ---------------------------------------------- | ---------------------------------------------------- |
+| **[Usage Examples](docs/usage-examples.md)**   | 💡 Neo4j Cypher and PostgreSQL query examples        |
+| **[Database Schema](docs/database-schema.md)** | 🗄️ Complete Neo4j graph model and PostgreSQL schema  |
+| **[Monitoring Guide](docs/monitoring.md)**     | 📊 Real-time dashboard, metrics, and debug utilities |
 
 ### 👨‍💻 Development
 
-| Document                                                           | Purpose                                              |
-| ------------------------------------------------------------------ | ---------------------------------------------------- |
+| Document                                                           | Purpose                                               |
+| ------------------------------------------------------------------ | ----------------------------------------------------- |
 | **[Development Guide](docs/development.md)**                       | 💻 Project structure, tooling, and developer workflow |
 | **[Testing Guide](docs/testing-guide.md)**                         | 🧪 Unit, integration, and E2E testing with Playwright |
 | **[Logging Guide](docs/logging-guide.md)**                         | 📊 Structured logging standards and emoji conventions |
 | **[Contributing Guide](docs/contributing.md)**                     | 🤝 How to contribute: process, standards, and PR flow |
-| **[Python Version Management](docs/python-version-management.md)** | 🐍 Managing Python 3.13+ across the project          |
+| **[Python Version Management](docs/python-version-management.md)** | 🐍 Managing Python 3.13+ across the project           |
 
 ### 🔧 Operations
 
@@ -168,7 +168,7 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 | ------------------------------------------------------------ | ------------------------------------------------ |
 | **[Troubleshooting Guide](docs/troubleshooting.md)**         | 🔧 Common issues, solutions, and debugging steps |
 | **[Maintenance Guide](docs/maintenance.md)**                 | 🔄 Package upgrades, dependency management       |
-| **[Performance Guide](docs/performance-guide.md)**           | ⚡ Database tuning, hardware specs, optimization  |
+| **[Performance Guide](docs/performance-guide.md)**           | ⚡ Database tuning, hardware specs, optimization |
 | **[Performance Benchmarks](docs/performance-benchmarks.md)** | 📈 Processing rates and tuning results           |
 | **[Database Resilience](docs/database-resilience.md)**       | 💾 Database connection patterns & error handling |
 
