@@ -35,14 +35,12 @@ development experience enhancements.
 
 #### Static Files
 
-| File | Change |
-| ---- | ------ |
-| `dashboard/static/index.html` | Complete rewrite (dark Tailwind theme) |
-| `dashboard/static/dashboard.js` | Complete rewrite (Chart.js removed, SVG gauges + CSS bars) |
-| `dashboard/static/styles.css` | Simplified to base reset + legacy selector stubs |
-| `tests/dashboard/test_dashboard_ui.py` | Updated Playwright selectors |
-
-
+| File                                   | Change                                                     |
+| -------------------------------------- | ---------------------------------------------------------- |
+| `dashboard/static/index.html`          | Complete rewrite (dark Tailwind theme)                     |
+| `dashboard/static/dashboard.js`        | Complete rewrite (Chart.js removed, SVG gauges + CSS bars) |
+| `dashboard/static/styles.css`          | Simplified to base reset + legacy selector stubs           |
+| `tests/dashboard/test_dashboard_ui.py` | Updated Playwright selectors                               |
 
 ### 🧹 Code Simplification & Test Coverage (February 2026)
 
