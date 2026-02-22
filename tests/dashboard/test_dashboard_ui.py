@@ -56,13 +56,16 @@ class TestDashboardUI:
         queue_heading = page.locator("h2", has_text="Queue Size Metrics")
         expect(queue_heading).to_be_visible(timeout=10000)
 
-        # Processing rates section heading
-        rates_heading = page.locator("h2", has_text="Processing Rates")
-        expect(rates_heading).to_be_visible(timeout=10000)
+        # Processing rates section headings (split into publish and ack panels)
+        publish_rates_heading = page.locator("h2", has_text="Publish Rates")
+        expect(publish_rates_heading).to_be_visible(timeout=10000)
 
-        # SVG rate circles are rendered (8 total: 4 publish + 4 ack)
-        rate_grid = page.locator("#processing-rates-grid")
-        expect(rate_grid).to_be_visible(timeout=10000)
+        ack_rates_heading = page.locator("h2", has_text="Ack Rates")
+        expect(ack_rates_heading).to_be_visible(timeout=10000)
+
+        # SVG rate circles are rendered
+        rate_circle = page.locator("#rate-circle-graphinator-masters-publish")
+        expect(rate_circle).to_be_visible(timeout=10000)
 
     def test_database_cards_display(self, page: Page) -> None:
         """Test that database cards are displayed."""
