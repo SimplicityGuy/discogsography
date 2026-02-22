@@ -68,21 +68,21 @@ The script provides:
 
 The script now includes comprehensive component verification and updates **all** project files:
 
-**Python Configuration (8 files)**:
+**Python Configuration (7 files)**:
 
 - ✅ Root `pyproject.toml`
-- ✅ All service `pyproject.toml` files including nested extractor subdirectories
+- ✅ All Python service `pyproject.toml` files (common, dashboard, explore, graphinator, schema-init, tableinator)
 
 **Docker Configuration (7 files)**:
 
-- ✅ All service Dockerfiles including nested `extractor/pyextractor` and `extractor/extractor`
+- ✅ All service Dockerfiles
 - ✅ Documentation standards file
 
 **Rust Configuration (2 files)**:
 
 - ✅ `Cargo.toml` and `Cargo.lock` for extractor
 
-**Total: 15+ components verified and updated automatically**
+**Total: 14+ components verified and updated automatically**
 
 ### Example Output
 
@@ -95,7 +95,7 @@ The script now includes comprehensive component verification and updates **all**
 ℹ️  [INFO] Checking Python configuration files...
 ℹ️  [INFO] Checking Dockerfiles...
 ℹ️  [INFO] Found Rust extractor (Cargo.toml)
-✅  [SUCCESS] Found 15/15 expected components
+✅  [SUCCESS] Found 14/14 expected components
 ✅  [SUCCESS] All expected components found!
 
 🐳  Updating UV Version in Dockerfiles
@@ -150,11 +150,9 @@ Standalone script for updating Python version across the codebase. This is calle
 
 - All `pyproject.toml` files in:
   - Root directory
-  - `common/`, `dashboard/`, `discovery/`, `graphinator/`, `tableinator/`
-  - `extractor/pyextractor/` and `extractor/extractor/`
+  - `common/`, `dashboard/`, `explore/`, `graphinator/`, `schema-init/`, `tableinator/`
 - All Dockerfiles including nested ones in:
-  - `dashboard/`, `discovery/`, `graphinator/`, `tableinator/`
-  - `extractor/pyextractor/` and `extractor/extractor/`
+  - `dashboard/`, `explore/`, `graphinator/`, `tableinator/`
   - `docs/dockerfile-standards.md`
 - GitHub workflow files
 - `pyrightconfig.json`
