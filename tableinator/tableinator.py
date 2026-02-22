@@ -64,7 +64,7 @@ STUCK_CHECK_INTERVAL = int(
 
 # Idle mode settings - reduce log noise when no messages arrive after startup
 STARTUP_IDLE_TIMEOUT = int(
-    os.environ.get("STARTUP_IDLE_TIMEOUT", "60")
+    os.environ.get("STARTUP_IDLE_TIMEOUT", "30")
 )  # Seconds after startup with no messages before entering idle mode
 IDLE_LOG_INTERVAL = int(
     os.environ.get("IDLE_LOG_INTERVAL", "300")
@@ -636,6 +636,7 @@ async def progress_reporter() -> None:
         current_time = time.time()
 
         # Idle mode detection: no messages received after STARTUP_IDLE_TIMEOUT
+        # Idle mode only suppresses reporting - consumers stay connected
         if (
             not idle_mode
             and total == 0
@@ -643,27 +644,10 @@ async def progress_reporter() -> None:
         ):
             idle_mode = True
             last_idle_log = current_time
-
-            # Cancel all active consumers and close connection
-            for dt in list(consumer_tags.keys()):
-                if dt in queues:
-                    try:
-                        await queues[dt].cancel(consumer_tags[dt], nowait=True)
-                    except Exception as e:
-                        logger.warning(
-                            "⚠️ Error canceling consumer during idle transition",
-                            data_type=dt,
-                            error=str(e),
-                        )
-                del consumer_tags[dt]
-
-            await close_rabbitmq_connection()
-
             logger.info(
                 f"😴 No messages received after {STARTUP_IDLE_TIMEOUT}s, entering idle mode. "
-                f"Will check queues every {QUEUE_CHECK_INTERVAL}s",
+                "Consumers remain connected, reporting paused.",
                 startup_idle_timeout=STARTUP_IDLE_TIMEOUT,
-                queue_check_interval=QUEUE_CHECK_INTERVAL,
             )
             continue
 
@@ -676,9 +660,7 @@ async def progress_reporter() -> None:
             elif (current_time - last_idle_log) >= IDLE_LOG_INTERVAL:
                 last_idle_log = current_time
                 logger.info(
-                    "😴 Idle mode - no messages received. "
-                    f"Next queue check in ≤{QUEUE_CHECK_INTERVAL}s",
-                    queue_check_interval=QUEUE_CHECK_INTERVAL,
+                    "😴 Idle mode - waiting for messages. Consumers connected.",
                 )
             continue
 

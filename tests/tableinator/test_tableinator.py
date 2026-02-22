@@ -2316,8 +2316,8 @@ class TestProgressReporterAdditionalPaths:
         assert "slow" in warning_calls.lower() or "Slow" in warning_calls
 
     @pytest.mark.asyncio
-    async def test_idle_mode_entry_cancels_consumers(self) -> None:
-        """Test idle mode entry cancels existing consumers (lines 650-659)."""
+    async def test_idle_mode_keeps_consumers_connected(self) -> None:
+        """Test idle mode entry keeps consumers connected (only suppresses reporting)."""
         import tableinator.tableinator
 
         mock_queue = AsyncMock()
@@ -2339,7 +2339,7 @@ class TestProgressReporterAdditionalPaths:
 
         with (
             patch("asyncio.sleep", side_effect=mock_sleep),
-            patch("tableinator.tableinator.close_rabbitmq_connection", AsyncMock()),
+            patch("tableinator.tableinator.close_rabbitmq_connection", AsyncMock()) as mock_close,
             patch("tableinator.tableinator.logger"),
             patch("tableinator.tableinator.STARTUP_IDLE_TIMEOUT", 0),
         ):
@@ -2347,6 +2347,10 @@ class TestProgressReporterAdditionalPaths:
 
             await progress_reporter()
 
-        # Consumer cancel should have been called (lines 650-659)
-        mock_queue.cancel.assert_called_once_with("tag-123", nowait=True)
-        assert tableinator.tableinator.consumer_tags == {}
+        # Consumers should NOT be canceled - they stay connected in idle mode
+        mock_queue.cancel.assert_not_called()
+        assert tableinator.tableinator.consumer_tags == {"artists": "tag-123"}
+        # Connection should NOT be closed
+        mock_close.assert_not_called()
+        # But idle mode should be active
+        assert tableinator.tableinator.idle_mode is True
