@@ -10,6 +10,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
 
+import redis.asyncio as aioredis
 import structlog
 import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
@@ -17,8 +18,18 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
+from pydantic import BaseModel
 
 from auth.models import LoginRequest, RegisterRequest
+from auth.services.discogs import (
+    DISCOGS_AUTHORIZE_URL,
+    REDIS_OAUTH_STATE_TTL,
+    REDIS_STATE_PREFIX,
+    DiscogsOAuthError,
+    exchange_oauth_verifier,
+    fetch_discogs_identity,
+    request_oauth_token,
+)
 from common import AsyncPostgreSQLPool, HealthServer, setup_logging
 from common.config import AuthConfig
 
@@ -28,7 +39,15 @@ logger = structlog.get_logger(__name__)
 # Module-level state
 _pool: AsyncPostgreSQLPool | None = None
 _config: AuthConfig | None = None
+_redis: aioredis.Redis | None = None  # type: ignore[type-arg]
 _security = HTTPBearer()
+
+
+class OAuthVerifyRequest(BaseModel):
+    """Request body for completing Discogs OAuth verification."""
+
+    state: str  # The state token (maps to redis key for request token)
+    oauth_verifier: str  # Verification code from Discogs
 
 AUTH_PORT = 8004
 AUTH_HEALTH_PORT = 8005
@@ -157,7 +176,7 @@ async def _get_current_user(
 @asynccontextmanager
 async def lifespan(_app: FastAPI):  # type: ignore[misc]
     """Manage auth service lifecycle."""
-    global _pool, _config
+    global _pool, _config, _redis
 
     logger.info("🚀 Auth service starting...")
     _config = AuthConfig.from_env()
@@ -182,6 +201,11 @@ async def lifespan(_app: FastAPI):  # type: ignore[misc]
     )
     await _pool.initialize()
     logger.info("💾 Database pool initialized")
+
+    # Initialize Redis for OAuth state storage
+    _redis = await aioredis.from_url(_config.redis_url, decode_responses=True)
+    logger.info("🔴 Redis connected", url=_config.redis_url)
+
     logger.info("✅ Auth service ready", port=AUTH_PORT)
 
     yield
@@ -189,6 +213,8 @@ async def lifespan(_app: FastAPI):  # type: ignore[misc]
     logger.info("🔧 Auth service shutting down...")
     if _pool:
         await _pool.close()
+    if _redis:
+        await _redis.aclose()
     health_srv.stop()
     logger.info("✅ Auth service stopped")
 
@@ -345,6 +371,280 @@ async def get_me(
             "created_at": user["created_at"].isoformat(),
         }
     )
+
+
+async def _get_app_config(key: str) -> str | None:
+    """Fetch a value from the app_config table."""
+    if _pool is None:
+        return None
+    async with _pool.connection() as conn:
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute("SELECT value FROM app_config WHERE key = %s", (key,))
+            row = await cur.fetchone()
+    return row["value"] if row else None
+
+
+@app.get("/api/oauth/authorize/discogs")
+async def authorize_discogs(
+    current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
+) -> ORJSONResponse:
+    """Start the Discogs OAuth 1.0a OOB flow.
+
+    Returns the Discogs authorization URL and a state token.
+    The frontend should open the URL in a popup and ask the user to paste
+    the verifier code, then call /api/oauth/verify/discogs.
+    """
+    if _pool is None or _redis is None or _config is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service not ready",
+        )
+
+    consumer_key = await _get_app_config("discogs_consumer_key")
+    consumer_secret = await _get_app_config("discogs_consumer_secret")
+
+    if not consumer_key or not consumer_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Discogs app credentials not configured. Ask an admin to set them via /api/admin/config.",
+        )
+
+    try:
+        token_data = await request_oauth_token(
+            consumer_key=consumer_key,
+            consumer_secret=consumer_secret,
+            user_agent=_config.discogs_user_agent,
+        )
+    except DiscogsOAuthError as exc:
+        logger.error("❌ Failed to get Discogs request token", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Failed to initiate Discogs OAuth",
+        )
+
+    # Store request token in Redis (keyed by state = request_token itself)
+    # This acts as both a CSRF token and a lookup key for the token secret
+    state = token_data["oauth_token"]
+    redis_key = f"{REDIS_STATE_PREFIX}{state}"
+    await _redis.setex(redis_key, REDIS_OAUTH_STATE_TTL, token_data["oauth_token_secret"])
+
+    authorize_url = f"{DISCOGS_AUTHORIZE_URL}?oauth_token={state}"
+    logger.info("🔐 Discogs OAuth flow started", user_id=current_user.get("sub"))
+
+    return ORJSONResponse(
+        content={
+            "authorize_url": authorize_url,
+            "state": state,
+            "expires_in": REDIS_OAUTH_STATE_TTL,
+        }
+    )
+
+
+@app.post("/api/oauth/verify/discogs")
+async def verify_discogs(
+    request: OAuthVerifyRequest,
+    current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
+) -> ORJSONResponse:
+    """Complete the Discogs OAuth flow by exchanging the verifier code.
+
+    The user pastes the verifier code shown on Discogs into the app.
+    This exchanges the verifier for a permanent access token and stores it.
+    """
+    if _pool is None or _redis is None or _config is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service not ready",
+        )
+
+    consumer_key = await _get_app_config("discogs_consumer_key")
+    consumer_secret = await _get_app_config("discogs_consumer_secret")
+
+    if not consumer_key or not consumer_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Discogs app credentials not configured",
+        )
+
+    # Retrieve request token secret from Redis
+    redis_key = f"{REDIS_STATE_PREFIX}{request.state}"
+    token_secret = await _redis.get(redis_key)
+
+    if not token_secret:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="OAuth state not found or expired. Please restart the OAuth flow.",
+        )
+
+    try:
+        access_data = await exchange_oauth_verifier(
+            consumer_key=consumer_key,
+            consumer_secret=consumer_secret,
+            oauth_token=request.state,
+            oauth_token_secret=token_secret,
+            oauth_verifier=request.oauth_verifier,
+            user_agent=_config.discogs_user_agent,
+        )
+        identity = await fetch_discogs_identity(
+            consumer_key=consumer_key,
+            consumer_secret=consumer_secret,
+            access_token=access_data["oauth_token"],
+            access_token_secret=access_data["oauth_token_secret"],
+            user_agent=_config.discogs_user_agent,
+        )
+    except DiscogsOAuthError as exc:
+        logger.error("❌ Discogs OAuth exchange failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verifier code or OAuth flow failed",
+        )
+
+    # Clean up state from Redis
+    await _redis.delete(redis_key)
+
+    user_id = current_user.get("sub")
+    discogs_username = identity.get("username", "")
+    discogs_user_id = str(identity.get("id", ""))
+
+    # Upsert oauth_tokens record
+    async with _pool.connection() as conn:
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
+                INSERT INTO oauth_tokens (user_id, provider, access_token, access_secret,
+                                          provider_username, provider_user_id, updated_at)
+                VALUES (%s::uuid, 'discogs', %s, %s, %s, %s, NOW())
+                ON CONFLICT (user_id, provider) DO UPDATE SET
+                    access_token = EXCLUDED.access_token,
+                    access_secret = EXCLUDED.access_secret,
+                    provider_username = EXCLUDED.provider_username,
+                    provider_user_id = EXCLUDED.provider_user_id,
+                    updated_at = NOW()
+                RETURNING id
+                """,
+                (
+                    user_id,
+                    access_data["oauth_token"],
+                    access_data["oauth_token_secret"],
+                    discogs_username,
+                    discogs_user_id,
+                ),
+            )
+
+    logger.info("✅ Discogs account connected", user_id=user_id, discogs_username=discogs_username)
+    return ORJSONResponse(
+        content={
+            "connected": True,
+            "discogs_username": discogs_username,
+            "discogs_user_id": discogs_user_id,
+        }
+    )
+
+
+@app.get("/api/oauth/status/discogs")
+async def discogs_status(
+    current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
+) -> ORJSONResponse:
+    """Check if the current user has a connected Discogs account."""
+    if _pool is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service not ready",
+        )
+
+    user_id = current_user.get("sub")
+    async with _pool.connection() as conn:
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
+                SELECT provider_username, provider_user_id, updated_at
+                FROM oauth_tokens
+                WHERE user_id = %s::uuid AND provider = 'discogs'
+                """,
+                (user_id,),
+            )
+            token = await cur.fetchone()
+
+    if token is None:
+        return ORJSONResponse(content={"connected": False})
+
+    return ORJSONResponse(
+        content={
+            "connected": True,
+            "discogs_username": token["provider_username"],
+            "discogs_user_id": token["provider_user_id"],
+            "connected_at": token["updated_at"].isoformat(),
+        }
+    )
+
+
+@app.delete("/api/oauth/revoke/discogs")
+async def revoke_discogs(
+    current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
+) -> ORJSONResponse:
+    """Disconnect the current user's Discogs account."""
+    if _pool is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service not ready",
+        )
+
+    user_id = current_user.get("sub")
+    async with _pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "DELETE FROM oauth_tokens WHERE user_id = %s::uuid AND provider = 'discogs'",
+                (user_id,),
+            )
+
+    logger.info("✅ Discogs account disconnected", user_id=user_id)
+    return ORJSONResponse(content={"revoked": True})
+
+
+@app.put("/api/admin/config/{key}")
+async def set_app_config(
+    key: str,
+    body: dict[str, str],
+    current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
+) -> ORJSONResponse:
+    """Set an admin configuration value (e.g., Discogs consumer key/secret).
+
+    Allowed keys: discogs_consumer_key, discogs_consumer_secret
+    """
+    if _pool is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Service not ready",
+        )
+
+    allowed_keys = {"discogs_consumer_key", "discogs_consumer_secret"}
+    if key not in allowed_keys:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown config key. Allowed keys: {', '.join(sorted(allowed_keys))}",
+        )
+
+    value = body.get("value", "")
+    if not value:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="'value' field is required",
+        )
+
+    async with _pool.connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                INSERT INTO app_config (key, value, updated_at)
+                VALUES (%s, %s, NOW())
+                ON CONFLICT (key) DO UPDATE SET
+                    value = EXCLUDED.value,
+                    updated_at = NOW()
+                """,
+                (key, value),
+            )
+
+    logger.info("✅ App config updated", key=key, user_id=current_user.get("sub"))
+    return ORJSONResponse(content={"key": key, "updated": True})
 
 
 def main() -> None:

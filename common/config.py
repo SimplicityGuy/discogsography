@@ -360,8 +360,10 @@ class AuthConfig:
     postgres_password: str
     postgres_database: str
     jwt_secret_key: str
+    redis_url: str = "redis://redis:6379/0"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30
+    discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
     @classmethod
     def from_env(cls) -> "AuthConfig":
@@ -387,12 +389,17 @@ class AuthConfig:
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
+        redis_url = getenv("REDIS_URL", "redis://redis:6379/0")
         jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
         jwt_expire_minutes_str = getenv("JWT_EXPIRE_MINUTES", "30")
         try:
             jwt_expire_minutes = int(jwt_expire_minutes_str)
         except ValueError:
             jwt_expire_minutes = 30
+        discogs_user_agent = getenv(
+            "DISCOGS_USER_AGENT",
+            "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography",
+        )
 
         return cls(
             postgres_address=postgres_address,  # type: ignore[arg-type]
@@ -400,8 +407,10 @@ class AuthConfig:
             postgres_password=postgres_password,  # type: ignore[arg-type]
             postgres_database=postgres_database,  # type: ignore[arg-type]
             jwt_secret_key=jwt_secret_key,  # type: ignore[arg-type]
+            redis_url=redis_url,
             jwt_algorithm=jwt_algorithm,
             jwt_expire_minutes=jwt_expire_minutes,
+            discogs_user_agent=discogs_user_agent,
         )
 
 
