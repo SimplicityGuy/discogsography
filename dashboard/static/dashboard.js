@@ -5,32 +5,23 @@ class Dashboard {
         this.reconnectInterval = null;
         this.activityLog = [];
         this.maxLogEntries = 50;
-        this.queueChart = null;
-        this.queueChartData = {
-            labels: [],
-            datasets: []
-        };
-        // Track historical rate data for 5-minute windows
-        this.rateHistory = new Map(); // Map<queueName, {publish: [], ack: []}>
-        this.historyWindowMs = 5 * 60 * 1000; // 5 minutes
+        // SVG circle circumference: 2 * PI * r(28) ≈ 176
+        this.CIRCUMFERENCE = 176;
 
         this.initializeWebSocket();
-        this.initializeChart();
         this.fetchInitialData();
     }
+
+    // ─── WebSocket ────────────────────────────────────────────────────────────
 
     initializeWebSocket() {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
-
         this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
-            console.log('WebSocket connected');
             this.updateConnectionStatus('connected');
-            this.addLogEntry('Connected to dashboard');
-
-            // Clear reconnect interval if it exists
+            this.addLogEntry('Connected to dashboard', 'info');
             if (this.reconnectInterval) {
                 clearInterval(this.reconnectInterval);
                 this.reconnectInterval = null;
@@ -44,14 +35,11 @@ class Dashboard {
             }
         };
 
-        this.ws.onerror = (error) => {
-            console.error('WebSocket error:', error);
+        this.ws.onerror = () => {
             this.updateConnectionStatus('disconnected');
-            this.addLogEntry('Connection error', 'error');
         };
 
         this.ws.onclose = () => {
-            console.log('WebSocket disconnected');
             this.updateConnectionStatus('disconnected');
             this.addLogEntry('Disconnected from dashboard', 'warning');
             this.reconnect();
@@ -61,19 +49,58 @@ class Dashboard {
     reconnect() {
         if (!this.reconnectInterval) {
             this.reconnectInterval = setInterval(() => {
-                console.log('Attempting to reconnect...');
                 this.initializeWebSocket();
             }, 5000);
         }
     }
 
+    // ─── Status indicators ────────────────────────────────────────────────────
+
     updateConnectionStatus(status) {
         const indicator = document.querySelector('.status-indicator');
         const text = document.querySelector('.status-text');
 
-        indicator.className = `status-indicator ${status}`;
-        text.textContent = status === 'connected' ? 'Connected' : 'Disconnected';
+        if (status === 'connected') {
+            // NOTE: 'connected' class is kept for Playwright test detection
+            if (indicator) indicator.className = 'status-indicator connected w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+            if (text) {
+                text.textContent = 'Connected';
+                text.className = 'status-text text-[10px] text-emerald-400 font-bold uppercase tracking-widest';
+            }
+        } else {
+            // NOTE: 'disconnected' class is kept for Playwright test detection
+            if (indicator) indicator.className = 'status-indicator disconnected w-2 h-2 rounded-full bg-red-500';
+            if (text) {
+                text.textContent = 'Disconnected';
+                text.className = 'status-text text-[10px] text-red-400 font-bold uppercase tracking-widest';
+            }
+        }
     }
+
+    updateOverallStatus(services) {
+        const dot = document.getElementById('operational-status-dot');
+        const text = document.getElementById('operational-status-text');
+        if (!dot || !text) return;
+
+        const allHealthy = services.length > 0 && services.every(s => s.status === 'healthy');
+        const anyUnhealthy = services.some(s => s.status === 'unhealthy');
+
+        if (allHealthy) {
+            dot.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+            text.className = 'text-[10px] text-emerald-500 font-bold uppercase tracking-widest';
+            text.textContent = 'Operational';
+        } else if (anyUnhealthy) {
+            dot.className = 'w-2 h-2 rounded-full bg-red-500';
+            text.className = 'text-[10px] text-red-500 font-bold uppercase tracking-widest';
+            text.textContent = 'Degraded';
+        } else {
+            dot.className = 'w-2 h-2 rounded-full bg-yellow-500 animate-pulse';
+            text.className = 'text-[10px] text-yellow-500 font-bold uppercase tracking-widest';
+            text.textContent = 'Unknown';
+        }
+    }
+
+    // ─── Initial data fetch ───────────────────────────────────────────────────
 
     async fetchInitialData() {
         try {
@@ -83,543 +110,286 @@ class Dashboard {
                 this.updateDashboard(data);
             }
         } catch (error) {
-            console.error('Error fetching initial data:', error);
             this.addLogEntry('Failed to fetch initial data', 'error');
         }
     }
+
+    // ─── Main update dispatcher ───────────────────────────────────────────────
 
     updateDashboard(data) {
         this.updateServices(data.services);
         this.updateQueues(data.queues);
         this.updateDatabases(data.databases);
         this.updateLastUpdated(data.timestamp);
+        this.updateOverallStatus(data.services);
+    }
+
+    // ─── Service cards ────────────────────────────────────────────────────────
+
+    _serviceBadgeClasses(status) {
+        switch (status.toLowerCase()) {
+            case 'healthy':
+                return 'text-[10px] px-2 py-0.5 rounded uppercase font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20';
+            case 'unhealthy':
+                return 'text-[10px] px-2 py-0.5 rounded uppercase font-bold bg-red-500/10 text-red-400 border border-red-500/20';
+            case 'extracting':
+            case 'active':
+                return 'text-[10px] px-2 py-0.5 rounded uppercase font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20';
+            default:
+                return 'text-[10px] px-2 py-0.5 rounded uppercase font-bold bg-yellow-500/10 text-yellow-400 border border-yellow-500/20';
+        }
+    }
+
+    _statusLabel(status) {
+        switch (status.toLowerCase()) {
+            case 'healthy':    return 'Healthy';
+            case 'unhealthy':  return 'Unhealthy';
+            case 'extracting': return 'Active';
+            case 'unknown':    return 'Unknown';
+            default:           return status;
+        }
     }
 
     updateServices(services) {
-        const container = document.getElementById('servicesGrid');
-        container.innerHTML = '';
-
         services.forEach(service => {
-            const card = this.createServiceCard(service);
-            container.appendChild(card);
+            const badge = document.getElementById(`${service.name}-status-badge`);
+            if (badge) {
+                badge.className = this._serviceBadgeClasses(service.status);
+                badge.textContent = this._statusLabel(service.status);
+            }
         });
     }
 
-    createServiceCard(service) {
-        const card = document.createElement('div');
-        card.className = 'service-card';
-
-        const statusClass = service.status.toLowerCase();
-        const progressHtml = service.progress !== null ? `
-            <div class="progress-bar">
-                <div class="progress-fill" style="width: ${service.progress * 100}%"></div>
-            </div>
-        ` : '';
-
-        const taskHtml = service.current_task ? `
-            <div class="service-task">
-                <strong>Current Task:</strong> ${service.current_task}
-                ${progressHtml}
-            </div>
-        ` : '';
-
-        card.innerHTML = `
-            <div class="service-header">
-                <span class="service-name">${service.name}</span>
-                <span class="service-status ${statusClass}">${service.status}</span>
-            </div>
-            <div class="service-details">
-                ${service.last_seen ? `Last seen: ${this.formatTime(service.last_seen)}` : 'Never seen'}
-                ${service.error ? `<br><span style="color: var(--accent-red)">Error: ${service.error}</span>` : ''}
-            </div>
-            ${taskHtml}
-        `;
-
-        return card;
-    }
-
-    updateRateHistory(queueName, publishRate, ackRate) {
-        const now = Date.now();
-
-        if (!this.rateHistory.has(queueName)) {
-            this.rateHistory.set(queueName, { publish: [], ack: [] });
-        }
-
-        const history = this.rateHistory.get(queueName);
-
-        // Add new data points
-        history.publish.push({ timestamp: now, value: publishRate });
-        history.ack.push({ timestamp: now, value: ackRate });
-
-        // Remove data older than 5 minutes
-        const cutoff = now - this.historyWindowMs;
-        history.publish = history.publish.filter(d => d.timestamp >= cutoff);
-        history.ack = history.ack.filter(d => d.timestamp >= cutoff);
-    }
-
-    getRateRange(queueName, type) {
-        if (!this.rateHistory.has(queueName)) {
-            return { min: 0, max: 0, current: 0 };
-        }
-
-        const history = this.rateHistory.get(queueName);
-        const data = history[type];
-
-        if (data.length === 0) {
-            return { min: 0, max: 0, current: 0 };
-        }
-
-        const values = data.map(d => d.value);
-        const current = values[values.length - 1];
-        const min = Math.min(...values);
-        const max = Math.max(...values);
-
-        return { min, max, current };
-    }
+    // ─── Queue metrics ────────────────────────────────────────────────────────
 
     updateQueues(queues) {
-        const container = document.getElementById('queuesGrid');
-        container.innerHTML = '';
+        const TYPES = ['masters', 'releases', 'artists', 'labels'];
 
-        // Update chart data
-        const labels = [];
-        const messagesData = [];
-        const rateRanges = [];
-
+        // Map queue type → queue object. Queue names like "discogsography-masters".
+        const queueMap = {};
         queues.forEach(queue => {
-            const card = this.createQueueCard(queue);
-            container.appendChild(card);
-
-            const shortName = queue.name.replace('discogsography-', '');
-
-            // Update historical data
-            this.updateRateHistory(shortName, queue.message_rate, queue.ack_rate);
-
-            // Collect data for chart
-            labels.push(shortName);
-            messagesData.push(queue.messages);
-
-            const publishRange = this.getRateRange(shortName, 'publish');
-            const ackRange = this.getRateRange(shortName, 'ack');
-
-            rateRanges.push({
-                queue: shortName,
-                publish: publishRange,
-                ack: ackRange
-            });
-        });
-
-        // Update chart
-        this.updateQueueChart(labels, messagesData, rateRanges);
-
-        // Log significant queue changes
-        queues.forEach(queue => {
-            if (queue.messages > 1000) {
-                this.addLogEntry(`High message count in ${queue.name}: ${queue.messages}`, 'warning');
-            }
-        });
-    }
-
-    createQueueCard(queue) {
-        const card = document.createElement('div');
-        card.className = 'queue-card';
-
-        const shortName = queue.name.replace('discogsography-', '');
-
-        card.innerHTML = `
-            <div class="queue-header">
-                <span class="queue-name">${shortName}</span>
-                <span class="queue-consumers">${queue.consumers} consumers</span>
-            </div>
-            <div class="queue-stats">
-                <div class="stat-item">
-                    <span class="stat-label">Total:</span>
-                    <span class="stat-value">${queue.messages.toLocaleString()}</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Ready:</span>
-                    <span class="stat-value">${queue.messages_ready.toLocaleString()}</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-label">Unacked:</span>
-                    <span class="stat-value">${queue.messages_unacknowledged.toLocaleString()}</span>
-                </div>
-            </div>
-            <div class="queue-rates">
-                <div class="rate-item">
-                    <div class="rate-label">Publish Rate</div>
-                    <div class="rate-value">${queue.message_rate.toFixed(1)}/s</div>
-                </div>
-                <div class="rate-item">
-                    <div class="rate-label">Ack Rate</div>
-                    <div class="rate-value">${queue.ack_rate.toFixed(1)}/s</div>
-                </div>
-            </div>
-        `;
-
-        return card;
-    }
-
-    updateDatabases(databases) {
-        const container = document.getElementById('databasesGrid');
-        container.innerHTML = '';
-
-        databases.forEach(database => {
-            const card = this.createDatabaseCard(database);
-            container.appendChild(card);
-        });
-    }
-
-    createDatabaseCard(database) {
-        const card = document.createElement('div');
-        card.className = 'database-card';
-
-        const statusClass = database.status.toLowerCase();
-
-        card.innerHTML = `
-            <div class="database-header">
-                <span class="database-name">${database.name}</span>
-                <span class="service-status ${statusClass}">${database.status}</span>
-            </div>
-            <div class="database-stats">
-                <div class="database-stat">
-                    <span>Connections:</span>
-                    <span>${database.connection_count}</span>
-                </div>
-                ${database.size ? `
-                    <div class="database-stat">
-                        <span>Size:</span>
-                        <span>${database.size}</span>
-                    </div>
-                ` : ''}
-                ${database.error ? `
-                    <div class="database-stat" style="color: var(--accent-red)">
-                        <span>Error:</span>
-                        <span>${database.error}</span>
-                    </div>
-                ` : ''}
-            </div>
-        `;
-
-        return card;
-    }
-
-    initializeChart() {
-        const ctx = document.getElementById('queueChart').getContext('2d');
-
-        // Custom plugin to draw range bars
-        const rangeBarPlugin = {
-            id: 'rangeBar',
-            afterDatasetsDraw: (chart) => {
-                const ctx = chart.ctx;
-                const xScale = chart.scales.x;
-                const yScale = chart.scales['y-rate'];
-
-                const publishRangeData = chart.data.datasets[1].data;
-                const ackRangeData = chart.data.datasets[3].data;
-
-                if (!publishRangeData || publishRangeData.length === 0) return;
-
-                const barWidth = 12;
-                const halfWidth = barWidth / 2;
-
-                // Draw publish ranges
-                publishRangeData.forEach((data, index) => {
-                    if (!data || data.length !== 2) return;
-
-                    const xPos = xScale.getPixelForValue(index) - 8; // Offset left
-                    const yMin = yScale.getPixelForValue(data[0]);
-                    const yMax = yScale.getPixelForValue(data[1]);
-                    const height = yMin - yMax;
-
-                    if (height < 1) {
-                        // Draw a line when min == max
-                        ctx.save();
-                        ctx.strokeStyle = 'rgba(66, 184, 131, 1)';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.moveTo(xPos - halfWidth, yMin);
-                        ctx.lineTo(xPos + halfWidth, yMin);
-                        ctx.stroke();
-                        ctx.restore();
-                    } else {
-                        // Draw a bar
-                        ctx.save();
-                        ctx.fillStyle = 'rgba(66, 184, 131, 0.3)';
-                        ctx.strokeStyle = 'rgba(66, 184, 131, 1)';
-                        ctx.lineWidth = 1;
-                        ctx.fillRect(xPos - halfWidth, yMax, barWidth, height);
-                        ctx.strokeRect(xPos - halfWidth, yMax, barWidth, height);
-                        ctx.restore();
-                    }
-                });
-
-                // Draw ack ranges
-                ackRangeData.forEach((data, index) => {
-                    if (!data || data.length !== 2) return;
-
-                    const xPos = xScale.getPixelForValue(index) + 8; // Offset right
-                    const yMin = yScale.getPixelForValue(data[0]);
-                    const yMax = yScale.getPixelForValue(data[1]);
-                    const height = yMin - yMax;
-
-                    if (height < 1) {
-                        // Draw a line when min == max
-                        ctx.save();
-                        ctx.strokeStyle = 'rgba(255, 159, 64, 1)';
-                        ctx.lineWidth = 2;
-                        ctx.beginPath();
-                        ctx.moveTo(xPos - halfWidth, yMin);
-                        ctx.lineTo(xPos + halfWidth, yMin);
-                        ctx.stroke();
-                        ctx.restore();
-                    } else {
-                        // Draw a bar
-                        ctx.save();
-                        ctx.fillStyle = 'rgba(255, 159, 64, 0.3)';
-                        ctx.strokeStyle = 'rgba(255, 159, 64, 1)';
-                        ctx.lineWidth = 1;
-                        ctx.fillRect(xPos - halfWidth, yMax, barWidth, height);
-                        ctx.strokeRect(xPos - halfWidth, yMax, barWidth, height);
-                        ctx.restore();
-                    }
-                });
-            }
-        };
-
-        this.queueChart = new Chart(ctx, {
-            type: 'bar',
-            data: {
-                labels: [],
-                datasets: [
-                    {
-                        label: 'Messages',
-                        data: [],
-                        backgroundColor: 'rgba(24, 119, 242, 0.6)',
-                        borderColor: 'rgba(24, 119, 242, 1)',
-                        borderWidth: 1,
-                        yAxisID: 'y-messages',
-                        order: 1
-                    },
-                    {
-                        label: 'Publish Range (hidden)',
-                        data: [],
-                        type: 'scatter',
-                        backgroundColor: 'transparent',
-                        borderColor: 'transparent',
-                        pointRadius: 0,
-                        yAxisID: 'y-rate',
-                        order: 3
-                    },
-                    {
-                        label: 'Publish Current',
-                        data: [],
-                        type: 'scatter',
-                        backgroundColor: 'rgba(66, 184, 131, 1)',
-                        borderColor: 'rgba(255, 255, 255, 0.8)',
-                        borderWidth: 2,
-                        pointRadius: 6,
-                        pointHoverRadius: 8,
-                        yAxisID: 'y-rate',
-                        order: 2
-                    },
-                    {
-                        label: 'Ack Range (hidden)',
-                        data: [],
-                        type: 'scatter',
-                        backgroundColor: 'transparent',
-                        borderColor: 'transparent',
-                        pointRadius: 0,
-                        yAxisID: 'y-rate',
-                        order: 3
-                    },
-                    {
-                        label: 'Ack Current',
-                        data: [],
-                        type: 'scatter',
-                        backgroundColor: 'rgba(255, 159, 64, 1)',
-                        borderColor: 'rgba(255, 255, 255, 0.8)',
-                        borderWidth: 2,
-                        pointRadius: 6,
-                        pointHoverRadius: 8,
-                        yAxisID: 'y-rate',
-                        order: 2
-                    }
-                ]
-            },
-            plugins: [rangeBarPlugin],
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                interaction: {
-                    mode: 'index',
-                    intersect: false
-                },
-                plugins: {
-                    legend: {
-                        display: true,
-                        labels: {
-                            color: '#e4e6eb',
-                            filter: (item) => !item.text.includes('Range')
-                        }
-                    },
-                    title: {
-                        display: true,
-                        text: 'Queue Statistics (Ranges show 5-min history)',
-                        color: '#e4e6eb'
-                    },
-                    tooltip: {
-                        callbacks: {
-                            label: function(context) {
-                                const label = context.dataset.label || '';
-                                if (label.includes('Range')) {
-                                    const range = context.raw;
-                                    return `${label}: ${range[0].toFixed(1)} - ${range[1].toFixed(1)} msg/s`;
-                                } else if (label.includes('Current')) {
-                                    return `${label}: ${context.parsed.y.toFixed(1)} msg/s`;
-                                } else {
-                                    return `${label}: ${context.parsed.y.toLocaleString()}`;
-                                }
-                            }
-                        }
-                    }
-                },
-                scales: {
-                    x: {
-                        ticks: {
-                            color: '#b0b3b8'
-                        },
-                        grid: {
-                            color: 'rgba(45, 48, 81, 0.5)'
-                        }
-                    },
-                    'y-messages': {
-                        type: 'linear',
-                        display: true,
-                        position: 'left',
-                        title: {
-                            display: true,
-                            text: 'Messages in Queue',
-                            color: '#b0b3b8'
-                        },
-                        ticks: {
-                            color: '#b0b3b8'
-                        },
-                        grid: {
-                            color: 'rgba(45, 48, 81, 0.5)'
-                        }
-                    },
-                    'y-rate': {
-                        type: 'linear',
-                        display: true,
-                        position: 'right',
-                        title: {
-                            display: true,
-                            text: 'Rate (msg/s)',
-                            color: '#b0b3b8'
-                        },
-                        ticks: {
-                            color: '#b0b3b8'
-                        },
-                        grid: {
-                            drawOnChartArea: false
-                        }
-                    }
+            const name = queue.name.toLowerCase();
+            for (const type of TYPES) {
+                if (name.includes(type)) {
+                    queueMap[type] = queue;
+                    break;
                 }
             }
         });
+
+        // Extractor card – queue state based on publish rate
+        TYPES.forEach(type => {
+            const el = document.getElementById(`extractor-${type}-state`);
+            if (!el) return;
+            const q = queueMap[type];
+            if (q) {
+                const processing = q.message_rate > 0;
+                el.textContent = processing ? 'Processing' : 'Idle';
+                el.className = processing ? 'text-blue-400' : 'text-emerald-400';
+            } else {
+                el.textContent = '—';
+                el.className = 'text-zinc-500';
+            }
+        });
+
+        // Graphinator card – total messages in queue
+        TYPES.forEach(type => {
+            const el = document.getElementById(`graphinator-${type}-count`);
+            if (!el) return;
+            const q = queueMap[type];
+            el.textContent = q ? q.messages.toLocaleString() : '—';
+        });
+
+        // Tableinator card – messages ready to process
+        TYPES.forEach(type => {
+            const el = document.getElementById(`tableinator-${type}-count`);
+            if (!el) return;
+            const q = queueMap[type];
+            el.textContent = q ? q.messages_ready.toLocaleString() : '—';
+        });
+
+        this._updateBarChart(queueMap, TYPES);
+        this._updateRateCircles(queueMap, TYPES);
+
+        // Log high message counts
+        queues.forEach(queue => {
+            if (queue.messages > 1000) {
+                this.addLogEntry(
+                    `High message count in ${queue.name}: ${queue.messages.toLocaleString()}`,
+                    'warning'
+                );
+            }
+        });
     }
 
-    updateQueueChart(labels, messagesData, rateRanges) {
-        if (this.queueChart) {
-            this.queueChart.data.labels = labels;
+    // ─── Bar chart (SVG-less, CSS height bars) ────────────────────────────────
 
-            // Messages dataset
-            this.queueChart.data.datasets[0].data = messagesData;
+    _updateBarChart(queueMap, types) {
+        const allMessages = types.map(t => queueMap[t]?.messages || 0);
+        const allReady    = types.map(t => queueMap[t]?.messages_ready || 0);
+        const maxCount = Math.max(...allMessages, ...allReady, 1);
 
-            // Prepare rate range and current value data
-            const publishRangeData = [];
-            const publishRangePoints = [];
-            const publishCurrentData = [];
-            const ackRangeData = [];
-            const ackRangePoints = [];
-            const ackCurrentData = [];
+        // Update Y-axis labels
+        const fmt = this._formatCount.bind(this);
+        const y4 = document.getElementById('bar-yaxis-4');
+        const y3 = document.getElementById('bar-yaxis-3');
+        const y2 = document.getElementById('bar-yaxis-2');
+        const y1 = document.getElementById('bar-yaxis-1');
+        if (y4) y4.textContent = fmt(maxCount);
+        if (y3) y3.textContent = fmt(maxCount * 0.75);
+        if (y2) y2.textContent = fmt(maxCount * 0.5);
+        if (y1) y1.textContent = fmt(maxCount * 0.25);
 
-            rateRanges.forEach((range, index) => {
-                // Publish range data for custom plugin
-                publishRangeData.push([range.publish.min, range.publish.max]);
-                // Hidden scatter point at center of range for positioning
-                publishRangePoints.push({
-                    x: index,
-                    y: (range.publish.min + range.publish.max) / 2
-                });
-
-                // Publish current value as scatter point with slight offset left
-                publishCurrentData.push({
-                    x: index - 0.15,
-                    y: range.publish.current
-                });
-
-                // Ack range data for custom plugin
-                ackRangeData.push([range.ack.min, range.ack.max]);
-                // Hidden scatter point at center of range for positioning
-                ackRangePoints.push({
-                    x: index,
-                    y: (range.ack.min + range.ack.max) / 2
-                });
-
-                // Ack current value as scatter point with slight offset right
-                ackCurrentData.push({
-                    x: index + 0.15,
-                    y: range.ack.current
-                });
-            });
-
-            // Update datasets
-            this.queueChart.data.datasets[1].data = publishRangeData;
-            this.queueChart.data.datasets[2].data = publishCurrentData;
-            this.queueChart.data.datasets[3].data = ackRangeData;
-            this.queueChart.data.datasets[4].data = ackCurrentData;
-
-            this.queueChart.update('none'); // 'none' mode for smoother updates
-        }
+        // Update bar heights
+        types.forEach(type => {
+            const q = queueMap[type];
+            const msgBar   = document.getElementById(`bar-${type}-messages`);
+            const readyBar = document.getElementById(`bar-${type}-ready`);
+            if (msgBar) {
+                const pct = q ? Math.max((q.messages / maxCount) * 100, q.messages > 0 ? 1 : 0) : 0;
+                msgBar.style.height = `${pct}%`;
+            }
+            if (readyBar) {
+                const pct = q ? Math.max((q.messages_ready / maxCount) * 100, q.messages_ready > 0 ? 1 : 0) : 0;
+                readyBar.style.height = `${pct}%`;
+            }
+        });
     }
+
+    // ─── Circular rate gauges ─────────────────────────────────────────────────
+
+    _updateRateCircles(queueMap, types) {
+        const allPublish = types.map(t => queueMap[t]?.message_rate || 0);
+        const allAck     = types.map(t => queueMap[t]?.ack_rate     || 0);
+        const maxRate = Math.max(...allPublish, ...allAck, 1);
+
+        const C = this.CIRCUMFERENCE;
+
+        types.forEach(type => {
+            const q = queueMap[type];
+
+            // Publish gauge
+            const pubCircle = document.getElementById(`rate-circle-${type}-publish`);
+            const pubText   = document.getElementById(`rate-text-${type}-publish`);
+            if (pubCircle && pubText) {
+                const rate = q?.message_rate || 0;
+                pubCircle.style.strokeDashoffset = rate > 0 ? C - (rate / maxRate) * C : C;
+                pubText.textContent = this._formatRate(rate);
+                pubText.className = rate > 0 ? '' : 'text-zinc-600';
+            }
+
+            // Ack gauge
+            const ackCircle = document.getElementById(`rate-circle-${type}-ack`);
+            const ackText   = document.getElementById(`rate-text-${type}-ack`);
+            if (ackCircle && ackText) {
+                const rate = q?.ack_rate || 0;
+                ackCircle.style.strokeDashoffset = rate > 0 ? C - (rate / maxRate) * C : C;
+                ackText.textContent = this._formatRate(rate);
+                ackText.className = rate > 0 ? '' : 'text-zinc-600';
+            }
+        });
+    }
+
+    // ─── Database cards ───────────────────────────────────────────────────────
+
+    updateDatabases(databases) {
+        databases.forEach(db => {
+            const key = db.name.toLowerCase();
+
+            if (key === 'neo4j') {
+                const badge = document.getElementById('neo4j-status-badge');
+                const nodesEl = document.getElementById('neo4j-nodes');
+                const relsEl  = document.getElementById('neo4j-relationships');
+
+                if (badge) {
+                    badge.textContent = db.status === 'healthy' ? 'Primary' : 'Unavailable';
+                    badge.className = `text-[10px] font-bold uppercase ${db.status === 'healthy' ? 'text-emerald-400' : 'text-red-400'}`;
+                }
+
+                if (nodesEl && relsEl) {
+                    if (db.size && db.status === 'healthy') {
+                        // Backend formats as "X nodes, Y relationships"
+                        const m = db.size.match(/^([\d,]+)\s+nodes?,\s+([\d,]+)\s+relationships?/i);
+                        if (m) {
+                            nodesEl.textContent = m[1];
+                            relsEl.textContent  = m[2];
+                        } else {
+                            nodesEl.textContent = db.size;
+                            relsEl.textContent  = '—';
+                        }
+                    } else {
+                        nodesEl.textContent = db.error ? 'Error' : '—';
+                        relsEl.textContent  = '—';
+                    }
+                }
+
+            } else if (key === 'postgresql') {
+                const badge  = document.getElementById('postgresql-status-badge');
+                const connEl = document.getElementById('postgresql-connections');
+                const sizeEl = document.getElementById('postgresql-size');
+
+                if (badge) {
+                    badge.textContent = db.status === 'healthy' ? 'Healthy' : 'Unavailable';
+                    badge.className = `text-[10px] font-bold uppercase ${db.status === 'healthy' ? 'text-emerald-400' : 'text-red-400'}`;
+                }
+                if (connEl) connEl.textContent = db.connection_count.toString();
+                if (sizeEl) sizeEl.textContent = db.size || '—';
+            }
+        });
+    }
+
+    // ─── Activity log ─────────────────────────────────────────────────────────
 
     addLogEntry(message, type = 'info') {
-        const timestamp = new Date().toLocaleTimeString();
-        this.activityLog.unshift({ timestamp, message, type });
-
-        // Keep only the most recent entries
-        if (this.activityLog.length > this.maxLogEntries) {
-            this.activityLog.pop();
-        }
-
+        const ts = new Date().toLocaleTimeString('en-US', {
+            hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit'
+        });
+        this.activityLog.unshift({ timestamp: ts, message, type });
+        if (this.activityLog.length > this.maxLogEntries) this.activityLog.pop();
         this.renderActivityLog();
     }
 
     renderActivityLog() {
         const container = document.getElementById('activityLog');
-        container.innerHTML = this.activityLog.map(entry => `
-            <div class="log-entry">
-                <span class="log-timestamp">${entry.timestamp}</span>
-                ${entry.message}
+        if (!container) return;
+
+        const levelCls = { info: 'text-emerald-500', warning: 'text-orange-500', error: 'text-red-500' };
+        const levelLbl = { info: '[INFO]',            warning: '[WARN]',          error: '[ERR]'        };
+
+        container.innerHTML = this.activityLog.map(e => `
+            <div class="flex items-start space-x-4 log-entry">
+                <span class="text-zinc-600 shrink-0">${e.timestamp}</span>
+                <span class="${levelCls[e.type] || 'text-emerald-500'} font-bold shrink-0">${levelLbl[e.type] || '[INFO]'}</span>
+                <span class="text-zinc-300">${e.message}</span>
             </div>
         `).join('');
     }
 
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+
     updateLastUpdated(timestamp) {
-        const element = document.getElementById('lastUpdated');
-        element.textContent = this.formatTime(timestamp);
+        const el = document.getElementById('lastUpdated');
+        if (el) el.textContent = new Date(timestamp).toLocaleString();
     }
 
+    // Kept for backward-compatibility with any external callers
     formatTime(timestamp) {
-        const date = new Date(timestamp);
-        return date.toLocaleString();
+        return new Date(timestamp).toLocaleString();
     }
 
+    _formatRate(rate) {
+        if (rate >= 1000) return `${(rate / 1000).toFixed(1)}k`;
+        return rate.toFixed(1);
+    }
+
+    _formatCount(count) {
+        if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+        if (count >= 1_000)     return `${(count / 1_000).toFixed(0)}K`;
+        return Math.round(count).toString();
+    }
 }
 
-// Initialize dashboard when DOM is loaded
+// Initialize when DOM is ready
 document.addEventListener('DOMContentLoaded', () => {
     window.dashboard = new Dashboard();
 });

@@ -22,94 +22,88 @@ class TestDashboardUI:
         """Test that the dashboard page loads successfully."""
         dashboard_url = "http://localhost:8003"
 
-        # Navigate to the dashboard
         page.goto(dashboard_url, wait_until="domcontentloaded", timeout=10000)
 
-        # Check page title
+        # Page title is set in <title> tag
         expect(page).to_have_title("Discogsography Dashboard")
 
-        # Check main heading
+        # New design: main heading reads "Discogsography Infrastructure"
         heading = page.locator("h1")
-        expect(heading).to_have_text("Discogsography Dashboard")
+        expect(heading).to_have_text("Discogsography Infrastructure")
 
     def test_service_cards_display(self, page: Page) -> None:
         """Test that service cards are displayed."""
         dashboard_url = "http://localhost:8003"
         page.goto(dashboard_url, wait_until="domcontentloaded")
 
-        # Wait for services section
-        services_section = page.locator("section").filter(has_text="Services")
-        expect(services_section).to_be_visible(timeout=10000)
-
-        # Check for service cards - wait for them to be rendered
-        service_cards = page.locator(".service-card")
-        expect(service_cards).to_have_count(3, timeout=15000)
-
-        # Check service names
+        # Each service has a dedicated card element with id="service-<name>"
         service_names = ["extractor", "graphinator", "tableinator"]
         for name in service_names:
-            service = page.locator(".service-name", has_text=name)
-            expect(service).to_be_visible()
+            card = page.locator(f"#service-{name}")
+            expect(card).to_be_visible(timeout=10000)
+
+        # Each card header contains the service name as text
+        for name in service_names:
+            card = page.locator(f"#service-{name}")
+            expect(card).to_contain_text(name.capitalize(), timeout=10000)
 
     def test_queue_section_display(self, page: Page) -> None:
-        """Test that queue section is displayed."""
+        """Test that queue metrics sections are displayed."""
         dashboard_url = "http://localhost:8003"
         page.goto(dashboard_url, wait_until="domcontentloaded")
 
-        # Wait for queues section
-        queues_section = page.locator("section").filter(has_text="Message Queues")
-        expect(queues_section).to_be_visible(timeout=10000)
+        # Bar chart section heading
+        queue_heading = page.locator("h2", has_text="Queue Size Metrics")
+        expect(queue_heading).to_be_visible(timeout=10000)
 
-        # Check for queue chart
-        queue_chart = page.locator("#queueChart")
-        expect(queue_chart).to_be_visible(timeout=10000)
+        # Processing rates section heading
+        rates_heading = page.locator("h2", has_text="Processing Rates")
+        expect(rates_heading).to_be_visible(timeout=10000)
+
+        # SVG rate circles are rendered (8 total: 4 publish + 4 ack)
+        rate_grid = page.locator("#processing-rates-grid")
+        expect(rate_grid).to_be_visible(timeout=10000)
 
     def test_database_cards_display(self, page: Page) -> None:
         """Test that database cards are displayed."""
         dashboard_url = "http://localhost:8003"
         page.goto(dashboard_url, wait_until="domcontentloaded")
 
-        # Wait for databases section
-        databases_section = page.locator("section").filter(has_text="Databases")
-        expect(databases_section).to_be_visible(timeout=10000)
+        # Each database has a dedicated card element
+        neo4j_card = page.locator("#db-neo4j")
+        expect(neo4j_card).to_be_visible(timeout=10000)
 
-        # Check for database cards
-        database_cards = page.locator(".database-card")
-        expect(database_cards).to_have_count(2, timeout=15000)
+        postgresql_card = page.locator("#db-postgresql")
+        expect(postgresql_card).to_be_visible(timeout=10000)
 
-        # Check database names
-        database_names = ["PostgreSQL", "Neo4j"]
-        for name in database_names:
-            database = page.locator(".database-name", has_text=name)
-            expect(database).to_be_visible(timeout=10000)
+        # Check database name labels
+        for name in ["Neo4j", "PostgreSQL"]:
+            label = page.locator(".database-name", has_text=name)
+            expect(label).to_be_visible(timeout=10000)
 
     def test_websocket_connection(self, page: Page) -> None:
         """Test that WebSocket connection is established."""
         dashboard_url = "http://localhost:8003"
         page.goto(dashboard_url, wait_until="domcontentloaded")
 
-        # Wait for connection status
+        # The connection-status widget lives in the event-log header
         connection_status = page.locator(".connection-status")
         expect(connection_status).to_be_visible(timeout=10000)
 
-        # Check that status shows connected
+        # Status text changes to "Connected" once the WS handshake completes
         status_text = page.locator(".status-text")
         expect(status_text).to_have_text("Connected", timeout=15000)
 
-        # Check status indicator has connected class
+        # Status indicator acquires the .connected class
         status_indicator = page.locator(".status-indicator")
         expect(status_indicator).to_have_class(re.compile(r"connected"), timeout=10000)
 
     def test_activity_log_display(self, page: Page) -> None:
-        """Test that activity log is displayed."""
+        """Test that the activity log is displayed."""
         dashboard_url = "http://localhost:8003"
         page.goto(dashboard_url, wait_until="domcontentloaded")
 
-        # Wait for activity log section
-        activity_section = page.locator("section").filter(has_text="Recent Activity")
-        expect(activity_section).to_be_visible(timeout=10000)
-
-        # Check for activity log
+        # Event log panel is present
         activity_log = page.locator("#activityLog")
         expect(activity_log).to_be_visible(timeout=10000)
 
@@ -118,21 +112,20 @@ class TestDashboardUI:
         expect(log_entries.first).to_be_visible(timeout=15000)
 
     def test_responsive_design(self, page: Page) -> None:
-        """Test that dashboard is responsive."""
+        """Test that the dashboard is responsive."""
         dashboard_url = "http://localhost:8003"
         page.goto(dashboard_url, wait_until="domcontentloaded")
 
-        # Test desktop view
-        page.set_viewport_size({"width": 1200, "height": 800})
-        expect(page.locator(".container")).to_be_visible(timeout=10000)
+        # Desktop viewport
+        page.set_viewport_size({"width": 1440, "height": 900})
+        expect(page.locator("header")).to_be_visible(timeout=10000)
 
-        # Test mobile view
+        # Mobile viewport — page should still render without errors
         page.set_viewport_size({"width": 375, "height": 667})
-        expect(page.locator(".container")).to_be_visible(timeout=10000)
+        expect(page.locator("#activityLog")).to_be_visible(timeout=10000)
 
-        # Check that grid layouts adjust
-        queues_container = page.locator(".queues-container")
-        expect(queues_container).to_be_visible(timeout=10000)
+        # Service cards remain in the DOM regardless of viewport
+        expect(page.locator("#service-extractor")).to_be_visible(timeout=10000)
 
     def test_api_endpoints(self, page: Page) -> None:
         """Test that API endpoints are accessible."""
