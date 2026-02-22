@@ -187,6 +187,61 @@ services:
     tmpfs:
       - /tmp
 
+  # Auth service — user accounts, JWT, Discogs OAuth
+  auth:
+    build:
+      context: .
+      dockerfile: auth/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: discogsography/auth:latest
+    container_name: discogsography-auth
+    hostname: auth
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      POSTGRES_ADDRESS: postgres:5432
+      POSTGRES_USERNAME: discogsography
+      POSTGRES_PASSWORD: discogsography
+      POSTGRES_DATABASE: discogsography
+      # IMPORTANT: Override JWT_SECRET_KEY with a random 256-bit key in production!
+      JWT_SECRET_KEY: "dev-secret-change-in-production-use-a-256-bit-random-key"
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRE_MINUTES: "60"
+      REDIS_URL: redis://redis:6379/0
+      PYTHONUNBUFFERED: "1"
+      STARTUP_DELAY: "5"
+    ports:
+      - "8004:8004"      # Auth API
+      - "8005:8005"      # Health check
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - auth_logs:/logs
+
   # Rust-based extractor service
   extractor:
     build:
@@ -441,3 +496,4 @@ volumes:
   discogs_data:
   extractor_logs:
   schema_init_logs:
+  auth_logs:

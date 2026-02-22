@@ -351,6 +351,60 @@ class DashboardConfig:
         )
 
 
+@dataclass(frozen=True)
+class AuthConfig:
+    """Configuration for the auth service."""
+
+    postgres_address: str
+    postgres_username: str
+    postgres_password: str
+    postgres_database: str
+    jwt_secret_key: str
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 30
+
+    @classmethod
+    def from_env(cls) -> "AuthConfig":
+        """Create configuration from environment variables."""
+        postgres_address = getenv("POSTGRES_ADDRESS")
+        postgres_username = getenv("POSTGRES_USERNAME")
+        postgres_password = getenv("POSTGRES_PASSWORD")
+        postgres_database = getenv("POSTGRES_DATABASE")
+        jwt_secret_key = getenv("JWT_SECRET_KEY")
+
+        missing_vars = []
+        if not postgres_address:
+            missing_vars.append("POSTGRES_ADDRESS")
+        if not postgres_username:
+            missing_vars.append("POSTGRES_USERNAME")
+        if not postgres_password:
+            missing_vars.append("POSTGRES_PASSWORD")
+        if not postgres_database:
+            missing_vars.append("POSTGRES_DATABASE")
+        if not jwt_secret_key:
+            missing_vars.append("JWT_SECRET_KEY")
+
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
+        jwt_expire_minutes_str = getenv("JWT_EXPIRE_MINUTES", "30")
+        try:
+            jwt_expire_minutes = int(jwt_expire_minutes_str)
+        except ValueError:
+            jwt_expire_minutes = 30
+
+        return cls(
+            postgres_address=postgres_address,  # type: ignore[arg-type]
+            postgres_username=postgres_username,  # type: ignore[arg-type]
+            postgres_password=postgres_password,  # type: ignore[arg-type]
+            postgres_database=postgres_database,  # type: ignore[arg-type]
+            jwt_secret_key=jwt_secret_key,  # type: ignore[arg-type]
+            jwt_algorithm=jwt_algorithm,
+            jwt_expire_minutes=jwt_expire_minutes,
+        )
+
+
 # Discovery service uses the same configuration as dashboard
 DiscoveryConfig = DashboardConfig
 
