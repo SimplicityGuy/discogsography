@@ -1,7 +1,7 @@
 """Pydantic models for the auth service."""
 
-import re
 from datetime import datetime
+import re
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -43,7 +43,7 @@ class LoginResponse(BaseModel):
     """User login response with JWT access token."""
 
     access_token: str
-    token_type: str = "bearer"
+    token_type: str = "bearer"  # noqa: S105  # nosec B105
     expires_in: int  # seconds until expiration
 
 

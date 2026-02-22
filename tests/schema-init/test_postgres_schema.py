@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from postgres_schema import _ENTITY_TABLES, _SPECIFIC_INDEXES, create_postgres_schema
+from postgres_schema import _ENTITY_TABLES, _SPECIFIC_INDEXES, _USER_TABLES, create_postgres_schema
 
 
 @pytest.fixture
@@ -74,8 +74,8 @@ class TestCreatePostgresSchema:
         await create_postgres_schema(mock_pool)
 
         cursor = mock_pool.connection.return_value.__aenter__.return_value.cursor.return_value
-        # 3 statements per entity table (CREATE TABLE + 2 indexes) + specific indexes
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES)
+        # 3 statements per entity table (CREATE TABLE + 2 indexes) + specific indexes + user tables
+        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio
@@ -95,7 +95,7 @@ class TestCreatePostgresSchema:
         # Must not raise
         await create_postgres_schema(mock_pool)
 
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES)
+        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio
@@ -123,7 +123,7 @@ class TestCreatePostgresSchema:
         # Must not raise
         await create_postgres_schema(mock_pool)
 
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES)
+        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio

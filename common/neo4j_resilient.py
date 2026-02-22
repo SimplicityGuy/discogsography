@@ -145,6 +145,11 @@ class AsyncResilientNeo4jDriver(AsyncResilientConnection[Any]):
             logger.warning(f"⚠️ Async Neo4j health check failed: {e}")
             return False
 
+    @property
+    def driver(self) -> Any:
+        """Return the underlying raw neo4j AsyncDriver (or None if not yet connected)."""
+        return self._connection
+
     async def session(self, **kwargs: Any) -> Any:
         """Get an async Neo4j session with resilient connection."""
         driver = await self.get_connection()

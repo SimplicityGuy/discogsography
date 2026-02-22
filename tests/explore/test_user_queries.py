@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+
 # Set env vars before importing explore modules
 os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USERNAME", "neo4j")
@@ -20,7 +21,7 @@ def _make_driver(rows: list[dict[str, Any]]) -> MagicMock:
     mock_session = AsyncMock()
     mock_result = AsyncMock()
 
-    async def _aiter(self: Any) -> Any:  # type: ignore[override]
+    async def _aiter(_self: Any) -> Any:  # type: ignore[override]
         for row in rows:
             yield row
 
@@ -31,7 +32,7 @@ def _make_driver(rows: list[dict[str, Any]]) -> MagicMock:
     mock_session.__aexit__ = AsyncMock(return_value=False)
     mock_session.run = AsyncMock(return_value=mock_result)
 
-    driver.session = MagicMock(return_value=mock_session)
+    driver.session = AsyncMock(return_value=mock_session)
     return driver
 
 

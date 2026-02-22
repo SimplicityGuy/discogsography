@@ -9,13 +9,13 @@ Implements Out-of-Band (OOB) OAuth flow:
 6. Discogs identity is fetched (/oauth/identity) and stored in oauth_tokens table
 """
 
+from base64 import b64encode
 import hashlib
 import hmac
 import os
 import time
-import urllib.parse
-from base64 import b64encode
 from typing import Any
+import urllib.parse
 
 import httpx
 import structlog
@@ -23,9 +23,9 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-DISCOGS_REQUEST_TOKEN_URL = "https://api.discogs.com/oauth/request_token"
+DISCOGS_REQUEST_TOKEN_URL = "https://api.discogs.com/oauth/request_token"  # noqa: S105  # nosec B105
 DISCOGS_AUTHORIZE_URL = "https://www.discogs.com/oauth/authorize"
-DISCOGS_ACCESS_TOKEN_URL = "https://api.discogs.com/oauth/access_token"
+DISCOGS_ACCESS_TOKEN_URL = "https://api.discogs.com/oauth/access_token"  # noqa: S105  # nosec B105
 DISCOGS_IDENTITY_URL = "https://api.discogs.com/oauth/identity"
 
 REDIS_OAUTH_STATE_TTL = 600  # 10 minutes in seconds
@@ -52,7 +52,7 @@ def _hmac_sha1_signature(
     url: str,
     oauth_params: dict[str, str],
     consumer_secret: str,
-    token_secret: str = "",
+    token_secret: str = "",  # nosec B107
 ) -> str:
     """Generate an HMAC-SHA1 OAuth signature.
 
@@ -67,15 +67,15 @@ def _hmac_sha1_signature(
         Base64-encoded HMAC-SHA1 signature string
     """
     # Collect and sort all parameters
-    param_string = "&".join(
-        f"{_oauth_escape(k)}={_oauth_escape(v)}" for k, v in sorted(oauth_params.items())
-    )
+    param_string = "&".join(f"{_oauth_escape(k)}={_oauth_escape(v)}" for k, v in sorted(oauth_params.items()))
     # Build the signature base string
-    base_string = "&".join([
-        _oauth_escape(method.upper()),
-        _oauth_escape(url),
-        _oauth_escape(param_string),
-    ])
+    base_string = "&".join(
+        [
+            _oauth_escape(method.upper()),
+            _oauth_escape(url),
+            _oauth_escape(param_string),
+        ]
+    )
     # Build the signing key
     signing_key = f"{_oauth_escape(consumer_secret)}&{_oauth_escape(token_secret)}"
     # Compute HMAC-SHA1
@@ -122,9 +122,7 @@ async def request_oauth_token(
         response = await client.get(url, headers=headers)
 
     if response.status_code != 200:
-        raise DiscogsOAuthError(
-            f"Failed to get request token: {response.status_code} {response.text}"
-        )
+        raise DiscogsOAuthError(f"Failed to get request token: {response.status_code} {response.text}")
 
     params = dict(urllib.parse.parse_qsl(response.text))
     if "oauth_token" not in params or "oauth_token_secret" not in params:
@@ -188,9 +186,7 @@ async def exchange_oauth_verifier(
         response = await client.post(url, headers=headers)
 
     if response.status_code != 200:
-        raise DiscogsOAuthError(
-            f"Failed to exchange verifier: {response.status_code} {response.text}"
-        )
+        raise DiscogsOAuthError(f"Failed to exchange verifier: {response.status_code} {response.text}")
 
     params = dict(urllib.parse.parse_qsl(response.text))
     if "oauth_token" not in params or "oauth_token_secret" not in params:
@@ -244,9 +240,7 @@ async def fetch_discogs_identity(
         response = await client.get(url, headers=headers)
 
     if response.status_code != 200:
-        raise DiscogsOAuthError(
-            f"Failed to fetch Discogs identity: {response.status_code} {response.text}"
-        )
+        raise DiscogsOAuthError(f"Failed to fetch Discogs identity: {response.status_code} {response.text}")
 
     identity: dict[str, Any] = response.json()
     logger.info("✅ Discogs identity fetched", username=identity.get("username"))

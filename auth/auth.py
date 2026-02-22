@@ -1,24 +1,25 @@
 """Auth microservice for discogsography — user accounts and JWT authentication."""
 
 import base64
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 import hashlib
 import hmac
 import json
 import os
-from contextlib import asynccontextmanager
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any
 
-import redis.asyncio as aioredis
-import structlog
-import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 from pydantic import BaseModel
+import redis.asyncio as aioredis
+import structlog
+import uvicorn
 
 from auth.models import LoginRequest, RegisterRequest
 from auth.services.discogs import (
@@ -39,7 +40,7 @@ logger = structlog.get_logger(__name__)
 # Module-level state
 _pool: AsyncPostgreSQLPool | None = None
 _config: AuthConfig | None = None
-_redis: aioredis.Redis | None = None  # type: ignore[type-arg]
+_redis: aioredis.Redis | None = None
 _security = HTTPBearer()
 
 
@@ -48,6 +49,7 @@ class OAuthVerifyRequest(BaseModel):
 
     state: str  # The state token (maps to redis key for request token)
     oauth_verifier: str  # Verification code from Discogs
+
 
 AUTH_PORT = 8004
 AUTH_HEALTH_PORT = 8005
@@ -114,9 +116,7 @@ def _create_access_token(user_id: str, email: str) -> tuple[str, int]:
     header = _b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
     body = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
     signing_input = f"{header}.{body}".encode("ascii")
-    signature = _b64url_encode(
-        hmac.new(_config.jwt_secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    )
+    signature = _b64url_encode(hmac.new(_config.jwt_secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest())
     token = f"{header}.{body}.{signature}"
     return token, expire_minutes * 60
 
@@ -132,9 +132,7 @@ def _decode_access_token(token: str) -> dict[str, Any]:
 
     header_b64, body_b64, sig_b64 = parts
     signing_input = f"{header_b64}.{body_b64}".encode("ascii")
-    expected_sig = _b64url_encode(
-        hmac.new(_config.jwt_secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    )
+    expected_sig = _b64url_encode(hmac.new(_config.jwt_secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest())
 
     if not hmac.compare_digest(sig_b64, expected_sig):
         raise ValueError("Invalid token signature")
@@ -165,16 +163,16 @@ async def _get_current_user(
                 detail="Invalid token",
             )
         return payload
-    except ValueError:
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):  # type: ignore[misc]
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage auth service lifecycle."""
     global _pool, _config, _redis
 
@@ -253,29 +251,28 @@ async def register(request: RegisterRequest) -> ORJSONResponse:
     hashed_password = _hash_password(request.password)
 
     try:
-        async with _pool.connection() as conn:
-            async with conn.cursor(row_factory=dict_row) as cur:
-                await cur.execute(
-                    """
+        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
                     INSERT INTO users (email, hashed_password)
                     VALUES (%s, %s)
                     RETURNING id, email, is_active, created_at
                     """,
-                    (request.email, hashed_password),
-                )
-                row = await cur.fetchone()
+                (request.email, hashed_password),
+            )
+            row = await cur.fetchone()
     except Exception as exc:
         exc_str = str(exc).lower()
         if "unique" in exc_str or "duplicate" in exc_str:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Email address already registered",
-            )
+            ) from exc
         logger.error("❌ Registration failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Registration failed",
-        )
+        ) from exc
 
     if row is None:
         raise HTTPException(
@@ -304,13 +301,12 @@ async def login(request: LoginRequest) -> ORJSONResponse:
             detail="Service not ready",
         )
 
-    async with _pool.connection() as conn:
-        async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
-                "SELECT id, email, hashed_password, is_active FROM users WHERE email = %s",
-                (request.email,),
-            )
-            user = await cur.fetchone()
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            "SELECT id, email, hashed_password, is_active FROM users WHERE email = %s",
+            (request.email,),
+        )
+        user = await cur.fetchone()
 
     if user is None or not user["is_active"] or not _verify_password(request.password, user["hashed_password"]):
         raise HTTPException(
@@ -325,7 +321,7 @@ async def login(request: LoginRequest) -> ORJSONResponse:
     return ORJSONResponse(
         content={
             "access_token": access_token,
-            "token_type": "bearer",
+            "token_type": "bearer",  # nosec B105
             "expires_in": expires_in,
         }
     )
@@ -349,13 +345,12 @@ async def get_me(
             detail="Invalid token",
         )
 
-    async with _pool.connection() as conn:
-        async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
-                "SELECT id, email, is_active, created_at FROM users WHERE id = %s::uuid",
-                (user_id,),
-            )
-            user = await cur.fetchone()
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            "SELECT id, email, is_active, created_at FROM users WHERE id = %s::uuid",
+            (user_id,),
+        )
+        user = await cur.fetchone()
 
     if user is None:
         raise HTTPException(
@@ -377,10 +372,9 @@ async def _get_app_config(key: str) -> str | None:
     """Fetch a value from the app_config table."""
     if _pool is None:
         return None
-    async with _pool.connection() as conn:
-        async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute("SELECT value FROM app_config WHERE key = %s", (key,))
-            row = await cur.fetchone()
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute("SELECT value FROM app_config WHERE key = %s", (key,))
+        row = await cur.fetchone()
     return row["value"] if row else None
 
 
@@ -420,7 +414,7 @@ async def authorize_discogs(
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Failed to initiate Discogs OAuth",
-        )
+        ) from exc
 
     # Store request token in Redis (keyed by state = request_token itself)
     # This acts as both a CSRF token and a lookup key for the token secret
@@ -496,7 +490,7 @@ async def verify_discogs(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid verifier code or OAuth flow failed",
-        )
+        ) from exc
 
     # Clean up state from Redis
     await _redis.delete(redis_key)
@@ -506,10 +500,9 @@ async def verify_discogs(
     discogs_user_id = str(identity.get("id", ""))
 
     # Upsert oauth_tokens record
-    async with _pool.connection() as conn:
-        async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
-                """
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            """
                 INSERT INTO oauth_tokens (user_id, provider, access_token, access_secret,
                                           provider_username, provider_user_id, updated_at)
                 VALUES (%s::uuid, 'discogs', %s, %s, %s, %s, NOW())
@@ -521,14 +514,14 @@ async def verify_discogs(
                     updated_at = NOW()
                 RETURNING id
                 """,
-                (
-                    user_id,
-                    access_data["oauth_token"],
-                    access_data["oauth_token_secret"],
-                    discogs_username,
-                    discogs_user_id,
-                ),
-            )
+            (
+                user_id,
+                access_data["oauth_token"],
+                access_data["oauth_token_secret"],
+                discogs_username,
+                discogs_user_id,
+            ),
+        )
 
     logger.info("✅ Discogs account connected", user_id=user_id, discogs_username=discogs_username)
     return ORJSONResponse(
@@ -552,17 +545,16 @@ async def discogs_status(
         )
 
     user_id = current_user.get("sub")
-    async with _pool.connection() as conn:
-        async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
-                """
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            """
                 SELECT provider_username, provider_user_id, updated_at
                 FROM oauth_tokens
                 WHERE user_id = %s::uuid AND provider = 'discogs'
                 """,
-                (user_id,),
-            )
-            token = await cur.fetchone()
+            (user_id,),
+        )
+        token = await cur.fetchone()
 
     if token is None:
         return ORJSONResponse(content={"connected": False})
@@ -589,12 +581,11 @@ async def revoke_discogs(
         )
 
     user_id = current_user.get("sub")
-    async with _pool.connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "DELETE FROM oauth_tokens WHERE user_id = %s::uuid AND provider = 'discogs'",
-                (user_id,),
-            )
+    async with _pool.connection() as conn, conn.cursor() as cur:
+        await cur.execute(
+            "DELETE FROM oauth_tokens WHERE user_id = %s::uuid AND provider = 'discogs'",
+            (user_id,),
+        )
 
     logger.info("✅ Discogs account disconnected", user_id=user_id)
     return ORJSONResponse(content={"revoked": True})
@@ -630,18 +621,17 @@ async def set_app_config(
             detail="'value' field is required",
         )
 
-    async with _pool.connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """
+    async with _pool.connection() as conn, conn.cursor() as cur:
+        await cur.execute(
+            """
                 INSERT INTO app_config (key, value, updated_at)
                 VALUES (%s, %s, NOW())
                 ON CONFLICT (key) DO UPDATE SET
                     value = EXCLUDED.value,
                     updated_at = NOW()
                 """,
-                (key, value),
-            )
+            (key, value),
+        )
 
     logger.info("✅ App config updated", key=key, user_id=current_user.get("sub"))
     return ORJSONResponse(content={"key": key, "updated": True})
@@ -650,7 +640,7 @@ async def set_app_config(
 def main() -> None:
     """Entry point for the auth service."""
     setup_logging("auth", log_file=Path("/logs/auth.log"))
-    print(  # noqa: T201
+    print(
         r"""
     _____  _
    |  __ \(_)
@@ -663,7 +653,7 @@ def main() -> None:
     Auth Service — User Accounts & JWT Authentication
     """
     )
-    uvicorn.run(app, host="0.0.0.0", port=AUTH_PORT)  # noqa: S104
+    uvicorn.run(app, host="0.0.0.0", port=AUTH_PORT)  # noqa: S104  # nosec B104
 
 
 if __name__ == "__main__":

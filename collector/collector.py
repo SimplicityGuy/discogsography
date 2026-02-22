@@ -1,19 +1,19 @@
 """Collector microservice for discogsography — Discogs collection and wantlist sync."""
 
 import asyncio
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
-from os import getenv
 from pathlib import Path
 from typing import Annotated, Any
 
-import structlog
-import uvicorn
 from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
+import structlog
+import uvicorn
 
 from collector.syncer import run_full_sync
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, setup_logging
@@ -70,9 +70,7 @@ async def _verify_token(token: str) -> dict[str, Any]:
     def _b64url_encode(data: bytes) -> str:
         return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
 
-    expected_sig = _b64url_encode(
-        hmac.new(_config.jwt_secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    )
+    expected_sig = _b64url_encode(hmac.new(_config.jwt_secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest())
 
     if not hmac.compare_digest(sig_b64, expected_sig):
         raise ValueError("Invalid token signature")
@@ -107,16 +105,16 @@ async def _get_current_user(
                 detail="Invalid token",
             )
         return payload
-    except ValueError:
+    except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired token",
             headers={"WWW-Authenticate": "Bearer"},
-        )
+        ) from exc
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI):  # type: ignore[misc]
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage collector service lifecycle."""
     global _pool, _neo4j, _config
 
@@ -214,13 +212,12 @@ async def trigger_sync(
 
     # Check if sync is already running
     if user_id in _running_syncs and not _running_syncs[user_id].done():
-        async with _pool.connection() as conn:
-            async with conn.cursor(row_factory=dict_row) as cur:
-                await cur.execute(
-                    "SELECT id, status FROM sync_history WHERE user_id = %s::uuid AND status = 'running' ORDER BY started_at DESC LIMIT 1",
-                    (user_id,),
-                )
-                existing = await cur.fetchone()
+        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "SELECT id, status FROM sync_history WHERE user_id = %s::uuid AND status = 'running' ORDER BY started_at DESC LIMIT 1",
+                (user_id,),
+            )
+            existing = await cur.fetchone()
         if existing:
             return ORJSONResponse(
                 content={"sync_id": str(existing["id"]), "status": "already_running"},
@@ -228,17 +225,16 @@ async def trigger_sync(
             )
 
     # Create sync_history record
-    async with _pool.connection() as conn:
-        async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
-                """
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            """
                 INSERT INTO sync_history (user_id, sync_type, status)
                 VALUES (%s::uuid, 'full', 'running')
                 RETURNING id
                 """,
-                (user_id,),
-            )
-            sync_row = await cur.fetchone()
+            (user_id,),
+        )
+        sync_row = await cur.fetchone()
 
     if not sync_row:
         raise HTTPException(
@@ -256,7 +252,7 @@ async def trigger_sync(
             user_uuid=UUID(user_id),
             sync_id=sync_id,
             pg_pool=_pool,
-            neo4j_driver=_neo4j.driver,  # type: ignore[union-attr]
+            neo4j_driver=_neo4j.driver,
             discogs_user_agent=_config.discogs_user_agent,
         )
     )
@@ -282,10 +278,9 @@ async def sync_status(
         )
 
     user_id = current_user.get("sub")
-    async with _pool.connection() as conn:
-        async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
-                """
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            """
                 SELECT id, sync_type, status, items_synced, error_message,
                        started_at, completed_at
                 FROM sync_history
@@ -293,9 +288,9 @@ async def sync_status(
                 ORDER BY started_at DESC
                 LIMIT 10
                 """,
-                (user_id,),
-            )
-            rows = await cur.fetchall()
+            (user_id,),
+        )
+        rows = await cur.fetchall()
 
     history = [
         {
@@ -316,7 +311,7 @@ async def sync_status(
 def main() -> None:
     """Entry point for the collector service."""
     setup_logging("collector", log_file=Path("/logs/collector.log"))
-    print(  # noqa: T201
+    print(
         r"""
     ____      _ _           _
    / ___|___ | | | ___  ___| |_ ___  _ __
@@ -327,7 +322,7 @@ def main() -> None:
     Collector Service — Discogs Collection & Wantlist Sync
     """
     )
-    uvicorn.run(app, host="0.0.0.0", port=COLLECTOR_PORT)  # noqa: S104
+    uvicorn.run(app, host="0.0.0.0", port=COLLECTOR_PORT)  # noqa: S104  # nosec B104
 
 
 if __name__ == "__main__":

@@ -3,13 +3,13 @@
 
 import asyncio
 import base64
-import hashlib
-import hmac
-import json
 from collections import OrderedDict
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+import hashlib
+import hmac
+import json
 from pathlib import Path
 from typing import Annotated, Any
 
@@ -71,9 +71,7 @@ def _verify_jwt(token: str, secret: str) -> dict[str, Any] | None:
 
     header_b64, body_b64, sig_b64 = parts
     signing_input = f"{header_b64}.{body_b64}".encode("ascii")
-    expected_sig = base64.urlsafe_b64encode(
-        hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()
-    ).rstrip(b"=").decode("ascii")
+    expected_sig = base64.urlsafe_b64encode(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()).rstrip(b"=").decode("ascii")
 
     if not hmac.compare_digest(sig_b64, expected_sig):
         return None

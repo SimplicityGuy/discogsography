@@ -86,8 +86,8 @@ class TestSchemaStatements:
         assert constraint_max < first_non_constraint, "All CONSTRAINT statements must appear before INDEX statements"
 
     def test_total_statement_count(self) -> None:
-        # 6 constraints + 5 range indexes + 3 fulltext = 14
-        assert len(SCHEMA_STATEMENTS) == 14
+        # 7 constraints + 5 range indexes + 3 fulltext = 15
+        assert len(SCHEMA_STATEMENTS) == 15
 
 
 class TestCreateNeo4jSchema:

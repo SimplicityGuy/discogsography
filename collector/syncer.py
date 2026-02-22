@@ -10,20 +10,20 @@ Key Discogs API gotchas:
 """
 
 import asyncio
+from base64 import b64encode
+from datetime import UTC, datetime
 import hashlib
 import hmac
 import os
 import time
-import urllib.parse
-from base64 import b64encode
-from datetime import UTC, datetime
 from typing import Any
+import urllib.parse
 from uuid import UUID
 
 import httpx
-import structlog
 from neo4j import AsyncDriver
 from psycopg.rows import dict_row
+import structlog
 
 from common import AsyncPostgreSQLPool
 
@@ -54,14 +54,14 @@ def _hmac_sha1(
     token_secret: str,
 ) -> str:
     """Generate HMAC-SHA1 OAuth 1.0a signature."""
-    param_string = "&".join(
-        f"{_oauth_escape(k)}={_oauth_escape(v)}" for k, v in sorted(oauth_params.items())
+    param_string = "&".join(f"{_oauth_escape(k)}={_oauth_escape(v)}" for k, v in sorted(oauth_params.items()))
+    base_string = "&".join(
+        [
+            _oauth_escape(method.upper()),
+            _oauth_escape(url),
+            _oauth_escape(param_string),
+        ]
     )
-    base_string = "&".join([
-        _oauth_escape(method.upper()),
-        _oauth_escape(url),
-        _oauth_escape(param_string),
-    ])
     signing_key = f"{_oauth_escape(consumer_secret)}&{_oauth_escape(token_secret)}"
     digest = hmac.new(signing_key.encode("ascii"), base_string.encode("ascii"), hashlib.sha1).digest()
     return b64encode(digest).decode("ascii")
@@ -152,23 +152,22 @@ async def sync_collection(
                 break
 
             # Upsert to PostgreSQL
-            async with pg_pool.connection() as conn:
-                async with conn.cursor() as cur:
-                    for item in releases:
-                        basic = item.get("basic_information", {})
-                        release_id = basic.get("id")
-                        if not release_id:
-                            continue
+            async with pg_pool.connection() as conn, conn.cursor() as cur:
+                for item in releases:
+                    basic = item.get("basic_information", {})
+                    release_id = basic.get("id")
+                    if not release_id:
+                        continue
 
-                        artists = basic.get("artists", [])
-                        artist_name = artists[0]["name"] if artists else None
-                        labels = basic.get("labels", [])
-                        label_name = labels[0]["name"] if labels else None
-                        formats = basic.get("formats", [])
-                        fmt_name = formats[0]["name"] if formats else None
+                    artists = basic.get("artists", [])
+                    artist_name = artists[0]["name"] if artists else None
+                    labels = basic.get("labels", [])
+                    label_name = labels[0]["name"] if labels else None
+                    formats = basic.get("formats", [])
+                    fmt_name = formats[0]["name"] if formats else None
 
-                        await cur.execute(
-                            """
+                    await cur.execute(
+                        """
                             INSERT INTO user_collections (
                                 user_id, release_id, instance_id, folder_id,
                                 title, artist, year, format, label,
@@ -190,22 +189,22 @@ async def sync_collection(
                                 metadata = EXCLUDED.metadata,
                                 updated_at = NOW()
                             """,
-                            (
-                                str(user_uuid),
-                                release_id,
-                                item.get("instance_id"),
-                                item.get("folder_id"),
-                                basic.get("title"),
-                                artist_name,
-                                basic.get("year"),
-                                fmt_name,
-                                label_name,
-                                item.get("rating", 0),
-                                item.get("date_added"),
-                                None,  # metadata reserved for future use
-                            ),
-                        )
-                        total_synced += 1
+                        (
+                            str(user_uuid),
+                            release_id,
+                            item.get("instance_id"),
+                            item.get("folder_id"),
+                            basic.get("title"),
+                            artist_name,
+                            basic.get("year"),
+                            fmt_name,
+                            label_name,
+                            item.get("rating", 0),
+                            item.get("date_added"),
+                            None,  # metadata reserved for future use
+                        ),
+                    )
+                    total_synced += 1
 
             # Upsert to Neo4j — ensure User node and COLLECTED relationships
             cypher = """
@@ -315,23 +314,22 @@ async def sync_wantlist(
                 break
 
             # Upsert to PostgreSQL
-            async with pg_pool.connection() as conn:
-                async with conn.cursor() as cur:
-                    for item in wants:
-                        # CRITICAL: wantlist ID is at item['id'] (top-level)
-                        # unlike collection where it's at item['basic_information']['id']
-                        release_id = item.get("id")
-                        if not release_id:
-                            continue
+            async with pg_pool.connection() as conn, conn.cursor() as cur:
+                for item in wants:
+                    # CRITICAL: wantlist ID is at item['id'] (top-level)
+                    # unlike collection where it's at item['basic_information']['id']
+                    release_id = item.get("id")
+                    if not release_id:
+                        continue
 
-                        basic = item.get("basic_information", {})
-                        artists = basic.get("artists", [])
-                        artist_name = artists[0]["name"] if artists else None
-                        formats = basic.get("formats", [])
-                        fmt_name = formats[0]["name"] if formats else None
+                    basic = item.get("basic_information", {})
+                    artists = basic.get("artists", [])
+                    artist_name = artists[0]["name"] if artists else None
+                    formats = basic.get("formats", [])
+                    fmt_name = formats[0]["name"] if formats else None
 
-                        await cur.execute(
-                            """
+                    await cur.execute(
+                        """
                             INSERT INTO user_wantlists (
                                 user_id, release_id,
                                 title, artist, year, format,
@@ -351,19 +349,19 @@ async def sync_wantlist(
                                 date_added = EXCLUDED.date_added,
                                 updated_at = NOW()
                             """,
-                            (
-                                str(user_uuid),
-                                release_id,
-                                basic.get("title"),
-                                artist_name,
-                                basic.get("year"),
-                                fmt_name,
-                                item.get("rating", 0),
-                                item.get("notes"),
-                                item.get("date_added"),
-                            ),
-                        )
-                        total_synced += 1
+                        (
+                            str(user_uuid),
+                            release_id,
+                            basic.get("title"),
+                            artist_name,
+                            basic.get("year"),
+                            fmt_name,
+                            item.get("rating", 0),
+                            item.get("notes"),
+                            item.get("date_added"),
+                        ),
+                    )
+                    total_synced += 1
 
             # Upsert to Neo4j — ensure User node and WANTS relationships
             cypher = """
@@ -430,27 +428,24 @@ async def run_full_sync(
 
     try:
         # Fetch OAuth tokens for the user
-        async with pg_pool.connection() as conn:
-            async with conn.cursor(row_factory=dict_row) as cur:
-                await cur.execute(
-                    """
+        async with pg_pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
                     SELECT ot.access_token, ot.access_secret, ot.provider_username
                     FROM oauth_tokens ot
                     WHERE ot.user_id = %s::uuid AND ot.provider = 'discogs'
                     """,
-                    (str(user_uuid),),
-                )
-                token = await cur.fetchone()
+                (str(user_uuid),),
+            )
+            token = await cur.fetchone()
 
-                if not token:
-                    raise ValueError("No Discogs OAuth token found for user. Please connect Discogs first.")
+            if not token:
+                raise ValueError("No Discogs OAuth token found for user. Please connect Discogs first.")
 
-                # Fetch app credentials
-                await cur.execute(
-                    "SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')"
-                )
-                config_rows = await cur.fetchall()
-                app_config = {row["key"]: row["value"] for row in config_rows}
+            # Fetch app credentials
+            await cur.execute("SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
+            config_rows = await cur.fetchall()
+            app_config = {row["key"]: row["value"] for row in config_rows}
 
         if "discogs_consumer_key" not in app_config or "discogs_consumer_secret" not in app_config:
             raise ValueError("Discogs app credentials not configured in app_config table")
@@ -489,10 +484,9 @@ async def run_full_sync(
 
     # Update sync_history record
     final_status = "failed" if error_message else "completed"
-    async with pg_pool.connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """
+    async with pg_pool.connection() as conn, conn.cursor() as cur:
+        await cur.execute(
+            """
                 UPDATE sync_history
                 SET status = %s,
                     items_synced = %s,
@@ -500,8 +494,8 @@ async def run_full_sync(
                     completed_at = NOW()
                 WHERE id = %s::uuid
                 """,
-                (final_status, collection_count + wantlist_count, error_message, sync_id),
-            )
+            (final_status, collection_count + wantlist_count, error_message, sync_id),
+        )
 
     return {
         "sync_id": sync_id,
