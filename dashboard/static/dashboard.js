@@ -8,6 +8,8 @@ class Dashboard {
         // SVG circle circumference: 2 * PI * r(28) ≈ 176
         this.CIRCUMFERENCE = 176;
 
+        this.gaugeStats = {};
+
         this.initializeWebSocket();
         this.fetchInitialData();
     }
@@ -165,23 +167,34 @@ class Dashboard {
     updateQueues(queues) {
         const TYPES = ['masters', 'releases', 'artists', 'labels'];
 
-        // Map queue type → queue object. Queue names like "discogsography-masters".
-        const queueMap = {};
+        // Build per-service maps, excluding DLQs.
+        // Queue naming convention: "discogsography-{service}-{type}" and
+        // "discogsography-{service}-{type}.dlq" for dead-letter queues.
+        // The old single-map approach failed because DLQ names also contain the
+        // type string (e.g. "artists.dlq" includes "artists") and DLQs sort
+        // after their parent queues, so they silently overwrote real data with
+        // zeros.
+        const graphinatorMap = {};
+        const tableInatorMap  = {};
+
         queues.forEach(queue => {
             const name = queue.name.toLowerCase();
+            if (name.endsWith('.dlq')) return;  // skip dead-letter queues
+
             for (const type of TYPES) {
-                if (name.includes(type)) {
-                    queueMap[type] = queue;
-                    break;
-                }
+                if (!name.includes(type)) continue;
+                if (name.includes('graphinator'))      graphinatorMap[type] = queue;
+                else if (name.includes('tableinator')) tableInatorMap[type] = queue;
+                break;
             }
         });
 
-        // Extractor card – queue state based on publish rate
+        // Extractor card – queue state based on publish rate.
+        // Uses graphinator queues as reference (extractor publishes to all services).
         TYPES.forEach(type => {
             const el = document.getElementById(`extractor-${type}-state`);
             if (!el) return;
-            const q = queueMap[type];
+            const q = graphinatorMap[type] || tableInatorMap[type];
             if (q) {
                 const processing = q.message_rate > 0;
                 el.textContent = processing ? 'Processing' : 'Idle';
@@ -192,24 +205,24 @@ class Dashboard {
             }
         });
 
-        // Graphinator card – total messages in queue
+        // Graphinator card – total messages waiting in graphinator queues.
         TYPES.forEach(type => {
             const el = document.getElementById(`graphinator-${type}-count`);
             if (!el) return;
-            const q = queueMap[type];
+            const q = graphinatorMap[type];
             el.textContent = q ? q.messages.toLocaleString() : '—';
         });
 
-        // Tableinator card – messages ready to process
+        // Tableinator card – messages ready to process in tableinator queues.
         TYPES.forEach(type => {
             const el = document.getElementById(`tableinator-${type}-count`);
             if (!el) return;
-            const q = queueMap[type];
+            const q = tableInatorMap[type];
             el.textContent = q ? q.messages_ready.toLocaleString() : '—';
         });
 
-        this._updateBarChart(queueMap, TYPES);
-        this._updateRateCircles(queueMap, TYPES);
+        this._updateBarChart(graphinatorMap, tableInatorMap, TYPES);
+        this._updateRateCircles(graphinatorMap, tableInatorMap, TYPES);
 
         // Log high message counts
         queues.forEach(queue => {
@@ -222,12 +235,12 @@ class Dashboard {
         });
     }
 
-    // ─── Bar chart (SVG-less, CSS height bars) ────────────────────────────────
+    // ─── Bar chart (CSS height bars) ─────────────────────────────────────────
 
-    _updateBarChart(queueMap, types) {
-        const allMessages = types.map(t => queueMap[t]?.messages || 0);
-        const allReady    = types.map(t => queueMap[t]?.messages_ready || 0);
-        const maxCount = Math.max(...allMessages, ...allReady, 1);
+    _updateBarChart(graphinatorMap, tableInatorMap, types) {
+        const allGraphinator = types.map(t => graphinatorMap[t]?.messages || 0);
+        const allTableinator = types.map(t => tableInatorMap[t]?.messages || 0);
+        const maxCount = Math.max(...allGraphinator, ...allTableinator, 1);
 
         // Update Y-axis labels
         const fmt = this._formatCount.bind(this);
@@ -240,17 +253,20 @@ class Dashboard {
         if (y2) y2.textContent = fmt(maxCount * 0.5);
         if (y1) y1.textContent = fmt(maxCount * 0.25);
 
-        // Update bar heights
+        // Update bar heights: purple = graphinator messages, blue = tableinator messages
         types.forEach(type => {
-            const q = queueMap[type];
+            const gq = graphinatorMap[type];
+            const tq = tableInatorMap[type];
             const msgBar   = document.getElementById(`bar-${type}-messages`);
             const readyBar = document.getElementById(`bar-${type}-ready`);
             if (msgBar) {
-                const pct = q ? Math.max((q.messages / maxCount) * 100, q.messages > 0 ? 1 : 0) : 0;
+                const count = gq?.messages || 0;
+                const pct = Math.max((count / maxCount) * 100, count > 0 ? 1 : 0);
                 msgBar.style.height = `${pct}%`;
             }
             if (readyBar) {
-                const pct = q ? Math.max((q.messages_ready / maxCount) * 100, q.messages_ready > 0 ? 1 : 0) : 0;
+                const count = tq?.messages || 0;
+                const pct = Math.max((count / maxCount) * 100, count > 0 ? 1 : 0);
                 readyBar.style.height = `${pct}%`;
             }
         });
@@ -258,35 +274,46 @@ class Dashboard {
 
     // ─── Circular rate gauges ─────────────────────────────────────────────────
 
-    _updateRateCircles(queueMap, types) {
-        const allPublish = types.map(t => queueMap[t]?.message_rate || 0);
-        const allAck     = types.map(t => queueMap[t]?.ack_rate     || 0);
-        const maxRate = Math.max(...allPublish, ...allAck, 1);
-
+    _updateRateCircles(graphinatorMap, tableInatorMap, types) {
         const C = this.CIRCUMFERENCE;
 
+        const updateGauge = (circleId, textId, rate) => {
+            const circle = document.getElementById(circleId);
+            const text   = document.getElementById(textId);
+            if (!circle || !text) return;
+
+            // Track per-gauge min (non-zero) and max
+            const s = this.gaugeStats[circleId] ??= { min: Infinity, max: 0 };
+            if (rate > 0) s.min = Math.min(s.min, rate);
+            s.max = Math.max(s.max, rate);
+
+            // Fill relative to this gauge's own observed max
+            const fill = s.max > 0 ? rate / s.max : 0;
+            circle.style.strokeDashoffset = fill > 0 ? C - fill * C : C;
+            text.textContent = this._formatRate(rate);
+            text.className = rate > 0 ? '' : 'text-zinc-600';
+
+            // Show min–max below the gauge label
+            const container = text.closest('.flex.flex-col');
+            if (container) {
+                let statsEl = container.querySelector('.gauge-stats');
+                if (!statsEl) {
+                    statsEl = document.createElement('span');
+                    statsEl.className = 'gauge-stats text-[8px] text-zinc-600 font-mono';
+                    container.appendChild(statsEl);
+                }
+                const minStr = s.min === Infinity ? '—' : this._formatRate(s.min);
+                statsEl.textContent = `${minStr}–${this._formatRate(s.max)}`;
+            }
+        };
+
         types.forEach(type => {
-            const q = queueMap[type];
-
-            // Publish gauge
-            const pubCircle = document.getElementById(`rate-circle-${type}-publish`);
-            const pubText   = document.getElementById(`rate-text-${type}-publish`);
-            if (pubCircle && pubText) {
-                const rate = q?.message_rate || 0;
-                pubCircle.style.strokeDashoffset = rate > 0 ? C - (rate / maxRate) * C : C;
-                pubText.textContent = this._formatRate(rate);
-                pubText.className = rate > 0 ? '' : 'text-zinc-600';
-            }
-
-            // Ack gauge
-            const ackCircle = document.getElementById(`rate-circle-${type}-ack`);
-            const ackText   = document.getElementById(`rate-text-${type}-ack`);
-            if (ackCircle && ackText) {
-                const rate = q?.ack_rate || 0;
-                ackCircle.style.strokeDashoffset = rate > 0 ? C - (rate / maxRate) * C : C;
-                ackText.textContent = this._formatRate(rate);
-                ackText.className = rate > 0 ? '' : 'text-zinc-600';
-            }
+            const gq = graphinatorMap[type];
+            const tq = tableInatorMap[type];
+            updateGauge(`rate-circle-graphinator-${type}-publish`, `rate-text-graphinator-${type}-publish`, gq?.message_rate || 0);
+            updateGauge(`rate-circle-tableinator-${type}-publish`, `rate-text-tableinator-${type}-publish`, tq?.message_rate || 0);
+            updateGauge(`rate-circle-graphinator-${type}-ack`,     `rate-text-graphinator-${type}-ack`,     gq?.ack_rate     || 0);
+            updateGauge(`rate-circle-tableinator-${type}-ack`,     `rate-text-tableinator-${type}-ack`,     tq?.ack_rate     || 0);
         });
     }
 

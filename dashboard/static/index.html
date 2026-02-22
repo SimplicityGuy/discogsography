@@ -201,11 +201,11 @@
             <div class="flex items-center space-x-8">
                 <div class="flex items-center space-x-2">
                     <div class="w-3 h-3 rounded-sm bg-[var(--purple-accent)]"></div>
-                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Messages</span>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Graphinator</span>
                 </div>
                 <div class="flex items-center space-x-2">
                     <div class="w-3 h-3 rounded-sm bg-[var(--blue-accent)]"></div>
-                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Ready</span>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Tableinator</span>
                 </div>
             </div>
         </div>
@@ -257,130 +257,262 @@
     <!-- ================================================================
          PROCESSING RATES  (circular SVG gauges)
          ================================================================ -->
-    <div class="dashboard-card p-8">
-        <div class="flex items-center justify-between mb-8">
-            <h2 class="text-xs font-bold text-zinc-400 uppercase tracking-[0.2em]">Processing Rates (msg/s)</h2>
-            <div class="flex items-center space-x-6">
-                <div class="flex items-center space-x-2">
-                    <div class="w-2.5 h-2.5 rounded-full bg-[var(--purple-accent)]"></div>
-                    <span class="text-[9px] font-bold text-zinc-500 uppercase">Publish</span>
+    <div class="grid grid-cols-2 gap-6">
+
+        <!-- Publish Rates panel -->
+        <div class="dashboard-card p-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xs font-bold text-zinc-400 uppercase tracking-[0.2em]">Publish Rates (msg/s)</h2>
+                <div class="flex items-center space-x-6">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-[var(--purple-accent)]"></div>
+                        <span class="text-[9px] font-bold text-zinc-500 uppercase">Graphinator</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-[var(--blue-accent)]"></div>
+                        <span class="text-[9px] font-bold text-zinc-500 uppercase">Tableinator</span>
+                    </div>
                 </div>
-                <div class="flex items-center space-x-2">
-                    <div class="w-2.5 h-2.5 rounded-full bg-[var(--blue-accent)]"></div>
-                    <span class="text-[9px] font-bold text-zinc-500 uppercase">Ack</span>
+            </div>
+
+            <!-- Graphinator publish row (purple) -->
+            <div class="flex items-center gap-4 mb-6">
+                <span class="text-[9px] font-bold text-[var(--purple-accent)] uppercase tracking-wider w-14 shrink-0">Graph.</span>
+                <div class="grid grid-cols-4 gap-4 flex-1">
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-graphinator-masters-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-graphinator-masters-publish" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Masters</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-graphinator-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-graphinator-releases-publish" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Releases</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-graphinator-artists-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-graphinator-artists-publish" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Artists</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-graphinator-labels-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-graphinator-labels-publish" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Labels</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tableinator publish row (blue) -->
+            <div class="flex items-center gap-4">
+                <span class="text-[9px] font-bold text-[var(--blue-accent)] uppercase tracking-wider w-14 shrink-0">Table.</span>
+                <div class="grid grid-cols-4 gap-4 flex-1">
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-tableinator-masters-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-tableinator-masters-publish" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Masters</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-tableinator-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-tableinator-releases-publish" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Releases</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-tableinator-artists-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-tableinator-artists-publish" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Artists</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-tableinator-labels-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-tableinator-labels-publish" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Labels</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="grid grid-cols-8 gap-6" id="processing-rates-grid">
-
-            <!-- Publish rate gauges (purple) -->
-            <div class="flex flex-col items-center space-y-3">
-                <div class="relative w-16 h-16">
-                    <svg class="w-full h-full -rotate-90">
-                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
-                        <circle id="rate-circle-masters-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                    </svg>
-                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                        <span id="rate-text-masters-publish" class="text-zinc-600">0</span>
+        <!-- Ack Rates panel -->
+        <div class="dashboard-card p-8">
+            <div class="flex items-center justify-between mb-6">
+                <h2 class="text-xs font-bold text-zinc-400 uppercase tracking-[0.2em]">Ack Rates (msg/s)</h2>
+                <div class="flex items-center space-x-6">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-[var(--purple-accent)]"></div>
+                        <span class="text-[9px] font-bold text-zinc-500 uppercase">Graphinator</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-[var(--blue-accent)]"></div>
+                        <span class="text-[9px] font-bold text-zinc-500 uppercase">Tableinator</span>
                     </div>
                 </div>
-                <span class="text-[9px] text-zinc-500 font-bold uppercase">Masters ↑</span>
             </div>
 
-            <div class="flex flex-col items-center space-y-3">
-                <div class="relative w-16 h-16">
-                    <svg class="w-full h-full -rotate-90">
-                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
-                        <circle id="rate-circle-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                    </svg>
-                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                        <span id="rate-text-releases-publish" class="text-zinc-600">0</span>
+            <!-- Graphinator ack row (purple) -->
+            <div class="flex items-center gap-4 mb-6">
+                <span class="text-[9px] font-bold text-[var(--purple-accent)] uppercase tracking-wider w-14 shrink-0">Graph.</span>
+                <div class="grid grid-cols-4 gap-4 flex-1">
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-graphinator-masters-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-graphinator-masters-ack" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Masters</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-graphinator-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-graphinator-releases-ack" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Releases</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-graphinator-artists-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-graphinator-artists-ack" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Artists</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-graphinator-labels-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-graphinator-labels-ack" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Labels</span>
                     </div>
                 </div>
-                <span class="text-[9px] text-zinc-500 font-bold uppercase">Releases ↑</span>
             </div>
 
-            <div class="flex flex-col items-center space-y-3">
-                <div class="relative w-16 h-16">
-                    <svg class="w-full h-full -rotate-90">
-                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
-                        <circle id="rate-circle-artists-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                    </svg>
-                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                        <span id="rate-text-artists-publish" class="text-zinc-600">0</span>
+            <!-- Tableinator ack row (blue) -->
+            <div class="flex items-center gap-4">
+                <span class="text-[9px] font-bold text-[var(--blue-accent)] uppercase tracking-wider w-14 shrink-0">Table.</span>
+                <div class="grid grid-cols-4 gap-4 flex-1">
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-tableinator-masters-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-tableinator-masters-ack" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Masters</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-tableinator-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-tableinator-releases-ack" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Releases</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-tableinator-artists-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-tableinator-artists-ack" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Artists</span>
+                    </div>
+                    <div class="flex flex-col items-center space-y-2">
+                        <div class="relative w-16 h-16">
+                            <svg class="w-full h-full -rotate-90">
+                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                                <circle id="rate-circle-tableinator-labels-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                            </svg>
+                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                <span id="rate-text-tableinator-labels-ack" class="text-zinc-600">0</span>
+                            </div>
+                        </div>
+                        <span class="text-[9px] text-zinc-500 font-bold uppercase">Labels</span>
                     </div>
                 </div>
-                <span class="text-[9px] text-zinc-500 font-bold uppercase">Artists ↑</span>
             </div>
-
-            <div class="flex flex-col items-center space-y-3">
-                <div class="relative w-16 h-16">
-                    <svg class="w-full h-full -rotate-90">
-                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
-                        <circle id="rate-circle-labels-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                    </svg>
-                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                        <span id="rate-text-labels-publish" class="text-zinc-600">0</span>
-                    </div>
-                </div>
-                <span class="text-[9px] text-zinc-500 font-bold uppercase">Labels ↑</span>
-            </div>
-
-            <!-- Ack rate gauges (blue) -->
-            <div class="flex flex-col items-center space-y-3">
-                <div class="relative w-16 h-16">
-                    <svg class="w-full h-full -rotate-90">
-                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
-                        <circle id="rate-circle-masters-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                    </svg>
-                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                        <span id="rate-text-masters-ack" class="text-zinc-600">0</span>
-                    </div>
-                </div>
-                <span class="text-[9px] text-zinc-500 font-bold uppercase">Masters ↓</span>
-            </div>
-
-            <div class="flex flex-col items-center space-y-3">
-                <div class="relative w-16 h-16">
-                    <svg class="w-full h-full -rotate-90">
-                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
-                        <circle id="rate-circle-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                    </svg>
-                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                        <span id="rate-text-releases-ack" class="text-zinc-600">0</span>
-                    </div>
-                </div>
-                <span class="text-[9px] text-zinc-500 font-bold uppercase">Releases ↓</span>
-            </div>
-
-            <div class="flex flex-col items-center space-y-3">
-                <div class="relative w-16 h-16">
-                    <svg class="w-full h-full -rotate-90">
-                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
-                        <circle id="rate-circle-artists-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                    </svg>
-                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                        <span id="rate-text-artists-ack" class="text-zinc-600">0</span>
-                    </div>
-                </div>
-                <span class="text-[9px] text-zinc-500 font-bold uppercase">Artists ↓</span>
-            </div>
-
-            <div class="flex flex-col items-center space-y-3">
-                <div class="relative w-16 h-16">
-                    <svg class="w-full h-full -rotate-90">
-                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
-                        <circle id="rate-circle-labels-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                    </svg>
-                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                        <span id="rate-text-labels-ack" class="text-zinc-600">0</span>
-                    </div>
-                </div>
-                <span class="text-[9px] text-zinc-500 font-bold uppercase">Labels ↓</span>
-            </div>
-
         </div>
+
     </div>
 
     <!-- ================================================================
