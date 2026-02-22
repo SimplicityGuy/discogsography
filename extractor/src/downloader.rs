@@ -27,6 +27,7 @@ pub struct Downloader {
     base_url: String,
     pub state_marker: Option<StateMarker>,
     pub marker_path: Option<PathBuf>,
+    cached_files: Option<Vec<S3FileInfo>>,
 }
 
 impl Downloader {
@@ -39,7 +40,7 @@ impl Downloader {
     pub async fn new_with_base_url(output_directory: PathBuf, base_url: String) -> Result<Self> {
         let metadata = load_metadata(&output_directory)?;
 
-        Ok(Self { output_directory, metadata, base_url, state_marker: None, marker_path: None })
+        Ok(Self { output_directory, metadata, base_url, state_marker: None, marker_path: None, cached_files: None })
     }
 
     /// Set the state marker for tracking download progress
@@ -210,7 +211,12 @@ impl Downloader {
         Ok(ids)
     }
 
-    pub async fn list_s3_files(&self) -> Result<Vec<S3FileInfo>> {
+    pub async fn list_s3_files(&mut self) -> Result<Vec<S3FileInfo>> {
+        if let Some(ref cached) = self.cached_files {
+            debug!("📋 Using cached file list ({} files)", cached.len());
+            return Ok(cached.clone());
+        }
+
         info!("🔍 Listing available files from Discogs website...");
 
         // Scrape file list from Discogs website instead of S3 listing
@@ -221,6 +227,7 @@ impl Downloader {
         let files: Vec<S3FileInfo> = ids_map.into_values().flat_map(|files| files.into_iter()).collect();
 
         info!("Found {} relevant files from website", files.len());
+        self.cached_files = Some(files.clone());
         Ok(files)
     }
 
