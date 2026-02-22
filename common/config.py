@@ -490,6 +490,7 @@ class ExploreConfig:
     neo4j_address: str
     neo4j_username: str
     neo4j_password: str
+    jwt_secret_key: str | None = None  # Optional: required only for personalized user endpoints
 
     @classmethod
     def from_env(cls) -> "ExploreConfig":
@@ -509,10 +510,14 @@ class ExploreConfig:
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
+        # Optional: enables personalized /api/user/* endpoints
+        jwt_secret_key = getenv("JWT_SECRET_KEY") or None
+
         return cls(
             neo4j_address=neo4j_address,  # type: ignore
             neo4j_username=neo4j_username,  # type: ignore
             neo4j_password=neo4j_password,  # type: ignore
+            jwt_secret_key=jwt_secret_key,
         )
 
 

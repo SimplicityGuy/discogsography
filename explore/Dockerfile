@@ -117,7 +117,8 @@ ENV HOME=/home/discogsography \
     PATH="/app/.venv/bin:$PATH" \
     NEO4J_ADDRESS="" \
     NEO4J_USERNAME="" \
-    NEO4J_PASSWORD=""
+    NEO4J_PASSWORD="" \
+    JWT_SECRET_KEY=""
 
 EXPOSE 8006 8007
 

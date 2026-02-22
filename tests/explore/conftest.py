@@ -7,6 +7,7 @@ import os
 os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USERNAME", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "testpassword")
+os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-for-unit-tests")
 
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
