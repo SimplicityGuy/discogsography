@@ -242,6 +242,63 @@ services:
     volumes:
       - auth_logs:/logs
 
+  # Collector service — Discogs collection and wantlist sync
+  collector:
+    build:
+      context: .
+      dockerfile: collector/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: discogsography/collector:latest
+    container_name: discogsography-collector
+    hostname: collector
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      POSTGRES_ADDRESS: postgres:5432
+      POSTGRES_USERNAME: discogsography
+      POSTGRES_PASSWORD: discogsography
+      POSTGRES_DATABASE: discogsography
+      NEO4J_ADDRESS: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: discogsography
+      # IMPORTANT: Must match the JWT_SECRET_KEY used by the auth service
+      JWT_SECRET_KEY: "dev-secret-change-in-production-use-a-256-bit-random-key"
+      PYTHONUNBUFFERED: "1"
+      STARTUP_DELAY: "10"
+    ports:
+      - "8010:8010"      # Collector API
+      - "8011:8011"      # Health check
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      auth:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - collector_logs:/logs
+
   # Rust-based extractor service
   extractor:
     build:
@@ -497,3 +554,4 @@ volumes:
   extractor_logs:
   schema_init_logs:
   auth_logs:
+  collector_logs:
