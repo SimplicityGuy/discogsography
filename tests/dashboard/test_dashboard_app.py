@@ -675,7 +675,7 @@ class TestDashboardAppDataCollection:
             mock_pg_cursor.fetchone = AsyncMock(
                 side_effect=[
                     (5,),  # connection count
-                    ("100 MB",),  # database size
+                    (104857600,),  # database size (100 MB in bytes)
                 ]
             )
             mock_pg_cursor.__aenter__ = AsyncMock(return_value=mock_pg_cursor)
@@ -713,10 +713,130 @@ class TestDashboardAppDataCollection:
                 assert databases[0].name == "PostgreSQL"
                 assert databases[0].status == "healthy"
                 assert databases[0].connection_count == 5
-                assert databases[0].size == "100 MB"
+                assert databases[0].size == "100 MB"  # 104857600 bytes → 100 MB
                 assert databases[1].name == "Neo4j"
                 assert databases[1].status == "healthy"
                 assert "1,000 nodes" in databases[1].size
+
+    @pytest.mark.asyncio
+    async def test_get_database_info_postgres_size_gb(self) -> None:
+        """Test that PostgreSQL DB size >= 1 GB is displayed in GB."""
+        mock_config = Mock()
+        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_database = "testdb"
+        mock_config.postgres_username = "test"
+        mock_config.postgres_password = "test"
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+            app.neo4j_driver = None
+
+            mock_pg_cursor = AsyncMock()
+            mock_pg_cursor.execute = AsyncMock()
+            mock_pg_cursor.fetchone = AsyncMock(
+                side_effect=[
+                    (2,),  # connection count
+                    (1674917632,),  # database size (1,597 MB in bytes)
+                ]
+            )
+            mock_pg_cursor.__aenter__ = AsyncMock(return_value=mock_pg_cursor)
+            mock_pg_cursor.__aexit__ = AsyncMock(return_value=None)
+
+            mock_pg_conn = AsyncMock()
+            mock_pg_conn.cursor = Mock(return_value=mock_pg_cursor)
+            mock_pg_conn.__aenter__ = AsyncMock(return_value=mock_pg_conn)
+            mock_pg_conn.__aexit__ = AsyncMock(return_value=None)
+
+            async def mock_connect(**_kwargs):
+                return mock_pg_conn
+
+            with patch("psycopg.AsyncConnection.connect", side_effect=mock_connect):
+                databases = await app.get_database_info()
+
+                assert len(databases) == 1
+                assert databases[0].name == "PostgreSQL"
+                assert databases[0].status == "healthy"
+                assert databases[0].size == "1.56 GB"  # 1674917632 bytes → 1.56 GB
+
+    @pytest.mark.asyncio
+    async def test_get_database_info_postgres_size_37gb(self) -> None:
+        """Test that PostgreSQL DB size of 37 GB is displayed correctly."""
+        mock_config = Mock()
+        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_database = "testdb"
+        mock_config.postgres_username = "test"
+        mock_config.postgres_password = "test"
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+            app.neo4j_driver = None
+
+            mock_pg_cursor = AsyncMock()
+            mock_pg_cursor.execute = AsyncMock()
+            mock_pg_cursor.fetchone = AsyncMock(
+                side_effect=[
+                    (2,),  # connection count
+                    (39728447488,),  # database size (37 GB in bytes)
+                ]
+            )
+            mock_pg_cursor.__aenter__ = AsyncMock(return_value=mock_pg_cursor)
+            mock_pg_cursor.__aexit__ = AsyncMock(return_value=None)
+
+            mock_pg_conn = AsyncMock()
+            mock_pg_conn.cursor = Mock(return_value=mock_pg_cursor)
+            mock_pg_conn.__aenter__ = AsyncMock(return_value=mock_pg_conn)
+            mock_pg_conn.__aexit__ = AsyncMock(return_value=None)
+
+            async def mock_connect(**_kwargs):
+                return mock_pg_conn
+
+            with patch("psycopg.AsyncConnection.connect", side_effect=mock_connect):
+                databases = await app.get_database_info()
+
+                assert len(databases) == 1
+                assert databases[0].name == "PostgreSQL"
+                assert databases[0].status == "healthy"
+                assert databases[0].size == "37.00 GB"  # 39728447488 bytes → 37.00 GB
+
+    @pytest.mark.asyncio
+    async def test_get_database_info_postgres_size_376gb(self) -> None:
+        """Test that PostgreSQL DB size of 376 GB is displayed correctly."""
+        mock_config = Mock()
+        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_database = "testdb"
+        mock_config.postgres_username = "test"
+        mock_config.postgres_password = "test"
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+            app.neo4j_driver = None
+
+            mock_pg_cursor = AsyncMock()
+            mock_pg_cursor.execute = AsyncMock()
+            mock_pg_cursor.fetchone = AsyncMock(
+                side_effect=[
+                    (2,),  # connection count
+                    (403726925824,),  # database size (376 GB in bytes)
+                ]
+            )
+            mock_pg_cursor.__aenter__ = AsyncMock(return_value=mock_pg_cursor)
+            mock_pg_cursor.__aexit__ = AsyncMock(return_value=None)
+
+            mock_pg_conn = AsyncMock()
+            mock_pg_conn.cursor = Mock(return_value=mock_pg_cursor)
+            mock_pg_conn.__aenter__ = AsyncMock(return_value=mock_pg_conn)
+            mock_pg_conn.__aexit__ = AsyncMock(return_value=None)
+
+            async def mock_connect(**_kwargs):
+                return mock_pg_conn
+
+            with patch("psycopg.AsyncConnection.connect", side_effect=mock_connect):
+                databases = await app.get_database_info()
+
+                assert len(databases) == 1
+                assert databases[0].name == "PostgreSQL"
+                assert databases[0].status == "healthy"
+                assert databases[0].size == "376.00 GB"  # 403726925824 bytes → 376.00 GB
 
     @pytest.mark.asyncio
     async def test_get_database_info_postgres_error(self) -> None:
@@ -762,7 +882,7 @@ class TestDashboardAppDataCollection:
             # Mock PostgreSQL cursor with proper async context manager
             mock_pg_cursor = AsyncMock()
             mock_pg_cursor.execute = AsyncMock()
-            mock_pg_cursor.fetchone = AsyncMock(side_effect=[(3,), ("50 MB",)])
+            mock_pg_cursor.fetchone = AsyncMock(side_effect=[(3,), (52428800,)])
             mock_pg_cursor.__aenter__ = AsyncMock(return_value=mock_pg_cursor)
             mock_pg_cursor.__aexit__ = AsyncMock(return_value=None)
 

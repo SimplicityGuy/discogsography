@@ -341,11 +341,17 @@ class DashboardApp:
                     connection_count = result[0] if result else 0
 
                     await cur.execute(
-                        "SELECT pg_size_pretty(pg_database_size(%s))",
+                        "SELECT pg_database_size(%s)",
                         (self.config.postgres_database,),
                     )
                     result = await cur.fetchone()
-                    db_size = result[0] if result else "0 bytes"
+                    raw_bytes = result[0] if result else 0
+                    if raw_bytes >= 1024**3:
+                        gb = raw_bytes / 1024**3
+                        db_size = f"{gb:,.2f} GB"
+                    else:
+                        mb = raw_bytes / 1024**2
+                        db_size = f"{mb:,.0f} MB"
 
                 databases.append(
                     DatabaseInfo(
