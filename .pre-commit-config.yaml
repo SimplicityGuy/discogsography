@@ -16,7 +16,6 @@ repos:
       - id: detect-private-key
       - id: end-of-file-fixer
       - id: mixed-line-ending
-      - id: requirements-txt-fixer
       - id: trailing-whitespace
       - id: pretty-format-json
         args: [--autofix, --indent=2]
