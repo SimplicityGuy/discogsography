@@ -56,18 +56,37 @@
                  its own size and shape.
                  ============================================================ -->
             <div id="app-logo" aria-label="Discogsography logo">
-                <!-- Default: four-segment rotated-square mark -->
+                <!-- Four-quadrant circle with center diamond -->
                 <div style="
+                    position: relative;
                     width: 40px; height: 40px;
                     border-radius: 50%; overflow: hidden;
-                    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
-                    background: var(--border-color);
-                    transform: rotate(45deg);
+                    border: 2px solid #1A2840;
+                    box-sizing: border-box;
                 ">
-                    <div style="width:100%;height:100%;background:#64748B;"></div>
-                    <div style="width:100%;height:100%;background:#818CF8;"></div>
-                    <div style="width:100%;height:100%;background:#CBD5E1;"></div>
-                    <div style="width:100%;height:100%;background:#94A3B8;"></div>
+                    <!-- Quadrants: terracotta / steel-blue / teal / olive -->
+                    <div style="
+                        position: absolute; inset: 0;
+                        display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+                    ">
+                        <div style="background:#AA7272;"></div>
+                        <div style="background:#4A70A3;"></div>
+                        <div style="background:#3C7068;"></div>
+                        <div style="background:#7B8E57;"></div>
+                    </div>
+                    <!-- Depth shadow toward center -->
+                    <div style="
+                        position: absolute; inset: 0;
+                        background: radial-gradient(circle at center, rgba(15,25,45,0.5) 18%, transparent 52%);
+                    "></div>
+                    <!-- White center diamond -->
+                    <div style="
+                        position: absolute;
+                        top: 50%; left: 50%;
+                        width: 44%; height: 44%;
+                        background: #F0F1F3;
+                        transform: translate(-50%, -50%) rotate(45deg);
+                    "></div>
                 </div>
             </div>
             <!-- END LOGO -->
