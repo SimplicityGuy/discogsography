@@ -43,12 +43,12 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 | Service                                                       | Purpose                                | Key Technologies                       |
 | ------------------------------------------------------------- | -------------------------------------- | -------------------------------------- |
-| **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initialiser   | `neo4j-driver`, `psycopg3`             |
+| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI      |
+| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j |
 | **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`          |
 | **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms       |
+| **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initialiser   | `neo4j-driver`, `psycopg3`             |
 | **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search    |
-| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j |
-| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI      |
 
 ### 📐 System Architecture
 
@@ -127,9 +127,9 @@ open http://localhost:8003
 | ----------------- | ---------------------- | ----------------------------------- |
 | 📊 **Dashboard**  | http://localhost:8003  | None                                |
 | 🔍 **Explore**    | http://localhost:8006  | None                                |
-| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` |
 | 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          |
 | 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` |
+| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` |
 
 See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local development setup, and environment configuration.
 
@@ -157,43 +157,43 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 | Document                                                           | Purpose                                              |
 | ------------------------------------------------------------------ | ---------------------------------------------------- |
 | **[Development Guide](docs/development.md)**                       | 💻 Project structure, tooling, and developer workflow |
-| **[Contributing Guide](docs/contributing.md)**                     | 🤝 How to contribute: process, standards, and PR flow |
 | **[Testing Guide](docs/testing-guide.md)**                         | 🧪 Unit, integration, and E2E testing with Playwright |
 | **[Logging Guide](docs/logging-guide.md)**                         | 📊 Structured logging standards and emoji conventions |
+| **[Contributing Guide](docs/contributing.md)**                     | 🤝 How to contribute: process, standards, and PR flow |
 | **[Python Version Management](docs/python-version-management.md)** | 🐍 Managing Python 3.13+ across the project          |
 
 ### 🔧 Operations
 
-| Document                                                 | Purpose                                          |
-| -------------------------------------------------------- | ------------------------------------------------ |
-| **[Troubleshooting Guide](docs/troubleshooting.md)**     | 🔧 Common issues, solutions, and debugging steps |
-| **[Performance Guide](docs/performance-guide.md)**       | ⚡ Database tuning, hardware specs, optimization  |
-| **[Performance Benchmarks](docs/performance-benchmarks.md)** | 📈 Processing rates and tuning results       |
-| **[Database Resilience](docs/database-resilience.md)**   | 💾 Database connection patterns & error handling |
-| **[Maintenance Guide](docs/maintenance.md)**             | 🔄 Package upgrades, dependency management       |
+| Document                                                     | Purpose                                          |
+| ------------------------------------------------------------ | ------------------------------------------------ |
+| **[Troubleshooting Guide](docs/troubleshooting.md)**         | 🔧 Common issues, solutions, and debugging steps |
+| **[Maintenance Guide](docs/maintenance.md)**                 | 🔄 Package upgrades, dependency management       |
+| **[Performance Guide](docs/performance-guide.md)**           | ⚡ Database tuning, hardware specs, optimization  |
+| **[Performance Benchmarks](docs/performance-benchmarks.md)** | 📈 Processing rates and tuning results           |
+| **[Database Resilience](docs/database-resilience.md)**       | 💾 Database connection patterns & error handling |
 
 ### 🐋 Infrastructure & CI/CD
 
-| Document                                                 | Purpose                                              |
-| -------------------------------------------------------- | ---------------------------------------------------- |
-| **[Docker Security](docs/docker-security.md)**           | 🔒 Container hardening & security practices          |
-| **[Dockerfile Standards](docs/dockerfile-standards.md)** | 🐋 Best practices for writing Dockerfiles            |
-| **[GitHub Actions Guide](docs/github-actions-guide.md)** | 🚀 CI/CD workflows, automation & best practices      |
+| Document                                                 | Purpose                                                |
+| -------------------------------------------------------- | ------------------------------------------------------ |
+| **[Dockerfile Standards](docs/dockerfile-standards.md)** | 🐋 Best practices for writing Dockerfiles              |
+| **[Docker Security](docs/docker-security.md)**           | 🔒 Container hardening & security practices            |
+| **[GitHub Actions Guide](docs/github-actions-guide.md)** | 🚀 CI/CD workflows, automation & best practices        |
 | **[Task Automation](docs/task-automation.md)**           | ⚙️ Complete `just` and `uv run task` command reference |
-| **[Monorepo Guide](docs/monorepo-guide.md)**             | 📦 Managing Python monorepo with shared dependencies |
+| **[Monorepo Guide](docs/monorepo-guide.md)**             | 📦 Managing Python monorepo with shared dependencies   |
 
 ### 📋 Reference
 
-| Document                                                                      | Purpose                                               |
-| ----------------------------------------------------------------------------- | ----------------------------------------------------- |
-| **[State Marker System](docs/state-marker-system.md)**                        | 📋 Extraction progress tracking & safe restart system |
-| **[State Marker Periodic Updates](docs/state-marker-periodic-updates.md)**    | 💾 Periodic state saves and crash recovery            |
-| **[Consumer Cancellation](docs/consumer-cancellation.md)**                    | 🔄 File completion and consumer lifecycle management  |
-| **[File Completion Tracking](docs/file-completion-tracking.md)**              | 📊 Intelligent completion tracking and stall detection |
-| **[Neo4j Indexing](docs/neo4j-indexing.md)**                                  | 🔗 Advanced Neo4j indexing strategies                 |
-| **[Platform Targeting](docs/platform-targeting.md)**                          | 🎯 Cross-platform compatibility guidelines            |
-| **[Emoji Guide](docs/emoji-guide.md)**                                        | 📋 Standardized emoji usage across the project        |
-| **[Recent Improvements](docs/recent-improvements.md)**                        | 🚀 Latest platform enhancements and changelog         |
+| Document                                                                   | Purpose                                                |
+| -------------------------------------------------------------------------- | ------------------------------------------------------ |
+| **[State Marker System](docs/state-marker-system.md)**                     | 📋 Extraction progress tracking & safe restart system  |
+| **[State Marker Periodic Updates](docs/state-marker-periodic-updates.md)** | 💾 Periodic state saves and crash recovery             |
+| **[Consumer Cancellation](docs/consumer-cancellation.md)**                 | 🔄 File completion and consumer lifecycle management   |
+| **[File Completion Tracking](docs/file-completion-tracking.md)**           | 📊 Intelligent completion tracking and stall detection |
+| **[Neo4j Indexing](docs/neo4j-indexing.md)**                               | 🔗 Advanced Neo4j indexing strategies                  |
+| **[Platform Targeting](docs/platform-targeting.md)**                       | 🎯 Cross-platform compatibility guidelines             |
+| **[Emoji Guide](docs/emoji-guide.md)**                                     | 📋 Standardized emoji usage across the project         |
+| **[Recent Improvements](docs/recent-improvements.md)**                     | 🚀 Latest platform enhancements and changelog          |
 
 ## 💬 Support & Community
 
