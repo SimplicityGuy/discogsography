@@ -4,9 +4,8 @@ High-performance Rust-based Discogs data extractor for the Discogsography platfo
 
 ## Overview
 
-Extractor is a Rust reimplementation of the Python-based extractor service, offering significantly improved
-performance and lower resource usage. It streams and parses Discogs XML data dumps, sending processed records to
-RabbitMQ for consumption by downstream services.
+Extractor is a high-performance Rust service that streams and parses Discogs XML data dumps, sending processed
+records to RabbitMQ for consumption by downstream services (Graphinator and Tableinator).
 
 ## Features
 
@@ -88,8 +87,8 @@ docker run -e AMQP_CONNECTION=amqp://rabbitmq:5672 extractor
 # Run all tests
 cargo test
 
-# Run with coverage (requires cargo-tarpaulin)
-cargo tarpaulin --out Html
+# Run with coverage (requires cargo-llvm-cov)
+cargo llvm-cov --html
 
 # Run benchmarks
 cargo bench
@@ -193,21 +192,9 @@ Set the `LOG_LEVEL` environment variable to control logging verbosity:
 
 Extractor integrates with the Discogsography platform:
 
-- Publishes to the same AMQP exchange as the Python extractor
-- Maintains compatibility with existing message formats
-- Supports the same data types (artists, labels, masters, releases)
-- Provides equivalent health monitoring
-
-## Migration from Python Extractor
-
-Extractor is a drop-in replacement for the Python extractor:
-
-1. Uses the same environment variables
-1. Publishes to the same AMQP queues
-1. Produces identical message formats
-1. Maintains the same file processing state
-
-To migrate, simply replace the Python extractor service with extractor in your deployment configuration.
+- Publishes to RabbitMQ queues consumed by Graphinator (Neo4j) and Tableinator (PostgreSQL)
+- Supports all four data types: artists, labels, masters, releases
+- Provides HTTP health, metrics, and readiness endpoints
 
 ## License
 

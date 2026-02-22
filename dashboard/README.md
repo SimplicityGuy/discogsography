@@ -6,7 +6,7 @@ Real-time monitoring dashboard for the Discogsography system with WebSocket supp
 
 The dashboard service provides a web-based interface to monitor all Discogsography services, including:
 
-- Service health status (extractor, graphinator, tableinator, discovery)
+- Service health status (extractor, graphinator, tableinator)
 - RabbitMQ queue metrics and consumer counts
 - PostgreSQL and Neo4j database statistics
 - Real-time activity logs
@@ -15,7 +15,7 @@ The dashboard service provides a web-based interface to monitor all Discogsograp
 ## Architecture
 
 - **Backend**: FastAPI with WebSocket support
-- **Frontend**: Vanilla JavaScript with dynamic updates
+- **Frontend**: Tailwind CSS, Inter/JetBrains Mono fonts, SVG circular gauges, CSS bar charts
 - **Port**: 8003 (configurable via `DASHBOARD_PORT`)
 - **Health Endpoint**: `/health` (port 8003)
 
@@ -32,14 +32,13 @@ DASHBOARD_PORT=8003       # Port for web interface
 EXTRACTOR_URL=http://extractor:8000
 GRAPHINATOR_URL=http://graphinator:8001
 TABLEINATOR_URL=http://tableinator:8002
-DISCOVERY_URL=http://discovery:8004
 
 # Database connections
 NEO4J_ADDRESS=neo4j:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=discogsography
 
-POSTGRES_ADDRESS=postgres:5433
+POSTGRES_ADDRESS=postgres:5432
 POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
@@ -67,8 +66,7 @@ The dashboard broadcasts updates every 5 seconds with the following data:
     "services": {
       "extractor": { "status": "healthy", "health_url": "..." },
       "graphinator": { "status": "healthy", "health_url": "..." },
-      "tableinator": { "status": "healthy", "health_url": "..." },
-      "discovery": { "status": "healthy", "health_url": "..." }
+      "tableinator": { "status": "healthy", "health_url": "..." }
     },
     "queues": {
       "labels": { "messages": 0, "consumers": 1 },
@@ -116,9 +114,9 @@ uv run pytest tests/dashboard/test_dashboard_api_integration.py -v
 
 The frontend consists of static files in the `static/` directory:
 
-- `index.html` - Main dashboard page
-- `styles.css` - Dashboard styling
-- `script.js` - WebSocket client and UI updates
+- `index.html` - Main dashboard page (Tailwind CSS, dark theme)
+- `styles.css` - Base reset and legacy selector stubs
+- `dashboard.js` - WebSocket client and UI update logic
 
 ## Docker
 
@@ -139,6 +137,5 @@ The dashboard itself exposes metrics at `/api/metrics` for monitoring its own he
 ## Security
 
 - CORS is configured for production use
-- WebSocket connections are authenticated
 - All external service calls have timeouts
 - Sensitive configuration is loaded from environment variables
