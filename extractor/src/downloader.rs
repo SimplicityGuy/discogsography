@@ -359,6 +359,8 @@ impl Downloader {
             let mut file = File::create(&local_path).await.context("Failed to create local file")?;
             let mut hasher = Sha256::new();
             let mut downloaded: u64 = 0;
+            let download_start = std::time::Instant::now();
+            let mut last_progress_log = download_start;
 
             // Stream the response body
             let mut stream = response.bytes_stream();
@@ -374,6 +376,15 @@ impl Downloader {
                         }
                         downloaded += chunk.len() as u64;
                         pb.set_position(downloaded);
+
+                        // Log progress every 10 seconds for syslog visibility
+                        let now = std::time::Instant::now();
+                        if now.duration_since(last_progress_log).as_secs() >= 10 {
+                            let elapsed_secs = download_start.elapsed().as_secs_f64();
+                            let speed = if elapsed_secs > 0.0 { (downloaded as f64 / 1_048_576.0) / elapsed_secs } else { 0.0 };
+                            info!("📥 {} — {:.1} MB received ({:.1} MB/s)", filename, downloaded as f64 / 1_048_576.0, speed);
+                            last_progress_log = now;
+                        }
                     }
                     Err(e) => {
                         stream_error = Some(anyhow::anyhow!("Failed to read HTTP response chunk: {}", e));
