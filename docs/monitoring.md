@@ -105,7 +105,7 @@ ws.onmessage = (event) => {
 
 ```bash
 # Check for errors in all service logs
-uv run task check-errors
+just check-errors
 
 # Or directly with Python
 uv run python utilities/check_errors.py
@@ -122,7 +122,7 @@ uv run python utilities/check_errors.py
 
 ```bash
 # Real-time queue monitoring
-uv run task monitor
+just monitor
 
 # Or directly with Python
 uv run python utilities/monitor_queues.py
@@ -154,7 +154,7 @@ Queue: releases_queue
 
 ```bash
 # Comprehensive system monitoring
-uv run task system-monitor
+just system-monitor
 
 # Or directly with Python
 uv run python utilities/system_monitor.py
@@ -174,7 +174,7 @@ uv run python utilities/system_monitor.py
 
 ```bash
 # All services
-uv run task logs
+just logs
 
 # Or with docker-compose
 docker-compose logs -f
@@ -213,7 +213,7 @@ Each service tracks and logs processing statistics:
 #### Extractor Metrics
 
 ```
-🚀 Starting Python Extractor
+🚀 Starting Extractor
 📥 Downloading artists data dump
 📊 Processed 10,000 artists (1,234 msg/s)
 📊 Processed 50,000 artists (1,456 msg/s)
@@ -470,7 +470,7 @@ Errors are automatically tracked and reported:
 
 ```bash
 # Recent errors across all services
-uv run task check-errors
+just check-errors
 
 # Errors by service
 docker-compose logs graphinator | grep "❌"
@@ -555,7 +555,7 @@ docker-compose logs -f | grep -E "(ERROR|❌)"
 open http://localhost:15672
 
 # Or use CLI monitoring
-uv run task monitor
+just monitor
 ```
 
 **Look for**:
@@ -579,7 +579,7 @@ PGPASSWORD=discogsography psql -h localhost -p 5433 \
 
 ```bash
 # System monitoring
-uv run task system-monitor
+just system-monitor
 
 # Database query performance (Neo4j)
 MATCH (n) RETURN count(n);
@@ -648,7 +648,7 @@ docker stats
 docker stats discogsography-graphinator-1
 
 # System monitor utility
-uv run task system-monitor
+just system-monitor
 ```
 
 ### Database Performance
@@ -691,4 +691,4 @@ LIMIT 10;
 
 ______________________________________________________________________
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2026-02-21

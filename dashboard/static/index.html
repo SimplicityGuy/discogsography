@@ -1,67 +1,467 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Discogsography Dashboard</title>
-    <link rel="stylesheet" href="styles.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <style type="text/tailwindcss">
+        :root {
+            --bg-deep: #121212;
+            --card-bg: #1E1E1E;
+            --border-color: #2D2D2D;
+            --text-high: #F5F5F5;
+            --text-dim: #A0A0A0;
+            --purple-accent: #A78BFA;
+            --blue-accent: #60A5FA;
+        }
+        body {
+            background-color: var(--bg-deep);
+            color: var(--text-high);
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .dashboard-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-deep); }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+    </style>
 </head>
-<body>
-    <div class="container">
-        <header>
-            <h1>Discogsography Dashboard</h1>
-            <div class="connection-status" id="connectionStatus">
-                <span class="status-indicator"></span>
-                <span class="status-text">Connecting...</span>
+<body class="p-8">
+<div class="max-w-[1440px] mx-auto space-y-8">
+
+    <!-- ================================================================
+         HEADER
+         ================================================================ -->
+    <header class="flex items-center justify-between">
+        <div class="flex items-center space-x-5">
+
+            <!-- ============================================================
+                 APP LOGO — easy to replace.
+
+                 To swap in a custom logo, change the contents of #app-logo:
+
+                   <img src="/static/my-logo.png" alt="Logo" class="w-10 h-10">
+
+                 or any other element. The surrounding <div id="app-logo">
+                 wrapper is intentionally unstyled so your element controls
+                 its own size and shape.
+                 ============================================================ -->
+            <div id="app-logo" aria-label="Discogsography logo">
+                <!-- Default: four-segment rotated-square mark -->
+                <div style="
+                    width: 40px; height: 40px;
+                    border-radius: 50%; overflow: hidden;
+                    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+                    background: var(--border-color);
+                    transform: rotate(45deg);
+                ">
+                    <div style="width:100%;height:100%;background:#64748B;"></div>
+                    <div style="width:100%;height:100%;background:#818CF8;"></div>
+                    <div style="width:100%;height:100%;background:#CBD5E1;"></div>
+                    <div style="width:100%;height:100%;background:#94A3B8;"></div>
+                </div>
             </div>
-        </header>
+            <!-- END LOGO -->
 
-        <main>
-            <!-- Services Section -->
-            <section class="dashboard-section">
-                <h2>Services</h2>
-                <div class="services-grid" id="servicesGrid">
-                    <!-- Service cards will be dynamically added here -->
+            <div>
+                <h1 class="text-xl font-semibold tracking-tight">Discogsography Infrastructure</h1>
+                <div class="flex items-center space-x-2 mt-0.5">
+                    <span id="operational-status-dot" class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                    <span id="operational-status-text" class="text-[10px] text-yellow-500 font-bold uppercase tracking-widest">Connecting</span>
                 </div>
-            </section>
+            </div>
+        </div>
 
-            <!-- Queues Section -->
-            <section class="dashboard-section">
-                <h2>Message Queues</h2>
-                <div class="queues-container">
-                    <div class="queues-grid" id="queuesGrid">
-                        <!-- Queue cards will be dynamically added here -->
-                    </div>
-                    <div class="queue-charts">
-                        <canvas id="queueChart"></canvas>
-                    </div>
+        <div class="flex items-center space-x-4 bg-[#1E1E1E] border border-[#2D2D2D] py-1.5 px-4 rounded-full">
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DLQ Toggle</span>
+            <label class="relative inline-flex items-center cursor-pointer">
+                <input id="dlq-toggle" class="sr-only peer" type="checkbox" value=""/>
+                <div class="w-8 h-4 bg-zinc-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-500"></div>
+            </label>
+        </div>
+    </header>
+
+    <!-- ================================================================
+         SERVICE CARDS  (3-column grid)
+         ================================================================ -->
+    <div class="grid grid-cols-3 gap-6">
+
+        <!-- Extractor -->
+        <div id="service-extractor" class="dashboard-card p-6">
+            <div class="flex items-center justify-between mb-6 border-b border-[#2D2D2D] pb-4">
+                <h3 class="text-sm font-semibold flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-slate-400">output</span> Extractor
+                </h3>
+                <span id="extractor-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
+            </div>
+            <div class="space-y-3">
+                <div class="flex justify-between text-[10px] text-zinc-500 uppercase font-bold tracking-wider">
+                    <span>Queues</span><span>State</span>
                 </div>
-            </section>
-
-            <!-- Databases Section -->
-            <section class="dashboard-section">
-                <h2>Databases</h2>
-                <div class="databases-grid" id="databasesGrid">
-                    <!-- Database cards will be dynamically added here -->
+                <div class="flex justify-between text-xs mono py-1 border-b border-white/5">
+                    <span>Masters</span>
+                    <span id="extractor-masters-state" class="text-zinc-500">—</span>
                 </div>
-            </section>
-
-            <!-- Activity Log Section -->
-            <section class="dashboard-section">
-                <h2>Recent Activity</h2>
-                <div class="activity-log" id="activityLog">
-                    <div class="log-entry">Waiting for data...</div>
+                <div class="flex justify-between text-xs mono py-1 border-b border-white/5">
+                    <span>Releases</span>
+                    <span id="extractor-releases-state" class="text-zinc-500">—</span>
                 </div>
-            </section>
+                <div class="flex justify-between text-xs mono py-1 border-b border-white/5">
+                    <span>Artists</span>
+                    <span id="extractor-artists-state" class="text-zinc-500">—</span>
+                </div>
+                <div class="flex justify-between text-xs mono py-1">
+                    <span>Labels</span>
+                    <span id="extractor-labels-state" class="text-zinc-500">—</span>
+                </div>
+            </div>
+        </div>
 
-        </main>
+        <!-- Graphinator -->
+        <div id="service-graphinator" class="dashboard-card p-6">
+            <div class="flex items-center justify-between mb-6 border-b border-[#2D2D2D] pb-4">
+                <h3 class="text-sm font-semibold flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[var(--purple-accent)]">hub</span> Graphinator
+                </h3>
+                <span id="graphinator-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
+            </div>
+            <div class="space-y-3">
+                <div class="flex justify-between text-[10px] text-zinc-500 uppercase font-bold tracking-wider">
+                    <span>Queues</span><span>Messages</span>
+                </div>
+                <div class="flex justify-between text-xs mono py-1 border-b border-white/5">
+                    <span>Masters</span>
+                    <span id="graphinator-masters-count" class="text-white">—</span>
+                </div>
+                <div class="flex justify-between text-xs mono py-1 border-b border-white/5">
+                    <span>Releases</span>
+                    <span id="graphinator-releases-count" class="text-white">—</span>
+                </div>
+                <div class="flex justify-between text-xs mono py-1 border-b border-white/5">
+                    <span>Artists</span>
+                    <span id="graphinator-artists-count" class="text-white">—</span>
+                </div>
+                <div class="flex justify-between text-xs mono py-1">
+                    <span>Labels</span>
+                    <span id="graphinator-labels-count" class="text-white">—</span>
+                </div>
+            </div>
+        </div>
 
-        <footer>
-            <p>Last updated: <span id="lastUpdated">-</span></p>
-        </footer>
+        <!-- Tableinator -->
+        <div id="service-tableinator" class="dashboard-card p-6">
+            <div class="flex items-center justify-between mb-6 border-b border-[#2D2D2D] pb-4">
+                <h3 class="text-sm font-semibold flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-[var(--blue-accent)]">grid_view</span> Tableinator
+                </h3>
+                <span id="tableinator-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
+            </div>
+            <div class="space-y-3">
+                <div class="flex justify-between text-[10px] text-zinc-500 uppercase font-bold tracking-wider">
+                    <span>Queues</span><span>Messages</span>
+                </div>
+                <div class="flex justify-between text-xs mono py-1 border-b border-white/5">
+                    <span>Masters</span>
+                    <span id="tableinator-masters-count" class="text-white">—</span>
+                </div>
+                <div class="flex justify-between text-xs mono py-1 border-b border-white/5">
+                    <span>Releases</span>
+                    <span id="tableinator-releases-count" class="text-white">—</span>
+                </div>
+                <div class="flex justify-between text-xs mono py-1 border-b border-white/5">
+                    <span>Artists</span>
+                    <span id="tableinator-artists-count" class="text-white">—</span>
+                </div>
+                <div class="flex justify-between text-xs mono py-1">
+                    <span>Labels</span>
+                    <span id="tableinator-labels-count" class="text-white">—</span>
+                </div>
+            </div>
+        </div>
     </div>
 
-    <script src="dashboard.js"></script>
+    <!-- ================================================================
+         QUEUE SIZE METRICS  (SVG bar chart)
+         ================================================================ -->
+    <div class="dashboard-card p-8">
+        <div class="flex items-center justify-between mb-10">
+            <div>
+                <h2 class="text-lg font-bold">Queue Size Metrics</h2>
+                <p class="text-[10px] text-zinc-500 uppercase tracking-[0.2em] font-mono mt-1">Message Count by Queue Type</p>
+            </div>
+            <div class="flex items-center space-x-8">
+                <div class="flex items-center space-x-2">
+                    <div class="w-3 h-3 rounded-sm bg-[var(--purple-accent)]"></div>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Messages</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div class="w-3 h-3 rounded-sm bg-[var(--blue-accent)]"></div>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Ready</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="h-64 flex items-end justify-between px-12 relative">
+            <!-- Y-axis grid lines -->
+            <div class="absolute left-0 top-0 bottom-0 w-full flex flex-col justify-between pointer-events-none text-[9px] font-mono text-zinc-600">
+                <div class="border-t border-[#2D2D2D] w-full pt-1" id="bar-yaxis-4">—</div>
+                <div class="border-t border-[#2D2D2D] w-full pt-1" id="bar-yaxis-3">—</div>
+                <div class="border-t border-[#2D2D2D] w-full pt-1" id="bar-yaxis-2">—</div>
+                <div class="border-t border-[#2D2D2D] w-full pt-1" id="bar-yaxis-1">—</div>
+                <div class="border-t border-[#2D2D2D] w-full"></div>
+            </div>
+
+            <!-- Bar groups -->
+            <div class="flex-1 flex justify-around items-end z-10 h-full">
+                <div class="flex flex-col items-center gap-4">
+                    <div class="flex items-end gap-2">
+                        <div id="bar-masters-messages" class="w-10 bg-[var(--purple-accent)] rounded-t-sm transition-all duration-500" style="height:0%"></div>
+                        <div id="bar-masters-ready" class="w-10 bg-[var(--blue-accent)] rounded-t-sm transition-all duration-500" style="height:0%"></div>
+                    </div>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Masters</span>
+                </div>
+                <div class="flex flex-col items-center gap-4">
+                    <div class="flex items-end gap-2">
+                        <div id="bar-releases-messages" class="w-10 bg-[var(--purple-accent)] rounded-t-sm transition-all duration-500" style="height:0%"></div>
+                        <div id="bar-releases-ready" class="w-10 bg-[var(--blue-accent)] rounded-t-sm transition-all duration-500" style="height:0%"></div>
+                    </div>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Releases</span>
+                </div>
+                <div class="flex flex-col items-center gap-4">
+                    <div class="flex items-end gap-2">
+                        <div id="bar-artists-messages" class="w-10 bg-[var(--purple-accent)] rounded-t-sm transition-all duration-500" style="height:0%"></div>
+                        <div id="bar-artists-ready" class="w-10 bg-[var(--blue-accent)] rounded-t-sm transition-all duration-500" style="height:0%"></div>
+                    </div>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Artists</span>
+                </div>
+                <div class="flex flex-col items-center gap-4">
+                    <div class="flex items-end gap-2">
+                        <div id="bar-labels-messages" class="w-10 bg-[var(--purple-accent)] rounded-t-sm transition-all duration-500" style="height:0%"></div>
+                        <div id="bar-labels-ready" class="w-10 bg-[var(--blue-accent)] rounded-t-sm transition-all duration-500" style="height:0%"></div>
+                    </div>
+                    <span class="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Labels</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         PROCESSING RATES  (circular SVG gauges)
+         ================================================================ -->
+    <div class="dashboard-card p-8">
+        <div class="flex items-center justify-between mb-8">
+            <h2 class="text-xs font-bold text-zinc-400 uppercase tracking-[0.2em]">Processing Rates (msg/s)</h2>
+            <div class="flex items-center space-x-6">
+                <div class="flex items-center space-x-2">
+                    <div class="w-2.5 h-2.5 rounded-full bg-[var(--purple-accent)]"></div>
+                    <span class="text-[9px] font-bold text-zinc-500 uppercase">Publish</span>
+                </div>
+                <div class="flex items-center space-x-2">
+                    <div class="w-2.5 h-2.5 rounded-full bg-[var(--blue-accent)]"></div>
+                    <span class="text-[9px] font-bold text-zinc-500 uppercase">Ack</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-8 gap-6" id="processing-rates-grid">
+
+            <!-- Publish rate gauges (purple) -->
+            <div class="flex flex-col items-center space-y-3">
+                <div class="relative w-16 h-16">
+                    <svg class="w-full h-full -rotate-90">
+                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                        <circle id="rate-circle-masters-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                        <span id="rate-text-masters-publish" class="text-zinc-600">0</span>
+                    </div>
+                </div>
+                <span class="text-[9px] text-zinc-500 font-bold uppercase">Masters ↑</span>
+            </div>
+
+            <div class="flex flex-col items-center space-y-3">
+                <div class="relative w-16 h-16">
+                    <svg class="w-full h-full -rotate-90">
+                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                        <circle id="rate-circle-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                        <span id="rate-text-releases-publish" class="text-zinc-600">0</span>
+                    </div>
+                </div>
+                <span class="text-[9px] text-zinc-500 font-bold uppercase">Releases ↑</span>
+            </div>
+
+            <div class="flex flex-col items-center space-y-3">
+                <div class="relative w-16 h-16">
+                    <svg class="w-full h-full -rotate-90">
+                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                        <circle id="rate-circle-artists-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                        <span id="rate-text-artists-publish" class="text-zinc-600">0</span>
+                    </div>
+                </div>
+                <span class="text-[9px] text-zinc-500 font-bold uppercase">Artists ↑</span>
+            </div>
+
+            <div class="flex flex-col items-center space-y-3">
+                <div class="relative w-16 h-16">
+                    <svg class="w-full h-full -rotate-90">
+                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                        <circle id="rate-circle-labels-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                        <span id="rate-text-labels-publish" class="text-zinc-600">0</span>
+                    </div>
+                </div>
+                <span class="text-[9px] text-zinc-500 font-bold uppercase">Labels ↑</span>
+            </div>
+
+            <!-- Ack rate gauges (blue) -->
+            <div class="flex flex-col items-center space-y-3">
+                <div class="relative w-16 h-16">
+                    <svg class="w-full h-full -rotate-90">
+                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                        <circle id="rate-circle-masters-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                        <span id="rate-text-masters-ack" class="text-zinc-600">0</span>
+                    </div>
+                </div>
+                <span class="text-[9px] text-zinc-500 font-bold uppercase">Masters ↓</span>
+            </div>
+
+            <div class="flex flex-col items-center space-y-3">
+                <div class="relative w-16 h-16">
+                    <svg class="w-full h-full -rotate-90">
+                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                        <circle id="rate-circle-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                        <span id="rate-text-releases-ack" class="text-zinc-600">0</span>
+                    </div>
+                </div>
+                <span class="text-[9px] text-zinc-500 font-bold uppercase">Releases ↓</span>
+            </div>
+
+            <div class="flex flex-col items-center space-y-3">
+                <div class="relative w-16 h-16">
+                    <svg class="w-full h-full -rotate-90">
+                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                        <circle id="rate-circle-artists-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                        <span id="rate-text-artists-ack" class="text-zinc-600">0</span>
+                    </div>
+                </div>
+                <span class="text-[9px] text-zinc-500 font-bold uppercase">Artists ↓</span>
+            </div>
+
+            <div class="flex flex-col items-center space-y-3">
+                <div class="relative w-16 h-16">
+                    <svg class="w-full h-full -rotate-90">
+                        <circle cx="32" cy="32" fill="transparent" r="28" stroke="#2D2D2D" stroke-width="4"></circle>
+                        <circle id="rate-circle-labels-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                    </svg>
+                    <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                        <span id="rate-text-labels-ack" class="text-zinc-600">0</span>
+                    </div>
+                </div>
+                <span class="text-[9px] text-zinc-500 font-bold uppercase">Labels ↓</span>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- ================================================================
+         BOTTOM ROW: DATABASE CARDS  +  SYSTEM EVENT LOG
+         ================================================================ -->
+    <div class="grid grid-cols-2 gap-6 items-stretch">
+
+        <!-- Database cards stacked vertically -->
+        <div class="grid grid-rows-2 gap-6">
+
+            <!-- Neo4j -->
+            <div id="db-neo4j" class="dashboard-card p-6 flex flex-col justify-between">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span class="material-symbols-outlined text-orange-400">hub</span>
+                        <span class="text-sm font-bold database-name">Neo4j</span>
+                    </div>
+                    <span id="neo4j-status-badge" class="text-[10px] text-zinc-500 font-bold uppercase">Unknown</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mt-6">
+                    <div class="bg-zinc-900/50 p-4 rounded-lg border border-[#2D2D2D]">
+                        <p class="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Total Nodes</p>
+                        <p id="neo4j-nodes" class="text-xl font-mono text-white mt-1">—</p>
+                    </div>
+                    <div class="bg-zinc-900/50 p-4 rounded-lg border border-[#2D2D2D]">
+                        <p class="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Relationships</p>
+                        <p id="neo4j-relationships" class="text-xl font-mono text-white mt-1">—</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PostgreSQL -->
+            <div id="db-postgresql" class="dashboard-card p-6 flex flex-col justify-between">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center space-x-3">
+                        <span class="material-symbols-outlined text-blue-400">database</span>
+                        <span class="text-sm font-bold database-name">PostgreSQL</span>
+                    </div>
+                    <span id="postgresql-status-badge" class="text-[10px] text-zinc-500 font-bold uppercase">Unknown</span>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mt-6">
+                    <div class="bg-zinc-900/50 p-4 rounded-lg border border-[#2D2D2D]">
+                        <p class="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">Connections</p>
+                        <p id="postgresql-connections" class="text-xl font-mono text-white mt-1">—</p>
+                    </div>
+                    <div class="bg-zinc-900/50 p-4 rounded-lg border border-[#2D2D2D]">
+                        <p class="text-[9px] text-zinc-500 uppercase font-bold tracking-wider">DB Size</p>
+                        <p id="postgresql-size" class="text-xl font-mono text-white mt-1">—</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- System Event Log -->
+        <div class="dashboard-card flex flex-col overflow-hidden">
+            <div class="px-6 py-4 border-b border-[#2D2D2D] flex items-center justify-between">
+                <h2 class="text-sm font-bold flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm text-zinc-400">list_alt</span> System Event Log
+                </h2>
+                <!-- WebSocket connection indicator -->
+                <div class="connection-status flex items-center space-x-2">
+                    <span class="status-indicator w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                    <span class="status-text text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Connecting</span>
+                </div>
+            </div>
+            <div id="activityLog" class="flex-1 overflow-y-auto p-6 space-y-4 mono text-[11px] leading-relaxed" style="max-height:340px">
+                <div class="flex items-start space-x-4 log-entry">
+                    <span class="text-zinc-600 shrink-0">—</span>
+                    <span class="text-zinc-500 font-bold shrink-0">[INFO]</span>
+                    <span class="text-zinc-400">Waiting for data...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="text-center py-4 text-[10px] text-zinc-600 font-mono">
+        Last updated: <span id="lastUpdated">—</span>
+    </footer>
+
+</div>
+<script src="dashboard.js"></script>
 </body>
 </html>

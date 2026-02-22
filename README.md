@@ -32,7 +32,7 @@ Discogsography transforms monthly Discogs data dumps (50GB+ compressed XML) into
 
 - **🔗 Neo4j Graph Database**: Navigate complex music industry relationships
 - **🐘 PostgreSQL Database**: High-performance queries and full-text search
-- **🤖 AI Discovery Engine**: Intelligent recommendations and analytics
+- **🔍 Interactive Explorer**: Graph visualisation, trends, and path discovery
 - **📊 Real-time Dashboard**: Monitor system health and processing metrics
 
 Perfect for music researchers, data scientists, developers, and music enthusiasts who want to explore the world's largest music database.
@@ -109,7 +109,6 @@ graph TD
 - **🐋 Container Security**: Non-root users, read-only filesystems, dropped capabilities
 - **📝 Type Safety**: Full type hints with strict mypy validation and Bandit security scanning
 - **✅ Comprehensive Testing**: Unit, integration, and E2E tests with Playwright
-- **🧠 ML-Powered Discovery**: Semantic search, graph algorithms (PageRank, community detection)
 
 ## 🚀 Quick Start
 

@@ -15,6 +15,35 @@ development experience enhancements.
 
 ## 🆕 Latest Improvements (February 2026)
 
+### 🎨 Dashboard UI Redesign (February 2026)
+
+**Overview**: Complete frontend redesign based on a new Stitch-generated dark theme.
+
+#### Changes
+
+- **Tailwind CSS**: Replaced hand-written CSS with Tailwind CDN (`?plugins=forms,container-queries`), Inter + JetBrains
+  Mono fonts, and Material Symbols Outlined icons
+- **Logo placeholder**: `<div id="app-logo">` with prominent comment block for easy brand swapping
+- **Service cards**: Per-service sections (`#service-extractor`, `#service-graphinator`, `#service-tableinator`) with
+  per-queue-type rows showing state/counts
+- **Queue Size Metrics**: CSS height bars replace the previous Chart.js canvas — no CDN JS dependency
+- **Processing Rates**: SVG circular gauges with `stroke-dashoffset` animation for publish and ack rates per queue type
+- **Database cards**: `#db-neo4j` and `#db-postgresql` with status badges and live stats
+- **Event log**: `#activityLog` with `.connection-status` / `.status-indicator` / `.status-text` kept for Playwright
+  test compatibility
+- **E2E tests updated**: `test_dashboard_ui.py` selectors updated to match the new HTML structure
+
+#### Static Files
+
+| File | Change |
+| ---- | ------ |
+| `dashboard/static/index.html` | Complete rewrite (dark Tailwind theme) |
+| `dashboard/static/dashboard.js` | Complete rewrite (Chart.js removed, SVG gauges + CSS bars) |
+| `dashboard/static/styles.css` | Simplified to base reset + legacy selector stubs |
+| `tests/dashboard/test_dashboard_ui.py` | Updated Playwright selectors |
+
+
+
 ### 🧹 Code Simplification & Test Coverage (February 2026)
 
 **Overview**: Simplified service code across all five components and improved test coverage from 92% to 94%.
@@ -391,13 +420,13 @@ CONSUMER_CANCEL_DELAY=300    # Wait 5 minutes before canceling consumers (defaul
 ```bash
 # Neo4j Batch Processing
 NEO4J_BATCH_MODE=true           # Enable batch mode (default)
-NEO4J_BATCH_SIZE=100            # Records per batch (default)
-NEO4J_BATCH_FLUSH_INTERVAL=5.0  # Seconds between flushes (default)
+NEO4J_BATCH_SIZE=500            # Records per batch (default)
+NEO4J_BATCH_FLUSH_INTERVAL=2.0  # Seconds between flushes (default)
 
 # PostgreSQL Batch Processing
 POSTGRES_BATCH_MODE=true           # Enable batch mode (default)
-POSTGRES_BATCH_SIZE=100            # Records per batch (default)
-POSTGRES_BATCH_FLUSH_INTERVAL=5.0  # Seconds between flushes (default)
+POSTGRES_BATCH_SIZE=500            # Records per batch (default)
+POSTGRES_BATCH_FLUSH_INTERVAL=2.0  # Seconds between flushes (default)
 ```
 
 **Benefits:**

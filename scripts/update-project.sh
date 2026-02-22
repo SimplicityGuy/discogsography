@@ -795,7 +795,7 @@ generate_summary() {
     fi
 
     if [[ -n "$PYTHON_VERSION_CHANGE" ]]; then
-        echo "   git add pyproject.toml */pyproject.toml extractor/*/pyproject.toml"
+        echo "   git add pyproject.toml */pyproject.toml"
         echo "   git add .github/workflows/*.yml"
         echo "   git add pyrightconfig.json"
     fi

@@ -14,7 +14,7 @@ This guide covers common issues you might encounter while using Discogsography a
 
 ## 🚨 Common Issues & Solutions
 
-### ❌ Python/Extractor Download Failures
+### ❌ Extractor Download Failures
 
 **Symptoms**:
 
@@ -247,10 +247,10 @@ PGPASSWORD=discogsography psql \
 
 ```bash
 # Check what's using the ports
-netstat -an | grep -E "(5672|7474|7687|5433|6379|8003|8004|8005)"
+netstat -an | grep -E "(5672|7474|7687|5433|6379|8003|8006|8007)"
 
 # Or on macOS
-lsof -i :8005
+lsof -i :8006
 lsof -i :7474
 
 # List all Docker containers
@@ -263,7 +263,7 @@ docker ps -a
 
    ```bash
    # Find process using port
-   lsof -i :8005
+   lsof -i :8006
 
    # Kill the process
    kill -9 <PID>
@@ -366,10 +366,6 @@ sudo chown -R 1000:1000 /discogs-data
 sudo chown -R 1000:1000 logs/
 chmod -R 755 /discogs-data
 chmod -R 755 logs/
-
-# For ML model caches (Discovery)
-sudo chown -R 1000:1000 /models
-chmod -R 755 /models
 ```
 
 ## 🐛 Debugging Guide
@@ -380,12 +376,11 @@ All services expose health endpoints:
 
 ```bash
 # Check each service
-curl http://localhost:8000/health  # Extractor (Python or Rust)
+curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
-curl http://localhost:8004/health  # Discovery (health endpoint)
-curl http://localhost:8005/health  # Discovery (main port)
+curl http://localhost:8007/health  # Explore
 ```
 
 Expected response:
@@ -424,11 +419,10 @@ LOG_LEVEL=DEBUG uv run python explore/explore.py
 
 - 🔍 Database query logging with parameters
 - 📊 Detailed operation traces
-- 🧠 ML model operations
 - 🔄 Cache hits/misses
 - 📡 Internal state changes
 
-See [Logging Configuration](logging-configuration.md) for complete details.
+See [Logging Guide](logging-guide.md) for complete details.
 
 ### Step 3: Monitor Real-time Logs
 
@@ -529,7 +523,7 @@ SELECT 'masters', COUNT(*) FROM masters;
 ### Neo4j Schema Warnings
 
 **Symptoms**:
-You see many warning messages in the Discovery service logs like:
+You see warning messages in the Explore or Graphinator service logs like:
 
 ```json
 {"event":"Received notification from DBMS server: {severity: WARNING} {code: Neo.ClientNotification.Statement.UnknownRelationshipTypeWarning} ...","level":"warning",...}
@@ -545,8 +539,8 @@ Warnings about:
 These warnings appear when:
 
 1. The Neo4j database is **empty** (no data has been loaded yet)
-1. The database is **being populated** by the graphinator service
-1. The Discovery service tries to query data that doesn't exist yet
+1. The database is **being populated** by the Graphinator service
+1. A service queries data that does not exist yet
 
 **This is normal and not an error!** The Cypher queries use `OPTIONAL MATCH` patterns that gracefully handle missing data.
 
@@ -565,72 +559,14 @@ logging.getLogger("neo4j").setLevel(logging.ERROR)
 Run the extractor and graphinator to load data:
 
 ```bash
-# Start extractor (Python or Rust)
 docker-compose up -d extractor
 docker-compose logs -f extractor
 
-# Start graphinator
 docker-compose up -d graphinator
 docker-compose logs -f graphinator
 
 # Verify data in Neo4j
 curl http://localhost:7474
-```
-
-### Discovery Service Issues
-
-#### Missing asyncpg Dependency
-
-**Symptom**:
-
-```
-ModuleNotFoundError: No module named 'asyncpg'
-```
-
-**Solution**:
-
-```bash
-docker-compose build explore
-docker-compose up -d explore
-```
-
-#### Cache Directory Permission Errors
-
-**Symptom**:
-
-```
-OSError: [Errno 30] Read-only file system: 'data'
-```
-
-**Solution**:
-Ensure cache directories are writable by UID 1000:
-
-```bash
-# Verify cache directories
-docker exec -it discogsography-explore ls -la /tmp/
-
-# Fix permissions if needed
-sudo chown -R 1000:1000 /models
-chmod -R 755 /models
-```
-
-#### Deprecated TRANSFORMERS_CACHE Warning
-
-**Symptom**:
-
-```
-FutureWarning: Using `TRANSFORMERS_CACHE` is deprecated. Use `HF_HOME` instead.
-```
-
-**Solution**:
-
-```bash
-# Update to latest code
-git pull
-
-# Rebuild explore service
-docker-compose build explore
-docker-compose up -d explore
 ```
 
 ### Dashboard Issues
@@ -675,7 +611,7 @@ docker-compose restart dashboard
 # Refresh browser (Cmd+Shift+R / Ctrl+Shift+F5)
 ```
 
-### Extractor Issues (Python/Rust)
+### Extractor Issues
 
 #### Stuck on "Checking for updates"
 
@@ -715,12 +651,6 @@ docker-compose logs -f extractor
    speedtest-cli
    ```
 
-1. **Switch to Extractor** (20-400x faster)
-
-   ```bash
-   ./scripts/switch-extractor.sh rust
-   ```
-
 1. **Resume interrupted download**
 
    - Extractor automatically resumes from last position
@@ -734,7 +664,7 @@ docker-compose logs -f extractor
 
 - Queries take too long
 - Dashboard slow to load
-- Discovery service timeouts
+- Explore service timeouts
 
 **Diagnostic Steps**:
 
