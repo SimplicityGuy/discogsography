@@ -305,6 +305,144 @@ class TestSyncCollection:
 
         assert total == 0
 
+    @pytest.mark.asyncio
+    async def test_rate_limited_then_succeeds(self) -> None:
+        """A 429 response causes a 60s sleep and retry (covers lines 135-137)."""
+        cur = AsyncMock()
+        pool = _make_mock_pg_pool(cur)
+        driver = _make_mock_neo4j()
+
+        rate_limited_resp = MagicMock()
+        rate_limited_resp.status_code = 429
+
+        empty_resp = MagicMock()
+        empty_resp.status_code = 200
+        empty_resp.json = MagicMock(return_value={"releases": [], "pagination": {"pages": 1}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=[rate_limited_resp, empty_resp])
+
+        sleep_mock = AsyncMock()
+        with (
+            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("curator.syncer.asyncio.sleep", new=sleep_mock),
+        ):
+            total = await sync_collection(
+                user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
+                discogs_username="testuser",
+                consumer_key="ckey",
+                consumer_secret="csecret",  # noqa: S106
+                access_token="acctok",  # noqa: S106
+                token_secret="tsecret",  # noqa: S106
+                user_agent="TestAgent/1.0",
+                pg_pool=pool,
+                neo4j_driver=driver,
+            )
+
+        assert total == 0
+        # The 429 handler sleeps for 60 seconds then retries
+        sleep_mock.assert_awaited_once_with(60)
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_collection_skips_item_without_release_id(self) -> None:
+        """Items missing basic_information.id are skipped (covers line 159)."""
+        cur = AsyncMock()
+        cur.execute = AsyncMock()
+        pool = _make_mock_pg_pool(cur)
+        driver = _make_mock_neo4j()
+
+        releases = [
+            {
+                "basic_information": {},  # No 'id' field
+                "instance_id": 111,
+                "folder_id": 1,
+                "rating": 0,
+                "date_added": "2023-01-01T00:00:00-08:00",
+            }
+        ]
+        resp = _make_collection_response(releases, total_pages=1)
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=resp)
+
+        with (
+            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("curator.syncer.asyncio.sleep", new=AsyncMock()),
+        ):
+            total = await sync_collection(
+                user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
+                discogs_username="testuser",
+                consumer_key="ckey",
+                consumer_secret="csecret",  # noqa: S106
+                access_token="acctok",  # noqa: S106
+                token_secret="tsecret",  # noqa: S106
+                user_agent="TestAgent/1.0",
+                pg_pool=pool,
+                neo4j_driver=driver,
+            )
+
+        assert total == 0
+        cur.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_multi_page_collection(self) -> None:
+        """Multi-page collection fetches all pages (covers lines 250-251)."""
+        cur = AsyncMock()
+        cur.execute = AsyncMock()
+        pool = _make_mock_pg_pool(cur)
+        driver = _make_mock_neo4j()
+
+        def _make_release(release_id: int, instance_id: int) -> dict[str, Any]:
+            return {
+                "basic_information": {
+                    "id": release_id,
+                    "title": f"Album {release_id}",
+                    "year": 2020,
+                    "artists": [{"name": "Artist"}],
+                    "labels": [{"name": "Label"}],
+                    "formats": [{"name": "Vinyl"}],
+                },
+                "instance_id": instance_id,
+                "folder_id": 1,
+                "rating": 0,
+                "date_added": "2023-01-01T00:00:00-08:00",
+            }
+
+        resp_page1 = _make_collection_response([_make_release(111, 1)], total_pages=2)
+        resp_page2 = _make_collection_response([_make_release(222, 2)], total_pages=2)
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=[resp_page1, resp_page2])
+
+        sleep_mock = AsyncMock()
+        with (
+            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("curator.syncer.asyncio.sleep", new=sleep_mock),
+        ):
+            total = await sync_collection(
+                user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
+                discogs_username="testuser",
+                consumer_key="ckey",
+                consumer_secret="csecret",  # noqa: S106
+                access_token="acctok",  # noqa: S106
+                token_secret="tsecret",  # noqa: S106
+                user_agent="TestAgent/1.0",
+                pg_pool=pool,
+                neo4j_driver=driver,
+            )
+
+        assert total == 2
+        assert mock_client.get.call_count == 2
+        # asyncio.sleep called between pages
+        sleep_mock.assert_awaited()
+
 
 class TestSyncWantlist:
     """Tests for sync_wantlist."""
@@ -382,6 +520,171 @@ class TestSyncWantlist:
             )
 
         assert total == 1
+
+    @pytest.mark.asyncio
+    async def test_wantlist_rate_limited_then_succeeds(self) -> None:
+        """A 429 response causes a 60s sleep and retry (covers lines 298-300)."""
+        cur = AsyncMock()
+        pool = _make_mock_pg_pool(cur)
+        driver = _make_mock_neo4j()
+
+        rate_limited_resp = MagicMock()
+        rate_limited_resp.status_code = 429
+
+        empty_resp = MagicMock()
+        empty_resp.status_code = 200
+        empty_resp.json = MagicMock(return_value={"wants": [], "pagination": {"pages": 1}})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=[rate_limited_resp, empty_resp])
+
+        sleep_mock = AsyncMock()
+        with (
+            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("curator.syncer.asyncio.sleep", new=sleep_mock),
+        ):
+            total = await sync_wantlist(
+                user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
+                discogs_username="testuser",
+                consumer_key="ckey",
+                consumer_secret="csecret",  # noqa: S106
+                access_token="acctok",  # noqa: S106
+                token_secret="tsecret",  # noqa: S106
+                user_agent="TestAgent/1.0",
+                pg_pool=pool,
+                neo4j_driver=driver,
+            )
+
+        assert total == 0
+        sleep_mock.assert_awaited_once_with(60)
+        assert mock_client.get.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_wantlist_api_error_breaks_loop(self) -> None:
+        """A non-200 non-429 response breaks the loop (covers lines 303-308)."""
+        cur = AsyncMock()
+        pool = _make_mock_pg_pool(cur)
+        driver = _make_mock_neo4j()
+
+        error_resp = MagicMock()
+        error_resp.status_code = 503
+        error_resp.json = MagicMock(return_value={})
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=error_resp)
+
+        with patch("curator.syncer.httpx.AsyncClient", return_value=mock_client):
+            total = await sync_wantlist(
+                user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
+                discogs_username="testuser",
+                consumer_key="ckey",
+                consumer_secret="csecret",  # noqa: S106
+                access_token="acctok",  # noqa: S106
+                token_secret="tsecret",  # noqa: S106
+                user_agent="TestAgent/1.0",
+                pg_pool=pool,
+                neo4j_driver=driver,
+            )
+
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_wantlist_skips_item_without_id(self) -> None:
+        """Items missing top-level id are skipped (covers line 323)."""
+        cur = AsyncMock()
+        cur.execute = AsyncMock()
+        pool = _make_mock_pg_pool(cur)
+        driver = _make_mock_neo4j()
+
+        wants = [
+            {
+                # No top-level 'id' field
+                "basic_information": {"title": "No ID Album", "year": 2020, "artists": [], "formats": []},
+                "rating": 0,
+                "notes": "",
+                "date_added": "2023-01-01T00:00:00-08:00",
+            }
+        ]
+        resp = _make_wantlist_response(wants, total_pages=1)
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=resp)
+
+        with (
+            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("curator.syncer.asyncio.sleep", new=AsyncMock()),
+        ):
+            total = await sync_wantlist(
+                user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
+                discogs_username="testuser",
+                consumer_key="ckey",
+                consumer_secret="csecret",  # noqa: S106
+                access_token="acctok",  # noqa: S106
+                token_secret="tsecret",  # noqa: S106
+                user_agent="TestAgent/1.0",
+                pg_pool=pool,
+                neo4j_driver=driver,
+            )
+
+        assert total == 0
+        cur.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_multi_page_wantlist(self) -> None:
+        """Multi-page wantlist fetches all pages (covers lines 404-405)."""
+        cur = AsyncMock()
+        cur.execute = AsyncMock()
+        pool = _make_mock_pg_pool(cur)
+        driver = _make_mock_neo4j()
+
+        def _make_want(release_id: int) -> dict[str, Any]:
+            return {
+                "id": release_id,
+                "basic_information": {
+                    "title": f"Want {release_id}",
+                    "year": 2021,
+                    "artists": [{"name": "Artist"}],
+                    "formats": [{"name": "Vinyl"}],
+                },
+                "rating": 0,
+                "notes": "",
+                "date_added": "2023-01-01T00:00:00-08:00",
+            }
+
+        resp_page1 = _make_wantlist_response([_make_want(111)], total_pages=2)
+        resp_page2 = _make_wantlist_response([_make_want(222)], total_pages=2)
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(side_effect=[resp_page1, resp_page2])
+
+        sleep_mock = AsyncMock()
+        with (
+            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("curator.syncer.asyncio.sleep", new=sleep_mock),
+        ):
+            total = await sync_wantlist(
+                user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
+                discogs_username="testuser",
+                consumer_key="ckey",
+                consumer_secret="csecret",  # noqa: S106
+                access_token="acctok",  # noqa: S106
+                token_secret="tsecret",  # noqa: S106
+                user_agent="TestAgent/1.0",
+                pg_pool=pool,
+                neo4j_driver=driver,
+            )
+
+        assert total == 2
+        assert mock_client.get.call_count == 2
+        sleep_mock.assert_awaited()
 
 
 class TestRunFullSync:
