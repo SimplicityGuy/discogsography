@@ -61,10 +61,11 @@ Tasks are organized into logical groups for easier navigation:
 
 | Task          | Description                                                | Port |
 | ------------- | ---------------------------------------------------------- | ---- |
+| `api`         | Run the API service (user accounts & JWT authentication)   | 8004 |
+| `curator`     | Run the curator service (collection & wantlist sync)       | 8010 |
 | `dashboard`   | Run the dashboard service (monitoring UI)                  | 8003 |
-| `extractor`   | Run the Python extractor service (backwards compatibility) | -    |
+| `explore`     | Run the explore service (graph exploration and trends)     | 8006 |
 | `graphinator` | Run the graphinator service (Neo4j graph builder)          | -    |
-| `schema-init` | Run the one-shot schema initialiser (exits after success)  | -    |
 | `tableinator` | Run the tableinator service (PostgreSQL table builder)     | -    |
 
 ### 🦀 Rust Group

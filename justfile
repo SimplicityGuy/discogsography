@@ -285,6 +285,16 @@ test-e2e-explore-mobile browser device:
 # Python Services
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Run the API service (user accounts & JWT authentication)
+[group('services')]
+api:
+    uv run python api/api.py
+
+# Run the curator service (Discogs collection & wantlist sync)
+[group('services')]
+curator:
+    uv run python curator/curator.py
+
 # Run the dashboard service (monitoring UI)
 [group('services')]
 dashboard:
