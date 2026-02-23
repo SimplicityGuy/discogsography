@@ -63,8 +63,8 @@ The same `JWT_SECRET_KEY` must be set in both the API and Curator services. JWT 
 The API implements Discogs OAuth 1.0a OOB (out-of-band) flow:
 
 1. **Start**: `GET /api/oauth/authorize/discogs` — requests a token from Discogs and returns an authorization URL and state token. State is stored in Redis with a TTL.
-2. **Authorize**: User visits the Discogs URL and approves access, receiving a PIN verifier code.
-3. **Complete**: `POST /api/oauth/verify/discogs` — exchanges the verifier for a permanent access token, which is stored in the `oauth_tokens` table.
+1. **Authorize**: User visits the Discogs URL and approves access, receiving a PIN verifier code.
+1. **Complete**: `POST /api/oauth/verify/discogs` — exchanges the verifier for a permanent access token, which is stored in the `oauth_tokens` table.
 
 After the flow, the Curator service can read these tokens to sync the user's Discogs collection and wantlist.
 
@@ -72,26 +72,26 @@ After the flow, the Curator service can read these tokens to sync the user's Dis
 
 ### Authentication
 
-| Method | Path                   | Auth Required | Description                   |
-| ------ | ---------------------- | ------------- | ----------------------------- |
-| POST   | `/api/auth/register`   | No            | Register a new user account   |
-| POST   | `/api/auth/login`      | No            | Login and receive JWT token   |
-| GET    | `/api/auth/me`         | Yes           | Get current user details      |
+| Method | Path                 | Auth Required | Description                 |
+| ------ | -------------------- | ------------- | --------------------------- |
+| POST   | `/api/auth/register` | No            | Register a new user account |
+| POST   | `/api/auth/login`    | No            | Login and receive JWT token |
+| GET    | `/api/auth/me`       | Yes           | Get current user details    |
 
 ### Discogs OAuth
 
-| Method | Path                           | Auth Required | Description                             |
-| ------ | ------------------------------ | ------------- | --------------------------------------- |
-| GET    | `/api/oauth/authorize/discogs` | Yes           | Start Discogs OAuth flow                |
-| POST   | `/api/oauth/verify/discogs`    | Yes           | Complete OAuth with verifier code       |
-| GET    | `/api/oauth/status/discogs`    | Yes           | Check if Discogs account is connected   |
-| DELETE | `/api/oauth/revoke/discogs`    | Yes           | Disconnect Discogs account              |
+| Method | Path                           | Auth Required | Description                           |
+| ------ | ------------------------------ | ------------- | ------------------------------------- |
+| GET    | `/api/oauth/authorize/discogs` | Yes           | Start Discogs OAuth flow              |
+| POST   | `/api/oauth/verify/discogs`    | Yes           | Complete OAuth with verifier code     |
+| GET    | `/api/oauth/status/discogs`    | Yes           | Check if Discogs account is connected |
+| DELETE | `/api/oauth/revoke/discogs`    | Yes           | Disconnect Discogs account            |
 
 ### Admin
 
-| Method | Path                       | Auth Required | Description                             |
-| ------ | -------------------------- | ------------- | --------------------------------------- |
-| PUT    | `/api/admin/config/{key}`  | Yes           | Set admin config (Discogs app keys)     |
+| Method | Path                      | Auth Required | Description                         |
+| ------ | ------------------------- | ------------- | ----------------------------------- |
+| PUT    | `/api/admin/config/{key}` | Yes           | Set admin config (Discogs app keys) |
 
 **Admin Config Keys**: `discogs_consumer_key`, `discogs_consumer_secret`
 

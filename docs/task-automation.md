@@ -48,27 +48,27 @@ Tasks are organized into logical groups for easier navigation:
 
 ### 🧪 Test Group
 
-| Task              | Description                                    |
-| ----------------- | ---------------------------------------------- |
-| `test`            | Run unit and integration tests (excluding E2E) |
-| `test-cov`        | Run tests with coverage report                 |
-| `test-e2e`        | Run end-to-end browser tests                   |
-| `test-all`        | Run all tests including E2E                    |
-| `test-api`        | Run API service tests with coverage            |
-| `test-curator`    | Run curator service tests with coverage        |
+| Task           | Description                                    |
+| -------------- | ---------------------------------------------- |
+| `test`         | Run unit and integration tests (excluding E2E) |
+| `test-cov`     | Run tests with coverage report                 |
+| `test-e2e`     | Run end-to-end browser tests                   |
+| `test-all`     | Run all tests including E2E                    |
+| `test-api`     | Run API service tests with coverage            |
+| `test-curator` | Run curator service tests with coverage        |
 
 ### 🚀 Services Group
 
-| Task          | Description                                                | Port |
-| ------------- | ---------------------------------------------------------- | ---- |
-| `api`         | Run the API service (user accounts & JWT authentication)   | 8004 |
-| `curator`     | Run the curator service (collection & wantlist sync)       | 8010 |
-| `dashboard`   | Run the dashboard service (monitoring UI)                  | 8003 |
-| `explore`     | Run the explore service (graph exploration and trends)     | 8006 |
-| `extractor`   | Run the Rust extractor (Discogs data ingestion)            | -    |
-| `graphinator` | Run the graphinator service (Neo4j graph builder)          | -    |
-| `schema-init` | Run the schema initializer (one-time Neo4j + PostgreSQL)   | -    |
-| `tableinator` | Run the tableinator service (PostgreSQL table builder)     | -    |
+| Task          | Description                                              | Port |
+| ------------- | -------------------------------------------------------- | ---- |
+| `api`         | Run the API service (user accounts & JWT authentication) | 8004 |
+| `curator`     | Run the curator service (collection & wantlist sync)     | 8010 |
+| `dashboard`   | Run the dashboard service (monitoring UI)                | 8003 |
+| `explore`     | Run the explore service (graph exploration and trends)   | 8006 |
+| `extractor`   | Run the Rust extractor (Discogs data ingestion)          | -    |
+| `graphinator` | Run the graphinator service (Neo4j graph builder)        | -    |
+| `schema-init` | Run the schema initializer (one-time Neo4j + PostgreSQL) | -    |
+| `tableinator` | Run the tableinator service (PostgreSQL table builder)   | -    |
 
 ### 🦀 Rust Group
 

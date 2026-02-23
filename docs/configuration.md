@@ -217,9 +217,9 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ### Redis Configuration
 
-| Variable    | Description          | Default                    | Required              |
-| ----------- | -------------------- | -------------------------- | --------------------- |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` | Yes (Dashboard, API)  |
+| Variable    | Description          | Default                    | Required             |
+| ----------- | -------------------- | -------------------------- | -------------------- |
+| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` | Yes (Dashboard, API) |
 
 **Used By**: Dashboard, API
 
@@ -256,11 +256,11 @@ REDIS_URL="redis+sentinel://sentinel1:26379,sentinel2:26379/myservice"
 
 ## JWT Configuration
 
-| Variable              | Description                         | Default | Required           |
-| --------------------- | ----------------------------------- | ------- | ------------------ |
-| `JWT_SECRET_KEY`      | HMAC-SHA256 signing secret          | (none)  | Yes (API, Curator) |
-| `JWT_EXPIRE_MINUTES`  | Token lifetime in minutes           | `1440`  | No                 |
-| `DISCOGS_USER_AGENT`  | User-Agent for Discogs API requests | (none)  | Yes (API, Curator) |
+| Variable             | Description                         | Default | Required           |
+| -------------------- | ----------------------------------- | ------- | ------------------ |
+| `JWT_SECRET_KEY`     | HMAC-SHA256 signing secret          | (none)  | Yes (API, Curator) |
+| `JWT_EXPIRE_MINUTES` | Token lifetime in minutes           | `1440`  | No                 |
+| `DISCOGS_USER_AGENT` | User-Agent for Discogs API requests | (none)  | Yes (API, Curator) |
 
 **Used By**: API, Curator
 
@@ -505,6 +505,7 @@ LOG_LEVEL=INFO
 Health check: http://localhost:8004/health (service), http://localhost:8005/health (health check port)
 
 **Notes**: After startup, set Discogs app credentials via the admin endpoint:
+
 ```bash
 curl -X PUT http://localhost:8004/api/admin/config/discogs_consumer_key \
   -H "Authorization: Bearer <token>" \

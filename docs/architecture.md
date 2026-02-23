@@ -16,16 +16,16 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### ⚙️ Service Components
 
-| Service                                                  | Purpose                                | Key Technologies                                  | Port(s)        |
-| -------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- | -------------- |
-| **[🔐](emoji-guide.md#service-identifiers) API**         | User accounts and JWT authentication   | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 | 8004, 8005     |
-| **[🗂️](emoji-guide.md#service-identifiers) Curator**    | Discogs collection & wantlist sync     | `FastAPI`, `psycopg3`, `neo4j-driver`             | 8010, 8011     |
-| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     | 8000 (health)  |
-| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer         | `neo4j-driver`, `psycopg3`                        | —              |
-| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms                  | 8001 (health)  |
-| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search               | 8002 (health)  |
-| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson`               | 8006, 8007     |
-| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI                 | 8003           |
+| Service                                                  | Purpose                                | Key Technologies                                  | Port(s)       |
+| -------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- | ------------- |
+| **[🔐](emoji-guide.md#service-identifiers) API**         | User accounts and JWT authentication   | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 | 8004, 8005    |
+| **[🗂️](emoji-guide.md#service-identifiers) Curator**     | Discogs collection & wantlist sync     | `FastAPI`, `psycopg3`, `neo4j-driver`             | 8010, 8011    |
+| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     | 8000 (health) |
+| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer         | `neo4j-driver`, `psycopg3`                        | —             |
+| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms                  | 8001 (health) |
+| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search               | 8002 (health) |
+| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson`               | 8006, 8007    |
+| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI                 | 8003          |
 
 ### Infrastructure Components
 

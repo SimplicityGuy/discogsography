@@ -61,10 +61,10 @@ When a sync is triggered, the Curator reads the user's stored Discogs OAuth acce
 
 ### Sync Operations
 
-| Method | Path              | Auth Required | Description                                         |
-| ------ | ----------------- | ------------- | --------------------------------------------------- |
-| POST   | `/api/sync`       | Yes           | Trigger a full collection + wantlist sync           |
-| GET    | `/api/sync/status`| Yes           | Get sync history for the current user (last 10)     |
+| Method | Path               | Auth Required | Description                                     |
+| ------ | ------------------ | ------------- | ----------------------------------------------- |
+| POST   | `/api/sync`        | Yes           | Trigger a full collection + wantlist sync       |
+| GET    | `/api/sync/status` | Yes           | Get sync history for the current user (last 10) |
 
 #### Trigger Sync Response
 
@@ -123,12 +123,12 @@ Health response includes `active_syncs` count:
 ## Sync Flow
 
 1. User calls `POST /api/sync` with a valid JWT token
-2. Curator looks up the user's Discogs OAuth token from PostgreSQL
-3. A `sync_history` record is created with `status = "running"`
-4. A background async task (`run_full_sync`) is launched
-5. The task fetches the user's collection and wantlist from the Discogs API
-6. Data is written to the Neo4j graph database
-7. The `sync_history` record is updated with the final status and item count
+1. Curator looks up the user's Discogs OAuth token from PostgreSQL
+1. A `sync_history` record is created with `status = "running"`
+1. A background async task (`run_full_sync`) is launched
+1. The task fetches the user's collection and wantlist from the Discogs API
+1. Data is written to the Neo4j graph database
+1. The `sync_history` record is updated with the final status and item count
 
 Only one sync can run per user at a time — a second trigger returns the existing `sync_id`.
 

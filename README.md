@@ -44,7 +44,7 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 | Service                                                       | Purpose                                | Key Technologies                                  |
 | ------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- |
 | **[🔐](docs/emoji-guide.md#service-identifiers) API**         | User accounts and JWT authentication   | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 |
-| **[🗂️](docs/emoji-guide.md#service-identifiers) Curator**    | Discogs collection & wantlist sync     | `FastAPI`, `psycopg3`, `neo4j-driver`             |
+| **[🗂️](docs/emoji-guide.md#service-identifiers) Curator**     | Discogs collection & wantlist sync     | `FastAPI`, `psycopg3`, `neo4j-driver`             |
 | **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI                 |
 | **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j            |
 | **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     |
