@@ -26,6 +26,13 @@ init:
     uv run pre-commit install
     @echo '✅ Pre-commit hooks installed!'
 
+# Configure Discogs app credentials (run against the API container)
+[group('setup')]
+configure-discogs consumer-key consumer-secret container="discogsography-api-1":
+    docker exec {{ container }} discogs-setup \
+        --consumer-key {{ consumer-key }} \
+        --consumer-secret {{ consumer-secret }}
+
 # Update pre-commit hooks to latest versions
 [group('setup')]
 update-hooks:

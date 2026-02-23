@@ -400,7 +400,7 @@ async def authorize_discogs(
     if not consumer_key or not consumer_secret:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Discogs app credentials not configured. Ask an admin to set them via /api/admin/config.",
+            detail="Discogs app credentials not configured. Ask an admin to run discogs-setup on the API container.",
         )
 
     try:
@@ -589,52 +589,6 @@ async def revoke_discogs(
 
     logger.info("✅ Discogs account disconnected", user_id=user_id)
     return ORJSONResponse(content={"revoked": True})
-
-
-@app.put("/api/admin/config/{key}")
-async def set_app_config(
-    key: str,
-    body: dict[str, str],
-    current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> ORJSONResponse:
-    """Set an admin configuration value (e.g., Discogs consumer key/secret).
-
-    Allowed keys: discogs_consumer_key, discogs_consumer_secret
-    """
-    if _pool is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service not ready",
-        )
-
-    allowed_keys = {"discogs_consumer_key", "discogs_consumer_secret"}
-    if key not in allowed_keys:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown config key. Allowed keys: {', '.join(sorted(allowed_keys))}",
-        )
-
-    value = body.get("value", "")
-    if not value:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="'value' field is required",
-        )
-
-    async with _pool.connection() as conn, conn.cursor() as cur:
-        await cur.execute(
-            """
-                INSERT INTO app_config (key, value, updated_at)
-                VALUES (%s, %s, NOW())
-                ON CONFLICT (key) DO UPDATE SET
-                    value = EXCLUDED.value,
-                    updated_at = NOW()
-                """,
-            (key, value),
-        )
-
-    logger.info("✅ App config updated", key=key, user_id=current_user.get("sub"))
-    return ORJSONResponse(content={"key": key, "updated": True})
 
 
 def main() -> None:

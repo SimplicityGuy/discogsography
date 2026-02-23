@@ -29,6 +29,7 @@ dependencies = [
 
 [project.scripts]
 api = "api.api:main"
+discogs-setup = "api.setup:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
