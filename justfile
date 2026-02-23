@@ -310,7 +310,7 @@ explore:
 graphinator:
     uv run python graphinator/graphinator.py
 
-# Run the schema-init service (one-time Neo4j and PostgreSQL schema initialisation)
+# Run the schema-init service (one-time Neo4j and PostgreSQL schema initialization)
 [group('services')]
 schema-init:
     uv run python schema-init/schema_init.py

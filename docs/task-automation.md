@@ -67,7 +67,7 @@ Tasks are organized into logical groups for easier navigation:
 | `explore`     | Run the explore service (graph exploration and trends)     | 8006 |
 | `extractor`   | Run the Rust extractor (Discogs data ingestion)            | -    |
 | `graphinator` | Run the graphinator service (Neo4j graph builder)          | -    |
-| `schema-init` | Run the schema initialiser (one-time Neo4j + PostgreSQL)   | -    |
+| `schema-init` | Run the schema initializer (one-time Neo4j + PostgreSQL)   | -    |
 | `tableinator` | Run the tableinator service (PostgreSQL table builder)     | -    |
 
 ### 🦀 Rust Group
