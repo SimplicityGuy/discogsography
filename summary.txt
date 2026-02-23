@@ -1,0 +1,5 @@
+[1;36m📝  Update Summary[0m
+[1;36m============================================================[0m
+
+📄 File Updates:
+  • extractor/Cargo.lock: Updated to latest compatible versions

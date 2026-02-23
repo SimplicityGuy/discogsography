@@ -1,0 +1,180 @@
+
+[1;36m🚀  Starting Project Update[0m
+[1;36m============================================================[0m
+
+[1;36m🔍  Verifying Project Components[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Checking Python configuration files...
+[0;34mℹ️  [INFO][0m Checking Dockerfiles...
+[0;34mℹ️  [INFO][0m Found Rust extractor (Cargo.toml)
+[0;32m✅  [SUCCESS][0m Found 14/14 expected components
+[0;32m✅  [SUCCESS][0m All expected components found!
+
+
+[1;36m🐳  Updating UV Version[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Latest UV version: 0.10.4
+[0;34mℹ️  [INFO][0m Latest setup-uv action: v7.3.0 (commit: eac588a)
+[0;32m✅  [SUCCESS][0m UV version in Dockerfiles is already up to date (0.10.4)
+[0;34mℹ️  [INFO][0m Checking GitHub workflows for setup-uv updates...
+[0;32m✅  [SUCCESS][0m GitHub workflows are already up to date
+
+[1;36m🪝  Updating Pre-commit Hooks[0m
+[1;36m============================================================[0m
+[1;33m⚠️  [WARNING][0m pre-commit not installed, skipping hook updates
+
+[1;36m📦  Updating ALL Python Dependencies[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Checking for uv updates...
+error: Self-update is only available for uv binaries installed via the standalone installation scripts.
+
+If you installed uv with pip, brew, or another package manager, update uv with `pip install --upgrade`, `brew upgrade`, or similar.
+[1;33m⚠️  [WARNING][0m Could not update uv (may already be latest)
+[0;34mℹ️  [INFO][0m Updating ALL dependency types:
+[0;34mℹ️  [INFO][0m   • Core dependencies ([project] dependencies)
+[0;34mℹ️  [INFO][0m   • Optional dependencies ([project.optional-dependencies])
+[0;34mℹ️  [INFO][0m   • Dev dependencies ([dependency-groups])
+[0;34mℹ️  [INFO][0m   • Build dependencies ([build-system])
+[0;34mℹ️  [INFO][0m Upgrading ALL dependencies to latest versions (respecting >= constraints)
+[0;34mℹ️  [INFO][0m Note: With >= constraints, this includes major upgrades. Use specific version pins to restrict.
+Resolved 125 packages in 2.10s
+Updated aiormq v6.9.2 -> v6.9.3
+[0;32m✅  [SUCCESS][0m ALL dependencies compiled successfully
+[0;34mℹ️  [INFO][0m Syncing ALL upgraded dependencies (including optional and dev)...
+Resolved 125 packages in 3ms
+   Building discogsography @ file:///home/runner/work/discogsography/discogsography
+      Built discogsography @ file:///home/runner/work/discogsography/discogsography
+Prepared 2 packages in 530ms
+Uninstalled 2 packages in 1ms
+Installed 2 packages in 1ms
+ - aiormq==6.9.2
+ + aiormq==6.9.3
+ ~ discogsography==0.1.0 (from file:///home/runner/work/discogsography/discogsography)
+[0;32m✅  [SUCCESS][0m ALL dependencies synced successfully
+[0;32m✅  [SUCCESS][0m Completed Python dependency updates
+
+[1;36m🦀  Updating Rust Dependencies[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Updating Cargo.lock to latest compatible versions (within Cargo.toml constraints)
+[0;34mℹ️  [INFO][0m   Run with --major to also update Cargo.toml version requirements
+[0;34mℹ️  [INFO][0m Updating Cargo.lock...
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/runner/work/discogsography/discogsography/extractor/Cargo.toml
+workspace: /home/runner/work/discogsography/discogsography/Cargo.toml
+    Updating crates.io index
+     Locking 0 packages to latest compatible versions
+note: pass `--verbose` to see 2 unchanged dependencies behind latest
+[0;32m✅  [SUCCESS][0m Cargo.lock updated with latest compatible versions
+[0;32m✅  [SUCCESS][0m Completed Rust dependency updates
+
+[1;36m✅  Verifying Dependency Updates[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m All dependency types have been updated:
+[0;32m✅  [SUCCESS][0m ✓ Python core dependencies ([project] dependencies)
+[0;32m✅  [SUCCESS][0m ✓ Python optional dependencies ([project.optional-dependencies])
+[0;32m✅  [SUCCESS][0m ✓ Python dev dependencies ([dependency-groups])
+[0;32m✅  [SUCCESS][0m ✓ Python build dependencies ([build-system])
+[0;32m✅  [SUCCESS][0m ✓ Rust dependencies (Cargo.lock updated within existing constraints)
+[0;32m✅  [SUCCESS][0m ✓ Pre-commit hooks and their dependencies
+[0;32m✅  [SUCCESS][0m ✓ UV package manager in Dockerfiles
+[0;32m✅  [SUCCESS][0m ✓ GitHub Actions dependencies
+[0;34mℹ️  [INFO][0m Run 'uv tree --outdated' to verify all Python packages are up to date
+[0;34mℹ️  [INFO][0m Run 'cd extractor && cargo update --dry-run' to verify Rust crates
+
+[1;36m🧪  Running Tests[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Running linters...
+./scripts/update-project.sh: line 696: just: command not found
+[1;33m⚠️  [WARNING][0m Linting failed - review the changes
+[0;34mℹ️  [INFO][0m Running Python tests...
+./scripts/update-project.sh: line 704: just: command not found
+[1;33m⚠️  [WARNING][0m Python tests failed - review the changes
+[0;34mℹ️  [INFO][0m Running Rust tests...
+./scripts/update-project.sh: line 713: just: command not found
+[1;33m⚠️  [WARNING][0m Rust tests failed - review the changes
+
+[1;36m📝  Update Summary[0m
+[1;36m============================================================[0m
+
+📄 File Updates:
+  • extractor/Cargo.lock: Updated to latest compatible versions
+
+
+[1;36m🔀  Next Steps[0m
+[1;36m============================================================[0m
+1. Review the changes:
+   git diff --stat
+   git diff uv.lock
+
+2. Stage the changes:
+   git add */Dockerfile extractor/*/Dockerfile docs/dockerfile-standards.md
+
+3. Commit the changes:
+   git commit -m "chore: update dependencies
+   "
+
+[1;36m📋  File Update Report[0m
+[1;36m============================================================[0m
+The following files were checked and updated:
+
+🐍 Python Configuration:
+  ✓ pyproject.toml (root)
+  ✓ common/pyproject.toml
+  ✓ dashboard/pyproject.toml
+  ✓ explore/pyproject.toml
+  ✓ graphinator/pyproject.toml
+  ✓ schema-init/pyproject.toml
+  ✓ tableinator/pyproject.toml
+  ✓ uv.lock (root)
+  ✓ pyrightconfig.json
+
+🐳 Docker Configuration:
+  ✓ dashboard/Dockerfile
+  ✓ explore/Dockerfile
+  ✓ extractor/Dockerfile
+  ✓ graphinator/Dockerfile
+  ✓ schema-init/Dockerfile
+  ✓ tableinator/Dockerfile
+  ✓ docs/dockerfile-standards.md
+  ✓ docker-compose.yml
+  ✓ docker-compose.prod.yml
+
+🦀 Rust Configuration:
+  ✓ extractor/Cargo.toml (constraints unchanged)
+  ✓ extractor/Cargo.lock (updated to latest compatible)
+
+🔄 GitHub Workflows:
+  ✓ .github/workflows/*.yml (setup-uv action)
+  ✓ Python version references
+
+📊 Summary:
+  • Total files updated: 1
+  • Python packages updated: 0
+  • Dockerfiles updated: 0
+0
+  • Workflows updated: 0
+
+[1;36m🔍  Manual Verification Steps[0m
+[1;36m============================================================[0m
+Please verify the following before merging:
+
+1. 🐳 Docker builds:
+   docker-compose build --no-cache
+
+2. 🧪 Service health checks:
+   docker-compose up -d
+   docker-compose ps  # All services should be 'healthy'
+
+3. 🔍 Smoke tests:
+   # Check dashboard
+   curl -f http://localhost:8003/health
+   # Check explore service
+   curl -f http://localhost:8006/health
+
+4. 📊 Review dependency changes:
+   # Check for security advisories
+   uv pip audit
+   # Review major version changes
+   git diff uv.lock | grep -E "^[+-]version"
+
+5. 📝 Update CHANGELOG.md if needed
