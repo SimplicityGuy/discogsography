@@ -16,14 +16,16 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### ⚙️ Service Components
 
-| Service                                                  | Purpose                                | Key Technologies                    | Port(s)       |
-| -------------------------------------------------------- | -------------------------------------- | ----------------------------------- | ------------- |
-| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`       | 8000 (health) |
-| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initialiser         | `neo4j-driver`, `psycopg3`          | —             |
-| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms    | 8001 (health) |
-| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search | 8002 (health) |
-| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson` | 8006, 8007    |
-| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI   | 8003          |
+| Service                                                  | Purpose                                | Key Technologies                                  | Port(s)        |
+| -------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- | -------------- |
+| **[🔐](emoji-guide.md#service-identifiers) API**         | User accounts and JWT authentication   | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 | 8004, 8005     |
+| **[🗂️](emoji-guide.md#service-identifiers) Curator**    | Discogs collection & wantlist sync     | `FastAPI`, `psycopg3`, `neo4j-driver`             | 8010, 8011     |
+| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     | 8000 (health)  |
+| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initialiser         | `neo4j-driver`, `psycopg3`                        | —              |
+| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms                  | 8001 (health)  |
+| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search               | 8002 (health)  |
+| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson`               | 8006, 8007     |
+| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI                 | 8003           |
 
 ### Infrastructure Components
 
@@ -49,6 +51,8 @@ graph TD
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
+    API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
+    CURATOR[["🗂️ Curator<br/>Collection<br/>Sync"]]
 
     SCHEMA -->|0. Create schemas| NEO4J
     SCHEMA -->|0. Create schemas| PG
@@ -61,6 +65,12 @@ graph TD
 
     EXPLORE -.->|Query Graph| NEO4J
     EXPLORE -.->|Explore Paths| NEO4J
+
+    API -.->|User Accounts| PG
+    API -.->|OAuth State| REDIS
+
+    CURATOR -.->|Sync Collections| NEO4J
+    CURATOR -.->|Sync History| PG
 
     DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
@@ -82,6 +92,8 @@ graph TD
     style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
     style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style CURATOR fill:#fff8e1,stroke:#f57f17,stroke-width:2px
 ```
 
 ## Data Flow
@@ -292,6 +304,59 @@ See [Explore README](../explore/README.md) for details.
 
 See [Dashboard README](../dashboard/README.md) for details.
 
+### API
+
+**Responsibilities**:
+
+- User registration and authentication
+- JWT token generation and validation (HS256)
+- Discogs OAuth 1.0a OOB flow management
+- Discogs OAuth token storage and retrieval
+- Admin configuration management
+
+**Key Features**:
+
+- FastAPI backend with async PostgreSQL
+- PBKDF2-SHA256 password hashing (100,000 iterations)
+- Stateless JWT authentication using shared `JWT_SECRET_KEY`
+- Redis-backed OAuth state storage with TTL
+- Token-protected endpoints for all user operations
+
+**Configuration**:
+
+- `JWT_SECRET_KEY`: Shared secret for HS256 token signing
+- `POSTGRES_ADDRESS`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`: PostgreSQL connection
+- `REDIS_URL`: Redis connection for OAuth state
+- `DISCOGS_USER_AGENT`: User-Agent header for Discogs API calls
+
+See [API README](../api/README.md) for details.
+
+### Curator
+
+**Responsibilities**:
+
+- Sync user Discogs collections to Neo4j graph database
+- Sync user Discogs wantlists to Neo4j graph database
+- Background async sync job management
+- Sync history tracking in PostgreSQL
+
+**Key Features**:
+
+- FastAPI backend with async PostgreSQL and Neo4j
+- Stateless JWT validation using shared `JWT_SECRET_KEY`
+- Background task orchestration with per-user sync state
+- Uses Discogs OAuth tokens stored by the API service
+- Prevents duplicate syncs for the same user
+
+**Configuration**:
+
+- `JWT_SECRET_KEY`: Shared secret for HS256 token validation
+- `POSTGRES_ADDRESS`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`: PostgreSQL connection
+- `NEO4J_ADDRESS`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
+- `DISCOGS_USER_AGENT`: User-Agent header for Discogs API calls
+
+See [Curator README](../curator/README.md) for details.
+
 ## Message Queue Architecture
 
 ### Queue Structure
@@ -398,11 +463,12 @@ See [Database Schema](database-schema.md) for details.
 
 ### Redis Cache
 
-**Purpose**: Cache query results and ML model outputs
+**Purpose**: Cache query results and OAuth state
 
 **Cache Types**:
 
-- Query result caching
+- OAuth state tokens (API — short TTL, used during Discogs OAuth flow)
+- Query result caching (Dashboard)
 - Embedding vectors
 - Graph algorithm results
 - Dashboard metrics
@@ -450,7 +516,9 @@ curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
+curl http://localhost:8005/health  # API (health check port)
 curl http://localhost:8007/health  # Explore
+curl http://localhost:8011/health  # Curator (health check port)
 ```
 
 ### Logging
@@ -493,6 +561,8 @@ See [Monitoring](monitoring.md) for details.
 
 **Stateless Services** (can scale horizontally):
 
+- API (load balanced — JWT validation is stateless)
+- Curator (load balanced — background task state is per-request)
 - Extractor (one instance per data type)
 - Graphinator (multiple consumers per queue)
 - Tableinator (multiple consumers per queue)
@@ -562,4 +632,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2026-02-22

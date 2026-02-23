@@ -129,7 +129,7 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 | `NEO4J_USERNAME` | Neo4j username | `neo4j`                 | Yes      |
 | `NEO4J_PASSWORD` | Neo4j password | (none)                  | Yes      |
 
-**Used By**: Graphinator, Dashboard, Explore
+**Used By**: Graphinator, Dashboard, Explore, Curator
 
 **Connection Details**:
 
@@ -174,7 +174,7 @@ NEO4J_PASSWORD="your-secure-password"
 | `POSTGRES_PASSWORD` | PostgreSQL password  | (none)           | Yes      |
 | `POSTGRES_DATABASE` | Database name        | `discogsography` | Yes      |
 
-**Used By**: Tableinator, Dashboard
+**Used By**: Tableinator, Dashboard, API, Curator
 
 **Connection Details**:
 
@@ -217,11 +217,11 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ### Redis Configuration
 
-| Variable    | Description          | Default                    | Required        |
-| ----------- | -------------------- | -------------------------- | --------------- |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` | Yes (Dashboard) |
+| Variable    | Description          | Default                    | Required              |
+| ----------- | -------------------- | -------------------------- | --------------------- |
+| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` | Yes (Dashboard, API)  |
 
-**Used By**: Dashboard
+**Used By**: Dashboard, API
 
 **Connection Details**:
 
@@ -253,6 +253,44 @@ REDIS_URL="redis+sentinel://sentinel1:26379,sentinel2:26379/myservice"
 - Max memory: 256MB (configurable in docker-compose.yml)
 - Eviction policy: allkeys-lru
 - Persistence: Disabled (cache only)
+
+## JWT Configuration
+
+| Variable              | Description                         | Default | Required           |
+| --------------------- | ----------------------------------- | ------- | ------------------ |
+| `JWT_SECRET_KEY`      | HMAC-SHA256 signing secret          | (none)  | Yes (API, Curator) |
+| `JWT_EXPIRE_MINUTES`  | Token lifetime in minutes           | `1440`  | No                 |
+| `DISCOGS_USER_AGENT`  | User-Agent for Discogs API requests | (none)  | Yes (API, Curator) |
+
+**Used By**: API, Curator
+
+**JWT Details**:
+
+- Algorithm: HS256 (HMAC-SHA256)
+- Token format: Standard JWT (`header.body.signature`, base64url-encoded)
+- Payload claims: `sub` (user UUID), `email`, `iat`, `exp`
+- The same `JWT_SECRET_KEY` must be set in both API and Curator — tokens issued by API are validated locally by Curator
+
+**Security Notes**:
+
+- Use a cryptographically random secret of at least 32 bytes in production
+- Rotate the secret to invalidate all existing tokens
+- Never log or expose `JWT_SECRET_KEY`
+
+**Examples**:
+
+```bash
+# Generate a secure random secret (Linux/macOS)
+JWT_SECRET_KEY=$(openssl rand -hex 32)
+
+# Set token lifetime
+JWT_EXPIRE_MINUTES=1440   # 24 hours (default)
+JWT_EXPIRE_MINUTES=60     # 1 hour (more secure)
+JWT_EXPIRE_MINUTES=10080  # 7 days (more convenient)
+
+# Discogs User-Agent (required for Discogs API)
+DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+```
 
 ## Logging Configuration
 
@@ -447,6 +485,55 @@ See [Performance Guide](performance-guide.md) for detailed optimization strategi
 
 ## Service-Specific Settings
 
+### API
+
+```bash
+# Required
+POSTGRES_ADDRESS="localhost:5433"
+POSTGRES_USERNAME="discogsography"
+POSTGRES_PASSWORD="discogsography"
+POSTGRES_DATABASE="discogsography"
+REDIS_URL="redis://localhost:6379/0"
+JWT_SECRET_KEY="your-secret-key-here"
+DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+
+# Optional
+JWT_EXPIRE_MINUTES=1440
+LOG_LEVEL=INFO
+```
+
+Health check: http://localhost:8004/health (service), http://localhost:8005/health (health check port)
+
+**Notes**: After startup, set Discogs app credentials via the admin endpoint:
+```bash
+curl -X PUT http://localhost:8004/api/admin/config/discogs_consumer_key \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"value": "your-discogs-consumer-key"}'
+```
+
+### Curator
+
+```bash
+# Required
+POSTGRES_ADDRESS="localhost:5433"
+POSTGRES_USERNAME="discogsography"
+POSTGRES_PASSWORD="discogsography"
+POSTGRES_DATABASE="discogsography"
+NEO4J_ADDRESS="bolt://localhost:7687"
+NEO4J_USERNAME="neo4j"
+NEO4J_PASSWORD="discogsography"
+JWT_SECRET_KEY="your-secret-key-here"  # Must match API service
+DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+
+# Optional
+LOG_LEVEL=INFO
+```
+
+Health check: http://localhost:8010/health (service), http://localhost:8011/health (health check port)
+
+**Notes**: Curator validates JWTs locally using the same `JWT_SECRET_KEY` as the API service. It reads Discogs OAuth tokens from the `oauth_tokens` PostgreSQL table, which is populated when users connect their Discogs accounts through the API.
+
 ### Schema-Init
 
 ```bash
@@ -597,6 +684,11 @@ POSTGRES_DATABASE=discogsography_dev
 # Redis
 REDIS_URL=redis://localhost:6379/0
 
+# JWT (API + Curator)
+JWT_SECRET_KEY=dev-secret-key-not-for-production
+JWT_EXPIRE_MINUTES=1440
+DISCOGS_USER_AGENT="Discogsography/1.0-dev +https://github.com/SimplicityGuy/discogsography"
+
 # Data
 DISCOGS_ROOT=/tmp/discogs-data-dev
 PERIODIC_CHECK_DAYS=0
@@ -628,6 +720,11 @@ POSTGRES_DATABASE=discogsography
 
 # Redis
 REDIS_URL=redis://:${REDIS_PASSWORD}@redis.prod.internal:6379/0
+
+# JWT (API + Curator) — must match across both services
+JWT_SECRET_KEY=${JWT_SECRET_KEY}
+JWT_EXPIRE_MINUTES=1440
+DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
 # Data
 DISCOGS_ROOT=/mnt/data/discogs
@@ -714,7 +811,9 @@ curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
+curl http://localhost:8005/health  # API (health check port)
 curl http://localhost:8007/health  # Explore
+curl http://localhost:8011/health  # Curator (health check port)
 ```
 
 Expected response for all:

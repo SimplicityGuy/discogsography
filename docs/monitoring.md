@@ -41,7 +41,9 @@ open http://localhost:8003
 - Graphinator (http://localhost:8001/health)
 - Tableinator (http://localhost:8002/health)
 - Dashboard (http://localhost:8003/health)
+- API (http://localhost:8004/health, http://localhost:8005/health)
 - Explore (http://localhost:8006/health, http://localhost:8007/health)
+- Curator (http://localhost:8010/health, http://localhost:8011/health)
 
 #### Queue Metrics Panel
 
@@ -384,9 +386,17 @@ curl http://localhost:8002/health
 curl http://localhost:8003/health
 # Response: {"status": "healthy"}
 
+# API (health check port)
+curl http://localhost:8005/health
+# Response: {"status": "healthy", "service": "api", ...}
+
 # Explore
 curl http://localhost:8007/health
 # Response: {"status": "healthy"}
+
+# Curator (health check port)
+curl http://localhost:8011/health
+# Response: {"status": "healthy", "service": "curator", "active_syncs": 0, ...}
 ```
 
 ### Automated Health Monitoring
@@ -400,7 +410,9 @@ services=(
   "Graphinator:8001"
   "Tableinator:8002"
   "Dashboard:8003"
+  "API:8005"
   "Explore:8007"
+  "Curator:8011"
 )
 
 for service in "${services[@]}"; do
@@ -509,8 +521,10 @@ curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
+curl http://localhost:8005/health  # API (health check port)
 curl http://localhost:8006/health  # Explore (service port)
 curl http://localhost:8007/health  # Explore (health check port)
+curl http://localhost:8011/health  # Curator (health check port)
 ```
 
 ### Step 2: Enable Debug Logging

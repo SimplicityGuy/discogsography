@@ -84,13 +84,15 @@ Open your browser and visit:
 
 ### Service Access Details
 
-| Service           | URL                    | Default Credentials                 | Purpose           |
-| ----------------- | ---------------------- | ----------------------------------- | ----------------- |
-| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring |
-| 🔍 **Explore**    | http://localhost:8006  | None                                | Graph exploration |
-| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management  |
-| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph database UI |
-| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access   |
+| Service           | URL                    | Default Credentials                 | Purpose                        |
+| ----------------- | ---------------------- | ----------------------------------- | ------------------------------ |
+| 🔐 **API**        | http://localhost:8004  | Register via `/api/auth/register`   | User auth & Discogs OAuth      |
+| 🗂️ **Curator**    | http://localhost:8010  | JWT required (`/api/sync`)          | Collection & wantlist sync     |
+| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring              |
+| 🔍 **Explore**    | http://localhost:8006  | None                                | Graph exploration              |
+| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management               |
+| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph database UI              |
+| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access                |
 
 ## 💻 Local Development Setup
 
@@ -208,6 +210,12 @@ just tableinator
 Or run services directly with Python:
 
 ```bash
+# API (user auth & Discogs OAuth)
+uv run python -m api.api
+
+# Curator (collection sync)
+uv run python -m curator.curator
+
 # Dashboard
 uv run python dashboard/dashboard.py
 
@@ -233,7 +241,9 @@ curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
+curl http://localhost:8005/health  # API
 curl http://localhost:8007/health  # Explore
+curl http://localhost:8011/health  # Curator
 ```
 
 Expected response:
