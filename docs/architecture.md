@@ -21,7 +21,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🔐](emoji-guide.md#service-identifiers) API**         | User accounts and JWT authentication   | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 | 8004, 8005     |
 | **[🗂️](emoji-guide.md#service-identifiers) Curator**    | Discogs collection & wantlist sync     | `FastAPI`, `psycopg3`, `neo4j-driver`             | 8010, 8011     |
 | **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     | 8000 (health)  |
-| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initialiser         | `neo4j-driver`, `psycopg3`                        | —              |
+| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer         | `neo4j-driver`, `psycopg3`                        | —              |
 | **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms                  | 8001 (health)  |
 | **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search               | 8002 (health)  |
 | **[🔍](emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson`               | 8006, 8007     |
@@ -198,10 +198,10 @@ See [Extractor README](../extractor/README.md) for details.
 
 **Key Features**:
 
-- Idempotent: re-running on an already-initialised database is a no-op
+- Idempotent: re-running on an already-initialized database is a no-op
 - Single source of truth for both Neo4j and PostgreSQL schema definitions
 - Schema definitions live in `schema-init/neo4j_schema.py` and `schema-init/postgres_schema.py`
-- Parallel initialisation: Neo4j and PostgreSQL schema creation run concurrently
+- Parallel initialization: Neo4j and PostgreSQL schema creation run concurrently
 - Exits 0 on success, 1 on any failure (so dependent services will not start)
 
 **Configuration**:

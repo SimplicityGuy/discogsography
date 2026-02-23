@@ -550,7 +550,7 @@ POSTGRES_DATABASE="discogsography"
 LOG_LEVEL=INFO
 ```
 
-**Notes**: Schema-init is a one-shot initialiser — it exits 0 on success and 1 on failure. It has no health check port. In Docker Compose, all dependent services use `condition: service_completed_successfully`. Re-running on an already-initialised database is a no-op (all DDL uses `IF NOT EXISTS`).
+**Notes**: Schema-init is a one-shot initializer — it exits 0 on success and 1 on failure. It has no health check port. In Docker Compose, all dependent services use `condition: service_completed_successfully`. Re-running on an already-initialized database is a no-op (all DDL uses `IF NOT EXISTS`).
 
 ### Extractor
 

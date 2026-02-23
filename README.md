@@ -49,7 +49,7 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 | **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j            |
 | **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     |
 | **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms                  |
-| **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initialiser   | `neo4j-driver`, `psycopg3`                        |
+| **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initializer   | `neo4j-driver`, `psycopg3`                        |
 | **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search               |
 
 ### 📐 System Architecture

@@ -22,7 +22,7 @@ def mock_driver() -> MagicMock:
 
 
 class TestSchemaStatements:
-    """Verify the SCHEMA_STATEMENTS catalogue is well-formed."""
+    """Verify the SCHEMA_STATEMENTS catalog is well-formed."""
 
     def test_not_empty(self) -> None:
         assert len(SCHEMA_STATEMENTS) > 0

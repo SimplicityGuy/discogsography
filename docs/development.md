@@ -68,7 +68,7 @@ discogsography/
 │   ├── graphinator.py      # Graph relationship builder
 │   ├── README.md
 │   └── __init__.py
-├── 🔧 schema-init/         # One-shot database schema initialiser
+├── 🔧 schema-init/         # One-shot database schema initializer
 │   ├── schema_init.py      # Entry point — creates Neo4j + PostgreSQL schema
 │   ├── neo4j_schema.py     # Neo4j constraints and indexes
 │   ├── postgres_schema.py  # PostgreSQL tables and indexes
@@ -89,7 +89,7 @@ discogsography/
 │   ├── explore/            # Explore service tests
 │   ├── graphinator/        # Graphinator tests
 │   ├── load/               # Load tests (Locust)
-│   ├── schema-init/        # Schema initialiser tests
+│   ├── schema-init/        # Schema initializer tests
 │   └── tableinator/        # Tableinator tests
 ├── 📝 docs/                # Documentation
 ├── 📜 scripts/             # Utility scripts
