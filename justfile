@@ -310,6 +310,15 @@ explore:
 graphinator:
     uv run python graphinator/graphinator.py
 
+# Run the schema-init service (one-time Neo4j and PostgreSQL schema initialisation)
+[group('services')]
+schema-init:
+    uv run python schema-init/schema_init.py
+
+# Run the Rust extractor (high-performance Discogs data ingestion)
+[group('services')]
+extractor: extractor-run
+
 # Run the tableinator service (PostgreSQL table builder)
 [group('services')]
 tableinator:

@@ -65,7 +65,9 @@ Tasks are organized into logical groups for easier navigation:
 | `curator`     | Run the curator service (collection & wantlist sync)       | 8010 |
 | `dashboard`   | Run the dashboard service (monitoring UI)                  | 8003 |
 | `explore`     | Run the explore service (graph exploration and trends)     | 8006 |
+| `extractor`   | Run the Rust extractor (Discogs data ingestion)            | -    |
 | `graphinator` | Run the graphinator service (Neo4j graph builder)          | -    |
+| `schema-init` | Run the schema initialiser (one-time Neo4j + PostgreSQL)   | -    |
 | `tableinator` | Run the tableinator service (PostgreSQL table builder)     | -    |
 
 ### 🦀 Rust Group
