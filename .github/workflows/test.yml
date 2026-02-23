@@ -41,6 +41,82 @@ permissions:
 
 jobs:
   # ============================================================================
+  # API SERVICE TESTS - Runs in parallel with all other test jobs
+  # ============================================================================
+  test-api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔧 Setup Python and UV
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 🔧 Setup Just
+        uses: ./.github/actions/setup-just
+
+      - name: 📦 Install dependencies
+        run: just install
+
+      - name: 🧪 Run api tests
+        run: just test-api
+
+      - name: 📊 Upload coverage (api)
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./coverage.xml
+          flags: api
+          name: api-tests
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
+
+  # ============================================================================
+  # CURATOR SERVICE TESTS - Runs in parallel with all other test jobs
+  # ============================================================================
+  test-curator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔧 Setup Python and UV
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 🔧 Setup Just
+        uses: ./.github/actions/setup-just
+
+      - name: 📦 Install dependencies
+        run: just install
+
+      - name: 🧪 Run curator tests
+        run: just test-curator
+
+      - name: 📊 Upload coverage (curator)
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./coverage.xml
+          flags: curator
+          name: curator-tests
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
+
+  # ============================================================================
   # COMMON/SHARED LIBRARY TESTS - Runs in parallel with all other test jobs
   # ============================================================================
   test-common:
@@ -357,6 +433,8 @@ jobs:
   aggregate-results:
     runs-on: ubuntu-latest
     needs:
+      - test-api
+      - test-curator
       - test-common
       - test-dashboard
       - test-explore
@@ -370,6 +448,8 @@ jobs:
       - name: 📊 Check test results
         run: |
           echo "Test Results Summary:"
+          echo "  API: ${{ needs.test-api.result }}"
+          echo "  Curator: ${{ needs.test-curator.result }}"
           echo "  Common: ${{ needs.test-common.result }}"
           echo "  Dashboard: ${{ needs.test-dashboard.result }}"
           echo "  Explore: ${{ needs.test-explore.result }}"
@@ -379,7 +459,9 @@ jobs:
           echo "  Extractor: ${{ needs.test-extractor.result }}"
 
           # Check if any test job failed
-          if [[ "${{ needs.test-common.result }}" == "failure" ]] || \
+          if [[ "${{ needs.test-api.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-curator.result }}" == "failure" ]] || \
+             [[ "${{ needs.test-common.result }}" == "failure" ]] || \
              [[ "${{ needs.test-dashboard.result }}" == "failure" ]] || \
              [[ "${{ needs.test-explore.result }}" == "failure" ]] || \
              [[ "${{ needs.test-graphinator.result }}" == "failure" ]] || \

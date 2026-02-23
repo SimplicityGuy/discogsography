@@ -31,17 +31,17 @@ services:
       - "15672:15672"    # Management UI
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      discogsography:
+        aliases:
+          - message-broker
+          - amqp
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 15s
       timeout: 10s
       retries: 8
       start_period: 45s
-    networks:
-      discogsography:
-        aliases:
-          - message-broker
-          - amqp
     restart: unless-stopped
     logging: *default-logging
 
@@ -60,17 +60,17 @@ services:
       - "5433:5432"  # Changed from 5432 to avoid conflict
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    networks:
+      discogsography:
+        aliases:
+          - postgres-db
+          - database
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U discogsography -d discogsography -h localhost"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 45s
-    networks:
-      discogsography:
-        aliases:
-          - postgres-db
-          - database
     restart: unless-stopped
     logging: *default-logging
     security_opt:
@@ -102,17 +102,17 @@ services:
       - neo4j_logs:/logs
       - neo4j_import:/var/lib/neo4j/import
       - neo4j_plugins:/plugins
+    networks:
+      discogsography:
+        aliases:
+          - graph-db
+          - neo4j-db
     healthcheck:
       test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "discogsography", "RETURN 1 as health"]
       interval: 15s
       timeout: 10s
       retries: 20
       start_period: 60s
-    networks:
-      discogsography:
-        aliases:
-          - graph-db
-          - neo4j-db
     restart: unless-stopped
     logging: *default-logging
     security_opt:
@@ -128,17 +128,17 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    networks:
+      discogsography:
+        aliases:
+          - cache
+          - redis-cache
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 10s
-    networks:
-      discogsography:
-        aliases:
-          - cache
-          - redis-cache
     restart: unless-stopped
     logging: *default-logging
     security_opt:
@@ -215,6 +215,8 @@ services:
     ports:
       - "8004:8004"      # Auth API
       - "8005:8005"      # Health check
+    volumes:
+      - api_logs:/logs
     depends_on:
       schema-init:
         condition: service_completed_successfully
@@ -239,8 +241,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    volumes:
-      - api_logs:/logs
 
   # Curator service — Discogs collection and wantlist sync
   curator:
@@ -270,6 +270,8 @@ services:
     ports:
       - "8010:8010"      # Collector API
       - "8011:8011"      # Health check
+    volumes:
+      - curator_logs:/logs
     depends_on:
       schema-init:
         condition: service_completed_successfully
@@ -296,8 +298,6 @@ services:
     read_only: true
     tmpfs:
       - /tmp
-    volumes:
-      - curator_logs:/logs
 
   # Rust-based extractor service
   extractor:

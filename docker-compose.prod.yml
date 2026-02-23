@@ -31,6 +31,30 @@ services:
       NEO4J_dbms_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-2G}
     # No resource limits per project convention
 
+  api:
+    restart: always
+    environment:
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+
+  curator:
+    restart: always
+    environment:
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+
   extractor:
     restart: always
     deploy:
