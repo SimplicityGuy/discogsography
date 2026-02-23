@@ -374,3 +374,214 @@ class TestGetConfig:
         config = get_config()
 
         assert isinstance(config, DashboardConfig)
+
+
+class TestApiConfig:
+    """Test ApiConfig.from_env."""
+
+    def test_from_env_with_all_required_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test ApiConfig with all required environment variables."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("POSTGRES_ADDRESS", "pghost:5432")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
+        monkeypatch.setenv("JWT_SECRET_KEY", "supersecret123")
+
+        config = ApiConfig.from_env()
+
+        assert config.postgres_address == "pghost:5432"
+        assert config.postgres_username == "pguser"
+        assert config.postgres_password == "pgpass"
+        assert config.postgres_database == "mydb"
+        assert config.jwt_secret_key == "supersecret123"
+
+    def test_from_env_optional_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test ApiConfig optional fields have correct defaults."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.delenv("JWT_ALGORITHM", raising=False)
+        monkeypatch.delenv("JWT_EXPIRE_MINUTES", raising=False)
+        monkeypatch.delenv("DISCOGS_USER_AGENT", raising=False)
+
+        config = ApiConfig.from_env()
+
+        assert config.redis_url == "redis://redis:6379/0"
+        assert config.jwt_algorithm == "HS256"
+        assert config.jwt_expire_minutes == 30
+        assert "discogsography" in config.discogs_user_agent
+
+    def test_from_env_custom_optional_values(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test ApiConfig reads optional env vars."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("REDIS_URL", "redis://myredis:6380/1")
+        monkeypatch.setenv("JWT_ALGORITHM", "HS256")
+        monkeypatch.setenv("JWT_EXPIRE_MINUTES", "60")
+        monkeypatch.setenv("DISCOGS_USER_AGENT", "CustomAgent/2.0")
+
+        config = ApiConfig.from_env()
+
+        assert config.redis_url == "redis://myredis:6380/1"
+        assert config.jwt_expire_minutes == 60
+        assert config.discogs_user_agent == "CustomAgent/2.0"
+
+    def test_from_env_invalid_jwt_expire_uses_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that invalid JWT_EXPIRE_MINUTES falls back to 30."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("JWT_EXPIRE_MINUTES", "not-a-number")
+
+        config = ApiConfig.from_env()
+
+        assert config.jwt_expire_minutes == 30
+
+    def test_from_env_missing_postgres_address(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test missing POSTGRES_ADDRESS raises ValueError."""
+        from common.config import ApiConfig
+
+        monkeypatch.delenv("POSTGRES_ADDRESS", raising=False)
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+
+        with pytest.raises(ValueError, match="POSTGRES_ADDRESS"):
+            ApiConfig.from_env()
+
+    def test_from_env_missing_jwt_secret(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test missing JWT_SECRET_KEY raises ValueError."""
+        from common.config import ApiConfig
+
+        monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+
+        with pytest.raises(ValueError, match="JWT_SECRET_KEY"):
+            ApiConfig.from_env()
+
+    def test_from_env_missing_multiple_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test missing multiple vars lists them all."""
+        from common.config import ApiConfig
+
+        monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
+        monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+
+        with pytest.raises(ValueError) as exc_info:
+            ApiConfig.from_env()
+
+        error_msg = str(exc_info.value)
+        assert "POSTGRES_USERNAME" in error_msg
+        assert "JWT_SECRET_KEY" in error_msg
+
+
+class TestCuratorConfig:
+    """Test CuratorConfig.from_env."""
+
+    def test_from_env_with_all_required_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test CuratorConfig with all required environment variables."""
+        from common.config import CuratorConfig
+
+        monkeypatch.setenv("POSTGRES_ADDRESS", "pghost:5432")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
+        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://neo4j:7687")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+        monkeypatch.setenv("JWT_SECRET_KEY", "jwtsecret")
+
+        config = CuratorConfig.from_env()
+
+        assert config.postgres_address == "pghost:5432"
+        assert config.neo4j_address == "bolt://neo4j:7687"
+        assert config.jwt_secret_key == "jwtsecret"
+
+    def test_from_env_missing_jwt_secret(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test missing JWT_SECRET_KEY raises ValueError."""
+        from common.config import CuratorConfig
+
+        monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+
+        with pytest.raises(ValueError, match="JWT_SECRET_KEY"):
+            CuratorConfig.from_env()
+
+    def test_from_env_missing_neo4j_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test missing Neo4j vars raises ValueError."""
+        from common.config import CuratorConfig
+
+        monkeypatch.delenv("NEO4J_ADDRESS", raising=False)
+
+        with pytest.raises(ValueError, match="NEO4J_ADDRESS"):
+            CuratorConfig.from_env()
+
+    def test_from_env_custom_user_agent(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test custom DISCOGS_USER_AGENT is read."""
+        from common.config import CuratorConfig
+
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("DISCOGS_USER_AGENT", "MyAgent/3.0")
+
+        config = CuratorConfig.from_env()
+
+        assert config.discogs_user_agent == "MyAgent/3.0"
+
+    def test_from_env_missing_postgres_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test missing POSTGRES_PASSWORD raises ValueError."""
+        from common.config import CuratorConfig
+
+        monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+
+        with pytest.raises(ValueError, match="POSTGRES_PASSWORD"):
+            CuratorConfig.from_env()
+
+
+class TestOrjsonSerializer:
+    """Test orjson_serializer function."""
+
+    def test_serializes_simple_dict(self) -> None:
+        from common.config import orjson_serializer
+
+        result = orjson_serializer({"key": "value", "number": 42})
+        import json
+
+        data = json.loads(result)
+        assert data["key"] == "value"
+        assert data["number"] == 42
+
+    def test_keys_are_sorted(self) -> None:
+        from common.config import orjson_serializer
+
+        result = orjson_serializer({"z": 1, "a": 2, "m": 3})
+        # Keys should appear in sorted order
+        assert result.index('"a"') < result.index('"m"') < result.index('"z"')
+
+    def test_serializes_exception_as_string(self) -> None:
+        from common.config import orjson_serializer
+
+        exc = ValueError("something went wrong")
+        result = orjson_serializer({"error": exc})
+        import json
+
+        data = json.loads(result)
+        assert "ValueError" in data["error"]
+        assert "something went wrong" in data["error"]
+
+    def test_serializes_non_serializable_as_string(self) -> None:
+        from common.config import orjson_serializer
+
+        class CustomObj:
+            def __str__(self) -> str:
+                return "custom_repr"
+
+        result = orjson_serializer({"obj": CustomObj()})
+        import json
+
+        data = json.loads(result)
+        assert data["obj"] == "custom_repr"
+
+    def test_returns_string(self) -> None:
+        from common.config import orjson_serializer
+
+        result = orjson_serializer({"x": 1})
+        assert isinstance(result, str)
