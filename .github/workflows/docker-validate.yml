@@ -90,7 +90,7 @@ jobs:
       - name: 🔍 Check docker-compose services
         run: |
           services=$(docker-compose config --services | sort | tr "\n" " " | sed "s/ $//")
-          expected="auth collector dashboard explore extractor graphinator neo4j postgres rabbitmq redis schema-init tableinator"
+          expected="api curator dashboard explore extractor graphinator neo4j postgres rabbitmq redis schema-init tableinator"
 
           if [ "$services" != "$expected" ]; then
             echo "❌ Service mismatch!"

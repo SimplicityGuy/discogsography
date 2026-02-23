@@ -1,9 +1,9 @@
-"""Tests for auth service Pydantic models."""
+"""Tests for API service Pydantic models."""
 
 from pydantic import ValidationError
 import pytest
 
-from auth.models import LoginRequest, LoginResponse, RegisterRequest
+from api.models import LoginRequest, LoginResponse, RegisterRequest
 
 
 class TestRegisterRequest:

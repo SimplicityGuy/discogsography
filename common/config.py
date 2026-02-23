@@ -352,8 +352,8 @@ class DashboardConfig:
 
 
 @dataclass(frozen=True)
-class AuthConfig:
-    """Configuration for the auth service."""
+class ApiConfig:
+    """Configuration for the API service."""
 
     postgres_address: str
     postgres_username: str
@@ -366,7 +366,7 @@ class AuthConfig:
     discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
     @classmethod
-    def from_env(cls) -> "AuthConfig":
+    def from_env(cls) -> "ApiConfig":
         """Create configuration from environment variables."""
         postgres_address = getenv("POSTGRES_ADDRESS")
         postgres_username = getenv("POSTGRES_USERNAME")
@@ -415,8 +415,8 @@ class AuthConfig:
 
 
 @dataclass(frozen=True)
-class CollectorConfig:
-    """Configuration for the collector service."""
+class CuratorConfig:
+    """Configuration for the curator service."""
 
     postgres_address: str
     postgres_username: str
@@ -429,7 +429,7 @@ class CollectorConfig:
     discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
     @classmethod
-    def from_env(cls) -> "CollectorConfig":
+    def from_env(cls) -> "CuratorConfig":
         """Create configuration from environment variables."""
         postgres_address = getenv("POSTGRES_ADDRESS")
         postgres_username = getenv("POSTGRES_USERNAME")

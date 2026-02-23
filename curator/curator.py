@@ -1,4 +1,4 @@
-"""Collector microservice for discogsography — Discogs collection and wantlist sync."""
+"""Curator microservice for discogsography — Discogs collection and wantlist sync."""
 
 import asyncio
 from collections.abc import AsyncGenerator
@@ -15,9 +15,9 @@ from psycopg.rows import dict_row
 import structlog
 import uvicorn
 
-from collector.syncer import run_full_sync
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, setup_logging
-from common.config import CollectorConfig
+from common.config import CuratorConfig
+from curator.syncer import run_full_sync
 
 
 logger = structlog.get_logger(__name__)
@@ -25,21 +25,21 @@ logger = structlog.get_logger(__name__)
 # Module-level state
 _pool: AsyncPostgreSQLPool | None = None
 _neo4j: AsyncResilientNeo4jDriver | None = None
-_config: CollectorConfig | None = None
+_config: CuratorConfig | None = None
 _security = HTTPBearer()
 
-COLLECTOR_PORT = 8010
-COLLECTOR_HEALTH_PORT = 8011
+CURATOR_PORT = 8010
+CURATOR_HEALTH_PORT = 8011
 
 # In-memory registry of running background tasks (user_id -> asyncio.Task)
 _running_syncs: dict[str, asyncio.Task[Any]] = {}
 
 
 def get_health_data() -> dict[str, Any]:
-    """Return health status for the collector service."""
+    """Return health status for the curator service."""
     return {
         "status": "healthy" if _pool and _neo4j else "starting",
-        "service": "collector",
+        "service": "curator",
         "active_syncs": len(_running_syncs),
         "timestamp": datetime.now(UTC).isoformat(),
     }
@@ -115,16 +115,16 @@ async def _get_current_user(
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-    """Manage collector service lifecycle."""
+    """Manage curator service lifecycle."""
     global _pool, _neo4j, _config
 
-    logger.info("🚀 Collector service starting...")
-    _config = CollectorConfig.from_env()
+    logger.info("🚀 Curator service starting...")
+    _config = CuratorConfig.from_env()
 
     # Start health server on separate port
-    health_srv = HealthServer(COLLECTOR_HEALTH_PORT, get_health_data)
+    health_srv = HealthServer(CURATOR_HEALTH_PORT, get_health_data)
     health_srv.start_background()
-    logger.info("🏥 Health server started", port=COLLECTOR_HEALTH_PORT)
+    logger.info("🏥 Health server started", port=CURATOR_HEALTH_PORT)
 
     # PostgreSQL connection pool
     host, port_str = _config.postgres_address.rsplit(":", 1)
@@ -150,11 +150,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         encrypted=False,
     )
     logger.info("🔗 Neo4j driver initialized")
-    logger.info("✅ Collector service ready", port=COLLECTOR_PORT)
+    logger.info("✅ Curator service ready", port=CURATOR_PORT)
 
     yield
 
-    logger.info("🔧 Collector service shutting down...")
+    logger.info("🔧 Curator service shutting down...")
     # Cancel any running sync tasks
     for task in _running_syncs.values():
         task.cancel()
@@ -166,13 +166,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     if _neo4j:
         await _neo4j.close()
     health_srv.stop()
-    logger.info("✅ Collector service stopped")
+    logger.info("✅ Curator service stopped")
 
 
 app = FastAPI(
-    title="Discogsography Collector",
+    title="Discogsography Curator",
     version="0.1.0",
-    description="Discogs collection and wantlist sync service for Discogsography",
+    description="Curator service for Discogs collection and wantlist sync for Discogsography",
     default_response_class=ORJSONResponse,
     lifespan=lifespan,
 )
@@ -309,8 +309,8 @@ async def sync_status(
 
 
 def main() -> None:
-    """Entry point for the collector service."""
-    setup_logging("collector", log_file=Path("/logs/collector.log"))
+    """Entry point for the curator service."""
+    setup_logging("curator", log_file=Path("/logs/curator.log"))
     print(
         r"""
     ____      _ _           _
@@ -319,10 +319,10 @@ def main() -> None:
   | |__| (_) | | |  __/ (__| || (_) | |
    \____\___/|_|_|\___|\___|\__\___/|_|
 
-    Collector Service — Discogs Collection & Wantlist Sync
+    Curator Service — Discogs Collection & Wantlist Sync
     """
     )
-    uvicorn.run(app, host="0.0.0.0", port=COLLECTOR_PORT)  # noqa: S104  # nosec B104
+    uvicorn.run(app, host="0.0.0.0", port=CURATOR_PORT)  # noqa: S104  # nosec B104
 
 
 if __name__ == "__main__":

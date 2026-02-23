@@ -1,6 +1,6 @@
-"""Tests for the collector syncer module."""
+"""Tests for the curator syncer module."""
 
-from collector.syncer import (
+from curator.syncer import (
     PAGE_SIZE,
     SYNC_DELAY_SECONDS,
     _build_oauth_header,

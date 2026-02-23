@@ -1,9 +1,9 @@
 """Neo4j Cypher queries for personalized user endpoints in the Explore service.
 
 Queries the User node and its COLLECTED / WANTS relationships that are written
-by the collector service when a user syncs their Discogs account.
+by the curator service when a user syncs their Discogs account.
 
-Graph model additions (collector):
+Graph model additions (curator):
   (User)-[:COLLECTED {rating, folder_id, date_added, synced_at}]->(Release)
   (User)-[:WANTS    {rating, date_added, synced_at}]->(Release)
   (User)-[:COLLECTED]->(Release)-[:BY]->(Artist)

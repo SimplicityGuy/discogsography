@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "discogsography-collector"
+name = "discogsography-curator"
 version = "0.1.0"
-description = "Discogs collection and wantlist sync service for Discogsography"
+description = "Curator service for Discogs collection and wantlist sync for Discogsography"
 authors = [{name = "Robert Wlodarczyk", email = "robert@simplicityguy.com"}]
 requires-python = ">=3.13"
 classifiers = [
@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
-collector = "collector.collector:main"
+curator = "curator.curator:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]

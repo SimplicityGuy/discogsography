@@ -1,1 +1,0 @@
-"""Auth microservice for discogsography."""

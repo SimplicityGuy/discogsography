@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "discogsography-auth"
+name = "discogsography-api"
 version = "0.1.0"
-description = "User authentication and Discogs OAuth integration for Discogsography"
+description = "API service for user authentication and Discogs OAuth integration for Discogsography"
 authors = [{name = "Robert Wlodarczyk", email = "robert@simplicityguy.com"}]
 requires-python = ">=3.13"
 classifiers = [
@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
-auth = "auth.auth:main"
+api = "api.api:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]

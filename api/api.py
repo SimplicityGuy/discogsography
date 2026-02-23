@@ -1,4 +1,4 @@
-"""Auth microservice for discogsography — user accounts and JWT authentication."""
+"""API microservice for discogsography — user accounts and JWT authentication."""
 
 import base64
 from collections.abc import AsyncGenerator
@@ -21,8 +21,8 @@ import redis.asyncio as aioredis
 import structlog
 import uvicorn
 
-from auth.models import LoginRequest, RegisterRequest
-from auth.services.discogs import (
+from api.models import LoginRequest, RegisterRequest
+from api.services.discogs import (
     DISCOGS_AUTHORIZE_URL,
     REDIS_OAUTH_STATE_TTL,
     REDIS_STATE_PREFIX,
@@ -32,14 +32,14 @@ from auth.services.discogs import (
     request_oauth_token,
 )
 from common import AsyncPostgreSQLPool, HealthServer, setup_logging
-from common.config import AuthConfig
+from common.config import ApiConfig
 
 
 logger = structlog.get_logger(__name__)
 
 # Module-level state
 _pool: AsyncPostgreSQLPool | None = None
-_config: AuthConfig | None = None
+_config: ApiConfig | None = None
 _redis: aioredis.Redis | None = None
 _security = HTTPBearer()
 
@@ -51,15 +51,15 @@ class OAuthVerifyRequest(BaseModel):
     oauth_verifier: str  # Verification code from Discogs
 
 
-AUTH_PORT = 8004
-AUTH_HEALTH_PORT = 8005
+API_PORT = 8004
+API_HEALTH_PORT = 8005
 
 
 def get_health_data() -> dict[str, Any]:
-    """Return health status for the auth service."""
+    """Return health status for the API service."""
     return {
         "status": "healthy" if _pool else "starting",
-        "service": "auth",
+        "service": "api",
         "timestamp": datetime.now(UTC).isoformat(),
     }
 
@@ -173,16 +173,16 @@ async def _get_current_user(
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-    """Manage auth service lifecycle."""
+    """Manage API service lifecycle."""
     global _pool, _config, _redis
 
-    logger.info("🚀 Auth service starting...")
-    _config = AuthConfig.from_env()
+    logger.info("🚀 API service starting...")
+    _config = ApiConfig.from_env()
 
     # Start health server on separate port
-    health_srv = HealthServer(AUTH_HEALTH_PORT, get_health_data)
+    health_srv = HealthServer(API_HEALTH_PORT, get_health_data)
     health_srv.start_background()
-    logger.info("🏥 Health server started", port=AUTH_HEALTH_PORT)
+    logger.info("🏥 Health server started", port=API_HEALTH_PORT)
 
     # Parse postgres address (format: host:port)
     host, port_str = _config.postgres_address.rsplit(":", 1)
@@ -204,21 +204,21 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _redis = await aioredis.from_url(_config.redis_url, decode_responses=True)
     logger.info("🔴 Redis connected", url=_config.redis_url)
 
-    logger.info("✅ Auth service ready", port=AUTH_PORT)
+    logger.info("✅ API service ready", port=API_PORT)
 
     yield
 
-    logger.info("🔧 Auth service shutting down...")
+    logger.info("🔧 API service shutting down...")
     if _pool:
         await _pool.close()
     if _redis:
         await _redis.aclose()
     health_srv.stop()
-    logger.info("✅ Auth service stopped")
+    logger.info("✅ API service stopped")
 
 
 app = FastAPI(
-    title="Discogsography Auth",
+    title="Discogsography API",
     version="0.1.0",
     description="User authentication and Discogs OAuth integration for Discogsography",
     default_response_class=ORJSONResponse,
@@ -638,8 +638,8 @@ async def set_app_config(
 
 
 def main() -> None:
-    """Entry point for the auth service."""
-    setup_logging("auth", log_file=Path("/logs/auth.log"))
+    """Entry point for the API service."""
+    setup_logging("api", log_file=Path("/logs/api.log"))
     print(
         r"""
     _____  _
@@ -650,10 +650,10 @@ def main() -> None:
    |_____/|_|___/\___\___/ \__, |___/\___| \__, |_|  \__,_| .__/|_| |_|\__, |
                             |___/           |___/           |_|          |___/
 
-    Auth Service — User Accounts & JWT Authentication
+    API Service — User Accounts & JWT Authentication
     """
     )
-    uvicorn.run(app, host="0.0.0.0", port=AUTH_PORT)  # noqa: S104  # nosec B104
+    uvicorn.run(app, host="0.0.0.0", port=API_PORT)  # noqa: S104  # nosec B104
 
 
 if __name__ == "__main__":

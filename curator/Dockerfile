@@ -22,12 +22,12 @@ WORKDIR /app
 # Copy dependency files first for better caching
 COPY pyproject.toml uv.lock README.md ./
 COPY common/pyproject.toml ./common/
-COPY collector/pyproject.toml ./collector/
+COPY curator/pyproject.toml ./curator/
 
 # Install dependencies and clean up
 # hadolint ignore=SC2015
 RUN --mount=type=cache,target=/tmp/.cache/uv \
-    uv sync --frozen --no-dev --extra collector && \
+    uv sync --frozen --no-dev --extra curator && \
     # Clean up cache and test files
     find /app/.venv -type f -name "*.pyc" -delete && \
     find /app/.venv -type f -name "*.pyo" -delete && \
@@ -42,7 +42,7 @@ RUN --mount=type=cache,target=/tmp/.cache/uv \
 
 # Copy source files
 COPY common/ ./common/
-COPY collector/ ./collector/
+COPY curator/ ./curator/
 
 # Final stage
 FROM python:${PYTHON_VERSION}-slim
@@ -56,8 +56,8 @@ ARG GID=1000
 
 # OCI Image Spec Annotations
 # https://github.com/opencontainers/image-spec/blob/main/annotations.md
-LABEL org.opencontainers.image.title="Discogsography Collector" \
-      org.opencontainers.image.description="Discogs collection and wantlist sync service for Discogsography." \
+LABEL org.opencontainers.image.title="Discogsography Curator" \
+      org.opencontainers.image.description="Curator service for Discogs collection and wantlist sync for Discogsography." \
       org.opencontainers.image.authors="Robert Wlodarczyk <robert@simplicityguy.com>" \
       org.opencontainers.image.url="https://github.com/SimplicityGuy/discogsography" \
       org.opencontainers.image.documentation="https://github.com/SimplicityGuy/discogsography/blob/main/README.md" \
@@ -68,7 +68,7 @@ LABEL org.opencontainers.image.title="Discogsography Collector" \
       org.opencontainers.image.revision="${VCS_REF}" \
       org.opencontainers.image.created="${BUILD_DATE}" \
       org.opencontainers.image.base.name="docker.io/library/python:${PYTHON_VERSION}-slim" \
-      com.discogsography.service="collector" \
+      com.discogsography.service="curator" \
       com.discogsography.dependencies="fastapi,uvicorn,neo4j,psycopg,httpx" \
       com.discogsography.python.version="${PYTHON_VERSION}"
 
@@ -93,13 +93,13 @@ WORKDIR /app
 # Copy only necessary files from builder
 COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
 COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
-COPY --from=builder --chown=discogsography:discogsography /app/collector /app/collector
+COPY --from=builder --chown=discogsography:discogsography /app/curator /app/curator
 
 # UV not needed at runtime
 
 # Create startup script
 # hadolint ignore=SC2016
-RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m collector.collector "$@"\n' > /app/start.sh && \
+RUN printf '#!/bin/sh\nset -e\nsleep "${STARTUP_DELAY:-0}"\nexec /app/.venv/bin/python -m curator.curator "$@"\n' > /app/start.sh && \
     chmod +x /app/start.sh
 
 # Health check on health port 8011

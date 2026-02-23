@@ -1,4 +1,4 @@
-"""Pydantic models for the auth service."""
+"""Pydantic models for the API service."""
 
 from datetime import datetime
 import re
