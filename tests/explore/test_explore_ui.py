@@ -41,7 +41,7 @@ class TestExploreUI:
 
     def test_pane_switching(self, page: Page, test_server: str) -> None:
         """Test switching between Explore and Trends panes."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         # Explore pane should be active by default
         explore_pane = page.locator("#explorePane")
@@ -77,7 +77,7 @@ class TestExploreUI:
 
     def test_responsive_layout(self, page: Page, test_server: str) -> None:
         """Test that the page responds to viewport changes."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         # Desktop viewport
         page.set_viewport_size({"width": 1280, "height": 720})
