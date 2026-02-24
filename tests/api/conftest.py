@@ -14,6 +14,9 @@ os.environ.setdefault("POSTGRES_PASSWORD", "test")
 os.environ.setdefault("POSTGRES_DATABASE", "test")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-for-unit-tests")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
+os.environ.setdefault("NEO4J_USERNAME", "neo4j")
+os.environ.setdefault("NEO4J_PASSWORD", "testpassword")
 
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
@@ -96,6 +99,25 @@ def mock_redis() -> AsyncMock:
 
 
 @pytest.fixture
+def mock_neo4j() -> MagicMock:
+    """Mock AsyncResilientNeo4jDriver."""
+    from typing import Any
+
+    driver = MagicMock()
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+    mock_session.run = AsyncMock()
+
+    async def _session_factory(*_args: Any, **_kwargs: Any) -> Any:
+        return mock_session
+
+    driver.session = MagicMock(side_effect=_session_factory)
+    driver.close = AsyncMock()
+    return driver
+
+
+@pytest.fixture
 def test_api_config() -> ApiConfig:
     """Create a test ApiConfig with the test JWT secret."""
     return ApiConfig(
@@ -106,6 +128,9 @@ def test_api_config() -> ApiConfig:
         jwt_secret_key=TEST_JWT_SECRET,
         redis_url="redis://localhost:6379/0",
         jwt_expire_minutes=30,
+        neo4j_address="bolt://localhost:7687",
+        neo4j_username="neo4j",
+        neo4j_password="testpassword",  # noqa: S106
     )
 
 
@@ -119,6 +144,7 @@ def valid_token() -> str:
 def test_client(
     mock_pool: MagicMock,
     mock_redis: AsyncMock,
+    mock_neo4j: MagicMock,
     test_api_config: ApiConfig,
 ) -> Generator[TestClient]:
     """Create a TestClient with mocked lifespan and module-level state."""
@@ -133,11 +159,21 @@ def test_client(
     original_pool = api_module._pool
     original_config = api_module._config
     original_redis = api_module._redis
+    original_neo4j = api_module._neo4j
 
     app.router.lifespan_context = mock_lifespan
     api_module._pool = mock_pool
     api_module._config = test_api_config
     api_module._redis = mock_redis
+    api_module._neo4j = mock_neo4j
+
+    import api.routers.explore as _explore_router
+    import api.routers.sync as _sync_router
+    import api.routers.user as _user_router
+
+    _sync_router.configure(mock_pool, mock_neo4j, test_api_config, api_module._running_syncs)
+    _explore_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
+    _user_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
 
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
@@ -146,6 +182,8 @@ def test_client(
     api_module._pool = original_pool
     api_module._config = original_config
     api_module._redis = original_redis
+    api_module._neo4j = original_neo4j
+    api_module._running_syncs.clear()
     app.router.lifespan_context = original_lifespan
 
 

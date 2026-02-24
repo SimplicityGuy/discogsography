@@ -132,7 +132,7 @@ def test_client(
 ) -> Generator[TestClient]:
     """Create a TestClient with mocked lifespan and module-level state."""
     import curator.curator as curator_module
-    from curator.curator import _running_syncs, app
+    from curator.curator import app
 
     @asynccontextmanager
     async def mock_lifespan(_app: FastAPI) -> AsyncGenerator[None]:
@@ -147,7 +147,6 @@ def test_client(
     curator_module._pool = mock_pool
     curator_module._neo4j = mock_neo4j
     curator_module._config = test_curator_config
-    _running_syncs.clear()
 
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
@@ -156,7 +155,6 @@ def test_client(
     curator_module._pool = original_pool
     curator_module._neo4j = original_neo4j
     curator_module._config = original_config
-    _running_syncs.clear()
     app.router.lifespan_context = original_lifespan
 
 
