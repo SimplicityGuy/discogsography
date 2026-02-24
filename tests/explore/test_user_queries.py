@@ -75,7 +75,7 @@ class TestJwtVerification:
         import hmac
         import json
 
-        from explore.explore import _verify_jwt
+        from api.routers.explore import _verify_jwt
 
         secret = "test-secret"
 
@@ -99,7 +99,7 @@ class TestJwtVerification:
         import hmac
         import json
 
-        from explore.explore import _verify_jwt
+        from api.routers.explore import _verify_jwt
 
         def b64url(data: bytes) -> str:
             return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
@@ -113,7 +113,7 @@ class TestJwtVerification:
         assert _verify_jwt(token, "wrong-secret") is None
 
     def test_malformed_token_returns_none(self) -> None:
-        from explore.explore import _verify_jwt
+        from api.routers.explore import _verify_jwt
 
         assert _verify_jwt("not.a.valid.jwt.parts", "secret") is None
         assert _verify_jwt("only.two", "secret") is None
@@ -124,7 +124,7 @@ class TestJwtVerification:
         import hmac
         import json
 
-        from explore.explore import _verify_jwt
+        from api.routers.explore import _verify_jwt
 
         secret = "test-secret"
 
@@ -145,14 +145,14 @@ class TestB64UrlDecode:
     """Tests for explore._b64url_decode."""
 
     def test_decode_with_padding_needed(self) -> None:
-        from explore.explore import _b64url_decode
+        from api.routers.explore import _b64url_decode
 
         # base64url of b"a" without padding is "YQ"
         result = _b64url_decode("YQ")
         assert result == b"a"
 
     def test_decode_already_aligned(self) -> None:
-        from explore.explore import _b64url_decode
+        from api.routers.explore import _b64url_decode
 
         # "AAAA" decodes to 3 zero bytes
         result = _b64url_decode("AAAA")
@@ -161,7 +161,7 @@ class TestB64UrlDecode:
     def test_roundtrip_with_urlsafe_chars(self) -> None:
         import base64
 
-        from explore.explore import _b64url_decode
+        from api.routers.explore import _b64url_decode
 
         original = b"hello world!"
         encoded = base64.urlsafe_b64encode(original).rstrip(b"=").decode("ascii")

@@ -72,7 +72,7 @@ class TestAutocompleteEndpoint:
     ) -> None:
         mock_func = AsyncMock(return_value=sample_artist_autocomplete)
 
-        with patch.dict("explore.explore.AUTOCOMPLETE_DISPATCH", {"artist": mock_func}):
+        with patch.dict("api.routers.explore.AUTOCOMPLETE_DISPATCH", {"artist": mock_func}):
             response = test_client.get("/api/autocomplete?q=radio&type=artist&limit=10")
 
         assert response.status_code == 200
@@ -93,7 +93,7 @@ class TestAutocompleteEndpoint:
     def test_autocomplete_genre(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[{"id": "Rock", "name": "Rock", "score": 1.0}])
 
-        with patch.dict("explore.explore.AUTOCOMPLETE_DISPATCH", {"genre": mock_func}):
+        with patch.dict("api.routers.explore.AUTOCOMPLETE_DISPATCH", {"genre": mock_func}):
             response = test_client.get("/api/autocomplete?q=rock&type=genre")
 
         assert response.status_code == 200
@@ -103,7 +103,7 @@ class TestAutocompleteEndpoint:
     def test_autocomplete_label(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[{"id": "100", "name": "Warp Records", "score": 9.0}])
 
-        with patch.dict("explore.explore.AUTOCOMPLETE_DISPATCH", {"label": mock_func}):
+        with patch.dict("api.routers.explore.AUTOCOMPLETE_DISPATCH", {"label": mock_func}):
             response = test_client.get("/api/autocomplete?q=warp&type=label")
 
         assert response.status_code == 200
@@ -114,7 +114,7 @@ class TestAutocompleteEndpoint:
         """Test that repeated queries use the cache."""
         mock_func = AsyncMock(return_value=[{"id": "1", "name": "Radiohead", "score": 9.5}])
 
-        with patch.dict("explore.explore.AUTOCOMPLETE_DISPATCH", {"artist": mock_func}):
+        with patch.dict("api.routers.explore.AUTOCOMPLETE_DISPATCH", {"artist": mock_func}):
             # First call
             response1 = test_client.get("/api/autocomplete?q=cachetest&type=artist")
             assert response1.status_code == 200
@@ -127,19 +127,19 @@ class TestAutocompleteEndpoint:
             assert mock_func.call_count == 1
 
     def test_autocomplete_service_not_ready(self, test_client: TestClient) -> None:
-        import explore.explore as explore_module
+        import api.routers.explore as explore_module
 
-        original_driver = explore_module.neo4j_driver
-        explore_module.neo4j_driver = None
+        original_driver = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
 
         response = test_client.get("/api/autocomplete?q=test&type=artist")
         assert response.status_code == 503
 
-        explore_module.neo4j_driver = original_driver
+        explore_module._neo4j_driver = original_driver
 
     def test_autocomplete_cache_eviction(self, test_client: TestClient) -> None:
         """Test that cache evicts oldest entries when full."""
-        import explore.explore as explore_module
+        import api.routers.explore as explore_module
 
         # Set a small cache max to trigger eviction
         original_max = explore_module._AUTOCOMPLETE_CACHE_MAX
@@ -147,7 +147,7 @@ class TestAutocompleteEndpoint:
         explore_module._autocomplete_cache.clear()
 
         mock_func = AsyncMock(return_value=[{"id": "1", "name": "Test", "score": 1.0}])
-        with patch.dict("explore.explore.AUTOCOMPLETE_DISPATCH", {"artist": mock_func}):
+        with patch.dict("api.routers.explore.AUTOCOMPLETE_DISPATCH", {"artist": mock_func}):
             # Fill cache beyond max to trigger eviction
             for i in range(5):
                 response = test_client.get(f"/api/autocomplete?q=evict{i}&type=artist")
@@ -170,7 +170,7 @@ class TestExploreEndpoint:
     ) -> None:
         mock_func = AsyncMock(return_value=sample_explore_artist)
 
-        with patch.dict("explore.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
             response = test_client.get("/api/explore?name=Radiohead&type=artist")
 
         assert response.status_code == 200
@@ -188,7 +188,7 @@ class TestExploreEndpoint:
     ) -> None:
         mock_func = AsyncMock(return_value=sample_explore_genre)
 
-        with patch.dict("explore.explore.EXPLORE_DISPATCH", {"genre": mock_func}):
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"genre": mock_func}):
             response = test_client.get("/api/explore?name=Rock&type=genre")
 
         assert response.status_code == 200
@@ -203,7 +203,7 @@ class TestExploreEndpoint:
     ) -> None:
         mock_func = AsyncMock(return_value=sample_explore_label)
 
-        with patch.dict("explore.explore.EXPLORE_DISPATCH", {"label": mock_func}):
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"label": mock_func}):
             response = test_client.get("/api/explore?name=Warp%20Records&type=label")
 
         assert response.status_code == 200
@@ -218,7 +218,7 @@ class TestExploreEndpoint:
     ) -> None:
         mock_func = AsyncMock(return_value=sample_explore_style)
 
-        with patch.dict("explore.explore.EXPLORE_DISPATCH", {"style": mock_func}):
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"style": mock_func}):
             response = test_client.get("/api/explore?name=Alternative+Rock&type=style")
 
         assert response.status_code == 200
@@ -230,7 +230,7 @@ class TestExploreEndpoint:
     def test_explore_not_found(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=None)
 
-        with patch.dict("explore.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
             response = test_client.get("/api/explore?name=NonExistent&type=artist")
 
         assert response.status_code == 404
@@ -240,15 +240,15 @@ class TestExploreEndpoint:
         assert response.status_code == 400
 
     def test_explore_service_not_ready(self, test_client: TestClient) -> None:
-        import explore.explore as explore_module
+        import api.routers.explore as explore_module
 
-        original_driver = explore_module.neo4j_driver
-        explore_module.neo4j_driver = None
+        original_driver = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
 
         response = test_client.get("/api/explore?name=Test&type=artist")
         assert response.status_code == 503
 
-        explore_module.neo4j_driver = original_driver
+        explore_module._neo4j_driver = original_driver
 
     def test_explore_category_counts(
         self,
@@ -257,7 +257,7 @@ class TestExploreEndpoint:
     ) -> None:
         mock_func = AsyncMock(return_value=sample_explore_artist)
 
-        with patch.dict("explore.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
             response = test_client.get("/api/explore?name=Radiohead&type=artist")
 
         data = response.json()
@@ -279,8 +279,8 @@ class TestExpandEndpoint:
         mock_count = AsyncMock(return_value=3)
 
         with (
-            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
-            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
         ):
             response = test_client.get("/api/expand?node_id=Radiohead&type=artist&category=releases")
 
@@ -298,8 +298,8 @@ class TestExpandEndpoint:
         mock_count = AsyncMock(return_value=3)
 
         with (
-            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
-            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
         ):
             response = test_client.get("/api/expand?node_id=Radiohead&type=artist&category=releases")
 
@@ -317,8 +317,8 @@ class TestExpandEndpoint:
         mock_count = AsyncMock(return_value=100)
 
         with (
-            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
-            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
         ):
             response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases")
 
@@ -331,8 +331,8 @@ class TestExpandEndpoint:
         mock_count = AsyncMock(return_value=1)
 
         with (
-            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
-            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
         ):
             response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases")
 
@@ -344,8 +344,8 @@ class TestExpandEndpoint:
         mock_count = AsyncMock(return_value=100)
 
         with (
-            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
-            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
         ):
             response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases&limit=50&offset=50")
 
@@ -365,19 +365,19 @@ class TestExpandEndpoint:
         assert response.status_code == 400
 
     def test_expand_service_not_ready(self, test_client: TestClient) -> None:
-        import explore.explore as explore_module
+        import api.routers.explore as explore_module
 
-        original_driver = explore_module.neo4j_driver
-        explore_module.neo4j_driver = None
+        original_driver = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
 
         response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases")
         assert response.status_code == 503
 
-        explore_module.neo4j_driver = original_driver
+        explore_module._neo4j_driver = original_driver
 
     def test_expand_invalid_category(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[])
-        with patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func, "labels": mock_func, "aliases": mock_func}}):
+        with patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func, "labels": mock_func, "aliases": mock_func}}):
             response = test_client.get("/api/expand?node_id=Test&type=artist&category=invalid")
 
         assert response.status_code == 400
@@ -389,8 +389,8 @@ class TestExpandEndpoint:
         mock_count = AsyncMock(return_value=1)
 
         with (
-            patch.dict("explore.explore.EXPAND_DISPATCH", {"genre": {"artists": mock_func}}),
-            patch.dict("explore.explore.COUNT_DISPATCH", {"genre": {"artists": mock_count}}),
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"genre": {"artists": mock_func}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"genre": {"artists": mock_count}}),
         ):
             response = test_client.get("/api/expand?node_id=Rock&type=genre&category=artists")
 
@@ -403,8 +403,8 @@ class TestExpandEndpoint:
         mock_count = AsyncMock(return_value=1)
 
         with (
-            patch.dict("explore.explore.EXPAND_DISPATCH", {"label": {"releases": mock_func}}),
-            patch.dict("explore.explore.COUNT_DISPATCH", {"label": {"releases": mock_count}}),
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"label": {"releases": mock_func}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"label": {"releases": mock_count}}),
         ):
             response = test_client.get("/api/expand?node_id=Parlophone&type=label&category=releases")
 
@@ -415,8 +415,8 @@ class TestExpandEndpoint:
         mock_count = AsyncMock(return_value=0)
 
         with (
-            patch.dict("explore.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
-            patch.dict("explore.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_func}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
         ):
             response = test_client.get("/api/expand?node_id=Test&type=artist&category=releases&limit=5")
 
@@ -439,7 +439,7 @@ class TestNodeDetailsEndpoint:
     ) -> None:
         mock_func = AsyncMock(return_value=sample_artist_details)
 
-        with patch.dict("explore.explore.DETAILS_DISPATCH", {"artist": mock_func}):
+        with patch.dict("api.routers.explore.DETAILS_DISPATCH", {"artist": mock_func}):
             response = test_client.get("/api/node/1?type=artist")
 
         assert response.status_code == 200
@@ -461,7 +461,7 @@ class TestNodeDetailsEndpoint:
         }
         mock_func = AsyncMock(return_value=release_data)
 
-        with patch.dict("explore.explore.DETAILS_DISPATCH", {"release": mock_func}):
+        with patch.dict("api.routers.explore.DETAILS_DISPATCH", {"release": mock_func}):
             response = test_client.get("/api/node/10?type=release")
 
         assert response.status_code == 200
@@ -471,7 +471,7 @@ class TestNodeDetailsEndpoint:
     def test_get_node_not_found(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=None)
 
-        with patch.dict("explore.explore.DETAILS_DISPATCH", {"artist": mock_func}):
+        with patch.dict("api.routers.explore.DETAILS_DISPATCH", {"artist": mock_func}):
             response = test_client.get("/api/node/nonexistent?type=artist")
 
         assert response.status_code == 404
@@ -481,21 +481,21 @@ class TestNodeDetailsEndpoint:
         assert response.status_code == 400
 
     def test_get_node_service_not_ready(self, test_client: TestClient) -> None:
-        import explore.explore as explore_module
+        import api.routers.explore as explore_module
 
-        original_driver = explore_module.neo4j_driver
-        explore_module.neo4j_driver = None
+        original_driver = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
 
         response = test_client.get("/api/node/1?type=artist")
         assert response.status_code == 503
 
-        explore_module.neo4j_driver = original_driver
+        explore_module._neo4j_driver = original_driver
 
     def test_get_genre_details(self, test_client: TestClient) -> None:
         genre_data = {"id": "Rock", "name": "Rock", "artist_count": 1000}
         mock_func = AsyncMock(return_value=genre_data)
 
-        with patch.dict("explore.explore.DETAILS_DISPATCH", {"genre": mock_func}):
+        with patch.dict("api.routers.explore.DETAILS_DISPATCH", {"genre": mock_func}):
             response = test_client.get("/api/node/Rock?type=genre")
 
         assert response.status_code == 200
@@ -504,7 +504,7 @@ class TestNodeDetailsEndpoint:
         label_data = {"id": "100", "name": "Warp Records", "release_count": 500}
         mock_func = AsyncMock(return_value=label_data)
 
-        with patch.dict("explore.explore.DETAILS_DISPATCH", {"label": mock_func}):
+        with patch.dict("api.routers.explore.DETAILS_DISPATCH", {"label": mock_func}):
             response = test_client.get("/api/node/100?type=label")
 
         assert response.status_code == 200
@@ -520,7 +520,7 @@ class TestTrendsEndpoint:
     ) -> None:
         mock_func = AsyncMock(return_value=sample_trends_data)
 
-        with patch.dict("explore.explore.TRENDS_DISPATCH", {"artist": mock_func}):
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"artist": mock_func}):
             response = test_client.get("/api/trends?name=Radiohead&type=artist")
 
         assert response.status_code == 200
@@ -532,7 +532,7 @@ class TestTrendsEndpoint:
     def test_trends_genre(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[{"year": 2000, "count": 100}])
 
-        with patch.dict("explore.explore.TRENDS_DISPATCH", {"genre": mock_func}):
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"genre": mock_func}):
             response = test_client.get("/api/trends?name=Rock&type=genre")
 
         assert response.status_code == 200
@@ -542,7 +542,7 @@ class TestTrendsEndpoint:
     def test_trends_label(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[{"year": 1990, "count": 50}])
 
-        with patch.dict("explore.explore.TRENDS_DISPATCH", {"label": mock_func}):
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"label": mock_func}):
             response = test_client.get("/api/trends?name=Warp%20Records&type=label")
 
         assert response.status_code == 200
@@ -554,20 +554,20 @@ class TestTrendsEndpoint:
         assert response.status_code == 400
 
     def test_trends_service_not_ready(self, test_client: TestClient) -> None:
-        import explore.explore as explore_module
+        import api.routers.explore as explore_module
 
-        original_driver = explore_module.neo4j_driver
-        explore_module.neo4j_driver = None
+        original_driver = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
 
         response = test_client.get("/api/trends?name=Test&type=artist")
         assert response.status_code == 503
 
-        explore_module.neo4j_driver = original_driver
+        explore_module._neo4j_driver = original_driver
 
     def test_trends_empty_results(self, test_client: TestClient) -> None:
         mock_func = AsyncMock(return_value=[])
 
-        with patch.dict("explore.explore.TRENDS_DISPATCH", {"artist": mock_func}):
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"artist": mock_func}):
             response = test_client.get("/api/trends?name=Unknown&type=artist")
 
         assert response.status_code == 200
@@ -579,7 +579,7 @@ class TestBuildCategories:
     """Test the _build_categories helper function."""
 
     def test_build_artist_categories(self) -> None:
-        from explore.explore import _build_categories
+        from api.routers.explore import _build_categories
 
         result = {
             "id": "1",
@@ -596,7 +596,7 @@ class TestBuildCategories:
         assert cat_map["aliases"]["count"] == 1
 
     def test_build_genre_categories(self) -> None:
-        from explore.explore import _build_categories
+        from api.routers.explore import _build_categories
 
         result = {
             "id": "Rock",
@@ -614,7 +614,7 @@ class TestBuildCategories:
         assert cat_map["styles"]["count"] == 25
 
     def test_build_label_categories(self) -> None:
-        from explore.explore import _build_categories
+        from api.routers.explore import _build_categories
 
         result = {
             "id": "100",
@@ -629,7 +629,7 @@ class TestBuildCategories:
         assert cat_map["genres"]["count"] == 8
 
     def test_build_style_categories(self) -> None:
-        from explore.explore import _build_categories
+        from api.routers.explore import _build_categories
 
         result = {
             "id": "Alternative Rock",
@@ -646,7 +646,7 @@ class TestBuildCategories:
         assert cat_map["genres"]["count"] == 3
 
     def test_build_unknown_type(self) -> None:
-        from explore.explore import _build_categories
+        from api.routers.explore import _build_categories
 
         categories = _build_categories("unknown", {"id": "x", "name": "x"})
         assert categories == []
@@ -703,13 +703,13 @@ class TestGetCacheKey:
     """Test the _get_cache_key helper function."""
 
     def test_cache_key_lowercases(self) -> None:
-        from explore.explore import _get_cache_key
+        from api.routers.explore import _get_cache_key
 
         key = _get_cache_key("Radiohead", "artist", 10)
         assert key == ("radiohead", "artist", 10)
 
     def test_cache_key_strips_whitespace(self) -> None:
-        from explore.explore import _get_cache_key
+        from api.routers.explore import _get_cache_key
 
         key = _get_cache_key("  radio  ", "artist", 10)
         assert key == ("radio", "artist", 10)
@@ -759,7 +759,7 @@ class TestJwtHelpers:
 
     def test_b64url_decode_with_padding(self) -> None:
         """Test _b64url_decode adds padding when length % 4 != 0 (covers lines 61-62)."""
-        from explore.explore import _b64url_decode
+        from api.routers.explore import _b64url_decode
 
         # "dGVzdA" is 6 chars (6 % 4 == 2), so padding = 2 is added
         # This is base64url encoding of b"test"
@@ -768,7 +768,7 @@ class TestJwtHelpers:
 
     def test_b64url_decode_no_padding_needed(self) -> None:
         """Test _b64url_decode when length % 4 == 0 (no padding added)."""
-        from explore.explore import _b64url_decode
+        from api.routers.explore import _b64url_decode
 
         # "YWJj" is 4 chars (4 % 4 == 0), no padding added
         # This is base64url encoding of b"abc"
@@ -777,7 +777,7 @@ class TestJwtHelpers:
 
     def test_verify_jwt_valid_token(self) -> None:
         """Test _verify_jwt returns payload for a valid token."""
-        from explore.explore import _verify_jwt
+        from api.routers.explore import _verify_jwt
 
         token = _make_explore_jwt()
         payload = _verify_jwt(token, TEST_EXPLORE_JWT_SECRET)
@@ -786,14 +786,14 @@ class TestJwtHelpers:
 
     def test_verify_jwt_malformed_token_too_few_parts(self) -> None:
         """Test _verify_jwt returns None when token has wrong number of parts."""
-        from explore.explore import _verify_jwt
+        from api.routers.explore import _verify_jwt
 
         result = _verify_jwt("only.two", TEST_EXPLORE_JWT_SECRET)
         assert result is None
 
     def test_verify_jwt_wrong_signature(self) -> None:
         """Test _verify_jwt returns None when signature is invalid."""
-        from explore.explore import _verify_jwt
+        from api.routers.explore import _verify_jwt
 
         token = _make_explore_jwt()
         parts = token.split(".")
@@ -805,7 +805,7 @@ class TestJwtHelpers:
 
     def test_verify_jwt_invalid_body_not_json(self) -> None:
         """Test _verify_jwt returns None when body cannot be JSON decoded."""
-        from explore.explore import _verify_jwt
+        from api.routers.explore import _verify_jwt
 
         token = _make_invalid_body_jwt()
         result = _verify_jwt(token, TEST_EXPLORE_JWT_SECRET)
@@ -813,7 +813,7 @@ class TestJwtHelpers:
 
     def test_verify_jwt_expired_token(self) -> None:
         """Test _verify_jwt returns None for an expired token."""
-        from explore.explore import _verify_jwt
+        from api.routers.explore import _verify_jwt
 
         expired_token = _make_explore_jwt(exp=int(time.time()) - 100)
         result = _verify_jwt(expired_token, TEST_EXPLORE_JWT_SECRET)
@@ -821,7 +821,7 @@ class TestJwtHelpers:
 
     def test_verify_jwt_wrong_secret(self) -> None:
         """Test _verify_jwt returns None when wrong secret is used."""
-        from explore.explore import _verify_jwt
+        from api.routers.explore import _verify_jwt
 
         token = _make_explore_jwt(secret=TEST_EXPLORE_JWT_SECRET)
         result = _verify_jwt(token, "wrong-secret")
@@ -833,38 +833,34 @@ class TestRequireUserDependency:
 
     def test_user_collection_no_config_returns_503(self, test_client: TestClient) -> None:
         """When config is None, _require_user raises 503."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        original_config = explore_module.config
-        explore_module.config = None
+        original_config = explore_module._jwt_secret
+        explore_module._jwt_secret = None
 
         response = test_client.get("/api/user/collection")
         assert response.status_code == 503
 
-        explore_module.config = original_config
+        explore_module._jwt_secret = original_config
 
     def test_user_collection_no_auth_returns_401(self, test_client: TestClient) -> None:
         """When no bearer token is provided, _require_user raises 401."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        explore_module.config = mock_config
+        original_config = explore_module._jwt_secret
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         response = test_client.get("/api/user/collection")
         assert response.status_code == 401
 
-        explore_module.config = original_config
+        explore_module._jwt_secret = original_config
 
     def test_user_collection_invalid_token_returns_401(self, test_client: TestClient) -> None:
         """When token signature is invalid, _require_user raises 401."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        explore_module.config = mock_config
+        original_config = explore_module._jwt_secret
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         response = test_client.get(
             "/api/user/collection",
@@ -872,7 +868,7 @@ class TestRequireUserDependency:
         )
         assert response.status_code == 401
 
-        explore_module.config = original_config
+        explore_module._jwt_secret = original_config
 
 
 class TestUserEndpoints:
@@ -896,14 +892,12 @@ class TestUserEndpoints:
 
     def test_user_collection_service_not_ready(self, test_client: TestClient) -> None:
         """When neo4j_driver is None (but config set), collection returns 503."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        original_driver = explore_module.neo4j_driver
-        explore_module.config = mock_config
-        explore_module.neo4j_driver = None
+        original_config = explore_module._jwt_secret
+        original_driver = explore_module._neo4j_driver
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        explore_module._neo4j_driver = None
 
         token = _make_explore_jwt()
         response = test_client.get(
@@ -912,20 +906,18 @@ class TestUserEndpoints:
         )
         assert response.status_code == 503
 
-        explore_module.config = original_config
-        explore_module.neo4j_driver = original_driver
+        explore_module._jwt_secret = original_config
+        explore_module._neo4j_driver = original_driver
 
     def test_user_collection_success(self, test_client: TestClient) -> None:
         """With valid auth and neo4j driver, collection endpoint returns 200."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        explore_module.config = mock_config
+        original_config = explore_module._jwt_secret
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         token = _make_explore_jwt()
-        with patch("explore.explore.get_user_collection", new=AsyncMock(return_value=([], 0))):
+        with patch("api.routers.user.get_user_collection", new=AsyncMock(return_value=([], 0))):
             response = test_client.get(
                 "/api/user/collection",
                 headers={"Authorization": f"Bearer {token}"},
@@ -936,18 +928,16 @@ class TestUserEndpoints:
         assert "releases" in data
         assert data["total"] == 0
 
-        explore_module.config = original_config
+        explore_module._jwt_secret = original_config
 
     def test_user_wantlist_service_not_ready(self, test_client: TestClient) -> None:
         """When neo4j_driver is None (but config set), wantlist returns 503."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        original_driver = explore_module.neo4j_driver
-        explore_module.config = mock_config
-        explore_module.neo4j_driver = None
+        original_config = explore_module._jwt_secret
+        original_driver = explore_module._neo4j_driver
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        explore_module._neo4j_driver = None
 
         token = _make_explore_jwt()
         response = test_client.get(
@@ -956,20 +946,18 @@ class TestUserEndpoints:
         )
         assert response.status_code == 503
 
-        explore_module.config = original_config
-        explore_module.neo4j_driver = original_driver
+        explore_module._jwt_secret = original_config
+        explore_module._neo4j_driver = original_driver
 
     def test_user_wantlist_success(self, test_client: TestClient) -> None:
         """With valid auth and neo4j driver, wantlist endpoint returns 200."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        explore_module.config = mock_config
+        original_config = explore_module._jwt_secret
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         token = _make_explore_jwt()
-        with patch("explore.explore.get_user_wantlist", new=AsyncMock(return_value=([], 0))):
+        with patch("api.routers.user.get_user_wantlist", new=AsyncMock(return_value=([], 0))):
             response = test_client.get(
                 "/api/user/wantlist",
                 headers={"Authorization": f"Bearer {token}"},
@@ -979,18 +967,16 @@ class TestUserEndpoints:
         data = response.json()
         assert "releases" in data
 
-        explore_module.config = original_config
+        explore_module._jwt_secret = original_config
 
     def test_user_recommendations_service_not_ready(self, test_client: TestClient) -> None:
         """When neo4j_driver is None, recommendations returns 503."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        original_driver = explore_module.neo4j_driver
-        explore_module.config = mock_config
-        explore_module.neo4j_driver = None
+        original_config = explore_module._jwt_secret
+        original_driver = explore_module._neo4j_driver
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        explore_module._neo4j_driver = None
 
         token = _make_explore_jwt()
         response = test_client.get(
@@ -999,20 +985,18 @@ class TestUserEndpoints:
         )
         assert response.status_code == 503
 
-        explore_module.config = original_config
-        explore_module.neo4j_driver = original_driver
+        explore_module._jwt_secret = original_config
+        explore_module._neo4j_driver = original_driver
 
     def test_user_recommendations_success(self, test_client: TestClient) -> None:
         """With valid auth and neo4j driver, recommendations endpoint returns 200."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        explore_module.config = mock_config
+        original_config = explore_module._jwt_secret
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         token = _make_explore_jwt()
-        with patch("explore.explore.get_user_recommendations", new=AsyncMock(return_value=[])):
+        with patch("api.routers.user.get_user_recommendations", new=AsyncMock(return_value=[])):
             response = test_client.get(
                 "/api/user/recommendations",
                 headers={"Authorization": f"Bearer {token}"},
@@ -1022,18 +1006,16 @@ class TestUserEndpoints:
         data = response.json()
         assert "recommendations" in data
 
-        explore_module.config = original_config
+        explore_module._jwt_secret = original_config
 
     def test_user_collection_stats_service_not_ready(self, test_client: TestClient) -> None:
         """When neo4j_driver is None, collection stats returns 503."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        original_driver = explore_module.neo4j_driver
-        explore_module.config = mock_config
-        explore_module.neo4j_driver = None
+        original_config = explore_module._jwt_secret
+        original_driver = explore_module._neo4j_driver
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        explore_module._neo4j_driver = None
 
         token = _make_explore_jwt()
         response = test_client.get(
@@ -1042,21 +1024,19 @@ class TestUserEndpoints:
         )
         assert response.status_code == 503
 
-        explore_module.config = original_config
-        explore_module.neo4j_driver = original_driver
+        explore_module._jwt_secret = original_config
+        explore_module._neo4j_driver = original_driver
 
     def test_user_collection_stats_success(self, test_client: TestClient) -> None:
         """With valid auth and neo4j driver, collection stats returns 200."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        explore_module.config = mock_config
+        original_config = explore_module._jwt_secret
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         token = _make_explore_jwt()
         stats = {"genres": [], "decades": [], "labels": []}
-        with patch("explore.explore.get_user_collection_stats", new=AsyncMock(return_value=stats)):
+        with patch("api.routers.user.get_user_collection_stats", new=AsyncMock(return_value=stats)):
             response = test_client.get(
                 "/api/user/collection/stats",
                 headers={"Authorization": f"Bearer {token}"},
@@ -1064,20 +1044,18 @@ class TestUserEndpoints:
 
         assert response.status_code == 200
 
-        explore_module.config = original_config
+        explore_module._jwt_secret = original_config
 
     def test_user_status_with_auth_uses_db_query(self, test_client: TestClient) -> None:
         """With valid auth and driver, /api/user/status queries Neo4j."""
-        import explore.explore as explore_module
+        import api.routers.user as explore_module
 
-        mock_config = MagicMock()
-        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
-        original_config = explore_module.config
-        explore_module.config = mock_config
+        original_config = explore_module._jwt_secret
+        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         token = _make_explore_jwt()
         status_result = {"123": {"in_collection": True, "in_wantlist": False}}
-        with patch("explore.explore.check_releases_user_status", new=AsyncMock(return_value=status_result)):
+        with patch("api.routers.user.check_releases_user_status", new=AsyncMock(return_value=status_result)):
             response = test_client.get(
                 "/api/user/status?ids=123",
                 headers={"Authorization": f"Bearer {token}"},
@@ -1087,4 +1065,4 @@ class TestUserEndpoints:
         data = response.json()
         assert data["status"]["123"]["in_collection"] is True
 
-        explore_module.config = original_config
+        explore_module._jwt_secret = original_config
