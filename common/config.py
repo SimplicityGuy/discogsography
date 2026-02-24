@@ -364,6 +364,9 @@ class ApiConfig:
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30
     discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+    neo4j_address: str | None = None
+    neo4j_username: str | None = None
+    neo4j_password: str | None = None
 
     @classmethod
     def from_env(cls) -> "ApiConfig":
@@ -400,6 +403,9 @@ class ApiConfig:
             "DISCOGS_USER_AGENT",
             "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography",
         )
+        neo4j_address = getenv("NEO4J_ADDRESS") or None
+        neo4j_username = getenv("NEO4J_USERNAME") or None
+        neo4j_password = getenv("NEO4J_PASSWORD") or None
 
         return cls(
             postgres_address=postgres_address,  # type: ignore[arg-type]
@@ -411,6 +417,9 @@ class ApiConfig:
             jwt_algorithm=jwt_algorithm,
             jwt_expire_minutes=jwt_expire_minutes,
             discogs_user_agent=discogs_user_agent,
+            neo4j_address=neo4j_address,
+            neo4j_username=neo4j_username,
+            neo4j_password=neo4j_password,
         )
 
 
