@@ -585,3 +585,56 @@ class TestOrjsonSerializer:
 
         result = orjson_serializer({"x": 1})
         assert isinstance(result, str)
+
+
+class TestApiConfigFromEnv:
+    """Test ApiConfig.from_env NEO4J optional variable branches."""
+
+    def test_from_env_without_neo4j_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Lines 406-408: NEO4J_* vars absent → neo4j fields are None."""
+        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.delenv("NEO4J_ADDRESS", raising=False)
+        monkeypatch.delenv("NEO4J_USERNAME", raising=False)
+        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
+
+        from common.config import ApiConfig
+
+        config = ApiConfig.from_env()
+        assert config.neo4j_address is None
+        assert config.neo4j_username is None
+        assert config.neo4j_password is None
+
+    def test_from_env_with_neo4j_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """NEO4J_* vars present → neo4j fields are populated."""
+        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://neo4j:7687")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+
+        from common.config import ApiConfig
+
+        config = ApiConfig.from_env()
+        assert config.neo4j_address == "bolt://neo4j:7687"
+        assert config.neo4j_username == "neo4j"
+        assert config.neo4j_password == "neo4jpass"
+
+    def test_from_env_missing_required_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Missing required var raises ValueError."""
+        monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
+        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
+
+        from common.config import ApiConfig
+
+        with pytest.raises(ValueError, match="JWT_SECRET_KEY"):
+            ApiConfig.from_env()

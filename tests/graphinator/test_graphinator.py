@@ -2634,7 +2634,7 @@ class TestMainBatchProcessorFlushError:
 
                     async def empty_aiter() -> Any:
                         return
-                        yield  # noqa: unreachable
+                        yield
 
                     result.__aiter__ = lambda _: empty_aiter()
                     return result
@@ -2755,7 +2755,7 @@ class TestMainNeo4jCloseError:
 
                     async def empty_aiter() -> Any:
                         return
-                        yield  # noqa: unreachable
+                        yield
 
                     result.__aiter__ = lambda _: empty_aiter()
                     return result
@@ -2880,7 +2880,7 @@ class TestMainAmqpConnectionNone:
 
                     async def empty_aiter() -> Any:
                         return
-                        yield  # noqa: unreachable
+                        yield
 
                     result.__aiter__ = lambda _: empty_aiter()
                     return result
@@ -2914,5 +2914,586 @@ class TestMainAmqpConnectionNone:
 
             error_calls = str(mock_logger.error.call_args_list)
             assert "AMQP" in error_calls or "amqp" in error_calls.lower() or "No AMQP" in error_calls
+        finally:
+            gm.shutdown_requested = original_shutdown
+
+
+class TestProgressReporterFunction:
+    """Test progress_reporter function coverage (lines 1038-1155)."""
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_exits_immediately_on_shutdown(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test progress_reporter exits when shutdown_requested is True."""
+        import graphinator.graphinator as gm
+
+        monkeypatch.setattr(gm, "shutdown_requested", True)
+        sleep_called = False
+
+        async def mock_sleep(_: float) -> None:
+            nonlocal sleep_called
+            sleep_called = True
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        await gm.progress_reporter()
+        assert not sleep_called
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_idle_mode_entry(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test entering idle mode after startup timeout with no messages."""
+        import graphinator.graphinator as gm
+
+        monkeypatch.setattr(gm, "shutdown_requested", False)
+        monkeypatch.setattr(gm, "message_counts", {"artists": 0, "labels": 0, "masters": 0, "releases": 0})
+        monkeypatch.setattr(gm, "completed_files", set())
+        monkeypatch.setattr(gm, "idle_mode", False)
+        monkeypatch.setattr(gm, "STARTUP_IDLE_TIMEOUT", 0)
+        monkeypatch.setattr(
+            gm,
+            "last_message_time",
+            {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0},
+        )
+        monkeypatch.setattr(gm, "consumer_tags", {})
+
+        call_count = 0
+
+        async def mock_sleep(_: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                monkeypatch.setattr(gm, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        await gm.progress_reporter()
+        assert gm.idle_mode is True
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_idle_mode_exit_on_messages(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test exiting idle mode when messages start flowing."""
+        import graphinator.graphinator as gm
+
+        monkeypatch.setattr(gm, "shutdown_requested", False)
+        monkeypatch.setattr(gm, "message_counts", {"artists": 10, "labels": 0, "masters": 0, "releases": 0})
+        monkeypatch.setattr(gm, "completed_files", set())
+        monkeypatch.setattr(gm, "idle_mode", True)
+        monkeypatch.setattr(
+            gm,
+            "last_message_time",
+            {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0},
+        )
+        monkeypatch.setattr(gm, "consumer_tags", {})
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(gm, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        await gm.progress_reporter()
+        assert gm.idle_mode is False
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_idle_mode_periodic_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test idle mode periodic logging when IDLE_LOG_INTERVAL passes."""
+        import graphinator.graphinator as gm
+
+        monkeypatch.setattr(gm, "shutdown_requested", False)
+        monkeypatch.setattr(gm, "message_counts", {"artists": 0, "labels": 0, "masters": 0, "releases": 0})
+        monkeypatch.setattr(gm, "completed_files", set())
+        monkeypatch.setattr(gm, "idle_mode", True)
+        monkeypatch.setattr(gm, "IDLE_LOG_INTERVAL", 0)
+        monkeypatch.setattr(
+            gm,
+            "last_message_time",
+            {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0},
+        )
+        monkeypatch.setattr(gm, "consumer_tags", {})
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(gm, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            await gm.progress_reporter()
+
+        info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
+        assert "Idle mode" in info_calls or "idle" in info_calls.lower()
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_skip_when_all_files_complete(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test progress reporter skips when all files are complete."""
+        from common import DATA_TYPES
+        import graphinator.graphinator as gm
+
+        monkeypatch.setattr(gm, "shutdown_requested", False)
+        monkeypatch.setattr(
+            gm,
+            "message_counts",
+            {"artists": 100, "labels": 50, "masters": 25, "releases": 200},
+        )
+        monkeypatch.setattr(gm, "completed_files", set(DATA_TYPES))
+        monkeypatch.setattr(gm, "idle_mode", False)
+        monkeypatch.setattr(
+            gm,
+            "last_message_time",
+            {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0},
+        )
+        monkeypatch.setattr(gm, "consumer_tags", {})
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(gm, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            await gm.progress_reporter()
+
+        info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
+        assert "Progress" not in info_calls
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_stalled_consumers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test stalled consumer detection when no messages for >2 minutes."""
+        import time
+
+        import graphinator.graphinator as gm
+
+        current_time = time.time()
+        monkeypatch.setattr(gm, "shutdown_requested", False)
+        monkeypatch.setattr(gm, "message_counts", {"artists": 10, "labels": 0, "masters": 0, "releases": 0})
+        monkeypatch.setattr(gm, "completed_files", set())
+        monkeypatch.setattr(gm, "idle_mode", False)
+        monkeypatch.setattr(gm, "STARTUP_IDLE_TIMEOUT", 99999)
+        monkeypatch.setattr(
+            gm,
+            "last_message_time",
+            {
+                "artists": current_time - 200,
+                "labels": 0.0,
+                "masters": 0.0,
+                "releases": 0.0,
+            },
+        )
+        monkeypatch.setattr(gm, "consumer_tags", {"artists": "tag-123"})
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(gm, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            await gm.progress_reporter()
+
+        error_calls = " ".join(str(c) for c in mock_logger.error.call_args_list)
+        assert "Stalled" in error_calls or "stalled" in error_calls.lower()
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_waiting_for_messages(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test progress reporter shows waiting state when no messages."""
+        import graphinator.graphinator as gm
+
+        monkeypatch.setattr(gm, "shutdown_requested", False)
+        monkeypatch.setattr(gm, "message_counts", {"artists": 0, "labels": 0, "masters": 0, "releases": 0})
+        monkeypatch.setattr(gm, "completed_files", set())
+        monkeypatch.setattr(gm, "idle_mode", False)
+        monkeypatch.setattr(gm, "STARTUP_IDLE_TIMEOUT", 99999)
+        monkeypatch.setattr(
+            gm,
+            "last_message_time",
+            {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0},
+        )
+        monkeypatch.setattr(gm, "consumer_tags", {})
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(gm, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            await gm.progress_reporter()
+
+        info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
+        assert "Waiting" in info_calls
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_all_actively_processing(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test all consumers actively processing log."""
+        import time
+
+        import graphinator.graphinator as gm
+
+        current_time = time.time()
+        monkeypatch.setattr(gm, "shutdown_requested", False)
+        monkeypatch.setattr(
+            gm,
+            "message_counts",
+            {"artists": 10, "labels": 5, "masters": 3, "releases": 20},
+        )
+        monkeypatch.setattr(gm, "completed_files", set())
+        monkeypatch.setattr(gm, "idle_mode", False)
+        monkeypatch.setattr(gm, "STARTUP_IDLE_TIMEOUT", 99999)
+        monkeypatch.setattr(
+            gm,
+            "last_message_time",
+            {
+                "artists": current_time - 2,
+                "labels": current_time - 1,
+                "masters": current_time - 3,
+                "releases": current_time - 4,
+            },
+        )
+        monkeypatch.setattr(
+            gm,
+            "consumer_tags",
+            {"artists": "t1", "labels": "t2", "masters": "t3", "releases": "t4"},
+        )
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(gm, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            await gm.progress_reporter()
+
+        info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
+        assert "actively processing" in info_calls.lower()
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_slow_consumers(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test slow consumer detection (5-120 seconds since last message)."""
+        import time
+
+        import graphinator.graphinator as gm
+
+        current_time = time.time()
+        monkeypatch.setattr(gm, "shutdown_requested", False)
+        monkeypatch.setattr(gm, "message_counts", {"artists": 10, "labels": 0, "masters": 0, "releases": 0})
+        monkeypatch.setattr(gm, "completed_files", set())
+        monkeypatch.setattr(gm, "idle_mode", False)
+        monkeypatch.setattr(gm, "STARTUP_IDLE_TIMEOUT", 99999)
+        monkeypatch.setattr(
+            gm,
+            "last_message_time",
+            {
+                "artists": current_time - 30,
+                "labels": 0.0,
+                "masters": 0.0,
+                "releases": 0.0,
+            },
+        )
+        monkeypatch.setattr(gm, "consumer_tags", {"artists": "tag-123"})
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(gm, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            await gm.progress_reporter()
+
+        warning_calls = " ".join(str(c) for c in mock_logger.warning.call_args_list)
+        assert "Slow" in warning_calls or "slow" in warning_calls.lower()
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_active_consumers_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test active and canceled consumers are logged."""
+        import time
+
+        import graphinator.graphinator as gm
+
+        current_time = time.time()
+        monkeypatch.setattr(gm, "shutdown_requested", False)
+        monkeypatch.setattr(
+            gm,
+            "message_counts",
+            {"artists": 10, "labels": 5, "masters": 0, "releases": 0},
+        )
+        # Mark masters as completed (so it shows as a canceled consumer)
+        monkeypatch.setattr(gm, "completed_files", {"masters"})
+        monkeypatch.setattr(gm, "idle_mode", False)
+        monkeypatch.setattr(gm, "STARTUP_IDLE_TIMEOUT", 99999)
+        monkeypatch.setattr(
+            gm,
+            "last_message_time",
+            {
+                "artists": current_time - 30,
+                "labels": current_time - 30,
+                "masters": 0.0,
+                "releases": 0.0,
+            },
+        )
+        monkeypatch.setattr(gm, "consumer_tags", {"artists": "tag-1", "labels": "tag-2"})
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(gm, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            await gm.progress_reporter()
+
+        info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
+        assert "Active consumers" in info_calls or "Canceled consumers" in info_calls
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_sleep_30s_after_three_reports(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that after 3 reports, sleep interval changes to 30s."""
+        import graphinator.graphinator as gm
+
+        monkeypatch.setattr(gm, "shutdown_requested", False)
+        monkeypatch.setattr(gm, "message_counts", {"artists": 10, "labels": 0, "masters": 0, "releases": 0})
+        monkeypatch.setattr(gm, "completed_files", set())
+        monkeypatch.setattr(gm, "idle_mode", False)
+        monkeypatch.setattr(gm, "STARTUP_IDLE_TIMEOUT", 99999)
+        monkeypatch.setattr(
+            gm,
+            "last_message_time",
+            {"artists": 0.0, "labels": 0.0, "masters": 0.0, "releases": 0.0},
+        )
+        monkeypatch.setattr(gm, "consumer_tags", {})
+
+        call_count = 0
+        sleep_durations: list[float] = []
+
+        async def mock_sleep(duration: float) -> None:
+            nonlocal call_count
+            sleep_durations.append(duration)
+            call_count += 1
+            if call_count >= 4:
+                monkeypatch.setattr(gm, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("graphinator.graphinator.logger"):
+            await gm.progress_reporter()
+
+        assert len(sleep_durations) >= 4
+        assert sleep_durations[0] == 10
+        assert sleep_durations[1] == 10
+        assert sleep_durations[2] == 10
+        assert sleep_durations[3] == 30
+
+
+class TestProgressIntervalLog:
+    """Test progress interval logging in message handler (line 956)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.shutdown_requested", False)
+    async def test_progress_interval_log_at_100_messages(self, sample_artist_data: dict[str, Any], mock_neo4j_driver: MagicMock) -> None:
+        """Test progress interval log fires every progress_interval messages."""
+        import graphinator.graphinator as gm
+
+        original_counts = dict(gm.message_counts)
+        original_interval = gm.progress_interval
+        gm.message_counts["artists"] = gm.progress_interval - 1
+        try:
+            mock_message = AsyncMock(spec=AbstractIncomingMessage)
+            mock_message.body = json.dumps(sample_artist_data).encode()
+
+            mock_context_manager = await mock_neo4j_driver.session(database="neo4j")
+            mock_session = await mock_context_manager.__aenter__()
+            mock_session.execute_write = AsyncMock(return_value=True)
+
+            with (
+                patch("graphinator.graphinator.graph", mock_neo4j_driver),
+                patch("graphinator.graphinator.logger") as mock_logger,
+            ):
+                await on_artist_message(mock_message)
+
+            assert gm.message_counts["artists"] == original_interval
+            info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
+            assert "Processed artists" in info_calls or "📊" in info_calls
+        finally:
+            gm.message_counts.update(original_counts)
+
+
+class TestCloseRabbitMQOuterException:
+    """Test outer exception handling in close_rabbitmq_connection (lines 231-232)."""
+
+    @pytest.mark.asyncio
+    async def test_outer_exception_logged(self) -> None:
+        """Test that outer exception in close_rabbitmq_connection is logged (lines 231-232)."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.active_channel = None
+        graphinator.graphinator.active_connection = None
+
+        with patch("graphinator.graphinator.logger") as mock_logger:
+            mock_logger.info.side_effect = Exception("Logger failed unexpectedly")
+            from graphinator.graphinator import close_rabbitmq_connection
+
+            await close_rabbitmq_connection()
+
+        mock_logger.error.assert_called()
+        error_str = " ".join(str(c) for c in mock_logger.error.call_args_list)
+        assert "Error" in error_str
+
+
+class TestScheduleConsumerCancellationException:
+    """Test exception handling in cancel_after_delay (line 189)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.CONSUMER_CANCEL_DELAY", 0.01)
+    async def test_cancel_exception_is_handled(self) -> None:
+        """Test exception during consumer cancel is logged (line 189)."""
+        mock_queue = AsyncMock()
+        mock_queue.cancel.side_effect = Exception("Cancel failed")
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.consumer_tags = {"artists": "consumer-tag-123"}
+        graphinator.graphinator.consumer_cancel_tasks = {}
+
+        from graphinator.graphinator import schedule_consumer_cancellation
+
+        await schedule_consumer_cancellation("artists", mock_queue)
+        await asyncio.sleep(0.05)
+
+        mock_queue.cancel.assert_called_once()
+        assert "artists" not in graphinator.graphinator.consumer_cancel_tasks
+
+
+class TestPeriodicQueueCheckerStuckState:
+    """Test periodic_queue_checker stuck state detection (lines 280-293)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.STUCK_CHECK_INTERVAL", 0.01)
+    async def test_stuck_state_triggers_recovery(self) -> None:
+        """Test periodic_queue_checker detects stuck state and calls _recover_consumers."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = {"artists"}
+        graphinator.graphinator.message_counts = {
+            "artists": 10,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+        graphinator.graphinator.active_connection = None
+        graphinator.graphinator.shutdown_requested = False
+
+        recover_event = asyncio.Event()
+
+        async def mock_recover() -> None:
+            recover_event.set()
+            graphinator.graphinator.shutdown_requested = True
+
+        from graphinator.graphinator import periodic_queue_checker
+
+        with patch("graphinator.graphinator._recover_consumers", mock_recover):
+            checker_task = asyncio.create_task(periodic_queue_checker())
+            try:
+                await asyncio.wait_for(recover_event.wait(), timeout=1.0)
+            finally:
+                graphinator.graphinator.shutdown_requested = True
+                checker_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await checker_task
+
+        assert recover_event.is_set()
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.STUCK_CHECK_INTERVAL", 0.01)
+    @patch("graphinator.graphinator.QUEUE_CHECK_INTERVAL", 9999)
+    async def test_timing_guard_prevents_frequent_checks(self) -> None:
+        """Test timing guard continues when not enough time has passed (lines 292-293)."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = {
+            "artists",
+            "labels",
+            "masters",
+            "releases",
+        }
+        graphinator.graphinator.message_counts = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+        graphinator.graphinator.active_connection = None
+        graphinator.graphinator.shutdown_requested = False
+
+        recover_call_count = [0]
+
+        async def mock_recover() -> None:
+            recover_call_count[0] += 1
+
+        from graphinator.graphinator import periodic_queue_checker
+
+        with patch("graphinator.graphinator._recover_consumers", mock_recover):
+            checker_task = asyncio.create_task(periodic_queue_checker())
+            await asyncio.sleep(0.08)
+            graphinator.graphinator.shutdown_requested = True
+            await asyncio.sleep(0.02)
+            checker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await checker_task
+
+        # With QUEUE_CHECK_INTERVAL=9999, after the first full check sets last_full_check,
+        # subsequent iterations hit the timing guard. recover should only be called once.
+        assert recover_call_count[0] <= 2
+
+
+class TestMainAmqpRetryExhausted:
+    """Test main() when all RabbitMQ connection retry attempts are exhausted (lines 1267-1279)."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.signal.signal")
+    @patch("graphinator.graphinator.setup_logging")
+    @patch("graphinator.graphinator.HealthServer")
+    @patch("graphinator.graphinator.GraphinatorConfig.from_env")
+    @patch("graphinator.graphinator.AsyncResilientNeo4jDriver")
+    @patch("graphinator.graphinator.AsyncResilientRabbitMQ")
+    async def test_main_returns_when_connect_retries_exhausted(
+        self,
+        mock_rabbitmq_class: MagicMock,
+        mock_neo4j_class: MagicMock,
+        mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test main() returns after exhausting all RabbitMQ connect retries."""
+        mock_health_server.return_value = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_username = "neo4j"
+        mock_config.neo4j_password = "password"
+        mock_config.amqp_connection = "amqp://guest:guest@localhost/"
+        mock_from_env.return_value = mock_config
+
+        mock_neo4j_instance = MagicMock()
+        mock_neo4j_class.return_value = mock_neo4j_instance
+        mock_neo4j_instance.close = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"test": 1})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        async def mock_session_factory(*_args: Any, **_kwargs: Any) -> Any:
+            return mock_cm
+
+        mock_neo4j_instance.session = MagicMock(side_effect=mock_session_factory)
+
+        # RabbitMQ constructor succeeds, but connect() always raises
+        mock_rabbitmq_instance = MagicMock()
+        mock_rabbitmq_instance.connect = AsyncMock(side_effect=Exception("RabbitMQ connection refused"))
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+
+        import graphinator.graphinator as gm
+
+        original_shutdown = gm.shutdown_requested
+        try:
+            gm.shutdown_requested = False
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("graphinator.graphinator.BATCH_MODE", False),
+                patch("graphinator.graphinator.asyncio.sleep", AsyncMock(return_value=None)),
+                patch("graphinator.graphinator.logger"),
+            ):
+                await main()
+
+            # Should have tried max_startup_retries=5 times
+            assert mock_rabbitmq_instance.connect.call_count == 5
         finally:
             gm.shutdown_requested = original_shutdown

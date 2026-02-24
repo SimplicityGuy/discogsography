@@ -56,31 +56,63 @@ def mock_neo4j_session(mock_neo4j_driver: MagicMock) -> AsyncMock:
 
 @pytest.fixture
 def test_client(mock_neo4j_driver: MagicMock) -> Generator[TestClient]:
-    """Create a test client with mocked Neo4j driver, bypassing real lifespan."""
-    import explore.explore as explore_module
-    from explore.explore import app
+    """Create a test client with mocked Neo4j driver, bypassing real lifespan.
 
-    # Replace the lifespan with a no-op so we don't try to connect to Neo4j
+    The API endpoints (autocomplete, explore, expand, user) have been migrated
+    from explore.explore to api.routers.explore and api.routers.user.  We build
+    a minimal FastAPI app that mounts those routers plus a /health endpoint that
+    mimics the old explore service health response.
+    """
+    # Build a minimal test app that includes the migrated API routers
+    # plus the explore /health endpoint and static files (still served by explore.explore).
+    from pathlib import Path
+
+    from fastapi.staticfiles import StaticFiles
+
+    import api.routers.explore as explore_router_module
+    import api.routers.snapshot as snapshot_router_module
+    import api.routers.user as user_router_module
+    from explore.explore import app as explore_app  # noqa: F401 - explore_app referenced in TestLifespan
+
     @asynccontextmanager
     async def mock_lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         yield
 
-    original_lifespan = app.router.lifespan_context
-    app.router.lifespan_context = mock_lifespan
+    test_app = FastAPI(lifespan=mock_lifespan)
 
-    # Patch the module-level driver
-    original_driver = explore_module.neo4j_driver
-    explore_module.neo4j_driver = mock_neo4j_driver
+    @test_app.get("/health")
+    async def health_check() -> dict[str, Any]:
+        # Return healthy status since mock driver is configured
+        from datetime import UTC, datetime
+
+        return {
+            "status": "healthy",
+            "service": "explore",
+            "timestamp": datetime.now(UTC).isoformat(),
+        }
+
+    test_app.include_router(explore_router_module.router)
+    test_app.include_router(user_router_module.router)
+    test_app.include_router(snapshot_router_module.router)
+
+    # Mount static files from the explore service
+    static_dir = Path(__file__).parent.parent.parent / "explore" / "static"
+    if static_dir.exists():
+        test_app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
+
+    # Wire the mock driver into both api routers
+    explore_router_module.configure(mock_neo4j_driver, os.environ.get("JWT_SECRET_KEY"))
+    user_router_module.configure(mock_neo4j_driver, os.environ.get("JWT_SECRET_KEY"))
 
     # Clear autocomplete cache between tests
-    explore_module._autocomplete_cache.clear()
+    explore_router_module._autocomplete_cache.clear()
 
-    with TestClient(app, raise_server_exceptions=False) as client:
+    with TestClient(test_app, raise_server_exceptions=False) as client:
         yield client
 
-    # Restore
-    explore_module.neo4j_driver = original_driver
-    app.router.lifespan_context = original_lifespan
+    # Restore router state (set driver back to None so tests are isolated)
+    explore_router_module.configure(None, None)
+    user_router_module.configure(None, None)
 
 
 @pytest.fixture

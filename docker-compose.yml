@@ -210,6 +210,9 @@ services:
       JWT_ALGORITHM: HS256
       JWT_EXPIRE_MINUTES: "60"
       REDIS_URL: redis://redis:6379/0
+      NEO4J_ADDRESS: bolt://neo4j:7687
+      NEO4J_USERNAME: neo4j
+      NEO4J_PASSWORD: discogsography
       PYTHONUNBUFFERED: "1"
       STARTUP_DELAY: "5"
     ports:
@@ -223,6 +226,8 @@ services:
       postgres:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      neo4j:
         condition: service_healthy
     networks:
       - discogsography
@@ -267,9 +272,6 @@ services:
       JWT_SECRET_KEY: "dev-secret-change-in-production-use-a-256-bit-random-key"
       PYTHONUNBUFFERED: "1"
       STARTUP_DELAY: "10"
-    ports:
-      - "8010:8010"      # Collector API
-      - "8011:8011"      # Health check
     volumes:
       - curator_logs:/logs
     depends_on:
@@ -518,9 +520,6 @@ services:
       # IMPORTANT: Must match JWT_SECRET_KEY used by api/curator services
       JWT_SECRET_KEY: "dev-secret-change-in-production-use-a-256-bit-random-key"
       PYTHONUNBUFFERED: "1"
-    ports:
-      - "8006:8006"      # Explore service port
-      - "8007:8007"      # Health check port
     depends_on:
       schema-init:
         condition: service_completed_successfully

@@ -97,7 +97,7 @@ def create_test_app() -> FastAPI:
         if not result:
             return ORJSONResponse(content={"error": "Not found"}, status_code=404)
 
-        from explore.explore import _build_categories
+        from api.routers.explore import _build_categories
 
         categories = _build_categories(entity_type, result)
         return ORJSONResponse(

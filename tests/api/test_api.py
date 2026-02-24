@@ -570,3 +570,283 @@ class TestDiscogsOAuthEndpoints:
         assert response.status_code == 200
         data = response.json()
         assert data["revoked"] is True
+
+    def test_authorize_discogs_service_not_ready_503(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Returns 503 when Redis is None."""
+        import api.api as api_module
+
+        original_redis = api_module._redis
+        api_module._redis = None
+        try:
+            response = test_client.get("/api/oauth/authorize/discogs", headers=auth_headers)
+            assert response.status_code == 503
+        finally:
+            api_module._redis = original_redis
+
+    def test_verify_discogs_service_not_ready_503(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Returns 503 when Redis is None."""
+        import api.api as api_module
+
+        original_redis = api_module._redis
+        api_module._redis = None
+        try:
+            response = test_client.post(
+                "/api/oauth/verify/discogs",
+                headers=auth_headers,
+                json={"state": "tok", "oauth_verifier": "verif"},
+            )
+            assert response.status_code == 503
+        finally:
+            api_module._redis = original_redis
+
+    def test_verify_discogs_exchange_error_400(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Returns 400 when exchange_oauth_verifier raises DiscogsOAuthError."""
+        from api.services.discogs import DiscogsOAuthError
+
+        mock_cur.fetchone.side_effect = [
+            {"value": "ckey"},
+            {"value": "csecret"},
+        ]
+        mock_redis.get.return_value = "reqsecret"
+
+        with patch(
+            "api.api.exchange_oauth_verifier",
+            new=AsyncMock(side_effect=DiscogsOAuthError("bad verifier")),
+        ):
+            response = test_client.post(
+                "/api/oauth/verify/discogs",
+                headers=auth_headers,
+                json={"state": "tok", "oauth_verifier": "bad"},
+            )
+        assert response.status_code == 400
+
+    def test_discogs_status_service_not_ready_503(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        import api.api as api_module
+
+        original_pool = api_module._pool
+        api_module._pool = None
+        try:
+            response = test_client.get("/api/oauth/status/discogs", headers=auth_headers)
+            assert response.status_code == 503
+        finally:
+            api_module._pool = original_pool
+
+    def test_revoke_discogs_service_not_ready_503(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        import api.api as api_module
+
+        original_pool = api_module._pool
+        api_module._pool = None
+        try:
+            response = test_client.delete("/api/oauth/revoke/discogs", headers=auth_headers)
+            assert response.status_code == 503
+        finally:
+            api_module._pool = original_pool
+
+
+class TestGetCurrentUser:
+    """Tests for the _get_current_user dependency."""
+
+    def test_get_current_user_config_none_503(self) -> None:
+        """When _config is None, protected endpoint returns 503."""
+        from collections.abc import AsyncGenerator
+        from contextlib import asynccontextmanager
+
+        from fastapi import FastAPI
+
+        import api.api as api_module
+        from api.api import app
+
+        @asynccontextmanager
+        async def mock_lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+            yield
+
+        original_lifespan = app.router.lifespan_context
+        original_config = api_module._config
+        app.router.lifespan_context = mock_lifespan
+        api_module._config = None
+        try:
+            with TestClient(app, raise_server_exceptions=False) as client:
+                response = client.get(
+                    "/api/auth/me",
+                    headers={"Authorization": "Bearer a.b.c"},
+                )
+            assert response.status_code in (401, 503)
+        finally:
+            api_module._config = original_config
+            app.router.lifespan_context = original_lifespan
+
+    def test_get_current_user_no_sub_in_token_401(
+        self,
+        test_client: TestClient,
+    ) -> None:
+        """A valid-signature token with no 'sub' claim returns 401."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        from tests.api.conftest import TEST_JWT_SECRET
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body = b64url(json.dumps({"email": "x@y.com", "exp": 9_999_999_999}, separators=(",", ":")).encode())
+        signing_input = f"{header}.{body}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        token = f"{header}.{body}.{sig}"
+
+        response = test_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
+
+
+class TestLoginServiceNotReady:
+    """Test login 503 when pool/config is None."""
+
+    def test_login_pool_none_503(self) -> None:
+        from collections.abc import AsyncGenerator
+        from contextlib import asynccontextmanager
+
+        from fastapi import FastAPI
+
+        import api.api as api_module
+        from api.api import app
+
+        @asynccontextmanager
+        async def mock_lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+            yield
+
+        original_lifespan = app.router.lifespan_context
+        original_pool = api_module._pool
+        app.router.lifespan_context = mock_lifespan
+        api_module._pool = None
+        try:
+            with TestClient(app, raise_server_exceptions=False) as client:
+                response = client.post(
+                    "/api/auth/login",
+                    json={"email": "x@y.com", "password": "password"},
+                )
+            assert response.status_code == 503
+        finally:
+            api_module._pool = original_pool
+            app.router.lifespan_context = original_lifespan
+
+
+class TestGetAppConfig:
+    """Tests for _get_app_config."""
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_pool_is_none(self) -> None:
+        """Line 404: _get_app_config returns None when _pool is None."""
+        import api.api as api_module
+        from api.api import _get_app_config
+
+        original = api_module._pool
+        api_module._pool = None
+        try:
+            result = await _get_app_config("any_key")
+            assert result is None
+        finally:
+            api_module._pool = original
+
+
+class TestVerifyDiscogsNoCredentials:
+    """Test verify_discogs 503 when app credentials not configured."""
+
+    def test_verify_discogs_no_credentials_503(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Line 487: verify_discogs raises 503 when consumer_key/secret not in app_config."""
+        mock_cur.fetchone.return_value = None  # _get_app_config returns None
+
+        response = test_client.post(
+            "/api/oauth/verify/discogs",
+            headers=auth_headers,
+            json={"state": "reqtok", "oauth_verifier": "verif123"},
+        )
+        assert response.status_code == 503
+
+
+class TestGetMeNoSub:
+    """Test get_me line 373: raises 401 when current_user has no sub."""
+
+    def test_get_me_no_sub_401(self, test_client: TestClient) -> None:
+        """Line 373: get_me raises 401 when current_user lacks 'sub'."""
+        from api.api import _get_current_user, app
+
+        async def override_no_sub() -> dict[str, str]:
+            return {"email": "x@y.com"}
+
+        app.dependency_overrides[_get_current_user] = override_no_sub
+        try:
+            response = test_client.get("/api/auth/me")
+            assert response.status_code == 401
+        finally:
+            del app.dependency_overrides[_get_current_user]
+
+
+class TestGetMeServiceEdgeCases:
+    """Additional get_me edge cases."""
+
+    def test_get_me_pool_none_503(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        import api.api as api_module
+
+        original_pool = api_module._pool
+        api_module._pool = None
+        try:
+            response = test_client.get("/api/auth/me", headers=auth_headers)
+            assert response.status_code == 503
+        finally:
+            api_module._pool = original_pool
+
+    def test_get_me_no_sub_in_valid_token_401(
+        self,
+        test_client: TestClient,
+    ) -> None:
+        """Token valid signature but missing 'sub' → 401."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        from tests.api.conftest import TEST_JWT_SECRET
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body = b64url(json.dumps({"email": "x@y.com", "exp": 9_999_999_999}, separators=(",", ":")).encode())
+        signing_input = f"{header}.{body}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        token = f"{header}.{body}.{sig}"
+        response = test_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401

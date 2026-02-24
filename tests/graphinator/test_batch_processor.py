@@ -257,6 +257,27 @@ class TestFlushQueue:
         await processor._flush_queue("artists")
 
     @pytest.mark.asyncio
+    async def test_flush_queue_empty_messages_returns_early(self) -> None:
+        """Test _flush_queue hits 'if not messages' branch when batch_size=0 (line 171)."""
+        mock_driver = MagicMock()
+        config = BatchConfig(batch_size=0)
+        processor = Neo4jBatchProcessor(mock_driver, config)
+
+        # Add a message so queue is non-empty (passes first 'if not queue' check)
+        ack = AsyncMock()
+        nack = AsyncMock()
+        msg = PendingMessage("artists", {"id": "1", "name": "Test", "sha256": "hash"}, ack, nack)
+        processor.queues["artists"].append(msg)
+
+        # With batch_size=0, the while loop never executes, messages stays empty
+        # This hits line 170-171 (if not messages: return)
+        await processor._flush_queue("artists")
+
+        # Should return early without processing
+        ack.assert_not_called()
+        nack.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_flush_artists_batch_success(self) -> None:
         """Test successfully flushing artists batch."""
         mock_driver, _mock_session = create_async_session_mock()

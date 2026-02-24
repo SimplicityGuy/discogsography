@@ -116,12 +116,12 @@ class TestSaveSnapshotEndpoint:
         assert data["url"] == f"/snapshot/{data['token']}"
 
     def test_save_snapshot_exceeds_max_nodes(self, test_client: TestClient) -> None:
-        import explore.explore as explore_module
+        import api.routers.snapshot as snapshot_module
 
-        original_store = explore_module.snapshot_store
+        original_store = snapshot_module._snapshot_store
         small_store = SnapshotStore()
         small_store._max_nodes = 2
-        explore_module.snapshot_store = small_store
+        snapshot_module._snapshot_store = small_store
 
         payload = {
             "nodes": [
@@ -136,7 +136,7 @@ class TestSaveSnapshotEndpoint:
         data = response.json()
         assert "error" in data
 
-        explore_module.snapshot_store = original_store
+        snapshot_module._snapshot_store = original_store
 
     def test_save_snapshot_empty_nodes_rejected(self, test_client: TestClient) -> None:
         payload = {
@@ -202,7 +202,7 @@ class TestRestoreSnapshotEndpoint:
         assert "error" in data
 
     def test_restore_expired_token_returns_404(self, test_client: TestClient) -> None:
-        import explore.explore as explore_module
+        import api.routers.snapshot as snapshot_module
 
         # Save a snapshot
         payload: dict[str, Any] = {
@@ -215,7 +215,7 @@ class TestRestoreSnapshotEndpoint:
 
         # Manually expire it
         past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-        explore_module.snapshot_store._store[token]["expires_at"] = past
+        snapshot_module._snapshot_store._store[token]["expires_at"] = past
 
         # Restore should return 404
         restore_response = test_client.get(f"/api/snapshot/{token}")

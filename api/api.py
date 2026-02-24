@@ -1,5 +1,6 @@
 """API microservice for discogsography — user accounts and JWT authentication."""
 
+import asyncio
 import base64
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -22,6 +23,10 @@ import structlog
 import uvicorn
 
 from api.models import LoginRequest, RegisterRequest
+import api.routers.explore as _explore_router
+import api.routers.snapshot as _snapshot_router
+import api.routers.sync as _sync_router
+import api.routers.user as _user_router
 from api.services.discogs import (
     DISCOGS_AUTHORIZE_URL,
     REDIS_OAUTH_STATE_TTL,
@@ -31,7 +36,7 @@ from api.services.discogs import (
     fetch_discogs_identity,
     request_oauth_token,
 )
-from common import AsyncPostgreSQLPool, HealthServer, setup_logging
+from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, setup_logging
 from common.config import ApiConfig
 
 
@@ -41,6 +46,8 @@ logger = structlog.get_logger(__name__)
 _pool: AsyncPostgreSQLPool | None = None
 _config: ApiConfig | None = None
 _redis: aioredis.Redis | None = None
+_neo4j: AsyncResilientNeo4jDriver | None = None
+_running_syncs: dict[str, asyncio.Task[Any]] = {}
 _security = HTTPBearer()
 
 
@@ -172,7 +179,7 @@ async def _get_current_user(
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     """Manage API service lifecycle."""
     global _pool, _config, _redis
 
@@ -204,11 +211,29 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     _redis = await aioredis.from_url(_config.redis_url, decode_responses=True)
     logger.info("🔴 Redis connected", url=_config.redis_url)
 
+    if _config.neo4j_address and _config.neo4j_username and _config.neo4j_password:
+        _neo4j = AsyncResilientNeo4jDriver(
+            uri=_config.neo4j_address,
+            auth=(_config.neo4j_username, _config.neo4j_password),
+            max_retries=5,
+            encrypted=False,
+        )
+        logger.info("🔗 Neo4j driver initialized")
+    jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_address else None
+    _sync_router.configure(_pool, _neo4j, _config, _running_syncs)
+    _explore_router.configure(_neo4j, jwt_secret_for_neo4j)
+    _user_router.configure(_neo4j, jwt_secret_for_neo4j)
     logger.info("✅ API service ready", port=API_PORT)
 
     yield
 
     logger.info("🔧 API service shutting down...")
+    for task in _running_syncs.values():
+        task.cancel()
+    if _running_syncs:
+        await asyncio.gather(*_running_syncs.values(), return_exceptions=True)
+    if _neo4j:
+        await _neo4j.close()
     if _pool:
         await _pool.close()
     if _redis:
@@ -231,6 +256,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(_sync_router.router)
+app.include_router(_explore_router.router)
+app.include_router(_snapshot_router.router)
+app.include_router(_user_router.router)
 
 
 @app.get("/health")
@@ -591,7 +621,7 @@ async def revoke_discogs(
     return ORJSONResponse(content={"revoked": True})
 
 
-def main() -> None:
+def main() -> None:  # pragma: no cover
     """Entry point for the API service."""
     setup_logging("api", log_file=Path("/logs/api.log"))
     print(
