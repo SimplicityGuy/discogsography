@@ -234,5 +234,5 @@ jobs:
           # layers, etc.) is infrastructure code not exercised by browser interactions —
           # it is covered thoroughly by unit tests instead. This lowers the blended E2E
           # percentage to ~41%, so we set the threshold to 40 rather than the default 50.
-          warning_threshold: "50"
-          failure_threshold: "40"
+          threshold_warning: "50"
+          threshold_alert: "40"
