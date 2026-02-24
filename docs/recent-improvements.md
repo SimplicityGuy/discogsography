@@ -48,7 +48,7 @@ development experience enhancements.
 
 #### Code Simplification
 
-Reduced complexity and improved readability across all Python and Rust services without changing behaviour:
+Reduced complexity and improved readability across all Python and Rust services without changing behavior:
 
 **Dashboard** (`dashboard/dashboard.py`):
 

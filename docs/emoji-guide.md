@@ -18,6 +18,8 @@ Emojis in Discogsography serve to:
 
 | Emoji | Service     | Usage                                          |
 | ----- | ----------- | ---------------------------------------------- |
+| 🔐    | API         | User accounts and JWT authentication service   |
+| 🗂️    | Curator     | Discogs collection & wantlist sync service     |
 | ⚡    | Extractor   | Rust-based high-performance extraction service |
 | 🔗    | Graphinator | Neo4j graph service                            |
 | 🐘    | Tableinator | PostgreSQL service                             |

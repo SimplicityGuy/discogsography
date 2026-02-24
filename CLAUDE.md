@@ -344,6 +344,8 @@ http://localhost:8000/api/health
 
 ### Service Ports
 
+- API: 8004 (service), 8005 (health)
+- Curator: 8010 (service), 8011 (health)
 - Dashboard: 8003
 - Explore: 8006 (service), 8007 (health)
 - Neo4j: 7474 (browser), 7687 (bolt)

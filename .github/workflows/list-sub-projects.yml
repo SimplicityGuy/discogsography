@@ -30,6 +30,8 @@ jobs:
           # Define sub-projects with their properties
           cat << "EOF" > projects.json
           [
+            {"name": "api", "use_cache": true},
+            {"name": "curator", "use_cache": true},
             {"name": "dashboard", "use_cache": true},
             {"name": "explore", "use_cache": true},
             {"name": "extractor", "use_cache": true},

@@ -26,6 +26,13 @@ init:
     uv run pre-commit install
     @echo '✅ Pre-commit hooks installed!'
 
+# Configure Discogs app credentials (run against the API container)
+[group('setup')]
+configure-discogs consumer-key consumer-secret container="discogsography-api-1":
+    docker exec {{ container }} discogs-setup \
+        --consumer-key {{ consumer-key }} \
+        --consumer-secret {{ consumer-secret }}
+
 # Update pre-commit hooks to latest versions
 [group('setup')]
 update-hooks:
@@ -114,6 +121,12 @@ test-parallel:
     echo "🚀 Running all service tests in parallel..."
 
     # Run each service test in background
+    uv run pytest tests/api/ -v > /tmp/test-api.log 2>&1 &
+    pid_api=$!
+
+    uv run pytest tests/curator/ -v > /tmp/test-curator.log 2>&1 &
+    pid_curator=$!
+
     uv run pytest tests/common/ -v > /tmp/test-common.log 2>&1 &
     pid_common=$!
 
@@ -140,6 +153,8 @@ test-parallel:
     # Wait for all tests and track results
     failed=0
 
+    wait $pid_api || { echo "❌ API tests failed"; cat /tmp/test-api.log; failed=1; }
+    wait $pid_curator || { echo "❌ Curator tests failed"; cat /tmp/test-curator.log; failed=1; }
     wait $pid_common || { echo "❌ Common tests failed"; cat /tmp/test-common.log; failed=1; }
     wait $pid_dashboard || { echo "❌ Dashboard tests failed"; cat /tmp/test-dashboard.log; failed=1; }
     wait $pid_explore || { echo "❌ Explore tests failed"; cat /tmp/test-explore.log; failed=1; }
@@ -156,7 +171,7 @@ test-parallel:
         # Show summary
         echo ""
         echo "📊 Test Summary:"
-        grep -h "passed" /tmp/test-*.log | tail -7
+        grep -h "passed" /tmp/test-*.log | tail -9
     else
         echo "❌ Some tests failed. Check logs above for details."
         exit 1
@@ -165,6 +180,18 @@ test-parallel:
 # ──────────────────────────────────────────────────────────────────────────────
 # Service-Specific Tests
 # ──────────────────────────────────────────────────────────────────────────────
+
+# Run api service tests with coverage
+[group('test')]
+test-api:
+    uv run pytest tests/api/ -v \
+        --cov=api --cov-report=xml --cov-report=json --cov-report=term
+
+# Run curator service tests with coverage
+[group('test')]
+test-curator:
+    uv run pytest tests/curator/ -v \
+        --cov=curator --cov-report=xml --cov-report=json --cov-report=term
 
 # Run common/shared library tests with coverage
 [group('test')]
@@ -265,6 +292,16 @@ test-e2e-explore-mobile browser device:
 # Python Services
 # ──────────────────────────────────────────────────────────────────────────────
 
+# Run the API service (user accounts & JWT authentication)
+[group('services')]
+api:
+    uv run python api/api.py
+
+# Run the curator service (Discogs collection & wantlist sync)
+[group('services')]
+curator:
+    uv run python curator/curator.py
+
 # Run the dashboard service (monitoring UI)
 [group('services')]
 dashboard:
@@ -279,6 +316,15 @@ explore:
 [group('services')]
 graphinator:
     uv run python graphinator/graphinator.py
+
+# Run the schema-init service (one-time Neo4j and PostgreSQL schema initialization)
+[group('services')]
+schema-init:
+    uv run python schema-init/schema_init.py
+
+# Run the Rust extractor (high-performance Discogs data ingestion)
+[group('services')]
+extractor: extractor-run
 
 # Run the tableinator service (PostgreSQL table builder)
 [group('services')]
@@ -366,6 +412,8 @@ rebuild:
 [group('docker')]
 build:
     docker-compose build \
+        api \
+        curator \
         dashboard \
         explore \
         extractor \

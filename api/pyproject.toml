@@ -1,0 +1,37 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "discogsography-api"
+version = "0.1.0"
+description = "API service for user authentication and Discogs OAuth integration for Discogsography"
+authors = [{name = "Robert Wlodarczyk", email = "robert@simplicityguy.com"}]
+requires-python = ">=3.13"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+]
+license = {text = "MIT"}
+dependencies = [
+    "fastapi>=0.115.6",
+    "httpx>=0.27.0",
+    "orjson>=3.9.0",
+    "psycopg[binary]>=3.1.0",
+    "pydantic>=2.10.5",
+    "redis[hiredis]>=6.2.0",
+    "structlog>=24.0.0",
+    "uvicorn[standard]>=0.34.0",
+]
+
+[project.scripts]
+api = "api.api:main"
+discogs-setup = "api.setup:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["."]
+
+# Tool configurations inherit from root pyproject.toml

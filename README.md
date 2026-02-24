@@ -41,14 +41,16 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 ### ⚙️ Core Services
 
-| Service                                                       | Purpose                                | Key Technologies                       |
-| ------------------------------------------------------------- | -------------------------------------- | -------------------------------------- |
-| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI      |
-| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j |
-| **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`          |
-| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms       |
-| **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initialiser   | `neo4j-driver`, `psycopg3`             |
-| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search    |
+| Service                                                       | Purpose                                | Key Technologies                                  |
+| ------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- |
+| **[🔐](docs/emoji-guide.md#service-identifiers) API**         | User accounts and JWT authentication   | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 |
+| **[🗂️](docs/emoji-guide.md#service-identifiers) Curator**     | Discogs collection & wantlist sync     | `FastAPI`, `psycopg3`, `neo4j-driver`             |
+| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI                 |
+| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j            |
+| **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     |
+| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms                  |
+| **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initializer   | `neo4j-driver`, `psycopg3`                        |
+| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search               |
 
 ### 📐 System Architecture
 
@@ -65,6 +67,8 @@ graph TD
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
+    API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
+    CURATOR[["🗂️ Curator<br/>Collection<br/>Sync"]]
 
     SCHEMA -->|0. Create Indexes & Constraints| NEO4J
     SCHEMA -->|0. Create Tables & Indexes| PG
@@ -77,6 +81,12 @@ graph TD
 
     EXPLORE -.->|Query Graph| NEO4J
     EXPLORE -.->|Explore Paths| NEO4J
+
+    API -.->|User Accounts| PG
+    API -.->|OAuth State| REDIS
+
+    CURATOR -.->|Sync Collections| NEO4J
+    CURATOR -.->|Sync History| PG
 
     DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
@@ -98,6 +108,8 @@ graph TD
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
+    style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style CURATOR fill:#fff8e1,stroke:#f57f17,stroke-width:2px
 ```
 
 ## 🌟 Key Features
@@ -124,6 +136,8 @@ open http://localhost:8003
 
 | Service           | URL                    | Default Credentials                 |
 | ----------------- | ---------------------- | ----------------------------------- |
+| 🔐 **API**        | http://localhost:8004  | Register via `/api/auth/register`   |
+| 🗂️ **Curator**    | http://localhost:8010  | JWT required (via API)              |
 | 📊 **Dashboard**  | http://localhost:8003  | None                                |
 | 🔍 **Explore**    | http://localhost:8006  | None                                |
 | 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          |

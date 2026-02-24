@@ -351,6 +351,134 @@ class DashboardConfig:
         )
 
 
+@dataclass(frozen=True)
+class ApiConfig:
+    """Configuration for the API service."""
+
+    postgres_address: str
+    postgres_username: str
+    postgres_password: str
+    postgres_database: str
+    jwt_secret_key: str
+    redis_url: str = "redis://redis:6379/0"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 30
+    discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+
+    @classmethod
+    def from_env(cls) -> "ApiConfig":
+        """Create configuration from environment variables."""
+        postgres_address = getenv("POSTGRES_ADDRESS")
+        postgres_username = getenv("POSTGRES_USERNAME")
+        postgres_password = getenv("POSTGRES_PASSWORD")
+        postgres_database = getenv("POSTGRES_DATABASE")
+        jwt_secret_key = getenv("JWT_SECRET_KEY")
+
+        missing_vars = []
+        if not postgres_address:
+            missing_vars.append("POSTGRES_ADDRESS")
+        if not postgres_username:
+            missing_vars.append("POSTGRES_USERNAME")
+        if not postgres_password:
+            missing_vars.append("POSTGRES_PASSWORD")
+        if not postgres_database:
+            missing_vars.append("POSTGRES_DATABASE")
+        if not jwt_secret_key:
+            missing_vars.append("JWT_SECRET_KEY")
+
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        redis_url = getenv("REDIS_URL", "redis://redis:6379/0")
+        jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
+        jwt_expire_minutes_str = getenv("JWT_EXPIRE_MINUTES", "30")
+        try:
+            jwt_expire_minutes = int(jwt_expire_minutes_str)
+        except ValueError:
+            jwt_expire_minutes = 30
+        discogs_user_agent = getenv(
+            "DISCOGS_USER_AGENT",
+            "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography",
+        )
+
+        return cls(
+            postgres_address=postgres_address,  # type: ignore[arg-type]
+            postgres_username=postgres_username,  # type: ignore[arg-type]
+            postgres_password=postgres_password,  # type: ignore[arg-type]
+            postgres_database=postgres_database,  # type: ignore[arg-type]
+            jwt_secret_key=jwt_secret_key,  # type: ignore[arg-type]
+            redis_url=redis_url,
+            jwt_algorithm=jwt_algorithm,
+            jwt_expire_minutes=jwt_expire_minutes,
+            discogs_user_agent=discogs_user_agent,
+        )
+
+
+@dataclass(frozen=True)
+class CuratorConfig:
+    """Configuration for the curator service."""
+
+    postgres_address: str
+    postgres_username: str
+    postgres_password: str
+    postgres_database: str
+    neo4j_address: str
+    neo4j_username: str
+    neo4j_password: str
+    jwt_secret_key: str
+    discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+
+    @classmethod
+    def from_env(cls) -> "CuratorConfig":
+        """Create configuration from environment variables."""
+        postgres_address = getenv("POSTGRES_ADDRESS")
+        postgres_username = getenv("POSTGRES_USERNAME")
+        postgres_password = getenv("POSTGRES_PASSWORD")
+        postgres_database = getenv("POSTGRES_DATABASE")
+        neo4j_address = getenv("NEO4J_ADDRESS")
+        neo4j_username = getenv("NEO4J_USERNAME")
+        neo4j_password = getenv("NEO4J_PASSWORD")
+        jwt_secret_key = getenv("JWT_SECRET_KEY")
+
+        missing_vars = []
+        if not postgres_address:
+            missing_vars.append("POSTGRES_ADDRESS")
+        if not postgres_username:
+            missing_vars.append("POSTGRES_USERNAME")
+        if not postgres_password:
+            missing_vars.append("POSTGRES_PASSWORD")
+        if not postgres_database:
+            missing_vars.append("POSTGRES_DATABASE")
+        if not neo4j_address:
+            missing_vars.append("NEO4J_ADDRESS")
+        if not neo4j_username:
+            missing_vars.append("NEO4J_USERNAME")
+        if not neo4j_password:
+            missing_vars.append("NEO4J_PASSWORD")
+        if not jwt_secret_key:
+            missing_vars.append("JWT_SECRET_KEY")
+
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        discogs_user_agent = getenv(
+            "DISCOGS_USER_AGENT",
+            "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography",
+        )
+
+        return cls(
+            postgres_address=postgres_address,  # type: ignore[arg-type]
+            postgres_username=postgres_username,  # type: ignore[arg-type]
+            postgres_password=postgres_password,  # type: ignore[arg-type]
+            postgres_database=postgres_database,  # type: ignore[arg-type]
+            neo4j_address=neo4j_address,  # type: ignore[arg-type]
+            neo4j_username=neo4j_username,  # type: ignore[arg-type]
+            neo4j_password=neo4j_password,  # type: ignore[arg-type]
+            jwt_secret_key=jwt_secret_key,  # type: ignore[arg-type]
+            discogs_user_agent=discogs_user_agent,
+        )
+
+
 # Discovery service uses the same configuration as dashboard
 DiscoveryConfig = DashboardConfig
 
@@ -362,6 +490,7 @@ class ExploreConfig:
     neo4j_address: str
     neo4j_username: str
     neo4j_password: str
+    jwt_secret_key: str | None = None  # Optional: required only for personalized user endpoints
 
     @classmethod
     def from_env(cls) -> "ExploreConfig":
@@ -381,10 +510,14 @@ class ExploreConfig:
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
+        # Optional: enables personalized /api/user/* endpoints
+        jwt_secret_key = getenv("JWT_SECRET_KEY") or None
+
         return cls(
             neo4j_address=neo4j_address,  # type: ignore
             neo4j_username=neo4j_username,  # type: ignore
             neo4j_password=neo4j_password,  # type: ignore
+            jwt_secret_key=jwt_secret_key,
         )
 
 

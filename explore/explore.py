@@ -2,16 +2,21 @@
 """Explore service for interactive graph exploration of Discogs data."""
 
 import asyncio
+import base64
 from collections import OrderedDict
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+import hashlib
+import hmac
+import json
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import FastAPI, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 import structlog
 
@@ -31,6 +36,13 @@ from explore.neo4j_queries import (
     TRENDS_DISPATCH,
 )
 from explore.snapshot_store import SnapshotStore
+from explore.user_queries import (
+    check_releases_user_status,
+    get_user_collection,
+    get_user_collection_stats,
+    get_user_recommendations,
+    get_user_wantlist,
+)
 
 
 logger = structlog.get_logger(__name__)
@@ -39,6 +51,75 @@ logger = structlog.get_logger(__name__)
 neo4j_driver: AsyncResilientNeo4jDriver | None = None
 config: ExploreConfig | None = None
 snapshot_store: SnapshotStore = SnapshotStore()
+
+_security = HTTPBearer(auto_error=False)
+
+
+def _b64url_decode(s: str) -> bytes:
+    """Decode a base64url-encoded string (without padding)."""
+    padding = 4 - len(s) % 4
+    if padding != 4:
+        s += "=" * padding
+    return base64.urlsafe_b64decode(s)
+
+
+def _verify_jwt(token: str, secret: str) -> dict[str, Any] | None:
+    """Verify a JWT token and return the payload, or None if invalid/expired."""
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+
+    header_b64, body_b64, sig_b64 = parts
+    signing_input = f"{header_b64}.{body_b64}".encode("ascii")
+    expected_sig = base64.urlsafe_b64encode(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()).rstrip(b"=").decode("ascii")
+
+    if not hmac.compare_digest(sig_b64, expected_sig):
+        return None
+
+    try:
+        payload: dict[str, Any] = json.loads(_b64url_decode(body_b64))
+    except Exception:
+        return None
+
+    exp = payload.get("exp")
+    if exp and datetime.fromtimestamp(int(exp), UTC) < datetime.now(UTC):
+        return None
+
+    return payload
+
+
+async def _get_optional_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_security)],
+) -> dict[str, Any] | None:
+    """Extract JWT payload if a valid bearer token is provided; returns None otherwise."""
+    if credentials is None or config is None or config.jwt_secret_key is None:
+        return None
+    return _verify_jwt(credentials.credentials, config.jwt_secret_key)
+
+
+async def _require_user(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_security)],
+) -> dict[str, Any]:
+    """Require a valid JWT; raises 401 if missing or invalid."""
+    if config is None or config.jwt_secret_key is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Personalized endpoints not enabled (JWT_SECRET_KEY not configured)",
+        )
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    payload = _verify_jwt(credentials.credentials, config.jwt_secret_key)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return payload
 
 
 def get_health_data() -> dict[str, Any]:
@@ -339,6 +420,111 @@ async def restore_snapshot(token: str) -> ORJSONResponse:
         created_at=entry["created_at"],
     )
     return ORJSONResponse(content=response.model_dump())
+
+
+# --- Personalized user endpoints ---
+
+
+@app.get("/api/user/collection")
+async def user_collection(
+    current_user: Annotated[dict[str, Any], Depends(_require_user)],
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+) -> ORJSONResponse:
+    """Get the authenticated user's Discogs collection from Neo4j."""
+    if not neo4j_driver:
+        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    user_id: str = current_user.get("sub", "")
+    results, total = await get_user_collection(neo4j_driver, user_id, limit, offset)
+
+    return ORJSONResponse(
+        content={
+            "releases": results,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(results) < total,
+        }
+    )
+
+
+@app.get("/api/user/wantlist")
+async def user_wantlist(
+    current_user: Annotated[dict[str, Any], Depends(_require_user)],
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
+) -> ORJSONResponse:
+    """Get the authenticated user's Discogs wantlist from Neo4j."""
+    if not neo4j_driver:
+        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    user_id: str = current_user.get("sub", "")
+    results, total = await get_user_wantlist(neo4j_driver, user_id, limit, offset)
+
+    return ORJSONResponse(
+        content={
+            "releases": results,
+            "total": total,
+            "offset": offset,
+            "limit": limit,
+            "has_more": offset + len(results) < total,
+        }
+    )
+
+
+@app.get("/api/user/recommendations")
+async def user_recommendations(
+    current_user: Annotated[dict[str, Any], Depends(_require_user)],
+    limit: int = Query(20, ge=1, le=100, description="Max results"),
+) -> ORJSONResponse:
+    """Get release recommendations based on artists in user's collection."""
+    if not neo4j_driver:
+        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    user_id: str = current_user.get("sub", "")
+    results = await get_user_recommendations(neo4j_driver, user_id, limit)
+
+    return ORJSONResponse(content={"recommendations": results, "total": len(results)})
+
+
+@app.get("/api/user/collection/stats")
+async def user_collection_stats(
+    current_user: Annotated[dict[str, Any], Depends(_require_user)],
+) -> ORJSONResponse:
+    """Get statistics for the authenticated user's collection grouped by genre, decade, and label."""
+    if not neo4j_driver:
+        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    user_id: str = current_user.get("sub", "")
+    stats = await get_user_collection_stats(neo4j_driver, user_id)
+
+    return ORJSONResponse(content=stats)
+
+
+@app.get("/api/user/status")
+async def user_release_status(
+    ids: str = Query(..., description="Comma-separated release IDs to check"),
+    current_user: Annotated[dict[str, Any] | None, Depends(_get_optional_user)] = None,
+) -> ORJSONResponse:
+    """Check which of the given release IDs are in the user's collection or wantlist.
+
+    Returns in_collection/in_wantlist flags for each provided release ID.
+    If no valid auth token is provided, all flags default to false.
+    """
+    release_ids = [rid.strip() for rid in ids.split(",") if rid.strip()]
+    if not release_ids:
+        return ORJSONResponse(content={"status": {}})
+
+    if not neo4j_driver or current_user is None:
+        return ORJSONResponse(content={"status": {rid: {"in_collection": False, "in_wantlist": False} for rid in release_ids}})
+
+    user_id: str = current_user.get("sub", "")
+    status_map = await check_releases_user_status(neo4j_driver, user_id, release_ids)
+
+    # Fill in missing IDs with defaults
+    result = {rid: status_map.get(rid, {"in_collection": False, "in_wantlist": False}) for rid in release_ids}
+    return ORJSONResponse(content={"status": result})
 
 
 # Mount static files for the UI

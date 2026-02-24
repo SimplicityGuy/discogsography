@@ -1,10 +1,49 @@
 """Tests for Explore service API endpoints."""
 
+import base64
+import hashlib
+import hmac
+import json
+import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 import pytest
+
+
+TEST_EXPLORE_JWT_SECRET = "test-jwt-secret-for-unit-tests"
+TEST_EXPLORE_USER_ID = "00000000-0000-0000-0000-000000000001"
+
+
+def _make_explore_jwt(
+    user_id: str = TEST_EXPLORE_USER_ID,
+    exp: int = 9_999_999_999,
+    secret: str = TEST_EXPLORE_JWT_SECRET,
+) -> str:
+    """Create a valid HS256 JWT for explore service tests."""
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64url(json.dumps({"sub": user_id, "exp": exp}, separators=(",", ":")).encode())
+    signing_input = f"{header}.{body}".encode("ascii")
+    sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    return f"{header}.{body}.{sig}"
+
+
+def _make_invalid_body_jwt(secret: str = TEST_EXPLORE_JWT_SECRET) -> str:
+    """Create a JWT with a valid signature but non-JSON body."""
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header = b64url(b'{"alg":"HS256"}')
+    body = b64url(b"not-valid-json!")
+    signing_input = f"{header}.{body}".encode("ascii")
+    sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    return f"{header}.{body}.{sig}"
 
 
 class TestHealthEndpoint:
@@ -713,3 +752,339 @@ class TestLifespan:
             mock_health_server.stop.assert_called_once()
 
             explore_module.neo4j_driver = original_driver
+
+
+class TestJwtHelpers:
+    """Test the JWT helper functions _b64url_decode and _verify_jwt."""
+
+    def test_b64url_decode_with_padding(self) -> None:
+        """Test _b64url_decode adds padding when length % 4 != 0 (covers lines 61-62)."""
+        from explore.explore import _b64url_decode
+
+        # "dGVzdA" is 6 chars (6 % 4 == 2), so padding = 2 is added
+        # This is base64url encoding of b"test"
+        result = _b64url_decode("dGVzdA")
+        assert result == b"test"
+
+    def test_b64url_decode_no_padding_needed(self) -> None:
+        """Test _b64url_decode when length % 4 == 0 (no padding added)."""
+        from explore.explore import _b64url_decode
+
+        # "YWJj" is 4 chars (4 % 4 == 0), no padding added
+        # This is base64url encoding of b"abc"
+        result = _b64url_decode("YWJj")
+        assert result == b"abc"
+
+    def test_verify_jwt_valid_token(self) -> None:
+        """Test _verify_jwt returns payload for a valid token."""
+        from explore.explore import _verify_jwt
+
+        token = _make_explore_jwt()
+        payload = _verify_jwt(token, TEST_EXPLORE_JWT_SECRET)
+        assert payload is not None
+        assert payload["sub"] == TEST_EXPLORE_USER_ID
+
+    def test_verify_jwt_malformed_token_too_few_parts(self) -> None:
+        """Test _verify_jwt returns None when token has wrong number of parts."""
+        from explore.explore import _verify_jwt
+
+        result = _verify_jwt("only.two", TEST_EXPLORE_JWT_SECRET)
+        assert result is None
+
+    def test_verify_jwt_wrong_signature(self) -> None:
+        """Test _verify_jwt returns None when signature is invalid."""
+        from explore.explore import _verify_jwt
+
+        token = _make_explore_jwt()
+        parts = token.split(".")
+        # Corrupt the last character of the signature
+        bad_sig = parts[2][:-1] + ("A" if parts[2][-1] != "A" else "B")
+        bad_token = f"{parts[0]}.{parts[1]}.{bad_sig}"
+        result = _verify_jwt(bad_token, TEST_EXPLORE_JWT_SECRET)
+        assert result is None
+
+    def test_verify_jwt_invalid_body_not_json(self) -> None:
+        """Test _verify_jwt returns None when body cannot be JSON decoded."""
+        from explore.explore import _verify_jwt
+
+        token = _make_invalid_body_jwt()
+        result = _verify_jwt(token, TEST_EXPLORE_JWT_SECRET)
+        assert result is None
+
+    def test_verify_jwt_expired_token(self) -> None:
+        """Test _verify_jwt returns None for an expired token."""
+        from explore.explore import _verify_jwt
+
+        expired_token = _make_explore_jwt(exp=int(time.time()) - 100)
+        result = _verify_jwt(expired_token, TEST_EXPLORE_JWT_SECRET)
+        assert result is None
+
+    def test_verify_jwt_wrong_secret(self) -> None:
+        """Test _verify_jwt returns None when wrong secret is used."""
+        from explore.explore import _verify_jwt
+
+        token = _make_explore_jwt(secret=TEST_EXPLORE_JWT_SECRET)
+        result = _verify_jwt(token, "wrong-secret")
+        assert result is None
+
+
+class TestRequireUserDependency:
+    """Test the _require_user FastAPI dependency via user endpoints."""
+
+    def test_user_collection_no_config_returns_503(self, test_client: TestClient) -> None:
+        """When config is None, _require_user raises 503."""
+        import explore.explore as explore_module
+
+        original_config = explore_module.config
+        explore_module.config = None
+
+        response = test_client.get("/api/user/collection")
+        assert response.status_code == 503
+
+        explore_module.config = original_config
+
+    def test_user_collection_no_auth_returns_401(self, test_client: TestClient) -> None:
+        """When no bearer token is provided, _require_user raises 401."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        explore_module.config = mock_config
+
+        response = test_client.get("/api/user/collection")
+        assert response.status_code == 401
+
+        explore_module.config = original_config
+
+    def test_user_collection_invalid_token_returns_401(self, test_client: TestClient) -> None:
+        """When token signature is invalid, _require_user raises 401."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        explore_module.config = mock_config
+
+        response = test_client.get(
+            "/api/user/collection",
+            headers={"Authorization": "Bearer header.body.badsig"},
+        )
+        assert response.status_code == 401
+
+        explore_module.config = original_config
+
+
+class TestUserEndpoints:
+    """Test the user-personalized endpoints."""
+
+    def test_user_status_no_auth_returns_defaults(self, test_client: TestClient) -> None:
+        """Without auth, /api/user/status returns false for all release IDs."""
+        response = test_client.get("/api/user/status?ids=123,456")
+        assert response.status_code == 200
+        data = response.json()
+        assert "status" in data
+        assert data["status"]["123"] == {"in_collection": False, "in_wantlist": False}
+        assert data["status"]["456"] == {"in_collection": False, "in_wantlist": False}
+
+    def test_user_status_empty_ids_returns_empty(self, test_client: TestClient) -> None:
+        """When ids contains only whitespace/commas, returns empty status dict."""
+        response = test_client.get("/api/user/status?ids=,,,")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == {}
+
+    def test_user_collection_service_not_ready(self, test_client: TestClient) -> None:
+        """When neo4j_driver is None (but config set), collection returns 503."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        original_driver = explore_module.neo4j_driver
+        explore_module.config = mock_config
+        explore_module.neo4j_driver = None
+
+        token = _make_explore_jwt()
+        response = test_client.get(
+            "/api/user/collection",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 503
+
+        explore_module.config = original_config
+        explore_module.neo4j_driver = original_driver
+
+    def test_user_collection_success(self, test_client: TestClient) -> None:
+        """With valid auth and neo4j driver, collection endpoint returns 200."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        explore_module.config = mock_config
+
+        token = _make_explore_jwt()
+        with patch("explore.explore.get_user_collection", new=AsyncMock(return_value=([], 0))):
+            response = test_client.get(
+                "/api/user/collection",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "releases" in data
+        assert data["total"] == 0
+
+        explore_module.config = original_config
+
+    def test_user_wantlist_service_not_ready(self, test_client: TestClient) -> None:
+        """When neo4j_driver is None (but config set), wantlist returns 503."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        original_driver = explore_module.neo4j_driver
+        explore_module.config = mock_config
+        explore_module.neo4j_driver = None
+
+        token = _make_explore_jwt()
+        response = test_client.get(
+            "/api/user/wantlist",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 503
+
+        explore_module.config = original_config
+        explore_module.neo4j_driver = original_driver
+
+    def test_user_wantlist_success(self, test_client: TestClient) -> None:
+        """With valid auth and neo4j driver, wantlist endpoint returns 200."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        explore_module.config = mock_config
+
+        token = _make_explore_jwt()
+        with patch("explore.explore.get_user_wantlist", new=AsyncMock(return_value=([], 0))):
+            response = test_client.get(
+                "/api/user/wantlist",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "releases" in data
+
+        explore_module.config = original_config
+
+    def test_user_recommendations_service_not_ready(self, test_client: TestClient) -> None:
+        """When neo4j_driver is None, recommendations returns 503."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        original_driver = explore_module.neo4j_driver
+        explore_module.config = mock_config
+        explore_module.neo4j_driver = None
+
+        token = _make_explore_jwt()
+        response = test_client.get(
+            "/api/user/recommendations",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 503
+
+        explore_module.config = original_config
+        explore_module.neo4j_driver = original_driver
+
+    def test_user_recommendations_success(self, test_client: TestClient) -> None:
+        """With valid auth and neo4j driver, recommendations endpoint returns 200."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        explore_module.config = mock_config
+
+        token = _make_explore_jwt()
+        with patch("explore.explore.get_user_recommendations", new=AsyncMock(return_value=[])):
+            response = test_client.get(
+                "/api/user/recommendations",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "recommendations" in data
+
+        explore_module.config = original_config
+
+    def test_user_collection_stats_service_not_ready(self, test_client: TestClient) -> None:
+        """When neo4j_driver is None, collection stats returns 503."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        original_driver = explore_module.neo4j_driver
+        explore_module.config = mock_config
+        explore_module.neo4j_driver = None
+
+        token = _make_explore_jwt()
+        response = test_client.get(
+            "/api/user/collection/stats",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert response.status_code == 503
+
+        explore_module.config = original_config
+        explore_module.neo4j_driver = original_driver
+
+    def test_user_collection_stats_success(self, test_client: TestClient) -> None:
+        """With valid auth and neo4j driver, collection stats returns 200."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        explore_module.config = mock_config
+
+        token = _make_explore_jwt()
+        stats = {"genres": [], "decades": [], "labels": []}
+        with patch("explore.explore.get_user_collection_stats", new=AsyncMock(return_value=stats)):
+            response = test_client.get(
+                "/api/user/collection/stats",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 200
+
+        explore_module.config = original_config
+
+    def test_user_status_with_auth_uses_db_query(self, test_client: TestClient) -> None:
+        """With valid auth and driver, /api/user/status queries Neo4j."""
+        import explore.explore as explore_module
+
+        mock_config = MagicMock()
+        mock_config.jwt_secret_key = TEST_EXPLORE_JWT_SECRET
+        original_config = explore_module.config
+        explore_module.config = mock_config
+
+        token = _make_explore_jwt()
+        status_result = {"123": {"in_collection": True, "in_wantlist": False}}
+        with patch("explore.explore.check_releases_user_status", new=AsyncMock(return_value=status_result)):
+            response = test_client.get(
+                "/api/user/status?ids=123",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"]["123"]["in_collection"] is True
+
+        explore_module.config = original_config

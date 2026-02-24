@@ -49,6 +49,10 @@ SCHEMA_STATEMENTS: list[tuple[str, str]] = [
         "style_name",
         "CREATE CONSTRAINT style_name IF NOT EXISTS FOR (s:Style) REQUIRE s.name IS UNIQUE",
     ),
+    (
+        "user_id",
+        "CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE",
+    ),
     # ── Range indexes ─────────────────────────────────────────────────────────
     # sha256 indexes retained for efficient MERGE operations during ingestion.
     (

@@ -67,6 +67,141 @@ _SPECIFIC_INDEXES: list[tuple[str, str]] = [
 ]
 
 
+# User-facing tables for auth and personal data
+_USER_TABLES: list[tuple[str, str]] = [
+    (
+        "users table",
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email           VARCHAR(255) UNIQUE NOT NULL,
+            hashed_password VARCHAR(255) NOT NULL,
+            is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    ),
+    (
+        "idx_users_email",
+        "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email)",
+    ),
+    (
+        "oauth_tokens table",
+        """
+        CREATE TABLE IF NOT EXISTS oauth_tokens (
+            id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            provider          VARCHAR(50) NOT NULL,
+            access_token      TEXT NOT NULL,
+            access_secret     TEXT NOT NULL,
+            provider_username VARCHAR(255),
+            provider_user_id  VARCHAR(255),
+            created_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            updated_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            UNIQUE(user_id, provider)
+        )
+        """,
+    ),
+    (
+        "idx_oauth_tokens_user_provider",
+        "CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_provider ON oauth_tokens (user_id, provider)",
+    ),
+    (
+        "app_config table",
+        """
+        CREATE TABLE IF NOT EXISTS app_config (
+            key        VARCHAR(255) PRIMARY KEY,
+            value      TEXT NOT NULL,
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    ),
+    (
+        "user_collections table",
+        """
+        CREATE TABLE IF NOT EXISTS user_collections (
+            id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            release_id   BIGINT NOT NULL,
+            instance_id  BIGINT,
+            folder_id    INTEGER,
+            title        VARCHAR(500),
+            artist       VARCHAR(500),
+            year         INTEGER,
+            format       VARCHAR(255),
+            label        VARCHAR(255),
+            condition    VARCHAR(100),
+            rating       SMALLINT,
+            notes        TEXT,
+            date_added   TIMESTAMP WITH TIME ZONE,
+            metadata     JSONB,
+            created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            updated_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            UNIQUE(user_id, release_id, instance_id)
+        )
+        """,
+    ),
+    (
+        "idx_user_collections_user_id",
+        "CREATE INDEX IF NOT EXISTS idx_user_collections_user_id ON user_collections (user_id)",
+    ),
+    (
+        "idx_user_collections_release_id",
+        "CREATE INDEX IF NOT EXISTS idx_user_collections_release_id ON user_collections (release_id)",
+    ),
+    (
+        "user_wantlists table",
+        """
+        CREATE TABLE IF NOT EXISTS user_wantlists (
+            id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            release_id BIGINT NOT NULL,
+            title      VARCHAR(500),
+            artist     VARCHAR(500),
+            year       INTEGER,
+            format     VARCHAR(255),
+            rating     SMALLINT,
+            notes      TEXT,
+            date_added TIMESTAMP WITH TIME ZONE,
+            metadata   JSONB,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            UNIQUE(user_id, release_id)
+        )
+        """,
+    ),
+    (
+        "idx_user_wantlists_user_id",
+        "CREATE INDEX IF NOT EXISTS idx_user_wantlists_user_id ON user_wantlists (user_id)",
+    ),
+    (
+        "idx_user_wantlists_release_id",
+        "CREATE INDEX IF NOT EXISTS idx_user_wantlists_release_id ON user_wantlists (release_id)",
+    ),
+    (
+        "sync_history table",
+        """
+        CREATE TABLE IF NOT EXISTS sync_history (
+            id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            sync_type     VARCHAR(50) NOT NULL,
+            status        VARCHAR(50) NOT NULL DEFAULT 'pending',
+            items_synced  INTEGER,
+            pages_fetched INTEGER,
+            error_message TEXT,
+            started_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            completed_at  TIMESTAMP WITH TIME ZONE
+        )
+        """,
+    ),
+    (
+        "idx_sync_history_user_id",
+        "CREATE INDEX IF NOT EXISTS idx_sync_history_user_id ON sync_history (user_id)",
+    ),
+]
+
+
 async def create_postgres_schema(pool: Any) -> None:
     """Create all PostgreSQL tables and indexes.
 
@@ -139,7 +274,17 @@ async def create_postgres_schema(pool: Any) -> None:
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 
-    total = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES)
+            # ── User-facing tables ────────────────────────────────────────────
+            for name, stmt in _USER_TABLES:
+                try:
+                    await cursor.execute(stmt)
+                    logger.info(f"✅ Schema: {name}")
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"❌ Failed to create schema object '{name}': {e}")
+                    failure_count += 1
+
+    total = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
     logger.info(
         f"✅ PostgreSQL schema creation complete: "
         f"{success_count} succeeded, {failure_count} failed (total: {total})"
