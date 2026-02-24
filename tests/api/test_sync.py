@@ -220,3 +220,89 @@ class TestVerifyToken:
 
         with pytest.raises(ValueError, match="Invalid token"):
             await _verify_token("only.two.parts.extra")
+
+    @pytest.mark.asyncio
+    async def test_verify_token_config_none_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
+        """Line 48: _verify_token raises ValueError when _config is None."""
+        import api.routers.sync as sync_module
+        from api.routers.sync import _verify_token
+
+        original = sync_module._config
+        sync_module._config = None
+        try:
+            with pytest.raises(ValueError, match="Service not initialized"):
+                await _verify_token("a.b.c")
+        finally:
+            sync_module._config = original
+
+    @pytest.mark.asyncio
+    async def test_verify_token_body_padding_branch(self, test_client: TestClient) -> None:  # noqa: ARG002
+        """Line 63: _verify_token handles a JWT body whose base64url needs padding."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        from api.routers.sync import _verify_token
+        from tests.api.conftest import TEST_JWT_SECRET, TEST_USER_ID
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        # email "ab@example.com" (14 chars) produces JSON of 88 bytes →
+        # base64url stripped length is 118 (118 % 4 == 2, needs padding)
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body = b64url(
+            json.dumps(
+                {"sub": TEST_USER_ID, "email": "ab@example.com", "exp": 9_999_999_999},
+                separators=(",", ":"),
+            ).encode()
+        )
+        assert len(body) % 4 != 0, "test precondition: body must need base64 padding"
+        signing_input = f"{header}.{body}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        token = f"{header}.{body}.{sig}"
+
+        payload = await _verify_token(token)
+        assert payload["sub"] == TEST_USER_ID
+
+
+class TestSyncGetCurrentUser:
+    """Tests for api.routers.sync._get_current_user."""
+
+    def test_get_current_user_config_none_returns_503(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Line 75: _get_current_user raises 503 when sync _config is None."""
+        import api.routers.sync as sync_module
+
+        original = sync_module._config
+        sync_module._config = None
+        try:
+            response = test_client.get("/api/sync/status", headers=auth_headers)
+            assert response.status_code == 503
+        finally:
+            sync_module._config = original
+
+    def test_trigger_sync_no_sub_in_current_user_401(
+        self,
+        test_client: TestClient,
+    ) -> None:
+        """Line 98: trigger_sync raises 401 when current_user has no 'sub'."""
+        from api.api import app
+        from api.routers.sync import _get_current_user
+
+        async def override_no_sub() -> dict[str, str]:
+            return {"email": "x@y.com"}
+
+        app.dependency_overrides[_get_current_user] = override_no_sub
+        try:
+            response = test_client.post(
+                "/api/sync",
+                headers={"Authorization": "Bearer fake"},
+            )
+            assert response.status_code == 401
+        finally:
+            del app.dependency_overrides[_get_current_user]

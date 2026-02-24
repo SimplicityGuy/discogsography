@@ -179,7 +179,7 @@ async def _get_current_user(
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     """Manage API service lifecycle."""
     global _pool, _config, _redis
 
@@ -621,7 +621,7 @@ async def revoke_discogs(
     return ORJSONResponse(content={"revoked": True})
 
 
-def main() -> None:
+def main() -> None:  # pragma: no cover
     """Entry point for the API service."""
     setup_logging("api", log_file=Path("/logs/api.log"))
     print(
