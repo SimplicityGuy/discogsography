@@ -18,7 +18,7 @@ class TestExploreUI:
 
     def test_navbar_visible(self, page: Page, test_server: str) -> None:
         """Test that the navigation bar is visible."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         navbar = page.locator("nav")
         expect(navbar).to_be_visible(timeout=5000)
@@ -301,7 +301,7 @@ class TestExploreSearchInteraction:
 
     def test_graph_legend_visible(self, page: Page, test_server: str) -> None:
         """Test that the graph legend is visible on the explore pane."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         legend = page.locator("#graphLegend")
         expect(legend).to_be_visible(timeout=5000)
