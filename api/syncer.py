@@ -10,10 +10,7 @@ Key Discogs API gotchas:
 """
 
 import asyncio
-from base64 import b64encode
 from datetime import UTC, datetime
-import hashlib
-import hmac
 import os
 import time
 from typing import Any
@@ -25,6 +22,7 @@ from psycopg.rows import dict_row
 import structlog
 
 from api.auth import decrypt_oauth_token
+from api.services.discogs import _build_oauth_header, _hmac_sha1_signature as _hmac_sha1
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
 
 
@@ -33,38 +31,6 @@ logger = structlog.get_logger(__name__)
 DISCOGS_API_BASE = "https://api.discogs.com"
 SYNC_DELAY_SECONDS = 0.5  # 0.5s between requests to stay under 60 req/min
 PAGE_SIZE = 100
-
-
-def _oauth_escape(value: str) -> str:
-    """Percent-encode a string for OAuth signatures (RFC 3986)."""
-    return urllib.parse.quote(value, safe="")
-
-
-def _build_oauth_header(params: dict[str, str]) -> str:
-    """Build an OAuth Authorization header."""
-    parts = [f'{k}="{_oauth_escape(v)}"' for k, v in sorted(params.items())]
-    return "OAuth " + ", ".join(parts)
-
-
-def _hmac_sha1(
-    method: str,
-    url: str,
-    oauth_params: dict[str, str],
-    consumer_secret: str,
-    token_secret: str,
-) -> str:
-    """Generate HMAC-SHA1 OAuth 1.0a signature."""
-    param_string = "&".join(f"{_oauth_escape(k)}={_oauth_escape(v)}" for k, v in sorted(oauth_params.items()))
-    base_string = "&".join(
-        [
-            _oauth_escape(method.upper()),
-            _oauth_escape(url),
-            _oauth_escape(param_string),
-        ]
-    )
-    signing_key = f"{_oauth_escape(consumer_secret)}&{_oauth_escape(token_secret)}"
-    digest = hmac.new(signing_key.encode("ascii"), base_string.encode("ascii"), hashlib.sha1).digest()
-    return b64encode(digest).decode("ascii")
 
 
 def _auth_header(
