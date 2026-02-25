@@ -20,11 +20,11 @@ logger = structlog.get_logger(__name__)
 
 
 @overload
-def get_secret(env_var: str, default: str) -> str: ...
+def get_secret(env_var: str, default: str) -> str: ...  # pragma: no cover
 
 
 @overload
-def get_secret(env_var: str, default: None = None) -> str | None: ...
+def get_secret(env_var: str, default: None = None) -> str | None: ...  # pragma: no cover
 
 
 def get_secret(env_var: str, default: str | None = None) -> str | None:
