@@ -33,7 +33,7 @@ POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
 
-# Redis (OAuth state storage)
+# Redis (OAuth state + JTI blacklist storage)
 REDIS_URL=redis://redis:6379/0
 
 # JWT signing secret (shared with Curator)
@@ -41,6 +41,17 @@ JWT_SECRET_KEY=your-secret-key-here
 
 # Discogs API
 DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+
+# OAuth token encryption (Fernet symmetric key — generate with:
+# python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
+OAUTH_ENCRYPTION_KEY=your-fernet-key-here
+
+# Optional — CORS
+CORS_ORIGINS="http://localhost:8003,http://localhost:8006"  # Comma-separated allowed origins
+
+# Optional — Snapshot settings
+SNAPSHOT_TTL_DAYS=28     # Default: 28 days
+SNAPSHOT_MAX_NODES=100   # Default: 100 nodes per snapshot
 
 # Optional
 JWT_EXPIRE_MINUTES=1440   # Default: 24 hours
@@ -115,11 +126,12 @@ If a user attempts to start the Discogs OAuth flow before credentials are config
 
 ### Authentication
 
-| Method | Path                 | Auth Required | Description                 |
-| ------ | -------------------- | ------------- | --------------------------- |
-| POST   | `/api/auth/register` | No            | Register a new user account |
-| POST   | `/api/auth/login`    | No            | Login and receive JWT token |
-| GET    | `/api/auth/me`       | Yes           | Get current user details    |
+| Method | Path                 | Auth Required | Rate Limit | Description                     |
+| ------ | -------------------- | ------------- | ---------- | ------------------------------- |
+| POST   | `/api/auth/register` | No            | 3/min      | Register a new user account     |
+| POST   | `/api/auth/login`    | No            | 5/min      | Login and receive JWT token     |
+| POST   | `/api/auth/logout`   | Yes           | —          | Revoke JWT token (JTI blacklist) |
+| GET    | `/api/auth/me`       | Yes           | —          | Get current user details        |
 
 ### Discogs OAuth
 
@@ -134,20 +146,20 @@ If a user attempts to start the Discogs OAuth flow before credentials are config
 
 All graph query endpoints are served by the API service and consumed by the Explore frontend.
 
-| Method | Path                  | Auth Required | Description                          |
-| ------ | --------------------- | ------------- | ------------------------------------ |
-| GET    | `/api/autocomplete`   | No            | Search entities with autocomplete    |
-| GET    | `/api/explore`        | No            | Get center node with category counts |
-| GET    | `/api/expand`         | No            | Expand a category node (paginated)   |
-| GET    | `/api/node/{node_id}` | No            | Get full details for a node          |
-| GET    | `/api/trends`         | No            | Get time-series release counts       |
+| Method | Path                  | Auth Required | Rate Limit | Description                          |
+| ------ | --------------------- | ------------- | ---------- | ------------------------------------ |
+| GET    | `/api/autocomplete`   | No            | 30/min     | Search entities with autocomplete    |
+| GET    | `/api/explore`        | No            | —          | Get center node with category counts |
+| GET    | `/api/expand`         | No            | —          | Expand a category node (paginated)   |
+| GET    | `/api/node/{node_id}` | No            | —          | Get full details for a node          |
+| GET    | `/api/trends`         | No            | —          | Get time-series release counts       |
 
 ### Collection Sync
 
-| Method | Path               | Auth Required | Description                     |
-| ------ | ------------------ | ------------- | ------------------------------- |
-| POST   | `/api/sync`        | Yes           | Trigger a full Discogs sync     |
-| GET    | `/api/sync/status` | Yes           | Get sync history (last 10 jobs) |
+| Method | Path               | Auth Required | Rate Limit | Description                     |
+| ------ | ------------------ | ------------- | ---------- | ------------------------------- |
+| POST   | `/api/sync`        | Yes           | 2/10min    | Trigger a full Discogs sync     |
+| GET    | `/api/sync/status` | Yes           | —          | Get sync history (last 10 jobs) |
 
 ### User Collection
 
@@ -167,7 +179,7 @@ Save and restore graph exploration states as shareable URLs.
 
 | Method | Path                    | Auth Required | Description                 |
 | ------ | ----------------------- | ------------- | --------------------------- |
-| POST   | `/api/snapshot`         | No            | Save current graph snapshot |
+| POST   | `/api/snapshot`         | Yes           | Save current graph snapshot |
 | GET    | `/api/snapshot/{token}` | No            | Restore a saved snapshot    |
 
 ### Health
@@ -221,10 +233,16 @@ The API service uses the following tables (created by schema-init):
 
 ## Security
 
-- Passwords hashed with PBKDF2-SHA256 (100,000 iterations, random 32-byte salt)
-- JWT signatures use `hmac.compare_digest` for constant-time comparison
-- OAuth state stored in Redis with TTL to prevent replay attacks
-- All endpoints run as non-root container user (UID 1000)
+- **Passwords**: PBKDF2-SHA256 (100,000 iterations, random 32-byte salt)
+- **Constant-time auth**: Login and registration use constant-time comparison to prevent user enumeration via timing attacks
+- **Blind registration**: Duplicate email registration returns the same 201 response to prevent enumeration
+- **JWT revocation**: Logout blacklists the JWT's `jti` claim in Redis with TTL matching the token expiry
+- **OAuth tokens encrypted at rest**: Discogs OAuth access tokens are encrypted with Fernet symmetric encryption before database storage (`OAUTH_ENCRYPTION_KEY`)
+- **Rate limiting**: register (3/min), login (5/min), sync (2/10min), autocomplete (30/min) via slowapi; per-user sync cooldown (600s) in Redis
+- **Security response headers**: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`
+- **CORS**: Configurable via `CORS_ORIGINS` env var (disabled by default)
+- **Snapshots require auth**: `POST /api/snapshot` requires a valid JWT
+- **Container**: All endpoints run as non-root container user (UID 1000)
 
 ## Monitoring
 
