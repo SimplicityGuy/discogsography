@@ -4,9 +4,12 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import patch
 
+import fakeredis
+import fakeredis.aioredis as aioredis_fake
 from fastapi.testclient import TestClient
+import pytest
 
-from explore.snapshot_store import SnapshotStore
+from api.snapshot_store import SnapshotStore
 
 
 # ---------------------------------------------------------------------------
@@ -17,78 +20,83 @@ from explore.snapshot_store import SnapshotStore
 class TestSnapshotStore:
     """Tests for SnapshotStore."""
 
-    def test_save_returns_token_and_expiry(self) -> None:
-        store = SnapshotStore()
+    @pytest.mark.asyncio
+    async def test_save_returns_token_and_expiry(self) -> None:
+        store = SnapshotStore(aioredis_fake.FakeRedis())
         nodes = [{"id": "1", "type": "artist"}]
         center = {"id": "1", "type": "artist"}
-        token, expires_at = store.save(nodes, center)
+        token, expires_at = await store.save(nodes, center)
         assert isinstance(token, str)
         assert len(token) > 0
         assert isinstance(expires_at, datetime)
         assert expires_at > datetime.now(UTC)
 
-    def test_save_and_load_round_trip(self) -> None:
-        store = SnapshotStore()
+    @pytest.mark.asyncio
+    async def test_save_and_load_round_trip(self) -> None:
+        store = SnapshotStore(aioredis_fake.FakeRedis())
         nodes = [{"id": "1", "type": "artist"}, {"id": "2", "type": "release"}]
         center = {"id": "1", "type": "artist"}
-        token, _ = store.save(nodes, center)
-        result = store.load(token)
+        token, _ = await store.save(nodes, center)
+        result = await store.load(token)
         assert result is not None
         assert result["nodes"] == nodes
         assert result["center"] == center
         assert "created_at" in result
 
-    def test_load_unknown_token_returns_none(self) -> None:
-        store = SnapshotStore()
-        result = store.load("nonexistent_token")
+    @pytest.mark.asyncio
+    async def test_load_unknown_token_returns_none(self) -> None:
+        store = SnapshotStore(aioredis_fake.FakeRedis())
+        result = await store.load("nonexistent_token")
         assert result is None
 
-    def test_load_expired_token_returns_none(self) -> None:
-        store = SnapshotStore()
+    @pytest.mark.asyncio
+    async def test_load_expired_token_returns_none(self) -> None:
+        redis = aioredis_fake.FakeRedis()
+        store = SnapshotStore(redis)
         nodes = [{"id": "1", "type": "artist"}]
         center = {"id": "1", "type": "artist"}
-        token, _ = store.save(nodes, center)
+        token, _ = await store.save(nodes, center)
 
-        # Manually expire the entry
-        past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-        store._store[token]["expires_at"] = past
+        # Delete the key to simulate Redis TTL expiration
+        await redis.delete(f"snapshot:{token}")
 
-        result = store.load(token)
+        result = await store.load(token)
         assert result is None
-        # Expired entry should be removed
-        assert token not in store._store
 
-    def test_ttl_days_from_env(self) -> None:
+    @pytest.mark.asyncio
+    async def test_ttl_days_from_env(self) -> None:
         with patch.dict("os.environ", {"SNAPSHOT_TTL_DAYS": "7"}):
-            store = SnapshotStore()
+            store = SnapshotStore(aioredis_fake.FakeRedis())
             assert store.ttl_days == 7
 
-    def test_max_nodes_from_env(self) -> None:
+    @pytest.mark.asyncio
+    async def test_max_nodes_from_env(self) -> None:
         with patch.dict("os.environ", {"SNAPSHOT_MAX_NODES": "50"}):
-            store = SnapshotStore()
+            store = SnapshotStore(aioredis_fake.FakeRedis())
             assert store.max_nodes == 50
 
-    def test_evict_expired_on_save(self) -> None:
-        store = SnapshotStore()
+    @pytest.mark.asyncio
+    async def test_tokens_are_unique(self) -> None:
+        store = SnapshotStore(aioredis_fake.FakeRedis())
         nodes = [{"id": "1", "type": "artist"}]
         center = {"id": "1", "type": "artist"}
-
-        token1, _ = store.save(nodes, center)
-
-        # Manually expire the first entry
-        past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-        store._store[token1]["expires_at"] = past
-
-        # Save a second entry — should trigger eviction of the first
-        store.save(nodes, center)
-        assert token1 not in store._store
-
-    def test_tokens_are_unique(self) -> None:
-        store = SnapshotStore()
-        nodes = [{"id": "1", "type": "artist"}]
-        center = {"id": "1", "type": "artist"}
-        tokens = {store.save(nodes, center)[0] for _ in range(20)}
+        tokens = set()
+        for _ in range(20):
+            token, _ = await store.save(nodes, center)
+            tokens.add(token)
         assert len(tokens) == 20
+
+    @pytest.mark.asyncio
+    async def test_ttl_is_set_on_key(self) -> None:
+        redis = aioredis_fake.FakeRedis()
+        store = SnapshotStore(redis, ttl_days=7)
+        nodes = [{"id": "1", "type": "artist"}]
+        center = {"id": "1", "type": "artist"}
+        token, _ = await store.save(nodes, center)
+        ttl = await redis.ttl(f"snapshot:{token}")
+        # TTL should be within a few seconds of 7 * 86400
+        expected = 7 * 86400
+        assert expected - 5 <= ttl <= expected
 
 
 # ---------------------------------------------------------------------------
@@ -119,8 +127,7 @@ class TestSaveSnapshotEndpoint:
         import api.routers.snapshot as snapshot_module
 
         original_store = snapshot_module._snapshot_store
-        small_store = SnapshotStore()
-        small_store._max_nodes = 2
+        small_store = SnapshotStore(aioredis_fake.FakeRedis(), max_nodes=2)
         snapshot_module._snapshot_store = small_store
 
         payload = {
@@ -201,7 +208,9 @@ class TestRestoreSnapshotEndpoint:
         data = response.json()
         assert "error" in data
 
-    def test_restore_expired_token_returns_404(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+    def test_restore_expired_token_returns_404(
+        self, test_client: TestClient, auth_headers: dict[str, str], fake_redis_server: fakeredis.FakeServer
+    ) -> None:
         import api.routers.snapshot as snapshot_module
 
         # Save a snapshot
@@ -213,9 +222,10 @@ class TestRestoreSnapshotEndpoint:
         assert save_response.status_code == 201
         token = save_response.json()["token"]
 
-        # Manually expire it
-        past = (datetime.now(UTC) - timedelta(days=1)).isoformat()
-        snapshot_module._snapshot_store._store[token]["expires_at"] = past
+        # Delete the key via sync fakeredis to simulate Redis TTL expiration
+        sync_redis = fakeredis.FakeRedis(server=fake_redis_server)
+        key = f"{snapshot_module._snapshot_store._KEY_PREFIX}{token}"
+        sync_redis.delete(key)
 
         # Restore should return 404
         restore_response = test_client.get(f"/api/snapshot/{token}")

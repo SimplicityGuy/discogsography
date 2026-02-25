@@ -1,18 +1,29 @@
-"""In-memory snapshot store with TTL eviction for graph state persistence."""
+"""Redis-backed snapshot store with native TTL for graph state persistence."""
 
 from datetime import UTC, datetime, timedelta
+import os
 import secrets
 from typing import Any
 
+import orjson
+import redis.asyncio as aioredis
+
 
 class SnapshotStore:
-    """Thread-safe in-memory store for graph snapshots with TTL eviction."""
+    """Redis-backed store for graph snapshots with native TTL eviction."""
 
-    def __init__(self, ttl_days: int = 28, max_nodes: int = 100, max_entries: int = 1000) -> None:
-        self._store: dict[str, dict[str, Any]] = {}
-        self._ttl_days: int = ttl_days
-        self._max_nodes: int = max_nodes
-        self._max_entries: int = max_entries
+    _KEY_PREFIX = "snapshot:"
+
+    def __init__(
+        self,
+        redis_client: aioredis.Redis,
+        ttl_days: int | None = None,
+        max_nodes: int | None = None,
+    ) -> None:
+        self._redis = redis_client
+        self._ttl_days: int = ttl_days if ttl_days is not None else int(os.environ.get("SNAPSHOT_TTL_DAYS", "28"))
+        self._max_nodes: int = max_nodes if max_nodes is not None else int(os.environ.get("SNAPSHOT_MAX_NODES", "100"))
+        self._ttl_seconds: int = self._ttl_days * 86400
 
     @property
     def ttl_days(self) -> int:
@@ -22,38 +33,25 @@ class SnapshotStore:
     def max_nodes(self) -> int:
         return self._max_nodes
 
-    def save(self, nodes: list[dict[str, Any]], center: dict[str, Any]) -> tuple[str, datetime]:
+    async def save(self, nodes: list[dict[str, Any]], center: dict[str, Any]) -> tuple[str, datetime]:
         """Save a snapshot and return (token, expires_at)."""
-        self._evict_expired()
         token = secrets.token_urlsafe(12)
         now = datetime.now(UTC)
-        expires_at = now + timedelta(days=self._ttl_days)
-        self._store[token] = {
-            "nodes": nodes,
-            "center": center,
-            "created_at": now.isoformat(),
-            "expires_at": expires_at.isoformat(),
-        }
+        expires_at = now + timedelta(seconds=self._ttl_seconds)
+        payload = orjson.dumps(
+            {
+                "nodes": nodes,
+                "center": center,
+                "created_at": now.isoformat(),
+            }
+        )
+        await self._redis.set(f"{self._KEY_PREFIX}{token}", payload, ex=self._ttl_seconds)
         return token, expires_at
 
-    def load(self, token: str) -> dict[str, Any] | None:
+    async def load(self, token: str) -> dict[str, Any] | None:
         """Load a snapshot by token, returning None if not found or expired."""
-        entry = self._store.get(token)
-        if entry is None:
+        raw = await self._redis.get(f"{self._KEY_PREFIX}{token}")
+        if raw is None:
             return None
-        expires_at = datetime.fromisoformat(entry["expires_at"])
-        if datetime.now(UTC) > expires_at:
-            del self._store[token]
-            return None
-        return {
-            "nodes": entry["nodes"],
-            "center": entry["center"],
-            "created_at": entry["created_at"],
-        }
-
-    def _evict_expired(self) -> None:
-        """Remove all expired entries."""
-        now = datetime.now(UTC)
-        expired = [token for token, entry in self._store.items() if datetime.fromisoformat(entry["expires_at"]) < now]
-        for token in expired:
-            del self._store[token]
+        result: dict[str, Any] = orjson.loads(raw)
+        return result

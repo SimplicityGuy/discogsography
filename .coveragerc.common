@@ -1,5 +1,4 @@
 [run]
-source = .
 include = common/**
 relative_files = true
 omit =

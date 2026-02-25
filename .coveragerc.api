@@ -1,5 +1,4 @@
 [run]
-source = .
 include = api/**
 relative_files = true
 omit =

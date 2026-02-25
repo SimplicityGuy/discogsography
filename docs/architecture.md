@@ -67,7 +67,7 @@ graph TD
 
     API -.->|User Accounts| PG
     API -.->|Graph Queries| NEO4J
-    API -.->|OAuth State| REDIS
+    API -.->|OAuth State + Snapshots| REDIS
 
     CURATOR -.->|Sync Collections| NEO4J
     CURATOR -.->|Sync History| PG
@@ -476,6 +476,8 @@ See [Database Schema](database-schema.md) for details.
 **Cache Types**:
 
 - OAuth state tokens (API — short TTL, used during Discogs OAuth flow)
+- Graph snapshots (API — native Redis TTL, default 28 days, survives service restarts)
+- JWT revocation blacklist (API — JTI claims with TTL matching token expiry)
 - Query result caching (Dashboard)
 - Embedding vectors
 - Graph algorithm results

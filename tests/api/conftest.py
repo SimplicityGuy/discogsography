@@ -23,6 +23,8 @@ from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import fakeredis
+import fakeredis.aioredis as aioredis_fake
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
@@ -141,11 +143,18 @@ def valid_token() -> str:
 
 
 @pytest.fixture
+def fake_redis_server() -> fakeredis.FakeServer:
+    """Shared FakeServer allowing both async and sync fakeredis clients to access the same data."""
+    return fakeredis.FakeServer()
+
+
+@pytest.fixture
 def test_client(
     mock_pool: MagicMock,
     mock_redis: AsyncMock,
     mock_neo4j: MagicMock,
     test_api_config: ApiConfig,
+    fake_redis_server: fakeredis.FakeServer,
 ) -> Generator[TestClient]:
     """Create a TestClient with mocked lifespan and module-level state."""
     import api.api as api_module
@@ -172,10 +181,11 @@ def test_client(
     import api.routers.sync as _sync_router
     import api.routers.user as _user_router
 
+    fake_redis = aioredis_fake.FakeRedis(server=fake_redis_server)
     _sync_router.configure(mock_pool, mock_neo4j, test_api_config, api_module._running_syncs, mock_redis)
     _explore_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
     _user_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
-    _snapshot_router.configure(jwt_secret=TEST_JWT_SECRET)
+    _snapshot_router.configure(jwt_secret=TEST_JWT_SECRET, redis_client=fake_redis)
 
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client

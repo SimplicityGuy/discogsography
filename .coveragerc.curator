@@ -1,5 +1,4 @@
 [run]
-source = .
 include = curator/**
 relative_files = true
 omit =

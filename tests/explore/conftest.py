@@ -8,6 +8,7 @@ os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USERNAME", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "testpassword")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-for-unit-tests")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
@@ -17,6 +18,8 @@ import time
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import fakeredis
+import fakeredis.aioredis as aioredis_fake
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import httpx
@@ -55,7 +58,13 @@ def mock_neo4j_session(mock_neo4j_driver: MagicMock) -> AsyncMock:
 
 
 @pytest.fixture
-def test_client(mock_neo4j_driver: MagicMock) -> Generator[TestClient]:
+def fake_redis_server() -> fakeredis.FakeServer:
+    """Shared FakeServer allowing both async and sync fakeredis clients to access the same data."""
+    return fakeredis.FakeServer()
+
+
+@pytest.fixture
+def test_client(mock_neo4j_driver: MagicMock, fake_redis_server: fakeredis.FakeServer) -> Generator[TestClient]:
     """Create a test client with mocked Neo4j driver, bypassing real lifespan.
 
     The API endpoints (autocomplete, explore, expand, user) have been migrated
@@ -102,9 +111,10 @@ def test_client(mock_neo4j_driver: MagicMock) -> Generator[TestClient]:
 
     # Wire the mock driver into both api routers
     jwt_secret = os.environ.get("JWT_SECRET_KEY")
+    fake_redis = aioredis_fake.FakeRedis(server=fake_redis_server)
     explore_router_module.configure(mock_neo4j_driver, jwt_secret)
     user_router_module.configure(mock_neo4j_driver, jwt_secret)
-    snapshot_router_module.configure(jwt_secret=jwt_secret)
+    snapshot_router_module.configure(jwt_secret=jwt_secret, redis_client=fake_redis)
 
     # Clear autocomplete cache between tests
     explore_router_module._autocomplete_cache.clear()
@@ -115,7 +125,7 @@ def test_client(mock_neo4j_driver: MagicMock) -> Generator[TestClient]:
     # Restore router state (set driver back to None so tests are isolated)
     explore_router_module.configure(None, None)
     user_router_module.configure(None, None)
-    snapshot_router_module.configure(jwt_secret=None)
+    snapshot_router_module.configure(jwt_secret=None, redis_client=None)
 
 
 @pytest.fixture
