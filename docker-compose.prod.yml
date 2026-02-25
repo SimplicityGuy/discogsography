@@ -3,42 +3,67 @@
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 # Note: When using deploy.replicas, container_name from base config is ignored
 #
-# Additional environment variables for production:
-# - UID/GID: User/Group ID for container processes (default: 1000)
-# - Memory limits: <SERVICE>_MEMORY_LIMIT (e.g., DASHBOARD_MEMORY_LIMIT)
-# - Database credentials: RABBITMQ_USER, RABBITMQ_PASS, POSTGRES_USER, NEO4J_USER, etc.
-# - Secrets: JWT_SECRET_KEY, OAUTH_ENCRYPTION_KEY
+# Secrets: populate secrets/ from secrets.example/ and run scripts/create-secrets.sh
+# See: scripts/create-secrets.sh for automated secret generation
+
+secrets:
+  jwt_secret_key:
+    file: ./secrets/jwt_secret_key.txt
+  oauth_encryption_key:
+    file: ./secrets/oauth_encryption_key.txt
+  postgres_password:
+    file: ./secrets/postgres_password.txt
+  postgres_user:
+    file: ./secrets/postgres_user.txt
+  rabbitmq_pass:
+    file: ./secrets/rabbitmq_pass.txt
+  rabbitmq_user:
+    file: ./secrets/rabbitmq_user.txt
+  neo4j_password:
+    file: ./secrets/neo4j_password.txt
 
 services:
   rabbitmq:
     restart: always
     environment:
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASS}
-    # No resource limits per project convention
+      RABBITMQ_DEFAULT_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_DEFAULT_PASS_FILE: /run/secrets/rabbitmq_pass
+    secrets:
+      - rabbitmq_user
+      - rabbitmq_pass
 
   postgres:
     restart: always
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    # No resource limits per project convention
+      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_DB: discogsography
+    secrets:
+      - postgres_user
+      - postgres_password
 
   neo4j:
     restart: always
+    entrypoint: ["/scripts/neo4j-entrypoint.sh"]
     environment:
-      NEO4J_AUTH: ${NEO4J_USER}/${NEO4J_PASSWORD}
       NEO4J_dbms_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-2G}
-    # No resource limits per project convention
+    secrets:
+      - neo4j_password
+    volumes:
+      - ./scripts/neo4j-entrypoint.sh:/scripts/neo4j-entrypoint.sh:ro
 
   api:
     restart: always
     environment:
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      OAUTH_ENCRYPTION_KEY: ${OAUTH_ENCRYPTION_KEY}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret_key
+      OAUTH_ENCRYPTION_KEY_FILE: /run/secrets/oauth_encryption_key
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - jwt_secret_key
+      - oauth_encryption_key
+      - postgres_user
+      - postgres_password
     deploy:
       restart_policy:
         condition: any
@@ -48,9 +73,13 @@ services:
   curator:
     restart: always
     environment:
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret_key
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - jwt_secret_key
+      - postgres_user
+      - postgres_password
     deploy:
       restart_policy:
         condition: any
@@ -76,6 +105,12 @@ services:
 
   tableinator:
     restart: always
+    environment:
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_user
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_user
+      - postgres_password
     deploy:
       restart_policy:
         condition: any
@@ -85,8 +120,11 @@ services:
   dashboard:
     restart: always
     environment:
-      RABBITMQ_MANAGEMENT_USER: ${RABBITMQ_USER}
-      RABBITMQ_MANAGEMENT_PASSWORD: ${RABBITMQ_PASS}
+      RABBITMQ_MANAGEMENT_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_MANAGEMENT_PASSWORD_FILE: /run/secrets/rabbitmq_pass
+    secrets:
+      - rabbitmq_user
+      - rabbitmq_pass
     deploy:
       restart_policy:
         condition: any

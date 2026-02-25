@@ -14,9 +14,9 @@ Discogsography uses environment variables for all configuration. This approach p
 
 ## Configuration Methods
 
-### 1. Environment File (.env)
+### 1. Environment File (.env) — Development
 
-The recommended approach is using a `.env` file:
+The recommended approach for local development is a `.env` file:
 
 ```bash
 # Copy the example file
@@ -26,7 +26,9 @@ cp .env.example .env
 nano .env
 ```
 
-### 2. Direct Environment Variables
+> **Production**: Do not use `.env` files with real credentials in production. Use Docker Compose runtime secrets instead — see [Production Secrets](#production-secrets) below.
+
+### 2. Direct Environment Variables — Development
 
 Export variables in your shell:
 
@@ -36,9 +38,23 @@ export NEO4J_ADDRESS="bolt://localhost:7687"
 # ... other variables
 ```
 
-### 3. Docker Compose
+### 3. Docker Compose Runtime Secrets — Production
 
-Override in `docker-compose.yml` or `docker-compose.override.yml`:
+In production, credentials are mounted as in-memory tmpfs files via `docker-compose.prod.yml`. Secret values are never visible in `docker inspect`, never written to disk, and flushed when the container stops.
+
+```bash
+# Generate secrets once (idempotent)
+bash scripts/create-secrets.sh
+
+# Start with production overlay
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+See [Production Secrets](#production-secrets) below and [Docker Security](docker-security.md) for full details.
+
+### 4. Docker Compose Override
+
+Override non-secret settings in `docker-compose.yml` or `docker-compose.override.yml`:
 
 ```yaml
 services:
@@ -276,6 +292,7 @@ REDIS_URL="redis+sentinel://sentinel1:26379,sentinel2:26379/myservice"
 - Use a cryptographically random secret of at least 32 bytes in production
 - Rotate the secret to invalidate all existing tokens
 - Never log or expose `JWT_SECRET_KEY`
+- In production, supply via `JWT_SECRET_KEY_FILE` pointing to a Docker secret file — see [Production Secrets](#production-secrets)
 
 **Examples**:
 
@@ -463,7 +480,7 @@ See [Performance Guide](performance-guide.md) for detailed optimization strategi
 
 **Notes**:
 
-- `RABBITMQ_MANAGEMENT_USER` / `RABBITMQ_MANAGEMENT_PASSWORD` must match the credentials set in RabbitMQ for the management plugin
+- `RABBITMQ_MANAGEMENT_USER` / `RABBITMQ_MANAGEMENT_PASSWORD` must match the credentials set in RabbitMQ for the management plugin. In production these are supplied via `RABBITMQ_MANAGEMENT_USER_FILE` / `RABBITMQ_MANAGEMENT_PASSWORD_FILE` (Docker secrets)
 - `CORS_ORIGINS` is optional; omit it to restrict cross-origin access
 - `CACHE_WEBHOOK_SECRET` enables an authenticated endpoint to invalidate cached queries
 
@@ -499,6 +516,7 @@ DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogs
 
 # Required — Discogs OAuth token encryption (Fernet symmetric key)
 # Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+# In production, supply via OAUTH_ENCRYPTION_KEY_FILE (Docker secret)
 OAUTH_ENCRYPTION_KEY="your-fernet-key-here"
 
 # Optional — CORS origins (comma-separated; omit to disable CORS)
@@ -717,28 +735,48 @@ CONSUMER_CANCEL_DELAY=60
 QUEUE_CHECK_INTERVAL=300
 ```
 
-### Production (.env.production)
+### Production Secrets
+
+In production, all sensitive credentials are delivered as Docker Compose runtime secrets — never as plain environment variables. The `docker-compose.prod.yml` overlay wires everything up automatically.
+
+**Step 1 — Bootstrap secrets** (run once; safe to re-run, skips existing files):
+
+```bash
+bash scripts/create-secrets.sh
+```
+
+This creates `secrets/` with these files (all `chmod 600`, directory `chmod 700`):
+
+```
+secrets/
+├── jwt_secret_key.txt        # openssl rand -hex 32
+├── neo4j_password.txt        # openssl rand -base64 24
+├── oauth_encryption_key.txt  # Fernet.generate_key()
+├── postgres_password.txt     # openssl rand -base64 24
+├── postgres_user.txt         # discogsography
+├── rabbitmq_pass.txt         # openssl rand -base64 24
+└── rabbitmq_user.txt         # discogsography
+```
+
+See `secrets.example/` for reference placeholders and generation commands.
+
+**Step 2 — Set non-secret production environment** (safe to commit, no credentials):
 
 ```bash
 # RabbitMQ
-AMQP_CONNECTION=amqp://prod_user:${RABBITMQ_PASSWORD}@rabbitmq.prod.internal:5672/
+AMQP_CONNECTION=amqp://discogsography:@rabbitmq:5672/
 
 # Neo4j
 NEO4J_ADDRESS=bolt+s://neo4j.prod.internal:7687
-NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=${NEO4J_PASSWORD}
 
 # PostgreSQL
 POSTGRES_ADDRESS=postgres.prod.internal:5432
-POSTGRES_USERNAME=discogsography_app
-POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
 POSTGRES_DATABASE=discogsography
 
 # Redis
-REDIS_URL=redis://:${REDIS_PASSWORD}@redis.prod.internal:6379/0
+REDIS_URL=redis://redis:6379/0
 
-# JWT (API + Curator) — must match across both services
-JWT_SECRET_KEY=${JWT_SECRET_KEY}
+# JWT (optional non-secret settings)
 JWT_EXPIRE_MINUTES=1440
 DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
@@ -754,27 +792,35 @@ CONSUMER_CANCEL_DELAY=300
 QUEUE_CHECK_INTERVAL=3600
 ```
 
+**Step 3 — Start with the production overlay**:
+
+```bash
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+Credentials are mounted at `/run/secrets/<name>` inside each container and read automatically. See [Docker Security](docker-security.md) for the full secrets table and Neo4j entrypoint details.
+
 ## Security Best Practices
 
 ### Password Management
 
-**Never commit passwords**:
+**Never commit credentials**:
 
 ```bash
-# ❌ BAD - hardcoded password
+# ❌ BAD — hardcoded password in any committed file
 NEO4J_PASSWORD=supersecret
 
-# ✅ GOOD - reference to secret
-NEO4J_PASSWORD=${NEO4J_PASSWORD}
+# ✅ GOOD — Docker Compose runtime secret (production)
+# secrets/neo4j_password.txt contains the value, mounted at /run/secrets/neo4j_password
+# docker-compose.prod.yml wires it up automatically via get_secret()
 ```
 
-Use secret management systems:
+For production deployments, use `docker-compose.prod.yml` with `scripts/create-secrets.sh`. For other platforms:
 
-- Docker Secrets
-- Kubernetes Secrets
-- HashiCorp Vault
-- AWS Secrets Manager
-- Azure Key Vault
+- **Kubernetes**: Kubernetes Secrets or an external secrets operator
+- **HashiCorp Vault**: Vault Agent Injector or the Vault CSI provider
+- **AWS**: Secrets Manager with the AWS Secrets and Configuration Provider
+- **Azure**: Azure Key Vault with the CSI Secrets Store driver
 
 ### Connection Encryption
 
@@ -873,6 +919,7 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 ## Related Documentation
 
 - [Quick Start Guide](quick-start.md) - Get started with default configuration
+- [Docker Security](docker-security.md) - Runtime secrets, container hardening, and production setup
 - [Architecture Overview](architecture.md) - Understand service dependencies
 - [Database Resilience](database-resilience.md) - Connection patterns
 - [Logging Guide](logging-guide.md) - Logging configuration details

@@ -6,21 +6,21 @@ Run via docker exec on the API container:
 """
 
 import argparse
-import os
 import sys
 
 import psycopg
 from psycopg.rows import dict_row
 
 from api.auth import decrypt_oauth_token, encrypt_oauth_token
+from common.config import get_secret
 
 
 def _build_conninfo() -> str:
     """Build a psycopg conninfo string from environment variables."""
-    address = os.environ.get("POSTGRES_ADDRESS", "")
-    username = os.environ.get("POSTGRES_USERNAME", "")
-    password = os.environ.get("POSTGRES_PASSWORD", "")
-    database = os.environ.get("POSTGRES_DATABASE", "")
+    address = get_secret("POSTGRES_ADDRESS") or ""
+    username = get_secret("POSTGRES_USERNAME") or ""
+    password = get_secret("POSTGRES_PASSWORD") or ""
+    database = get_secret("POSTGRES_DATABASE") or ""
 
     missing = []
     if not address:
@@ -56,7 +56,7 @@ def _mask(value: str) -> str:
 
 def show_config(conninfo: str) -> None:
     """Print current Discogs credentials (masked)."""
-    encryption_key = os.environ.get("OAUTH_ENCRYPTION_KEY") or None
+    encryption_key = get_secret("OAUTH_ENCRYPTION_KEY")
     with psycopg.connect(conninfo) as conn, conn.cursor(row_factory=dict_row) as cur:
         cur.execute("SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
         rows = {row["key"]: row["value"] for row in cur.fetchall()}
@@ -69,7 +69,7 @@ def show_config(conninfo: str) -> None:
 
 def set_config(conninfo: str, consumer_key: str, consumer_secret: str) -> None:
     """Upsert Discogs credentials into the app_config table."""
-    encryption_key = os.environ.get("OAUTH_ENCRYPTION_KEY") or None
+    encryption_key = get_secret("OAUTH_ENCRYPTION_KEY")
     if encryption_key:
         consumer_key = encrypt_oauth_token(consumer_key, encryption_key)
         consumer_secret = encrypt_oauth_token(consumer_secret, encryption_key)
