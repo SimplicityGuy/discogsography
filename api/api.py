@@ -25,7 +25,7 @@ from slowapi.errors import RateLimitExceeded
 import structlog
 import uvicorn
 
-from api.auth import encrypt_oauth_token
+from api.auth import decrypt_oauth_token, encrypt_oauth_token
 from api.limiter import limiter
 from api.models import LoginRequest, RegisterRequest
 import api.routers.explore as _explore_router
@@ -495,6 +495,10 @@ async def authorize_discogs(
 
     consumer_key = await _get_app_config("discogs_consumer_key")
     consumer_secret = await _get_app_config("discogs_consumer_secret")
+    if consumer_key:
+        consumer_key = decrypt_oauth_token(consumer_key, _config.oauth_encryption_key)
+    if consumer_secret:
+        consumer_secret = decrypt_oauth_token(consumer_secret, _config.oauth_encryption_key)
 
     if not consumer_key or not consumer_secret:
         raise HTTPException(
@@ -551,6 +555,10 @@ async def verify_discogs(
 
     consumer_key = await _get_app_config("discogs_consumer_key")
     consumer_secret = await _get_app_config("discogs_consumer_secret")
+    if consumer_key:
+        consumer_key = decrypt_oauth_token(consumer_key, _config.oauth_encryption_key)
+    if consumer_secret:
+        consumer_secret = decrypt_oauth_token(consumer_secret, _config.oauth_encryption_key)
 
     if not consumer_key or not consumer_secret:
         raise HTTPException(
