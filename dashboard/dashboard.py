@@ -502,11 +502,11 @@ async def get_metrics() -> JSONResponse:
     API_REQUESTS.labels(endpoint="/api/metrics", method="GET").inc()
 
     if dashboard and dashboard.latest_metrics:
-        return JSONResponse(content=dashboard.latest_metrics.model_dump())
+        return JSONResponse(content=dashboard.latest_metrics.model_dump(mode="json"))
     elif dashboard:
         # Collect metrics on demand if not available
         metrics = await dashboard.collect_all_metrics()
-        return JSONResponse(content=metrics.model_dump())
+        return JSONResponse(content=metrics.model_dump(mode="json"))
     else:
         return JSONResponse(content={})
 
@@ -518,7 +518,7 @@ async def get_services() -> JSONResponse:
     if not dashboard:
         return JSONResponse(content=[])
     services = await dashboard.get_service_statuses()
-    return JSONResponse(content=[s.model_dump() for s in services])
+    return JSONResponse(content=[s.model_dump(mode="json") for s in services])
 
 
 @app.get("/api/queues")
