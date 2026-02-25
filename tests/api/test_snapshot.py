@@ -49,6 +49,20 @@ class TestSaveSnapshot:
         response = test_client.post("/api/snapshot", json={"nodes": [{"id": "1", "type": "artist"}]}, headers=auth_headers)
         assert response.status_code == 422
 
+    def test_save_snapshot_store_not_ready_returns_503(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """snapshot.py:53 — 503 when _snapshot_store is None."""
+        import api.routers.snapshot as snap_module
+
+        original = snap_module._snapshot_store
+        snap_module._snapshot_store = None
+        try:
+            body = {"nodes": [{"id": "1", "type": "artist"}], "center": {"id": "1", "type": "artist"}}
+            response = test_client.post("/api/snapshot", json=body, headers=auth_headers)
+            assert response.status_code == 503
+            assert "error" in response.json()
+        finally:
+            snap_module._snapshot_store = original
+
 
 class TestRestoreSnapshot:
     """Tests for GET /api/snapshot/{token}."""
@@ -75,6 +89,19 @@ class TestRestoreSnapshot:
         response = test_client.get("/api/snapshot/nonexistent-token")
         assert response.status_code == 404
         assert "error" in response.json()
+
+    def test_restore_snapshot_store_not_ready_returns_503(self, test_client: TestClient) -> None:
+        """snapshot.py:66 — 503 when _snapshot_store is None."""
+        import api.routers.snapshot as snap_module
+
+        original = snap_module._snapshot_store
+        snap_module._snapshot_store = None
+        try:
+            response = test_client.get("/api/snapshot/some-token")
+            assert response.status_code == 503
+            assert "error" in response.json()
+        finally:
+            snap_module._snapshot_store = original
 
     def test_restore_snapshot_expired(self, test_client: TestClient, fake_redis_server: fakeredis.FakeServer) -> None:
         import secrets
