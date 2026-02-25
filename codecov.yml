@@ -31,13 +31,41 @@ comment:
 
 # Flag configuration for different coverage types
 flags:
-  python:
+  api:
     paths:
-      - "**/*.py"
+      - "api/**"
     carryforward: true
-  rust:
+  curator:
     paths:
-      - "extractor/**/*.rs"
+      - "curator/**"
+    carryforward: true
+  common:
+    paths:
+      - "common/**"
+    carryforward: true
+  dashboard:
+    paths:
+      - "dashboard/**"
+    carryforward: true
+  explore:
+    paths:
+      - "explore/**"
+    carryforward: true
+  graphinator:
+    paths:
+      - "graphinator/**"
+    carryforward: true
+  schema-init:
+    paths:
+      - "schema-init/**"
+    carryforward: true
+  tableinator:
+    paths:
+      - "tableinator/**"
+    carryforward: true
+  extractor:
+    paths:
+      - "extractor/**"
     carryforward: true
   e2e-chromium:
     paths:
@@ -77,6 +105,14 @@ component_management:
       - type: project
         target: auto
   individual_components:
+    - component_id: api
+      name: API
+      paths:
+        - "api/**"
+    - component_id: curator
+      name: Curator
+      paths:
+        - "curator/**"
     - component_id: dashboard
       name: Dashboard
       paths:
@@ -93,6 +129,10 @@ component_management:
       name: Graphinator
       paths:
         - "graphinator/**"
+    - component_id: schema-init
+      name: Schema-Init
+      paths:
+        - "schema-init/**"
     - component_id: tableinator
       name: Tableinator
       paths:
