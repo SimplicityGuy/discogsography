@@ -15,7 +15,6 @@ os.environ.setdefault("POSTGRES_DATABASE", "test")
 os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USERNAME", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "testpassword")
-os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-for-unit-tests")
 
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
@@ -114,7 +113,6 @@ def test_curator_config() -> CuratorConfig:
         neo4j_address="bolt://localhost:7687",
         neo4j_username="neo4j",
         neo4j_password="testpassword",  # noqa: S106
-        jwt_secret_key=TEST_JWT_SECRET,
     )
 
 

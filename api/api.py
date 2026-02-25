@@ -10,18 +10,23 @@ import hmac
 import json
 import os
 from pathlib import Path
+import secrets
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 from pydantic import BaseModel
 import redis.asyncio as aioredis
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 import structlog
 import uvicorn
 
+from api.auth import encrypt_oauth_token
+from api.limiter import limiter
 from api.models import LoginRequest, RegisterRequest
 import api.routers.explore as _explore_router
 import api.routers.snapshot as _snapshot_router
@@ -106,6 +111,11 @@ def _verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
+# Pre-computed dummy hash for timing attack protection in login (H4)
+# Ensures user-not-found path takes the same time as wrong-password path
+_DUMMY_HASH: str = _hash_password("__dummy_password_for_timing__")
+
+
 def _create_access_token(user_id: str, email: str) -> tuple[str, int]:
     """Create a HS256 JWT access token. Returns (token, expires_in_seconds)."""
     if _config is None:
@@ -118,6 +128,7 @@ def _create_access_token(user_id: str, email: str) -> tuple[str, int]:
         "email": email,
         "exp": int(expire.timestamp()),
         "iat": int(datetime.now(UTC).timestamp()),
+        "jti": secrets.token_hex(16),
     }
 
     header = _b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
@@ -169,6 +180,16 @@ async def _get_current_user(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid token",
             )
+        # Check jti blacklist (revoked tokens via logout)
+        jti: str | None = payload.get("jti")
+        if jti and _redis:
+            revoked = await _redis.get(f"revoked:jti:{jti}")
+            if revoked:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
         return payload
     except ValueError as exc:
         raise HTTPException(
@@ -207,22 +228,28 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     await _pool.initialize()
     logger.info("💾 Database pool initialized")
 
-    # Initialize Redis for OAuth state storage
+    # Initialize Redis for OAuth state storage and token blacklist
     _redis = await aioredis.from_url(_config.redis_url, decode_responses=True)
-    logger.info("🔴 Redis connected", url=_config.redis_url)
+    redis_host = _config.redis_url.split("@")[-1] if "@" in _config.redis_url else _config.redis_url.split("://")[-1]
+    logger.info("🔴 Redis connected", host=redis_host)
 
     if _config.neo4j_address and _config.neo4j_username and _config.neo4j_password:
         _neo4j = AsyncResilientNeo4jDriver(
             uri=_config.neo4j_address,
             auth=(_config.neo4j_username, _config.neo4j_password),
             max_retries=5,
-            encrypted=False,
+            encrypted=False,  # M3: Set encrypted=True in production with TLS-enabled Neo4j
         )
         logger.info("🔗 Neo4j driver initialized")
     jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_address else None
-    _sync_router.configure(_pool, _neo4j, _config, _running_syncs)
+    _sync_router.configure(_pool, _neo4j, _config, _running_syncs, _redis)
     _explore_router.configure(_neo4j, jwt_secret_for_neo4j)
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
+    _snapshot_router.configure(
+        jwt_secret=_config.jwt_secret_key,
+        ttl_days=_config.snapshot_ttl_days,
+        max_nodes=_config.snapshot_max_nodes,
+    )
     logger.info("✅ API service ready", port=API_PORT)
 
     yield
@@ -242,6 +269,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     logger.info("✅ API service stopped")
 
 
+# Read CORS origins at module load time (config not available yet at this point)
+_cors_origins_raw = os.environ.get("CORS_ORIGINS", "")
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()] if _cors_origins_raw else None
+
 app = FastAPI(
     title="Discogsography API",
     version="0.1.0",
@@ -250,12 +281,27 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins or ["http://localhost:3000", "http://localhost:8003"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next: Any) -> Any:
+    """Add security headers to all responses."""
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    return response
+
 
 app.include_router(_sync_router.router)
 app.include_router(_explore_router.router)
@@ -270,7 +316,8 @@ async def health_check() -> ORJSONResponse:
 
 
 @app.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
-async def register(request: RegisterRequest) -> ORJSONResponse:
+@limiter.limit("3/minute")
+async def register(request: Request, body: RegisterRequest) -> ORJSONResponse:  # noqa: ARG001
     """Register a new user account."""
     if _pool is None:
         raise HTTPException(
@@ -278,7 +325,7 @@ async def register(request: RegisterRequest) -> ORJSONResponse:
             detail="Service not ready",
         )
 
-    hashed_password = _hash_password(request.password)
+    hashed_password = _hash_password(body.password)
 
     try:
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
@@ -288,16 +335,18 @@ async def register(request: RegisterRequest) -> ORJSONResponse:
                     VALUES (%s, %s)
                     RETURNING id, email, is_active, created_at
                     """,
-                (request.email, hashed_password),
+                (body.email, hashed_password),
             )
             row = await cur.fetchone()
     except Exception as exc:
         exc_str = str(exc).lower()
         if "unique" in exc_str or "duplicate" in exc_str:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Email address already registered",
-            ) from exc
+            # L1: Return same response for duplicate email to prevent user enumeration
+            logger.info("i Registration attempt for existing email (blind)")
+            return ORJSONResponse(
+                content={"message": "Registration processed"},
+                status_code=status.HTTP_201_CREATED,
+            )
         logger.error("❌ Registration failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -310,20 +359,16 @@ async def register(request: RegisterRequest) -> ORJSONResponse:
             detail="Registration failed",
         )
 
-    logger.info("✅ User registered", email=request.email)
+    logger.info("✅ User registered", email=body.email)
     return ORJSONResponse(
-        content={
-            "id": str(row["id"]),
-            "email": row["email"],
-            "is_active": row["is_active"],
-            "created_at": row["created_at"].isoformat(),
-        },
+        content={"message": "Registration processed"},
         status_code=status.HTTP_201_CREATED,
     )
 
 
 @app.post("/api/auth/login")
-async def login(request: LoginRequest) -> ORJSONResponse:
+@limiter.limit("5/minute")
+async def login(request: Request, body: LoginRequest) -> ORJSONResponse:  # noqa: ARG001
     """Authenticate and receive a JWT access token."""
     if _pool is None or _config is None:
         raise HTTPException(
@@ -334,11 +379,20 @@ async def login(request: LoginRequest) -> ORJSONResponse:
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await cur.execute(
             "SELECT id, email, hashed_password, is_active FROM users WHERE email = %s",
-            (request.email,),
+            (body.email,),
         )
         user = await cur.fetchone()
 
-    if user is None or not user["is_active"] or not _verify_password(request.password, user["hashed_password"]):
+    # H4: Constant-time check to prevent user enumeration via timing
+    if user is None:
+        _verify_password(body.password, _DUMMY_HASH)  # consume same time as real verify
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect email or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not user["is_active"] or not _verify_password(body.password, user["hashed_password"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -346,7 +400,7 @@ async def login(request: LoginRequest) -> ORJSONResponse:
         )
 
     access_token, expires_in = _create_access_token(str(user["id"]), user["email"])
-    logger.info("✅ User logged in", email=request.email)
+    logger.info("✅ User logged in", email=body.email)
 
     return ORJSONResponse(
         content={
@@ -355,6 +409,21 @@ async def login(request: LoginRequest) -> ORJSONResponse:
             "expires_in": expires_in,
         }
     )
+
+
+@app.post("/api/auth/logout")
+async def logout(
+    current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
+) -> ORJSONResponse:
+    """Logout and revoke the current JWT token."""
+    if _redis:
+        jti: str | None = current_user.get("jti")
+        exp: int | None = current_user.get("exp")
+        if jti:
+            now = int(datetime.now(UTC).timestamp())
+            ttl = max((exp - now), 60) if exp else 3600
+            await _redis.setex(f"revoked:jti:{jti}", ttl, "1")
+    return ORJSONResponse(content={"logged_out": True})
 
 
 @app.get("/api/auth/me")
@@ -546,8 +615,12 @@ async def verify_discogs(
                 """,
             (
                 user_id,
-                access_data["oauth_token"],
-                access_data["oauth_token_secret"],
+                encrypt_oauth_token(access_data["oauth_token"], _config.oauth_encryption_key)
+                if _config.oauth_encryption_key
+                else access_data["oauth_token"],
+                encrypt_oauth_token(access_data["oauth_token_secret"], _config.oauth_encryption_key)
+                if _config.oauth_encryption_key
+                else access_data["oauth_token_secret"],
                 discogs_username,
                 discogs_user_id,
             ),

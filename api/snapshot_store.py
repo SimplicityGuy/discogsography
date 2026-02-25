@@ -1,7 +1,6 @@
 """In-memory snapshot store with TTL eviction for graph state persistence."""
 
 from datetime import UTC, datetime, timedelta
-import os
 import secrets
 from typing import Any
 
@@ -9,10 +8,11 @@ from typing import Any
 class SnapshotStore:
     """Thread-safe in-memory store for graph snapshots with TTL eviction."""
 
-    def __init__(self) -> None:
+    def __init__(self, ttl_days: int = 28, max_nodes: int = 100, max_entries: int = 1000) -> None:
         self._store: dict[str, dict[str, Any]] = {}
-        self._ttl_days: int = int(os.environ.get("SNAPSHOT_TTL_DAYS", "28"))
-        self._max_nodes: int = int(os.environ.get("SNAPSHOT_MAX_NODES", "100"))
+        self._ttl_days: int = ttl_days
+        self._max_nodes: int = max_nodes
+        self._max_entries: int = max_entries
 
     @property
     def ttl_days(self) -> int:

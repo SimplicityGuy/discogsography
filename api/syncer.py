@@ -24,6 +24,7 @@ import httpx
 from psycopg.rows import dict_row
 import structlog
 
+from api.auth import decrypt_oauth_token
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
 
 
@@ -414,6 +415,7 @@ async def run_full_sync(
     pg_pool: AsyncPostgreSQLPool,
     neo4j_driver: AsyncResilientNeo4jDriver,
     discogs_user_agent: str,
+    oauth_encryption_key: str | None = None,
 ) -> dict[str, Any]:
     """Run a full collection + wantlist sync for a user.
 
@@ -443,6 +445,10 @@ async def run_full_sync(
             if not token:
                 raise ValueError("No Discogs OAuth token found for user. Please connect Discogs first.")
 
+            # Decrypt OAuth tokens if encryption key is configured
+            access_token_value = decrypt_oauth_token(token["access_token"], oauth_encryption_key)
+            access_secret_value = decrypt_oauth_token(token["access_secret"], oauth_encryption_key)
+
             # Fetch app credentials
             await cur.execute("SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
             config_rows = await cur.fetchall()
@@ -459,8 +465,8 @@ async def run_full_sync(
             discogs_username=discogs_username,
             consumer_key=app_config["discogs_consumer_key"],
             consumer_secret=app_config["discogs_consumer_secret"],
-            access_token=token["access_token"],
-            token_secret=token["access_secret"],
+            access_token=access_token_value,
+            token_secret=access_secret_value,
             user_agent=discogs_user_agent,
             pg_pool=pg_pool,
             neo4j_driver=neo4j_driver,
@@ -472,8 +478,8 @@ async def run_full_sync(
             discogs_username=discogs_username,
             consumer_key=app_config["discogs_consumer_key"],
             consumer_secret=app_config["discogs_consumer_secret"],
-            access_token=token["access_token"],
-            token_secret=token["access_secret"],
+            access_token=access_token_value,
+            token_secret=access_secret_value,
             user_agent=discogs_user_agent,
             pg_pool=pg_pool,
             neo4j_driver=neo4j_driver,

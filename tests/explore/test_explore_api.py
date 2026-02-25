@@ -755,77 +755,76 @@ class TestLifespan:
 
 
 class TestJwtHelpers:
-    """Test the JWT helper functions _b64url_decode and _verify_jwt."""
+    """Test the JWT helper functions b64url_decode and decode_token."""
 
     def test_b64url_decode_with_padding(self) -> None:
-        """Test _b64url_decode adds padding when length % 4 != 0 (covers lines 61-62)."""
-        from api.routers.explore import _b64url_decode
+        """Test b64url_decode adds padding when length % 4 != 0."""
+        from api.auth import b64url_decode
 
         # "dGVzdA" is 6 chars (6 % 4 == 2), so padding = 2 is added
         # This is base64url encoding of b"test"
-        result = _b64url_decode("dGVzdA")
+        result = b64url_decode("dGVzdA")
         assert result == b"test"
 
     def test_b64url_decode_no_padding_needed(self) -> None:
-        """Test _b64url_decode when length % 4 == 0 (no padding added)."""
-        from api.routers.explore import _b64url_decode
+        """Test b64url_decode when length % 4 == 0 (no padding added)."""
+        from api.auth import b64url_decode
 
         # "YWJj" is 4 chars (4 % 4 == 0), no padding added
         # This is base64url encoding of b"abc"
-        result = _b64url_decode("YWJj")
+        result = b64url_decode("YWJj")
         assert result == b"abc"
 
     def test_verify_jwt_valid_token(self) -> None:
-        """Test _verify_jwt returns payload for a valid token."""
-        from api.routers.explore import _verify_jwt
+        """Test decode_token returns payload for a valid token."""
+        from api.auth import decode_token
 
         token = _make_explore_jwt()
-        payload = _verify_jwt(token, TEST_EXPLORE_JWT_SECRET)
-        assert payload is not None
+        payload = decode_token(token, TEST_EXPLORE_JWT_SECRET)
         assert payload["sub"] == TEST_EXPLORE_USER_ID
 
     def test_verify_jwt_malformed_token_too_few_parts(self) -> None:
-        """Test _verify_jwt returns None when token has wrong number of parts."""
-        from api.routers.explore import _verify_jwt
+        """Test decode_token raises ValueError when token has wrong number of parts."""
+        from api.auth import decode_token
 
-        result = _verify_jwt("only.two", TEST_EXPLORE_JWT_SECRET)
-        assert result is None
+        with pytest.raises(ValueError):
+            decode_token("only.two", TEST_EXPLORE_JWT_SECRET)
 
     def test_verify_jwt_wrong_signature(self) -> None:
-        """Test _verify_jwt returns None when signature is invalid."""
-        from api.routers.explore import _verify_jwt
+        """Test decode_token raises ValueError when signature is invalid."""
+        from api.auth import decode_token
 
         token = _make_explore_jwt()
         parts = token.split(".")
         # Corrupt the last character of the signature
         bad_sig = parts[2][:-1] + ("A" if parts[2][-1] != "A" else "B")
         bad_token = f"{parts[0]}.{parts[1]}.{bad_sig}"
-        result = _verify_jwt(bad_token, TEST_EXPLORE_JWT_SECRET)
-        assert result is None
+        with pytest.raises(ValueError):
+            decode_token(bad_token, TEST_EXPLORE_JWT_SECRET)
 
     def test_verify_jwt_invalid_body_not_json(self) -> None:
-        """Test _verify_jwt returns None when body cannot be JSON decoded."""
-        from api.routers.explore import _verify_jwt
+        """Test decode_token raises ValueError when body cannot be JSON decoded."""
+        from api.auth import decode_token
 
         token = _make_invalid_body_jwt()
-        result = _verify_jwt(token, TEST_EXPLORE_JWT_SECRET)
-        assert result is None
+        with pytest.raises(ValueError):
+            decode_token(token, TEST_EXPLORE_JWT_SECRET)
 
     def test_verify_jwt_expired_token(self) -> None:
-        """Test _verify_jwt returns None for an expired token."""
-        from api.routers.explore import _verify_jwt
+        """Test decode_token raises ValueError for an expired token."""
+        from api.auth import decode_token
 
         expired_token = _make_explore_jwt(exp=int(time.time()) - 100)
-        result = _verify_jwt(expired_token, TEST_EXPLORE_JWT_SECRET)
-        assert result is None
+        with pytest.raises(ValueError):
+            decode_token(expired_token, TEST_EXPLORE_JWT_SECRET)
 
     def test_verify_jwt_wrong_secret(self) -> None:
-        """Test _verify_jwt returns None when wrong secret is used."""
-        from api.routers.explore import _verify_jwt
+        """Test decode_token raises ValueError when wrong secret is used."""
+        from api.auth import decode_token
 
         token = _make_explore_jwt(secret=TEST_EXPLORE_JWT_SECRET)
-        result = _verify_jwt(token, "wrong-secret")
-        assert result is None
+        with pytest.raises(ValueError):
+            decode_token(token, "wrong-secret")
 
 
 class TestRequireUserDependency:

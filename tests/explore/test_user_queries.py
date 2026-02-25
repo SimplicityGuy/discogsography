@@ -67,7 +67,7 @@ class TestCheckReleasesUserStatus:
 
 
 class TestJwtVerification:
-    """Tests for the JWT verification helpers in explore.explore."""
+    """Tests for api.auth.decode_token."""
 
     def test_valid_token_returns_payload(self) -> None:
         import base64
@@ -75,7 +75,7 @@ class TestJwtVerification:
         import hmac
         import json
 
-        from api.routers.explore import _verify_jwt
+        from api.auth import decode_token
 
         secret = "test-secret"
 
@@ -89,17 +89,18 @@ class TestJwtVerification:
         sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
         token = f"{header}.{body}.{sig}"
 
-        payload = _verify_jwt(token, secret)
-        assert payload is not None
+        payload = decode_token(token, secret)
         assert payload["sub"] == "user-123"
 
-    def test_wrong_secret_returns_none(self) -> None:
+    def test_wrong_secret_raises(self) -> None:
         import base64
         import hashlib
         import hmac
         import json
 
-        from api.routers.explore import _verify_jwt
+        import pytest
+
+        from api.auth import decode_token
 
         def b64url(data: bytes) -> str:
             return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
@@ -110,21 +111,28 @@ class TestJwtVerification:
         sig = b64url(hmac.new(b"correct-secret", signing_input, hashlib.sha256).digest())
         token = f"{header}.{body}.{sig}"
 
-        assert _verify_jwt(token, "wrong-secret") is None
+        with pytest.raises(ValueError):
+            decode_token(token, "wrong-secret")
 
-    def test_malformed_token_returns_none(self) -> None:
-        from api.routers.explore import _verify_jwt
+    def test_malformed_token_raises(self) -> None:
+        import pytest
 
-        assert _verify_jwt("not.a.valid.jwt.parts", "secret") is None
-        assert _verify_jwt("only.two", "secret") is None
+        from api.auth import decode_token
 
-    def test_expired_token_returns_none(self) -> None:
+        with pytest.raises(ValueError):
+            decode_token("not.a.valid.jwt.parts", "secret")
+        with pytest.raises(ValueError):
+            decode_token("only.two", "secret")
+
+    def test_expired_token_raises(self) -> None:
         import base64
         import hashlib
         import hmac
         import json
 
-        from api.routers.explore import _verify_jwt
+        import pytest
+
+        from api.auth import decode_token
 
         secret = "test-secret"
 
@@ -138,34 +146,35 @@ class TestJwtVerification:
         sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
         token = f"{header}.{body}.{sig}"
 
-        assert _verify_jwt(token, secret) is None
+        with pytest.raises(ValueError):
+            decode_token(token, secret)
 
 
 class TestB64UrlDecode:
-    """Tests for explore._b64url_decode."""
+    """Tests for api.auth.b64url_decode."""
 
     def test_decode_with_padding_needed(self) -> None:
-        from api.routers.explore import _b64url_decode
+        from api.auth import b64url_decode
 
         # base64url of b"a" without padding is "YQ"
-        result = _b64url_decode("YQ")
+        result = b64url_decode("YQ")
         assert result == b"a"
 
     def test_decode_already_aligned(self) -> None:
-        from api.routers.explore import _b64url_decode
+        from api.auth import b64url_decode
 
         # "AAAA" decodes to 3 zero bytes
-        result = _b64url_decode("AAAA")
+        result = b64url_decode("AAAA")
         assert result == b"\x00\x00\x00"
 
     def test_roundtrip_with_urlsafe_chars(self) -> None:
         import base64
 
-        from api.routers.explore import _b64url_decode
+        from api.auth import b64url_decode
 
         original = b"hello world!"
         encoded = base64.urlsafe_b64encode(original).rstrip(b"=").decode("ascii")
-        assert _b64url_decode(encoded) == original
+        assert b64url_decode(encoded) == original
 
 
 def _make_driver_with_rows(rows: list[dict[str, Any]], count_record: dict[str, Any] | None = None) -> MagicMock:

@@ -99,7 +99,7 @@ class TestSnapshotStore:
 class TestSaveSnapshotEndpoint:
     """Tests for POST /api/snapshot."""
 
-    def test_save_snapshot_success(self, test_client: TestClient) -> None:
+    def test_save_snapshot_success(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
         payload = {
             "nodes": [
                 {"id": "1", "type": "artist"},
@@ -107,7 +107,7 @@ class TestSaveSnapshotEndpoint:
             ],
             "center": {"id": "1", "type": "artist"},
         }
-        response = test_client.post("/api/snapshot", json=payload)
+        response = test_client.post("/api/snapshot", json=payload, headers=auth_headers)
         assert response.status_code == 201
         data = response.json()
         assert "token" in data
@@ -115,7 +115,7 @@ class TestSaveSnapshotEndpoint:
         assert "expires_at" in data
         assert data["url"] == f"/snapshot/{data['token']}"
 
-    def test_save_snapshot_exceeds_max_nodes(self, test_client: TestClient) -> None:
+    def test_save_snapshot_exceeds_max_nodes(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
         import api.routers.snapshot as snapshot_module
 
         original_store = snapshot_module._snapshot_store
@@ -131,35 +131,35 @@ class TestSaveSnapshotEndpoint:
             ],
             "center": {"id": "1", "type": "artist"},
         }
-        response = test_client.post("/api/snapshot", json=payload)
+        response = test_client.post("/api/snapshot", json=payload, headers=auth_headers)
         assert response.status_code == 422
         data = response.json()
         assert "error" in data
 
         snapshot_module._snapshot_store = original_store
 
-    def test_save_snapshot_empty_nodes_rejected(self, test_client: TestClient) -> None:
+    def test_save_snapshot_empty_nodes_rejected(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
         payload = {
             "nodes": [],
             "center": {"id": "1", "type": "artist"},
         }
-        response = test_client.post("/api/snapshot", json=payload)
+        response = test_client.post("/api/snapshot", json=payload, headers=auth_headers)
         assert response.status_code == 422
 
-    def test_save_snapshot_missing_center(self, test_client: TestClient) -> None:
+    def test_save_snapshot_missing_center(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
         payload = {
             "nodes": [{"id": "1", "type": "artist"}],
         }
-        response = test_client.post("/api/snapshot", json=payload)
+        response = test_client.post("/api/snapshot", json=payload, headers=auth_headers)
         assert response.status_code == 422
 
-    def test_save_snapshot_returns_valid_expiry(self, test_client: TestClient) -> None:
+    def test_save_snapshot_returns_valid_expiry(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
         payload = {
             "nodes": [{"id": "1", "type": "artist"}],
             "center": {"id": "1", "type": "artist"},
         }
         before = datetime.now(UTC)
-        response = test_client.post("/api/snapshot", json=payload)
+        response = test_client.post("/api/snapshot", json=payload, headers=auth_headers)
         assert response.status_code == 201
         data = response.json()
         expires_at = datetime.fromisoformat(data["expires_at"])
@@ -170,7 +170,7 @@ class TestSaveSnapshotEndpoint:
 class TestRestoreSnapshotEndpoint:
     """Tests for GET /api/snapshot/{token}."""
 
-    def test_restore_valid_snapshot(self, test_client: TestClient) -> None:
+    def test_restore_valid_snapshot(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
         # First save a snapshot
         payload: dict[str, Any] = {
             "nodes": [
@@ -180,7 +180,7 @@ class TestRestoreSnapshotEndpoint:
             ],
             "center": {"id": "1", "type": "artist"},
         }
-        save_response = test_client.post("/api/snapshot", json=payload)
+        save_response = test_client.post("/api/snapshot", json=payload, headers=auth_headers)
         assert save_response.status_code == 201
         token = save_response.json()["token"]
 
@@ -201,7 +201,7 @@ class TestRestoreSnapshotEndpoint:
         data = response.json()
         assert "error" in data
 
-    def test_restore_expired_token_returns_404(self, test_client: TestClient) -> None:
+    def test_restore_expired_token_returns_404(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
         import api.routers.snapshot as snapshot_module
 
         # Save a snapshot
@@ -209,7 +209,7 @@ class TestRestoreSnapshotEndpoint:
             "nodes": [{"id": "1", "type": "artist"}],
             "center": {"id": "1", "type": "artist"},
         }
-        save_response = test_client.post("/api/snapshot", json=payload)
+        save_response = test_client.post("/api/snapshot", json=payload, headers=auth_headers)
         assert save_response.status_code == 201
         token = save_response.json()["token"]
 
