@@ -918,11 +918,11 @@ class TestFastAPIEndpoints:
         """Test health check endpoint."""
         # Create a test app without lifespan to avoid connection attempts
         from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
+        from fastapi.responses import JSONResponse
 
         from dashboard.dashboard import health_check
 
-        test_app = FastAPI(default_response_class=ORJSONResponse)
+        test_app = FastAPI(default_response_class=JSONResponse)
         test_app.get("/health")(health_check)
 
         with TestClient(test_app) as client:
@@ -938,7 +938,7 @@ class TestFastAPIEndpoints:
     async def test_get_metrics_with_data(self) -> None:
         """Test /api/metrics endpoint with existing metrics."""
         from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
+        from fastapi.responses import JSONResponse
 
         from dashboard.dashboard import get_metrics
 
@@ -952,7 +952,7 @@ class TestFastAPIEndpoints:
         with patch("dashboard.dashboard.dashboard") as mock_dashboard_obj:
             mock_dashboard_obj.latest_metrics = mock_metrics
 
-            test_app = FastAPI(default_response_class=ORJSONResponse)
+            test_app = FastAPI(default_response_class=JSONResponse)
             test_app.get("/api/metrics")(get_metrics)
 
             with TestClient(test_app) as client:
@@ -965,7 +965,7 @@ class TestFastAPIEndpoints:
     async def test_get_metrics_without_data(self) -> None:
         """Test /api/metrics endpoint collecting on demand."""
         from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
+        from fastapi.responses import JSONResponse
 
         from dashboard.dashboard import get_metrics
 
@@ -981,7 +981,7 @@ class TestFastAPIEndpoints:
         mock_dashboard_instance.collect_all_metrics = AsyncMock(return_value=mock_metrics)
 
         with patch("dashboard.dashboard.dashboard", mock_dashboard_instance):
-            test_app = FastAPI(default_response_class=ORJSONResponse)
+            test_app = FastAPI(default_response_class=JSONResponse)
             test_app.get("/api/metrics")(get_metrics)
 
             with TestClient(test_app) as client:
@@ -993,12 +993,12 @@ class TestFastAPIEndpoints:
     async def test_get_metrics_no_dashboard(self) -> None:
         """Test /api/metrics endpoint when dashboard is None."""
         from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
+        from fastapi.responses import JSONResponse
 
         from dashboard.dashboard import get_metrics
 
         with patch("dashboard.dashboard.dashboard", None):
-            test_app = FastAPI(default_response_class=ORJSONResponse)
+            test_app = FastAPI(default_response_class=JSONResponse)
             test_app.get("/api/metrics")(get_metrics)
 
             with TestClient(test_app) as client:
@@ -1010,7 +1010,7 @@ class TestFastAPIEndpoints:
     async def test_get_services(self) -> None:
         """Test /api/services endpoint."""
         from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
+        from fastapi.responses import JSONResponse
 
         from dashboard.dashboard import get_services
 
@@ -1029,7 +1029,7 @@ class TestFastAPIEndpoints:
         mock_dashboard_instance.get_service_statuses = AsyncMock(return_value=mock_services)
 
         with patch("dashboard.dashboard.dashboard", mock_dashboard_instance):
-            test_app = FastAPI(default_response_class=ORJSONResponse)
+            test_app = FastAPI(default_response_class=JSONResponse)
             test_app.get("/api/services")(get_services)
 
             with TestClient(test_app) as client:
@@ -1043,7 +1043,7 @@ class TestFastAPIEndpoints:
     async def test_get_queues(self) -> None:
         """Test /api/queues endpoint."""
         from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
+        from fastapi.responses import JSONResponse
 
         from dashboard.dashboard import get_queues
 
@@ -1063,7 +1063,7 @@ class TestFastAPIEndpoints:
         mock_dashboard_instance.get_queue_info = AsyncMock(return_value=mock_queues)
 
         with patch("dashboard.dashboard.dashboard", mock_dashboard_instance):
-            test_app = FastAPI(default_response_class=ORJSONResponse)
+            test_app = FastAPI(default_response_class=JSONResponse)
             test_app.get("/api/queues")(get_queues)
 
             with TestClient(test_app) as client:
@@ -1077,7 +1077,7 @@ class TestFastAPIEndpoints:
     async def test_get_databases(self) -> None:
         """Test /api/databases endpoint."""
         from fastapi import FastAPI
-        from fastapi.responses import ORJSONResponse
+        from fastapi.responses import JSONResponse
 
         from dashboard.dashboard import get_databases
 
@@ -1095,7 +1095,7 @@ class TestFastAPIEndpoints:
         mock_dashboard_instance.get_database_info = AsyncMock(return_value=mock_databases)
 
         with patch("dashboard.dashboard.dashboard", mock_dashboard_instance):
-            test_app = FastAPI(default_response_class=ORJSONResponse)
+            test_app = FastAPI(default_response_class=JSONResponse)
             test_app.get("/api/databases")(get_databases)
 
             with TestClient(test_app) as client:

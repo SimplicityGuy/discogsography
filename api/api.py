@@ -15,7 +15,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request, status
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 from pydantic import BaseModel
@@ -278,7 +278,7 @@ app = FastAPI(
     title="Discogsography API",
     version="0.1.0",
     description="User authentication and Discogs OAuth integration for Discogsography",
-    default_response_class=ORJSONResponse,
+    default_response_class=JSONResponse,
     lifespan=lifespan,
 )
 
@@ -311,14 +311,14 @@ app.include_router(_user_router.router)
 
 
 @app.get("/health")
-async def health_check() -> ORJSONResponse:
+async def health_check() -> JSONResponse:
     """Service health check endpoint."""
-    return ORJSONResponse(content=get_health_data())
+    return JSONResponse(content=get_health_data())
 
 
 @app.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
 @limiter.limit("3/minute")
-async def register(request: Request, body: RegisterRequest) -> ORJSONResponse:  # noqa: ARG001
+async def register(request: Request, body: RegisterRequest) -> JSONResponse:  # noqa: ARG001
     """Register a new user account."""
     if _pool is None:
         raise HTTPException(
@@ -344,7 +344,7 @@ async def register(request: Request, body: RegisterRequest) -> ORJSONResponse:  
         if "unique" in exc_str or "duplicate" in exc_str:
             # L1: Return same response for duplicate email to prevent user enumeration
             logger.info("i Registration attempt for existing email (blind)")
-            return ORJSONResponse(
+            return JSONResponse(
                 content={"message": "Registration processed"},
                 status_code=status.HTTP_201_CREATED,
             )
@@ -361,7 +361,7 @@ async def register(request: Request, body: RegisterRequest) -> ORJSONResponse:  
         )
 
     logger.info("✅ User registered", email=body.email)
-    return ORJSONResponse(
+    return JSONResponse(
         content={"message": "Registration processed"},
         status_code=status.HTTP_201_CREATED,
     )
@@ -369,7 +369,7 @@ async def register(request: Request, body: RegisterRequest) -> ORJSONResponse:  
 
 @app.post("/api/auth/login")
 @limiter.limit("5/minute")
-async def login(request: Request, body: LoginRequest) -> ORJSONResponse:  # noqa: ARG001
+async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: ARG001
     """Authenticate and receive a JWT access token."""
     if _pool is None or _config is None:
         raise HTTPException(
@@ -403,7 +403,7 @@ async def login(request: Request, body: LoginRequest) -> ORJSONResponse:  # noqa
     access_token, expires_in = _create_access_token(str(user["id"]), user["email"])
     logger.info("✅ User logged in", email=body.email)
 
-    return ORJSONResponse(
+    return JSONResponse(
         content={
             "access_token": access_token,
             "token_type": "bearer",  # nosec B105
@@ -415,7 +415,7 @@ async def login(request: Request, body: LoginRequest) -> ORJSONResponse:  # noqa
 @app.post("/api/auth/logout")
 async def logout(
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> ORJSONResponse:
+) -> JSONResponse:
     """Logout and revoke the current JWT token."""
     if _redis:
         jti: str | None = current_user.get("jti")
@@ -424,13 +424,13 @@ async def logout(
             now = int(datetime.now(UTC).timestamp())
             ttl = max((exp - now), 60) if exp else 3600
             await _redis.setex(f"revoked:jti:{jti}", ttl, "1")
-    return ORJSONResponse(content={"logged_out": True})
+    return JSONResponse(content={"logged_out": True})
 
 
 @app.get("/api/auth/me")
 async def get_me(
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> ORJSONResponse:
+) -> JSONResponse:
     """Get the current authenticated user's information."""
     if _pool is None:
         raise HTTPException(
@@ -458,7 +458,7 @@ async def get_me(
             detail="User not found",
         )
 
-    return ORJSONResponse(
+    return JSONResponse(
         content={
             "id": str(user["id"]),
             "email": user["email"],
@@ -481,7 +481,7 @@ async def _get_app_config(key: str) -> str | None:
 @app.get("/api/oauth/authorize/discogs")
 async def authorize_discogs(
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> ORJSONResponse:
+) -> JSONResponse:
     """Start the Discogs OAuth 1.0a OOB flow.
 
     Returns the Discogs authorization URL and a state token.
@@ -529,7 +529,7 @@ async def authorize_discogs(
     authorize_url = f"{DISCOGS_AUTHORIZE_URL}?oauth_token={state}"
     logger.info("🔐 Discogs OAuth flow started", user_id=current_user.get("sub"))
 
-    return ORJSONResponse(
+    return JSONResponse(
         content={
             "authorize_url": authorize_url,
             "state": state,
@@ -542,7 +542,7 @@ async def authorize_discogs(
 async def verify_discogs(
     request: OAuthVerifyRequest,
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> ORJSONResponse:
+) -> JSONResponse:
     """Complete the Discogs OAuth flow by exchanging the verifier code.
 
     The user pastes the verifier code shown on Discogs into the app.
@@ -636,7 +636,7 @@ async def verify_discogs(
         )
 
     logger.info("✅ Discogs account connected", user_id=user_id, discogs_username=discogs_username)
-    return ORJSONResponse(
+    return JSONResponse(
         content={
             "connected": True,
             "discogs_username": discogs_username,
@@ -648,7 +648,7 @@ async def verify_discogs(
 @app.get("/api/oauth/status/discogs")
 async def discogs_status(
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> ORJSONResponse:
+) -> JSONResponse:
     """Check if the current user has a connected Discogs account."""
     if _pool is None:
         raise HTTPException(
@@ -669,9 +669,9 @@ async def discogs_status(
         token = await cur.fetchone()
 
     if token is None:
-        return ORJSONResponse(content={"connected": False})
+        return JSONResponse(content={"connected": False})
 
-    return ORJSONResponse(
+    return JSONResponse(
         content={
             "connected": True,
             "discogs_username": token["provider_username"],
@@ -684,7 +684,7 @@ async def discogs_status(
 @app.delete("/api/oauth/revoke/discogs")
 async def revoke_discogs(
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> ORJSONResponse:
+) -> JSONResponse:
     """Disconnect the current user's Discogs account."""
     if _pool is None:
         raise HTTPException(
@@ -700,7 +700,7 @@ async def revoke_discogs(
         )
 
     logger.info("✅ Discogs account disconnected", user_id=user_id)
-    return ORJSONResponse(content={"revoked": True})
+    return JSONResponse(content={"revoked": True})
 
 
 def main() -> None:  # pragma: no cover

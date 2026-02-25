@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, Query
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 
@@ -62,13 +62,13 @@ def create_test_app() -> FastAPI:
     app = FastAPI(
         title="Discogsography Explore Test",
         version="0.1.0",
-        default_response_class=ORJSONResponse,
+        default_response_class=JSONResponse,
         lifespan=lifespan,
     )
 
     @app.get("/health")
-    async def health_check() -> ORJSONResponse:
-        return ORJSONResponse(
+    async def health_check() -> JSONResponse:
+        return JSONResponse(
             content={
                 "status": "healthy",
                 "service": "explore",
@@ -81,26 +81,26 @@ def create_test_app() -> FastAPI:
         q: str = Query(..., min_length=2),
         type: str = Query("artist"),
         limit: int = Query(10, ge=1, le=50),
-    ) -> ORJSONResponse:
+    ) -> JSONResponse:
         entity_type = type.lower()
         results = MOCK_AUTOCOMPLETE_RESULTS.get(entity_type, [])
         filtered = [r for r in results if q.lower() in r["name"].lower()][:limit]
-        return ORJSONResponse(content={"results": filtered})
+        return JSONResponse(content={"results": filtered})
 
     @app.get("/api/explore")
     async def explore(
         name: str = Query(...),  # noqa: ARG001
         type: str = Query("artist"),
-    ) -> ORJSONResponse:
+    ) -> JSONResponse:
         entity_type = type.lower()
         result = MOCK_EXPLORE_RESULTS.get(entity_type)
         if not result:
-            return ORJSONResponse(content={"error": "Not found"}, status_code=404)
+            return JSONResponse(content={"error": "Not found"}, status_code=404)
 
         from api.routers.explore import _build_categories
 
         categories = _build_categories(entity_type, result)
-        return ORJSONResponse(
+        return JSONResponse(
             content={
                 "center": {"id": str(result["id"]), "name": result["name"], "type": entity_type},
                 "categories": categories,
@@ -113,8 +113,8 @@ def create_test_app() -> FastAPI:
         type: str = Query(...),  # noqa: ARG001
         category: str = Query(...),  # noqa: ARG001
         limit: int = Query(50, ge=1, le=200),  # noqa: ARG001
-    ) -> ORJSONResponse:
-        return ORJSONResponse(
+    ) -> JSONResponse:
+        return JSONResponse(
             content={
                 "children": [
                     {"id": "10", "name": "OK Computer", "type": "release"},
@@ -127,8 +127,8 @@ def create_test_app() -> FastAPI:
     async def get_node_details(
         node_id: str,
         type: str = Query("artist"),  # noqa: ARG001
-    ) -> ORJSONResponse:
-        return ORJSONResponse(
+    ) -> JSONResponse:
+        return JSONResponse(
             content={
                 "id": node_id,
                 "name": "Radiohead",
@@ -143,8 +143,8 @@ def create_test_app() -> FastAPI:
     async def get_trends(
         name: str = Query(...),
         type: str = Query("artist"),
-    ) -> ORJSONResponse:
-        return ORJSONResponse(
+    ) -> JSONResponse:
+        return JSONResponse(
             content={
                 "name": name,
                 "type": type.lower(),

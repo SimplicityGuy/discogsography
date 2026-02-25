@@ -11,7 +11,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 import orjson
@@ -469,7 +469,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 app = FastAPI(
     title="Discogsography Dashboard",
     version="0.1.0",
-    default_response_class=ORJSONResponse,
+    default_response_class=JSONResponse,
     lifespan=lifespan,
 )
 
@@ -484,9 +484,9 @@ app.add_middleware(
 
 
 @app.get("/health")
-async def health_check() -> ORJSONResponse:
+async def health_check() -> JSONResponse:
     """Health check endpoint for Docker and monitoring."""
-    return ORJSONResponse(
+    return JSONResponse(
         content={
             "status": "healthy",
             "service": "dashboard",
@@ -497,48 +497,48 @@ async def health_check() -> ORJSONResponse:
 
 
 @app.get("/api/metrics")
-async def get_metrics() -> ORJSONResponse:
+async def get_metrics() -> JSONResponse:
     """Get current system metrics."""
     API_REQUESTS.labels(endpoint="/api/metrics", method="GET").inc()
 
     if dashboard and dashboard.latest_metrics:
-        return ORJSONResponse(content=dashboard.latest_metrics.model_dump())
+        return JSONResponse(content=dashboard.latest_metrics.model_dump())
     elif dashboard:
         # Collect metrics on demand if not available
         metrics = await dashboard.collect_all_metrics()
-        return ORJSONResponse(content=metrics.model_dump())
+        return JSONResponse(content=metrics.model_dump())
     else:
-        return ORJSONResponse(content={})
+        return JSONResponse(content={})
 
 
 @app.get("/api/services")
-async def get_services() -> ORJSONResponse:
+async def get_services() -> JSONResponse:
     """Get service statuses."""
     API_REQUESTS.labels(endpoint="/api/services", method="GET").inc()
     if not dashboard:
-        return ORJSONResponse(content=[])
+        return JSONResponse(content=[])
     services = await dashboard.get_service_statuses()
-    return ORJSONResponse(content=[s.model_dump() for s in services])
+    return JSONResponse(content=[s.model_dump() for s in services])
 
 
 @app.get("/api/queues")
-async def get_queues() -> ORJSONResponse:
+async def get_queues() -> JSONResponse:
     """Get queue information."""
     API_REQUESTS.labels(endpoint="/api/queues", method="GET").inc()
     if not dashboard:
-        return ORJSONResponse(content=[])
+        return JSONResponse(content=[])
     queues = await dashboard.get_queue_info()
-    return ORJSONResponse(content=[q.model_dump() for q in queues])
+    return JSONResponse(content=[q.model_dump() for q in queues])
 
 
 @app.get("/api/databases")
-async def get_databases() -> ORJSONResponse:
+async def get_databases() -> JSONResponse:
     """Get database information."""
     API_REQUESTS.labels(endpoint="/api/databases", method="GET").inc()
     if not dashboard:
-        return ORJSONResponse(content=[])
+        return JSONResponse(content=[])
     databases = await dashboard.get_database_info()
-    return ORJSONResponse(content=[d.model_dump() for d in databases])
+    return JSONResponse(content=[d.model_dump() for d in databases])
 
 
 @app.get("/metrics")

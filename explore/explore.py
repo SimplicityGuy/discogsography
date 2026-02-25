@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse
 import structlog
 import uvicorn
 
@@ -79,7 +79,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 app = FastAPI(
     title="Discogsography Explore",
     version="0.1.0",
-    default_response_class=ORJSONResponse,
+    default_response_class=JSONResponse,
     lifespan=lifespan,
 )
 
@@ -92,9 +92,9 @@ app.add_middleware(
 
 
 @app.get("/health")
-async def health_check() -> ORJSONResponse:
+async def health_check() -> JSONResponse:
     """Health check endpoint."""
-    return ORJSONResponse(content=get_health_data())
+    return JSONResponse(content=get_health_data())
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse
 import structlog
 import uvicorn
 
@@ -94,7 +94,7 @@ app = FastAPI(
     title="Discogsography Curator",
     version="0.1.0",
     description="Curator service for Discogsography",
-    default_response_class=ORJSONResponse,
+    default_response_class=JSONResponse,
     lifespan=lifespan,
 )
 
@@ -107,9 +107,9 @@ app.add_middleware(
 
 
 @app.get("/health")
-async def health_check() -> ORJSONResponse:
+async def health_check() -> JSONResponse:
     """Service health check endpoint."""
-    return ORJSONResponse(content=get_health_data())
+    return JSONResponse(content=get_health_data())
 
 
 def main() -> None:

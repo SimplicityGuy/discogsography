@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, ORJSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from common import DashboardConfig
@@ -171,7 +171,7 @@ def create_test_app() -> FastAPI:
     app = FastAPI(
         title="Discogsography Dashboard",
         version="0.1.0",
-        default_response_class=ORJSONResponse,
+        default_response_class=JSONResponse,
         lifespan=lifespan,
     )
 

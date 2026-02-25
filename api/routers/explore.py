@@ -5,7 +5,7 @@ from collections import OrderedDict
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import structlog
 
@@ -92,15 +92,15 @@ async def autocomplete(
     q: str = Query(..., min_length=2),
     type: str = Query("artist"),
     limit: int = Query(10, ge=1, le=50),
-) -> ORJSONResponse:
+) -> JSONResponse:
     if not _neo4j_driver:
-        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     entity_type = type.lower()
     if entity_type not in AUTOCOMPLETE_DISPATCH:
-        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
+        return JSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
     cache_key = _get_cache_key(q, entity_type, limit)
     if cache_key in _autocomplete_cache:
-        return ORJSONResponse(content={"results": _autocomplete_cache[cache_key]})
+        return JSONResponse(content={"results": _autocomplete_cache[cache_key]})
     query_func = AUTOCOMPLETE_DISPATCH[entity_type]
     results = await query_func(_neo4j_driver, q, limit)
     if len(_autocomplete_cache) >= _AUTOCOMPLETE_CACHE_MAX:
@@ -108,25 +108,25 @@ async def autocomplete(
         for _ in range(evict_count):
             _autocomplete_cache.popitem(last=False)
     _autocomplete_cache[cache_key] = results
-    return ORJSONResponse(content={"results": results})
+    return JSONResponse(content={"results": results})
 
 
 @router.get("/api/explore")
 async def explore(
     name: str = Query(...),
     type: str = Query("artist"),
-) -> ORJSONResponse:
+) -> JSONResponse:
     if not _neo4j_driver:
-        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     entity_type = type.lower()
     if entity_type not in EXPLORE_DISPATCH:
-        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
+        return JSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
     query_func = EXPLORE_DISPATCH[entity_type]
     result = await query_func(_neo4j_driver, name)
     if not result:
-        return ORJSONResponse(content={"error": f"{type.capitalize()} '{name}' not found"}, status_code=404)
+        return JSONResponse(content={"error": f"{type.capitalize()} '{name}' not found"}, status_code=404)
     categories = _build_categories(entity_type, result)
-    return ORJSONResponse(content={"center": {"id": str(result["id"]), "name": result["name"], "type": entity_type}, "categories": categories})
+    return JSONResponse(content={"center": {"id": str(result["id"]), "name": result["name"], "type": entity_type}, "categories": categories})
 
 
 @router.get("/api/expand")
@@ -136,53 +136,53 @@ async def expand(
     category: str = Query(...),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
-) -> ORJSONResponse:
+) -> JSONResponse:
     if not _neo4j_driver:
-        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     entity_type = type.lower()
     category_lower = category.lower()
     if entity_type not in EXPAND_DISPATCH:
-        return ORJSONResponse(content={"error": f"Invalid type: {type}"}, status_code=400)
+        return JSONResponse(content={"error": f"Invalid type: {type}"}, status_code=400)
     type_categories = EXPAND_DISPATCH[entity_type]
     if category_lower not in type_categories:
         valid = ", ".join(type_categories.keys())
-        return ORJSONResponse(content={"error": f"Invalid category '{category}' for type '{type}'. Valid: {valid}"}, status_code=400)
+        return JSONResponse(content={"error": f"Invalid category '{category}' for type '{type}'. Valid: {valid}"}, status_code=400)
     query_func = type_categories[category_lower]
     count_func = COUNT_DISPATCH[entity_type][category_lower]
     results, total = await asyncio.gather(
         query_func(_neo4j_driver, node_id, limit, offset),
         count_func(_neo4j_driver, node_id),
     )
-    return ORJSONResponse(content={"children": results, "total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total})
+    return JSONResponse(content={"children": results, "total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total})
 
 
 @router.get("/api/node/{node_id}")
 async def get_node_details(
     node_id: str,
     type: str = Query("artist"),
-) -> ORJSONResponse:
+) -> JSONResponse:
     if not _neo4j_driver:
-        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     entity_type = type.lower()
     if entity_type not in DETAILS_DISPATCH:
-        return ORJSONResponse(content={"error": f"Invalid type: {type}"}, status_code=400)
+        return JSONResponse(content={"error": f"Invalid type: {type}"}, status_code=400)
     query_func = DETAILS_DISPATCH[entity_type]
     result = await query_func(_neo4j_driver, node_id)
     if not result:
-        return ORJSONResponse(content={"error": f"{type.capitalize()} '{node_id}' not found"}, status_code=404)
-    return ORJSONResponse(content=result)
+        return JSONResponse(content={"error": f"{type.capitalize()} '{node_id}' not found"}, status_code=404)
+    return JSONResponse(content=result)
 
 
 @router.get("/api/trends")
 async def get_trends(
     name: str = Query(...),
     type: str = Query("artist"),
-) -> ORJSONResponse:
+) -> JSONResponse:
     if not _neo4j_driver:
-        return ORJSONResponse(content={"error": "Service not ready"}, status_code=503)
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     entity_type = type.lower()
     if entity_type not in TRENDS_DISPATCH:
-        return ORJSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
+        return JSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
     query_func = TRENDS_DISPATCH[entity_type]
     results = await query_func(_neo4j_driver, name)
-    return ORJSONResponse(content={"name": name, "type": entity_type, "data": results})
+    return JSONResponse(content={"name": name, "type": entity_type, "data": results})

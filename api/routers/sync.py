@@ -5,7 +5,7 @@ from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import ORJSONResponse
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 import structlog
@@ -73,7 +73,7 @@ async def _get_current_user(
 async def trigger_sync(
     request: Request,  # noqa: ARG001 — required by slowapi rate limiter
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> ORJSONResponse:
+) -> JSONResponse:
     if _pool is None or _neo4j is None or _config is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
     user_id = current_user.get("sub")
@@ -85,7 +85,7 @@ async def trigger_sync(
         cooldown_key = f"sync:cooldown:{user_id}"
         in_cooldown = await _redis.get(cooldown_key)
         if in_cooldown:
-            return ORJSONResponse(
+            return JSONResponse(
                 content={"status": "cooldown", "message": "Sync rate limited. Please wait before triggering again."},
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             )
@@ -98,7 +98,7 @@ async def trigger_sync(
             )
             existing = await cur.fetchone()
         if existing:
-            return ORJSONResponse(
+            return JSONResponse(
                 content={"sync_id": str(existing["id"]), "status": "already_running"},
                 status_code=status.HTTP_202_ACCEPTED,
             )
@@ -128,13 +128,13 @@ async def trigger_sync(
         await _redis.setex(f"sync:cooldown:{user_id}", 600, "1")
 
     logger.info("🔄 Sync triggered", user_id=user_id, sync_id=sync_id)
-    return ORJSONResponse(content={"sync_id": sync_id, "status": "started"}, status_code=status.HTTP_202_ACCEPTED)
+    return JSONResponse(content={"sync_id": sync_id, "status": "started"}, status_code=status.HTTP_202_ACCEPTED)
 
 
 @router.get("/api/sync/status")
 async def sync_status(
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> ORJSONResponse:
+) -> JSONResponse:
     if _pool is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
     user_id = current_user.get("sub")
@@ -157,4 +157,4 @@ async def sync_status(
         }
         for row in rows
     ]
-    return ORJSONResponse(content={"syncs": history})
+    return JSONResponse(content={"syncs": history})

@@ -25,7 +25,7 @@ development experience enhancements.
 - **`api/routers/snapshot.py`**: `configure()` now accepts a `redis_client` parameter; endpoint handlers `await` the async store methods.
 - **`api/api.py`**: Passes the existing `_redis` client to `_snapshot_router.configure()` at startup.
 - **`explore/snapshot_store.py`**: Deleted — dead code after API consolidation (the snapshot router has lived in `api/` since issue #72).
-- **`pyproject.toml`**: Added `fakeredis[aioredis]>=2.0.0` to dev dependencies for test isolation.
+- **`pyproject.toml`**: Added `fakeredis>=2.0.0` to dev dependencies for test isolation.
 - **Tests**: `tests/api/` and `tests/explore/` snapshot tests updated to use `fakeredis.aioredis.FakeRedis` (backed by a shared `fakeredis.FakeServer` fixture); unit tests converted to `async` with `@pytest.mark.asyncio`.
 
 #### Benefits
