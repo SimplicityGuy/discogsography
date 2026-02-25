@@ -119,6 +119,44 @@ class TestShowConfig:
         assert "mykey12345" not in captured.out
         assert "mysecret678" not in captured.out
 
+    def test_show_decrypts_encrypted_values(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+        from cryptography.fernet import Fernet
+
+        from api.setup import show_config
+
+        encryption_key = Fernet.generate_key().decode("ascii")
+        monkeypatch.setenv("OAUTH_ENCRYPTION_KEY", encryption_key)
+
+        f = Fernet(encryption_key.encode("ascii"))
+        encrypted_key = f.encrypt(b"mykey12345").decode("ascii")
+        encrypted_secret = f.encrypt(b"mysecret678").decode("ascii")
+
+        mock_rows = [
+            {"key": "discogs_consumer_key", "value": encrypted_key},
+            {"key": "discogs_consumer_secret", "value": encrypted_secret},
+        ]
+
+        mock_cur = MagicMock()
+        mock_cur.__enter__ = MagicMock(return_value=mock_cur)
+        mock_cur.__exit__ = MagicMock(return_value=False)
+        mock_cur.fetchall = MagicMock(return_value=mock_rows)
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+
+        with patch("psycopg.connect", return_value=mock_conn):
+            show_config("host=localhost dbname=test")
+
+        captured = capsys.readouterr()
+        # Decrypted values should be masked (first/last 2 chars visible)
+        assert "my" in captured.out  # first 2 chars of "mykey12345"
+        assert "45" in captured.out  # last 2 chars of "mykey12345"
+        # Raw encrypted ciphertext must not appear in output
+        assert encrypted_key not in captured.out
+        assert encrypted_secret not in captured.out
+
     def test_show_handles_unset_values(self, capsys: pytest.CaptureFixture[str]) -> None:
         from api.setup import show_config
 
@@ -142,8 +180,10 @@ class TestShowConfig:
 class TestSetConfig:
     """Tests for set_config."""
 
-    def test_upserts_both_keys(self, capsys: pytest.CaptureFixture[str]) -> None:
+    def test_upserts_both_keys(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
         from api.setup import set_config
+
+        monkeypatch.delenv("OAUTH_ENCRYPTION_KEY", raising=False)
 
         mock_cur = MagicMock()
         mock_cur.__enter__ = MagicMock(return_value=mock_cur)
@@ -172,6 +212,39 @@ class TestSetConfig:
         captured = capsys.readouterr()
         assert "✅" in captured.out
         assert "updated successfully" in captured.out
+
+    def test_encrypts_values_when_key_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        from cryptography.fernet import Fernet
+
+        from api.setup import set_config
+
+        encryption_key = Fernet.generate_key().decode("ascii")
+        monkeypatch.setenv("OAUTH_ENCRYPTION_KEY", encryption_key)
+
+        mock_cur = MagicMock()
+        mock_cur.__enter__ = MagicMock(return_value=mock_cur)
+        mock_cur.__exit__ = MagicMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.__enter__ = MagicMock(return_value=mock_conn)
+        mock_conn.__exit__ = MagicMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+
+        with patch("psycopg.connect", return_value=mock_conn):
+            set_config("host=localhost dbname=test", "mykey", "mysecret")
+
+        calls = mock_cur.execute.call_args_list
+        stored_key_val = calls[0][0][1][1]
+        stored_secret_val = calls[1][0][1][1]
+
+        # Stored values must not be the original plaintext
+        assert stored_key_val != "mykey"
+        assert stored_secret_val != "mysecret"
+
+        # Stored values must decrypt back to originals
+        f = Fernet(encryption_key.encode("ascii"))
+        assert f.decrypt(stored_key_val.encode("ascii")).decode("utf-8") == "mykey"
+        assert f.decrypt(stored_secret_val.encode("ascii")).decode("utf-8") == "mysecret"
 
 
 class TestMain:

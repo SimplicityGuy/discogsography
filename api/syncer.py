@@ -419,6 +419,9 @@ async def run_full_sync(
             await cur.execute("SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
             config_rows = await cur.fetchall()
             app_config = {row["key"]: row["value"] for row in config_rows}
+            for cred_key in ("discogs_consumer_key", "discogs_consumer_secret"):
+                if cred_key in app_config:
+                    app_config[cred_key] = decrypt_oauth_token(app_config[cred_key], oauth_encryption_key)
 
         if "discogs_consumer_key" not in app_config or "discogs_consumer_secret" not in app_config:
             raise ValueError("Discogs app credentials not configured in app_config table")

@@ -12,6 +12,8 @@ import sys
 import psycopg
 from psycopg.rows import dict_row
 
+from api.auth import decrypt_oauth_token, encrypt_oauth_token
+
 
 def _build_conninfo() -> str:
     """Build a psycopg conninfo string from environment variables."""
@@ -54,18 +56,24 @@ def _mask(value: str) -> str:
 
 def show_config(conninfo: str) -> None:
     """Print current Discogs credentials (masked)."""
+    encryption_key = os.environ.get("OAUTH_ENCRYPTION_KEY") or None
     with psycopg.connect(conninfo) as conn, conn.cursor(row_factory=dict_row) as cur:
         cur.execute("SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
         rows = {row["key"]: row["value"] for row in cur.fetchall()}
 
-    key_val = rows.get("discogs_consumer_key", "")
-    secret_val = rows.get("discogs_consumer_secret", "")
+    key_val = decrypt_oauth_token(rows.get("discogs_consumer_key", ""), encryption_key)
+    secret_val = decrypt_oauth_token(rows.get("discogs_consumer_secret", ""), encryption_key)
     print(f"discogs_consumer_key:    {_mask(key_val)}")
     print(f"discogs_consumer_secret: {_mask(secret_val)}")
 
 
 def set_config(conninfo: str, consumer_key: str, consumer_secret: str) -> None:
     """Upsert Discogs credentials into the app_config table."""
+    encryption_key = os.environ.get("OAUTH_ENCRYPTION_KEY") or None
+    if encryption_key:
+        consumer_key = encrypt_oauth_token(consumer_key, encryption_key)
+        consumer_secret = encrypt_oauth_token(consumer_secret, encryption_key)
+
     upsert_sql = """
         INSERT INTO app_config (key, value, updated_at)
         VALUES (%s, %s, NOW())
