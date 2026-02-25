@@ -144,31 +144,31 @@ All graph query endpoints are served by the API service and consumed by the Expl
 
 ### Collection Sync
 
-| Method | Path             | Auth Required | Description                     |
-| ------ | ---------------- | ------------- | ------------------------------- |
-| POST   | `/api/sync`      | Yes           | Trigger a full Discogs sync     |
-| GET    | `/api/sync/status` | Yes         | Get sync history (last 10 jobs) |
+| Method | Path               | Auth Required | Description                     |
+| ------ | ------------------ | ------------- | ------------------------------- |
+| POST   | `/api/sync`        | Yes           | Trigger a full Discogs sync     |
+| GET    | `/api/sync/status` | Yes           | Get sync history (last 10 jobs) |
 
 ### User Collection
 
 Personalized endpoints that return data from the user's synced Discogs collection.
 
-| Method | Path                        | Auth Required | Description                              |
-| ------ | --------------------------- | ------------- | ---------------------------------------- |
-| GET    | `/api/user/collection`      | Yes           | List user's collected releases           |
-| GET    | `/api/user/wantlist`        | Yes           | List user's wantlist releases            |
-| GET    | `/api/user/recommendations` | Yes           | Get recommended releases                 |
-| GET    | `/api/user/collection/stats`| Yes           | Collection statistics summary            |
-| GET    | `/api/user/status`          | Optional      | Check collection/wantlist status for IDs |
+| Method | Path                         | Auth Required | Description                              |
+| ------ | ---------------------------- | ------------- | ---------------------------------------- |
+| GET    | `/api/user/collection`       | Yes           | List user's collected releases           |
+| GET    | `/api/user/wantlist`         | Yes           | List user's wantlist releases            |
+| GET    | `/api/user/recommendations`  | Yes           | Get recommended releases                 |
+| GET    | `/api/user/collection/stats` | Yes           | Collection statistics summary            |
+| GET    | `/api/user/status`           | Optional      | Check collection/wantlist status for IDs |
 
 ### Snapshots
 
 Save and restore graph exploration states as shareable URLs.
 
-| Method | Path                    | Auth Required | Description                  |
-| ------ | ----------------------- | ------------- | ---------------------------- |
-| POST   | `/api/snapshot`         | No            | Save current graph snapshot  |
-| GET    | `/api/snapshot/{token}` | No            | Restore a saved snapshot     |
+| Method | Path                    | Auth Required | Description                 |
+| ------ | ----------------------- | ------------- | --------------------------- |
+| POST   | `/api/snapshot`         | No            | Save current graph snapshot |
+| GET    | `/api/snapshot/{token}` | No            | Restore a saved snapshot    |
 
 ### Health
 

@@ -256,10 +256,10 @@ Example response:
 
 ## 🔌 Ports
 
-| Port | Purpose                                          |
-| ---- | ------------------------------------------------ |
-| 8006 | Static file server (internal only in Docker)     |
-| 8007 | Health check endpoint (internal only in Docker)  |
+| Port | Purpose                                         |
+| ---- | ----------------------------------------------- |
+| 8006 | Static file server (internal only in Docker)    |
+| 8007 | Health check endpoint (internal only in Docker) |
 
 ## 🧪 Testing
 
