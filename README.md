@@ -79,10 +79,10 @@ graph TD
     GRAPH -->|4a. Build Graph| NEO4J
     TABLE -->|4b. Store Data| PG
 
-    EXPLORE -.->|Query Graph| NEO4J
-    EXPLORE -.->|Explore Paths| NEO4J
+    EXPLORE -.->|Health Check| NEO4J
 
     API -.->|User Accounts| PG
+    API -.->|Graph Queries| NEO4J
     API -.->|OAuth State| REDIS
 
     CURATOR -.->|Sync Collections| NEO4J

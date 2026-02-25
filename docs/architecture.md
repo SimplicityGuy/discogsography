@@ -63,10 +63,10 @@ graph TD
     GRAPH -->|4a. Build Graph| NEO4J
     TABLE -->|4b. Store Data| PG
 
-    EXPLORE -.->|Query Graph| NEO4J
-    EXPLORE -.->|Explore Paths| NEO4J
+    EXPLORE -.->|Health Check| NEO4J
 
     API -.->|User Accounts| PG
+    API -.->|Graph Queries| NEO4J
     API -.->|OAuth State| REDIS
 
     CURATOR -.->|Sync Collections| NEO4J
@@ -144,12 +144,18 @@ graph TD
 
 ### 4. Query and Analytics Phase
 
-**Explore Service**:
+**API Service** (graph query endpoints):
 
-- Interactive graph exploration
-- Trend analysis and pattern discovery
-- Path finding and relationship queries
-- D3.js and Plotly.js visualizations
+- Interactive graph exploration (`/api/explore`, `/api/expand`)
+- Trend analysis and pattern discovery (`/api/trends`)
+- Entity autocomplete and node detail lookup (`/api/autocomplete`, `/api/node/{id}`)
+- User collection and wantlist queries (`/api/user/collection`, `/api/user/wantlist`)
+- Graph snapshot save/restore (`/api/snapshot`)
+
+**Explore Service** (static frontend):
+
+- Serves the D3.js force-directed graph UI and Plotly.js trends frontend
+- All graph query API calls are made from the browser to the **API service** (port 8004)
 
 **Dashboard Service**:
 
@@ -306,11 +312,15 @@ See [Dashboard README](../dashboard/README.md) for details.
 
 **Responsibilities**:
 
-- User registration and authentication
+- User registration and authentication (`/api/auth/*`)
 - JWT token generation and validation (HS256)
-- Discogs OAuth 1.0a OOB flow management
+- Discogs OAuth 1.0a OOB flow management (`/api/oauth/*`)
 - Discogs OAuth token storage and retrieval
-- Admin configuration management
+- Graph query endpoints (`/api/autocomplete`, `/api/explore`, `/api/expand`, `/api/node/{id}`, `/api/trends`)
+- User collection and wantlist queries (`/api/user/collection`, `/api/user/wantlist`, `/api/user/recommendations`, `/api/user/collection/stats`, `/api/user/status`)
+- Sync trigger for Curator service (`/api/sync`, `/api/sync/status`)
+- Graph snapshot save/restore (`/api/snapshot`, `/api/snapshot/{token}`)
+- Reads Discogs app credentials from `app_config` table (set via `discogs-setup` CLI)
 
 **Key Features**:
 
@@ -633,4 +643,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-24
+**Last Updated**: 2026-02-25

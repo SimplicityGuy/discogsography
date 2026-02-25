@@ -504,14 +504,18 @@ LOG_LEVEL=INFO
 
 Health check: http://localhost:8004/health (service), http://localhost:8005/health (health check port)
 
-**Notes**: After startup, set Discogs app credentials via the admin endpoint:
+**Notes**: After startup, set Discogs app credentials using the `discogs-setup` CLI bundled in the API container:
 
 ```bash
-curl -X PUT http://localhost:8004/api/admin/config/discogs_consumer_key \
-  -H "Authorization: Bearer <token>" \
-  -H "Content-Type: application/json" \
-  -d '{"value": "your-discogs-consumer-key"}'
+docker exec <api-container> discogs-setup \
+  --consumer-key YOUR_CONSUMER_KEY \
+  --consumer-secret YOUR_CONSUMER_SECRET
+
+# Verify (values are masked)
+docker exec <api-container> discogs-setup --show
 ```
+
+See the [API README](../api/README.md#operator-setup) for full setup instructions.
 
 ### Curator
 
@@ -865,4 +869,4 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-18
+**Last Updated**: 2026-02-25
