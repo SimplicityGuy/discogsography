@@ -2,7 +2,7 @@
 
 🔍 **Interactive Graph Exploration and Trends Visualization**
 
-The Explore service provides a lightweight, fast-loading interface for navigating the Discogs knowledge graph and visualizing release trends over time.
+The Explore service serves the interactive frontend (D3.js, Plotly.js) for navigating the Discogs knowledge graph and visualizing release trends. All graph query API endpoints are consolidated in the **API service** (`/api/explore/*`, `/api/trends`, etc.).
 
 ## 🌟 Features
 
@@ -29,9 +29,11 @@ The Explore service provides a lightweight, fast-loading interface for navigatin
 # Start all services including explore
 docker-compose up -d
 
-# Access the Explore UI
-open http://localhost:8006
+# Access graph queries via the API service
+open http://localhost:8004/api/explore
 ```
+
+> **Note**: The Explore service (port 8006) is internal-only in Docker Compose. Graph API endpoints are served by the API service at port 8004.
 
 ### Local Development
 
@@ -53,34 +55,39 @@ just explore
 ```mermaid
 graph TD
     UI["🌐 Browser<br/>HTML + D3.js + Plotly.js"]
-    API["🔍 Explore API<br/>FastAPI :8006"]
+    EXPLORE["🔍 Explore Service<br/>Static Files :8006"]
     HEALTH["🏥 Health Server<br/>:8007"]
+    APISERVICE["🔐 API Service<br/>Graph Queries :8004"]
     NEO4J[("🔗 Neo4j<br/>Graph Database")]
 
-    UI -->|HTTP| API
-    API -->|Bolt| NEO4J
-    HEALTH -.->|Status| API
+    UI -->|Static files| EXPLORE
+    UI -->|Graph API calls| APISERVICE
+    APISERVICE -->|Bolt| NEO4J
+    HEALTH -.->|Status| EXPLORE
 
     style UI fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
-    style API fill:#fff9c4,stroke:#f57c00,stroke-width:2px
+    style EXPLORE fill:#fff9c4,stroke:#f57c00,stroke-width:2px
     style HEALTH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style APISERVICE fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
 ```
 
 ### Dependencies
 
-The Explore service connects to **Neo4j only** — no RabbitMQ, PostgreSQL, or Redis needed. This makes it fast to start and simple to deploy.
+The Explore service serves static files only — the graph query logic lives in the **API service**. No RabbitMQ, PostgreSQL, or Redis needed.
 
 ## 📡 API Endpoints
 
-| Method | Path                  | Description                                |
-| ------ | --------------------- | ------------------------------------------ |
-| GET    | `/health`             | Health check (also available on port 8007) |
-| GET    | `/api/autocomplete`   | Search entities with autocomplete          |
-| GET    | `/api/explore`        | Get center node with category counts       |
-| GET    | `/api/expand`         | Expand a category node (paginated)         |
-| GET    | `/api/node/{node_id}` | Get full details for a node                |
-| GET    | `/api/trends`         | Get time-series release counts             |
+The Explore service exposes only a health endpoint. All graph query endpoints are served by the **API service** at port 8004:
+
+| Method | Path                  | Service     | Description                          |
+| ------ | --------------------- | ----------- | ------------------------------------ |
+| GET    | `/health`             | Explore     | Health check (port 8006 or 8007)     |
+| GET    | `/api/autocomplete`   | API (:8004) | Search entities with autocomplete    |
+| GET    | `/api/explore`        | API (:8004) | Get center node with category counts |
+| GET    | `/api/expand`         | API (:8004) | Expand a category node (paginated)   |
+| GET    | `/api/node/{node_id}` | API (:8004) | Get full details for a node          |
+| GET    | `/api/trends`         | API (:8004) | Get time-series release counts       |
 
 ### Autocomplete
 
@@ -249,10 +256,10 @@ Example response:
 
 ## 🔌 Ports
 
-| Port | Purpose                           |
-| ---- | --------------------------------- |
-| 8006 | Main service (API + static files) |
-| 8007 | Health check endpoint             |
+| Port | Purpose                                          |
+| ---- | ------------------------------------------------ |
+| 8006 | Static file server (internal only in Docker)     |
+| 8007 | Health check endpoint (internal only in Docker)  |
 
 ## 🧪 Testing
 

@@ -78,21 +78,19 @@ docker-compose logs -f
 Open your browser and visit:
 
 - **Dashboard**: http://localhost:8003 (System monitoring)
-- **Explore**: http://localhost:8006 (Graph exploration & trends)
+- **API**: http://localhost:8004 (User auth, graph queries, sync)
 - **Neo4j Browser**: http://localhost:7474 (Graph database UI)
 - **RabbitMQ Management**: http://localhost:15672 (Queue monitoring)
 
 ### Service Access Details
 
-| Service           | URL                    | Default Credentials                 | Purpose                    |
-| ----------------- | ---------------------- | ----------------------------------- | -------------------------- |
-| 🔐 **API**        | http://localhost:8004  | Register via `/api/auth/register`   | User auth & Discogs OAuth  |
-| 🗂️ **Curator**    | http://localhost:8010  | JWT required (`/api/sync`)          | Collection & wantlist sync |
-| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring          |
-| 🔍 **Explore**    | http://localhost:8006  | None                                | Graph exploration          |
-| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management           |
-| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph database UI          |
-| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access            |
+| Service           | URL                    | Default Credentials                 | Purpose                                      |
+| ----------------- | ---------------------- | ----------------------------------- | -------------------------------------------- |
+| 🔐 **API**        | http://localhost:8004  | Register via `/api/auth/register`   | User auth, graph queries, sync, OAuth        |
+| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring                            |
+| 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management                             |
+| 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph database UI                            |
+| 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access                              |
 
 ## 💻 Local Development Setup
 
@@ -373,7 +371,7 @@ Now that you have Discogsography running:
    - PostgreSQL analytics
    - Full-text search
 
-1. **Use Explore Service**: http://localhost:8006
+1. **Use the Explore API**: http://localhost:8004/api/explore
 
    - Interactive graph exploration
    - Trend analysis and visualizations

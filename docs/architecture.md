@@ -16,16 +16,16 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### ⚙️ Service Components
 
-| Service                                                  | Purpose                                | Key Technologies                                  | Port(s)       |
-| -------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- | ------------- |
-| **[🔐](emoji-guide.md#service-identifiers) API**         | User accounts and JWT authentication   | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 | 8004, 8005    |
-| **[🗂️](emoji-guide.md#service-identifiers) Curator**     | Discogs collection & wantlist sync     | `FastAPI`, `psycopg3`, `neo4j-driver`             | 8010, 8011    |
-| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     | 8000 (health) |
-| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer         | `neo4j-driver`, `psycopg3`                        | —             |
-| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms                  | 8001 (health) |
-| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search               | 8002 (health) |
-| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `neo4j-driver`, `orjson`               | 8006, 8007    |
-| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI                 | 8003          |
+| Service                                                  | Purpose                                        | Key Technologies                                  | Port(s)                |
+| -------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------- | ---------------------- |
+| **[🔐](emoji-guide.md#service-identifiers) API**         | User auth, graph queries, and sync triggers    | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 | 8004 (ext), 8005       |
+| **[🗂️](emoji-guide.md#service-identifiers) Curator**     | Background collection & wantlist sync jobs     | `FastAPI`, `psycopg3`, `neo4j-driver`             | 8010, 8011 (internal)  |
+| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor          | `tokio`, `quick-xml`, `lapin`                     | 8000 (health)          |
+| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer                 | `neo4j-driver`, `psycopg3`                        | —                      |
+| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs                  | `neo4j-driver`, graph algorithms                  | 8001 (health)          |
+| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables            | `psycopg3`, JSONB, full-text search               | 8002 (health)          |
+| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check         | `FastAPI`, `neo4j-driver`, `orjson`               | 8006, 8007 (internal)  |
+| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring                    | `FastAPI`, WebSocket, reactive UI                 | 8003 (ext)             |
 
 ### Infrastructure Components
 
@@ -261,22 +261,20 @@ See [Tableinator README](../tableinator/README.md) for details.
 
 **Responsibilities**:
 
-- Interactive graph exploration
-- Trend analysis and visualization
-- Path finding and relationship queries
-- Genre and style analysis
+- Serve the interactive graph exploration frontend (D3.js, Plotly.js)
+- Provide a health check endpoint
+- All graph query API endpoints are routed through the **API service**
 
 **Key Features**:
 
-- FastAPI backend with Neo4j integration
-- D3.js and Plotly.js visualizations
-- Real-time graph queries
-- Responsive web interface
+- FastAPI static file serving (HTML, JS, CSS)
+- D3.js force-directed graph and Plotly.js trends visualizations
+- Internal-only (not externally exposed in Docker Compose)
 
 **Configuration**:
 
 - `NEO4J_ADDRESS`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
-- Service and health check ports
+- `JWT_SECRET_KEY`: Shared secret for token validation
 
 See [Explore README](../explore/README.md) for details.
 
@@ -335,17 +333,17 @@ See [API README](../api/README.md) for details.
 
 **Responsibilities**:
 
-- Sync user Discogs collections to Neo4j graph database
-- Sync user Discogs wantlists to Neo4j graph database
-- Background async sync job management
-- Sync history tracking in PostgreSQL
+- Run background async sync jobs for user Discogs collections and wantlists
+- Write synced data to Neo4j graph (COLLECTED, WANTS relationships)
+- Track sync history in PostgreSQL
+- Sync jobs are triggered via the **API service** (`POST /api/sync`)
 
 **Key Features**:
 
-- FastAPI backend with async PostgreSQL and Neo4j
+- FastAPI health endpoint (internal-only, not exposed in Docker Compose)
 - Stateless JWT validation using shared `JWT_SECRET_KEY`
 - Background task orchestration with per-user sync state
-- Uses Discogs OAuth tokens stored by the API service
+- Reads Discogs OAuth tokens stored by the API service
 - Prevents duplicate syncs for the same user
 
 **Configuration**:
@@ -512,13 +510,16 @@ See [Docker Security](docker-security.md) for details.
 All services expose HTTP health endpoints:
 
 ```bash
+# Externally accessible (Docker Compose)
+curl http://localhost:8003/health  # Dashboard
+curl http://localhost:8005/health  # API health check port
+
+# Internal only (available from within Docker network, or local dev)
 curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
-curl http://localhost:8003/health  # Dashboard
-curl http://localhost:8005/health  # API (health check port)
 curl http://localhost:8007/health  # Explore
-curl http://localhost:8011/health  # Curator (health check port)
+curl http://localhost:8011/health  # Curator
 ```
 
 ### Logging
@@ -632,4 +633,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-22
+**Last Updated**: 2026-02-24

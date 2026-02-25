@@ -137,9 +137,7 @@ open http://localhost:8003
 | Service           | URL                    | Default Credentials                 |
 | ----------------- | ---------------------- | ----------------------------------- |
 | 🔐 **API**        | http://localhost:8004  | Register via `/api/auth/register`   |
-| 🗂️ **Curator**    | http://localhost:8010  | JWT required (via API)              |
 | 📊 **Dashboard**  | http://localhost:8003  | None                                |
-| 🔍 **Explore**    | http://localhost:8006  | None                                |
 | 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          |
 | 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` |
 | 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` |

@@ -20,8 +20,8 @@ The curator service:
 - **Database**: PostgreSQL 18 (sync history, OAuth token lookup)
 - **Graph Database**: Neo4j 2026 (collection graph data)
 - **Auth**: HS256 JWT validation (shared `JWT_SECRET_KEY` with API service)
-- **Service Port**: 8010
-- **Health Port**: 8011
+- **Service Port**: 8010 (internal — not exposed in Docker Compose)
+- **Health Port**: 8011 (internal — not exposed in Docker Compose)
 
 ## Configuration
 
@@ -59,48 +59,7 @@ When a sync is triggered, the Curator reads the user's stored Discogs OAuth acce
 
 ## API Endpoints
 
-### Sync Operations
-
-| Method | Path               | Auth Required | Description                                     |
-| ------ | ------------------ | ------------- | ----------------------------------------------- |
-| POST   | `/api/sync`        | Yes           | Trigger a full collection + wantlist sync       |
-| GET    | `/api/sync/status` | Yes           | Get sync history for the current user (last 10) |
-
-#### Trigger Sync Response
-
-```json
-{
-  "sync_id": "uuid",
-  "status": "started"
-}
-```
-
-If a sync is already running for the user:
-
-```json
-{
-  "sync_id": "uuid",
-  "status": "already_running"
-}
-```
-
-#### Sync Status Response
-
-```json
-{
-  "syncs": [
-    {
-      "sync_id": "uuid",
-      "sync_type": "full",
-      "status": "completed",
-      "items_synced": 1234,
-      "error": null,
-      "started_at": "2026-02-22T12:00:00+00:00",
-      "completed_at": "2026-02-22T12:05:00+00:00"
-    }
-  ]
-}
-```
+The Curator exposes a health endpoint only. Sync operations are triggered via the **API service** — see [API README](../api/README.md) for `POST /api/sync` and `GET /api/sync/status`.
 
 ### Health
 
@@ -109,21 +68,20 @@ If a sync is already running for the user:
 | GET    | `/health` | 8010 | Service health check |
 | GET    | `/health` | 8011 | Health check port    |
 
-Health response includes `active_syncs` count:
+Health response:
 
 ```json
 {
   "status": "healthy",
   "service": "curator",
-  "active_syncs": 0,
   "timestamp": "2026-02-22T12:00:00+00:00"
 }
 ```
 
 ## Sync Flow
 
-1. User calls `POST /api/sync` with a valid JWT token
-1. Curator looks up the user's Discogs OAuth token from PostgreSQL
+1. User calls `POST /api/sync` on the **API service** with a valid JWT token
+1. API service dispatches the job; Curator looks up the user's Discogs OAuth token from PostgreSQL
 1. A `sync_history` record is created with `status = "running"`
 1. A background async task (`run_full_sync`) is launched
 1. The task fetches the user's collection and wantlist from the Discogs API
@@ -177,7 +135,6 @@ Neo4j data is written by `curator/syncer.py` using the same node/relationship mo
 
 ## Monitoring
 
-- Health endpoint at `http://localhost:8011/health`
-- `active_syncs` field in health response shows concurrent background tasks
+- Health endpoint at `http://localhost:8011/health` (internal only)
 - Structured logging with visual emoji prefixes
 - Sync progress logged with `🔄` (running), `✅` (completed), `❌` (failed)
