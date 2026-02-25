@@ -16,7 +16,7 @@ The API service:
 
 - **Language**: Python 3.13+
 - **Framework**: FastAPI with async PostgreSQL (`psycopg3`)
-- **Cache**: Redis (OAuth state storage with TTL)
+- **Cache**: Redis (OAuth state, graph snapshot persistence, JWT revocation blacklist)
 - **Database**: PostgreSQL 18
 - **Auth**: HS256 JWT with PBKDF2-SHA256 password hashing
 - **Service Port**: 8004

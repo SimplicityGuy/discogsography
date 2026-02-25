@@ -15,6 +15,30 @@ development experience enhancements.
 
 ## 🆕 Latest Improvements (February 2026 — Continued)
 
+### 🔴 Redis-Backed Snapshot Store — Issue #55 (February 2026)
+
+**Overview**: Migrated `SnapshotStore` from an in-memory Python dict to Redis (`redis.asyncio`), eliminating all limitations of the previous in-memory approach.
+
+#### Changes
+
+- **`api/snapshot_store.py`**: Rewritten as an async Redis-backed store. `save()` and `load()` are now coroutines. TTL eviction is handled natively by Redis (`SET ... EX`) — the manual `_evict_expired()` scan is gone.
+- **`api/routers/snapshot.py`**: `configure()` now accepts a `redis_client` parameter; endpoint handlers `await` the async store methods.
+- **`api/api.py`**: Passes the existing `_redis` client to `_snapshot_router.configure()` at startup.
+- **`explore/snapshot_store.py`**: Deleted — dead code after API consolidation (the snapshot router has lived in `api/` since issue #72).
+- **`pyproject.toml`**: Added `fakeredis[aioredis]>=2.0.0` to dev dependencies for test isolation.
+- **Tests**: `tests/api/` and `tests/explore/` snapshot tests updated to use `fakeredis.aioredis.FakeRedis` (backed by a shared `fakeredis.FakeServer` fixture); unit tests converted to `async` with `@pytest.mark.asyncio`.
+
+#### Benefits
+
+| Before | After |
+|---|---|
+| Lost on service restart | Persists across restarts (`appendonly yes`) |
+| Process-local only | Shared across multiple API replicas |
+| O(n) lazy eviction scan on every save | Native Redis TTL — zero overhead |
+| Unbounded memory growth | Bounded by Redis `maxmemory 512mb` + LRU |
+
+---
+
 ### 🔒 Security Hardening — Issue #71 (February 2026)
 
 **Overview**: Addressed a set of security findings (issue #71) across the API service.

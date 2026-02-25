@@ -247,6 +247,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
     _snapshot_router.configure(
         jwt_secret=_config.jwt_secret_key,
+        redis_client=_redis,
         ttl_days=_config.snapshot_ttl_days,
         max_nodes=_config.snapshot_max_nodes,
     )

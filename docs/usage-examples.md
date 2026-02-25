@@ -578,12 +578,18 @@ curl "http://localhost:8004/api/user/recommendations?limit=20" \
 
 ### Graph Snapshots
 
+Snapshots are persisted in Redis with a configurable TTL (default 28 days) and survive service restarts.
+
 ```bash
 # Save a graph snapshot (requires authentication)
 curl -X POST "http://localhost:8004/api/snapshot" \
   -H "Authorization: Bearer <your-jwt-token>" \
   -H "Content-Type: application/json" \
-  -d '{"nodes": [...], "edges": [...]}'
+  -d '{
+    "nodes": [{"id": "1", "type": "artist"}, {"id": "2", "type": "release"}],
+    "center": {"id": "1", "type": "artist"}
+  }'
+# Response: {"token": "<token>", "url": "/snapshot/<token>", "expires_at": "<iso-datetime>"}
 
 # Restore a saved snapshot (public, no auth required)
 curl "http://localhost:8004/api/snapshot/<token>"

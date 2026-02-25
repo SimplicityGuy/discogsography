@@ -1,6 +1,9 @@
 """Tests for snapshot endpoints in the API service (api/routers/snapshot.py)."""
 
+import fakeredis
 from fastapi.testclient import TestClient
+
+from api.snapshot_store import SnapshotStore
 
 
 class TestSaveSnapshot:
@@ -24,19 +27,21 @@ class TestSaveSnapshot:
         assert response.status_code == 422
 
     def test_save_snapshot_too_many_nodes(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
-        from unittest.mock import PropertyMock, patch
+        import api.routers.snapshot as snap_module
 
         body = {
             "nodes": [{"id": str(i), "type": "artist"} for i in range(5)],
             "center": {"id": "0", "type": "artist"},
         }
-        with patch.object(
-            type(__import__("api.routers.snapshot", fromlist=["_snapshot_store"])._snapshot_store),
-            "max_nodes",
-            new_callable=PropertyMock,
-            return_value=2,
-        ):
+        original_store = snap_module._snapshot_store
+        import fakeredis.aioredis as aioredis_fake
+
+        small_store = SnapshotStore(aioredis_fake.FakeRedis(), max_nodes=2)
+        snap_module._snapshot_store = small_store
+        try:
             response = test_client.post("/api/snapshot", json=body, headers=auth_headers)
+        finally:
+            snap_module._snapshot_store = original_store
         assert response.status_code == 422
         assert "Too many nodes" in response.json()["error"]
 
@@ -71,27 +76,20 @@ class TestRestoreSnapshot:
         assert response.status_code == 404
         assert "error" in response.json()
 
-    def test_restore_snapshot_expired(self, test_client: TestClient) -> None:
-        import api.routers.snapshot as snap_module
-
-        store = snap_module._snapshot_store
-        # Manually insert an expired entry
+    def test_restore_snapshot_expired(self, test_client: TestClient, fake_redis_server: fakeredis.FakeServer) -> None:
         import secrets
 
-        token = secrets.token_urlsafe(16)
-        from datetime import UTC, datetime, timedelta
+        import api.routers.snapshot as snap_module
 
-        store._store[token] = {
-            "nodes": [{"id": "1", "type": "artist"}],
-            "center": {"id": "1", "type": "artist"},
-            "created_at": datetime.now(UTC).isoformat(),
-            "expires_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat(),
-        }
-        try:
-            response = test_client.get(f"/api/snapshot/{token}")
-            assert response.status_code == 404
-        finally:
-            store._store.pop(token, None)
+        token = secrets.token_urlsafe(16)
+
+        # Delete the key (or never insert it) to simulate a missing/expired entry
+        sync_redis = fakeredis.FakeRedis(server=fake_redis_server)
+        key = f"{snap_module._snapshot_store._KEY_PREFIX}{token}"
+        sync_redis.delete(key)
+
+        response = test_client.get(f"/api/snapshot/{token}")
+        assert response.status_code == 404
 
 
 class TestSnapshotAuth:
