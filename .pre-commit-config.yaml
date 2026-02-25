@@ -47,7 +47,7 @@ repos:
   # Mypy configured as local hook - see local hooks section below
 
   - repo: https://github.com/PyCQA/bandit
-    rev: 765f00d3f202f83f61d03f882f80a2d5142d81f8  # frozen: 1.9.3
+    rev: 92ae8b82fb422a639f0ed8d99e96cea769594e08  # frozen: 1.9.4
     hooks:
       - id: bandit
         args: [-x, "tests"]
