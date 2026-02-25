@@ -5,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from common import ExtractorConfig, GraphinatorConfig, TableinatorConfig, setup_logging
+from common.config import get_secret
 
 
 class TestExtractorConfig:
@@ -828,3 +829,53 @@ class TestConfigMissingVars:
         monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
         with pytest.raises(ValueError, match="NEO4J_PASSWORD"):
             CuratorConfig.from_env()
+
+
+class TestGetSecret:
+    """Test get_secret() helper for Docker Compose runtime secrets."""
+
+    def test_reads_from_file_when_file_env_set(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Returns file contents when <VAR>_FILE is set to a valid path."""
+        secret_file = tmp_path / "my_secret.txt"
+        secret_file.write_text("supersecret\n")
+        monkeypatch.setenv("MY_VAR_FILE", str(secret_file))
+        monkeypatch.delenv("MY_VAR", raising=False)
+
+        result = get_secret("MY_VAR")
+
+        assert result == "supersecret"
+
+    def test_falls_back_to_plain_env_var(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Returns plain env var value when no <VAR>_FILE is set."""
+        monkeypatch.delenv("MY_VAR_FILE", raising=False)
+        monkeypatch.setenv("MY_VAR", "plainvalue")
+
+        result = get_secret("MY_VAR")
+
+        assert result == "plainvalue"
+
+    def test_returns_none_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Returns None when neither <VAR>_FILE nor <VAR> is set and no default."""
+        monkeypatch.delenv("MY_VAR_FILE", raising=False)
+        monkeypatch.delenv("MY_VAR", raising=False)
+
+        result = get_secret("MY_VAR")
+
+        assert result is None
+
+    def test_returns_default_when_neither_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Returns default value when neither <VAR>_FILE nor <VAR> is set."""
+        monkeypatch.delenv("MY_VAR_FILE", raising=False)
+        monkeypatch.delenv("MY_VAR", raising=False)
+
+        result = get_secret("MY_VAR", "mydefault")
+
+        assert result == "mydefault"
+
+    def test_raises_value_error_for_missing_secret_file(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """Raises ValueError when <VAR>_FILE points to a non-existent file."""
+        monkeypatch.setenv("MY_VAR_FILE", str(tmp_path / "nonexistent.txt"))
+        monkeypatch.delenv("MY_VAR", raising=False)
+
+        with pytest.raises(ValueError, match="Cannot read secret file for MY_VAR"):
+            get_secret("MY_VAR")

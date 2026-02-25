@@ -97,11 +97,21 @@ deploy:
 
 ### Security-Sensitive Variables
 
-Never commit these to version control:
+These secrets are **never passed as plain environment variables in production**. Instead, they are mounted as in-memory tmpfs files via Docker Compose runtime secrets and read through the `_FILE` convention. See [Production Secrets Setup](#production-secrets-setup) below.
 
-- `RABBITMQ_PASS`
-- `POSTGRES_PASSWORD`
-- `NEO4J_PASSWORD`
+| Secret | `_FILE` env var | Plain env var (dev only) |
+|--------|-----------------|--------------------------|
+| RabbitMQ password | `RABBITMQ_DEFAULT_PASS_FILE` | `RABBITMQ_DEFAULT_PASS` |
+| RabbitMQ username | `RABBITMQ_DEFAULT_USER_FILE` | `RABBITMQ_DEFAULT_USER` |
+| PostgreSQL password | `POSTGRES_PASSWORD_FILE` | `POSTGRES_PASSWORD` |
+| PostgreSQL username | `POSTGRES_USER_FILE` | `POSTGRES_USER` |
+| Neo4j password | (via entrypoint wrapper) | `NEO4J_AUTH` |
+| JWT secret key | `JWT_SECRET_KEY_FILE` | `JWT_SECRET_KEY` |
+| OAuth encryption key | `OAUTH_ENCRYPTION_KEY_FILE` | `OAUTH_ENCRYPTION_KEY` |
+| RabbitMQ mgmt user | `RABBITMQ_MANAGEMENT_USER_FILE` | `RABBITMQ_MANAGEMENT_USER` |
+| RabbitMQ mgmt password | `RABBITMQ_MANAGEMENT_PASSWORD_FILE` | `RABBITMQ_MANAGEMENT_PASSWORD` |
+
+Plain env vars work in development. The production overlay (`docker-compose.prod.yml`) switches to the `_FILE` convention automatically — application code handles both via `get_secret()` in `common/config.py`.
 
 ### User Configuration
 
@@ -112,9 +122,44 @@ export UID=$(id -u)
 export GID=$(id -g)
 ```
 
-## Running Securely
+## Production Secrets Setup
 
-### Development
+### 8. Runtime Secrets via `docker-compose.prod.yml`
+
+The production overlay mounts secrets as in-memory tmpfs files at `/run/secrets/<name>`. Secret values are **never visible in `docker inspect`**, never written to disk, and flushed when the container stops.
+
+**Step 1 — Generate secrets** (idempotent, skips existing files):
+
+```bash
+bash scripts/create-secrets.sh
+```
+
+This creates `secrets/` (mode `700`) with one file per secret (mode `600`):
+
+```
+secrets/
+├── jwt_secret_key.txt        # openssl rand -hex 32
+├── neo4j_password.txt        # openssl rand -base64 24
+├── oauth_encryption_key.txt  # Fernet.generate_key()
+├── postgres_password.txt     # openssl rand -base64 24
+├── postgres_user.txt         # discogsography
+├── rabbitmq_pass.txt         # openssl rand -base64 24
+└── rabbitmq_user.txt         # discogsography
+```
+
+Use `secrets.example/` as a reference for each file's format and generation command.
+
+**Step 2 — Start with production overlay**:
+
+```bash
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+```
+
+**Neo4j note**: Neo4j does not natively support the `_FILE` convention. The production overlay overrides Neo4j's entrypoint with `scripts/neo4j-entrypoint.sh`, which reads `/run/secrets/neo4j_password` and sets `NEO4J_AUTH=neo4j/<password>` before delegating to the official Neo4j entrypoint.
+
+### Running Securely
+
+**Development**:
 
 ```bash
 # Copy and configure environment
@@ -125,19 +170,14 @@ cp .env.example .env
 docker-compose up -d
 ```
 
-### Production
+**Production**:
 
 ```bash
-# Use production overlay with restart policies
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# 1. Generate secrets (first time only — safe to re-run)
+bash scripts/create-secrets.sh
 
-# Additional hardening with Docker flags
-docker run \
-  --cap-drop=ALL \
-  --security-opt=no-new-privileges:true \
-  --read-only \
-  --tmpfs /tmp \
-  discogsography/service:latest
+# 2. Start with production overlay (secrets + restart policies)
+docker-compose -f docker-compose.yml -f docker-compose.prod.yml up -d
 ```
 
 ## Security Best Practices
@@ -150,9 +190,11 @@ docker run \
 
 1. **Secrets Management**
 
-   - Use Docker secrets in Swarm mode
-   - Consider external secret management (Vault, AWS Secrets Manager)
+   - Use `docker-compose.prod.yml` with `scripts/create-secrets.sh` for Docker Compose deployments
+   - For Kubernetes, use Kubernetes Secrets or an external secrets operator
+   - For cloud deployments, consider AWS Secrets Manager, Azure Key Vault, or HashiCorp Vault
    - Never use default passwords in production
+   - Rotate secrets by updating the file in `secrets/` and restarting the affected container
 
 1. **Monitoring**
 

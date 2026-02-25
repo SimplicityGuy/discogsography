@@ -5,7 +5,7 @@ import logging
 from os import getenv
 from pathlib import Path
 import sys
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, cast, overload
 import warnings
 
 
@@ -17,6 +17,30 @@ import structlog
 
 
 logger = structlog.get_logger(__name__)
+
+
+@overload
+def get_secret(env_var: str, default: str) -> str: ...
+
+
+@overload
+def get_secret(env_var: str, default: None = None) -> str | None: ...
+
+
+def get_secret(env_var: str, default: str | None = None) -> str | None:
+    """Read a secret from a _FILE path if set, else fall back to env var.
+
+    Supports Docker Compose runtime secrets via the _FILE convention:
+    if <VAR>_FILE is set, reads the secret value from that file path.
+    Falls back to the plain <VAR> environment variable otherwise.
+    """
+    file_path = getenv(f"{env_var}_FILE")
+    if file_path:
+        try:
+            return Path(file_path).read_text().strip()
+        except OSError as exc:
+            raise ValueError(f"Cannot read secret file for {env_var}: {file_path!r}") from exc
+    return getenv(env_var) if default is None else getenv(env_var, default)
 
 
 @dataclass(frozen=True)
@@ -73,8 +97,8 @@ class GraphinatorConfig:
         """Create configuration from environment variables."""
         amqp_connection = getenv("AMQP_CONNECTION")
         neo4j_address = getenv("NEO4J_ADDRESS")
-        neo4j_username = getenv("NEO4J_USERNAME")
-        neo4j_password = getenv("NEO4J_PASSWORD")
+        neo4j_username = get_secret("NEO4J_USERNAME")
+        neo4j_password = get_secret("NEO4J_PASSWORD")
 
         missing_vars = []
         if not amqp_connection:
@@ -112,8 +136,8 @@ class TableinatorConfig:
         """Create configuration from environment variables."""
         amqp_connection = getenv("AMQP_CONNECTION")
         postgres_address = getenv("POSTGRES_ADDRESS")
-        postgres_username = getenv("POSTGRES_USERNAME")
-        postgres_password = getenv("POSTGRES_PASSWORD")
+        postgres_username = get_secret("POSTGRES_USERNAME")
+        postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
 
         missing_vars = []
@@ -317,8 +341,8 @@ class DashboardConfig:
         redis_url = getenv("REDIS_URL", "redis://localhost:6379/0")
 
         # Get RabbitMQ management credentials
-        rabbitmq_management_user = getenv("RABBITMQ_MANAGEMENT_USER", "discogsography")
-        rabbitmq_management_password = getenv("RABBITMQ_MANAGEMENT_PASSWORD", "discogsography")
+        rabbitmq_management_user = get_secret("RABBITMQ_MANAGEMENT_USER", "discogsography")
+        rabbitmq_management_password = get_secret("RABBITMQ_MANAGEMENT_PASSWORD", "discogsography")
 
         # CORS configuration
         cors_origins_env = getenv("CORS_ORIGINS")
@@ -376,10 +400,10 @@ class ApiConfig:
     def from_env(cls) -> "ApiConfig":
         """Create configuration from environment variables."""
         postgres_address = getenv("POSTGRES_ADDRESS")
-        postgres_username = getenv("POSTGRES_USERNAME")
-        postgres_password = getenv("POSTGRES_PASSWORD")
+        postgres_username = get_secret("POSTGRES_USERNAME")
+        postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
-        jwt_secret_key = getenv("JWT_SECRET_KEY")
+        jwt_secret_key = get_secret("JWT_SECRET_KEY")
 
         missing_vars = []
         if not postgres_address:
@@ -428,7 +452,7 @@ class ApiConfig:
         except ValueError:
             snapshot_max_nodes = 100
 
-        oauth_encryption_key = getenv("OAUTH_ENCRYPTION_KEY") or None
+        oauth_encryption_key = get_secret("OAUTH_ENCRYPTION_KEY") or None
 
         return cls(
             postgres_address=cast("str", postgres_address),
@@ -468,12 +492,12 @@ class CuratorConfig:
     def from_env(cls) -> "CuratorConfig":
         """Create configuration from environment variables."""
         postgres_address = getenv("POSTGRES_ADDRESS")
-        postgres_username = getenv("POSTGRES_USERNAME")
-        postgres_password = getenv("POSTGRES_PASSWORD")
+        postgres_username = get_secret("POSTGRES_USERNAME")
+        postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
         neo4j_address = getenv("NEO4J_ADDRESS")
-        neo4j_username = getenv("NEO4J_USERNAME")
-        neo4j_password = getenv("NEO4J_PASSWORD")
+        neo4j_username = get_secret("NEO4J_USERNAME")
+        neo4j_password = get_secret("NEO4J_PASSWORD")
 
         missing_vars = []
         if not postgres_address:
@@ -532,8 +556,8 @@ class ExploreConfig:
     def from_env(cls) -> "ExploreConfig":
         """Create configuration from environment variables."""
         neo4j_address = getenv("NEO4J_ADDRESS")
-        neo4j_username = getenv("NEO4J_USERNAME")
-        neo4j_password = getenv("NEO4J_PASSWORD")
+        neo4j_username = get_secret("NEO4J_USERNAME")
+        neo4j_password = get_secret("NEO4J_PASSWORD")
 
         missing_vars = []
         if not neo4j_address:
@@ -547,7 +571,7 @@ class ExploreConfig:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
         # Optional: enables personalized /api/user/* endpoints
-        jwt_secret_key = getenv("JWT_SECRET_KEY") or None
+        jwt_secret_key = get_secret("JWT_SECRET_KEY") or None
 
         return cls(
             neo4j_address=cast("str", neo4j_address),
