@@ -10,7 +10,7 @@ import warnings
 
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Sequence  # pragma: no cover
 
 import orjson
 import structlog

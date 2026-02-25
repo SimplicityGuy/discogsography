@@ -300,3 +300,19 @@ class TestReleaseStatusIdsLimit:
         ids = ",".join(str(i) for i in range(101))
         data = test_client.get(f"/api/user/status?ids={ids}", headers=auth_headers).json()
         assert data["error"] == "Too many IDs: maximum is 100"
+
+
+class TestGetOptionalUserInvalidToken:
+    """Tests for _get_optional_user with an invalid token (user router)."""
+
+    def test_invalid_token_returns_false_flags(self, test_client: TestClient) -> None:
+        """user.py:42-43 — bad token on optional-auth /status falls back to all-False."""
+        response = test_client.get(
+            "/api/user/status?ids=1,2",
+            headers={"Authorization": "Bearer not.a.valid.jwt"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        for _rid, flags in data["status"].items():
+            assert flags["in_collection"] is False
+            assert flags["in_wantlist"] is False

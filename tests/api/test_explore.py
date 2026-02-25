@@ -393,3 +393,25 @@ class TestExpandInvalidCategory:
     def test_expand_genre_invalid_category(self, test_client: TestClient) -> None:
         response = test_client.get("/api/expand?node_id=Rock&type=genre&category=nonexistent")
         assert response.status_code == 400
+
+
+class TestGetOptionalUserInvalidToken:
+    """Tests for _get_optional_user with an invalid token (explore router)."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_token_returns_none(self) -> None:
+        """explore.py:46-47 — bad Bearer token causes ValueError which returns None."""
+        from unittest.mock import MagicMock
+
+        import api.routers.explore as explore_module
+        from api.routers.explore import _get_optional_user
+
+        original = explore_module._jwt_secret
+        explore_module._jwt_secret = "test-jwt-secret-for-unit-tests"
+        try:
+            creds = MagicMock()
+            creds.credentials = "not.a.valid.jwt"
+            result = await _get_optional_user(creds)
+            assert result is None
+        finally:
+            explore_module._jwt_secret = original

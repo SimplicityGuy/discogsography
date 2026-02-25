@@ -730,3 +730,101 @@ class TestCuratorConfigNoJwtRequired:
         # Should not raise
         config = CuratorConfig.from_env()
         assert not hasattr(config, "jwt_secret_key") or config.jwt_secret_key is None  # type: ignore[attr-defined]
+
+
+class TestConfigMissingVars:
+    """Tests for individual missing-variable branches in ApiConfig and CuratorConfig."""
+
+    def test_api_config_missing_postgres_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """config.py:390 — POSTGRES_PASSWORD missing fires the append."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "user")
+        monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+        monkeypatch.setenv("POSTGRES_DATABASE", "db")
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        with pytest.raises(ValueError, match="POSTGRES_PASSWORD"):
+            ApiConfig.from_env()
+
+    def test_api_config_missing_postgres_database(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """config.py:392 — POSTGRES_DATABASE missing fires the append."""
+        from common.config import ApiConfig
+
+        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
+        monkeypatch.delenv("POSTGRES_DATABASE", raising=False)
+        monkeypatch.setenv("JWT_SECRET_KEY", "secret")
+        with pytest.raises(ValueError, match="POSTGRES_DATABASE"):
+            ApiConfig.from_env()
+
+    def test_curator_config_missing_postgres_address(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """config.py:480 — POSTGRES_ADDRESS missing."""
+        from common.config import CuratorConfig
+
+        monkeypatch.delenv("POSTGRES_ADDRESS", raising=False)
+        monkeypatch.setenv("POSTGRES_USERNAME", "user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "db")
+        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+        with pytest.raises(ValueError, match="POSTGRES_ADDRESS"):
+            CuratorConfig.from_env()
+
+    def test_curator_config_missing_postgres_username(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """config.py:482 — POSTGRES_USERNAME missing."""
+        from common.config import CuratorConfig
+
+        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "db")
+        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+        with pytest.raises(ValueError, match="POSTGRES_USERNAME"):
+            CuratorConfig.from_env()
+
+    def test_curator_config_missing_postgres_database(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """config.py:486 — POSTGRES_DATABASE missing."""
+        from common.config import CuratorConfig
+
+        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
+        monkeypatch.delenv("POSTGRES_DATABASE", raising=False)
+        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+        with pytest.raises(ValueError, match="POSTGRES_DATABASE"):
+            CuratorConfig.from_env()
+
+    def test_curator_config_missing_neo4j_username(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """config.py:490 — NEO4J_USERNAME missing."""
+        from common.config import CuratorConfig
+
+        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "db")
+        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost")
+        monkeypatch.delenv("NEO4J_USERNAME", raising=False)
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
+        with pytest.raises(ValueError, match="NEO4J_USERNAME"):
+            CuratorConfig.from_env()
+
+    def test_curator_config_missing_neo4j_password(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """config.py:492 — NEO4J_PASSWORD missing."""
+        from common.config import CuratorConfig
+
+        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "db")
+        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
+        with pytest.raises(ValueError, match="NEO4J_PASSWORD"):
+            CuratorConfig.from_env()

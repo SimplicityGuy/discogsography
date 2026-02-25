@@ -92,3 +92,30 @@ class TestRestoreSnapshot:
             assert response.status_code == 404
         finally:
             store._store.pop(token, None)
+
+
+class TestSnapshotAuth:
+    """Tests for _get_current_user in snapshot router."""
+
+    def test_no_jwt_secret_returns_503(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """snapshot.py:30 — 503 when _jwt_secret is None."""
+        import api.routers.snapshot as snap_module
+
+        original = snap_module._jwt_secret
+        snap_module._jwt_secret = None
+        try:
+            body = {"nodes": [{"id": "1", "type": "artist"}], "center": {"id": "1", "type": "artist"}}
+            response = test_client.post("/api/snapshot", json=body, headers=auth_headers)
+            assert response.status_code == 503
+        finally:
+            snap_module._jwt_secret = original
+
+    def test_invalid_token_returns_401(self, test_client: TestClient) -> None:
+        """snapshot.py:33-34 — 401 on bad token."""
+        body = {"nodes": [{"id": "1", "type": "artist"}], "center": {"id": "1", "type": "artist"}}
+        response = test_client.post(
+            "/api/snapshot",
+            json=body,
+            headers={"Authorization": "Bearer not.a.valid.jwt"},
+        )
+        assert response.status_code == 401
