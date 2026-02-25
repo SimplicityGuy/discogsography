@@ -1,10 +1,5 @@
 """User endpoints — migrated from explore service."""
 
-import base64
-from datetime import UTC, datetime
-import hashlib
-import hmac
-import json
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -12,6 +7,7 @@ from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import structlog
 
+from api.auth import decode_token
 from api.queries.user_queries import (
     check_releases_user_status,
     get_user_collection,
@@ -36,38 +32,15 @@ def configure(neo4j: Any, jwt_secret: str | None) -> None:
     _jwt_secret = jwt_secret
 
 
-def _b64url_decode(s: str) -> bytes:
-    padding = 4 - len(s) % 4
-    if padding != 4:
-        s += "=" * padding
-    return base64.urlsafe_b64decode(s)
-
-
-def _verify_jwt(token: str, secret: str) -> dict[str, Any] | None:
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-    header_b64, body_b64, sig_b64 = parts
-    signing_input = f"{header_b64}.{body_b64}".encode("ascii")
-    expected_sig = base64.urlsafe_b64encode(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()).rstrip(b"=").decode("ascii")
-    if not hmac.compare_digest(sig_b64, expected_sig):
-        return None
-    try:
-        payload: dict[str, Any] = json.loads(_b64url_decode(body_b64))
-    except Exception:
-        return None
-    exp = payload.get("exp")
-    if exp and datetime.fromtimestamp(int(exp), UTC) < datetime.now(UTC):
-        return None
-    return payload
-
-
 async def _get_optional_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_security)],
 ) -> dict[str, Any] | None:
     if credentials is None or _jwt_secret is None:
         return None
-    return _verify_jwt(credentials.credentials, _jwt_secret)
+    try:
+        return decode_token(credentials.credentials, _jwt_secret)
+    except ValueError:
+        return None
 
 
 async def _require_user(
@@ -77,10 +50,12 @@ async def _require_user(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Personalized endpoints not enabled")
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required", headers={"WWW-Authenticate": "Bearer"})
-    payload = _verify_jwt(credentials.credentials, _jwt_secret)
-    if payload is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"})
-    return payload
+    try:
+        return decode_token(credentials.credentials, _jwt_secret)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"}
+        ) from exc
 
 
 @router.get("/api/user/collection")
@@ -140,6 +115,8 @@ async def user_release_status(
     release_ids = [rid.strip() for rid in ids.split(",") if rid.strip()]
     if not release_ids:
         return ORJSONResponse(content={"status": {}})
+    if len(release_ids) > 100:
+        return ORJSONResponse(content={"error": "Too many IDs: maximum is 100"}, status_code=422)
     if not _neo4j_driver or current_user is None:
         return ORJSONResponse(content={"status": {rid: {"in_collection": False, "in_wantlist": False} for rid in release_ids}})
     user_id: str = current_user.get("sub", "")

@@ -5,12 +5,12 @@ import logging
 from os import getenv
 from pathlib import Path
 import sys
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 import warnings
 
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Sequence  # pragma: no cover
 
 import orjson
 import structlog
@@ -90,10 +90,10 @@ class GraphinatorConfig:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
         return cls(
-            amqp_connection=amqp_connection,  # type: ignore
-            neo4j_address=neo4j_address,  # type: ignore
-            neo4j_username=neo4j_username,  # type: ignore
-            neo4j_password=neo4j_password,  # type: ignore
+            amqp_connection=cast("str", amqp_connection),
+            neo4j_address=cast("str", neo4j_address),
+            neo4j_username=cast("str", neo4j_username),
+            neo4j_password=cast("str", neo4j_password),
         )
 
 
@@ -132,11 +132,11 @@ class TableinatorConfig:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
         return cls(
-            amqp_connection=amqp_connection,  # type: ignore
-            postgres_address=postgres_address,  # type: ignore
-            postgres_username=postgres_username,  # type: ignore
-            postgres_password=postgres_password,  # type: ignore
-            postgres_database=postgres_database,  # type: ignore
+            amqp_connection=cast("str", amqp_connection),
+            postgres_address=cast("str", postgres_address),
+            postgres_username=cast("str", postgres_username),
+            postgres_password=cast("str", postgres_password),
+            postgres_database=cast("str", postgres_database),
         )
 
 
@@ -367,6 +367,10 @@ class ApiConfig:
     neo4j_address: str | None = None
     neo4j_username: str | None = None
     neo4j_password: str | None = None
+    cors_origins: list[str] | None = None
+    snapshot_ttl_days: int = 28
+    snapshot_max_nodes: int = 100
+    oauth_encryption_key: str | None = None
 
     @classmethod
     def from_env(cls) -> "ApiConfig":
@@ -394,6 +398,8 @@ class ApiConfig:
 
         redis_url = getenv("REDIS_URL", "redis://redis:6379/0")
         jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
+        if jwt_algorithm != "HS256":
+            raise ValueError(f"Unsupported JWT algorithm: {jwt_algorithm}. Only HS256 is supported.")
         jwt_expire_minutes_str = getenv("JWT_EXPIRE_MINUTES", "30")
         try:
             jwt_expire_minutes = int(jwt_expire_minutes_str)
@@ -407,12 +413,29 @@ class ApiConfig:
         neo4j_username = getenv("NEO4J_USERNAME") or None
         neo4j_password = getenv("NEO4J_PASSWORD") or None
 
+        cors_origins_env = getenv("CORS_ORIGINS")
+        cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else None
+
+        snapshot_ttl_days_str = getenv("SNAPSHOT_TTL_DAYS", "28")
+        try:
+            snapshot_ttl_days = int(snapshot_ttl_days_str)
+        except ValueError:
+            snapshot_ttl_days = 28
+
+        snapshot_max_nodes_str = getenv("SNAPSHOT_MAX_NODES", "100")
+        try:
+            snapshot_max_nodes = int(snapshot_max_nodes_str)
+        except ValueError:
+            snapshot_max_nodes = 100
+
+        oauth_encryption_key = getenv("OAUTH_ENCRYPTION_KEY") or None
+
         return cls(
-            postgres_address=postgres_address,  # type: ignore[arg-type]
-            postgres_username=postgres_username,  # type: ignore[arg-type]
-            postgres_password=postgres_password,  # type: ignore[arg-type]
-            postgres_database=postgres_database,  # type: ignore[arg-type]
-            jwt_secret_key=jwt_secret_key,  # type: ignore[arg-type]
+            postgres_address=cast("str", postgres_address),
+            postgres_username=cast("str", postgres_username),
+            postgres_password=cast("str", postgres_password),
+            postgres_database=cast("str", postgres_database),
+            jwt_secret_key=cast("str", jwt_secret_key),
             redis_url=redis_url,
             jwt_algorithm=jwt_algorithm,
             jwt_expire_minutes=jwt_expire_minutes,
@@ -420,6 +443,10 @@ class ApiConfig:
             neo4j_address=neo4j_address,
             neo4j_username=neo4j_username,
             neo4j_password=neo4j_password,
+            cors_origins=cors_origins,
+            snapshot_ttl_days=snapshot_ttl_days,
+            snapshot_max_nodes=snapshot_max_nodes,
+            oauth_encryption_key=oauth_encryption_key,
         )
 
 
@@ -434,8 +461,8 @@ class CuratorConfig:
     neo4j_address: str
     neo4j_username: str
     neo4j_password: str
-    jwt_secret_key: str
     discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+    cors_origins: list[str] | None = None
 
     @classmethod
     def from_env(cls) -> "CuratorConfig":
@@ -447,7 +474,6 @@ class CuratorConfig:
         neo4j_address = getenv("NEO4J_ADDRESS")
         neo4j_username = getenv("NEO4J_USERNAME")
         neo4j_password = getenv("NEO4J_PASSWORD")
-        jwt_secret_key = getenv("JWT_SECRET_KEY")
 
         missing_vars = []
         if not postgres_address:
@@ -464,8 +490,6 @@ class CuratorConfig:
             missing_vars.append("NEO4J_USERNAME")
         if not neo4j_password:
             missing_vars.append("NEO4J_PASSWORD")
-        if not jwt_secret_key:
-            missing_vars.append("JWT_SECRET_KEY")
 
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
@@ -475,16 +499,19 @@ class CuratorConfig:
             "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography",
         )
 
+        cors_origins_env = getenv("CORS_ORIGINS")
+        cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else None
+
         return cls(
-            postgres_address=postgres_address,  # type: ignore[arg-type]
-            postgres_username=postgres_username,  # type: ignore[arg-type]
-            postgres_password=postgres_password,  # type: ignore[arg-type]
-            postgres_database=postgres_database,  # type: ignore[arg-type]
-            neo4j_address=neo4j_address,  # type: ignore[arg-type]
-            neo4j_username=neo4j_username,  # type: ignore[arg-type]
-            neo4j_password=neo4j_password,  # type: ignore[arg-type]
-            jwt_secret_key=jwt_secret_key,  # type: ignore[arg-type]
+            postgres_address=cast("str", postgres_address),
+            postgres_username=cast("str", postgres_username),
+            postgres_password=cast("str", postgres_password),
+            postgres_database=cast("str", postgres_database),
+            neo4j_address=cast("str", neo4j_address),
+            neo4j_username=cast("str", neo4j_username),
+            neo4j_password=cast("str", neo4j_password),
             discogs_user_agent=discogs_user_agent,
+            cors_origins=cors_origins,
         )
 
 
@@ -523,9 +550,9 @@ class ExploreConfig:
         jwt_secret_key = getenv("JWT_SECRET_KEY") or None
 
         return cls(
-            neo4j_address=neo4j_address,  # type: ignore
-            neo4j_username=neo4j_username,  # type: ignore
-            neo4j_password=neo4j_password,  # type: ignore
+            neo4j_address=cast("str", neo4j_address),
+            neo4j_username=cast("str", neo4j_username),
+            neo4j_password=cast("str", neo4j_password),
             jwt_secret_key=jwt_secret_key,
         )
 

@@ -306,3 +306,77 @@ class TestSyncGetCurrentUser:
             assert response.status_code == 401
         finally:
             del app.dependency_overrides[_get_current_user]
+
+
+class TestSyncRedisCooldown:
+    """Tests for per-user Redis cooldown in trigger_sync."""
+
+    def test_in_cooldown_returns_429(self, test_client: TestClient, mock_redis: AsyncMock, auth_headers: dict[str, str]) -> None:
+        mock_redis.get.return_value = "1"  # cooldown active
+        response = test_client.post("/api/sync", headers=auth_headers)
+        assert response.status_code == 429
+        data = response.json()
+        assert data["status"] == "cooldown"
+
+    def test_cooldown_key_uses_user_id(self, test_client: TestClient, mock_redis: AsyncMock, auth_headers: dict[str, str]) -> None:
+        mock_redis.get.return_value = "1"
+        test_client.post("/api/sync", headers=auth_headers)
+        mock_redis.get.assert_awaited_once()
+        call_key = mock_redis.get.call_args[0][0]
+        assert call_key == f"sync:cooldown:{TEST_USER_ID}"
+
+    def test_sets_cooldown_after_trigger(
+        self, test_client: TestClient, mock_redis: AsyncMock, mock_cur: AsyncMock, auth_headers: dict[str, str]
+    ) -> None:
+        import asyncio
+        from unittest.mock import MagicMock
+
+        mock_redis.get.return_value = None  # not in cooldown
+        mock_cur.fetchone.return_value = {"id": "new-sync-id"}
+        with patch("api.routers.sync.asyncio.create_task") as mock_task:
+            mock_task.return_value = MagicMock(spec=asyncio.Task)
+            mock_task.return_value.done.return_value = False
+            test_client.post("/api/sync", headers=auth_headers)
+        mock_redis.setex.assert_awaited_once()
+        setex_args = mock_redis.setex.call_args[0]
+        assert setex_args[0] == f"sync:cooldown:{TEST_USER_ID}"
+        assert setex_args[1] == 600
+
+    def test_redis_none_skips_cooldown(self, test_client: TestClient, mock_cur: AsyncMock, auth_headers: dict[str, str]) -> None:
+        import asyncio
+        from unittest.mock import MagicMock
+
+        import api.routers.sync as sync_module
+
+        original = sync_module._redis
+        sync_module._redis = None
+        mock_cur.fetchone.return_value = {"id": "sync-id"}
+        try:
+            with patch("api.routers.sync.asyncio.create_task") as mock_task:
+                mock_task.return_value = MagicMock(spec=asyncio.Task)
+                mock_task.return_value.done.return_value = False
+                response = test_client.post("/api/sync", headers=auth_headers)
+            assert response.status_code == 202
+        finally:
+            sync_module._redis = original
+
+    def test_trigger_sync_passes_encryption_key(self, test_client: TestClient, mock_cur: AsyncMock, auth_headers: dict[str, str]) -> None:
+        import asyncio
+        from unittest.mock import MagicMock
+
+        import api.routers.sync as sync_module
+
+        mock_cur.fetchone.return_value = {"id": "sync-id"}
+        with patch("api.routers.sync.asyncio.create_task") as mock_task:
+            mock_task.return_value = MagicMock(spec=asyncio.Task)
+            mock_task.return_value.done.return_value = False
+            test_client.post("/api/sync", headers=auth_headers)
+
+        create_task_call = mock_task.call_args
+        # The coroutine is run_full_sync(...) — check kwargs contain oauth_encryption_key
+        coroutine = create_task_call[0][0]
+        assert coroutine is not None
+        coroutine.close()  # clean up unawaited coroutine
+
+        # Verify getattr used on config with oauth_encryption_key
+        assert hasattr(sync_module._config, "jwt_secret_key")

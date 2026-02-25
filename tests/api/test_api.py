@@ -213,8 +213,7 @@ class TestRegisterEndpoint:
         )
         assert response.status_code == 201
         data = response.json()
-        assert data["email"] == TEST_USER_EMAIL
-        assert "id" in data
+        assert data["message"] == "Registration processed"
 
     def test_register_duplicate_email_409(
         self,
@@ -227,7 +226,8 @@ class TestRegisterEndpoint:
             "/api/auth/register",
             json={"email": "dup@example.com", "password": "Password123!"},
         )
-        assert response.status_code == 409
+        assert response.status_code == 201
+        assert response.json()["message"] == "Registration processed"
 
     def test_register_generic_db_error_500(
         self,
@@ -850,3 +850,132 @@ class TestGetMeServiceEdgeCases:
         token = f"{header}.{body}.{sig}"
         response = test_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
         assert response.status_code == 401
+
+
+class TestLogoutEndpoint:
+    """Tests for POST /api/auth/logout."""
+
+    def test_logout_no_auth_returns_401(self, test_client: TestClient) -> None:
+        response = test_client.post("/api/auth/logout")
+        assert response.status_code in (401, 403)
+
+    def test_logout_success(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        response = test_client.post("/api/auth/logout", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["logged_out"] is True
+
+    def test_logout_revokes_jti_in_redis(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        from api.api import _create_access_token
+
+        token, _ = _create_access_token(TEST_USER_ID, TEST_USER_EMAIL)
+        response = test_client.post("/api/auth/logout", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 200
+        mock_redis.setex.assert_awaited_once()
+        assert mock_redis.setex.call_args[0][0].startswith("revoked:jti:")
+
+    def test_logout_redis_none_succeeds_gracefully(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        import api.api as api_module
+
+        original = api_module._redis
+        api_module._redis = None
+        try:
+            response = test_client.post("/api/auth/logout", headers=auth_headers)
+            assert response.status_code == 200
+        finally:
+            api_module._redis = original
+
+
+class TestJtiBlacklist:
+    """Tests for JTI blacklist check in _get_current_user."""
+
+    def test_revoked_jti_returns_401(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        from api.api import _create_access_token
+
+        token, _ = _create_access_token(TEST_USER_ID, TEST_USER_EMAIL)
+        mock_redis.get.return_value = "1"  # jti is revoked
+        response = test_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
+
+    def test_non_revoked_jti_allows_access(
+        self, test_client: TestClient, mock_redis: AsyncMock, mock_cur: AsyncMock, auth_headers: dict[str, str]
+    ) -> None:
+        from datetime import UTC, datetime
+
+        mock_redis.get.return_value = None  # not revoked
+        mock_cur.fetchone.return_value = {
+            "id": TEST_USER_ID,
+            "email": TEST_USER_EMAIL,
+            "is_active": True,
+            "created_at": datetime.now(UTC),
+        }
+        response = test_client.get("/api/auth/me", headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_create_access_token_includes_jti(self, test_client: TestClient) -> None:  # noqa: ARG002
+        from api.api import _create_access_token, _decode_access_token
+
+        token, _ = _create_access_token(TEST_USER_ID, TEST_USER_EMAIL)
+        payload = _decode_access_token(token)
+        assert "jti" in payload
+        assert isinstance(payload["jti"], str)
+        assert len(payload["jti"]) > 0
+
+    def test_jti_is_unique_per_token(self, test_client: TestClient) -> None:  # noqa: ARG002
+        from api.api import _create_access_token, _decode_access_token
+
+        t1, _ = _create_access_token(TEST_USER_ID, TEST_USER_EMAIL)
+        t2, _ = _create_access_token(TEST_USER_ID, TEST_USER_EMAIL)
+        assert _decode_access_token(t1)["jti"] != _decode_access_token(t2)["jti"]
+
+
+class TestSecurityHeaders:
+    """Tests for security headers middleware."""
+
+    def test_x_content_type_options_nosniff(self, test_client: TestClient) -> None:
+        response = test_client.get("/health")
+        assert response.headers.get("x-content-type-options") == "nosniff"
+
+    def test_x_frame_options_deny(self, test_client: TestClient) -> None:
+        response = test_client.get("/health")
+        assert response.headers.get("x-frame-options") == "DENY"
+
+    def test_referrer_policy(self, test_client: TestClient) -> None:
+        response = test_client.get("/health")
+        assert response.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
+
+    def test_permissions_policy(self, test_client: TestClient) -> None:
+        response = test_client.get("/health")
+        assert "geolocation=()" in response.headers.get("permissions-policy", "")
+
+
+class TestBlindRegistration:
+    """Tests for L1: blind registration (no user enumeration)."""
+
+    def test_duplicate_email_returns_201_not_409(self, test_client: TestClient, mock_cur: AsyncMock) -> None:
+        mock_cur.execute.side_effect = Exception("unique constraint violation")
+        response = test_client.post("/api/auth/register", json={"email": "dup@example.com", "password": "Password123!"})
+        assert response.status_code == 201
+
+    def test_duplicate_and_success_return_same_body(self, test_client: TestClient, mock_cur: AsyncMock) -> None:
+        from datetime import UTC, datetime
+
+        # Success case
+        mock_cur.execute.side_effect = None
+        mock_cur.fetchone.return_value = {"id": TEST_USER_ID, "email": TEST_USER_EMAIL, "is_active": True, "created_at": datetime.now(UTC)}
+        r1 = test_client.post("/api/auth/register", json={"email": "a@b.com", "password": "Password123!"})
+
+        # Duplicate case
+        mock_cur.execute.side_effect = Exception("duplicate key value violates unique constraint")
+        r2 = test_client.post("/api/auth/register", json={"email": "a@b.com", "password": "Password123!"})
+
+        assert r1.status_code == r2.status_code == 201
+        assert r1.json() == r2.json()
+
+    def test_register_response_no_user_details(self, test_client: TestClient, mock_cur: AsyncMock) -> None:
+        from datetime import UTC, datetime
+
+        mock_cur.fetchone.return_value = {"id": TEST_USER_ID, "email": TEST_USER_EMAIL, "is_active": True, "created_at": datetime.now(UTC)}
+        response = test_client.post("/api/auth/register", json={"email": TEST_USER_EMAIL, "password": "Password123!"})
+        data = response.json()
+        assert "id" not in data
+        assert "hashed_password" not in data

@@ -44,9 +44,9 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 | Service                                                       | Purpose                                | Key Technologies                                  |
 | ------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- |
 | **[🔐](docs/emoji-guide.md#service-identifiers) API**         | User accounts and JWT authentication   | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 |
-| **[🗂️](docs/emoji-guide.md#service-identifiers) Curator**     | Discogs collection & wantlist sync     | `FastAPI`, `psycopg3`, `neo4j-driver`             |
+| **[🗂️](docs/emoji-guide.md#service-identifiers) Curator**     | Background collection & wantlist sync  | `FastAPI`, `psycopg3`, `neo4j-driver`             |
 | **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI                 |
-| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Interactive graph exploration & trends | `FastAPI`, `D3.js`, `Plotly.js`, Neo4j            |
+| **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Serves graph exploration frontend (static files) | `FastAPI`, `D3.js`, `Plotly.js`                   |
 | **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     |
 | **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms                  |
 | **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initializer   | `neo4j-driver`, `psycopg3`                        |

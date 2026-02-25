@@ -13,7 +13,65 @@ Last Updated: February 2026
 This document tracks recent improvements made to the Discogsography platform, focusing on CI/CD, automation, and
 development experience enhancements.
 
-## 🆕 Latest Improvements (February 2026)
+## 🆕 Latest Improvements (February 2026 — Continued)
+
+### 🔒 Security Hardening — Issue #71 (February 2026)
+
+**Overview**: Addressed a set of security findings (issue #71) across the API service.
+
+#### Changes
+
+- **OAuth token encryption**: Discogs OAuth access tokens are now encrypted at rest using Fernet symmetric encryption before being stored in PostgreSQL. A new `OAUTH_ENCRYPTION_KEY` env var is required for the API container.
+- **Constant-time login**: Login and registration now use constant-time comparison to prevent user enumeration via timing attacks.
+- **Blind registration**: Duplicate email registration returns the same `201` response to prevent account enumeration.
+- **JWT logout with JTI blacklist**: `POST /api/auth/logout` now revokes the token's `jti` claim in Redis (TTL = token expiry), making logout stateful.
+- **Snapshot auth required**: `POST /api/snapshot` now requires a valid JWT token.
+- **Rate limiting**: Added SlowAPI rate limits — register (3/min), login (5/min), sync (2/10min), autocomplete (30/min). Per-user sync cooldown (600 s) stored in Redis.
+- **Security response headers**: All responses now include `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, and `Permissions-Policy`.
+- **CORS**: Origins configurable via `CORS_ORIGINS` env var (comma-separated; disabled by default).
+- **Input validation**: JWT algorithm validated to be `HS256`; Discogs API response bodies redacted from error messages.
+
+#### Refactoring
+
+- Extracted shared JWT helpers to `api/auth.py` (`b64url_encode/decode`, `decode_token`) — removed duplicated implementations from individual routers.
+- Added `api/limiter.py` for a shared SlowAPI `Limiter` instance.
+- Replaced all `type: ignore` pragmas with proper type narrowing across the codebase.
+
+---
+
+### 👤 Discogs User Integration (February 2026)
+
+**Overview**: Full Discogs account linking, collection and wantlist sync, and personalised graph exploration.
+
+#### Features
+
+- **OAuth 1.0a OOB flow**: Users connect their Discogs account via `GET /api/oauth/authorize/discogs` → `POST /api/oauth/verify/discogs`. State token stored in Redis with TTL.
+- **Collection & wantlist sync**: `POST /api/sync` triggers a background job in the Curator service that fetches the user's Discogs collection and wantlist and writes `COLLECTED` / `WANTS` relationships to Neo4j.
+- **Sync history**: `GET /api/sync/status` returns the last 10 sync operations with status, item count, and error details.
+- **User endpoints**: `/api/user/collection`, `/api/user/wantlist`, `/api/user/recommendations`, `/api/user/collection/stats`, `/api/user/status` for personalised graph data.
+- **Operator setup**: Discogs app credentials configured once via the `discogs-setup` CLI bundled in the API container (reads/writes the `app_config` table).
+
+---
+
+### 🏗️ API Consolidation (February 2026)
+
+**Overview**: All user-facing HTTP endpoints consolidated into the central **API service**. Explore and Curator now expose health-only endpoints.
+
+#### Before / After
+
+| Endpoint group        | Before                     | After              |
+| --------------------- | -------------------------- | ------------------ |
+| Graph queries         | Explore service (:8006)    | API service (:8004) |
+| Sync triggers         | Curator service (:8010)    | API service (:8004) |
+| User collection data  | (new)                      | API service (:8004) |
+
+#### Benefits
+
+- Single port (8004) for all client-facing API calls — simpler frontend configuration.
+- Explore and Curator internal services are now health-only, reducing their attack surface.
+- Shared JWT authentication and rate limiting enforced uniformly at the API layer.
+
+---
 
 ### 🎨 Dashboard UI Redesign (February 2026)
 

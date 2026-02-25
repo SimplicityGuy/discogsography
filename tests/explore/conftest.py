@@ -101,8 +101,10 @@ def test_client(mock_neo4j_driver: MagicMock) -> Generator[TestClient]:
         test_app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
     # Wire the mock driver into both api routers
-    explore_router_module.configure(mock_neo4j_driver, os.environ.get("JWT_SECRET_KEY"))
-    user_router_module.configure(mock_neo4j_driver, os.environ.get("JWT_SECRET_KEY"))
+    jwt_secret = os.environ.get("JWT_SECRET_KEY")
+    explore_router_module.configure(mock_neo4j_driver, jwt_secret)
+    user_router_module.configure(mock_neo4j_driver, jwt_secret)
+    snapshot_router_module.configure(jwt_secret=jwt_secret)
 
     # Clear autocomplete cache between tests
     explore_router_module._autocomplete_cache.clear()
@@ -113,6 +115,28 @@ def test_client(mock_neo4j_driver: MagicMock) -> Generator[TestClient]:
     # Restore router state (set driver back to None so tests are isolated)
     explore_router_module.configure(None, None)
     user_router_module.configure(None, None)
+    snapshot_router_module.configure(jwt_secret=None)
+
+
+@pytest.fixture
+def auth_headers() -> dict[str, str]:
+    """Authorization headers with a valid bearer token for explore tests."""
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    secret = os.environ.get("JWT_SECRET_KEY", "test-jwt-secret-for-unit-tests")
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64url(json.dumps({"sub": "00000000-0000-0000-0000-000000000001", "exp": 9_999_999_999}, separators=(",", ":")).encode())
+    signing_input = f"{header}.{body}".encode("ascii")
+    sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    token = f"{header}.{body}.{sig}"
+    return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.fixture

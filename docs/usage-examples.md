@@ -521,36 +521,72 @@ WHERE schemaname = 'public'
 ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 ```
 
-## 🎵 Discovery Service Examples
+## 🔐 API Service Examples
 
-The Discovery service provides AI-powered music intelligence through its REST API.
+The API service provides graph exploration endpoints at `http://localhost:8004`.
 
-### Semantic Search
+### Graph Exploration
 
 ```bash
-# Search for similar artists
-curl "http://localhost:8005/api/similar-artists?artist=Miles%20Davis&limit=10"
+# Search with autocomplete (artist, genre, label, or style)
+curl "http://localhost:8004/api/autocomplete?q=miles&type=artist&limit=10"
+
+# Explore a center node (returns categories with counts)
+curl "http://localhost:8004/api/explore?name=Miles%20Davis&type=artist"
+
+# Expand a category (paginated)
+curl "http://localhost:8004/api/expand?node_id=Miles%20Davis&type=artist&category=releases&limit=50&offset=0"
+
+# Get full details for a node
+curl "http://localhost:8004/api/node/1?type=artist"
 ```
 
-### Genre Analysis
+### Trend Analysis
 
 ```bash
-# Get genre trends over time
-curl "http://localhost:8005/api/genre-trends?genre=Jazz&start_year=1950&end_year=1970"
+# Get year-by-year release counts for an entity
+curl "http://localhost:8004/api/trends?name=Miles%20Davis&type=artist"
+curl "http://localhost:8004/api/trends?name=Jazz&type=genre"
+curl "http://localhost:8004/api/trends?name=Blue%20Note&type=label"
 ```
 
-### Artist Network
+### User Collection (requires JWT authentication)
 
 ```bash
-# Get artist collaboration network
-curl "http://localhost:8005/api/artist-network?artist=David%20Bowie&depth=2"
+# Register a user account
+curl -X POST "http://localhost:8004/api/auth/register" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "secret"}'
+
+# Login to receive a JWT token
+curl -X POST "http://localhost:8004/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d '{"email": "user@example.com", "password": "secret"}'
+
+# Use the token to query your collection
+curl "http://localhost:8004/api/user/collection?limit=50" \
+  -H "Authorization: Bearer <your-jwt-token>"
+
+# Get collection statistics
+curl "http://localhost:8004/api/user/collection/stats" \
+  -H "Authorization: Bearer <your-jwt-token>"
+
+# Get recommendations based on your collection
+curl "http://localhost:8004/api/user/recommendations?limit=20" \
+  -H "Authorization: Bearer <your-jwt-token>"
 ```
 
-### Label Analytics
+### Graph Snapshots
 
 ```bash
-# Get label statistics
-curl "http://localhost:8005/api/label-stats?label=Blue%20Note"
+# Save a graph snapshot (requires authentication)
+curl -X POST "http://localhost:8004/api/snapshot" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -H "Content-Type: application/json" \
+  -d '{"nodes": [...], "edges": [...]}'
+
+# Restore a saved snapshot (public, no auth required)
+curl "http://localhost:8004/api/snapshot/<token>"
 ```
 
 ## 📊 Combining Neo4j and PostgreSQL
@@ -614,4 +650,4 @@ AND (data->>'year')::int = 1959;
 
 ______________________________________________________________________
 
-**Last Updated**: 2025-01-15
+**Last Updated**: 2026-02-25

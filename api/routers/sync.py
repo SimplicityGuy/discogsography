@@ -1,20 +1,17 @@
 """Sync endpoints — migrated from curator service."""
 
 import asyncio
-import base64
-from datetime import UTC, datetime
-import hashlib
-import hmac
-import json
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 import structlog
 
+from api.auth import decode_token
+from api.limiter import limiter
 from api.syncer import run_full_sync
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
 
@@ -27,6 +24,7 @@ _security = HTTPBearer()
 _pool: AsyncPostgreSQLPool | None = None
 _neo4j: AsyncResilientNeo4jDriver | None = None
 _config: Any = None
+_redis: Any = None
 _running_syncs: dict[str, asyncio.Task[Any]] = {}
 
 
@@ -35,37 +33,20 @@ def configure(
     neo4j: AsyncResilientNeo4jDriver | None,
     config: Any,
     running_syncs: dict[str, asyncio.Task[Any]],
+    redis: Any = None,
 ) -> None:
-    global _pool, _neo4j, _config, _running_syncs
+    global _pool, _neo4j, _config, _running_syncs, _redis
     _pool = pool
     _neo4j = neo4j
     _config = config
     _running_syncs = running_syncs
+    _redis = redis
 
 
 async def _verify_token(token: str) -> dict[str, Any]:
     if _config is None:
         raise ValueError("Service not initialized")
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise ValueError("Invalid token")
-    header_b64, body_b64, sig_b64 = parts
-    signing_input = f"{header_b64}.{body_b64}".encode("ascii")
-
-    def _b64url_encode(data: bytes) -> str:
-        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-    expected_sig = _b64url_encode(hmac.new(_config.jwt_secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest())
-    if not hmac.compare_digest(sig_b64, expected_sig):
-        raise ValueError("Invalid token signature")
-    padding = 4 - len(body_b64) % 4
-    if padding != 4:
-        body_b64 += "=" * padding
-    payload: dict[str, Any] = json.loads(base64.urlsafe_b64decode(body_b64))
-    exp = payload.get("exp")
-    if exp and datetime.fromtimestamp(int(exp), UTC) < datetime.now(UTC):
-        raise ValueError("Token expired")
-    return payload
+    return decode_token(token, _config.jwt_secret_key)
 
 
 async def _get_current_user(
@@ -88,7 +69,9 @@ async def _get_current_user(
 
 
 @router.post("/api/sync", status_code=status.HTTP_202_ACCEPTED)
+@limiter.limit("2/10minute")
 async def trigger_sync(
+    request: Request,  # noqa: ARG001 — required by slowapi rate limiter
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
 ) -> ORJSONResponse:
     if _pool is None or _neo4j is None or _config is None:
@@ -96,6 +79,17 @@ async def trigger_sync(
     user_id = current_user.get("sub")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+
+    # Redis-based per-user sync cooldown (prevents rapid re-triggers)
+    if _redis:
+        cooldown_key = f"sync:cooldown:{user_id}"
+        in_cooldown = await _redis.get(cooldown_key)
+        if in_cooldown:
+            return ORJSONResponse(
+                content={"status": "cooldown", "message": "Sync rate limited. Please wait before triggering again."},
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
     if user_id in _running_syncs and not _running_syncs[user_id].done():
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
@@ -124,9 +118,15 @@ async def trigger_sync(
             pg_pool=_pool,
             neo4j_driver=_neo4j,
             discogs_user_agent=_config.discogs_user_agent,
+            oauth_encryption_key=getattr(_config, "oauth_encryption_key", None),
         )
     )
     _running_syncs[user_id] = task
+
+    # Set per-user cooldown to prevent rapid re-triggers
+    if _redis:
+        await _redis.setex(f"sync:cooldown:{user_id}", 600, "1")
+
     logger.info("🔄 Sync triggered", user_id=user_id, sync_id=sync_id)
     return ORJSONResponse(content={"sync_id": sync_id, "status": "started"}, status_code=status.HTTP_202_ACCEPTED)
 

@@ -121,50 +121,59 @@ class TestUserStatusEndpoint:
 
 
 class TestB64UrlDecode:
-    """Tests for api.routers.user._b64url_decode."""
+    """Tests for api.auth.b64url_decode."""
 
     def test_decode_with_padding_needed(self) -> None:
-        """Line 42: padding branch executes when length % 4 != 0."""
-        from api.routers.user import _b64url_decode
+        """Padding branch executes when length % 4 != 0."""
+        from api.auth import b64url_decode
 
         # "YQ" decodes to b"a" but needs 2 padding chars ("YQ==")
-        result = _b64url_decode("YQ")
+        result = b64url_decode("YQ")
         assert result == b"a"
 
     def test_decode_aligned_no_padding(self) -> None:
         """No padding when length already divisible by 4."""
-        from api.routers.user import _b64url_decode
+        from api.auth import b64url_decode
 
         # "AAAA" is 4 chars, already aligned
-        result = _b64url_decode("AAAA")
+        result = b64url_decode("AAAA")
         assert result == b"\x00\x00\x00"
 
 
 class TestVerifyJwt:
-    """Tests for api.routers.user._verify_jwt."""
+    """Tests for api.auth.decode_token."""
 
-    def test_wrong_part_count_returns_none(self) -> None:
-        """Line 49: returns None when token doesn't have 3 parts."""
-        from api.routers.user import _verify_jwt
+    def test_wrong_part_count_raises(self) -> None:
+        """Raises ValueError when token doesn't have 3 parts."""
+        import pytest
 
-        assert _verify_jwt("only.two", "secret") is None
-        assert _verify_jwt("a.b.c.d", "secret") is None
+        from api.auth import decode_token
 
-    def test_bad_signature_returns_none(self) -> None:
-        """Line 54: returns None when signature doesn't match."""
-        from api.routers.user import _verify_jwt
+        with pytest.raises(ValueError):
+            decode_token("only.two", "secret")
+        with pytest.raises(ValueError):
+            decode_token("a.b.c.d", "secret")
+
+    def test_bad_signature_raises(self) -> None:
+        """Raises ValueError when signature doesn't match."""
+        import pytest
+
+        from api.auth import decode_token
         from tests.api.conftest import TEST_JWT_SECRET, make_test_jwt
 
         token = make_test_jwt(secret="wrong-secret")  # noqa: S106
-        assert _verify_jwt(token, TEST_JWT_SECRET) is None
+        with pytest.raises(ValueError):
+            decode_token(token, TEST_JWT_SECRET)
 
-    def test_invalid_json_payload_returns_none(self) -> None:
-        """Lines 57-58: returns None when body decodes to non-JSON bytes."""
+    def test_invalid_json_payload_raises(self) -> None:
+        """Raises ValueError when body decodes to non-JSON bytes."""
         import base64
         import hashlib
         import hmac
 
-        from api.routers.user import _verify_jwt
+        import pytest
+
+        from api.auth import decode_token
 
         def b64url(data: bytes) -> str:
             return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
@@ -176,24 +185,27 @@ class TestVerifyJwt:
         sig = b64url(hmac.new(secret.encode(), signing_input, hashlib.sha256).digest())
         token = f"{header}.{body}.{sig}"
 
-        assert _verify_jwt(token, secret) is None
+        with pytest.raises(ValueError):
+            decode_token(token, secret)
 
-    def test_expired_token_returns_none(self) -> None:
-        """Line 61: returns None when token is expired."""
-        from api.routers.user import _verify_jwt
+    def test_expired_token_raises(self) -> None:
+        """Raises ValueError when token is expired."""
+        import pytest
+
+        from api.auth import decode_token
         from tests.api.conftest import TEST_JWT_SECRET, make_test_jwt
 
         expired_token = make_test_jwt(exp=1)  # epoch 1970
-        assert _verify_jwt(expired_token, TEST_JWT_SECRET) is None
+        with pytest.raises(ValueError):
+            decode_token(expired_token, TEST_JWT_SECRET)
 
     def test_valid_token_returns_payload(self) -> None:
         """Happy path: returns the payload dict for a valid token."""
-        from api.routers.user import _verify_jwt
+        from api.auth import decode_token
         from tests.api.conftest import TEST_JWT_SECRET, TEST_USER_ID, make_test_jwt
 
         token = make_test_jwt()
-        result = _verify_jwt(token, TEST_JWT_SECRET)
-        assert result is not None
+        result = decode_token(token, TEST_JWT_SECRET)
         assert result["sub"] == TEST_USER_ID
 
 
@@ -265,3 +277,42 @@ class TestUserEndpointsNoNeo4j:
             assert response.status_code == 503
         finally:
             user_module._neo4j_driver = original
+
+
+class TestReleaseStatusIdsLimit:
+    """Tests for GET /api/user/status — 100-ID limit."""
+
+    def test_over_100_ids_returns_422(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        ids = ",".join(str(i) for i in range(101))
+        response = test_client.get(f"/api/user/status?ids={ids}", headers=auth_headers)
+        assert response.status_code == 422
+        assert "Too many IDs" in response.json()["error"]
+
+    def test_exactly_100_ids_allowed(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        from unittest.mock import AsyncMock, patch
+
+        ids = ",".join(str(i) for i in range(100))
+        with patch("api.routers.user.check_releases_user_status", new=AsyncMock(return_value={})):
+            response = test_client.get(f"/api/user/status?ids={ids}", headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_error_message_format(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        ids = ",".join(str(i) for i in range(101))
+        data = test_client.get(f"/api/user/status?ids={ids}", headers=auth_headers).json()
+        assert data["error"] == "Too many IDs: maximum is 100"
+
+
+class TestGetOptionalUserInvalidToken:
+    """Tests for _get_optional_user with an invalid token (user router)."""
+
+    def test_invalid_token_returns_false_flags(self, test_client: TestClient) -> None:
+        """user.py:42-43 — bad token on optional-auth /status falls back to all-False."""
+        response = test_client.get(
+            "/api/user/status?ids=1,2",
+            headers={"Authorization": "Bearer not.a.valid.jwt"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        for _rid, flags in data["status"].items():
+            assert flags["in_collection"] is False
+            assert flags["in_wantlist"] is False

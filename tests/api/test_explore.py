@@ -231,58 +231,70 @@ class TestJWT:
     def test_b64url_decode_no_padding(self) -> None:
         import base64
 
-        from api.routers.explore import _b64url_decode
+        from api.auth import b64url_decode
 
         data = b'{"sub":"user-1"}'
         encoded = base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-        assert _b64url_decode(encoded) == data
+        assert b64url_decode(encoded) == data
 
     def test_b64url_decode_with_padding_needed(self) -> None:
         # 1-byte payload needs 3 padding chars
         import base64
 
-        from api.routers.explore import _b64url_decode
+        from api.auth import b64url_decode
 
         data = b"x"
         encoded = base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-        assert _b64url_decode(encoded) == data
+        assert b64url_decode(encoded) == data
 
     def test_verify_jwt_valid(self) -> None:
-        from api.routers.explore import _verify_jwt
+        from api.auth import decode_token
         from tests.api.conftest import make_test_jwt
 
         token = make_test_jwt()
-        payload = _verify_jwt(token, "test-jwt-secret-for-unit-tests")
+        payload = decode_token(token, "test-jwt-secret-for-unit-tests")
         assert payload is not None
         assert "sub" in payload
 
     def test_verify_jwt_wrong_secret(self) -> None:
-        from api.routers.explore import _verify_jwt
+        import pytest
+
+        from api.auth import decode_token
         from tests.api.conftest import make_test_jwt
 
         token = make_test_jwt()
-        assert _verify_jwt(token, "wrong-secret") is None
+        with pytest.raises(ValueError):
+            decode_token(token, "wrong-secret")
 
     def test_verify_jwt_invalid_format(self) -> None:
-        from api.routers.explore import _verify_jwt
+        import pytest
 
-        assert _verify_jwt("not.a.valid.jwt.token", "secret") is None
-        assert _verify_jwt("onlytwoparts.here", "secret") is None
+        from api.auth import decode_token
+
+        with pytest.raises(ValueError):
+            decode_token("not.a.valid.jwt.token", "secret")
+        with pytest.raises(ValueError):
+            decode_token("onlytwoparts.here", "secret")
 
     def test_verify_jwt_expired(self) -> None:
-        from api.routers.explore import _verify_jwt
+        import pytest
+
+        from api.auth import decode_token
         from tests.api.conftest import make_test_jwt
 
         token = make_test_jwt(exp=1)  # expired in 1970
-        assert _verify_jwt(token, "test-jwt-secret-for-unit-tests") is None
+        with pytest.raises(ValueError, match="expired"):
+            decode_token(token, "test-jwt-secret-for-unit-tests")
 
     def test_verify_jwt_invalid_json_body(self) -> None:
-        """Cover the except Exception branch when body decodes to non-JSON."""
+        """Cover ValueError when body is not valid JSON."""
         import base64 as _b64
         import hashlib
         import hmac as _hmac
 
-        from api.routers.explore import _verify_jwt
+        import pytest
+
+        from api.auth import decode_token
 
         secret = "test-secret"
         header_b64 = _b64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').rstrip(b"=").decode()
@@ -290,7 +302,8 @@ class TestJWT:
         body_b64 = _b64.urlsafe_b64encode(b"not-valid-json-{{{{").rstrip(b"=").decode()
         signing_input = f"{header_b64}.{body_b64}".encode("ascii")
         sig = _b64.urlsafe_b64encode(_hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()).rstrip(b"=").decode()
-        assert _verify_jwt(f"{header_b64}.{body_b64}.{sig}", secret) is None
+        with pytest.raises(Exception):  # noqa: B017
+            decode_token(f"{header_b64}.{body_b64}.{sig}", secret)
 
     @pytest.mark.asyncio
     async def test_get_optional_user_no_credentials(self) -> None:
@@ -380,3 +393,25 @@ class TestExpandInvalidCategory:
     def test_expand_genre_invalid_category(self, test_client: TestClient) -> None:
         response = test_client.get("/api/expand?node_id=Rock&type=genre&category=nonexistent")
         assert response.status_code == 400
+
+
+class TestGetOptionalUserInvalidToken:
+    """Tests for _get_optional_user with an invalid token (explore router)."""
+
+    @pytest.mark.asyncio
+    async def test_invalid_token_returns_none(self) -> None:
+        """explore.py:46-47 — bad Bearer token causes ValueError which returns None."""
+        from unittest.mock import MagicMock
+
+        import api.routers.explore as explore_module
+        from api.routers.explore import _get_optional_user
+
+        original = explore_module._jwt_secret
+        explore_module._jwt_secret = "test-jwt-secret-for-unit-tests"
+        try:
+            creds = MagicMock()
+            creds.credentials = "not.a.valid.jwt"
+            result = await _get_optional_user(creds)
+            assert result is None
+        finally:
+            explore_module._jwt_secret = original

@@ -282,3 +282,43 @@ class TestFetchDiscogsIdentity:
                 access_token_secret="accsec",  # noqa: S106
                 user_agent="TestAgent/1.0",
             )
+
+
+class TestErrorMessageRedaction:
+    """Tests that error messages do not expose response body (info disclosure fix)."""
+
+    @pytest.mark.asyncio
+    async def test_request_oauth_token_error_no_body_in_message(self) -> None:
+        from unittest.mock import patch
+
+        from api.services.discogs import DiscogsOAuthError, request_oauth_token
+
+        mock_client, _ = _make_mock_httpx_client(401, "SECRET_INTERNAL_DATA")
+        with patch("api.services.discogs.httpx.AsyncClient", return_value=mock_client), pytest.raises(DiscogsOAuthError) as exc_info:
+            await request_oauth_token("ckey", "csecret", "Agent/1.0")
+        assert "SECRET_INTERNAL_DATA" not in str(exc_info.value)
+        assert "HTTP 401" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_exchange_oauth_verifier_error_no_body_in_message(self) -> None:
+        from unittest.mock import patch
+
+        from api.services.discogs import DiscogsOAuthError, exchange_oauth_verifier
+
+        mock_client, _ = _make_mock_httpx_client(403, "SENSITIVE_ERROR_BODY")
+        with patch("api.services.discogs.httpx.AsyncClient", return_value=mock_client), pytest.raises(DiscogsOAuthError) as exc_info:
+            await exchange_oauth_verifier("ckey", "csecret", "tok", "sec", "verif", "Agent/1.0")
+        assert "SENSITIVE_ERROR_BODY" not in str(exc_info.value)
+        assert "HTTP 403" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_fetch_discogs_identity_error_no_body_in_message(self) -> None:
+        from unittest.mock import patch
+
+        from api.services.discogs import DiscogsOAuthError, fetch_discogs_identity
+
+        mock_client, _ = _make_mock_httpx_client(500, "INTERNAL_SERVER_DETAILS")
+        with patch("api.services.discogs.httpx.AsyncClient", return_value=mock_client), pytest.raises(DiscogsOAuthError) as exc_info:
+            await fetch_discogs_identity("ckey", "csecret", "tok", "sec", "Agent/1.0")
+        assert "INTERNAL_SERVER_DETAILS" not in str(exc_info.value)
+        assert "HTTP 500" in str(exc_info.value)

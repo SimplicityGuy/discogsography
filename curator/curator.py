@@ -3,6 +3,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,9 @@ from common.config import CuratorConfig
 
 
 logger = structlog.get_logger(__name__)
+
+_cors_origins_raw = os.environ.get("CORS_ORIGINS", "")
+_cors_origins: list[str] | None = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()] if _cors_origins_raw else None
 
 # Module-level state
 _pool: AsyncPostgreSQLPool | None = None
@@ -96,8 +100,8 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=_cors_origins or ["http://localhost:3000", "http://localhost:8003"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 

@@ -168,12 +168,14 @@ def test_client(
     api_module._neo4j = mock_neo4j
 
     import api.routers.explore as _explore_router
+    import api.routers.snapshot as _snapshot_router
     import api.routers.sync as _sync_router
     import api.routers.user as _user_router
 
-    _sync_router.configure(mock_pool, mock_neo4j, test_api_config, api_module._running_syncs)
+    _sync_router.configure(mock_pool, mock_neo4j, test_api_config, api_module._running_syncs, mock_redis)
     _explore_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
     _user_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
+    _snapshot_router.configure(jwt_secret=TEST_JWT_SECRET)
 
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
@@ -185,6 +187,18 @@ def test_client(
     api_module._neo4j = original_neo4j
     api_module._running_syncs.clear()
     app.router.lifespan_context = original_lifespan
+
+
+@pytest.fixture(autouse=True)
+def reset_rate_limits() -> Generator[None]:
+    """Reset slowapi rate limiter storage between tests."""
+    yield
+    try:
+        from api.limiter import limiter
+
+        limiter._storage.reset()
+    except Exception:  # noqa: S110
+        pass
 
 
 @pytest.fixture

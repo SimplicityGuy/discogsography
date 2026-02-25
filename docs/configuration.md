@@ -459,7 +459,7 @@ See [Performance Guide](performance-guide.md) for detailed optimization strategi
 | `CACHE_WARMING_ENABLED`        | Pre-warm cache on startup                    | `true`            | No       |
 | `CACHE_WEBHOOK_SECRET`         | Secret for cache invalidation webhooks       | (none — disabled) | No       |
 
-**Used By**: Dashboard only
+**Used By**: Dashboard only (for `RABBITMQ_MANAGEMENT_USER`, `CACHE_WARMING_ENABLED`, `CACHE_WEBHOOK_SECRET`); `CORS_ORIGINS` is also supported by the API service — see the [API](#api) section above.
 
 **Notes**:
 
@@ -496,6 +496,17 @@ POSTGRES_DATABASE="discogsography"
 REDIS_URL="redis://localhost:6379/0"
 JWT_SECRET_KEY="your-secret-key-here"
 DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
+
+# Required — Discogs OAuth token encryption (Fernet symmetric key)
+# Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+OAUTH_ENCRYPTION_KEY="your-fernet-key-here"
+
+# Optional — CORS origins (comma-separated; omit to disable CORS)
+CORS_ORIGINS="http://localhost:8003,http://localhost:8006"
+
+# Optional — snapshot settings
+SNAPSHOT_TTL_DAYS=28     # Snapshot expiry in days (default: 28)
+SNAPSHOT_MAX_NODES=100   # Max nodes per snapshot (default: 100)
 
 # Optional
 JWT_EXPIRE_MINUTES=1440

@@ -1,19 +1,16 @@
 """Explore endpoints — migrated from explore service."""
 
 import asyncio
-import base64
 from collections import OrderedDict
-from datetime import UTC, datetime
-import hashlib
-import hmac
-import json
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import ORJSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import structlog
 
+from api.auth import decode_token
+from api.limiter import limiter
 from api.queries.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
     COUNT_DISPATCH,
@@ -39,38 +36,15 @@ def configure(neo4j: Any, jwt_secret: str | None) -> None:
     _jwt_secret = jwt_secret
 
 
-def _b64url_decode(s: str) -> bytes:
-    padding = 4 - len(s) % 4
-    if padding != 4:
-        s += "=" * padding
-    return base64.urlsafe_b64decode(s)
-
-
-def _verify_jwt(token: str, secret: str) -> dict[str, Any] | None:
-    parts = token.split(".")
-    if len(parts) != 3:
-        return None
-    header_b64, body_b64, sig_b64 = parts
-    signing_input = f"{header_b64}.{body_b64}".encode("ascii")
-    expected_sig = base64.urlsafe_b64encode(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest()).rstrip(b"=").decode("ascii")
-    if not hmac.compare_digest(sig_b64, expected_sig):
-        return None
-    try:
-        payload: dict[str, Any] = json.loads(_b64url_decode(body_b64))
-    except Exception:
-        return None
-    exp = payload.get("exp")
-    if exp and datetime.fromtimestamp(int(exp), UTC) < datetime.now(UTC):
-        return None
-    return payload
-
-
 async def _get_optional_user(
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_security)],
 ) -> dict[str, Any] | None:
     if credentials is None or _jwt_secret is None:
         return None
-    return _verify_jwt(credentials.credentials, _jwt_secret)
+    try:
+        return decode_token(credentials.credentials, _jwt_secret)
+    except ValueError:
+        return None
 
 
 _autocomplete_cache: OrderedDict[tuple[str, str, int], list[dict[str, Any]]] = OrderedDict()
@@ -112,7 +86,9 @@ def _build_categories(entity_type: str, result: dict[str, Any]) -> list[dict[str
 
 
 @router.get("/api/autocomplete")
+@limiter.limit("30/minute")
 async def autocomplete(
+    request: Request,  # noqa: ARG001
     q: str = Query(..., min_length=2),
     type: str = Query("artist"),
     limit: int = Query(10, ge=1, le=50),
