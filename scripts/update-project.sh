@@ -600,7 +600,7 @@ update_python_packages() {
         backup_file "pyproject.toml"
 
         # Backup all pyproject.toml files including nested ones
-        for service in common dashboard explore graphinator schema-init tableinator; do
+        for service in api common curator dashboard explore graphinator schema-init tableinator; do
             if [[ -f "$service/pyproject.toml" ]]; then
                 backup_file "$service/pyproject.toml"
             fi
@@ -842,6 +842,8 @@ show_verification_steps() {
     echo "   docker-compose ps  # All services should be 'healthy'"
     echo ""
     echo "3. 🔍 Smoke tests:"
+    echo "   # Check API service"
+    echo "   curl -f http://localhost:8005/health"
     echo "   # Check dashboard"
     echo "   curl -f http://localhost:8003/health"
     echo "   # Check explore service"
@@ -872,7 +874,9 @@ show_file_report() {
     # Python files
     echo "🐍 Python Configuration:"
     echo "  ✓ pyproject.toml (root)"
+    echo "  ✓ api/pyproject.toml"
     echo "  ✓ common/pyproject.toml"
+    echo "  ✓ curator/pyproject.toml"
     echo "  ✓ dashboard/pyproject.toml"
     echo "  ✓ explore/pyproject.toml"
     echo "  ✓ graphinator/pyproject.toml"
@@ -884,6 +888,8 @@ show_file_report() {
 
     # Docker files
     echo "🐳 Docker Configuration:"
+    echo "  ✓ api/Dockerfile"
+    echo "  ✓ curator/Dockerfile"
     echo "  ✓ dashboard/Dockerfile"
     echo "  ✓ explore/Dockerfile"
     echo "  ✓ extractor/Dockerfile"
@@ -938,7 +944,9 @@ verify_components() {
     print_info "Checking Python configuration files..."
     local pyproject_files=(
         "pyproject.toml"
+        "api/pyproject.toml"
         "common/pyproject.toml"
+        "curator/pyproject.toml"
         "dashboard/pyproject.toml"
         "explore/pyproject.toml"
         "graphinator/pyproject.toml"
@@ -958,6 +966,8 @@ verify_components() {
     # Check Dockerfiles
     print_info "Checking Dockerfiles..."
     local dockerfile_list=(
+        "api/Dockerfile"
+        "curator/Dockerfile"
         "dashboard/Dockerfile"
         "explore/Dockerfile"
         "extractor/Dockerfile"
