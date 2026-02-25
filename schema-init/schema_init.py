@@ -14,6 +14,7 @@ import asyncio
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import psycopg
 import structlog
@@ -42,7 +43,7 @@ POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "discogsography")
 POSTGRES_DATABASE = os.environ.get("POSTGRES_DATABASE", "discogsography")
 
 
-def _postgres_connection_params() -> dict[str, str | int]:
+def _postgres_connection_params() -> dict[str, Any]:
     """Parse POSTGRES_ADDRESS into psycopg connection params."""
     if ":" in POSTGRES_ADDRESS:
         host, port_str = POSTGRES_ADDRESS.split(":", 1)
@@ -62,11 +63,11 @@ def _postgres_connection_params() -> dict[str, str | int]:
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
 
 
-def _ensure_postgres_database(params: dict[str, str | int]) -> None:
+def _ensure_postgres_database(params: dict[str, Any]) -> None:
     """Create the target database if it does not already exist (synchronous)."""
     admin_params = {**params, "dbname": "postgres"}
     logger.info("🔧 Ensuring PostgreSQL database exists...", database=POSTGRES_DATABASE)
-    with psycopg.connect(**admin_params) as conn:  # type: ignore[arg-type]
+    with psycopg.connect(**admin_params) as conn:
         conn.autocommit = True
         with conn.cursor() as cursor:
             cursor.execute(

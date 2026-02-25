@@ -6,7 +6,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import logging
 from threading import Thread
-from typing import Any
+from typing import Any, cast
 
 
 logger = logging.getLogger(__name__)
@@ -19,7 +19,7 @@ class HealthHandler(BaseHTTPRequestHandler):
         """Handle GET requests."""
         if self.path == "/health":
             # Get health data from the server instance
-            health_data = self.server.get_health_data()  # type: ignore
+            health_data = cast("HealthServer", self.server).get_health_data()
 
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
