@@ -6,7 +6,8 @@
 # Additional environment variables for production:
 # - UID/GID: User/Group ID for container processes (default: 1000)
 # - Memory limits: <SERVICE>_MEMORY_LIMIT (e.g., DASHBOARD_MEMORY_LIMIT)
-# - Database credentials: RABBITMQ_USER, POSTGRES_USER, NEO4J_USER, etc.
+# - Database credentials: RABBITMQ_USER, RABBITMQ_PASS, POSTGRES_USER, NEO4J_USER, etc.
+# - Secrets: JWT_SECRET_KEY, OAUTH_ENCRYPTION_KEY
 
 services:
   rabbitmq:
@@ -35,6 +36,7 @@ services:
     restart: always
     environment:
       JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      OAUTH_ENCRYPTION_KEY: ${OAUTH_ENCRYPTION_KEY}
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     deploy:
@@ -82,6 +84,9 @@ services:
 
   dashboard:
     restart: always
+    environment:
+      RABBITMQ_MANAGEMENT_USER: ${RABBITMQ_USER}
+      RABBITMQ_MANAGEMENT_PASSWORD: ${RABBITMQ_PASS}
     deploy:
       restart_policy:
         condition: any
