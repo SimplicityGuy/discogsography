@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-// use futures::StreamExt; // Not needed for current implementation
 use lapin::{BasicProperties, Channel, Connection, ConnectionProperties, ExchangeKind, options::*, types::FieldTable};
 use std::sync::Arc;
 use std::time::Duration;
@@ -425,5 +424,30 @@ mod tests {
         assert_eq!(AMQP_EXCHANGE_TYPE, ExchangeKind::Topic);
         assert_eq!(AMQP_QUEUE_PREFIX_GRAPHINATOR, "discogsography-graphinator");
         assert_eq!(AMQP_QUEUE_PREFIX_TABLEINATOR, "discogsography-tableinator");
+    }
+
+    #[test]
+    fn test_message_properties_persistent_delivery() {
+        let props = MessageQueue::message_properties();
+        // delivery_mode 2 = persistent (messages survive broker restart)
+        assert_eq!(props.delivery_mode(), &Some(2));
+        assert!(props.content_type().is_some());
+        assert!(props.content_encoding().is_some());
+    }
+
+    #[test]
+    fn test_dlx_exchange_name_format() {
+        let dlx_name = format!("{}.dlx", AMQP_EXCHANGE);
+        assert_eq!(dlx_name, "discogsography-exchange.dlx");
+    }
+
+    #[test]
+    fn test_dlq_queue_names() {
+        for data_type in [DataType::Artists, DataType::Labels, DataType::Masters, DataType::Releases] {
+            let queue_name = format!("{}-{}", AMQP_QUEUE_PREFIX_GRAPHINATOR, data_type);
+            let dlq_name = format!("{}.dlq", queue_name);
+            assert!(dlq_name.ends_with(".dlq"));
+            assert!(dlq_name.contains(data_type.as_str()));
+        }
     }
 }
