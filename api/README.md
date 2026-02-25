@@ -10,7 +10,7 @@ The API service:
 - Issues and validates HS256 JWT access tokens
 - Manages the Discogs OAuth 1.0a OOB flow for users
 - Stores Discogs OAuth access tokens in PostgreSQL
-- Exposes an admin endpoint for configuring Discogs app credentials
+- Reads Discogs app credentials from the `app_config` table (set via `discogs-setup` CLI)
 
 ## Architecture
 
@@ -68,6 +68,49 @@ The API implements Discogs OAuth 1.0a OOB (out-of-band) flow:
 
 After the flow, the Curator service can read these tokens to sync the user's Discogs collection and wantlist.
 
+## Operator Setup
+
+Before users can connect their Discogs accounts, an operator must configure the Discogs app credentials.
+
+### 1. Register a Discogs Developer App
+
+Go to <https://www.discogs.com/settings/developers> and create a new application to obtain a **Consumer Key** and **Consumer Secret**.
+
+### 2. Store Credentials via the CLI
+
+The `discogs-setup` CLI is included in the API container:
+
+```bash
+# Set credentials
+docker exec <api-container> discogs-setup \
+  --consumer-key YOUR_CONSUMER_KEY \
+  --consumer-secret YOUR_CONSUMER_SECRET
+
+# Verify (values are masked)
+docker exec <api-container> discogs-setup --show
+```
+
+The CLI upserts the values into the `app_config` table using the container's existing database connection environment variables. No service restart is required.
+
+### 3. Verify
+
+After running `--show`, output should resemble:
+
+```
+discogs_consumer_key:    ab********************cd
+discogs_consumer_secret: ef********************gh
+```
+
+### Error Without Credentials
+
+If a user attempts to start the Discogs OAuth flow before credentials are configured, the API returns:
+
+```json
+{
+  "detail": "Discogs app credentials not configured. Ask an admin to run discogs-setup on the API container."
+}
+```
+
 ## API Endpoints
 
 ### Authentication
@@ -86,14 +129,6 @@ After the flow, the Curator service can read these tokens to sync the user's Dis
 | POST   | `/api/oauth/verify/discogs`    | Yes           | Complete OAuth with verifier code     |
 | GET    | `/api/oauth/status/discogs`    | Yes           | Check if Discogs account is connected |
 | DELETE | `/api/oauth/revoke/discogs`    | Yes           | Disconnect Discogs account            |
-
-### Admin
-
-| Method | Path                      | Auth Required | Description                         |
-| ------ | ------------------------- | ------------- | ----------------------------------- |
-| PUT    | `/api/admin/config/{key}` | Yes           | Set admin config (Discogs app keys) |
-
-**Admin Config Keys**: `discogs_consumer_key`, `discogs_consumer_secret`
 
 ### Health
 
