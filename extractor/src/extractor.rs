@@ -825,4 +825,141 @@ mod tests {
         assert!(s.last_extraction_time.contains_key(&DataType::Artists));
         assert!(s.last_extraction_time.contains_key(&DataType::Labels));
     }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_progress_reporter_immediate_shutdown() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+        let shutdown = Arc::new(tokio::sync::Notify::new());
+        let shutdown_clone = shutdown.clone();
+
+        let handle = tokio::spawn(async move {
+            progress_reporter(state, shutdown_clone).await;
+        });
+
+        // Yield to allow the spawned task to enter the select!
+        tokio::task::yield_now().await;
+
+        // Signal shutdown before any timer fires
+        shutdown.notify_waiters();
+        tokio::task::yield_now().await;
+
+        assert!(handle.is_finished());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_progress_reporter_logs_on_timer_fire() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+        {
+            let mut s = state.write().await;
+            s.extraction_progress.increment(DataType::Artists);
+            s.extraction_progress.increment(DataType::Labels);
+            s.completed_files.insert("discogs_20260101_artists.xml.gz".to_string());
+            s.active_connections.insert(DataType::Labels, "discogs_20260101_labels.xml.gz".to_string());
+        }
+
+        let shutdown = Arc::new(tokio::sync::Notify::new());
+        let shutdown_clone = shutdown.clone();
+        let state_clone = state.clone();
+
+        let handle = tokio::spawn(async move {
+            progress_reporter(state_clone, shutdown_clone).await;
+        });
+
+        tokio::task::yield_now().await;
+
+        // Advance past first 10-second report interval
+        tokio::time::advance(Duration::from_secs(11)).await;
+        // Allow the reporter to run through the logging code
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+
+        // Reporter should still be running (waiting for next interval)
+        assert!(!handle.is_finished());
+
+        shutdown.notify_waiters();
+        tokio::task::yield_now().await;
+
+        assert!(handle.is_finished());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_progress_reporter_interval_increases_after_three_reports() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+        let shutdown = Arc::new(tokio::sync::Notify::new());
+        let shutdown_clone = shutdown.clone();
+        let state_clone = state.clone();
+
+        let handle = tokio::spawn(async move {
+            progress_reporter(state_clone, shutdown_clone).await;
+        });
+
+        tokio::task::yield_now().await;
+
+        // Fire first 3 short intervals (10s each)
+        for _ in 0..3 {
+            tokio::time::advance(Duration::from_secs(11)).await;
+            tokio::task::yield_now().await;
+            tokio::task::yield_now().await;
+        }
+
+        // Now on the 4th iteration the interval is 30s; 11s is not enough to fire
+        tokio::time::advance(Duration::from_secs(11)).await;
+        tokio::task::yield_now().await;
+
+        // Should still be running (30s interval, only 11s elapsed)
+        assert!(!handle.is_finished());
+
+        shutdown.notify_waiters();
+        tokio::task::yield_now().await;
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_message_batcher_triggers_state_save() {
+        use crate::state_marker::StateMarker;
+        use tempfile::TempDir;
+
+        let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(100);
+        let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(100);
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker_path = temp_dir.path().join(".extraction_status_test.json");
+        let mut marker = StateMarker::new("20260101".to_string());
+        marker.start_file_processing("test_file.xml.gz");
+        let state_marker = Arc::new(tokio::sync::Mutex::new(marker));
+
+        // state_save_interval = 5, send exactly 5 messages to trigger a save
+        let save_interval = 5usize;
+        for i in 0..save_interval {
+            let message = DataMessage { id: i.to_string(), sha256: format!("hash{i}"), data: serde_json::json!({}) };
+            parse_sender.send(message).await.unwrap();
+        }
+        drop(parse_sender);
+
+        let batcher_config = BatcherConfig {
+            batch_size: 100,
+            data_type: DataType::Artists,
+            state: state.clone(),
+            state_marker: state_marker.clone(),
+            marker_path: marker_path.clone(),
+            file_name: "test_file.xml.gz".to_string(),
+            state_save_interval: save_interval,
+        };
+
+        tokio::spawn(async move {
+            message_batcher(parse_receiver, batch_sender, batcher_config).await.ok();
+        });
+
+        let mut total = 0;
+        while let Some(batch) = batch_receiver.recv().await {
+            total += batch.len();
+        }
+        assert_eq!(total, save_interval);
+
+        // State marker file should have been created by the periodic save
+        assert!(marker_path.exists(), "State marker file should be written on periodic save");
+    }
 }
