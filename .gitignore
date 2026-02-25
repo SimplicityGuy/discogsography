@@ -246,6 +246,9 @@ target/criterion/
 cobertura.xml
 tarpaulin-report.html
 
+# LLVM coverage data
+lcov.info
+
 ###
 # Windows
 ###
