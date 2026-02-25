@@ -1,5 +1,4 @@
 [run]
-source = .
 include = schema-init/**
 relative_files = true
 omit =
