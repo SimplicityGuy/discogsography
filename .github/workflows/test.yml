@@ -10,26 +10,6 @@ name: Test
 on:
   workflow_dispatch:
   workflow_call:
-  push:
-    branches:
-      - main
-    paths:
-      - "**/*.py"
-      - "**/pyproject.toml"
-      - "**/uv.lock"
-      - "extractor/**/*.rs"
-      - "extractor/**/Cargo.toml"
-      - ".github/workflows/test.yml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "**/*.py"
-      - "**/pyproject.toml"
-      - "**/uv.lock"
-      - "extractor/**/*.rs"
-      - "extractor/**/Cargo.toml"
-      - ".github/workflows/test.yml"
 
 env:
   CI: true

@@ -185,31 +185,31 @@ test-parallel:
 [group('test')]
 test-api:
     uv run pytest tests/api/ -v \
-        --cov=api --cov-report=xml --cov-report=json --cov-report=term
+        --cov --cov-config=.coveragerc.api --cov-report=xml --cov-report=json --cov-report=term
 
 # Run curator service tests with coverage
 [group('test')]
 test-curator:
     uv run pytest tests/curator/ -v \
-        --cov=curator --cov-report=xml --cov-report=json --cov-report=term
+        --cov --cov-config=.coveragerc.curator --cov-report=xml --cov-report=json --cov-report=term
 
 # Run common/shared library tests with coverage
 [group('test')]
 test-common:
     uv run pytest tests/common/ -v \
-        --cov=common --cov-report=xml --cov-report=json --cov-report=term
+        --cov --cov-config=.coveragerc.common --cov-report=xml --cov-report=json --cov-report=term
 
 # Run dashboard service tests with coverage
 [group('test')]
 test-dashboard:
     uv run pytest tests/dashboard/ -v \
-        --cov=dashboard --cov-report=xml --cov-report=json --cov-report=term
+        --cov --cov-config=.coveragerc.dashboard --cov-report=xml --cov-report=json --cov-report=term
 
 # Run explore service tests with coverage
 [group('test')]
 test-explore:
     uv run pytest tests/explore/ -m 'not e2e' -v \
-        --cov=explore --cov-report=xml --cov-report=json --cov-report=term
+        --cov --cov-config=.coveragerc.explore --cov-report=xml --cov-report=json --cov-report=term
 
 # Run Rust extractor tests (same as extractor-test)
 [group('test')]
@@ -226,19 +226,19 @@ test-extractor-cov:
 [group('test')]
 test-graphinator:
     uv run pytest tests/graphinator/ -v \
-        --cov=graphinator --cov-report=xml --cov-report=json --cov-report=term
+        --cov --cov-config=.coveragerc.graphinator --cov-report=xml --cov-report=json --cov-report=term
 
 # Run schema-init service tests with coverage
 [group('test')]
 test-schema-init:
     uv run pytest tests/schema-init/ -v \
-        --cov=schema-init --cov-report=xml --cov-report=json --cov-report=term
+        --cov --cov-config=.coveragerc.schema-init --cov-report=xml --cov-report=json --cov-report=term
 
 # Run tableinator service tests with coverage
 [group('test')]
 test-tableinator:
     uv run pytest tests/tableinator/ -v \
-        --cov=tableinator --cov-report=xml --cov-report=json --cov-report=term
+        --cov --cov-config=.coveragerc.tableinator --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: dashboard unit tests establishing coverage baseline
 [group('test')]

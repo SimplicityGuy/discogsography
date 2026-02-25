@@ -6,30 +6,6 @@ name: E2E Test
 on:
   workflow_dispatch:
   workflow_call:
-  push:
-    branches:
-      - main
-    paths:
-      - "dashboard/**"
-      - "explore/**"
-      - "tests/dashboard/**"
-      - "tests/explore/**"
-      - ".github/workflows/e2e-test.yml"
-      - "common/**"
-      - "pyproject.toml"
-      - "uv.lock"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "dashboard/**"
-      - "explore/**"
-      - "tests/dashboard/**"
-      - "tests/explore/**"
-      - ".github/workflows/e2e-test.yml"
-      - "common/**"
-      - "pyproject.toml"
-      - "uv.lock"
 
 concurrency:
   group: e2e-${{ github.workflow }}-${{ github.ref }}
