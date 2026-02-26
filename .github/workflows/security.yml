@@ -54,7 +54,7 @@ jobs:
         uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
 
   semgrep:
-    name: semgrep-oss/scan
+    name: Semgrep CE Scan
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -62,7 +62,6 @@ jobs:
       image: semgrep/semgrep
 
     if: github.actor != 'dependabot[bot]'
-    continue-on-error: true
 
     steps:
       - name: 🔀 Checkout repository
