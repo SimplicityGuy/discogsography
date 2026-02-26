@@ -32,10 +32,13 @@ runs:
     - name: 💾 Setup Docker cache paths
       id: cache-setup
       shell: bash
+      env:
+        USE_CACHE: ${{ inputs.use-cache }}
+        RUNNER_TEMP_DIR: ${{ runner.temp }}
       run: |
-        if [[ "${{ inputs.use-cache }}" == "true" ]]; then
-          echo "cache-from=type=local,src=${{ runner.temp }}/.buildx-cache" >> $GITHUB_OUTPUT
-          echo "cache-to=type=local,dest=${{ runner.temp }}/.buildx-cache-new,mode=max" >> $GITHUB_OUTPUT
+        if [[ "$USE_CACHE" == "true" ]]; then
+          echo "cache-from=type=local,src=$RUNNER_TEMP_DIR/.buildx-cache" >> $GITHUB_OUTPUT
+          echo "cache-to=type=local,dest=$RUNNER_TEMP_DIR/.buildx-cache-new,mode=max" >> $GITHUB_OUTPUT
         else
           echo "cache-from=" >> $GITHUB_OUTPUT
           echo "cache-to=" >> $GITHUB_OUTPUT

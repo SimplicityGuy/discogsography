@@ -50,13 +50,32 @@ jobs:
       - name: 🛡️ Run bandit (Python SAST)
         run: uv run bandit -r . -c pyproject.toml
 
-      - name: 🔬 Run semgrep (enhanced Python SAST)
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: "p/security-audit p/python p/owasp-top-ten"
-
       - name: 🌐 Run osv-scanner (multi-ecosystem vulnerability scan)
         uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
+
+  semgrep:
+    name: semgrep-oss/scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    container:
+      image: semgrep/semgrep
+
+    if: github.actor != 'dependabot[bot]'
+    continue-on-error: true
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 🔬 Run semgrep scan
+        run: semgrep scan --config auto --sarif --output semgrep.sarif
+
+      - name: 📤 Upload SARIF to GitHub Advanced Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: semgrep.sarif
+        if: always()
 
   rust-security:
     name: Rust Security

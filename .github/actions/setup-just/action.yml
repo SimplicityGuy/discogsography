@@ -12,16 +12,20 @@ runs:
   steps:
     - name: '🔧 Install just'
       shell: bash
+      env:
+        JUST_VERSION: ${{ inputs.version }}
+        RUNNER_OS: ${{ runner.os }}
+        RUNNER_ARCH: ${{ runner.arch }}
       run: |
-        echo "Installing just version ${{ inputs.version }}..."
+        echo "Installing just version $JUST_VERSION..."
 
         # Determine OS and architecture
-        case "${{ runner.os }}" in
+        case "$RUNNER_OS" in
           Linux)
             PLATFORM="x86_64-unknown-linux-musl"
             ;;
           macOS)
-            if [[ "${{ runner.arch }}" == "ARM64" ]]; then
+            if [[ "$RUNNER_ARCH" == "ARM64" ]]; then
               PLATFORM="aarch64-apple-darwin"
             else
               PLATFORM="x86_64-apple-darwin"
@@ -32,15 +36,15 @@ runs:
             EXT=".zip"
             ;;
           *)
-            echo "Unsupported OS: ${{ runner.os }}"
+            echo "Unsupported OS: $RUNNER_OS"
             exit 1
             ;;
         esac
 
         # Download and install
-        URL="https://github.com/casey/just/releases/download/${{ inputs.version }}/just-${{ inputs.version }}-${PLATFORM}.tar.gz"
-        if [[ "${{ runner.os }}" == "Windows" ]]; then
-          URL="https://github.com/casey/just/releases/download/${{ inputs.version }}/just-${{ inputs.version }}-${PLATFORM}.zip"
+        URL="https://github.com/casey/just/releases/download/$JUST_VERSION/just-$JUST_VERSION-${PLATFORM}.tar.gz"
+        if [[ "$RUNNER_OS" == "Windows" ]]; then
+          URL="https://github.com/casey/just/releases/download/$JUST_VERSION/just-$JUST_VERSION-${PLATFORM}.zip"
           curl -L -o just.zip "$URL"
           unzip -p just.zip just.exe > just.exe
           mkdir -p "$HOME/.local/bin"
