@@ -113,12 +113,10 @@ jobs:
         run: cargo install cargo-audit cargo-deny
 
       - name: 🔍 Run cargo-audit (Rust advisory database scan)
-        working-directory: extractor
         run: cargo audit
 
       - name: 🛡️ Run cargo-deny (Rust license and policy check)
-        working-directory: extractor
-        run: cargo deny check
+        run: cargo deny --manifest-path extractor/Cargo.toml check
 
   secret-scanning:
     name: Secret Scanning

@@ -8,11 +8,8 @@ version = 2
 # They are transitive dependencies with no patched version available upstream.
 ignore = [
     # number_prefix is unmaintained (RUSTSEC-2025-0119); transitive dep of indicatif.
-    # No patched version exists yet — tracked for upstream resolution.
+    # indicatif has not yet migrated to the recommended unit-prefix alternative.
     "RUSTSEC-2025-0119",
-    # rustls-pemfile is unmaintained (RUSTSEC-2025-0134); transitive dep of lapin via tcp-stream.
-    # No patched version exists yet — tracked for upstream resolution.
-    "RUSTSEC-2025-0134",
 ]
 
 [licenses]
