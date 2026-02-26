@@ -110,7 +110,9 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: 📦 Install cargo-audit and cargo-deny
-        run: cargo install cargo-audit cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
 
       - name: 🔍 Run cargo-audit (Rust advisory database scan)
         run: cargo audit

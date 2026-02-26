@@ -4,13 +4,6 @@
 [advisories]
 # Check against the RustSec advisory database
 version = 2
-# Advisories acknowledged below are unmaintained-crate warnings (not CVEs).
-# They are transitive dependencies with no patched version available upstream.
-ignore = [
-    # number_prefix is unmaintained (RUSTSEC-2025-0119); transitive dep of indicatif.
-    # indicatif has not yet migrated to the recommended unit-prefix alternative.
-    "RUSTSEC-2025-0119",
-]
 
 [licenses]
 version = 2
@@ -22,8 +15,6 @@ allow = [
   "BSD-2-Clause",
   "BSD-3-Clause",
   "ISC",
-  "MPL-2.0",
-  "Unicode-DFS-2016",
   "Unicode-3.0",
   "CC0-1.0",
   "CDLA-Permissive-2.0",
