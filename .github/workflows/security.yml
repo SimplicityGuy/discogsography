@@ -19,7 +19,7 @@ on:
       - "**/uv.lock"
       - "extractor/**/*.rs"
       - "extractor/**/Cargo.toml"
-      - "extractor/**/Cargo.lock"
+      - "Cargo.lock"
       - "**/Dockerfile"
       - ".github/workflows/security.yml"
   pull_request:
@@ -31,7 +31,7 @@ on:
       - "**/uv.lock"
       - "extractor/**/*.rs"
       - "extractor/**/Cargo.toml"
-      - "extractor/**/Cargo.lock"
+      - "Cargo.lock"
       - "**/Dockerfile"
       - ".github/workflows/security.yml"
   schedule:
