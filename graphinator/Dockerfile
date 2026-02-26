@@ -5,6 +5,7 @@ ARG PYTHON_VERSION=3.13
 ARG UID=1000
 ARG GID=1000
 
+# nosemgrep: dockerfile.security.missing-user.missing-user
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv

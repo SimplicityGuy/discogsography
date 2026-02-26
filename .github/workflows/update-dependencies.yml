@@ -50,15 +50,19 @@ jobs:
 
       - name: 🚀 Run update script
         id: update
+        env:
+          UPDATE_PYTHON: ${{ github.event.inputs.update_python }}
+          PYTHON_VERSION_INPUT: ${{ github.event.inputs.python_version }}
+          MAJOR_UPGRADES: ${{ github.event.inputs.major_upgrades }}
         run: |
           # Build command based on workflow inputs
           UPDATE_CMD="./scripts/update-project.sh --no-backup"
 
-          if [[ "${{ github.event.inputs.update_python }}" == "true" ]]; then
-            UPDATE_CMD="$UPDATE_CMD --python \"${{ github.event.inputs.python_version }}\""
+          if [[ "$UPDATE_PYTHON" == "true" ]]; then
+            UPDATE_CMD="$UPDATE_CMD --python \"$PYTHON_VERSION_INPUT\""
           fi
 
-          if [[ "${{ github.event.inputs.major_upgrades }}" == "true" ]]; then
+          if [[ "$MAJOR_UPGRADES" == "true" ]]; then
             UPDATE_CMD="$UPDATE_CMD --major"
           fi
 

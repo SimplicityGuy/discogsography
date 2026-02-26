@@ -12,15 +12,15 @@ from urllib.request import Request, urlopen
 def get_queue_stats(
     base_url: str = "http://localhost:15672",
     username: str = "discogsography",
-    password: str = "discogsography",  # noqa: S107  # nosec B107
+    password: str = "discogsography",  # noqa: S107  # nosec B107  # nosemgrep: python.lang.security.audit.hardcoded-password-default-argument.hardcoded-password-default-argument
 ) -> list[dict[str, Any]] | None:
     """Fetch queue statistics from RabbitMQ Management API."""
     credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
     headers = {"Authorization": f"Basic {credentials}"}
 
     try:
-        request = Request(f"{base_url}/api/queues", headers=headers)  # noqa: S310  # nosec B310
-        with urlopen(request) as response:  # noqa: S310  # nosec B310
+        request = Request(f"{base_url}/api/queues", headers=headers)  # noqa: S310  # nosec B310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
+        with urlopen(request) as response:  # noqa: S310  # nosec B310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             data: list[dict[str, Any]] = json.loads(response.read())
             return data
     except URLError as e:

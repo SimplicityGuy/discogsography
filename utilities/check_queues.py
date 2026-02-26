@@ -19,11 +19,11 @@ def check_rabbitmq_queues() -> None:
     auth_header = base64.b64encode(credentials.encode()).decode()
 
     # Create request with auth
-    request = urllib.request.Request(url)  # noqa: S310  # nosec B310
+    request = urllib.request.Request(url)  # noqa: S310  # nosec B310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
     request.add_header("Authorization", f"Basic {auth_header}")
 
     try:
-        with urllib.request.urlopen(request) as response:  # noqa: S310  # nosec B310
+        with urllib.request.urlopen(request) as response:  # noqa: S310  # nosec B310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
             data = json.loads(response.read().decode())
 
         # Filter for graphinator queues

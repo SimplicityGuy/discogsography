@@ -4,6 +4,7 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 from typing import Any
 
@@ -22,6 +23,10 @@ from common import (
 
 
 logger = structlog.get_logger(__name__)
+
+# CORS origins configurable via environment variable (comma-separated list)
+_cors_origins_raw = os.environ.get("CORS_ORIGINS", "")
+_cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()] if _cors_origins_raw else None
 
 # Module-level state
 neo4j_driver: AsyncResilientNeo4jDriver | None = None
@@ -85,7 +90,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_origins or ["http://localhost:3000", "http://localhost:8003"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
