@@ -4,8 +4,16 @@
 [advisories]
 # Check against the RustSec advisory database
 version = 2
-# Deny crates with security vulnerabilities
-ignore = []
+# Advisories acknowledged below are unmaintained-crate warnings (not CVEs).
+# They are transitive dependencies with no patched version available upstream.
+ignore = [
+    # number_prefix is unmaintained (RUSTSEC-2025-0119); transitive dep of indicatif.
+    # No patched version exists yet — tracked for upstream resolution.
+    "RUSTSEC-2025-0119",
+    # rustls-pemfile is unmaintained (RUSTSEC-2025-0134); transitive dep of lapin via tcp-stream.
+    # No patched version exists yet — tracked for upstream resolution.
+    "RUSTSEC-2025-0134",
+]
 
 [licenses]
 version = 2

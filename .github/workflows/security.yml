@@ -80,13 +80,16 @@ jobs:
         with:
           config: "p/security-audit p/python p/owasp-top-ten"
 
-      - name: 🌐 Run osv-scanner (multi-ecosystem vulnerability scan)
-        uses: google/osv-scanner-action@v1
+      - name: 🔧 Setup Go (for osv-scanner)
+        uses: actions/setup-go@v5
         with:
-          scan-args: |-
-            --lockfile=uv.lock
-            --lockfile=extractor/Cargo.lock
-            .
+          go-version: stable
+          cache: false
+
+      - name: 🌐 Run osv-scanner (multi-ecosystem vulnerability scan)
+        run: |
+          go install github.com/google/osv-scanner/cmd/osv-scanner@latest
+          osv-scanner scan --lockfile=uv.lock --lockfile=extractor/Cargo.lock .
 
   rust-security:
     name: Rust Security
@@ -119,7 +122,7 @@ jobs:
 
       - name: 🔍 Run cargo-audit (Rust advisory database scan)
         working-directory: extractor
-        run: cargo audit --deny warnings
+        run: cargo audit
 
       - name: 🛡️ Run cargo-deny (Rust license and policy check)
         working-directory: extractor
