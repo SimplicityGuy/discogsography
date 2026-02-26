@@ -30,6 +30,17 @@ jobs:
     uses: ./.github/workflows/code-quality.yml
     secrets: inherit
 
+  run-security:
+    uses: ./.github/workflows/security.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      security-events: write # Required for SARIF uploads to GitHub Security tab
+
+  run-docker-validate:
+    uses: ./.github/workflows/docker-validate.yml
+    secrets: inherit
+
   # Test workflow runs all service tests in parallel
   # Each service has its own job that runs independently
   run-tests:
@@ -50,9 +61,43 @@ jobs:
       pull-requests: write  # Required for coverage report comments
       statuses: write  # Required for coverage status creation (only used on PRs)
 
+  # ============================================================================
+  # AGGREGATE RESULTS - Waits for all parallel workflows to complete
+  # ============================================================================
+  aggregate-results:
+    runs-on: ubuntu-latest
+    needs:
+      - run-code-quality
+      - run-tests
+      - run-e2e-tests
+      - run-security
+      - run-docker-validate
+    if: always()
+
+    steps:
+      - name: 📊 Check all pipeline results
+        run: |
+          echo "Pipeline Results Summary:"
+          echo "  Code Quality:    ${{ needs.run-code-quality.result }}"
+          echo "  Tests:           ${{ needs.run-tests.result }}"
+          echo "  E2E Tests:       ${{ needs.run-e2e-tests.result }}"
+          echo "  Security:        ${{ needs.run-security.result }}"
+          echo "  Docker Validate: ${{ needs.run-docker-validate.result }}"
+
+          if [[ "${{ needs.run-code-quality.result }}" == "failure" ]] || \
+             [[ "${{ needs.run-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.run-e2e-tests.result }}" == "failure" ]] || \
+             [[ "${{ needs.run-security.result }}" == "failure" ]] || \
+             [[ "${{ needs.run-docker-validate.result }}" == "failure" ]]; then
+            echo "❌ One or more pipeline workflows failed"
+            exit 1
+          fi
+
+          echo "✅ All pipeline workflows passed!"
+
   build-discogsography:
-    # Wait for both test workflows to complete before building
-    needs: [list-sub-projects, run-tests, run-e2e-tests]
+    # Wait for aggregate-results (which ensures all quality gates pass) before building
+    needs: [list-sub-projects, aggregate-results]
 
     runs-on: ubuntu-latest
     timeout-minutes: 30
