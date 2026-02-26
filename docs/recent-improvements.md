@@ -103,8 +103,11 @@ development experience enhancements.
 
 #### Changes
 
-- **Tailwind CSS**: Replaced hand-written CSS with Tailwind CDN (`?plugins=forms,container-queries`), Inter + JetBrains
-  Mono fonts, and Material Symbols Outlined icons
+- **Tailwind CSS**: Replaced hand-written CSS with Tailwind CSS (Inter + JetBrains Mono fonts,
+  Material Symbols Outlined icons). The stylesheet is built at Docker image build time by a
+  dedicated `css-builder` Node stage using the Tailwind CLI (`tailwind.config.js` +
+  `tailwind.input.css` → `dashboard/static/tailwind.css`), eliminating any CDN dependency at
+  runtime.
 - **Logo placeholder**: `<div id="app-logo">` with prominent comment block for easy brand swapping
 - **Service cards**: Per-service sections (`#service-extractor`, `#service-graphinator`, `#service-tableinator`) with
   per-queue-type rows showing state/counts
@@ -117,12 +120,15 @@ development experience enhancements.
 
 #### Static Files
 
-| File                                   | Change                                                     |
-| -------------------------------------- | ---------------------------------------------------------- |
-| `dashboard/static/index.html`          | Complete rewrite (dark Tailwind theme)                     |
-| `dashboard/static/dashboard.js`        | Complete rewrite (Chart.js removed, SVG gauges + CSS bars) |
-| `dashboard/static/styles.css`          | Simplified to base reset + legacy selector stubs           |
-| `tests/dashboard/test_dashboard_ui.py` | Updated Playwright selectors                               |
+| File                                   | Change                                                                     |
+| -------------------------------------- | -------------------------------------------------------------------------- |
+| `dashboard/static/index.html`          | Complete rewrite (dark Tailwind theme)                                     |
+| `dashboard/static/tailwind.css`        | New — generated at Docker build time by css-builder Node stage             |
+| `dashboard/static/styles.css`          | Simplified to base reset + legacy selector stubs                           |
+| `dashboard/static/dashboard.js`        | Complete rewrite (Chart.js removed, SVG gauges + CSS bars)                 |
+| `dashboard/tailwind.config.js`         | New — Tailwind CLI config (content paths, forms + container-queries plugins) |
+| `dashboard/tailwind.input.css`         | New — Tailwind source directives (`@tailwind base/components/utilities`)   |
+| `tests/dashboard/test_dashboard_ui.py` | Updated Playwright selectors                                               |
 
 ### 🧹 Code Simplification & Test Coverage (February 2026)
 

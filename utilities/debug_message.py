@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import os
 import sys
 from typing import Any
 
@@ -10,8 +11,8 @@ import pika
 def get_message_from_queue(
     queue_name: str,
     host: str = "localhost",
-    username: str = "discogsography",
-    password: str = "discogsography",  # noqa: S107  # nosec B107
+    username: str = os.environ.get("RABBITMQ_USER", "discogsography"),
+    password: str = os.environ.get("RABBITMQ_PASSWORD", ""),
 ) -> dict[str, Any] | None:
     """Peek at a message from the queue without consuming it."""
     try:

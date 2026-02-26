@@ -5,6 +5,28 @@ ARG PYTHON_VERSION=3.13
 ARG UID=1000
 ARG GID=1000
 
+# ── CSS build stage ────────────────────────────────────────────────────────────
+# Replaces the Tailwind Play CDN (cdn.tailwindcss.com) with a locally-built
+# stylesheet so we can serve it with a proper SRI hash.  Node is only needed
+# at build time; the final image contains only the generated tailwind.css.
+FROM node:22-slim AS css-builder
+
+WORKDIR /build
+
+# Copy only the files the CLI needs to generate the CSS
+COPY dashboard/tailwind.config.js ./
+COPY dashboard/tailwind.input.css ./
+COPY dashboard/static/index.html ./static/index.html
+
+# Install Tailwind + the forms plugin, then emit a minified stylesheet
+RUN npm install tailwindcss@^3 @tailwindcss/forms@^0.5 --save-dev && \
+    ./node_modules/.bin/tailwindcss \
+        --config tailwind.config.js \
+        --input tailwind.input.css \
+        --output tailwind.css \
+        --minify
+
+# ── Python build stage ─────────────────────────────────────────────────────────
 # nosemgrep: dockerfile.security.missing-user.missing-user
 FROM python:${PYTHON_VERSION}-slim AS builder
 
@@ -95,6 +117,9 @@ WORKDIR /app
 COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
 COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
 COPY --from=builder --chown=discogsography:discogsography /app/dashboard /app/dashboard
+
+# Copy the pre-built Tailwind CSS (replaces the CDN script tag in index.html)
+COPY --from=css-builder --chown=discogsography:discogsography /build/tailwind.css /app/dashboard/static/tailwind.css
 
 # UV not needed at runtime
 

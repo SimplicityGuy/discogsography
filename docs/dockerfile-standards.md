@@ -8,6 +8,42 @@ All Dockerfiles must follow these standards to ensure consistency, security, and
 
 ## 📐 Structure Template
 
+The standard template uses a two-stage build (builder + final). Services that require a build-time
+asset pipeline add a third stage **before** the builder stage.
+
+### Optional: CSS Build Stage (dashboard only)
+
+The dashboard uses a dedicated Node stage to run the Tailwind CLI and produce a minified stylesheet
+at image build time, eliminating any CDN dependency at runtime:
+
+```dockerfile
+# ── CSS build stage ────────────────────────────────────────────────────────────
+FROM node:22-slim AS css-builder
+
+WORKDIR /build
+
+# Copy only the files the CLI needs
+COPY dashboard/tailwind.config.js ./
+COPY dashboard/tailwind.input.css ./
+COPY dashboard/static/index.html ./static/index.html
+
+# Install Tailwind + forms plugin, emit minified stylesheet
+RUN npm install tailwindcss@^3 @tailwindcss/forms@^0.5 --save-dev && \
+    ./node_modules/.bin/tailwindcss \
+        --config tailwind.config.js \
+        --input tailwind.input.css \
+        --output tailwind.css \
+        --minify
+```
+
+The generated `tailwind.css` is copied into the final stage:
+
+```dockerfile
+COPY --from=css-builder --chown=discogsography:discogsography /build/tailwind.css /app/dashboard/static/tailwind.css
+```
+
+### Standard Two-Stage Template
+
 ```dockerfile
 # syntax=docker/dockerfile:1
 
@@ -167,7 +203,6 @@ RUN groupadd -r -g ${GID} discogsography && \
 Additional directories:
 
 - **extractor**: Add `/discogs-data` directory
-- **extractor**: Add `/discogs-data` directory
 
 ### 5. Startup Script
 
@@ -214,7 +249,6 @@ Service-specific additions:
 
 - **dashboard**: All database connections
 - **extractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
-- **extractor**: `DISCOGS_ROOT="/discogs-data"` and `PERIODIC_CHECK_DAYS="15"`
 - **graphinator**: Neo4j connections
 - **tableinator**: PostgreSQL connections
 
@@ -235,7 +269,6 @@ VOLUME ["/logs"]
 Additional volumes:
 
 - **extractor**: Add `"/discogs-data"`
-- **extractor**: Add `"/discogs-data"`
 
 ## 🔧 Service-Specific Requirements
 
@@ -249,29 +282,21 @@ Additional volumes:
 
 ### Dashboard
 
-- Standard configuration
-
+- Three-stage build: `css-builder` (Node) → `builder` (Python) → final
+- `css-builder` stage runs Tailwind CLI to produce `dashboard/static/tailwind.css`
 - Expose port 8003
-
 - All database connections in environment
 
-- Install gcc/g++ for ML libraries
+### API
 
-- Expose ports 8004 and 8005
-
+- Expose ports 8004 (service) and 8005 (health)
 - All database connections in environment
 
-### Python Extractor (extractor)
-
-- Create /discogs-data directory
-- Add /discogs-data volume
-- Special environment variables for Discogs configuration
-
-### Extractor (extractor)
+### Extractor
 
 - Rust-based container using multi-stage build
-- Create /discogs-data directory
-- Add /discogs-data volume
+- Create `/discogs-data` directory
+- Add `/discogs-data` volume
 - Special environment variables for Discogs configuration
 
 ### Graphinator

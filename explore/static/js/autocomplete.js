@@ -52,20 +52,21 @@ class Autocomplete {
             return;
         }
 
-        this.dropdown.innerHTML = this.results.map((item, index) => `
-            <div class="autocomplete-item ${index === this.activeIndex ? 'active' : ''}"
-                 data-index="${index}">
-                <span class="name">${this._escapeHtml(item.name)}</span>
-            </div>
-        `).join('');
+        this.dropdown.replaceChildren(
+            ...this.results.map((item, index) => {
+                const div = document.createElement('div');
+                div.className = `autocomplete-item${index === this.activeIndex ? ' active' : ''}`;
+                div.dataset.index = index;
 
-        // Bind click events
-        this.dropdown.querySelectorAll('.autocomplete-item').forEach(el => {
-            el.addEventListener('click', () => {
-                const idx = parseInt(el.dataset.index);
-                this._selectItem(idx);
-            });
-        });
+                const span = document.createElement('span');
+                span.className = 'name';
+                span.textContent = item.name;
+                div.appendChild(span);
+
+                div.addEventListener('click', () => this._selectItem(index));
+                return div;
+            })
+        );
 
         this.dropdown.classList.add('show');
     }

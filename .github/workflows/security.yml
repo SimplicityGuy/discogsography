@@ -68,7 +68,27 @@ jobs:
         uses: actions/checkout@v4
 
       - name: 🔬 Run semgrep scan
-        run: semgrep scan --config auto --sarif --output semgrep.sarif
+        run: semgrep scan --config auto --error --sarif --output semgrep.sarif
+
+      - name: 🧹 Remove nosemgrep-suppressed findings from SARIF
+        # Semgrep includes `# nosemgrep` suppressed findings in SARIF with a
+        # `suppressions` field. GitHub Code Scanning still creates alerts from
+        # them, even though they are intentionally silenced. Strip them before
+        # upload so GHAS only sees genuinely un-suppressed findings.
+        run: |
+          python3 - <<'EOF'
+          import json
+          with open("semgrep.sarif") as f:
+              sarif = json.load(f)
+          for run in sarif.get("runs", []):
+              run["results"] = [
+                  r for r in run.get("results", [])
+                  if not r.get("suppressions")
+              ]
+          with open("semgrep.sarif", "w") as f:
+              json.dump(sarif, f)
+          EOF
+        if: always()
 
       - name: 📤 Upload SARIF to GitHub Advanced Security
         uses: github/codeql-action/upload-sarif@v4

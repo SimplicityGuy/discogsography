@@ -1,29 +1,25 @@
 #!/usr/bin/env python3
 
-import base64
-import json
+import os
 import sys
 import time
 from typing import Any
-from urllib.error import URLError
-from urllib.request import Request, urlopen
+
+import requests
 
 
 def get_queue_stats(
-    base_url: str = "http://localhost:15672",
-    username: str = "discogsography",
-    password: str = "discogsography",  # noqa: S107  # nosec B107  # nosemgrep: python.lang.security.audit.hardcoded-password-default-argument.hardcoded-password-default-argument
+    base_url: str = os.environ.get("RABBITMQ_URL", "http://localhost:15672"),
+    username: str = os.environ.get("RABBITMQ_USER", "discogsography"),
+    password: str = os.environ.get("RABBITMQ_PASSWORD", ""),
 ) -> list[dict[str, Any]] | None:
     """Fetch queue statistics from RabbitMQ Management API."""
-    credentials = base64.b64encode(f"{username}:{password}".encode()).decode()
-    headers = {"Authorization": f"Basic {credentials}"}
-
     try:
-        request = Request(f"{base_url}/api/queues", headers=headers)  # noqa: S310  # nosec B310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-        with urlopen(request) as response:  # noqa: S310  # nosec B310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-            data: list[dict[str, Any]] = json.loads(response.read())
-            return data
-    except URLError as e:
+        response = requests.get(f"{base_url}/api/queues", auth=(username, password), timeout=10)
+        response.raise_for_status()
+        data: list[dict[str, Any]] = response.json()
+        return data
+    except requests.RequestException as e:
         print(f"Error connecting to RabbitMQ: {e}")
         return None
 

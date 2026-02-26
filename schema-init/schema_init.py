@@ -79,7 +79,7 @@ def _ensure_postgres_database(params: dict[str, Any]) -> None:
                     "✅ PostgreSQL database already exists", database=POSTGRES_DATABASE
                 )
             else:
-                cursor.execute(
+                cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                     sql.SQL("CREATE DATABASE {}").format(
                         sql.Identifier(POSTGRES_DATABASE)
                     )

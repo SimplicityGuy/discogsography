@@ -196,6 +196,8 @@ secrets/
 # Dashboard/Frontend (if applicable)
 node_modules/
 static/build/
+# Generated at Docker build time by the Tailwind CLI; not committed
+dashboard/static/tailwind.css
 
 # uv lock file - DO NOT IGNORE (needed for reproducible builds)
 # uv.lock
