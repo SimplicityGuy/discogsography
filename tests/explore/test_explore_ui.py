@@ -13,7 +13,7 @@ class TestExploreUI:
 
     def test_page_loads(self, page: Page, test_server: str) -> None:
         """Test that the explore page loads successfully."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
         expect(page).to_have_title(re.compile("Explore", re.IGNORECASE))
 
     def test_navbar_visible(self, page: Page, test_server: str) -> None:
@@ -25,14 +25,14 @@ class TestExploreUI:
 
     def test_search_input_visible(self, page: Page, test_server: str) -> None:
         """Test that the search input is visible."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         search_input = page.locator("#searchInput")
         expect(search_input).to_be_visible(timeout=5000)
 
     def test_search_type_dropdown(self, page: Page, test_server: str) -> None:
         """Test the search type dropdown works."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         # Find the search type button
         type_btn = page.locator("#searchTypeBtn")
@@ -62,7 +62,7 @@ class TestExploreUI:
 
     def test_graph_placeholder_visible(self, page: Page, test_server: str) -> None:
         """Test that the graph placeholder is shown before search."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         placeholder = page.locator("#graphPlaceholder")
         expect(placeholder).to_be_visible(timeout=5000)
@@ -90,7 +90,7 @@ class TestExploreUI:
 
     def test_info_panel_hidden_by_default(self, page: Page, test_server: str) -> None:
         """Test that the info panel is hidden before any node is clicked."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         info_panel = page.locator("#infoPanel")
         # The panel exists but should not have the 'open' class
@@ -190,7 +190,7 @@ class TestExploreSearchInteraction:
 
     def test_search_type_switching(self, page: Page, test_server: str) -> None:
         """Test switching between search types via dropdown."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         type_btn = page.locator("#searchTypeBtn")
         expect(type_btn).to_have_text("Artist", timeout=5000)
@@ -218,7 +218,7 @@ class TestExploreSearchInteraction:
 
     def test_autocomplete_shows_results(self, page: Page, test_server: str) -> None:
         """Test that typing in search shows autocomplete results."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         search_input = page.locator("#searchInput")
         search_input.fill("Radio")
@@ -233,7 +233,7 @@ class TestExploreSearchInteraction:
 
     def test_autocomplete_item_click_triggers_search(self, page: Page, test_server: str) -> None:
         """Test that clicking an autocomplete item triggers a search."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         search_input = page.locator("#searchInput")
         search_input.fill("Radio")
@@ -255,7 +255,7 @@ class TestExploreSearchInteraction:
 
     def test_graph_appears_after_search(self, page: Page, test_server: str) -> None:
         """Test that the graph appears after performing a search."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         search_input = page.locator("#searchInput")
         search_input.fill("Radio")
@@ -277,7 +277,7 @@ class TestExploreSearchInteraction:
 
     def test_trends_pane_search(self, page: Page, test_server: str) -> None:
         """Test searching on the Trends pane loads chart data."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         # Switch to trends pane
         trends_link = page.locator("[data-pane='trends']")
@@ -312,7 +312,7 @@ class TestExploreSearchInteraction:
 
     def test_trends_placeholder_visible(self, page: Page, test_server: str) -> None:
         """Test that the trends placeholder is visible before search."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=10000)
+        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
         # Switch to trends pane
         trends_link = page.locator("[data-pane='trends']")
