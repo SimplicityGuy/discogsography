@@ -4,32 +4,7 @@
 name: Code Quality
 
 on:
-  workflow_dispatch:
   workflow_call:
-  push:
-    branches:
-      - main
-    paths:
-      - "**/*.py"
-      - "**/pyproject.toml"
-      - "**/uv.lock"
-      - "**/Dockerfile"
-      - "extractor/**/*.rs"
-      - "extractor/**/Cargo.toml"
-      - ".github/workflows/code-quality.yml"
-      - ".pre-commit-config.yaml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "**/*.py"
-      - "**/pyproject.toml"
-      - "**/uv.lock"
-      - "**/Dockerfile"
-      - "extractor/**/*.rs"
-      - "extractor/**/Cargo.toml"
-      - ".github/workflows/code-quality.yml"
-      - ".pre-commit-config.yaml"
 
 env:
   CI: true

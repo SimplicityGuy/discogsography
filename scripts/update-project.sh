@@ -523,7 +523,7 @@ update_rust_crates() {
 
     if [[ "$BACKUP" == true ]] && [[ "$DRY_RUN" == false ]]; then
         backup_file "extractor/Cargo.toml"
-        backup_file "extractor/Cargo.lock"
+        backup_file "Cargo.lock"
     fi
 
     if [[ "$DRY_RUN" == false ]]; then
@@ -574,7 +574,7 @@ update_rust_crates() {
         print_info "Updating Cargo.lock..."
         if cargo update 2>&1; then
             print_success "Cargo.lock updated with latest compatible versions"
-            FILE_CHANGES+=("extractor/Cargo.lock: Updated to latest compatible versions")
+            FILE_CHANGES+=("Cargo.lock: Updated to latest compatible versions")
             CHANGES_MADE=true
         else
             print_warning "Failed to update Cargo.lock"
@@ -909,7 +909,7 @@ show_file_report() {
         else
             echo "  ✓ extractor/Cargo.toml (constraints unchanged)"
         fi
-        echo "  ✓ extractor/Cargo.lock (updated to latest compatible)"
+        echo "  ✓ Cargo.lock (updated to latest compatible)"
         echo ""
     fi
 

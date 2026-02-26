@@ -1,0 +1,137 @@
+---
+# This workflow runs security scans including dependency vulnerability scanning,
+# secret detection, and container vulnerability scanning.
+# It is called by the build.yml workflow.
+# Workflow linting (actionlint) is handled by pre-commit (see .pre-commit-config.yaml).
+# Dockerfile linting (hadolint) is handled by docker-validate.yml.
+# Covers issue #72: https://github.com/SimplicityGuy/discogsography/issues/72
+name: Security
+
+on:
+  workflow_call:
+  schedule:
+    - cron: "0 4 * * 1" # Weekly Monday 04:00 UTC
+
+env:
+  CI: true
+  PYTHON_VERSION: "3.13"
+
+permissions:
+  contents: read
+  security-events: write # Required for SARIF uploads to GitHub Security tab
+
+jobs:
+  python-security:
+    name: Python Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🔧 Setup Python and UV
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: 📦 Install dependencies
+        run: |
+          uv sync --all-extras
+          uv pip install -e api
+          uv pip install -e common
+          uv pip install -e curator
+          uv pip install -e dashboard
+          uv pip install -e explore
+
+      - name: 🔍 Run pip-audit (Python dependency vulnerability scan)
+        run: uv run pip-audit --desc
+
+      - name: 🛡️ Run bandit (Python SAST)
+        run: uv run bandit -r . -c pyproject.toml
+
+      - name: 🔬 Run semgrep (enhanced Python SAST)
+        uses: semgrep/semgrep-action@v1
+        with:
+          config: "p/security-audit p/python p/owasp-top-ten"
+
+      - name: 🌐 Run osv-scanner (multi-ecosystem vulnerability scan)
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
+
+  rust-security:
+    name: Rust Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🦀 Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: 💾 Cache Rust dependencies
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            extractor/target/
+          key: ${{ runner.os }}-cargo-security-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-security-
+            ${{ runner.os }}-cargo-
+
+      - name: 📦 Install cargo-audit and cargo-deny
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit,cargo-deny
+
+      - name: 🔍 Run cargo-audit (Rust advisory database scan)
+        run: cargo audit
+
+      - name: 🛡️ Run cargo-deny (Rust license and policy check)
+        run: cargo deny --manifest-path extractor/Cargo.toml check
+
+  secret-scanning:
+    name: Secret Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0 # Full history required for comprehensive secret scanning
+
+      - name: 🔑 Run TruffleHog (secret detection)
+        uses: trufflesecurity/trufflehog@v3.93.4
+        with:
+          path: ./
+          extra_args: --only-verified
+
+  container-scanning:
+    name: Container Scanning
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 🔀 Checkout repository
+        uses: actions/checkout@v6
+
+      - name: 🛡️ Run trivy (filesystem vulnerability scan)
+        uses: aquasecurity/trivy-action@0.34.1
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-results.sarif
+          severity: HIGH,CRITICAL
+
+      - name: 📤 Upload trivy SARIF results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif

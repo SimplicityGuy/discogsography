@@ -2,48 +2,31 @@
 name: Docker Validate
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
-    paths:
-      - "**/Dockerfile"
-      - "docker-compose*.yml"
-      - ".dockerignore"
-      - ".github/workflows/docker-validate.yml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "**/Dockerfile"
-      - "docker-compose*.yml"
-      - ".dockerignore"
-      - ".github/workflows/docker-validate.yml"
+  workflow_call:
+    inputs:
+      simple-matrix:
+        description: "Simple JSON array of sub-project names"
+        required: true
+        type: string
 
 concurrency:
   group: docker-validate-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
-  COMPOSE_VERSION: "v2.32.0"
   PYTHON_VERSION: "3.13"
 
 permissions:
   contents: read
 
 jobs:
-  list-sub-projects:
-    uses: ./.github/workflows/list-sub-projects.yml
-
   validate-dockerfiles:
-    needs: list-sub-projects
-
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     strategy:
       matrix:
-        sub-project: ${{ fromJson(needs.list-sub-projects.outputs.simple-matrix) }}
+        sub-project: ${{ fromJson(inputs.simple-matrix) }}
 
     steps:
       - name: 🔀 Checkout repository
@@ -63,102 +46,3 @@ jobs:
           echo "🔨 Testing build for ${{ matrix.sub-project }}..."
           docker build --build-arg PYTHON_VERSION=${{ env.PYTHON_VERSION }} -f ${{ matrix.sub-project }}/Dockerfile . --target builder
           echo "✅ ${{ matrix.sub-project }} builder stage built successfully"
-
-  validate-compose:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-
-    steps:
-      - name: 🔀 Checkout repository
-        uses: actions/checkout@v6
-
-      - name: 🔧 Install docker-compose
-        uses: alexellis/arkade-get@1eef818e467c387d3f50cfe0d2c565d1cbe82b03 # master
-        with:
-          docker-compose: latest
-
-      - name: 📋 Validate docker-compose syntax
-        run: |
-          docker-compose config --quiet
-          echo "✅ docker-compose.yml is valid"
-
-          if [ -f docker-compose.prod.yml ]; then
-            docker-compose -f docker-compose.yml -f docker-compose.prod.yml config --quiet
-            echo "✅ docker-compose.prod.yml overlay is valid"
-          fi
-
-      - name: 🔍 Check docker-compose services
-        run: |
-          services=$(docker-compose config --services | sort | tr "\n" " " | sed "s/ $//")
-          expected="api curator dashboard explore extractor graphinator neo4j postgres rabbitmq redis schema-init tableinator"
-
-          if [ "$services" != "$expected" ]; then
-            echo "❌ Service mismatch!"
-            echo "Expected: $expected"
-            echo "Got: $services"
-            exit 1
-          fi
-          echo "✅ All expected services are defined"
-
-      - name: 🔒 Validate service dependencies
-        run: |
-          # Check that services have correct dependencies
-          deps=$(docker-compose config | yq eval '.services.dashboard.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j postgres rabbitmq redis schema-init" ]; then
-            echo "❌ Dashboard should depend on neo4j, postgres, rabbitmq, redis, and schema-init"
-            exit 1
-          fi
-
-          deps=$(docker-compose config | yq eval '.services.extractor.depends_on | keys | .[]' -)
-          if [ "$deps" != "rabbitmq" ]; then
-            echo "❌ Extractor should only depend on rabbitmq"
-            exit 1
-          fi
-
-          deps=$(docker-compose config | yq eval '.services.graphinator.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j rabbitmq schema-init" ]; then
-            echo "❌ Graphinator should depend on neo4j, rabbitmq, and schema-init"
-            exit 1
-          fi
-
-          deps=$(docker-compose config | yq eval '.services.explore.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j schema-init" ]; then
-            echo "❌ Explore should depend on neo4j and schema-init"
-            exit 1
-          fi
-
-          deps=$(docker-compose config | yq eval '.services.tableinator.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "postgres rabbitmq schema-init" ]; then
-            echo "❌ Tableinator should depend on postgres, rabbitmq, and schema-init"
-            exit 1
-          fi
-
-          deps=$(docker-compose config | yq eval '.services.schema-init.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j postgres" ]; then
-            echo "❌ Schema-init should depend on neo4j and postgres"
-            exit 1
-          fi
-
-          echo "✅ Service dependencies are correct"
-
-      - name: 🛡️ Check for security best practices
-        run: |
-          # Check that services run as non-root user
-          for service in dashboard explore extractor graphinator schema-init tableinator; do
-            user=$(docker-compose config | yq eval ".services.$service.user" -)
-            if [ "$user" != "1000:1000" ]; then
-              echo "❌ $service should run as user 1000:1000"
-              exit 1
-            fi
-          done
-          echo "✅ All services run as non-root user"
-
-          # Check security options
-          for service in dashboard explore extractor graphinator schema-init tableinator; do
-            security_opt=$(docker-compose config | yq eval ".services.$service.security_opt[]" - | grep "no-new-privileges:true" || true)
-            if [ -z "$security_opt" ]; then
-              echo "❌ $service should have no-new-privileges security option"
-              exit 1
-            fi
-          done
-          echo "✅ Security options are properly set"

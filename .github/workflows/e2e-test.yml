@@ -1,10 +1,9 @@
 ---
 # This workflow runs all E2E tests including desktop browsers and mobile device emulation.
-# It can be called from other workflows or triggered directly on service changes.
+# It is called by the build.yml workflow.
 name: E2E Test
 
 on:
-  workflow_dispatch:
   workflow_call:
 
 concurrency:

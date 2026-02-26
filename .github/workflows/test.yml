@@ -1,6 +1,6 @@
 ---
 # This is the primary test workflow that runs all unit and integration tests.
-# It is called by the build.yml workflow and can also be triggered independently.
+# It is called by the build.yml workflow.
 # For E2E and browser testing, see e2e-test.yml.
 #
 # All service test jobs run in PARALLEL to minimize total workflow time.
@@ -8,7 +8,6 @@
 name: Test
 
 on:
-  workflow_dispatch:
   workflow_call:
 
 env:
@@ -406,50 +405,3 @@ jobs:
           CODECOV_GCOV_DISABLE: 1
           CODECOV_XCODE_DISABLE: 1
           CODECOV_PYTHON_DISABLE: 1
-
-  # ============================================================================
-  # AGGREGATE RESULTS - Waits for all parallel tests to complete
-  # ============================================================================
-  aggregate-results:
-    runs-on: ubuntu-latest
-    needs:
-      - test-api
-      - test-curator
-      - test-common
-      - test-dashboard
-      - test-explore
-      - test-graphinator
-      - test-schema-init
-      - test-tableinator
-      - test-extractor
-    if: always()
-
-    steps:
-      - name: 📊 Check test results
-        run: |
-          echo "Test Results Summary:"
-          echo "  API: ${{ needs.test-api.result }}"
-          echo "  Curator: ${{ needs.test-curator.result }}"
-          echo "  Common: ${{ needs.test-common.result }}"
-          echo "  Dashboard: ${{ needs.test-dashboard.result }}"
-          echo "  Explore: ${{ needs.test-explore.result }}"
-          echo "  Graphinator: ${{ needs.test-graphinator.result }}"
-          echo "  Schema-Init: ${{ needs.test-schema-init.result }}"
-          echo "  Tableinator: ${{ needs.test-tableinator.result }}"
-          echo "  Extractor: ${{ needs.test-extractor.result }}"
-
-          # Check if any test job failed
-          if [[ "${{ needs.test-api.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-curator.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-common.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-dashboard.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-explore.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-graphinator.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-schema-init.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-tableinator.result }}" == "failure" ]] || \
-             [[ "${{ needs.test-extractor.result }}" == "failure" ]]; then
-            echo "❌ One or more test jobs failed"
-            exit 1
-          fi
-
-          echo "✅ All test jobs passed!"
