@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
 """Check RabbitMQ queue status for graphinator."""
 
-import base64
-import json
 import os
-from urllib.error import URLError
-import urllib.request
+
+import requests
 
 
 def check_rabbitmq_queues() -> None:
@@ -15,17 +13,10 @@ def check_rabbitmq_queues() -> None:
     username = os.environ.get("RABBITMQ_USER", "discogsography")
     password = os.environ.get("RABBITMQ_PASSWORD", "")
 
-    # Create basic auth header
-    credentials = f"{username}:{password}"
-    auth_header = base64.b64encode(credentials.encode()).decode()
-
-    # Create request with auth
-    request = urllib.request.Request(url)  # noqa: S310  # nosec B310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-    request.add_header("Authorization", f"Basic {auth_header}")
-
     try:
-        with urllib.request.urlopen(request) as response:  # noqa: S310  # nosec B310  # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
-            data = json.loads(response.read().decode())
+        response = requests.get(url, auth=(username, password), timeout=10)
+        response.raise_for_status()
+        data = response.json()
 
         # Filter for graphinator queues
         graphinator_queues = [q for q in data if "graphinator" in q.get("name", "")]
@@ -70,13 +61,14 @@ def check_rabbitmq_queues() -> None:
                     print(f"    - Tag: {consumer_tag}")
                     print(f"      Connection: {connection_name}")
 
-    except URLError as e:
+    except requests.ConnectionError:
         print(f"Error: Could not connect to RabbitMQ management API at {url}")
-        print(f"Details: {e}")
         print("\nMake sure:")
         print("1. RabbitMQ is running (docker-compose up -d)")
         print("2. Management plugin is enabled")
         print("3. Port 15672 is accessible")
+    except requests.HTTPError as e:
+        print(f"Error: HTTP {e.response.status_code} from RabbitMQ management API")
     except Exception as e:
         print(f"Unexpected error: {e}")
 
