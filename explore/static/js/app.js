@@ -255,7 +255,7 @@ class ExploreApp {
         }
 
         title.textContent = details.name || nodeId;
-        body.innerHTML = this._renderDetails(details, type);
+        body.replaceChildren(...this._renderDetails(details, type));
 
         // Wire up the explore button if present
         const exploreBtn = body.querySelector('.explore-node-btn');
@@ -285,65 +285,76 @@ class ExploreApp {
     }
 
     _renderDetails(details, type) {
-        let html = '';
+        const nodes = [];
 
         // Explore button for navigable types
         const explorableTypes = ['artist', 'genre', 'label', 'style'];
         if (explorableTypes.includes(type)) {
-            html += `<button class="btn btn-sm btn-outline-primary w-100 mb-3 explore-node-btn" data-name="${this._escapeAttr(details.name)}" data-type="${type}"><i class="fas fa-project-diagram me-1"></i>Explore ${details.name}</button>`;
+            const btn = document.createElement('button');
+            btn.className = 'btn btn-sm btn-outline-primary w-100 mb-3 explore-node-btn';
+            btn.dataset.name = details.name;
+            btn.dataset.type = type;
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-project-diagram me-1';
+            btn.append(icon, `Explore ${details.name}`);
+            nodes.push(btn);
         }
 
         if (type === 'artist') {
-            html += this._detailStat('Releases', details.release_count || 0);
-            if (details.genres && details.genres.length) {
-                html += this._detailTags('Genres', details.genres);
-            }
-            if (details.styles && details.styles.length) {
-                html += this._detailTags('Styles', details.styles);
-            }
-            if (details.groups && details.groups.length) {
-                html += this._detailTags('Groups', details.groups);
-            }
+            nodes.push(this._detailStat('Releases', details.release_count || 0));
+            if (details.genres && details.genres.length) nodes.push(this._detailTags('Genres', details.genres));
+            if (details.styles && details.styles.length) nodes.push(this._detailTags('Styles', details.styles));
+            if (details.groups && details.groups.length) nodes.push(this._detailTags('Groups', details.groups));
         } else if (type === 'release') {
-            if (details.year) html += this._detailStat('Year', details.year);
-            if (details.artists && details.artists.length) {
-                html += this._detailTags('Artists', details.artists);
-            }
-            if (details.labels && details.labels.length) {
-                html += this._detailTags('Labels', details.labels);
-            }
-            if (details.genres && details.genres.length) {
-                html += this._detailTags('Genres', details.genres);
-            }
-            if (details.styles && details.styles.length) {
-                html += this._detailTags('Styles', details.styles);
-            }
+            if (details.year) nodes.push(this._detailStat('Year', details.year));
+            if (details.artists && details.artists.length) nodes.push(this._detailTags('Artists', details.artists));
+            if (details.labels && details.labels.length) nodes.push(this._detailTags('Labels', details.labels));
+            if (details.genres && details.genres.length) nodes.push(this._detailTags('Genres', details.genres));
+            if (details.styles && details.styles.length) nodes.push(this._detailTags('Styles', details.styles));
         } else if (type === 'label') {
-            html += this._detailStat('Releases', details.release_count || 0);
+            nodes.push(this._detailStat('Releases', details.release_count || 0));
         } else if (type === 'genre' || type === 'style') {
-            html += this._detailStat('Artists', details.artist_count || 0);
+            nodes.push(this._detailStat('Artists', details.artist_count || 0));
         }
 
-        return html || '<p class="text-muted">No additional details</p>';
+        if (nodes.length === 0) {
+            const p = document.createElement('p');
+            p.className = 'text-muted';
+            p.textContent = 'No additional details';
+            nodes.push(p);
+        }
+
+        return nodes;
     }
 
     _detailStat(label, value) {
-        return `<div class="detail-stat"><span class="label">${label}</span><span class="value">${label === 'Year' ? value : (typeof value === 'number' ? value.toLocaleString() : value)}</span></div>`;
+        const div = document.createElement('div');
+        div.className = 'detail-stat';
+        const labelEl = document.createElement('span');
+        labelEl.className = 'label';
+        labelEl.textContent = label;
+        const valueEl = document.createElement('span');
+        valueEl.className = 'value';
+        valueEl.textContent = label === 'Year' ? value : (typeof value === 'number' ? value.toLocaleString() : value);
+        div.append(labelEl, valueEl);
+        return div;
     }
 
     _detailTags(label, tags) {
-        const tagsHtml = tags.map(t => `<span class="detail-tag">${this._escapeHtml(t)}</span>`).join('');
-        return `<div class="detail-section"><h6>${label}</h6><div class="detail-tags">${tagsHtml}</div></div>`;
-    }
-
-    _escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
-    }
-
-    _escapeAttr(text) {
-        return text.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        const section = document.createElement('div');
+        section.className = 'detail-section';
+        const heading = document.createElement('h6');
+        heading.textContent = label;
+        const tagsDiv = document.createElement('div');
+        tagsDiv.className = 'detail-tags';
+        tags.forEach(t => {
+            const span = document.createElement('span');
+            span.className = 'detail-tag';
+            span.textContent = t;
+            tagsDiv.appendChild(span);
+        });
+        section.append(heading, tagsDiv);
+        return section;
     }
 }
 

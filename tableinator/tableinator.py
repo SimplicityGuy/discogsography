@@ -565,7 +565,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
         async with connection_pool.connection() as conn:
             async with conn.cursor() as cursor:
                 # Check existing hash and update in a single transaction
-                await cursor.execute(
+                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                     sql.SQL("SELECT hash FROM {table} WHERE data_id = %s;").format(
                         table=sql.Identifier(data_type)
                     ),
@@ -581,7 +581,7 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
                     return
 
                 # Insert or update record in same transaction
-                await cursor.execute(
+                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                     sql.SQL(
                         "INSERT INTO {table} (hash, data_id, data) VALUES (%s, %s, %s) "
                         "ON CONFLICT (data_id) DO UPDATE SET (hash, data_id, data) = (EXCLUDED.hash, EXCLUDED.data_id, EXCLUDED.data);"

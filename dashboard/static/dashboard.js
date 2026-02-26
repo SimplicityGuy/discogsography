@@ -427,13 +427,27 @@ class Dashboard {
         const levelCls = { info: 'text-emerald-500', warning: 'text-orange-500', error: 'text-red-500' };
         const levelLbl = { info: '[INFO]',            warning: '[WARN]',          error: '[ERR]'        };
 
-        container.innerHTML = this.activityLog.map(e => `
-            <div class="flex items-start space-x-4 log-entry">
-                <span class="text-zinc-600 shrink-0">${e.timestamp}</span>
-                <span class="${levelCls[e.type] || 'text-emerald-500'} font-bold shrink-0">${levelLbl[e.type] || '[INFO]'}</span>
-                <span class="text-zinc-300">${e.message}</span>
-            </div>
-        `).join('');
+        container.replaceChildren(
+            ...this.activityLog.map(e => {
+                const row = document.createElement('div');
+                row.className = 'flex items-start space-x-4 log-entry';
+
+                const ts = document.createElement('span');
+                ts.className = 'text-zinc-600 shrink-0';
+                ts.textContent = e.timestamp;
+
+                const lv = document.createElement('span');
+                lv.className = `${levelCls[e.type] || 'text-emerald-500'} font-bold shrink-0`;
+                lv.textContent = levelLbl[e.type] || '[INFO]';
+
+                const msg = document.createElement('span');
+                msg.className = 'text-zinc-300';
+                msg.textContent = e.message;
+
+                row.append(ts, lv, msg);
+                return row;
+            })
+        );
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────

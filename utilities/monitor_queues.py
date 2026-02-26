@@ -2,6 +2,7 @@
 
 import base64
 import json
+import os
 import sys
 import time
 from typing import Any
@@ -10,9 +11,9 @@ from urllib.request import Request, urlopen
 
 
 def get_queue_stats(
-    base_url: str = "http://localhost:15672",
-    username: str = "discogsography",
-    password: str = "discogsography",  # noqa: S107  # nosec B107  # nosemgrep: python.lang.security.audit.hardcoded-password-default-argument.hardcoded-password-default-argument
+    base_url: str = os.environ.get("RABBITMQ_URL", "http://localhost:15672"),
+    username: str = os.environ.get("RABBITMQ_USER", "discogsography"),
+    password: str = os.environ.get("RABBITMQ_PASSWORD", ""),
 ) -> list[dict[str, Any]] | None:
     """Fetch queue statistics from RabbitMQ Management API."""
     credentials = base64.b64encode(f"{username}:{password}".encode()).decode()

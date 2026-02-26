@@ -259,7 +259,7 @@ class PostgreSQLBatchProcessor:
             async with conn.cursor() as cursor:
                 # Step 1: Fetch all existing hashes in one query
                 data_ids = [msg.data_id for msg in messages]
-                await cursor.execute(
+                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                     sql.SQL(
                         "SELECT data_id, hash FROM {table} WHERE data_id = ANY(%s)"
                     ).format(table=sql.Identifier(data_type)),

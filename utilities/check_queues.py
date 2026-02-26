@@ -10,9 +10,10 @@ import urllib.request
 
 def check_rabbitmq_queues() -> None:
     """Check the status of graphinator queues in RabbitMQ."""
-    url = "http://localhost:15672/api/queues"
-    username = os.getenv("RABBITMQ_USER", "discogsography")
-    password = os.getenv("RABBITMQ_PASS", "discogsography")  # nosec B105
+    base_url = os.environ.get("RABBITMQ_URL", "http://localhost:15672")
+    url = f"{base_url}/api/queues"
+    username = os.environ.get("RABBITMQ_USER", "discogsography")
+    password = os.environ.get("RABBITMQ_PASSWORD", "")
 
     # Create basic auth header
     credentials = f"{username}:{password}"
