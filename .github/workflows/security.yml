@@ -81,7 +81,7 @@ jobs:
           config: "p/security-audit p/python p/owasp-top-ten"
 
       - name: 🌐 Run osv-scanner (multi-ecosystem vulnerability scan)
-        uses: google/osv-scanner-action@v2.3.3
+        uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
 
   rust-security:
     name: Rust Security
