@@ -59,8 +59,11 @@ discogsography/
 │   └── __init__.py
 ├── 📊 dashboard/           # Real-time monitoring dashboard
 │   ├── dashboard.py        # FastAPI backend with WebSocket
+│   ├── tailwind.config.js  # Tailwind CLI configuration (content paths, plugins)
+│   ├── tailwind.input.css  # Tailwind source directives (@tailwind base/…)
 │   ├── static/             # Frontend HTML/CSS/JS (Tailwind, SVG gauges)
 │   │   ├── index.html
+│   │   ├── tailwind.css    # Generated at Docker build time by css-builder stage
 │   │   ├── styles.css
 │   │   └── dashboard.js
 │   ├── README.md

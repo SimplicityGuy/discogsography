@@ -100,6 +100,25 @@ on:
 1. Assigns reviewers
 1. Sends Discord notification
 
+### 🛡️ Security Workflow (`security.yml`)
+
+**Trigger**: Called by `build.yml`, weekly schedule (Monday 04:00 UTC) **Purpose**: Comprehensive
+security scanning across Python, Rust, secrets, and containers
+
+**Jobs**:
+
+1. **Python Security** 🐍 — `pip-audit` (dependency vulnerabilities), `bandit` (SAST), `osv-scanner` (multi-ecosystem)
+1. **Semgrep CE Scan** 🔬 — Static analysis with SARIF upload to GitHub Advanced Security; suppressed findings (`# nosemgrep`) are stripped before upload
+1. **Rust Security** 🦀 — `cargo-audit` (advisory database), `cargo-deny` (license and policy checks)
+1. **Secret Scanning** 🔑 — TruffleHog on full history (`fetch-depth: 0`), verified secrets only
+1. **Container Scanning** 🐳 — Trivy filesystem scan for HIGH/CRITICAL CVEs, SARIF uploaded to GitHub Security tab
+
+**Key Features**:
+
+- 🔒 Minimal permissions (`contents: read`, `security-events: write`)
+- 📤 SARIF results uploaded to GitHub Advanced Security for all scanners
+- 🚫 Semgrep job skipped for Dependabot PRs (`github.actor != 'dependabot[bot]'`)
+
 ### 🧹 Cleanup Workflows
 
 #### Cache Cleanup (`cleanup-cache.yml`)

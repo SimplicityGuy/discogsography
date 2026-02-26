@@ -115,8 +115,18 @@ uv run pytest tests/dashboard/test_dashboard_api_integration.py -v
 The frontend consists of static files in the `static/` directory:
 
 - `index.html` - Main dashboard page (Tailwind CSS, dark theme)
+- `tailwind.css` - Minified Tailwind stylesheet — **generated at Docker build time** (see below)
 - `styles.css` - Base reset and legacy selector stubs
 - `dashboard.js` - WebSocket client and UI update logic
+
+Two additional files in `dashboard/` (not `static/`) drive the CSS build:
+
+- `tailwind.config.js` - Tailwind CLI configuration (content paths, forms plugin)
+- `tailwind.input.css` - Tailwind source directives (`@tailwind base/components/utilities`)
+
+The Docker build uses a dedicated **`css-builder`** stage (Node 22) to run the Tailwind CLI, which
+scans `index.html` and emits a minified `tailwind.css` into the final image. No CDN dependency is
+needed at runtime.
 
 ## Docker
 
