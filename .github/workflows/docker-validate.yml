@@ -2,24 +2,12 @@
 name: Docker Validate
 
 on:
-  workflow_dispatch:
   workflow_call:
-  push:
-    branches:
-      - main
-    paths:
-      - "**/Dockerfile"
-      - "docker-compose*.yml"
-      - ".dockerignore"
-      - ".github/workflows/docker-validate.yml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "**/Dockerfile"
-      - "docker-compose*.yml"
-      - ".dockerignore"
-      - ".github/workflows/docker-validate.yml"
+    inputs:
+      simple-matrix:
+        description: "Simple JSON array of sub-project names"
+        required: true
+        type: string
 
 concurrency:
   group: docker-validate-${{ github.workflow }}-${{ github.ref }}
@@ -33,18 +21,13 @@ permissions:
   contents: read
 
 jobs:
-  list-sub-projects:
-    uses: ./.github/workflows/list-sub-projects.yml
-
   validate-dockerfiles:
-    needs: list-sub-projects
-
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     strategy:
       matrix:
-        sub-project: ${{ fromJson(needs.list-sub-projects.outputs.simple-matrix) }}
+        sub-project: ${{ fromJson(inputs.simple-matrix) }}
 
     steps:
       - name: 🔀 Checkout repository

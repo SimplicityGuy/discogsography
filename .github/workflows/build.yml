@@ -38,8 +38,11 @@ jobs:
       security-events: write # Required for SARIF uploads to GitHub Security tab
 
   run-docker-validate:
+    needs: [list-sub-projects]
     uses: ./.github/workflows/docker-validate.yml
     secrets: inherit
+    with:
+      simple-matrix: ${{ needs.list-sub-projects.outputs.simple-matrix }}
 
   # Test workflow runs all service tests in parallel
   # Each service has its own job that runs independently

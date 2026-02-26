@@ -1,6 +1,6 @@
 ---
 # This is the primary test workflow that runs all unit and integration tests.
-# It is called by the build.yml workflow and can also be triggered independently.
+# It is called by the build.yml workflow.
 # For E2E and browser testing, see e2e-test.yml.
 #
 # All service test jobs run in PARALLEL to minimize total workflow time.
@@ -8,7 +8,6 @@
 name: Test
 
 on:
-  workflow_dispatch:
   workflow_call:
 
 env:

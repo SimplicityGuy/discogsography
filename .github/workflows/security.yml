@@ -1,39 +1,14 @@
 ---
 # This workflow runs security scans including dependency vulnerability scanning,
 # secret detection, and container vulnerability scanning.
-# It is called by the build.yml workflow and can also be triggered independently.
+# It is called by the build.yml workflow.
 # Workflow linting (actionlint) is handled by pre-commit (see .pre-commit-config.yaml).
 # Dockerfile linting (hadolint) is handled by docker-validate.yml.
 # Covers issue #72: https://github.com/SimplicityGuy/discogsography/issues/72
 name: Security
 
 on:
-  workflow_dispatch:
   workflow_call:
-  push:
-    branches:
-      - main
-    paths:
-      - "**/*.py"
-      - "**/pyproject.toml"
-      - "**/uv.lock"
-      - "extractor/**/*.rs"
-      - "extractor/**/Cargo.toml"
-      - "Cargo.lock"
-      - "**/Dockerfile"
-      - ".github/workflows/security.yml"
-  pull_request:
-    branches:
-      - main
-    paths:
-      - "**/*.py"
-      - "**/pyproject.toml"
-      - "**/uv.lock"
-      - "extractor/**/*.rs"
-      - "extractor/**/Cargo.toml"
-      - "Cargo.lock"
-      - "**/Dockerfile"
-      - ".github/workflows/security.yml"
   schedule:
     - cron: "0 4 * * 1" # Weekly Monday 04:00 UTC
 
