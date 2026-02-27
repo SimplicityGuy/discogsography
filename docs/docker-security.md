@@ -101,10 +101,10 @@ These secrets are **never passed as plain environment variables in production**.
 
 | Secret | `_FILE` env var | Plain env var (dev only) |
 |--------|-----------------|--------------------------|
-| RabbitMQ password | `RABBITMQ_PASSWORD_FILE` | `RABBITMQ_DEFAULT_PASS` |
-| RabbitMQ username | `RABBITMQ_USERNAME_FILE` | `RABBITMQ_DEFAULT_USER` |
+| RabbitMQ password | `RABBITMQ_PASSWORD_FILE` | `RABBITMQ_PASSWORD` |
+| RabbitMQ username | `RABBITMQ_USERNAME_FILE` | `RABBITMQ_USERNAME` |
 | PostgreSQL password | `POSTGRES_PASSWORD_FILE` | `POSTGRES_PASSWORD` |
-| PostgreSQL username | `POSTGRES_USER_FILE` | `POSTGRES_USER` |
+| PostgreSQL username | `POSTGRES_USERNAME_FILE` | `POSTGRES_USERNAME` |
 | Neo4j password | (via entrypoint wrapper) | `NEO4J_AUTH` |
 | JWT secret key | `JWT_SECRET_KEY_FILE` | `JWT_SECRET_KEY` |
 | OAuth encryption key | `OAUTH_ENCRYPTION_KEY_FILE` | `OAUTH_ENCRYPTION_KEY` |
