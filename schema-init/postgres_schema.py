@@ -129,7 +129,7 @@ _USER_TABLES: list[tuple[str, str]] = [
             title        VARCHAR(500),
             artist       VARCHAR(500),
             year         INTEGER,
-            format       VARCHAR(255),
+            formats      JSONB,
             label        VARCHAR(255),
             condition    VARCHAR(100),
             rating       SMALLINT,
