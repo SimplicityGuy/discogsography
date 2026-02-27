@@ -369,7 +369,7 @@ async def insert_with_prepared(conn, records: list[dict]):
 # 3. Connection pooling
 async def create_pool():
     return await asyncpg.create_pool(
-        host=POSTGRES_HOST,
+        host=POSTGRES_ADDRESS,
         port=POSTGRES_PORT,
         user=POSTGRES_USER,
         password=POSTGRES_PASSWORD,
