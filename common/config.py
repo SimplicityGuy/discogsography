@@ -57,6 +57,24 @@ def _build_amqp_url() -> str:
     return f"amqp://{_url_quote(user, safe='')}:{_url_quote(password, safe='')}@{host}:{port}/%2F"
 
 
+def _build_neo4j_uri() -> str:
+    """Build Neo4j bolt URI from plain hostname environment variable."""
+    host = getenv("NEO4J_HOST", "localhost")
+    return f"bolt://{host}:7687"
+
+
+def _build_postgres_connstr() -> str:
+    """Build PostgreSQL host:port connection string from plain hostname environment variable."""
+    host = getenv("POSTGRES_HOST", "localhost")
+    return f"{host}:5432"
+
+
+def _build_redis_url() -> str:
+    """Build Redis connection URL from plain hostname environment variable."""
+    host = getenv("REDIS_HOST", "localhost")
+    return f"redis://{host}:6379/0"
+
+
 @dataclass(frozen=True)
 class ExtractorConfig:
     """Configuration for the extractor service."""
@@ -108,12 +126,11 @@ class GraphinatorConfig:
     def from_env(cls) -> "GraphinatorConfig":
         """Create configuration from environment variables."""
         amqp_connection = _build_amqp_url()
-        neo4j_host = getenv("NEO4J_HOST")
         neo4j_username = get_secret("NEO4J_USERNAME")
         neo4j_password = get_secret("NEO4J_PASSWORD")
 
         missing_vars = []
-        if not neo4j_host:
+        if not getenv("NEO4J_HOST"):
             missing_vars.append("NEO4J_HOST")
         if not neo4j_username:
             missing_vars.append("NEO4J_USERNAME")
@@ -125,7 +142,7 @@ class GraphinatorConfig:
 
         return cls(
             amqp_connection=amqp_connection,
-            neo4j_host=cast("str", neo4j_host),
+            neo4j_host=_build_neo4j_uri(),
             neo4j_username=cast("str", neo4j_username),
             neo4j_password=cast("str", neo4j_password),
         )
@@ -145,13 +162,12 @@ class TableinatorConfig:
     def from_env(cls) -> "TableinatorConfig":
         """Create configuration from environment variables."""
         amqp_connection = _build_amqp_url()
-        postgres_host = getenv("POSTGRES_HOST")
         postgres_username = get_secret("POSTGRES_USERNAME")
         postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
 
         missing_vars = []
-        if not postgres_host:
+        if not getenv("POSTGRES_HOST"):
             missing_vars.append("POSTGRES_HOST")
         if not postgres_username:
             missing_vars.append("POSTGRES_USERNAME")
@@ -165,7 +181,7 @@ class TableinatorConfig:
 
         return cls(
             amqp_connection=amqp_connection,
-            postgres_host=cast("str", postgres_host),
+            postgres_host=_build_postgres_connstr(),
             postgres_username=cast("str", postgres_username),
             postgres_password=cast("str", postgres_password),
             postgres_database=cast("str", postgres_database),
@@ -346,7 +362,7 @@ class DashboardConfig:
         tableinator_config = TableinatorConfig.from_env()
 
         # Redis configuration
-        redis_host = getenv("REDIS_HOST", "redis://localhost:6379/0")
+        redis_host = _build_redis_url()
 
         # Get RabbitMQ credentials
         rabbitmq_username = get_secret("RABBITMQ_USERNAME", "discogsography")
@@ -392,13 +408,13 @@ class ApiConfig:
     postgres_password: str
     postgres_database: str
     jwt_secret_key: str
+    neo4j_host: str
+    neo4j_username: str
+    neo4j_password: str
     redis_host: str = "redis://redis:6379/0"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30
     discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
-    neo4j_host: str | None = None
-    neo4j_username: str | None = None
-    neo4j_password: str | None = None
     cors_origins: list[str] | None = None
     snapshot_ttl_days: int = 28
     snapshot_max_nodes: int = 100
@@ -407,14 +423,16 @@ class ApiConfig:
     @classmethod
     def from_env(cls) -> "ApiConfig":
         """Create configuration from environment variables."""
-        postgres_host = getenv("POSTGRES_HOST")
         postgres_username = get_secret("POSTGRES_USERNAME")
         postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
         jwt_secret_key = get_secret("JWT_SECRET_KEY")
 
+        neo4j_username = get_secret("NEO4J_USERNAME")
+        neo4j_password = get_secret("NEO4J_PASSWORD")
+
         missing_vars = []
-        if not postgres_host:
+        if not getenv("POSTGRES_HOST"):
             missing_vars.append("POSTGRES_HOST")
         if not postgres_username:
             missing_vars.append("POSTGRES_USERNAME")
@@ -424,11 +442,17 @@ class ApiConfig:
             missing_vars.append("POSTGRES_DATABASE")
         if not jwt_secret_key:
             missing_vars.append("JWT_SECRET_KEY")
+        if not getenv("NEO4J_HOST"):
+            missing_vars.append("NEO4J_HOST")
+        if not neo4j_username:
+            missing_vars.append("NEO4J_USERNAME")
+        if not neo4j_password:
+            missing_vars.append("NEO4J_PASSWORD")
 
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-        redis_host = getenv("REDIS_HOST", "redis://redis:6379/0")
+        redis_host = _build_redis_url()
         jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
         if jwt_algorithm != "HS256":
             raise ValueError(f"Unsupported JWT algorithm: {jwt_algorithm}. Only HS256 is supported.")
@@ -441,9 +465,6 @@ class ApiConfig:
             "DISCOGS_USER_AGENT",
             "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography",
         )
-        neo4j_host = getenv("NEO4J_HOST") or None
-        neo4j_username = getenv("NEO4J_USERNAME") or None
-        neo4j_password = getenv("NEO4J_PASSWORD") or None
 
         cors_origins_env = getenv("CORS_ORIGINS")
         cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else None
@@ -463,7 +484,7 @@ class ApiConfig:
         oauth_encryption_key = get_secret("OAUTH_ENCRYPTION_KEY") or None
 
         return cls(
-            postgres_host=cast("str", postgres_host),
+            postgres_host=_build_postgres_connstr(),
             postgres_username=cast("str", postgres_username),
             postgres_password=cast("str", postgres_password),
             postgres_database=cast("str", postgres_database),
@@ -472,9 +493,9 @@ class ApiConfig:
             jwt_algorithm=jwt_algorithm,
             jwt_expire_minutes=jwt_expire_minutes,
             discogs_user_agent=discogs_user_agent,
-            neo4j_host=neo4j_host,
-            neo4j_username=neo4j_username,
-            neo4j_password=neo4j_password,
+            neo4j_host=_build_neo4j_uri(),
+            neo4j_username=cast("str", neo4j_username),
+            neo4j_password=cast("str", neo4j_password),
             cors_origins=cors_origins,
             snapshot_ttl_days=snapshot_ttl_days,
             snapshot_max_nodes=snapshot_max_nodes,
@@ -499,16 +520,14 @@ class CuratorConfig:
     @classmethod
     def from_env(cls) -> "CuratorConfig":
         """Create configuration from environment variables."""
-        postgres_host = getenv("POSTGRES_HOST")
         postgres_username = get_secret("POSTGRES_USERNAME")
         postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
-        neo4j_host = getenv("NEO4J_HOST")
         neo4j_username = get_secret("NEO4J_USERNAME")
         neo4j_password = get_secret("NEO4J_PASSWORD")
 
         missing_vars = []
-        if not postgres_host:
+        if not getenv("POSTGRES_HOST"):
             missing_vars.append("POSTGRES_HOST")
         if not postgres_username:
             missing_vars.append("POSTGRES_USERNAME")
@@ -516,7 +535,7 @@ class CuratorConfig:
             missing_vars.append("POSTGRES_PASSWORD")
         if not postgres_database:
             missing_vars.append("POSTGRES_DATABASE")
-        if not neo4j_host:
+        if not getenv("NEO4J_HOST"):
             missing_vars.append("NEO4J_HOST")
         if not neo4j_username:
             missing_vars.append("NEO4J_USERNAME")
@@ -535,11 +554,11 @@ class CuratorConfig:
         cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else None
 
         return cls(
-            postgres_host=cast("str", postgres_host),
+            postgres_host=_build_postgres_connstr(),
             postgres_username=cast("str", postgres_username),
             postgres_password=cast("str", postgres_password),
             postgres_database=cast("str", postgres_database),
-            neo4j_host=cast("str", neo4j_host),
+            neo4j_host=_build_neo4j_uri(),
             neo4j_username=cast("str", neo4j_username),
             neo4j_password=cast("str", neo4j_password),
             discogs_user_agent=discogs_user_agent,
@@ -563,12 +582,11 @@ class ExploreConfig:
     @classmethod
     def from_env(cls) -> "ExploreConfig":
         """Create configuration from environment variables."""
-        neo4j_host = getenv("NEO4J_HOST")
         neo4j_username = get_secret("NEO4J_USERNAME")
         neo4j_password = get_secret("NEO4J_PASSWORD")
 
         missing_vars = []
-        if not neo4j_host:
+        if not getenv("NEO4J_HOST"):
             missing_vars.append("NEO4J_HOST")
         if not neo4j_username:
             missing_vars.append("NEO4J_USERNAME")
@@ -582,7 +600,7 @@ class ExploreConfig:
         jwt_secret_key = get_secret("JWT_SECRET_KEY") or None
 
         return cls(
-            neo4j_host=cast("str", neo4j_host),
+            neo4j_host=_build_neo4j_uri(),
             neo4j_username=cast("str", neo4j_username),
             neo4j_password=cast("str", neo4j_password),
             jwt_secret_key=jwt_secret_key,

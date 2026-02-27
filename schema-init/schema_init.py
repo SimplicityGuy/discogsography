@@ -33,11 +33,12 @@ logger = structlog.get_logger(__name__)
 
 # ── Configuration from environment ───────────────────────────────────────────
 
-NEO4J_HOST = os.environ.get("NEO4J_HOST", "bolt://neo4j:7687")
+_neo4j_host = os.environ.get("NEO4J_HOST", "localhost")
+NEO4J_URI = f"bolt://{_neo4j_host}:7687"
 NEO4J_USERNAME = os.environ.get("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "discogsography")
 
-POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "postgres:5432")
+POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")
 POSTGRES_USERNAME = os.environ.get("POSTGRES_USERNAME", "discogsography")
 POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "discogsography")
 POSTGRES_DATABASE = os.environ.get("POSTGRES_DATABASE", "discogsography")
@@ -119,7 +120,7 @@ async def _init_neo4j() -> bool:
     driver: AsyncResilientNeo4jDriver | None = None
     try:
         driver = AsyncResilientNeo4jDriver(
-            uri=NEO4J_HOST,
+            uri=NEO4J_URI,
             auth=(NEO4J_USERNAME, NEO4J_PASSWORD),
         )
 

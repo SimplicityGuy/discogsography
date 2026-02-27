@@ -28,13 +28,13 @@ Environment variables:
 
 ```bash
 # PostgreSQL connection
-POSTGRES_HOST=postgres:5432
+POSTGRES_HOST=postgres
 POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
 
 # Redis (OAuth state + JTI blacklist storage)
-REDIS_HOST=redis://redis:6379/0
+REDIS_HOST=redis
 
 # JWT signing secret (shared with Curator)
 JWT_SECRET_KEY=your-secret-key-here

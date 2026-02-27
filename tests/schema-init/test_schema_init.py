@@ -260,7 +260,7 @@ class TestInitNeo4j:
         with (
             patch("schema_init.AsyncResilientNeo4jDriver", return_value=mock_driver) as MockDriver,
             patch("schema_init.create_neo4j_schema", new_callable=AsyncMock),
-            patch("schema_init.NEO4J_HOST", "bolt://myhost:7687"),
+            patch("schema_init.NEO4J_URI", "bolt://myhost:7687"),
             patch("schema_init.NEO4J_USERNAME", "myuser"),
             patch("schema_init.NEO4J_PASSWORD", "mypass"),
         ):
@@ -364,7 +364,7 @@ class TestModuleVariables:
     """Verify module-level environment variable defaults."""
 
     def test_neo4j_host_has_default(self) -> None:
-        assert schema_init.NEO4J_HOST
+        assert schema_init.NEO4J_URI
 
     def test_postgres_host_has_default(self) -> None:
         assert schema_init.POSTGRES_HOST

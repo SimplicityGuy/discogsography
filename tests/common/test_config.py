@@ -66,7 +66,7 @@ class TestGraphinatorConfig:
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
         monkeypatch.setenv("RABBITMQ_HOST", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
-        monkeypatch.setenv("NEO4J_HOST", "bolt://neo4j:7687")
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "secret")
 
@@ -94,7 +94,7 @@ class TestTableinatorConfig:
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
         monkeypatch.setenv("RABBITMQ_HOST", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
-        monkeypatch.setenv("POSTGRES_HOST", "pghost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "pghost")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
@@ -335,11 +335,11 @@ class TestDashboardConfig:
         """Test custom REDIS_HOST is read from environment (line 317)."""
         from common import DashboardConfig
 
-        monkeypatch.setenv("REDIS_HOST", "redis://myredis:6380/1")
+        monkeypatch.setenv("REDIS_HOST", "myredis")
 
         config = DashboardConfig.from_env()
 
-        assert config.redis_host == "redis://myredis:6380/1"
+        assert config.redis_host == "redis://myredis:6379/0"
 
 
 class TestExploreConfig:
@@ -402,7 +402,7 @@ class TestApiConfig:
         """Test ApiConfig with all required environment variables."""
         from common.config import ApiConfig
 
-        monkeypatch.setenv("POSTGRES_HOST", "pghost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "pghost")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
@@ -428,7 +428,7 @@ class TestApiConfig:
 
         config = ApiConfig.from_env()
 
-        assert config.redis_host == "redis://redis:6379/0"
+        assert config.redis_host == "redis://localhost:6379/0"
         assert config.jwt_algorithm == "HS256"
         assert config.jwt_expire_minutes == 30
         assert "discogsography" in config.discogs_user_agent
@@ -438,14 +438,14 @@ class TestApiConfig:
         from common.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
-        monkeypatch.setenv("REDIS_HOST", "redis://myredis:6380/1")
+        monkeypatch.setenv("REDIS_HOST", "myredis")
         monkeypatch.setenv("JWT_ALGORITHM", "HS256")
         monkeypatch.setenv("JWT_EXPIRE_MINUTES", "60")
         monkeypatch.setenv("DISCOGS_USER_AGENT", "CustomAgent/2.0")
 
         config = ApiConfig.from_env()
 
-        assert config.redis_host == "redis://myredis:6380/1"
+        assert config.redis_host == "redis://myredis:6379/0"
         assert config.jwt_expire_minutes == 60
         assert config.discogs_user_agent == "CustomAgent/2.0"
 
@@ -501,11 +501,11 @@ class TestCuratorConfig:
         """Test CuratorConfig with all required environment variables."""
         from common.config import CuratorConfig
 
-        monkeypatch.setenv("POSTGRES_HOST", "pghost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "pghost")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
-        monkeypatch.setenv("NEO4J_HOST", "bolt://neo4j:7687")
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
 
@@ -599,8 +599,8 @@ class TestApiConfigFromEnv:
     """Test ApiConfig.from_env NEO4J optional variable branches."""
 
     def test_from_env_without_neo4j_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Lines 406-408: NEO4J_* vars absent → neo4j fields are None."""
-        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
+        """NEO4J_* vars absent → ValueError (NEO4J is required)."""
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
@@ -611,19 +611,17 @@ class TestApiConfigFromEnv:
 
         from common.config import ApiConfig
 
-        config = ApiConfig.from_env()
-        assert config.neo4j_host is None
-        assert config.neo4j_username is None
-        assert config.neo4j_password is None
+        with pytest.raises(ValueError, match="NEO4J_HOST"):
+            ApiConfig.from_env()
 
     def test_from_env_with_neo4j_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """NEO4J_* vars present → neo4j fields are populated."""
-        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
-        monkeypatch.setenv("NEO4J_HOST", "bolt://neo4j:7687")
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
 
@@ -637,7 +635,7 @@ class TestApiConfigFromEnv:
     def test_from_env_missing_required_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Missing required var raises ValueError."""
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
-        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
@@ -737,12 +735,12 @@ class TestCuratorConfigNoJwtRequired:
     def test_curator_config_works_without_jwt_secret(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from common.config import CuratorConfig
 
-        monkeypatch.setenv("POSTGRES_HOST", "pghost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "pghost")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
         monkeypatch.setenv("RABBITMQ_URL", "amqp://localhost/")
-        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost:7687")
+        monkeypatch.setenv("NEO4J_HOST", "localhost")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "password")
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
@@ -786,7 +784,7 @@ class TestConfigMissingVars:
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.setenv("POSTGRES_DATABASE", "db")
-        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_HOST", "localhost")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
         with pytest.raises(ValueError, match="POSTGRES_HOST"):
@@ -800,7 +798,7 @@ class TestConfigMissingVars:
         monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.setenv("POSTGRES_DATABASE", "db")
-        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_HOST", "localhost")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
         with pytest.raises(ValueError, match="POSTGRES_USERNAME"):
@@ -814,7 +812,7 @@ class TestConfigMissingVars:
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.delenv("POSTGRES_DATABASE", raising=False)
-        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_HOST", "localhost")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
         with pytest.raises(ValueError, match="POSTGRES_DATABASE"):
@@ -828,7 +826,7 @@ class TestConfigMissingVars:
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.setenv("POSTGRES_DATABASE", "db")
-        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_HOST", "localhost")
         monkeypatch.delenv("NEO4J_USERNAME", raising=False)
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
         with pytest.raises(ValueError, match="NEO4J_USERNAME"):
@@ -842,7 +840,7 @@ class TestConfigMissingVars:
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.setenv("POSTGRES_DATABASE", "db")
-        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_HOST", "localhost")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
         with pytest.raises(ValueError, match="NEO4J_PASSWORD"):
@@ -913,7 +911,7 @@ class TestGetSecretViaFromEnv:
         username_file.write_text("graph_user\n")
         password_file.write_text("graph_pass\n")
 
-        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost:7687")
+        monkeypatch.setenv("NEO4J_HOST", "localhost")
         monkeypatch.setenv("NEO4J_USERNAME_FILE", str(username_file))
         monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(password_file))
         monkeypatch.delenv("NEO4J_USERNAME", raising=False)
@@ -932,7 +930,7 @@ class TestGetSecretViaFromEnv:
         user_file.write_text("table_user\n")
         pass_file.write_text("table_pass\n")
 
-        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME_FILE", str(user_file))
         monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(pass_file))
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
@@ -956,7 +954,7 @@ class TestGetSecretViaFromEnv:
         jwt_file.write_text("api_jwt_secret\n")
         oauth_file.write_text("api_fernet_key\n")
 
-        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME_FILE", str(user_file))
         monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(pass_file))
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
@@ -986,11 +984,11 @@ class TestGetSecretViaFromEnv:
         neo_user_file.write_text("cur_neo_user\n")
         neo_pass_file.write_text("cur_neo_pass\n")
 
-        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME_FILE", str(pg_user_file))
         monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(pg_pass_file))
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
-        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost:7687")
+        monkeypatch.setenv("NEO4J_HOST", "localhost")
         monkeypatch.setenv("NEO4J_USERNAME_FILE", str(neo_user_file))
         monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(neo_pass_file))
         monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
@@ -1015,7 +1013,7 @@ class TestGetSecretViaFromEnv:
         neo_pass_file.write_text("exp_neo_pass\n")
         jwt_file.write_text("exp_jwt_secret\n")
 
-        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost:7687")
+        monkeypatch.setenv("NEO4J_HOST", "localhost")
         monkeypatch.setenv("NEO4J_USERNAME_FILE", str(neo_user_file))
         monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(neo_pass_file))
         monkeypatch.setenv("JWT_SECRET_KEY_FILE", str(jwt_file))
