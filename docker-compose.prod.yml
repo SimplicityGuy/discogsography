@@ -26,8 +26,8 @@ services:
   rabbitmq:
     restart: always
     environment:
-      RABBITMQ_DEFAULT_USER_FILE: /run/secrets/rabbitmq_user
-      RABBITMQ_DEFAULT_PASS_FILE: /run/secrets/rabbitmq_pass
+      RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_pass
     secrets:
       - rabbitmq_user
       - rabbitmq_pass
