@@ -18,7 +18,7 @@ pub struct ExtractorConfig {
 impl Default for ExtractorConfig {
     fn default() -> Self {
         Self {
-            amqp_connection: "amqp://localhost:5672".to_string(),
+            amqp_connection: build_amqp_url("discogsography", "discogsography", "localhost", "5672"),
             discogs_root: PathBuf::from("/discogs-data"),
             periodic_check_days: 15,
             health_port: 8000,
@@ -31,11 +31,33 @@ impl Default for ExtractorConfig {
     }
 }
 
+/// Read a secret value from a `<VAR>_FILE` path if set, else fall back to the plain `<VAR>`
+/// environment variable, then to the provided default.
+fn read_secret(env_var: &str, default: &str) -> Result<String> {
+    let file_var = format!("{}_FILE", env_var);
+    if let Ok(file_path) = std::env::var(&file_var) {
+        return std::fs::read_to_string(&file_path)
+            .map(|s| s.trim().to_string())
+            .with_context(|| format!("Cannot read secret file for {}: {:?}", env_var, file_path));
+    }
+    Ok(std::env::var(env_var).unwrap_or_else(|_| default.to_string()))
+}
+
+/// Build an AMQP connection URL from its component parts, percent-encoding credentials.
+fn build_amqp_url(user: &str, password: &str, host: &str, port: &str) -> String {
+    let encoded_user = urlencoding::encode(user);
+    let encoded_password = urlencoding::encode(password);
+    format!("amqp://{}:{}@{}:{}/%2F", encoded_user, encoded_password, host, port)
+}
+
 impl ExtractorConfig {
-    /// Load configuration from environment variables (drop-in replacement for extractor)
+    /// Load configuration from environment variables.
     pub fn from_env() -> Result<Self> {
-        // Use same environment variables as Python extractor for drop-in compatibility
-        let amqp_connection = std::env::var("AMQP_CONNECTION").context("AMQP_CONNECTION environment variable is required")?;
+        let user = read_secret("RABBITMQ_USER", "discogsography")?;
+        let password = read_secret("RABBITMQ_PASSWORD", "discogsography")?;
+        let host = std::env::var("RABBITMQ_HOST").unwrap_or_else(|_| "rabbitmq".to_string());
+        let port = std::env::var("RABBITMQ_PORT").unwrap_or_else(|_| "5672".to_string());
+        let amqp_connection = build_amqp_url(&user, &password, &host, &port);
 
         let discogs_root = PathBuf::from(std::env::var("DISCOGS_ROOT").unwrap_or_else(|_| "/discogs-data".to_string()));
 
@@ -67,7 +89,7 @@ mod tests {
         assert_eq!(config.progress_log_interval, 1000);
         assert_eq!(config.state_save_interval, 5000);
         assert_eq!(config.health_port, 8000);
-        assert_eq!(config.amqp_connection, "amqp://localhost:5672");
+        assert_eq!(config.amqp_connection, "amqp://discogsography:discogsography@localhost:5672/%2F");
         assert_eq!(config.discogs_root, PathBuf::from("/discogs-data"));
     }
 
@@ -79,28 +101,39 @@ mod tests {
 
     #[test]
     #[serial]
-    fn test_from_env_with_amqp() {
+    fn test_from_env_with_rabbitmq_credentials() {
         unsafe {
-            env::set_var("AMQP_CONNECTION", "amqp://test:5672");
+            env::set_var("RABBITMQ_USER", "testuser");
+            env::set_var("RABBITMQ_PASSWORD", "testpass");
+            env::set_var("RABBITMQ_HOST", "mybroker");
+            env::set_var("RABBITMQ_PORT", "5673");
         }
 
         let config = ExtractorConfig::from_env().unwrap();
-        assert_eq!(config.amqp_connection, "amqp://test:5672");
+        assert_eq!(config.amqp_connection, "amqp://testuser:testpass@mybroker:5673/%2F");
 
         unsafe {
-            env::remove_var("AMQP_CONNECTION");
+            env::remove_var("RABBITMQ_USER");
+            env::remove_var("RABBITMQ_PASSWORD");
+            env::remove_var("RABBITMQ_HOST");
+            env::remove_var("RABBITMQ_PORT");
         }
     }
 
     #[test]
     #[serial]
-    fn test_from_env_missing_amqp() {
+    fn test_from_env_uses_credential_defaults() {
         unsafe {
-            env::remove_var("AMQP_CONNECTION");
+            env::remove_var("RABBITMQ_USER");
+            env::remove_var("RABBITMQ_PASSWORD");
+            env::remove_var("RABBITMQ_HOST");
+            env::remove_var("RABBITMQ_PORT");
+            env::remove_var("RABBITMQ_USER_FILE");
+            env::remove_var("RABBITMQ_PASSWORD_FILE");
         }
 
-        let result = ExtractorConfig::from_env();
-        assert!(result.is_err());
+        let config = ExtractorConfig::from_env().unwrap();
+        assert_eq!(config.amqp_connection, "amqp://discogsography:discogsography@rabbitmq:5672/%2F");
     }
 
     #[test]
@@ -108,7 +141,10 @@ mod tests {
     fn test_from_env_with_all_settings() {
         // Lock to prevent concurrent env var access
         unsafe {
-            env::set_var("AMQP_CONNECTION", "amqp://test:5672");
+            env::set_var("RABBITMQ_USER", "testuser");
+            env::set_var("RABBITMQ_PASSWORD", "testpass");
+            env::remove_var("RABBITMQ_HOST");
+            env::remove_var("RABBITMQ_PORT");
             env::remove_var("DISCOGS_ROOT");
             env::remove_var("PERIODIC_CHECK_DAYS");
             env::remove_var("BATCH_SIZE");
@@ -116,7 +152,7 @@ mod tests {
         }
 
         let config = ExtractorConfig::from_env().unwrap();
-        assert_eq!(config.amqp_connection, "amqp://test:5672");
+        assert_eq!(config.amqp_connection, "amqp://testuser:testpass@rabbitmq:5672/%2F");
 
         unsafe {
             env::set_var("DISCOGS_ROOT", "/custom/path");
@@ -132,7 +168,8 @@ mod tests {
         assert_eq!(config2.max_workers, 8);
 
         unsafe {
-            env::remove_var("AMQP_CONNECTION");
+            env::remove_var("RABBITMQ_USER");
+            env::remove_var("RABBITMQ_PASSWORD");
             env::remove_var("DISCOGS_ROOT");
             env::remove_var("PERIODIC_CHECK_DAYS");
             env::remove_var("BATCH_SIZE");
@@ -144,23 +181,17 @@ mod tests {
     #[serial]
     fn test_from_env_default_discogs_root() {
         unsafe {
-            env::set_var("AMQP_CONNECTION", "amqp://test:5672");
             env::remove_var("DISCOGS_ROOT");
         }
 
         let config = ExtractorConfig::from_env().unwrap();
         assert_eq!(config.discogs_root, PathBuf::from("/discogs-data"));
-
-        unsafe {
-            env::remove_var("AMQP_CONNECTION");
-        }
     }
 
     #[test]
     #[serial]
     fn test_from_env_invalid_periodic_check_days() {
         unsafe {
-            env::set_var("AMQP_CONNECTION", "amqp://test:5672");
             env::set_var("PERIODIC_CHECK_DAYS", "invalid");
         }
 
@@ -168,7 +199,6 @@ mod tests {
         assert_eq!(config.periodic_check_days, 15); // Should use default
 
         unsafe {
-            env::remove_var("AMQP_CONNECTION");
             env::remove_var("PERIODIC_CHECK_DAYS");
         }
     }
@@ -192,10 +222,6 @@ mod tests {
     #[test]
     #[serial]
     fn test_from_env_fixed_values() {
-        unsafe {
-            env::set_var("AMQP_CONNECTION", "amqp://test:5672");
-        }
-
         let config = ExtractorConfig::from_env().unwrap();
 
         // These should always be fixed for drop-in compatibility
@@ -203,9 +229,5 @@ mod tests {
         assert_eq!(config.progress_log_interval, 1000);
         assert_eq!(config.state_save_interval, 5000);
         assert_eq!(config.health_port, 8000);
-
-        unsafe {
-            env::remove_var("AMQP_CONNECTION");
-        }
     }
 }

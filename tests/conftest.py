@@ -138,7 +138,10 @@ def sample_master_data() -> dict[str, Any]:
 def setup_test_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Set up test environment variables."""
     test_env = {
-        "AMQP_CONNECTION": "amqp://test:test@localhost:5672/",
+        "RABBITMQ_USER": "test",
+        "RABBITMQ_PASSWORD": "test",
+        "RABBITMQ_HOST": "localhost",
+        "RABBITMQ_PORT": "5672",
         "DISCOGS_ROOT": str(tmp_path / "test-discogs"),
         "NEO4J_ADDRESS": "bolt://localhost:7687",
         "NEO4J_USERNAME": "test",

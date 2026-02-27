@@ -6,6 +6,7 @@ from os import getenv
 from pathlib import Path
 import sys
 from typing import TYPE_CHECKING, Any, cast, overload
+from urllib.parse import quote as _url_quote
 import warnings
 
 
@@ -43,6 +44,19 @@ def get_secret(env_var: str, default: str | None = None) -> str | None:
     return getenv(env_var) if default is None else getenv(env_var, default)
 
 
+def _build_amqp_url() -> str:
+    """Build AMQP connection URL from component secrets and environment variables.
+
+    Reads credentials via the standard _FILE secret convention (Docker secrets),
+    falling back to plain environment variables, then to defaults.
+    """
+    user = get_secret("RABBITMQ_USER", "discogsography")
+    password = get_secret("RABBITMQ_PASSWORD", "discogsography")
+    host = getenv("RABBITMQ_HOST", "rabbitmq")
+    port = getenv("RABBITMQ_PORT", "5672")
+    return f"amqp://{_url_quote(user, safe='')}:{_url_quote(password, safe='')}@{host}:{port}/%2F"
+
+
 @dataclass(frozen=True)
 class ExtractorConfig:
     """Configuration for the extractor service."""
@@ -55,9 +69,7 @@ class ExtractorConfig:
     @classmethod
     def from_env(cls) -> "ExtractorConfig":
         """Create configuration from environment variables."""
-        amqp_connection = getenv("AMQP_CONNECTION")
-        if not amqp_connection:
-            raise ValueError("AMQP_CONNECTION environment variable is required")
+        amqp_connection = _build_amqp_url()
 
         discogs_root = Path(getenv("DISCOGS_ROOT", "/discogs-data"))
 
@@ -95,14 +107,12 @@ class GraphinatorConfig:
     @classmethod
     def from_env(cls) -> "GraphinatorConfig":
         """Create configuration from environment variables."""
-        amqp_connection = getenv("AMQP_CONNECTION")
+        amqp_connection = _build_amqp_url()
         neo4j_address = getenv("NEO4J_ADDRESS")
         neo4j_username = get_secret("NEO4J_USERNAME")
         neo4j_password = get_secret("NEO4J_PASSWORD")
 
         missing_vars = []
-        if not amqp_connection:
-            missing_vars.append("AMQP_CONNECTION")
         if not neo4j_address:
             missing_vars.append("NEO4J_ADDRESS")
         if not neo4j_username:
@@ -114,7 +124,7 @@ class GraphinatorConfig:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
         return cls(
-            amqp_connection=cast("str", amqp_connection),
+            amqp_connection=amqp_connection,
             neo4j_address=cast("str", neo4j_address),
             neo4j_username=cast("str", neo4j_username),
             neo4j_password=cast("str", neo4j_password),
@@ -134,15 +144,13 @@ class TableinatorConfig:
     @classmethod
     def from_env(cls) -> "TableinatorConfig":
         """Create configuration from environment variables."""
-        amqp_connection = getenv("AMQP_CONNECTION")
+        amqp_connection = _build_amqp_url()
         postgres_address = getenv("POSTGRES_ADDRESS")
         postgres_username = get_secret("POSTGRES_USERNAME")
         postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
 
         missing_vars = []
-        if not amqp_connection:
-            missing_vars.append("AMQP_CONNECTION")
         if not postgres_address:
             missing_vars.append("POSTGRES_ADDRESS")
         if not postgres_username:
@@ -156,7 +164,7 @@ class TableinatorConfig:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
         return cls(
-            amqp_connection=cast("str", amqp_connection),
+            amqp_connection=amqp_connection,
             postgres_address=cast("str", postgres_address),
             postgres_username=cast("str", postgres_username),
             postgres_password=cast("str", postgres_password),
@@ -323,8 +331,8 @@ class DashboardConfig:
     postgres_username: str
     postgres_password: str
     postgres_database: str
-    rabbitmq_management_user: str
-    rabbitmq_management_password: str
+    rabbitmq_user: str
+    rabbitmq_password: str
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] | None = None  # None = default to localhost only
     cache_warming_enabled: bool = True  # Enable cache warming on service startup
@@ -340,9 +348,9 @@ class DashboardConfig:
         # Redis configuration
         redis_url = getenv("REDIS_URL", "redis://localhost:6379/0")
 
-        # Get RabbitMQ management credentials
-        rabbitmq_management_user = get_secret("RABBITMQ_MANAGEMENT_USER", "discogsography")
-        rabbitmq_management_password = get_secret("RABBITMQ_MANAGEMENT_PASSWORD", "discogsography")
+        # Get RabbitMQ credentials
+        rabbitmq_user = get_secret("RABBITMQ_USER", "discogsography")
+        rabbitmq_password = get_secret("RABBITMQ_PASSWORD", "discogsography")
 
         # CORS configuration
         cors_origins_env = getenv("CORS_ORIGINS")
@@ -367,8 +375,8 @@ class DashboardConfig:
             postgres_password=tableinator_config.postgres_password,
             postgres_database=tableinator_config.postgres_database,
             redis_url=redis_url,
-            rabbitmq_management_user=rabbitmq_management_user,
-            rabbitmq_management_password=rabbitmq_management_password,
+            rabbitmq_user=rabbitmq_user,
+            rabbitmq_password=rabbitmq_password,
             cors_origins=cors_origins,
             cache_warming_enabled=cache_warming_enabled,
             cache_webhook_secret=cache_webhook_secret,

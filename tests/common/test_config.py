@@ -13,39 +13,43 @@ class TestExtractorConfig:
 
     def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with all environment variables set."""
-        monkeypatch.setenv("AMQP_CONNECTION", "amqp://user:pass@host:5672/")
+        monkeypatch.setenv("RABBITMQ_USER", "user")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
+        monkeypatch.setenv("RABBITMQ_HOST", "host")
+        monkeypatch.setenv("RABBITMQ_PORT", "5672")
         monkeypatch.setenv("DISCOGS_ROOT", "/custom/path")
         monkeypatch.setenv("PERIODIC_CHECK_DAYS", "30")
 
         config = ExtractorConfig.from_env()
 
-        assert config.amqp_connection == "amqp://user:pass@host:5672/"
+        assert config.amqp_connection == "amqp://user:pass@host:5672/%2F"
         assert config.discogs_root == Path("/custom/path")
         assert config.periodic_check_days == 30
         assert config.max_temp_size == int(1e9)  # Default value
 
-    def test_from_env_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test configuration loading with missing required variables."""
-        monkeypatch.delenv("AMQP_CONNECTION", raising=False)
+    def test_from_env_uses_credential_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test AMQP URL is built from defaults when credentials not set."""
+        monkeypatch.delenv("RABBITMQ_USER", raising=False)
+        monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
+        monkeypatch.delenv("RABBITMQ_HOST", raising=False)
+        monkeypatch.delenv("RABBITMQ_PORT", raising=False)
 
-        with pytest.raises(ValueError, match="AMQP_CONNECTION environment variable is required"):
-            ExtractorConfig.from_env()
+        config = ExtractorConfig.from_env()
+
+        assert config.amqp_connection == "amqp://discogsography:discogsography@rabbitmq:5672/%2F"
 
     def test_from_env_with_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with default values."""
-        monkeypatch.setenv("AMQP_CONNECTION", "amqp://localhost/")
         monkeypatch.delenv("DISCOGS_ROOT", raising=False)
         monkeypatch.delenv("PERIODIC_CHECK_DAYS", raising=False)
 
         config = ExtractorConfig.from_env()
 
-        assert config.amqp_connection == "amqp://localhost/"
         assert config.discogs_root == Path("/discogs-data")
         assert config.periodic_check_days == 15
 
     def test_from_env_invalid_periodic_days(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration with invalid periodic check days."""
-        monkeypatch.setenv("AMQP_CONNECTION", "amqp://localhost/")
         monkeypatch.setenv("PERIODIC_CHECK_DAYS", "not-a-number")
 
         # Should use default value, not raise exception
@@ -58,14 +62,17 @@ class TestGraphinatorConfig:
 
     def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with all environment variables set."""
-        monkeypatch.setenv("AMQP_CONNECTION", "amqp://user:pass@host:5672/")
+        monkeypatch.setenv("RABBITMQ_USER", "user")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
+        monkeypatch.setenv("RABBITMQ_HOST", "host")
+        monkeypatch.setenv("RABBITMQ_PORT", "5672")
         monkeypatch.setenv("NEO4J_ADDRESS", "bolt://neo4j:7687")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "secret")
 
         config = GraphinatorConfig.from_env()
 
-        assert config.amqp_connection == "amqp://user:pass@host:5672/"
+        assert config.amqp_connection == "amqp://user:pass@host:5672/%2F"
         assert config.neo4j_address == "bolt://neo4j:7687"
         assert config.neo4j_username == "neo4j"
         assert config.neo4j_password == "secret"
@@ -83,7 +90,10 @@ class TestTableinatorConfig:
 
     def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with all environment variables set."""
-        monkeypatch.setenv("AMQP_CONNECTION", "amqp://user:pass@host:5672/")
+        monkeypatch.setenv("RABBITMQ_USER", "user")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
+        monkeypatch.setenv("RABBITMQ_HOST", "host")
+        monkeypatch.setenv("RABBITMQ_PORT", "5672")
         monkeypatch.setenv("POSTGRES_ADDRESS", "pghost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
@@ -91,7 +101,7 @@ class TestTableinatorConfig:
 
         config = TableinatorConfig.from_env()
 
-        assert config.amqp_connection == "amqp://user:pass@host:5672/"
+        assert config.amqp_connection == "amqp://user:pass@host:5672/%2F"
         assert config.postgres_address == "pghost:5432"
         assert config.postgres_username == "pguser"
         assert config.postgres_password == "pgpass"
@@ -226,12 +236,16 @@ class TestExtractorConfigEdgeCases:
 class TestGraphinatorConfigMissingVars:
     """Test GraphinatorConfig individual missing variable branches."""
 
-    def test_missing_amqp_connection_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test AMQP_CONNECTION missing raises ValueError (line 81)."""
-        monkeypatch.delenv("AMQP_CONNECTION", raising=False)
+    def test_amqp_url_built_from_env_components(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test AMQP URL is constructed from RABBITMQ_USER/PASSWORD/HOST/PORT."""
+        monkeypatch.setenv("RABBITMQ_USER", "myuser")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "mypass")
+        monkeypatch.setenv("RABBITMQ_HOST", "myrabbitmq")
+        monkeypatch.setenv("RABBITMQ_PORT", "5673")
 
-        with pytest.raises(ValueError, match="AMQP_CONNECTION"):
-            GraphinatorConfig.from_env()
+        config = GraphinatorConfig.from_env()
+
+        assert config.amqp_connection == "amqp://myuser:mypass@myrabbitmq:5673/%2F"
 
     def test_missing_neo4j_username_only(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test NEO4J_USERNAME missing raises ValueError (line 85)."""
@@ -251,12 +265,16 @@ class TestGraphinatorConfigMissingVars:
 class TestTableinatorConfigMissingVars:
     """Test TableinatorConfig individual missing variable branches."""
 
-    def test_missing_amqp_connection(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test AMQP_CONNECTION missing raises ValueError (line 121)."""
-        monkeypatch.delenv("AMQP_CONNECTION", raising=False)
+    def test_amqp_url_built_from_env_components(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test AMQP URL is constructed from RABBITMQ_USER/PASSWORD/HOST/PORT."""
+        monkeypatch.setenv("RABBITMQ_USER", "myuser")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "mypass")
+        monkeypatch.setenv("RABBITMQ_HOST", "myrabbitmq")
+        monkeypatch.setenv("RABBITMQ_PORT", "5673")
 
-        with pytest.raises(ValueError, match="AMQP_CONNECTION"):
-            TableinatorConfig.from_env()
+        config = TableinatorConfig.from_env()
+
+        assert config.amqp_connection == "amqp://myuser:mypass@myrabbitmq:5673/%2F"
 
     def test_missing_postgres_username(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test POSTGRES_USERNAME missing raises ValueError (line 125)."""
@@ -895,7 +913,6 @@ class TestGetSecretViaFromEnv:
         username_file.write_text("graph_user\n")
         password_file.write_text("graph_pass\n")
 
-        monkeypatch.setenv("AMQP_CONNECTION", "amqp://localhost/")
         monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost:7687")
         monkeypatch.setenv("NEO4J_USERNAME_FILE", str(username_file))
         monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(password_file))
@@ -915,7 +932,6 @@ class TestGetSecretViaFromEnv:
         user_file.write_text("table_user\n")
         pass_file.write_text("table_pass\n")
 
-        monkeypatch.setenv("AMQP_CONNECTION", "amqp://localhost/")
         monkeypatch.setenv("POSTGRES_ADDRESS", "localhost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME_FILE", str(user_file))
         monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(pass_file))
@@ -1015,19 +1031,19 @@ class TestGetSecretViaFromEnv:
         assert config.jwt_secret_key == "exp_jwt_secret"
 
     def test_dashboard_config_reads_rabbitmq_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """DashboardConfig reads RABBITMQ_MANAGEMENT_USER and _PASSWORD via _FILE."""
+        """DashboardConfig reads RABBITMQ_USER and RABBITMQ_PASSWORD via _FILE."""
         user_file = tmp_path / "rmq_user.txt"
         pass_file = tmp_path / "rmq_pass.txt"
         user_file.write_text("dash_rmq_user\n")
         pass_file.write_text("dash_rmq_pass\n")
 
-        monkeypatch.setenv("RABBITMQ_MANAGEMENT_USER_FILE", str(user_file))
-        monkeypatch.setenv("RABBITMQ_MANAGEMENT_PASSWORD_FILE", str(pass_file))
-        monkeypatch.delenv("RABBITMQ_MANAGEMENT_USER", raising=False)
-        monkeypatch.delenv("RABBITMQ_MANAGEMENT_PASSWORD", raising=False)
+        monkeypatch.setenv("RABBITMQ_USER_FILE", str(user_file))
+        monkeypatch.setenv("RABBITMQ_PASSWORD_FILE", str(pass_file))
+        monkeypatch.delenv("RABBITMQ_USER", raising=False)
+        monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
 
         from common.config import DashboardConfig
 
         config = DashboardConfig.from_env()
-        assert config.rabbitmq_management_user == "dash_rmq_user"
-        assert config.rabbitmq_management_password == "dash_rmq_pass"
+        assert config.rabbitmq_user == "dash_rmq_user"
+        assert config.rabbitmq_password == "dash_rmq_pass"

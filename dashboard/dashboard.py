@@ -288,7 +288,7 @@ class DashboardApp:
                 # Use RabbitMQ management API with credentials from config
                 response = await client.get(
                     "http://rabbitmq:15672/api/queues",
-                    auth=(self.config.rabbitmq_management_user, self.config.rabbitmq_management_password),
+                    auth=(self.config.rabbitmq_user, self.config.rabbitmq_password),
                 )
 
                 if response.status_code == 200:

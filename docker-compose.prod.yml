@@ -88,6 +88,12 @@ services:
 
   extractor:
     restart: always
+    environment:
+      RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_pass
+    secrets:
+      - rabbitmq_user
+      - rabbitmq_pass
     deploy:
       replicas: 1
       restart_policy:
@@ -97,6 +103,12 @@ services:
 
   graphinator:
     restart: always
+    environment:
+      RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_pass
+    secrets:
+      - rabbitmq_user
+      - rabbitmq_pass
     deploy:
       restart_policy:
         condition: any
@@ -106,9 +118,13 @@ services:
   tableinator:
     restart: always
     environment:
+      RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_pass
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets:
+      - rabbitmq_user
+      - rabbitmq_pass
       - postgres_user
       - postgres_password
     deploy:
@@ -120,8 +136,8 @@ services:
   dashboard:
     restart: always
     environment:
-      RABBITMQ_MANAGEMENT_USER_FILE: /run/secrets/rabbitmq_user
-      RABBITMQ_MANAGEMENT_PASSWORD_FILE: /run/secrets/rabbitmq_pass
+      RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_pass
     secrets:
       - rabbitmq_user
       - rabbitmq_pass

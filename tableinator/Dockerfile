@@ -114,7 +114,6 @@ ENV HOME=/home/discogsography \
     UV_SYSTEM_PYTHON=1 \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
-    AMQP_CONNECTION="" \
     POSTGRES_ADDRESS="" \
     POSTGRES_USERNAME="" \
     POSTGRES_DATABASE=""
