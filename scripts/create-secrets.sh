@@ -40,7 +40,7 @@ write_secret "postgres_password.txt" "$(openssl rand -base64 24)"
 
 # RabbitMQ credentials
 write_secret "rabbitmq_user.txt" "discogsography"
-write_secret "rabbitmq_pass.txt" "$(openssl rand -base64 24)"
+write_secret "rabbitmq_password.txt" "$(openssl rand -base64 24)"
 
 # Neo4j password
 write_secret "neo4j_password.txt" "$(openssl rand -base64 24)"

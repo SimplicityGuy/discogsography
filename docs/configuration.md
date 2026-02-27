@@ -754,7 +754,7 @@ secrets/
 ├── oauth_encryption_key.txt  # Fernet.generate_key()
 ├── postgres_password.txt     # openssl rand -base64 24
 ├── postgres_user.txt         # discogsography
-├── rabbitmq_pass.txt         # openssl rand -base64 24
+├── rabbitmq_password.txt     # openssl rand -base64 24
 └── rabbitmq_user.txt         # discogsography
 ```
 

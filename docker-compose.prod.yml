@@ -15,8 +15,8 @@ secrets:
     file: ./secrets/postgres_password.txt
   postgres_user:
     file: ./secrets/postgres_user.txt
-  rabbitmq_pass:
-    file: ./secrets/rabbitmq_pass.txt
+  rabbitmq_password:
+    file: ./secrets/rabbitmq_password.txt
   rabbitmq_user:
     file: ./secrets/rabbitmq_user.txt
   neo4j_password:
@@ -27,10 +27,10 @@ services:
     restart: always
     environment:
       RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
-      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_pass
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
     secrets:
       - rabbitmq_user
-      - rabbitmq_pass
+      - rabbitmq_password
 
   postgres:
     restart: always
@@ -90,10 +90,10 @@ services:
     restart: always
     environment:
       RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
-      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_pass
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
     secrets:
       - rabbitmq_user
-      - rabbitmq_pass
+      - rabbitmq_password
     deploy:
       replicas: 1
       restart_policy:
@@ -105,10 +105,10 @@ services:
     restart: always
     environment:
       RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
-      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_pass
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
     secrets:
       - rabbitmq_user
-      - rabbitmq_pass
+      - rabbitmq_password
     deploy:
       restart_policy:
         condition: any
@@ -119,12 +119,12 @@ services:
     restart: always
     environment:
       RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
-      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_pass
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_user
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets:
       - rabbitmq_user
-      - rabbitmq_pass
+      - rabbitmq_password
       - postgres_user
       - postgres_password
     deploy:
@@ -137,10 +137,10 @@ services:
     restart: always
     environment:
       RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
-      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_pass
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
     secrets:
       - rabbitmq_user
-      - rabbitmq_pass
+      - rabbitmq_password
     deploy:
       restart_policy:
         condition: any
