@@ -61,7 +61,7 @@ services:
   dashboard:
     environment:
       - LOG_LEVEL=DEBUG
-      - REDIS_URL=redis://redis:6379/0
+      - REDIS_ADDRESS=redis://redis:6379/0
 ```
 
 ## Core Settings
@@ -235,7 +235,7 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 | Variable    | Description          | Default                    | Required             |
 | ----------- | -------------------- | -------------------------- | -------------------- |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379/0` | Yes (Dashboard, API) |
+| `REDIS_ADDRESS` | Redis connection URL | `redis://localhost:6379/0` | Yes (Dashboard, API) |
 
 **Used By**: Dashboard, API
 
@@ -251,16 +251,16 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ```bash
 # Local development
-REDIS_URL="redis://localhost:6379/0"
+REDIS_ADDRESS="redis://localhost:6379/0"
 
 # Docker Compose
-REDIS_URL="redis://redis:6379/0"
+REDIS_ADDRESS="redis://redis:6379/0"
 
 # With password
-REDIS_URL="redis://:password@localhost:6379/0"
+REDIS_ADDRESS="redis://:password@localhost:6379/0"
 
 # Redis Sentinel
-REDIS_URL="redis+sentinel://sentinel1:26379,sentinel2:26379/myservice"
+REDIS_ADDRESS="redis+sentinel://sentinel1:26379,sentinel2:26379/myservice"
 ```
 
 **Cache Configuration**:
@@ -510,7 +510,7 @@ POSTGRES_ADDRESS="localhost:5433"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
-REDIS_URL="redis://localhost:6379/0"
+REDIS_ADDRESS="redis://localhost:6379/0"
 JWT_SECRET_KEY="your-secret-key-here"
 DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
@@ -677,7 +677,7 @@ POSTGRES_ADDRESS="localhost:5433"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
-REDIS_URL="redis://localhost:6379/0"
+REDIS_ADDRESS="redis://localhost:6379/0"
 
 # Optional - RabbitMQ Management API access
 RABBITMQ_MANAGEMENT_USER=discogsography
@@ -716,7 +716,7 @@ POSTGRES_PASSWORD=development
 POSTGRES_DATABASE=discogsography_dev
 
 # Redis
-REDIS_URL=redis://localhost:6379/0
+REDIS_ADDRESS=redis://localhost:6379/0
 
 # JWT (API + Curator)
 JWT_SECRET_KEY=dev-secret-key-not-for-production
@@ -774,7 +774,7 @@ POSTGRES_ADDRESS=postgres.prod.internal:5432
 POSTGRES_DATABASE=discogsography
 
 # Redis
-REDIS_URL=redis://redis:6379/0
+REDIS_ADDRESS=redis://redis:6379/0
 
 # JWT (optional non-secret settings)
 JWT_EXPIRE_MINUTES=1440
@@ -834,7 +834,7 @@ NEO4J_ADDRESS=bolt+s://neo4j.example.com:7687
 POSTGRES_ADDRESS=postgres.example.com:5432?sslmode=require
 
 # Redis with TLS
-REDIS_URL=rediss://:password@redis.example.com:6380/0
+REDIS_ADDRESS=rediss://:password@redis.example.com:6380/0
 ```
 
 ### Access Control

@@ -178,7 +178,7 @@ export POSTGRES_PASSWORD="discogsography"
 export POSTGRES_DATABASE="discogsography"
 
 # Redis settings
-export REDIS_URL="redis://localhost:6379/0"
+export REDIS_ADDRESS="redis://localhost:6379/0"
 
 # Optional: Set log level
 export LOG_LEVEL="INFO"  # or DEBUG for detailed output

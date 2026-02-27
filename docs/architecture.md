@@ -334,7 +334,7 @@ See [Dashboard README](../dashboard/README.md) for details.
 
 - `JWT_SECRET_KEY`: Shared secret for HS256 token signing
 - `POSTGRES_ADDRESS`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`: PostgreSQL connection
-- `REDIS_URL`: Redis connection for OAuth state
+- `REDIS_ADDRESS`: Redis connection for OAuth state
 - `DISCOGS_USER_AGENT`: User-Agent header for Discogs API calls
 
 See [API README](../api/README.md) for details.

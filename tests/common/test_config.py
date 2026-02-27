@@ -15,7 +15,7 @@ class TestExtractorConfig:
         """Test configuration loading with all environment variables set."""
         monkeypatch.setenv("RABBITMQ_USERNAME", "user")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
-        monkeypatch.setenv("RABBITMQ_HOST", "host")
+        monkeypatch.setenv("RABBITMQ_ADDRESS", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
         monkeypatch.setenv("DISCOGS_ROOT", "/custom/path")
         monkeypatch.setenv("PERIODIC_CHECK_DAYS", "30")
@@ -31,7 +31,7 @@ class TestExtractorConfig:
         """Test AMQP URL is built from defaults when credentials not set."""
         monkeypatch.delenv("RABBITMQ_USERNAME", raising=False)
         monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
-        monkeypatch.delenv("RABBITMQ_HOST", raising=False)
+        monkeypatch.delenv("RABBITMQ_ADDRESS", raising=False)
         monkeypatch.delenv("RABBITMQ_PORT", raising=False)
 
         config = ExtractorConfig.from_env()
@@ -64,7 +64,7 @@ class TestGraphinatorConfig:
         """Test configuration loading with all environment variables set."""
         monkeypatch.setenv("RABBITMQ_USERNAME", "user")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
-        monkeypatch.setenv("RABBITMQ_HOST", "host")
+        monkeypatch.setenv("RABBITMQ_ADDRESS", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
         monkeypatch.setenv("NEO4J_ADDRESS", "bolt://neo4j:7687")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
@@ -92,7 +92,7 @@ class TestTableinatorConfig:
         """Test configuration loading with all environment variables set."""
         monkeypatch.setenv("RABBITMQ_USERNAME", "user")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
-        monkeypatch.setenv("RABBITMQ_HOST", "host")
+        monkeypatch.setenv("RABBITMQ_ADDRESS", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
         monkeypatch.setenv("POSTGRES_ADDRESS", "pghost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
@@ -240,7 +240,7 @@ class TestGraphinatorConfigMissingVars:
         """Test AMQP URL is constructed from RABBITMQ_USERNAME/PASSWORD/HOST/PORT."""
         monkeypatch.setenv("RABBITMQ_USERNAME", "myuser")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "mypass")
-        monkeypatch.setenv("RABBITMQ_HOST", "myrabbitmq")
+        monkeypatch.setenv("RABBITMQ_ADDRESS", "myrabbitmq")
         monkeypatch.setenv("RABBITMQ_PORT", "5673")
 
         config = GraphinatorConfig.from_env()
@@ -269,7 +269,7 @@ class TestTableinatorConfigMissingVars:
         """Test AMQP URL is constructed from RABBITMQ_USERNAME/PASSWORD/HOST/PORT."""
         monkeypatch.setenv("RABBITMQ_USERNAME", "myuser")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "mypass")
-        monkeypatch.setenv("RABBITMQ_HOST", "myrabbitmq")
+        monkeypatch.setenv("RABBITMQ_ADDRESS", "myrabbitmq")
         monkeypatch.setenv("RABBITMQ_PORT", "5673")
 
         config = TableinatorConfig.from_env()
@@ -331,15 +331,15 @@ class TestDashboardConfig:
 
         assert config.cache_webhook_secret == "mysecret123"
 
-    def test_redis_url_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test custom REDIS_URL is read from environment (line 317)."""
+    def test_redis_address_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test custom REDIS_ADDRESS is read from environment (line 317)."""
         from common import DashboardConfig
 
-        monkeypatch.setenv("REDIS_URL", "redis://myredis:6380/1")
+        monkeypatch.setenv("REDIS_ADDRESS", "redis://myredis:6380/1")
 
         config = DashboardConfig.from_env()
 
-        assert config.redis_url == "redis://myredis:6380/1"
+        assert config.redis_address == "redis://myredis:6380/1"
 
 
 class TestExploreConfig:
@@ -421,14 +421,14 @@ class TestApiConfig:
         from common.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
-        monkeypatch.delenv("REDIS_URL", raising=False)
+        monkeypatch.delenv("REDIS_ADDRESS", raising=False)
         monkeypatch.delenv("JWT_ALGORITHM", raising=False)
         monkeypatch.delenv("JWT_EXPIRE_MINUTES", raising=False)
         monkeypatch.delenv("DISCOGS_USER_AGENT", raising=False)
 
         config = ApiConfig.from_env()
 
-        assert config.redis_url == "redis://redis:6379/0"
+        assert config.redis_address == "redis://redis:6379/0"
         assert config.jwt_algorithm == "HS256"
         assert config.jwt_expire_minutes == 30
         assert "discogsography" in config.discogs_user_agent
@@ -438,14 +438,14 @@ class TestApiConfig:
         from common.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
-        monkeypatch.setenv("REDIS_URL", "redis://myredis:6380/1")
+        monkeypatch.setenv("REDIS_ADDRESS", "redis://myredis:6380/1")
         monkeypatch.setenv("JWT_ALGORITHM", "HS256")
         monkeypatch.setenv("JWT_EXPIRE_MINUTES", "60")
         monkeypatch.setenv("DISCOGS_USER_AGENT", "CustomAgent/2.0")
 
         config = ApiConfig.from_env()
 
-        assert config.redis_url == "redis://myredis:6380/1"
+        assert config.redis_address == "redis://myredis:6380/1"
         assert config.jwt_expire_minutes == 60
         assert config.discogs_user_agent == "CustomAgent/2.0"
 

@@ -140,7 +140,7 @@ def setup_test_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     test_env = {
         "RABBITMQ_USERNAME": "test",
         "RABBITMQ_PASSWORD": "test",
-        "RABBITMQ_HOST": "localhost",
+        "RABBITMQ_ADDRESS": "localhost",
         "RABBITMQ_PORT": "5672",
         "DISCOGS_ROOT": str(tmp_path / "test-discogs"),
         "NEO4J_ADDRESS": "bolt://localhost:7687",
@@ -150,7 +150,7 @@ def setup_test_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "POSTGRES_USERNAME": "test",
         "POSTGRES_PASSWORD": "test",
         "POSTGRES_DATABASE": "test",
-        "REDIS_URL": "redis://localhost:6379/0",
+        "REDIS_ADDRESS": "redis://localhost:6379/0",
         "PERIODIC_CHECK_DAYS": "15",
     }
 

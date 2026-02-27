@@ -13,7 +13,7 @@ os.environ.setdefault("POSTGRES_USERNAME", "test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test")
 os.environ.setdefault("POSTGRES_DATABASE", "test")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-for-unit-tests")
-os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("REDIS_ADDRESS", "redis://localhost:6379/0")
 os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USERNAME", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "testpassword")
@@ -128,7 +128,7 @@ def test_api_config() -> ApiConfig:
         postgres_password="test",  # noqa: S106
         postgres_database="test",
         jwt_secret_key=TEST_JWT_SECRET,
-        redis_url="redis://localhost:6379/0",
+        redis_address="redis://localhost:6379/0",
         jwt_expire_minutes=30,
         neo4j_address="bolt://localhost:7687",
         neo4j_username="neo4j",

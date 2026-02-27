@@ -229,8 +229,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     logger.info("💾 Database pool initialized")
 
     # Initialize Redis for OAuth state storage and token blacklist
-    _redis = await aioredis.from_url(_config.redis_url, decode_responses=True)
-    redis_host = _config.redis_url.split("@")[-1] if "@" in _config.redis_url else _config.redis_url.split("://")[-1]
+    _redis = await aioredis.from_url(_config.redis_address, decode_responses=True)
+    redis_host = _config.redis_address.split("@")[-1] if "@" in _config.redis_address else _config.redis_address.split("://")[-1]
     logger.info("🔴 Redis connected", host=redis_host)
 
     if _config.neo4j_address and _config.neo4j_username and _config.neo4j_password:

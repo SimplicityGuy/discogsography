@@ -34,7 +34,7 @@ POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
 
 # Redis (OAuth state + JTI blacklist storage)
-REDIS_URL=redis://redis:6379/0
+REDIS_ADDRESS=redis://redis:6379/0
 
 # JWT signing secret (shared with Curator)
 JWT_SECRET_KEY=your-secret-key-here

@@ -52,7 +52,7 @@ def _build_amqp_url() -> str:
     """
     user = get_secret("RABBITMQ_USERNAME", "discogsography")
     password = get_secret("RABBITMQ_PASSWORD", "discogsography")
-    host = getenv("RABBITMQ_HOST", "rabbitmq")
+    host = getenv("RABBITMQ_ADDRESS", "rabbitmq")
     port = getenv("RABBITMQ_PORT", "5672")
     return f"amqp://{_url_quote(user, safe='')}:{_url_quote(password, safe='')}@{host}:{port}/%2F"
 
@@ -333,7 +333,7 @@ class DashboardConfig:
     postgres_database: str
     rabbitmq_username: str
     rabbitmq_password: str
-    redis_url: str = "redis://localhost:6379/0"
+    redis_address: str = "redis://localhost:6379/0"
     cors_origins: list[str] | None = None  # None = default to localhost only
     cache_warming_enabled: bool = True  # Enable cache warming on service startup
     cache_webhook_secret: str | None = None  # Secret for cache invalidation webhooks
@@ -346,7 +346,7 @@ class DashboardConfig:
         tableinator_config = TableinatorConfig.from_env()
 
         # Redis configuration
-        redis_url = getenv("REDIS_URL", "redis://localhost:6379/0")
+        redis_address = getenv("REDIS_ADDRESS", "redis://localhost:6379/0")
 
         # Get RabbitMQ credentials
         rabbitmq_username = get_secret("RABBITMQ_USERNAME", "discogsography")
@@ -374,7 +374,7 @@ class DashboardConfig:
             postgres_username=tableinator_config.postgres_username,
             postgres_password=tableinator_config.postgres_password,
             postgres_database=tableinator_config.postgres_database,
-            redis_url=redis_url,
+            redis_address=redis_address,
             rabbitmq_username=rabbitmq_username,
             rabbitmq_password=rabbitmq_password,
             cors_origins=cors_origins,
@@ -392,7 +392,7 @@ class ApiConfig:
     postgres_password: str
     postgres_database: str
     jwt_secret_key: str
-    redis_url: str = "redis://redis:6379/0"
+    redis_address: str = "redis://redis:6379/0"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 30
     discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
@@ -428,7 +428,7 @@ class ApiConfig:
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-        redis_url = getenv("REDIS_URL", "redis://redis:6379/0")
+        redis_address = getenv("REDIS_ADDRESS", "redis://redis:6379/0")
         jwt_algorithm = getenv("JWT_ALGORITHM", "HS256")
         if jwt_algorithm != "HS256":
             raise ValueError(f"Unsupported JWT algorithm: {jwt_algorithm}. Only HS256 is supported.")
@@ -468,7 +468,7 @@ class ApiConfig:
             postgres_password=cast("str", postgres_password),
             postgres_database=cast("str", postgres_database),
             jwt_secret_key=cast("str", jwt_secret_key),
-            redis_url=redis_url,
+            redis_address=redis_address,
             jwt_algorithm=jwt_algorithm,
             jwt_expire_minutes=jwt_expire_minutes,
             discogs_user_agent=discogs_user_agent,

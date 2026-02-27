@@ -55,7 +55,7 @@ impl ExtractorConfig {
     pub fn from_env() -> Result<Self> {
         let user = read_secret("RABBITMQ_USERNAME", "discogsography")?;
         let password = read_secret("RABBITMQ_PASSWORD", "discogsography")?;
-        let host = std::env::var("RABBITMQ_HOST").unwrap_or_else(|_| "rabbitmq".to_string());
+        let host = std::env::var("RABBITMQ_ADDRESS").unwrap_or_else(|_| "rabbitmq".to_string());
         let port = std::env::var("RABBITMQ_PORT").unwrap_or_else(|_| "5672".to_string());
         let amqp_connection = build_amqp_url(&user, &password, &host, &port);
 
@@ -105,7 +105,7 @@ mod tests {
         unsafe {
             env::set_var("RABBITMQ_USERNAME", "testuser");
             env::set_var("RABBITMQ_PASSWORD", "testpass");
-            env::set_var("RABBITMQ_HOST", "mybroker");
+            env::set_var("RABBITMQ_ADDRESS", "mybroker");
             env::set_var("RABBITMQ_PORT", "5673");
         }
 
@@ -115,7 +115,7 @@ mod tests {
         unsafe {
             env::remove_var("RABBITMQ_USERNAME");
             env::remove_var("RABBITMQ_PASSWORD");
-            env::remove_var("RABBITMQ_HOST");
+            env::remove_var("RABBITMQ_ADDRESS");
             env::remove_var("RABBITMQ_PORT");
         }
     }
@@ -126,7 +126,7 @@ mod tests {
         unsafe {
             env::remove_var("RABBITMQ_USERNAME");
             env::remove_var("RABBITMQ_PASSWORD");
-            env::remove_var("RABBITMQ_HOST");
+            env::remove_var("RABBITMQ_ADDRESS");
             env::remove_var("RABBITMQ_PORT");
             env::remove_var("RABBITMQ_USERNAME_FILE");
             env::remove_var("RABBITMQ_PASSWORD_FILE");
@@ -143,7 +143,7 @@ mod tests {
         unsafe {
             env::set_var("RABBITMQ_USERNAME", "testuser");
             env::set_var("RABBITMQ_PASSWORD", "testpass");
-            env::remove_var("RABBITMQ_HOST");
+            env::remove_var("RABBITMQ_ADDRESS");
             env::remove_var("RABBITMQ_PORT");
             env::remove_var("DISCOGS_ROOT");
             env::remove_var("PERIODIC_CHECK_DAYS");
