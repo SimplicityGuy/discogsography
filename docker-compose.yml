@@ -159,11 +159,11 @@ services:
     hostname: schema-init
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      NEO4J_HOST: bolt://neo4j:7687
+      NEO4J_HOST: neo4j
       NEO4J_PASSWORD: discogsography
       NEO4J_USERNAME: neo4j
-      POSTGRES_HOST: postgres:5432
       POSTGRES_DATABASE: discogsography
+      POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: discogsography
       POSTGRES_USERNAME: discogsography
       PYTHONUNBUFFERED: "1"
@@ -204,15 +204,15 @@ services:
       JWT_EXPIRE_MINUTES: "60"
       # IMPORTANT: Override JWT_SECRET_KEY with a random 256-bit key in production!
       JWT_SECRET_KEY: "dev-secret-change-in-production-use-a-256-bit-random-key"
-      NEO4J_HOST: bolt://neo4j:7687
+      NEO4J_HOST: neo4j
       NEO4J_PASSWORD: discogsography
       NEO4J_USERNAME: neo4j
-      POSTGRES_HOST: postgres:5432
       POSTGRES_DATABASE: discogsography
+      POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: discogsography
       POSTGRES_USERNAME: discogsography
       PYTHONUNBUFFERED: "1"
-      REDIS_HOST: redis://redis:6379/0
+      REDIS_HOST: redis
       STARTUP_DELAY: "5"
     ports:
       - "8004:8004"      # Auth API
@@ -262,11 +262,11 @@ services:
     environment:
       # IMPORTANT: Must match the JWT_SECRET_KEY used by the api service
       JWT_SECRET_KEY: "dev-secret-change-in-production-use-a-256-bit-random-key"
-      NEO4J_HOST: bolt://neo4j:7687
+      NEO4J_HOST: neo4j
       NEO4J_PASSWORD: discogsography
       NEO4J_USERNAME: neo4j
-      POSTGRES_HOST: postgres:5432
       POSTGRES_DATABASE: discogsography
+      POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: discogsography
       POSTGRES_USERNAME: discogsography
       PYTHONUNBUFFERED: "1"
@@ -352,10 +352,10 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
-      NEO4J_HOST: bolt://neo4j:7687
       NEO4J_BATCH_FLUSH_INTERVAL: "2.0"  # Reduced from 5.0 for faster flushing
       NEO4J_BATCH_MODE: "true"
       NEO4J_BATCH_SIZE: "500"          # Increased from 100 to 500
+      NEO4J_HOST: neo4j
       NEO4J_PASSWORD: discogsography
       NEO4J_USERNAME: neo4j
       PYTHONUNBUFFERED: "1"
@@ -404,11 +404,11 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
-      POSTGRES_HOST: postgres:5432
       POSTGRES_BATCH_FLUSH_INTERVAL: "2.0"  # Reduced from 5.0 for faster flushing
       POSTGRES_BATCH_MODE: "true"
       POSTGRES_BATCH_SIZE: "500"          # Increased from 100 to 500
       POSTGRES_DATABASE: discogsography
+      POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: discogsography
       POSTGRES_USERNAME: discogsography
       PYTHONUNBUFFERED: "1"
@@ -456,18 +456,18 @@ services:
     hostname: dashboard
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      NEO4J_HOST: bolt://neo4j:7687
+      NEO4J_HOST: neo4j
       NEO4J_PASSWORD: discogsography
       NEO4J_USERNAME: neo4j
-      POSTGRES_HOST: postgres:5432
       POSTGRES_DATABASE: discogsography
+      POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: discogsography
       POSTGRES_USERNAME: discogsography
       PYTHONUNBUFFERED: "1"
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_USERNAME: discogsography
-      REDIS_HOST: redis://redis:6379/0
+      REDIS_HOST: redis
       UV_CACHE_DIR: "/tmp/.cache/uv"
     ports:
       - "8003:8003"
@@ -517,7 +517,7 @@ services:
     environment:
       # IMPORTANT: Must match JWT_SECRET_KEY used by api/curator services
       JWT_SECRET_KEY: "dev-secret-change-in-production-use-a-256-bit-random-key"
-      NEO4J_HOST: bolt://neo4j:7687
+      NEO4J_HOST: neo4j
       NEO4J_PASSWORD: discogsography
       NEO4J_USERNAME: neo4j
       PYTHONUNBUFFERED: "1"
