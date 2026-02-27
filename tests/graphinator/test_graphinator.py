@@ -2554,7 +2554,7 @@ class TestMainNeo4jFailure:
         mock_health_server.return_value = mock_health_instance
 
         mock_config = MagicMock()
-        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_host = "bolt://localhost:7687"
         mock_config.neo4j_username = "neo4j"
         mock_config.neo4j_password = "password"
         mock_from_env.return_value = mock_config
@@ -2601,7 +2601,7 @@ class TestMainBatchProcessorFlushError:
         mock_health_server.return_value = mock_health_instance
 
         mock_config = MagicMock()
-        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_host = "bolt://localhost:7687"
         mock_config.neo4j_username = "neo4j"
         mock_config.neo4j_password = "password"
         mock_config.amqp_connection = "amqp://guest:guest@localhost/"
@@ -2726,7 +2726,7 @@ class TestMainNeo4jCloseError:
         mock_health_server.return_value = mock_health_instance
 
         mock_config = MagicMock()
-        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_host = "bolt://localhost:7687"
         mock_config.neo4j_username = "neo4j"
         mock_config.neo4j_password = "password"
         mock_config.amqp_connection = "amqp://guest:guest@localhost/"
@@ -2851,7 +2851,7 @@ class TestMainAmqpConnectionNone:
         mock_health_server.return_value = mock_health_instance
 
         mock_config = MagicMock()
-        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_host = "bolt://localhost:7687"
         mock_config.neo4j_username = "neo4j"
         mock_config.neo4j_password = "password"
         mock_config.amqp_connection = "amqp://guest:guest@localhost/"
@@ -3451,7 +3451,7 @@ class TestMainAmqpRetryExhausted:
         mock_health_server.return_value = MagicMock()
 
         mock_config = MagicMock()
-        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_host = "bolt://localhost:7687"
         mock_config.neo4j_username = "neo4j"
         mock_config.neo4j_password = "password"
         mock_config.amqp_connection = "amqp://guest:guest@localhost/"

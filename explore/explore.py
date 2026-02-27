@@ -59,7 +59,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # Initialize Neo4j driver
     try:
         neo4j_driver = AsyncResilientNeo4jDriver(
-            uri=config.neo4j_address,
+            uri=config.neo4j_host,
             auth=(config.neo4j_username, config.neo4j_password),
             max_retries=5,
             encrypted=False,

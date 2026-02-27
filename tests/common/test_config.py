@@ -15,7 +15,7 @@ class TestExtractorConfig:
         """Test configuration loading with all environment variables set."""
         monkeypatch.setenv("RABBITMQ_USERNAME", "user")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
-        monkeypatch.setenv("RABBITMQ_ADDRESS", "host")
+        monkeypatch.setenv("RABBITMQ_HOST", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
         monkeypatch.setenv("DISCOGS_ROOT", "/custom/path")
         monkeypatch.setenv("PERIODIC_CHECK_DAYS", "30")
@@ -31,7 +31,7 @@ class TestExtractorConfig:
         """Test AMQP URL is built from defaults when credentials not set."""
         monkeypatch.delenv("RABBITMQ_USERNAME", raising=False)
         monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
-        monkeypatch.delenv("RABBITMQ_ADDRESS", raising=False)
+        monkeypatch.delenv("RABBITMQ_HOST", raising=False)
         monkeypatch.delenv("RABBITMQ_PORT", raising=False)
 
         config = ExtractorConfig.from_env()
@@ -64,24 +64,24 @@ class TestGraphinatorConfig:
         """Test configuration loading with all environment variables set."""
         monkeypatch.setenv("RABBITMQ_USERNAME", "user")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
-        monkeypatch.setenv("RABBITMQ_ADDRESS", "host")
+        monkeypatch.setenv("RABBITMQ_HOST", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://neo4j:7687")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://neo4j:7687")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "secret")
 
         config = GraphinatorConfig.from_env()
 
         assert config.amqp_connection == "amqp://user:pass@host:5672/%2F"
-        assert config.neo4j_address == "bolt://neo4j:7687"
+        assert config.neo4j_host == "bolt://neo4j:7687"
         assert config.neo4j_username == "neo4j"
         assert config.neo4j_password == "secret"
 
     def test_from_env_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with missing required variables."""
-        monkeypatch.delenv("NEO4J_ADDRESS", raising=False)
+        monkeypatch.delenv("NEO4J_HOST", raising=False)
 
-        with pytest.raises(ValueError, match=r"Missing required environment variables.*NEO4J_ADDRESS"):
+        with pytest.raises(ValueError, match=r"Missing required environment variables.*NEO4J_HOST"):
             GraphinatorConfig.from_env()
 
 
@@ -92,9 +92,9 @@ class TestTableinatorConfig:
         """Test configuration loading with all environment variables set."""
         monkeypatch.setenv("RABBITMQ_USERNAME", "user")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
-        monkeypatch.setenv("RABBITMQ_ADDRESS", "host")
+        monkeypatch.setenv("RABBITMQ_HOST", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
-        monkeypatch.setenv("POSTGRES_ADDRESS", "pghost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "pghost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
@@ -102,16 +102,16 @@ class TestTableinatorConfig:
         config = TableinatorConfig.from_env()
 
         assert config.amqp_connection == "amqp://user:pass@host:5672/%2F"
-        assert config.postgres_address == "pghost:5432"
+        assert config.postgres_host == "pghost:5432"
         assert config.postgres_username == "pguser"
         assert config.postgres_password == "pgpass"
         assert config.postgres_database == "mydb"
 
     def test_from_env_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with missing required variables."""
-        monkeypatch.delenv("POSTGRES_ADDRESS", raising=False)
+        monkeypatch.delenv("POSTGRES_HOST", raising=False)
 
-        with pytest.raises(ValueError, match=r"Missing required environment variables.*POSTGRES_ADDRESS"):
+        with pytest.raises(ValueError, match=r"Missing required environment variables.*POSTGRES_HOST"):
             TableinatorConfig.from_env()
 
 
@@ -240,7 +240,7 @@ class TestGraphinatorConfigMissingVars:
         """Test AMQP URL is constructed from RABBITMQ_USERNAME/PASSWORD/HOST/PORT."""
         monkeypatch.setenv("RABBITMQ_USERNAME", "myuser")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "mypass")
-        monkeypatch.setenv("RABBITMQ_ADDRESS", "myrabbitmq")
+        monkeypatch.setenv("RABBITMQ_HOST", "myrabbitmq")
         monkeypatch.setenv("RABBITMQ_PORT", "5673")
 
         config = GraphinatorConfig.from_env()
@@ -269,7 +269,7 @@ class TestTableinatorConfigMissingVars:
         """Test AMQP URL is constructed from RABBITMQ_USERNAME/PASSWORD/HOST/PORT."""
         monkeypatch.setenv("RABBITMQ_USERNAME", "myuser")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "mypass")
-        monkeypatch.setenv("RABBITMQ_ADDRESS", "myrabbitmq")
+        monkeypatch.setenv("RABBITMQ_HOST", "myrabbitmq")
         monkeypatch.setenv("RABBITMQ_PORT", "5673")
 
         config = TableinatorConfig.from_env()
@@ -331,15 +331,15 @@ class TestDashboardConfig:
 
         assert config.cache_webhook_secret == "mysecret123"
 
-    def test_redis_address_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test custom REDIS_ADDRESS is read from environment (line 317)."""
+    def test_redis_host_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test custom REDIS_HOST is read from environment (line 317)."""
         from common import DashboardConfig
 
-        monkeypatch.setenv("REDIS_ADDRESS", "redis://myredis:6380/1")
+        monkeypatch.setenv("REDIS_HOST", "redis://myredis:6380/1")
 
         config = DashboardConfig.from_env()
 
-        assert config.redis_address == "redis://myredis:6380/1"
+        assert config.redis_host == "redis://myredis:6380/1"
 
 
 class TestExploreConfig:
@@ -351,17 +351,17 @@ class TestExploreConfig:
 
         config = ExploreConfig.from_env()
 
-        assert config.neo4j_address == "bolt://localhost:7687"
+        assert config.neo4j_host == "bolt://localhost:7687"
         assert config.neo4j_username == "test"
         assert config.neo4j_password == "test"
 
-    def test_missing_neo4j_address(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test NEO4J_ADDRESS missing raises ValueError (line 375)."""
+    def test_missing_neo4j_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test NEO4J_HOST missing raises ValueError (line 375)."""
         from common import ExploreConfig
 
-        monkeypatch.delenv("NEO4J_ADDRESS", raising=False)
+        monkeypatch.delenv("NEO4J_HOST", raising=False)
 
-        with pytest.raises(ValueError, match="NEO4J_ADDRESS"):
+        with pytest.raises(ValueError, match="NEO4J_HOST"):
             ExploreConfig.from_env()
 
     def test_missing_neo4j_username(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -402,7 +402,7 @@ class TestApiConfig:
         """Test ApiConfig with all required environment variables."""
         from common.config import ApiConfig
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "pghost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "pghost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
@@ -410,7 +410,7 @@ class TestApiConfig:
 
         config = ApiConfig.from_env()
 
-        assert config.postgres_address == "pghost:5432"
+        assert config.postgres_host == "pghost:5432"
         assert config.postgres_username == "pguser"
         assert config.postgres_password == "pgpass"
         assert config.postgres_database == "mydb"
@@ -421,14 +421,14 @@ class TestApiConfig:
         from common.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
-        monkeypatch.delenv("REDIS_ADDRESS", raising=False)
+        monkeypatch.delenv("REDIS_HOST", raising=False)
         monkeypatch.delenv("JWT_ALGORITHM", raising=False)
         monkeypatch.delenv("JWT_EXPIRE_MINUTES", raising=False)
         monkeypatch.delenv("DISCOGS_USER_AGENT", raising=False)
 
         config = ApiConfig.from_env()
 
-        assert config.redis_address == "redis://redis:6379/0"
+        assert config.redis_host == "redis://redis:6379/0"
         assert config.jwt_algorithm == "HS256"
         assert config.jwt_expire_minutes == 30
         assert "discogsography" in config.discogs_user_agent
@@ -438,14 +438,14 @@ class TestApiConfig:
         from common.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
-        monkeypatch.setenv("REDIS_ADDRESS", "redis://myredis:6380/1")
+        monkeypatch.setenv("REDIS_HOST", "redis://myredis:6380/1")
         monkeypatch.setenv("JWT_ALGORITHM", "HS256")
         monkeypatch.setenv("JWT_EXPIRE_MINUTES", "60")
         monkeypatch.setenv("DISCOGS_USER_AGENT", "CustomAgent/2.0")
 
         config = ApiConfig.from_env()
 
-        assert config.redis_address == "redis://myredis:6380/1"
+        assert config.redis_host == "redis://myredis:6380/1"
         assert config.jwt_expire_minutes == 60
         assert config.discogs_user_agent == "CustomAgent/2.0"
 
@@ -460,14 +460,14 @@ class TestApiConfig:
 
         assert config.jwt_expire_minutes == 30
 
-    def test_from_env_missing_postgres_address(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test missing POSTGRES_ADDRESS raises ValueError."""
+    def test_from_env_missing_postgres_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test missing POSTGRES_HOST raises ValueError."""
         from common.config import ApiConfig
 
-        monkeypatch.delenv("POSTGRES_ADDRESS", raising=False)
+        monkeypatch.delenv("POSTGRES_HOST", raising=False)
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
 
-        with pytest.raises(ValueError, match="POSTGRES_ADDRESS"):
+        with pytest.raises(ValueError, match="POSTGRES_HOST"):
             ApiConfig.from_env()
 
     def test_from_env_missing_jwt_secret(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -501,26 +501,26 @@ class TestCuratorConfig:
         """Test CuratorConfig with all required environment variables."""
         from common.config import CuratorConfig
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "pghost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "pghost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://neo4j:7687")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://neo4j:7687")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
 
         config = CuratorConfig.from_env()
 
-        assert config.postgres_address == "pghost:5432"
-        assert config.neo4j_address == "bolt://neo4j:7687"
+        assert config.postgres_host == "pghost:5432"
+        assert config.neo4j_host == "bolt://neo4j:7687"
 
     def test_from_env_missing_neo4j_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test missing Neo4j vars raises ValueError."""
         from common.config import CuratorConfig
 
-        monkeypatch.delenv("NEO4J_ADDRESS", raising=False)
+        monkeypatch.delenv("NEO4J_HOST", raising=False)
 
-        with pytest.raises(ValueError, match="NEO4J_ADDRESS"):
+        with pytest.raises(ValueError, match="NEO4J_HOST"):
             CuratorConfig.from_env()
 
     def test_from_env_custom_user_agent(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -600,44 +600,44 @@ class TestApiConfigFromEnv:
 
     def test_from_env_without_neo4j_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Lines 406-408: NEO4J_* vars absent → neo4j fields are None."""
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
-        monkeypatch.delenv("NEO4J_ADDRESS", raising=False)
+        monkeypatch.delenv("NEO4J_HOST", raising=False)
         monkeypatch.delenv("NEO4J_USERNAME", raising=False)
         monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
 
         from common.config import ApiConfig
 
         config = ApiConfig.from_env()
-        assert config.neo4j_address is None
+        assert config.neo4j_host is None
         assert config.neo4j_username is None
         assert config.neo4j_password is None
 
     def test_from_env_with_neo4j_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """NEO4J_* vars present → neo4j fields are populated."""
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://neo4j:7687")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://neo4j:7687")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
 
         from common.config import ApiConfig
 
         config = ApiConfig.from_env()
-        assert config.neo4j_address == "bolt://neo4j:7687"
+        assert config.neo4j_host == "bolt://neo4j:7687"
         assert config.neo4j_username == "neo4j"
         assert config.neo4j_password == "neo4jpass"
 
     def test_from_env_missing_required_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Missing required var raises ValueError."""
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "pgdb")
@@ -737,12 +737,12 @@ class TestCuratorConfigNoJwtRequired:
     def test_curator_config_works_without_jwt_secret(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from common.config import CuratorConfig
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "pghost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "pghost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
         monkeypatch.setenv("RABBITMQ_URL", "amqp://localhost/")
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost:7687")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost:7687")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "password")
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
@@ -758,7 +758,7 @@ class TestConfigMissingVars:
         """config.py:390 — POSTGRES_PASSWORD missing fires the append."""
         from common.config import ApiConfig
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
         monkeypatch.setenv("POSTGRES_DATABASE", "db")
@@ -770,7 +770,7 @@ class TestConfigMissingVars:
         """config.py:392 — POSTGRES_DATABASE missing fires the append."""
         from common.config import ApiConfig
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.delenv("POSTGRES_DATABASE", raising=False)
@@ -778,29 +778,29 @@ class TestConfigMissingVars:
         with pytest.raises(ValueError, match="POSTGRES_DATABASE"):
             ApiConfig.from_env()
 
-    def test_curator_config_missing_postgres_address(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """config.py:480 — POSTGRES_ADDRESS missing."""
+    def test_curator_config_missing_postgres_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """config.py:480 — POSTGRES_HOST missing."""
         from common.config import CuratorConfig
 
-        monkeypatch.delenv("POSTGRES_ADDRESS", raising=False)
+        monkeypatch.delenv("POSTGRES_HOST", raising=False)
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.setenv("POSTGRES_DATABASE", "db")
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
-        with pytest.raises(ValueError, match="POSTGRES_ADDRESS"):
+        with pytest.raises(ValueError, match="POSTGRES_HOST"):
             CuratorConfig.from_env()
 
     def test_curator_config_missing_postgres_username(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """config.py:482 — POSTGRES_USERNAME missing."""
         from common.config import CuratorConfig
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.setenv("POSTGRES_DATABASE", "db")
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
         with pytest.raises(ValueError, match="POSTGRES_USERNAME"):
@@ -810,11 +810,11 @@ class TestConfigMissingVars:
         """config.py:486 — POSTGRES_DATABASE missing."""
         from common.config import CuratorConfig
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.delenv("POSTGRES_DATABASE", raising=False)
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
         with pytest.raises(ValueError, match="POSTGRES_DATABASE"):
@@ -824,11 +824,11 @@ class TestConfigMissingVars:
         """config.py:490 — NEO4J_USERNAME missing."""
         from common.config import CuratorConfig
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.setenv("POSTGRES_DATABASE", "db")
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost")
         monkeypatch.delenv("NEO4J_USERNAME", raising=False)
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
         with pytest.raises(ValueError, match="NEO4J_USERNAME"):
@@ -838,11 +838,11 @@ class TestConfigMissingVars:
         """config.py:492 — NEO4J_PASSWORD missing."""
         from common.config import CuratorConfig
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.setenv("POSTGRES_DATABASE", "db")
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
         with pytest.raises(ValueError, match="NEO4J_PASSWORD"):
@@ -913,7 +913,7 @@ class TestGetSecretViaFromEnv:
         username_file.write_text("graph_user\n")
         password_file.write_text("graph_pass\n")
 
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost:7687")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost:7687")
         monkeypatch.setenv("NEO4J_USERNAME_FILE", str(username_file))
         monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(password_file))
         monkeypatch.delenv("NEO4J_USERNAME", raising=False)
@@ -932,7 +932,7 @@ class TestGetSecretViaFromEnv:
         user_file.write_text("table_user\n")
         pass_file.write_text("table_pass\n")
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME_FILE", str(user_file))
         monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(pass_file))
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
@@ -956,7 +956,7 @@ class TestGetSecretViaFromEnv:
         jwt_file.write_text("api_jwt_secret\n")
         oauth_file.write_text("api_fernet_key\n")
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME_FILE", str(user_file))
         monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(pass_file))
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
@@ -986,11 +986,11 @@ class TestGetSecretViaFromEnv:
         neo_user_file.write_text("cur_neo_user\n")
         neo_pass_file.write_text("cur_neo_pass\n")
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "localhost:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "localhost:5432")
         monkeypatch.setenv("POSTGRES_USERNAME_FILE", str(pg_user_file))
         monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(pg_pass_file))
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost:7687")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost:7687")
         monkeypatch.setenv("NEO4J_USERNAME_FILE", str(neo_user_file))
         monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(neo_pass_file))
         monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
@@ -1015,7 +1015,7 @@ class TestGetSecretViaFromEnv:
         neo_pass_file.write_text("exp_neo_pass\n")
         jwt_file.write_text("exp_jwt_secret\n")
 
-        monkeypatch.setenv("NEO4J_ADDRESS", "bolt://localhost:7687")
+        monkeypatch.setenv("NEO4J_HOST", "bolt://localhost:7687")
         monkeypatch.setenv("NEO4J_USERNAME_FILE", str(neo_user_file))
         monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(neo_pass_file))
         monkeypatch.setenv("JWT_SECRET_KEY_FILE", str(jwt_file))

@@ -17,14 +17,14 @@ from common.config import get_secret
 
 def _build_conninfo() -> str:
     """Build a psycopg conninfo string from environment variables."""
-    address = get_secret("POSTGRES_ADDRESS") or ""
+    address = get_secret("POSTGRES_HOST") or ""
     username = get_secret("POSTGRES_USERNAME") or ""
     password = get_secret("POSTGRES_PASSWORD") or ""
     database = get_secret("POSTGRES_DATABASE") or ""
 
     missing = []
     if not address:
-        missing.append("POSTGRES_ADDRESS")
+        missing.append("POSTGRES_HOST")
     if not username:
         missing.append("POSTGRES_USERNAME")
     if not password:
@@ -36,7 +36,7 @@ def _build_conninfo() -> str:
         print(f"❌ Missing required environment variables: {', '.join(missing)}", file=sys.stderr)
         sys.exit(1)
 
-    # POSTGRES_ADDRESS is in host:port format (matching api.py lifespan)
+    # POSTGRES_HOST is in host:port format (matching api.py lifespan)
     if ":" in address:
         host, port = address.rsplit(":", 1)
     else:
@@ -93,7 +93,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         prog="discogs-setup",
         description="Configure Discogs app credentials in the database.",
-        epilog=("Reads DB connection from environment variables: POSTGRES_ADDRESS, POSTGRES_USERNAME, POSTGRES_PASSWORD, POSTGRES_DATABASE"),
+        epilog=("Reads DB connection from environment variables: POSTGRES_HOST, POSTGRES_USERNAME, POSTGRES_PASSWORD, POSTGRES_DATABASE"),
     )
     parser.add_argument("--consumer-key", metavar="KEY", help="Discogs consumer key")
     parser.add_argument("--consumer-secret", metavar="SECRET", help="Discogs consumer secret")

@@ -212,8 +212,8 @@ See [Extractor README](../extractor/README.md) for details.
 
 **Configuration**:
 
-- `NEO4J_ADDRESS`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
-- `POSTGRES_ADDRESS`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`: PostgreSQL connection
+- `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
+- `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`: PostgreSQL connection
 
 ### Graphinator
 
@@ -233,7 +233,7 @@ See [Extractor README](../extractor/README.md) for details.
 
 **Configuration**:
 
-- `NEO4J_ADDRESS`: Neo4j bolt URL
+- `NEO4J_HOST`: Neo4j bolt URL
 - `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Auth credentials
 - `CONSUMER_CANCEL_DELAY`: Idle timeout before shutdown
 
@@ -257,7 +257,7 @@ See [Graphinator README](../graphinator/README.md) for details.
 
 **Configuration**:
 
-- `POSTGRES_ADDRESS`: PostgreSQL host:port
+- `POSTGRES_HOST`: PostgreSQL host:port
 - `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`: Auth credentials
 - `POSTGRES_DATABASE`: Database name
 
@@ -279,7 +279,7 @@ See [Tableinator README](../tableinator/README.md) for details.
 
 **Configuration**:
 
-- `NEO4J_ADDRESS`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
+- `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
 - `JWT_SECRET_KEY`: Shared secret for token validation
 
 See [Explore README](../explore/README.md) for details.
@@ -333,8 +333,8 @@ See [Dashboard README](../dashboard/README.md) for details.
 **Configuration**:
 
 - `JWT_SECRET_KEY`: Shared secret for HS256 token signing
-- `POSTGRES_ADDRESS`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`: PostgreSQL connection
-- `REDIS_ADDRESS`: Redis connection for OAuth state
+- `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`: PostgreSQL connection
+- `REDIS_HOST`: Redis connection for OAuth state
 - `DISCOGS_USER_AGENT`: User-Agent header for Discogs API calls
 
 See [API README](../api/README.md) for details.
@@ -359,8 +359,8 @@ See [API README](../api/README.md) for details.
 **Configuration**:
 
 - `JWT_SECRET_KEY`: Shared secret for HS256 token validation
-- `POSTGRES_ADDRESS`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`: PostgreSQL connection
-- `NEO4J_ADDRESS`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
+- `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`: PostgreSQL connection
+- `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
 - `DISCOGS_USER_AGENT`: User-Agent header for Discogs API calls
 
 See [Curator README](../curator/README.md) for details.

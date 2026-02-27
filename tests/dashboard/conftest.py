@@ -147,10 +147,10 @@ def mock_dashboard_config() -> DashboardConfig:
     """Create a mock dashboard configuration for testing."""
     return DashboardConfig(
         amqp_connection="amqp://test:test@localhost:5672/",
-        neo4j_address="neo4j://localhost:7687",
+        neo4j_host="neo4j://localhost:7687",
         neo4j_username="test",
         neo4j_password="test",  # noqa: S106
-        postgres_address="localhost:5432",
+        postgres_host="localhost:5432",
         postgres_username="test",
         postgres_password="test",  # noqa: S106
         postgres_database="test",

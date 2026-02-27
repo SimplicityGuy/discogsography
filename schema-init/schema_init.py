@@ -33,23 +33,23 @@ logger = structlog.get_logger(__name__)
 
 # ── Configuration from environment ───────────────────────────────────────────
 
-NEO4J_ADDRESS = os.environ.get("NEO4J_ADDRESS", "bolt://neo4j:7687")
+NEO4J_HOST = os.environ.get("NEO4J_HOST", "bolt://neo4j:7687")
 NEO4J_USERNAME = os.environ.get("NEO4J_USERNAME", "neo4j")
 NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "discogsography")
 
-POSTGRES_ADDRESS = os.environ.get("POSTGRES_ADDRESS", "postgres:5432")
+POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "postgres:5432")
 POSTGRES_USERNAME = os.environ.get("POSTGRES_USERNAME", "discogsography")
 POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "discogsography")
 POSTGRES_DATABASE = os.environ.get("POSTGRES_DATABASE", "discogsography")
 
 
 def _postgres_connection_params() -> dict[str, Any]:
-    """Parse POSTGRES_ADDRESS into psycopg connection params."""
-    if ":" in POSTGRES_ADDRESS:
-        host, port_str = POSTGRES_ADDRESS.split(":", 1)
+    """Parse POSTGRES_HOST into psycopg connection params."""
+    if ":" in POSTGRES_HOST:
+        host, port_str = POSTGRES_HOST.split(":", 1)
         port = int(port_str)
     else:
-        host = POSTGRES_ADDRESS
+        host = POSTGRES_HOST
         port = 5432
     return {
         "host": host,
@@ -119,7 +119,7 @@ async def _init_neo4j() -> bool:
     driver: AsyncResilientNeo4jDriver | None = None
     try:
         driver = AsyncResilientNeo4jDriver(
-            uri=NEO4J_ADDRESS,
+            uri=NEO4J_HOST,
             auth=(NEO4J_USERNAME, NEO4J_PASSWORD),
         )
 

@@ -60,11 +60,11 @@ class TestLifespan:
         mock_health_server = MagicMock()
 
         mock_config = MagicMock()
-        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_host = "localhost:5432"
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "testuser"
         mock_config.postgres_password = "testpass"
-        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_host = "bolt://localhost:7687"
         mock_config.neo4j_username = "neo4j"
         mock_config.neo4j_password = "testpass"
 
@@ -102,11 +102,11 @@ class TestLifespan:
 
         mock_health_server = MagicMock()
         mock_config = MagicMock()
-        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_host = "localhost:5432"
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "testuser"
         mock_config.postgres_password = "testpass"
-        mock_config.neo4j_address = "bolt://localhost:7687"
+        mock_config.neo4j_host = "bolt://localhost:7687"
         mock_config.neo4j_username = "neo4j"
         mock_config.neo4j_password = "testpass"
 

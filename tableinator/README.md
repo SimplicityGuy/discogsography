@@ -29,7 +29,7 @@ Environment variables:
 HEALTH_CHECK_PORT=8002              # Health check endpoint port
 
 # PostgreSQL connection
-POSTGRES_ADDRESS=postgres:5432
+POSTGRES_HOST=postgres:5432
 POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography

@@ -34,11 +34,11 @@ GRAPHINATOR_URL=http://graphinator:8001
 TABLEINATOR_URL=http://tableinator:8002
 
 # Database connections
-NEO4J_ADDRESS=neo4j:7687
+NEO4J_HOST=neo4j:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=discogsography
 
-POSTGRES_ADDRESS=postgres:5432
+POSTGRES_HOST=postgres:5432
 POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography

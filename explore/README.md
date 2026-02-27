@@ -42,7 +42,7 @@ open http://localhost:8004/api/explore
 uv sync --extra explore
 
 # Set environment variables
-export NEO4J_ADDRESS="bolt://localhost:7687"
+export NEO4J_HOST="bolt://localhost:7687"
 export NEO4J_USERNAME="neo4j"
 export NEO4J_PASSWORD="password"
 
@@ -250,7 +250,7 @@ Example response:
 
 | Variable         | Description               | Default  |
 | ---------------- | ------------------------- | -------- |
-| `NEO4J_ADDRESS`  | Neo4j bolt connection URL | Required |
+| `NEO4J_HOST`  | Neo4j bolt connection URL | Required |
 | `NEO4J_USERNAME` | Neo4j username            | Required |
 | `NEO4J_PASSWORD` | Neo4j password            | Required |
 

@@ -110,12 +110,12 @@ No changes required to existing environment variables. The resilient connections
 
 ```bash
 # Neo4j
-NEO4J_ADDRESS=bolt://neo4j:7687
+NEO4J_HOST=bolt://neo4j:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=password
 
 # PostgreSQL
-POSTGRES_ADDRESS=postgres:5432
+POSTGRES_HOST=postgres:5432
 POSTGRES_DATABASE=discogsography
 POSTGRES_USERNAME=postgres
 POSTGRES_PASSWORD=postgres

@@ -38,10 +38,10 @@ class TestDashboardAppStartup:
         """Test successful startup."""
         mock_config = Mock()
         mock_config.amqp_connection = "amqp://test"
-        mock_config.neo4j_address = "bolt://test:7687"
+        mock_config.neo4j_host = "bolt://test:7687"
         mock_config.neo4j_username = "neo4j"
         mock_config.neo4j_password = "test"
-        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_host = "localhost:5432"
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "test"
         mock_config.postgres_password = "test"
@@ -71,14 +71,14 @@ class TestDashboardAppStartup:
             mock_create_task.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_startup_with_port_in_postgres_address(self) -> None:
+    async def test_startup_with_port_in_postgres_host(self) -> None:
         """Test startup with custom PostgreSQL port."""
         mock_config = Mock()
         mock_config.amqp_connection = "amqp://test"
-        mock_config.neo4j_address = "bolt://test:7687"
+        mock_config.neo4j_host = "bolt://test:7687"
         mock_config.neo4j_username = "neo4j"
         mock_config.neo4j_password = "test"
-        mock_config.postgres_address = "localhost:5433"  # Custom port
+        mock_config.postgres_host = "localhost:5433"  # Custom port
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "test"
         mock_config.postgres_password = "test"
@@ -660,7 +660,7 @@ class TestDashboardAppDataCollection:
     async def test_get_database_info_success(self) -> None:
         """Test getting database information successfully."""
         mock_config = Mock()
-        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_host = "localhost:5432"
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "test"
         mock_config.postgres_password = "test"
@@ -722,7 +722,7 @@ class TestDashboardAppDataCollection:
     async def test_get_database_info_postgres_size_gb(self) -> None:
         """Test that PostgreSQL DB size >= 1 GB is displayed in GB."""
         mock_config = Mock()
-        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_host = "localhost:5432"
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "test"
         mock_config.postgres_password = "test"
@@ -762,7 +762,7 @@ class TestDashboardAppDataCollection:
     async def test_get_database_info_postgres_size_37gb(self) -> None:
         """Test that PostgreSQL DB size of 37 GB is displayed correctly."""
         mock_config = Mock()
-        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_host = "localhost:5432"
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "test"
         mock_config.postgres_password = "test"
@@ -802,7 +802,7 @@ class TestDashboardAppDataCollection:
     async def test_get_database_info_postgres_size_376gb(self) -> None:
         """Test that PostgreSQL DB size of 376 GB is displayed correctly."""
         mock_config = Mock()
-        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_host = "localhost:5432"
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "test"
         mock_config.postgres_password = "test"
@@ -842,7 +842,7 @@ class TestDashboardAppDataCollection:
     async def test_get_database_info_postgres_error(self) -> None:
         """Test database info when PostgreSQL connection fails."""
         mock_config = Mock()
-        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_host = "localhost:5432"
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "test"
         mock_config.postgres_password = "test"
@@ -870,7 +870,7 @@ class TestDashboardAppDataCollection:
     async def test_get_database_info_neo4j_error(self) -> None:
         """Test database info when Neo4j connection fails."""
         mock_config = Mock()
-        mock_config.postgres_address = "localhost:5432"
+        mock_config.postgres_host = "localhost:5432"
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "test"
         mock_config.postgres_password = "test"
@@ -1194,14 +1194,14 @@ class TestPostgresAddressParsing:
     """Test PostgreSQL address parsing edge cases."""
 
     @pytest.mark.asyncio
-    async def test_startup_postgres_address_without_port(self) -> None:
+    async def test_startup_postgres_host_without_port(self) -> None:
         """Test startup with PostgreSQL address without port."""
         mock_config = Mock()
         mock_config.amqp_connection = "amqp://test"
-        mock_config.neo4j_address = "bolt://test:7687"
+        mock_config.neo4j_host = "bolt://test:7687"
         mock_config.neo4j_username = "neo4j"
         mock_config.neo4j_password = "test"
-        mock_config.postgres_address = "localhost"  # No port
+        mock_config.postgres_host = "localhost"  # No port
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "test"
         mock_config.postgres_password = "test"
@@ -1250,13 +1250,13 @@ class TestPrometheusMetricsInitialization:
 
 
 class TestGetDatabaseInfoNoPort:
-    """Test get_database_info() when postgres_address has no port (lines 323-324)."""
+    """Test get_database_info() when postgres_host has no port (lines 323-324)."""
 
     @pytest.mark.asyncio
-    async def test_get_database_info_postgres_address_without_port(self) -> None:
+    async def test_get_database_info_postgres_host_without_port(self) -> None:
         """Test that get_database_info uses port 5432 when address has no colon."""
         mock_config = Mock()
-        mock_config.postgres_address = "mydbhost"  # No port
+        mock_config.postgres_host = "mydbhost"  # No port
         mock_config.postgres_database = "testdb"
         mock_config.postgres_username = "test"
         mock_config.postgres_password = "test"

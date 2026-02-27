@@ -29,13 +29,13 @@ Environment variables:
 
 ```bash
 # PostgreSQL connection
-POSTGRES_ADDRESS=postgres:5432
+POSTGRES_HOST=postgres:5432
 POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
 
 # Neo4j connection
-NEO4J_ADDRESS=bolt://neo4j:7687
+NEO4J_HOST=bolt://neo4j:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=discogsography
 

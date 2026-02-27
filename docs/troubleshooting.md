@@ -166,7 +166,7 @@ echo "MATCH (n) RETURN count(n);" | \
 
    ```bash
    # Check environment variables
-   echo $NEO4J_ADDRESS
+   echo $NEO4J_HOST
    echo $NEO4J_USERNAME
    echo $NEO4J_PASSWORD
    ```
@@ -216,7 +216,7 @@ PGPASSWORD=discogsography psql \
 1. **✅ Verify credentials**
 
    ```bash
-   echo $POSTGRES_ADDRESS
+   echo $POSTGRES_HOST
    echo $POSTGRES_USERNAME
    echo $POSTGRES_PASSWORD
    echo $POSTGRES_DATABASE

@@ -8,13 +8,13 @@ import os
 
 
 # Set environment variables BEFORE importing api modules
-os.environ.setdefault("POSTGRES_ADDRESS", "localhost:5432")
+os.environ.setdefault("POSTGRES_HOST", "localhost:5432")
 os.environ.setdefault("POSTGRES_USERNAME", "test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test")
 os.environ.setdefault("POSTGRES_DATABASE", "test")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-for-unit-tests")
-os.environ.setdefault("REDIS_ADDRESS", "redis://localhost:6379/0")
-os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
+os.environ.setdefault("REDIS_HOST", "redis://localhost:6379/0")
+os.environ.setdefault("NEO4J_HOST", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USERNAME", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "testpassword")
 
@@ -123,14 +123,14 @@ def mock_neo4j() -> MagicMock:
 def test_api_config() -> ApiConfig:
     """Create a test ApiConfig with the test JWT secret."""
     return ApiConfig(
-        postgres_address="localhost:5432",
+        postgres_host="localhost:5432",
         postgres_username="test",
         postgres_password="test",  # noqa: S106
         postgres_database="test",
         jwt_secret_key=TEST_JWT_SECRET,
-        redis_address="redis://localhost:6379/0",
+        redis_host="redis://localhost:6379/0",
         jwt_expire_minutes=30,
-        neo4j_address="bolt://localhost:7687",
+        neo4j_host="bolt://localhost:7687",
         neo4j_username="neo4j",
         neo4j_password="testpassword",  # noqa: S106
     )

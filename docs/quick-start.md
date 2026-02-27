@@ -167,18 +167,18 @@ Create a `.env` file or export variables:
 export AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 
 # Neo4j settings
-export NEO4J_ADDRESS="bolt://localhost:7687"
+export NEO4J_HOST="bolt://localhost:7687"
 export NEO4J_USERNAME="neo4j"
 export NEO4J_PASSWORD="discogsography"
 
 # PostgreSQL settings
-export POSTGRES_ADDRESS="localhost:5433"
+export POSTGRES_HOST="localhost:5433"
 export POSTGRES_USERNAME="discogsography"
 export POSTGRES_PASSWORD="discogsography"
 export POSTGRES_DATABASE="discogsography"
 
 # Redis settings
-export REDIS_ADDRESS="redis://localhost:6379/0"
+export REDIS_HOST="redis://localhost:6379/0"
 
 # Optional: Set log level
 export LOG_LEVEL="INFO"  # or DEBUG for detailed output

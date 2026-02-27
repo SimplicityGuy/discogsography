@@ -27,7 +27,7 @@ class TestPostgresConnectionParams:
 
     def test_host_and_port(self) -> None:
         with (
-            patch("schema_init.POSTGRES_ADDRESS", "myhost:5433"),
+            patch("schema_init.POSTGRES_HOST", "myhost:5433"),
             patch("schema_init.POSTGRES_DATABASE", "testdb"),
             patch("schema_init.POSTGRES_USERNAME", "testuser"),
             patch("schema_init.POSTGRES_PASSWORD", "testpass"),
@@ -43,7 +43,7 @@ class TestPostgresConnectionParams:
 
     def test_host_only_defaults_to_port_5432(self) -> None:
         with (
-            patch("schema_init.POSTGRES_ADDRESS", "myhost"),
+            patch("schema_init.POSTGRES_HOST", "myhost"),
             patch("schema_init.POSTGRES_DATABASE", "db"),
             patch("schema_init.POSTGRES_USERNAME", "u"),
             patch("schema_init.POSTGRES_PASSWORD", "p"),
@@ -54,7 +54,7 @@ class TestPostgresConnectionParams:
 
     def test_custom_database(self) -> None:
         with (
-            patch("schema_init.POSTGRES_ADDRESS", "localhost:5432"),
+            patch("schema_init.POSTGRES_HOST", "localhost:5432"),
             patch("schema_init.POSTGRES_DATABASE", "custom_db"),
             patch("schema_init.POSTGRES_USERNAME", "u"),
             patch("schema_init.POSTGRES_PASSWORD", "p"),
@@ -64,7 +64,7 @@ class TestPostgresConnectionParams:
 
     def test_port_is_integer(self) -> None:
         with (
-            patch("schema_init.POSTGRES_ADDRESS", "host:9999"),
+            patch("schema_init.POSTGRES_HOST", "host:9999"),
             patch("schema_init.POSTGRES_DATABASE", "db"),
             patch("schema_init.POSTGRES_USERNAME", "u"),
             patch("schema_init.POSTGRES_PASSWORD", "p"),
@@ -260,7 +260,7 @@ class TestInitNeo4j:
         with (
             patch("schema_init.AsyncResilientNeo4jDriver", return_value=mock_driver) as MockDriver,
             patch("schema_init.create_neo4j_schema", new_callable=AsyncMock),
-            patch("schema_init.NEO4J_ADDRESS", "bolt://myhost:7687"),
+            patch("schema_init.NEO4J_HOST", "bolt://myhost:7687"),
             patch("schema_init.NEO4J_USERNAME", "myuser"),
             patch("schema_init.NEO4J_PASSWORD", "mypass"),
         ):
@@ -363,11 +363,11 @@ class TestMain:
 class TestModuleVariables:
     """Verify module-level environment variable defaults."""
 
-    def test_neo4j_address_has_default(self) -> None:
-        assert schema_init.NEO4J_ADDRESS
+    def test_neo4j_host_has_default(self) -> None:
+        assert schema_init.NEO4J_HOST
 
-    def test_postgres_address_has_default(self) -> None:
-        assert schema_init.POSTGRES_ADDRESS
+    def test_postgres_host_has_default(self) -> None:
+        assert schema_init.POSTGRES_HOST
 
     def test_postgres_database_has_default(self) -> None:
         assert schema_init.POSTGRES_DATABASE

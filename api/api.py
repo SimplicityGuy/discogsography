@@ -213,7 +213,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     logger.info("🏥 Health server started", port=API_HEALTH_PORT)
 
     # Parse postgres address (format: host:port)
-    host, port_str = _config.postgres_address.rsplit(":", 1)
+    host, port_str = _config.postgres_host.rsplit(":", 1)
     _pool = AsyncPostgreSQLPool(
         connection_params={
             "host": host,
@@ -229,19 +229,19 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     logger.info("💾 Database pool initialized")
 
     # Initialize Redis for OAuth state storage and token blacklist
-    _redis = await aioredis.from_url(_config.redis_address, decode_responses=True)
-    redis_host = _config.redis_address.split("@")[-1] if "@" in _config.redis_address else _config.redis_address.split("://")[-1]
+    _redis = await aioredis.from_url(_config.redis_host, decode_responses=True)
+    redis_host = _config.redis_host.split("@")[-1] if "@" in _config.redis_host else _config.redis_host.split("://")[-1]
     logger.info("🔴 Redis connected", host=redis_host)
 
-    if _config.neo4j_address and _config.neo4j_username and _config.neo4j_password:
+    if _config.neo4j_host and _config.neo4j_username and _config.neo4j_password:
         _neo4j = AsyncResilientNeo4jDriver(
-            uri=_config.neo4j_address,
+            uri=_config.neo4j_host,
             auth=(_config.neo4j_username, _config.neo4j_password),
             max_retries=5,
             encrypted=False,  # M3: Set encrypted=True in production with TLS-enabled Neo4j
         )
         logger.info("🔗 Neo4j driver initialized")
-    jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_address else None
+    jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_host else None
     _sync_router.configure(_pool, _neo4j, _config, _running_syncs, _redis)
     _explore_router.configure(_neo4j, jwt_secret_for_neo4j)
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)

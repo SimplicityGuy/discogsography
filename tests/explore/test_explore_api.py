@@ -731,7 +731,7 @@ class TestLifespan:
             patch("explore.explore.AsyncResilientNeo4jDriver", return_value=mock_driver),
         ):
             mock_config = MagicMock()
-            mock_config.neo4j_address = "bolt://localhost:7687"
+            mock_config.neo4j_host = "bolt://localhost:7687"
             mock_config.neo4j_username = "neo4j"
             mock_config.neo4j_password = "password"
             mock_config_class.from_env.return_value = mock_config

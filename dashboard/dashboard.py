@@ -128,7 +128,7 @@ class DashboardApp:
 
             # Initialize resilient Neo4j driver
             self.neo4j_driver = AsyncResilientNeo4jDriver(
-                uri=self.config.neo4j_address,
+                uri=self.config.neo4j_host,
                 auth=(self.config.neo4j_username, self.config.neo4j_password),
                 max_retries=5,
                 encrypted=False,
@@ -137,11 +137,11 @@ class DashboardApp:
 
             # Initialize resilient PostgreSQL connection
             # Parse host and port from address
-            if ":" in self.config.postgres_address:
-                host, port_str = self.config.postgres_address.split(":", 1)
+            if ":" in self.config.postgres_host:
+                host, port_str = self.config.postgres_host.split(":", 1)
                 port = int(port_str)
             else:
-                host = self.config.postgres_address
+                host = self.config.postgres_host
                 port = 5432
 
             self.postgres_conn = AsyncResilientPostgreSQL(
@@ -324,11 +324,11 @@ class DashboardApp:
 
         # Check PostgreSQL
         try:
-            if ":" in self.config.postgres_address:
-                pg_host, pg_port_str = self.config.postgres_address.split(":", 1)
+            if ":" in self.config.postgres_host:
+                pg_host, pg_port_str = self.config.postgres_host.split(":", 1)
                 pg_port = int(pg_port_str)
             else:
-                pg_host = self.config.postgres_address
+                pg_host = self.config.postgres_host
                 pg_port = 5432
             async with await psycopg.AsyncConnection.connect(
                 host=pg_host,

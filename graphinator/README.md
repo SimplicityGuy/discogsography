@@ -29,7 +29,7 @@ Environment variables:
 HEALTH_CHECK_PORT=8001              # Health check endpoint port
 
 # Neo4j connection
-NEO4J_ADDRESS=neo4j:7687
+NEO4J_HOST=neo4j:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=discogsography
 

@@ -776,11 +776,11 @@ async def main() -> None:
         return
 
     # Parse host and port from address
-    if ":" in config.postgres_address:
-        host, port_str = config.postgres_address.split(":", 1)
+    if ":" in config.postgres_host:
+        host, port_str = config.postgres_host.split(":", 1)
         port = int(port_str)
     else:
-        host = config.postgres_address
+        host = config.postgres_host
         port = 5432
 
     # Set connection parameters

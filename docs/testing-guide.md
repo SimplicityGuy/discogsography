@@ -206,10 +206,10 @@ def test_config():
     """Test configuration."""
     return Config(
         amqp_connection="amqp://test@localhost",
-        neo4j_address="bolt://localhost:7687",
+        neo4j_host="bolt://localhost:7687",
         neo4j_username="test",
         neo4j_password="test",
-        postgres_address="localhost:5432",
+        postgres_host="localhost:5432",
         postgres_username="test",
         postgres_password="test",
         postgres_database="test_db",

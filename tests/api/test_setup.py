@@ -41,7 +41,7 @@ class TestBuildConninfo:
     def test_builds_conninfo_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from api.setup import _build_conninfo
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "db:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "db:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "user")
         monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
@@ -56,7 +56,7 @@ class TestBuildConninfo:
     def test_address_without_port_defaults_to_5432(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from api.setup import _build_conninfo
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "myhost")
+        monkeypatch.setenv("POSTGRES_HOST", "myhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "u")
         monkeypatch.setenv("POSTGRES_PASSWORD", "p")
         monkeypatch.setenv("POSTGRES_DATABASE", "d")
@@ -68,7 +68,7 @@ class TestBuildConninfo:
     def test_missing_env_vars_exits(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from api.setup import _build_conninfo
 
-        for var in ("POSTGRES_ADDRESS", "POSTGRES_USERNAME", "POSTGRES_PASSWORD", "POSTGRES_DATABASE"):
+        for var in ("POSTGRES_HOST", "POSTGRES_USERNAME", "POSTGRES_PASSWORD", "POSTGRES_DATABASE"):
             monkeypatch.delenv(var, raising=False)
 
         with pytest.raises(SystemExit) as exc_info:
@@ -78,7 +78,7 @@ class TestBuildConninfo:
     def test_partial_missing_env_vars_exits(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from api.setup import _build_conninfo
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "db:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "db:5432")
         monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
         monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
         monkeypatch.delenv("POSTGRES_DATABASE", raising=False)
@@ -288,7 +288,7 @@ class TestMain:
     def test_show_calls_show_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from api.setup import main
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "db:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "db:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "u")
         monkeypatch.setenv("POSTGRES_PASSWORD", "p")
         monkeypatch.setenv("POSTGRES_DATABASE", "d")
@@ -304,7 +304,7 @@ class TestMain:
     def test_set_credentials_calls_set_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from api.setup import main
 
-        monkeypatch.setenv("POSTGRES_ADDRESS", "db:5432")
+        monkeypatch.setenv("POSTGRES_HOST", "db:5432")
         monkeypatch.setenv("POSTGRES_USERNAME", "u")
         monkeypatch.setenv("POSTGRES_PASSWORD", "p")
         monkeypatch.setenv("POSTGRES_DATABASE", "d")

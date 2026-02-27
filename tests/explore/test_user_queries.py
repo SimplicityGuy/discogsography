@@ -8,7 +8,7 @@ import pytest
 
 
 # Set env vars before importing explore modules
-os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
+os.environ.setdefault("NEO4J_HOST", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USERNAME", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "testpassword")
 

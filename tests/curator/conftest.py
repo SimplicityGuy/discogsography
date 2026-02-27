@@ -8,11 +8,11 @@ import os
 
 
 # Set environment variables BEFORE importing curator modules
-os.environ.setdefault("POSTGRES_ADDRESS", "localhost:5432")
+os.environ.setdefault("POSTGRES_HOST", "localhost:5432")
 os.environ.setdefault("POSTGRES_USERNAME", "test")
 os.environ.setdefault("POSTGRES_PASSWORD", "test")
 os.environ.setdefault("POSTGRES_DATABASE", "test")
-os.environ.setdefault("NEO4J_ADDRESS", "bolt://localhost:7687")
+os.environ.setdefault("NEO4J_HOST", "bolt://localhost:7687")
 os.environ.setdefault("NEO4J_USERNAME", "neo4j")
 os.environ.setdefault("NEO4J_PASSWORD", "testpassword")
 
@@ -106,11 +106,11 @@ def mock_neo4j() -> MagicMock:
 def test_curator_config() -> CuratorConfig:
     """Create a test CuratorConfig."""
     return CuratorConfig(
-        postgres_address="localhost:5432",
+        postgres_host="localhost:5432",
         postgres_username="test",
         postgres_password="test",  # noqa: S106
         postgres_database="test",
-        neo4j_address="bolt://localhost:7687",
+        neo4j_host="bolt://localhost:7687",
         neo4j_username="neo4j",
         neo4j_password="testpassword",  # noqa: S106
     )

@@ -34,7 +34,7 @@ Export variables in your shell:
 
 ```bash
 export AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
-export NEO4J_ADDRESS="bolt://localhost:7687"
+export NEO4J_HOST="bolt://localhost:7687"
 # ... other variables
 ```
 
@@ -61,7 +61,7 @@ services:
   dashboard:
     environment:
       - LOG_LEVEL=DEBUG
-      - REDIS_ADDRESS=redis://redis:6379/0
+      - REDIS_HOST=redis://redis:6379/0
 ```
 
 ## Core Settings
@@ -141,7 +141,7 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 
 | Variable         | Description    | Default                 | Required |
 | ---------------- | -------------- | ----------------------- | -------- |
-| `NEO4J_ADDRESS`  | Neo4j bolt URL | `bolt://localhost:7687` | Yes      |
+| `NEO4J_HOST`  | Neo4j bolt URL | `bolt://localhost:7687` | Yes      |
 | `NEO4J_USERNAME` | Neo4j username | `neo4j`                 | Yes      |
 | `NEO4J_PASSWORD` | Neo4j password | (none)                  | Yes      |
 
@@ -159,17 +159,17 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 
 ```bash
 # Local development
-NEO4J_ADDRESS="bolt://localhost:7687"
+NEO4J_HOST="bolt://localhost:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="password"
 
 # Docker Compose
-NEO4J_ADDRESS="bolt://neo4j:7687"
+NEO4J_HOST="bolt://neo4j:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
 
 # Neo4j Aura (cloud)
-NEO4J_ADDRESS="bolt+s://xxxxx.databases.neo4j.io:7687"
+NEO4J_HOST="bolt+s://xxxxx.databases.neo4j.io:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="your-secure-password"
 ```
@@ -185,7 +185,7 @@ NEO4J_PASSWORD="your-secure-password"
 
 | Variable            | Description          | Default          | Required |
 | ------------------- | -------------------- | ---------------- | -------- |
-| `POSTGRES_ADDRESS`  | PostgreSQL host:port | `localhost:5432` | Yes      |
+| `POSTGRES_HOST`  | PostgreSQL host:port | `localhost:5432` | Yes      |
 | `POSTGRES_USERNAME` | PostgreSQL username  | `postgres`       | Yes      |
 | `POSTGRES_PASSWORD` | PostgreSQL password  | (none)           | Yes      |
 | `POSTGRES_DATABASE` | Database name        | `discogsography` | Yes      |
@@ -204,19 +204,19 @@ NEO4J_PASSWORD="your-secure-password"
 
 ```bash
 # Local development
-POSTGRES_ADDRESS="localhost:5433"
+POSTGRES_HOST="localhost:5433"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
 
 # Docker Compose
-POSTGRES_ADDRESS="postgres:5432"
+POSTGRES_HOST="postgres:5432"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
 
 # Remote server with SSL
-POSTGRES_ADDRESS="db.example.com:5432"
+POSTGRES_HOST="db.example.com:5432"
 POSTGRES_USERNAME="app_user"
 POSTGRES_PASSWORD="secure-password"
 POSTGRES_DATABASE="discogsography_prod"
@@ -235,7 +235,7 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 | Variable    | Description          | Default                    | Required             |
 | ----------- | -------------------- | -------------------------- | -------------------- |
-| `REDIS_ADDRESS` | Redis connection URL | `redis://localhost:6379/0` | Yes (Dashboard, API) |
+| `REDIS_HOST` | Redis connection URL | `redis://localhost:6379/0` | Yes (Dashboard, API) |
 
 **Used By**: Dashboard, API
 
@@ -251,16 +251,16 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ```bash
 # Local development
-REDIS_ADDRESS="redis://localhost:6379/0"
+REDIS_HOST="redis://localhost:6379/0"
 
 # Docker Compose
-REDIS_ADDRESS="redis://redis:6379/0"
+REDIS_HOST="redis://redis:6379/0"
 
 # With password
-REDIS_ADDRESS="redis://:password@localhost:6379/0"
+REDIS_HOST="redis://:password@localhost:6379/0"
 
 # Redis Sentinel
-REDIS_ADDRESS="redis+sentinel://sentinel1:26379,sentinel2:26379/myservice"
+REDIS_HOST="redis+sentinel://sentinel1:26379,sentinel2:26379/myservice"
 ```
 
 **Cache Configuration**:
@@ -506,11 +506,11 @@ See [Performance Guide](performance-guide.md) for detailed optimization strategi
 
 ```bash
 # Required
-POSTGRES_ADDRESS="localhost:5433"
+POSTGRES_HOST="localhost:5433"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
-REDIS_ADDRESS="redis://localhost:6379/0"
+REDIS_HOST="redis://localhost:6379/0"
 JWT_SECRET_KEY="your-secret-key-here"
 DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
@@ -550,11 +550,11 @@ See the [API README](../api/README.md#operator-setup) for full setup instruction
 
 ```bash
 # Required
-POSTGRES_ADDRESS="localhost:5433"
+POSTGRES_HOST="localhost:5433"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
-NEO4J_ADDRESS="bolt://localhost:7687"
+NEO4J_HOST="bolt://localhost:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
 JWT_SECRET_KEY="your-secret-key-here"  # Must match API service
@@ -572,10 +572,10 @@ Health check: http://localhost:8010/health (service), http://localhost:8011/heal
 
 ```bash
 # Required
-NEO4J_ADDRESS="bolt://localhost:7687"
+NEO4J_HOST="bolt://localhost:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
-POSTGRES_ADDRESS="localhost:5433"
+POSTGRES_HOST="localhost:5433"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
@@ -605,7 +605,7 @@ Health check: http://localhost:8000/health
 ```bash
 # Required
 AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
-NEO4J_ADDRESS="bolt://localhost:7687"
+NEO4J_HOST="bolt://localhost:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
 
@@ -630,7 +630,7 @@ Health check: http://localhost:8001/health
 ```bash
 # Required
 AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
-POSTGRES_ADDRESS="localhost:5433"
+POSTGRES_HOST="localhost:5433"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
@@ -655,7 +655,7 @@ Health check: http://localhost:8002/health
 
 ```bash
 # Required
-NEO4J_ADDRESS="bolt://localhost:7687"
+NEO4J_HOST="bolt://localhost:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
 
@@ -670,14 +670,14 @@ Health check: http://localhost:8006/health (service), http://localhost:8007/heal
 ```bash
 # Required
 AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
-NEO4J_ADDRESS="bolt://localhost:7687"
+NEO4J_HOST="bolt://localhost:7687"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
-POSTGRES_ADDRESS="localhost:5433"
+POSTGRES_HOST="localhost:5433"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
-REDIS_ADDRESS="redis://localhost:6379/0"
+REDIS_HOST="redis://localhost:6379/0"
 
 # Optional - RabbitMQ Management API access
 RABBITMQ_MANAGEMENT_USER=discogsography
@@ -705,18 +705,18 @@ Health check: http://localhost:8003/health
 AMQP_CONNECTION=amqp://discogsography:discogsography@localhost:5672/
 
 # Neo4j
-NEO4J_ADDRESS=bolt://localhost:7687
+NEO4J_HOST=bolt://localhost:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=development
 
 # PostgreSQL
-POSTGRES_ADDRESS=localhost:5433
+POSTGRES_HOST=localhost:5433
 POSTGRES_USERNAME=postgres
 POSTGRES_PASSWORD=development
 POSTGRES_DATABASE=discogsography_dev
 
 # Redis
-REDIS_ADDRESS=redis://localhost:6379/0
+REDIS_HOST=redis://localhost:6379/0
 
 # JWT (API + Curator)
 JWT_SECRET_KEY=dev-secret-key-not-for-production
@@ -767,14 +767,14 @@ See `secrets.example/` for reference placeholders and generation commands.
 AMQP_CONNECTION=amqp://discogsography:@rabbitmq:5672/
 
 # Neo4j
-NEO4J_ADDRESS=bolt+s://neo4j.prod.internal:7687
+NEO4J_HOST=bolt+s://neo4j.prod.internal:7687
 
 # PostgreSQL
-POSTGRES_ADDRESS=postgres.prod.internal:5432
+POSTGRES_HOST=postgres.prod.internal:5432
 POSTGRES_DATABASE=discogsography
 
 # Redis
-REDIS_ADDRESS=redis://redis:6379/0
+REDIS_HOST=redis://redis:6379/0
 
 # JWT (optional non-secret settings)
 JWT_EXPIRE_MINUTES=1440
@@ -828,13 +828,13 @@ Enable encryption for production:
 
 ```bash
 # Neo4j with TLS
-NEO4J_ADDRESS=bolt+s://neo4j.example.com:7687
+NEO4J_HOST=bolt+s://neo4j.example.com:7687
 
 # PostgreSQL with SSL (via connection string)
-POSTGRES_ADDRESS=postgres.example.com:5432?sslmode=require
+POSTGRES_HOST=postgres.example.com:5432?sslmode=require
 
 # Redis with TLS
-REDIS_ADDRESS=rediss://:password@redis.example.com:6380/0
+REDIS_HOST=rediss://:password@redis.example.com:6380/0
 ```
 
 ### Access Control

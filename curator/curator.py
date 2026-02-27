@@ -54,7 +54,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     logger.info("🏥 Health server started", port=CURATOR_HEALTH_PORT)
 
     # PostgreSQL connection pool
-    host, port_str = _config.postgres_address.rsplit(":", 1)
+    host, port_str = _config.postgres_host.rsplit(":", 1)
     _pool = AsyncPostgreSQLPool(
         connection_params={
             "host": host,
@@ -71,7 +71,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     # Neo4j connection
     _neo4j = AsyncResilientNeo4jDriver(
-        uri=_config.neo4j_address,
+        uri=_config.neo4j_host,
         auth=(_config.neo4j_username, _config.neo4j_password),
         max_retries=5,
         encrypted=False,
