@@ -753,9 +753,9 @@ secrets/
 ├── neo4j_password.txt        # openssl rand -base64 24
 ├── oauth_encryption_key.txt  # Fernet.generate_key()
 ├── postgres_password.txt     # openssl rand -base64 24
-├── postgres_user.txt         # discogsography
+├── postgres_username.txt         # discogsography
 ├── rabbitmq_password.txt     # openssl rand -base64 24
-└── rabbitmq_user.txt         # discogsography
+└── rabbitmq_username.txt         # discogsography
 ```
 
 See `secrets.example/` for reference placeholders and generation commands.

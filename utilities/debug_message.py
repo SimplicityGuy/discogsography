@@ -11,7 +11,7 @@ import pika
 def get_message_from_queue(
     queue_name: str,
     host: str = "localhost",
-    username: str = os.environ.get("RABBITMQ_USER", "discogsography"),
+    username: str = os.environ.get("RABBITMQ_USERNAME", "discogsography"),
     password: str = os.environ.get("RABBITMQ_PASSWORD", ""),
 ) -> dict[str, Any] | None:
     """Peek at a message from the queue without consuming it."""

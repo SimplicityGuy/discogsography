@@ -138,7 +138,7 @@ def sample_master_data() -> dict[str, Any]:
 def setup_test_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Set up test environment variables."""
     test_env = {
-        "RABBITMQ_USER": "test",
+        "RABBITMQ_USERNAME": "test",
         "RABBITMQ_PASSWORD": "test",
         "RABBITMQ_HOST": "localhost",
         "RABBITMQ_PORT": "5672",

@@ -2,7 +2,7 @@
 async fn test_config_from_env() {
     // Test that configuration loads from environment variables
     unsafe {
-        std::env::set_var("RABBITMQ_USER", "testuser");
+        std::env::set_var("RABBITMQ_USERNAME", "testuser");
         std::env::set_var("RABBITMQ_PASSWORD", "testpass");
         std::env::set_var("RABBITMQ_HOST", "localhost");
     }
@@ -12,7 +12,7 @@ async fn test_config_from_env() {
 
     // Clean up
     unsafe {
-        std::env::remove_var("RABBITMQ_USER");
+        std::env::remove_var("RABBITMQ_USERNAME");
         std::env::remove_var("RABBITMQ_PASSWORD");
         std::env::remove_var("RABBITMQ_HOST");
     }

@@ -13,12 +13,12 @@ secrets:
     file: ./secrets/oauth_encryption_key.txt
   postgres_password:
     file: ./secrets/postgres_password.txt
-  postgres_user:
-    file: ./secrets/postgres_user.txt
+  postgres_username:
+    file: ./secrets/postgres_username.txt
   rabbitmq_password:
     file: ./secrets/rabbitmq_password.txt
-  rabbitmq_user:
-    file: ./secrets/rabbitmq_user.txt
+  rabbitmq_username:
+    file: ./secrets/rabbitmq_username.txt
   neo4j_password:
     file: ./secrets/neo4j_password.txt
 
@@ -26,20 +26,20 @@ services:
   rabbitmq:
     restart: always
     environment:
-      RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
     secrets:
-      - rabbitmq_user
+      - rabbitmq_username
       - rabbitmq_password
 
   postgres:
     restart: always
     environment:
-      POSTGRES_USER_FILE: /run/secrets/postgres_user
+      POSTGRES_USER_FILE: /run/secrets/postgres_username
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_DB: discogsography
     secrets:
-      - postgres_user
+      - postgres_username
       - postgres_password
 
   neo4j:
@@ -57,12 +57,12 @@ services:
     environment:
       JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret_key
       OAUTH_ENCRYPTION_KEY_FILE: /run/secrets/oauth_encryption_key
-      POSTGRES_USERNAME_FILE: /run/secrets/postgres_user
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets:
       - jwt_secret_key
       - oauth_encryption_key
-      - postgres_user
+      - postgres_username
       - postgres_password
     deploy:
       restart_policy:
@@ -74,11 +74,11 @@ services:
     restart: always
     environment:
       JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret_key
-      POSTGRES_USERNAME_FILE: /run/secrets/postgres_user
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets:
       - jwt_secret_key
-      - postgres_user
+      - postgres_username
       - postgres_password
     deploy:
       restart_policy:
@@ -89,10 +89,10 @@ services:
   extractor:
     restart: always
     environment:
-      RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
     secrets:
-      - rabbitmq_user
+      - rabbitmq_username
       - rabbitmq_password
     deploy:
       replicas: 1
@@ -104,10 +104,10 @@ services:
   graphinator:
     restart: always
     environment:
-      RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
     secrets:
-      - rabbitmq_user
+      - rabbitmq_username
       - rabbitmq_password
     deploy:
       restart_policy:
@@ -118,14 +118,14 @@ services:
   tableinator:
     restart: always
     environment:
-      RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
-      POSTGRES_USERNAME_FILE: /run/secrets/postgres_user
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
     secrets:
-      - rabbitmq_user
+      - rabbitmq_username
       - rabbitmq_password
-      - postgres_user
+      - postgres_username
       - postgres_password
     deploy:
       restart_policy:
@@ -136,10 +136,10 @@ services:
   dashboard:
     restart: always
     environment:
-      RABBITMQ_USER_FILE: /run/secrets/rabbitmq_user
+      RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
     secrets:
-      - rabbitmq_user
+      - rabbitmq_username
       - rabbitmq_password
     deploy:
       restart_policy:

@@ -50,7 +50,7 @@ def _build_amqp_url() -> str:
     Reads credentials via the standard _FILE secret convention (Docker secrets),
     falling back to plain environment variables, then to defaults.
     """
-    user = get_secret("RABBITMQ_USER", "discogsography")
+    user = get_secret("RABBITMQ_USERNAME", "discogsography")
     password = get_secret("RABBITMQ_PASSWORD", "discogsography")
     host = getenv("RABBITMQ_HOST", "rabbitmq")
     port = getenv("RABBITMQ_PORT", "5672")
@@ -331,7 +331,7 @@ class DashboardConfig:
     postgres_username: str
     postgres_password: str
     postgres_database: str
-    rabbitmq_user: str
+    rabbitmq_username: str
     rabbitmq_password: str
     redis_url: str = "redis://localhost:6379/0"
     cors_origins: list[str] | None = None  # None = default to localhost only
@@ -349,7 +349,7 @@ class DashboardConfig:
         redis_url = getenv("REDIS_URL", "redis://localhost:6379/0")
 
         # Get RabbitMQ credentials
-        rabbitmq_user = get_secret("RABBITMQ_USER", "discogsography")
+        rabbitmq_username = get_secret("RABBITMQ_USERNAME", "discogsography")
         rabbitmq_password = get_secret("RABBITMQ_PASSWORD", "discogsography")
 
         # CORS configuration
@@ -375,7 +375,7 @@ class DashboardConfig:
             postgres_password=tableinator_config.postgres_password,
             postgres_database=tableinator_config.postgres_database,
             redis_url=redis_url,
-            rabbitmq_user=rabbitmq_user,
+            rabbitmq_username=rabbitmq_username,
             rabbitmq_password=rabbitmq_password,
             cors_origins=cors_origins,
             cache_warming_enabled=cache_warming_enabled,

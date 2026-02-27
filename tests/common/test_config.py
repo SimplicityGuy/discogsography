@@ -13,7 +13,7 @@ class TestExtractorConfig:
 
     def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with all environment variables set."""
-        monkeypatch.setenv("RABBITMQ_USER", "user")
+        monkeypatch.setenv("RABBITMQ_USERNAME", "user")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
         monkeypatch.setenv("RABBITMQ_HOST", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
@@ -29,7 +29,7 @@ class TestExtractorConfig:
 
     def test_from_env_uses_credential_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test AMQP URL is built from defaults when credentials not set."""
-        monkeypatch.delenv("RABBITMQ_USER", raising=False)
+        monkeypatch.delenv("RABBITMQ_USERNAME", raising=False)
         monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
         monkeypatch.delenv("RABBITMQ_HOST", raising=False)
         monkeypatch.delenv("RABBITMQ_PORT", raising=False)
@@ -62,7 +62,7 @@ class TestGraphinatorConfig:
 
     def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with all environment variables set."""
-        monkeypatch.setenv("RABBITMQ_USER", "user")
+        monkeypatch.setenv("RABBITMQ_USERNAME", "user")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
         monkeypatch.setenv("RABBITMQ_HOST", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
@@ -90,7 +90,7 @@ class TestTableinatorConfig:
 
     def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test configuration loading with all environment variables set."""
-        monkeypatch.setenv("RABBITMQ_USER", "user")
+        monkeypatch.setenv("RABBITMQ_USERNAME", "user")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
         monkeypatch.setenv("RABBITMQ_HOST", "host")
         monkeypatch.setenv("RABBITMQ_PORT", "5672")
@@ -237,8 +237,8 @@ class TestGraphinatorConfigMissingVars:
     """Test GraphinatorConfig individual missing variable branches."""
 
     def test_amqp_url_built_from_env_components(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test AMQP URL is constructed from RABBITMQ_USER/PASSWORD/HOST/PORT."""
-        monkeypatch.setenv("RABBITMQ_USER", "myuser")
+        """Test AMQP URL is constructed from RABBITMQ_USERNAME/PASSWORD/HOST/PORT."""
+        monkeypatch.setenv("RABBITMQ_USERNAME", "myuser")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "mypass")
         monkeypatch.setenv("RABBITMQ_HOST", "myrabbitmq")
         monkeypatch.setenv("RABBITMQ_PORT", "5673")
@@ -266,8 +266,8 @@ class TestTableinatorConfigMissingVars:
     """Test TableinatorConfig individual missing variable branches."""
 
     def test_amqp_url_built_from_env_components(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Test AMQP URL is constructed from RABBITMQ_USER/PASSWORD/HOST/PORT."""
-        monkeypatch.setenv("RABBITMQ_USER", "myuser")
+        """Test AMQP URL is constructed from RABBITMQ_USERNAME/PASSWORD/HOST/PORT."""
+        monkeypatch.setenv("RABBITMQ_USERNAME", "myuser")
         monkeypatch.setenv("RABBITMQ_PASSWORD", "mypass")
         monkeypatch.setenv("RABBITMQ_HOST", "myrabbitmq")
         monkeypatch.setenv("RABBITMQ_PORT", "5673")
@@ -1031,19 +1031,19 @@ class TestGetSecretViaFromEnv:
         assert config.jwt_secret_key == "exp_jwt_secret"
 
     def test_dashboard_config_reads_rabbitmq_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """DashboardConfig reads RABBITMQ_USER and RABBITMQ_PASSWORD via _FILE."""
+        """DashboardConfig reads RABBITMQ_USERNAME and RABBITMQ_PASSWORD via _FILE."""
         user_file = tmp_path / "rmq_user.txt"
         pass_file = tmp_path / "rmq_pass.txt"
         user_file.write_text("dash_rmq_user\n")
         pass_file.write_text("dash_rmq_pass\n")
 
-        monkeypatch.setenv("RABBITMQ_USER_FILE", str(user_file))
+        monkeypatch.setenv("RABBITMQ_USERNAME_FILE", str(user_file))
         monkeypatch.setenv("RABBITMQ_PASSWORD_FILE", str(pass_file))
-        monkeypatch.delenv("RABBITMQ_USER", raising=False)
+        monkeypatch.delenv("RABBITMQ_USERNAME", raising=False)
         monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
 
         from common.config import DashboardConfig
 
         config = DashboardConfig.from_env()
-        assert config.rabbitmq_user == "dash_rmq_user"
+        assert config.rabbitmq_username == "dash_rmq_user"
         assert config.rabbitmq_password == "dash_rmq_pass"

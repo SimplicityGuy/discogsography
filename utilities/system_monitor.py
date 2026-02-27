@@ -25,7 +25,7 @@ def get_docker_stats() -> list[dict[str, Any]]:
 
 def get_queue_stats(
     base_url: str = os.environ.get("RABBITMQ_URL", "http://localhost:15672"),
-    username: str = os.environ.get("RABBITMQ_USER", "discogsography"),
+    username: str = os.environ.get("RABBITMQ_USERNAME", "discogsography"),
     password: str = os.environ.get("RABBITMQ_PASSWORD", ""),
 ) -> list[dict[str, Any]] | None:
     """Fetch queue statistics from RabbitMQ Management API."""

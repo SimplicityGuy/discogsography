@@ -102,7 +102,7 @@ These secrets are **never passed as plain environment variables in production**.
 | Secret | `_FILE` env var | Plain env var (dev only) |
 |--------|-----------------|--------------------------|
 | RabbitMQ password | `RABBITMQ_PASSWORD_FILE` | `RABBITMQ_DEFAULT_PASS` |
-| RabbitMQ username | `RABBITMQ_USER_FILE` | `RABBITMQ_DEFAULT_USER` |
+| RabbitMQ username | `RABBITMQ_USERNAME_FILE` | `RABBITMQ_DEFAULT_USER` |
 | PostgreSQL password | `POSTGRES_PASSWORD_FILE` | `POSTGRES_PASSWORD` |
 | PostgreSQL username | `POSTGRES_USER_FILE` | `POSTGRES_USER` |
 | Neo4j password | (via entrypoint wrapper) | `NEO4J_AUTH` |
@@ -142,9 +142,9 @@ secrets/
 ├── neo4j_password.txt        # openssl rand -base64 24
 ├── oauth_encryption_key.txt  # Fernet.generate_key()
 ├── postgres_password.txt     # openssl rand -base64 24
-├── postgres_user.txt         # discogsography
+├── postgres_username.txt         # discogsography
 ├── rabbitmq_password.txt         # openssl rand -base64 24
-└── rabbitmq_user.txt         # discogsography
+└── rabbitmq_username.txt         # discogsography
 ```
 
 Use `secrets.example/` as a reference for each file's format and generation command.

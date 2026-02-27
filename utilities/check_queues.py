@@ -10,7 +10,7 @@ def check_rabbitmq_queues() -> None:
     """Check the status of graphinator queues in RabbitMQ."""
     base_url = os.environ.get("RABBITMQ_URL", "http://localhost:15672")
     url = f"{base_url}/api/queues"
-    username = os.environ.get("RABBITMQ_USER", "discogsography")
+    username = os.environ.get("RABBITMQ_USERNAME", "discogsography")
     password = os.environ.get("RABBITMQ_PASSWORD", "")
 
     try:

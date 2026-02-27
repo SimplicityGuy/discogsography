@@ -53,7 +53,7 @@ fn build_amqp_url(user: &str, password: &str, host: &str, port: &str) -> String 
 impl ExtractorConfig {
     /// Load configuration from environment variables.
     pub fn from_env() -> Result<Self> {
-        let user = read_secret("RABBITMQ_USER", "discogsography")?;
+        let user = read_secret("RABBITMQ_USERNAME", "discogsography")?;
         let password = read_secret("RABBITMQ_PASSWORD", "discogsography")?;
         let host = std::env::var("RABBITMQ_HOST").unwrap_or_else(|_| "rabbitmq".to_string());
         let port = std::env::var("RABBITMQ_PORT").unwrap_or_else(|_| "5672".to_string());
@@ -103,7 +103,7 @@ mod tests {
     #[serial]
     fn test_from_env_with_rabbitmq_credentials() {
         unsafe {
-            env::set_var("RABBITMQ_USER", "testuser");
+            env::set_var("RABBITMQ_USERNAME", "testuser");
             env::set_var("RABBITMQ_PASSWORD", "testpass");
             env::set_var("RABBITMQ_HOST", "mybroker");
             env::set_var("RABBITMQ_PORT", "5673");
@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(config.amqp_connection, "amqp://testuser:testpass@mybroker:5673/%2F");
 
         unsafe {
-            env::remove_var("RABBITMQ_USER");
+            env::remove_var("RABBITMQ_USERNAME");
             env::remove_var("RABBITMQ_PASSWORD");
             env::remove_var("RABBITMQ_HOST");
             env::remove_var("RABBITMQ_PORT");
@@ -124,11 +124,11 @@ mod tests {
     #[serial]
     fn test_from_env_uses_credential_defaults() {
         unsafe {
-            env::remove_var("RABBITMQ_USER");
+            env::remove_var("RABBITMQ_USERNAME");
             env::remove_var("RABBITMQ_PASSWORD");
             env::remove_var("RABBITMQ_HOST");
             env::remove_var("RABBITMQ_PORT");
-            env::remove_var("RABBITMQ_USER_FILE");
+            env::remove_var("RABBITMQ_USERNAME_FILE");
             env::remove_var("RABBITMQ_PASSWORD_FILE");
         }
 
@@ -141,7 +141,7 @@ mod tests {
     fn test_from_env_with_all_settings() {
         // Lock to prevent concurrent env var access
         unsafe {
-            env::set_var("RABBITMQ_USER", "testuser");
+            env::set_var("RABBITMQ_USERNAME", "testuser");
             env::set_var("RABBITMQ_PASSWORD", "testpass");
             env::remove_var("RABBITMQ_HOST");
             env::remove_var("RABBITMQ_PORT");
@@ -168,7 +168,7 @@ mod tests {
         assert_eq!(config2.max_workers, 8);
 
         unsafe {
-            env::remove_var("RABBITMQ_USER");
+            env::remove_var("RABBITMQ_USERNAME");
             env::remove_var("RABBITMQ_PASSWORD");
             env::remove_var("DISCOGS_ROOT");
             env::remove_var("PERIODIC_CHECK_DAYS");

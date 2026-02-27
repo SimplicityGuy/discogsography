@@ -154,7 +154,7 @@ def mock_dashboard_config() -> DashboardConfig:
         postgres_username="test",
         postgres_password="test",  # noqa: S106
         postgres_database="test",
-        rabbitmq_user="test",
+        rabbitmq_username="test",
         rabbitmq_password="test",  # noqa: S106
     )
 

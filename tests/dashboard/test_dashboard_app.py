@@ -456,7 +456,7 @@ class TestDashboardAppDataCollection:
     async def test_get_queue_info_success(self) -> None:
         """Test getting queue information successfully."""
         mock_config = Mock()
-        mock_config.rabbitmq_user = "guest"
+        mock_config.rabbitmq_username = "guest"
         mock_config.rabbitmq_password = "guest"
 
         with patch("dashboard.dashboard.get_config", return_value=mock_config):
@@ -536,7 +536,7 @@ class TestDashboardAppDataCollection:
     async def test_get_queue_info_auth_failure(self) -> None:
         """Test queue info when authentication fails."""
         mock_config = Mock()
-        mock_config.rabbitmq_user = "guest"
+        mock_config.rabbitmq_username = "guest"
         mock_config.rabbitmq_password = "wrong"
 
         with (
@@ -568,7 +568,7 @@ class TestDashboardAppDataCollection:
     async def test_get_queue_info_non_200_status(self) -> None:
         """Test queue info when API returns non-200 status."""
         mock_config = Mock()
-        mock_config.rabbitmq_user = "guest"
+        mock_config.rabbitmq_username = "guest"
         mock_config.rabbitmq_password = "guest"
 
         with (
@@ -600,7 +600,7 @@ class TestDashboardAppDataCollection:
     async def test_get_queue_info_connection_error(self) -> None:
         """Test queue info when connection error occurs."""
         mock_config = Mock()
-        mock_config.rabbitmq_user = "guest"
+        mock_config.rabbitmq_username = "guest"
         mock_config.rabbitmq_password = "guest"
 
         with (
@@ -630,7 +630,7 @@ class TestDashboardAppDataCollection:
     async def test_get_queue_info_unexpected_error(self) -> None:
         """Test queue info when unexpected error occurs."""
         mock_config = Mock()
-        mock_config.rabbitmq_user = "guest"
+        mock_config.rabbitmq_username = "guest"
         mock_config.rabbitmq_password = "guest"
 
         with (

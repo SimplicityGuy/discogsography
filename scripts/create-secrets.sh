@@ -35,11 +35,11 @@ write_secret "jwt_secret_key.txt" "$(openssl rand -hex 32)"
 write_secret "oauth_encryption_key.txt" "$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode(), end="")')"
 
 # PostgreSQL credentials
-write_secret "postgres_user.txt" "discogsography"
+write_secret "postgres_username.txt" "discogsography"
 write_secret "postgres_password.txt" "$(openssl rand -base64 24)"
 
 # RabbitMQ credentials
-write_secret "rabbitmq_user.txt" "discogsography"
+write_secret "rabbitmq_username.txt" "discogsography"
 write_secret "rabbitmq_password.txt" "$(openssl rand -base64 24)"
 
 # Neo4j password

@@ -311,7 +311,7 @@ services:
     hostname: extractor
     user: "1000:1000"
     environment:
-      RABBITMQ_USER: discogsography
+      RABBITMQ_USERNAME: discogsography
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_HOST: rabbitmq
       DISCOGS_ROOT: /discogs-data
@@ -352,7 +352,7 @@ services:
     hostname: graphinator
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      RABBITMQ_USER: discogsography
+      RABBITMQ_USERNAME: discogsography
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_HOST: rabbitmq
       NEO4J_ADDRESS: bolt://neo4j:7687
@@ -406,7 +406,7 @@ services:
     hostname: tableinator
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      RABBITMQ_USER: discogsography
+      RABBITMQ_USERNAME: discogsography
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_HOST: rabbitmq
       POSTGRES_ADDRESS: postgres:5432
@@ -461,7 +461,7 @@ services:
     hostname: dashboard
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      RABBITMQ_USER: discogsography
+      RABBITMQ_USERNAME: discogsography
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_HOST: rabbitmq
       NEO4J_ADDRESS: bolt://neo4j:7687
