@@ -73,25 +73,26 @@ class TestDecryptOauthToken:
         encrypted = encrypt_oauth_token("my-secret", key)
         assert decrypt_oauth_token(encrypted, key) == "my-secret"
 
-    def test_invalid_token_falls_back_to_plaintext(self) -> None:
-        """InvalidToken exception → fallback to returning the token as-is (migration)."""
+    def test_invalid_token_raises(self) -> None:
+        """InvalidToken exception → raises ValueError when a key is provided."""
         from cryptography.fernet import Fernet
+        import pytest
 
         from api.auth import decrypt_oauth_token
 
         key = Fernet.generate_key().decode("ascii")
-        # "not-encrypted" is not valid Fernet ciphertext
-        result = decrypt_oauth_token("not-encrypted", key)
-        assert result == "not-encrypted"
+        with pytest.raises(ValueError, match="Failed to decrypt OAuth token"):
+            decrypt_oauth_token("not-encrypted", key)
 
-    def test_wrong_key_falls_back_to_plaintext(self) -> None:
+    def test_wrong_key_raises(self) -> None:
+        """Wrong key → raises ValueError rather than silently returning garbage."""
         from cryptography.fernet import Fernet
+        import pytest
 
         from api.auth import decrypt_oauth_token, encrypt_oauth_token
 
         key1 = Fernet.generate_key().decode("ascii")
         key2 = Fernet.generate_key().decode("ascii")
         encrypted = encrypt_oauth_token("secret", key1)
-        # Wrong key → fallback to plaintext migration path
-        result = decrypt_oauth_token(encrypted, key2)
-        assert result == encrypted  # returns ciphertext unchanged
+        with pytest.raises(ValueError, match="Failed to decrypt OAuth token"):
+            decrypt_oauth_token(encrypted, key2)

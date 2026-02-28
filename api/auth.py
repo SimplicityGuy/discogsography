@@ -47,7 +47,12 @@ def encrypt_oauth_token(token: str, key: str) -> str:
 
 
 def decrypt_oauth_token(token: str, key: str | None) -> str:
-    """Decrypt an OAuth token, falling back to plaintext for migration."""
+    """Decrypt an OAuth token.
+
+    If no key is configured (no-encryption mode), returns the token as-is.
+    If a key is provided but decryption fails, raises ValueError — silent
+    fallback would return garbage or expose plaintext to callers.
+    """
     if not key:
         return token
     from cryptography.fernet import Fernet, InvalidToken
@@ -55,5 +60,5 @@ def decrypt_oauth_token(token: str, key: str | None) -> str:
     try:
         f = Fernet(key.encode("ascii"))
         return f.decrypt(token.encode("ascii")).decode("utf-8")
-    except (InvalidToken, Exception):
-        return token  # fallback to plaintext (migration path)
+    except (InvalidToken, Exception) as exc:
+        raise ValueError(f"Failed to decrypt OAuth token: {exc}") from exc
