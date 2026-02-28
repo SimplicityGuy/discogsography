@@ -31,7 +31,7 @@ RUN npm install tailwindcss@^3 @tailwindcss/forms@^0.5 --save-dev && \
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.10.6 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10.7 /uv /bin/uv
 
 # Set environment for build
 ENV UV_SYSTEM_PYTHON=1 \
