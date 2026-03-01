@@ -11,6 +11,7 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 import structlog
 import uvicorn
 
@@ -100,6 +101,10 @@ app.add_middleware(
 async def health_check() -> JSONResponse:
     """Health check endpoint."""
     return JSONResponse(content=get_health_data())
+
+
+# Serve UI — must be mounted after all API routes so /health takes priority
+app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
 
 
 if __name__ == "__main__":
