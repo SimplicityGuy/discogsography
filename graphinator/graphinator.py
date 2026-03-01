@@ -1,6 +1,5 @@
 import asyncio
 import contextlib
-import logging
 import os
 import signal
 import time
@@ -28,9 +27,6 @@ from orjson import loads
 from graphinator.batch_processor import BatchConfig, Neo4jBatchProcessor
 
 logger = structlog.get_logger(__name__)
-
-# Suppress Neo4j notifications for missing labels/properties during initial setup
-logging.getLogger("neo4j.notifications").setLevel(logging.ERROR)
 
 # Config will be initialized in main
 config: GraphinatorConfig | None = None
@@ -226,10 +222,10 @@ async def close_rabbitmq_connection() -> None:
             active_connection = None
 
         logger.info(
-            f"✅ RabbitMQ connection closed. Will check for new messages every {QUEUE_CHECK_INTERVAL}s"
+            "✅ RabbitMQ connection closed", check_interval=f"{QUEUE_CHECK_INTERVAL}s"
         )
     except Exception as e:
-        logger.error(f"❌ Error closing RabbitMQ connection: {e}")
+        logger.error("❌ Error closing RabbitMQ connection", error=str(e))
 
 
 async def check_all_consumers_idle() -> bool:
@@ -304,7 +300,7 @@ async def periodic_queue_checker() -> None:
             logger.info("🛑 Queue checker task cancelled")
             break
         except Exception as e:
-            logger.error(f"❌ Error in periodic queue checker: {e}")
+            logger.error("❌ Error in periodic queue checker", error=str(e))
             # Continue running despite errors
 
 
@@ -331,7 +327,7 @@ async def _recover_consumers() -> None:
         temp_connection = await rabbitmq_manager.connect()
         temp_channel = await temp_connection.channel()
     except Exception as e:
-        logger.error(f"❌ Failed to connect to RabbitMQ for recovery: {e}")
+        logger.error("❌ Failed to connect to RabbitMQ for recovery", error=str(e))
         return
 
     try:
@@ -443,7 +439,7 @@ async def _recover_consumers() -> None:
             await temp_connection.close()
 
     except Exception as e:
-        logger.error(f"❌ Error during consumer recovery: {e}")
+        logger.error("❌ Error during consumer recovery", error=str(e))
         # Make sure to close temporary connection on error
         try:
             await temp_channel.close()
@@ -930,7 +926,7 @@ def make_message_handler(
 
         record_id = "unknown"
         try:
-            logger.debug(f"📥 Received {data_type[:-1]} message")
+            logger.debug("📥 Received message", data_type=data_type[:-1])
             record: dict[str, Any] = loads(message.body)
 
             if await check_file_completion(record, data_type, message):
