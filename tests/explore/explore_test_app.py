@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Header, Query, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -50,6 +50,52 @@ MOCK_EXPLORE_RESULTS: dict[str, dict[str, Any]] = {
     },
 }
 
+# Mock auth data
+MOCK_USER: dict[str, Any] = {
+    "id": "00000000-0000-0000-0000-000000000001",
+    "email": "test@example.com",
+    "is_active": True,
+    "created_at": "2026-01-01T00:00:00",
+}
+
+MOCK_TOKEN = "mock-test-access-token-abc123"  # nosec B105
+
+MOCK_COLLECTION: dict[str, Any] = {
+    "releases": [
+        {"id": "10", "title": "OK Computer", "artist": "Radiohead", "label": "Parlophone", "year": 1997},
+        {"id": "11", "title": "Kid A", "artist": "Radiohead", "label": "Parlophone", "year": 2000},
+    ],
+    "total": 2,
+    "offset": 0,
+    "limit": 50,
+    "has_more": False,
+}
+
+MOCK_WANTLIST: dict[str, Any] = {
+    "releases": [
+        {"id": "20", "title": "In Rainbows", "artist": "Radiohead", "label": "Self-released", "year": 2007},
+    ],
+    "total": 1,
+    "offset": 0,
+    "limit": 50,
+    "has_more": False,
+}
+
+MOCK_RECOMMENDATIONS: dict[str, Any] = {
+    "recommendations": [
+        {"id": "30", "title": "Pablo Honey", "artist": "Radiohead", "year": 1993, "score": 0.85},
+        {"id": "31", "title": "The Bends", "artist": "Radiohead", "year": 1995, "score": 0.72},
+    ],
+    "total": 2,
+}
+
+MOCK_COLLECTION_STATS: dict[str, Any] = {
+    "total_releases": 42,
+    "unique_artists": 15,
+    "unique_labels": 8,
+    "average_rating": 4.2,
+}
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
@@ -75,6 +121,165 @@ def create_test_app() -> FastAPI:
                 "timestamp": datetime.now(UTC).isoformat(),
             }
         )
+
+    # ------------------------------------------------------------------ #
+    # Auth endpoints
+    # ------------------------------------------------------------------ #
+
+    @app.post("/api/auth/register", status_code=201)
+    async def auth_register(request: Request) -> JSONResponse:
+        """Accept any well-formed registration request."""
+        body = await request.json()
+        if not body.get("email") or not body.get("password"):
+            return JSONResponse(content={"error": "Invalid request"}, status_code=422)
+        return JSONResponse(content={"message": "Registration processed"}, status_code=201)
+
+    @app.post("/api/auth/login")
+    async def auth_login(request: Request) -> JSONResponse:
+        """Accept test@example.com / testpassword; reject everything else."""
+        body = await request.json()
+        email = body.get("email", "")
+        password = body.get("password", "")
+        if email == "test@example.com" and password == "testpassword":
+            return JSONResponse(
+                content={
+                    "access_token": MOCK_TOKEN,
+                    "token_type": "bearer",
+                    "expires_in": 3600,
+                }
+            )
+        return JSONResponse(content={"detail": "Invalid credentials"}, status_code=401)
+
+    @app.post("/api/auth/logout")
+    async def auth_logout(authorization: str | None = Header(default=None)) -> JSONResponse:  # noqa: ARG001
+        """Accept any Bearer token and confirm logout."""
+        return JSONResponse(content={"logged_out": True})
+
+    @app.get("/api/auth/me")
+    async def auth_me(authorization: str | None = Header(default=None)) -> JSONResponse:
+        """Return mock user for any Bearer token."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(content=MOCK_USER)
+
+    # ------------------------------------------------------------------ #
+    # Discogs OAuth endpoints
+    # ------------------------------------------------------------------ #
+
+    @app.get("/api/oauth/authorize/discogs")
+    async def oauth_authorize_discogs(authorization: str | None = Header(default=None)) -> JSONResponse:
+        """Return a mock Discogs authorization URL."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(
+            content={
+                "authorize_url": "https://www.discogs.com/oauth/authorize?oauth_token=mock_token",
+                "state": "mock-oauth-state-abc123",
+                "expires_in": 3600,
+            }
+        )
+
+    @app.post("/api/oauth/verify/discogs")
+    async def oauth_verify_discogs(
+        request: Request,
+        authorization: str | None = Header(default=None),
+    ) -> JSONResponse:
+        """Accept verifier '12345678'; reject all others."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        body = await request.json()
+        verifier = body.get("oauth_verifier", "")
+        if verifier == "12345678":
+            return JSONResponse(content={"connected": True, "discogs_username": "testuser", "discogs_user_id": "99999"})
+        return JSONResponse(content={"detail": "Invalid verifier"}, status_code=400)
+
+    @app.get("/api/oauth/status/discogs")
+    async def oauth_status_discogs(authorization: str | None = Header(default=None)) -> JSONResponse:
+        """Return disconnected status by default."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(content={"connected": False})
+
+    @app.delete("/api/oauth/revoke/discogs")
+    async def oauth_revoke_discogs(authorization: str | None = Header(default=None)) -> JSONResponse:
+        """Confirm Discogs account disconnection."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(content={"revoked": True})
+
+    # ------------------------------------------------------------------ #
+    # User data endpoints
+    # ------------------------------------------------------------------ #
+
+    @app.get("/api/user/collection")
+    async def user_collection(
+        authorization: str | None = Header(default=None),
+        limit: int = Query(50, ge=1, le=200),  # noqa: ARG001
+        offset: int = Query(0, ge=0),  # noqa: ARG001
+    ) -> JSONResponse:
+        """Return mock collection for any authenticated user."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(content=MOCK_COLLECTION)
+
+    @app.get("/api/user/wantlist")
+    async def user_wantlist(
+        authorization: str | None = Header(default=None),
+        limit: int = Query(50, ge=1, le=200),  # noqa: ARG001
+        offset: int = Query(0, ge=0),  # noqa: ARG001
+    ) -> JSONResponse:
+        """Return mock wantlist for any authenticated user."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(content=MOCK_WANTLIST)
+
+    @app.get("/api/user/recommendations")
+    async def user_recommendations(
+        authorization: str | None = Header(default=None),
+        limit: int = Query(20, ge=1, le=100),  # noqa: ARG001
+    ) -> JSONResponse:
+        """Return mock recommendations for any authenticated user."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(content=MOCK_RECOMMENDATIONS)
+
+    @app.get("/api/user/collection/stats")
+    async def user_collection_stats(authorization: str | None = Header(default=None)) -> JSONResponse:
+        """Return mock collection stats for any authenticated user."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(content=MOCK_COLLECTION_STATS)
+
+    @app.get("/api/user/status")
+    async def user_release_status(
+        ids: str = Query(...),
+        authorization: str | None = Header(default=None),  # noqa: ARG001
+    ) -> JSONResponse:
+        """Return empty ownership status (works for authenticated and anonymous users)."""
+        release_ids = [rid.strip() for rid in ids.split(",") if rid.strip()]
+        return JSONResponse(content={"status": {rid: {"in_collection": False, "in_wantlist": False} for rid in release_ids}})
+
+    # ------------------------------------------------------------------ #
+    # Sync endpoints
+    # ------------------------------------------------------------------ #
+
+    @app.post("/api/sync", status_code=202)
+    async def trigger_sync(authorization: str | None = Header(default=None)) -> JSONResponse:
+        """Acknowledge a sync request."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(content={"status": "started", "job_id": "mock-job-id-xyz"}, status_code=202)
+
+    @app.get("/api/sync/status")
+    async def sync_status(authorization: str | None = Header(default=None)) -> JSONResponse:
+        """Return mock sync status."""
+        if not authorization or not authorization.startswith("Bearer "):
+            return JSONResponse(content={"detail": "Not authenticated"}, status_code=401)
+        return JSONResponse(content={"status": "idle", "last_sync": None})
+
+    # ------------------------------------------------------------------ #
+    # Existing explore/graph endpoints
+    # ------------------------------------------------------------------ #
 
     @app.get("/api/autocomplete")
     async def autocomplete(

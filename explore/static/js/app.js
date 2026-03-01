@@ -1,6 +1,6 @@
 /**
  * Main application controller.
- * Coordinates pane switching, search, graph, and trends.
+ * Coordinates pane switching, search, graph, trends, auth, and user panes.
  */
 class ExploreApp {
     constructor() {
@@ -16,15 +16,87 @@ class ExploreApp {
         this.autocomplete = new Autocomplete();
         this.graph = new GraphVisualization('graphContainer');
         this.trends = new TrendsChart('trendsChart');
+        this.userPanes = new window.UserPanes();
 
         // Wire up callbacks
         this.autocomplete.onSelect = (name) => this._onSearch(name);
         this.graph.onNodeClick = (nodeId, type) => this._onNodeClick(nodeId, type);
         this.graph.onNodeExpand = (name, type) => this._onNodeExpand(name, type);
 
+        // Auth state changes → update UI
+        window.authManager.onChange(() => this._updateAuthUI());
+
         this._bindEvents();
-        this._restoreFromUrl();
+        this._initAuth().then(() => this._restoreFromUrl());
     }
+
+    // ------------------------------------------------------------------ //
+    // Auth initialisation
+    // ------------------------------------------------------------------ //
+
+    async _initAuth() {
+        const valid = await window.authManager.init();
+        this._updateAuthUI();
+        return valid;
+    }
+
+    _updateAuthUI() {
+        const loggedIn = window.authManager.isLoggedIn();
+        const user = window.authManager.getUser();
+        const discogsStatus = window.authManager.getDiscogsStatus();
+
+        // Toggle auth buttons vs user dropdown
+        document.getElementById('authButtons').classList.toggle('d-none', loggedIn);
+        document.getElementById('userDropdown').classList.toggle('d-none', !loggedIn);
+
+        // Toggle auth-required nav items
+        ['navCollection', 'navWantlist', 'navRecommendations'].forEach(id => {
+            document.getElementById(id)?.classList.toggle('d-none', !loggedIn);
+        });
+
+        if (loggedIn && user) {
+            const emailEl = document.getElementById('userEmailDisplay');
+            if (emailEl) emailEl.textContent = user.email || '';
+        }
+
+        // Discogs status display
+        const statusDisplay = document.getElementById('discogsStatusDisplay');
+        const connectBtn = document.getElementById('connectDiscogsBtn');
+        const disconnectBtn = document.getElementById('disconnectDiscogsBtn');
+        const syncBtn = document.getElementById('syncBtn');
+
+        if (loggedIn && discogsStatus?.connected) {
+            if (statusDisplay) {
+                statusDisplay.innerHTML = `<span class="badge bg-success discogs-badge"><i class="fas fa-check me-1"></i>${discogsStatus.discogs_username || 'Connected'}</span>`;
+            }
+            connectBtn?.classList.add('d-none');
+            disconnectBtn?.classList.remove('d-none');
+            syncBtn?.classList.remove('d-none');
+        } else if (loggedIn) {
+            if (statusDisplay) {
+                statusDisplay.innerHTML = '<span class="badge bg-secondary discogs-badge">Not connected</span>';
+            }
+            connectBtn?.classList.remove('d-none');
+            disconnectBtn?.classList.add('d-none');
+            syncBtn?.classList.add('d-none');
+        } else {
+            if (statusDisplay) {
+                statusDisplay.innerHTML = '<span class="badge bg-secondary discogs-badge">Not connected</span>';
+            }
+            connectBtn?.classList.add('d-none');
+            disconnectBtn?.classList.add('d-none');
+            syncBtn?.classList.add('d-none');
+        }
+
+        // If we just logged out and were on a personal pane, switch to explore
+        if (!loggedIn && ['collection', 'wantlist', 'recommendations'].includes(this.activePane)) {
+            this._switchPane('explore');
+        }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Event binding
+    // ------------------------------------------------------------------ //
 
     _bindEvents() {
         // Pane switching
@@ -54,7 +126,159 @@ class ExploreApp {
 
         // Share button
         document.getElementById('shareBtn').addEventListener('click', () => this._shareSnapshot());
+
+        // Login form
+        document.getElementById('loginSubmitBtn')?.addEventListener('click', () => this._handleLogin());
+        document.getElementById('loginPassword')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this._handleLogin();
+        });
+
+        // Register form
+        document.getElementById('registerSubmitBtn')?.addEventListener('click', () => this._handleRegister());
+        document.getElementById('registerPassword')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this._handleRegister();
+        });
+
+        // Logout
+        document.getElementById('logoutBtn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this._handleLogout();
+        });
+
+        // Discogs OAuth
+        document.getElementById('connectDiscogsBtn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.userPanes.startDiscogsOAuth();
+        });
+        document.getElementById('disconnectDiscogsBtn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.userPanes.disconnectDiscogs();
+        });
+        document.getElementById('discogsVerifierSubmit')?.addEventListener('click', () => {
+            this.userPanes.submitDiscogsVerifier();
+        });
+        document.getElementById('discogsVerifierInput')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.userPanes.submitDiscogsVerifier();
+        });
+
+        // Sync
+        document.getElementById('syncBtn')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            this.userPanes.triggerSync();
+        });
+
+        // Collection / wantlist / recommendations refresh
+        document.getElementById('collectionRefreshBtn')?.addEventListener('click', () => {
+            this.userPanes.loadCollection(true);
+            this.userPanes.loadCollectionStats();
+        });
+        document.getElementById('wantlistRefreshBtn')?.addEventListener('click', () => {
+            this.userPanes.loadWantlist(true);
+        });
+        document.getElementById('recommendationsRefreshBtn')?.addEventListener('click', () => {
+            this.userPanes.loadRecommendations();
+        });
+
+        // Clear error fields when switching auth tabs
+        document.getElementById('authModal')?.addEventListener('show.bs.modal', () => {
+            document.getElementById('loginError').textContent = '';
+            document.getElementById('registerError').textContent = '';
+            document.getElementById('registerSuccess').classList.add('d-none');
+        });
     }
+
+    // ------------------------------------------------------------------ //
+    // Auth handlers
+    // ------------------------------------------------------------------ //
+
+    async _handleLogin() {
+        const email = document.getElementById('loginEmail')?.value.trim();
+        const password = document.getElementById('loginPassword')?.value;
+        const errorEl = document.getElementById('loginError');
+        const submitBtn = document.getElementById('loginSubmitBtn');
+
+        if (!email || !password) {
+            if (errorEl) errorEl.textContent = 'Please enter your email and password.';
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Logging in...';
+        if (errorEl) errorEl.textContent = '';
+
+        try {
+            const result = await window.apiClient.login(email, password);
+            if (!result || !result.access_token) {
+                if (errorEl) errorEl.textContent = 'Invalid email or password.';
+                return;
+            }
+
+            window.authManager.setToken(result.access_token);
+            const user = await window.apiClient.getMe(result.access_token);
+            window.authManager.setUser(user);
+            const discogsStatus = await window.apiClient.getDiscogsStatus(result.access_token);
+            window.authManager.setDiscogsStatus(discogsStatus);
+            window.authManager.notify();
+
+            // Close modal
+            bootstrap.Modal.getInstance(document.getElementById('authModal'))?.hide();
+            document.getElementById('loginEmail').value = '';
+            document.getElementById('loginPassword').value = '';
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-sign-in-alt me-1"></i>Login';
+        }
+    }
+
+    async _handleRegister() {
+        const email = document.getElementById('registerEmail')?.value.trim();
+        const password = document.getElementById('registerPassword')?.value;
+        const errorEl = document.getElementById('registerError');
+        const successEl = document.getElementById('registerSuccess');
+        const submitBtn = document.getElementById('registerSubmitBtn');
+
+        if (!email || !password) {
+            if (errorEl) errorEl.textContent = 'Please enter your email and password.';
+            return;
+        }
+        if (password.length < 8) {
+            if (errorEl) errorEl.textContent = 'Password must be at least 8 characters.';
+            return;
+        }
+
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Creating account...';
+        if (errorEl) errorEl.textContent = '';
+        if (successEl) successEl.classList.add('d-none');
+
+        try {
+            const ok = await window.apiClient.register(email, password);
+            if (ok) {
+                if (successEl) successEl.classList.remove('d-none');
+                document.getElementById('registerEmail').value = '';
+                document.getElementById('registerPassword').value = '';
+                // Switch to login tab
+                const loginTab = document.getElementById('login-tab');
+                if (loginTab) new bootstrap.Tab(loginTab).show();
+            } else {
+                if (errorEl) errorEl.textContent = 'Registration failed. Please try again.';
+            }
+        } finally {
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = '<i class="fas fa-user-plus me-1"></i>Create Account';
+        }
+    }
+
+    async _handleLogout() {
+        const token = window.authManager.getToken();
+        await window.apiClient.logout(token);
+        window.authManager.clear();
+        window.authManager.notify();
+    }
+
+    // ------------------------------------------------------------------ //
+    // Pane management
+    // ------------------------------------------------------------------ //
 
     _switchPane(pane) {
         this.activePane = pane;
@@ -65,35 +289,41 @@ class ExploreApp {
         });
 
         // Show/hide panes
-        document.querySelectorAll('.pane').forEach(el => {
-            el.classList.remove('active');
-        });
-        document.getElementById(pane + 'Pane').classList.add('active');
+        document.querySelectorAll('.pane').forEach(el => el.classList.remove('active'));
+        const target = document.getElementById(pane + 'Pane');
+        if (target) target.classList.add('active');
 
-        // If switching to trends and we have a query, load trends
+        // Lazy-load user panes on first visit
         if (pane === 'trends' && this.currentQuery) {
             this._loadTrends(this.currentQuery, this.searchType);
+        } else if (pane === 'collection' && window.authManager.isLoggedIn()) {
+            this.userPanes.loadCollection(true);
+            this.userPanes.loadCollectionStats();
+        } else if (pane === 'wantlist' && window.authManager.isLoggedIn()) {
+            this.userPanes.loadWantlist(true);
+        } else if (pane === 'recommendations' && window.authManager.isLoggedIn()) {
+            this.userPanes.loadRecommendations();
         }
     }
 
     _setSearchType(type) {
         this.searchType = type;
-
-        // Update button text
         const btn = document.getElementById('searchTypeBtn');
-        btn.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+        if (btn) btn.textContent = type.charAt(0).toUpperCase() + type.slice(1);
 
-        // Update dropdown active state
         document.querySelectorAll('[data-type]').forEach(item => {
             item.classList.toggle('active', item.dataset.type === type);
         });
 
-        // Re-trigger autocomplete if there's input
         const input = document.getElementById('searchInput');
-        if (input.value.trim().length >= 2) {
+        if (input?.value.trim().length >= 2) {
             this.autocomplete._search(input.value.trim());
         }
     }
+
+    // ------------------------------------------------------------------ //
+    // Search & graph
+    // ------------------------------------------------------------------ //
 
     async _onSearch(name) {
         this.currentQuery = name;
@@ -112,22 +342,70 @@ class ExploreApp {
         try {
             const data = await window.apiClient.explore(name, type);
             if (data) {
-                // Wait for all category expansions to complete before hiding loader
                 await new Promise((resolve) => {
                     this.graph.onExpandsComplete = () => {
                         this.graph.onExpandsComplete = null;
                         resolve();
                     };
                     this.graph.setExploreData(data);
-                    // If no expansions were needed, resolve immediately
                     if (this.graph._pendingExpands <= 0) {
                         this.graph.onExpandsComplete = null;
                         resolve();
                     }
                 });
+                // Decorate release nodes with ownership badges if logged in
+                await this._decorateOwnership();
             }
         } finally {
             loading.classList.remove('active');
+        }
+    }
+
+    async _decorateOwnership() {
+        if (!window.authManager.isLoggedIn()) return;
+        const token = window.authManager.getToken();
+        const releaseNodes = (this.graph.nodes || []).filter(n => n.type === 'release' && !n.isCategory);
+        if (releaseNodes.length === 0) return;
+
+        const ids = releaseNodes.map(n => n.nodeId || n.name).slice(0, 100);
+        const result = await window.apiClient.getUserStatus(ids, token);
+        if (!result || !result.status) return;
+
+        // Update info panel if it's showing a release node that has status
+        const title = document.getElementById('infoPanelTitle')?.textContent;
+        if (title) {
+            const matchId = ids.find(id => id === title);
+            if (matchId && result.status[matchId]) {
+                this._addOwnershipBadges(matchId, result.status[matchId]);
+            }
+        }
+    }
+
+    _addOwnershipBadges(releaseId, statusObj) {
+        const body = document.getElementById('infoPanelBody');
+        if (!body) return;
+
+        // Remove existing badges
+        body.querySelectorAll('.ownership-badge').forEach(b => b.remove());
+
+        const container = document.createElement('div');
+        container.className = 'mb-2';
+
+        if (statusObj.in_collection) {
+            const badge = document.createElement('span');
+            badge.className = 'ownership-badge in-collection';
+            badge.innerHTML = '<i class="fas fa-check me-1"></i>In Collection';
+            container.appendChild(badge);
+        }
+        if (statusObj.in_wantlist) {
+            const badge = document.createElement('span');
+            badge.className = 'ownership-badge in-wantlist';
+            badge.innerHTML = '<i class="fas fa-heart me-1"></i>In Wantlist';
+            container.appendChild(badge);
+        }
+
+        if (container.children.length > 0) {
+            body.insertBefore(container, body.firstChild);
         }
     }
 
@@ -138,14 +416,12 @@ class ExploreApp {
             const data = await window.apiClient.getTrends(name, type);
             if (data) {
                 if (this.compareMode && this.primaryTrendsData) {
-                    // Overlay comparison trace on existing chart
                     this.trends.addComparison(data);
                     document.getElementById('compareBadge').textContent = `vs ${data.name}`;
                     document.getElementById('compareInfo').classList.remove('d-none');
                     document.getElementById('compareHint').classList.add('d-none');
                     this.compareMode = false;
                 } else {
-                    // Replace primary trace and reset comparison state
                     this.primaryTrendsData = data;
                     this.trends.render(data);
                     document.getElementById('compareBtn').classList.remove('d-none');
@@ -200,9 +476,7 @@ class ExploreApp {
         loading.classList.add('active');
         try {
             const data = await window.apiClient.restoreSnapshot(token);
-            if (data) {
-                this.graph.restoreSnapshot(data.nodes, data.center);
-            }
+            if (data) this.graph.restoreSnapshot(data.nodes, data.center);
         } finally {
             loading.classList.remove('active');
         }
@@ -214,18 +488,15 @@ class ExploreApp {
             .map(n => ({ id: n.nodeId || n.name, type: n.type }));
         const centerName = this.graph.centerName;
         const centerType = this.graph.centerType;
-
         if (!centerName || nodes.length === 0) return;
 
-        const center = { id: centerName, type: centerType };
-        const result = await window.apiClient.saveSnapshot(nodes, center);
+        const result = await window.apiClient.saveSnapshot(nodes, { id: centerName, type: centerType });
         if (!result) return;
 
         const url = `${window.location.origin}/?snapshot=${result.token}`;
         try {
             await navigator.clipboard.writeText(url);
         } catch {
-            // Fallback for environments without clipboard API
             prompt('Copy this link:', url);
             return;
         }
@@ -235,9 +506,9 @@ class ExploreApp {
     _showToast(message) {
         const toast = document.getElementById('shareToast');
         const toastMsg = document.getElementById('shareToastMsg');
-        toastMsg.textContent = message;
-        toast.classList.add('show');
-        setTimeout(() => toast.classList.remove('show'), 2500);
+        if (toastMsg) toastMsg.textContent = message;
+        toast?.classList.add('show');
+        setTimeout(() => toast?.classList.remove('show'), 2500);
     }
 
     async _onNodeClick(nodeId, type) {
@@ -257,13 +528,19 @@ class ExploreApp {
         title.textContent = details.name || nodeId;
         body.replaceChildren(...this._renderDetails(details, type));
 
-        // Wire up the explore button if present
+        // Add ownership badges for release nodes
+        if (type === 'release' && window.authManager.isLoggedIn()) {
+            const token = window.authManager.getToken();
+            const result = await window.apiClient.getUserStatus([nodeId], token);
+            if (result?.status?.[nodeId]) {
+                this._addOwnershipBadges(nodeId, result.status[nodeId]);
+            }
+        }
+
         const exploreBtn = body.querySelector('.explore-node-btn');
         if (exploreBtn) {
             exploreBtn.addEventListener('click', () => {
-                const exploreName = exploreBtn.dataset.name;
-                const exploreType = exploreBtn.dataset.type;
-                this._onNodeExpand(exploreName, exploreType);
+                this._onNodeExpand(exploreBtn.dataset.name, exploreBtn.dataset.type);
                 panel.classList.remove('open');
             });
         }
@@ -273,21 +550,15 @@ class ExploreApp {
         const explorableTypes = ['artist', 'genre', 'label', 'style'];
         if (!explorableTypes.includes(type)) return;
 
-        // Update search type to match
         this._setSearchType(type);
         this.currentQuery = name;
-
-        // Update search input
         document.getElementById('searchInput').value = name;
-
-        // Load explore data for this node
         await this._loadExplore(name, type);
     }
 
     _renderDetails(details, type) {
         const nodes = [];
 
-        // Explore button for navigable types
         const explorableTypes = ['artist', 'genre', 'label', 'style'];
         if (explorableTypes.includes(type)) {
             const btn = document.createElement('button');
@@ -302,15 +573,15 @@ class ExploreApp {
 
         if (type === 'artist') {
             nodes.push(this._detailStat('Releases', details.release_count || 0));
-            if (details.genres && details.genres.length) nodes.push(this._detailTags('Genres', details.genres));
-            if (details.styles && details.styles.length) nodes.push(this._detailTags('Styles', details.styles));
-            if (details.groups && details.groups.length) nodes.push(this._detailTags('Groups', details.groups));
+            if (details.genres?.length) nodes.push(this._detailTags('Genres', details.genres));
+            if (details.styles?.length) nodes.push(this._detailTags('Styles', details.styles));
+            if (details.groups?.length) nodes.push(this._detailTags('Groups', details.groups));
         } else if (type === 'release') {
             if (details.year) nodes.push(this._detailStat('Year', details.year));
-            if (details.artists && details.artists.length) nodes.push(this._detailTags('Artists', details.artists));
-            if (details.labels && details.labels.length) nodes.push(this._detailTags('Labels', details.labels));
-            if (details.genres && details.genres.length) nodes.push(this._detailTags('Genres', details.genres));
-            if (details.styles && details.styles.length) nodes.push(this._detailTags('Styles', details.styles));
+            if (details.artists?.length) nodes.push(this._detailTags('Artists', details.artists));
+            if (details.labels?.length) nodes.push(this._detailTags('Labels', details.labels));
+            if (details.genres?.length) nodes.push(this._detailTags('Genres', details.genres));
+            if (details.styles?.length) nodes.push(this._detailTags('Styles', details.styles));
         } else if (type === 'label') {
             nodes.push(this._detailStat('Releases', details.release_count || 0));
         } else if (type === 'genre' || type === 'style') {

@@ -412,3 +412,264 @@ body {
         width: 280px;
     }
 }
+
+/* ============================================================
+   Auth modal
+   ============================================================ */
+#authModal .modal-content {
+    background-color: var(--bg-card, #1e2139);
+    border: 1px solid var(--border-color, #2d3051);
+    color: var(--text-primary, #e4e6eb);
+}
+
+#authModal .modal-header,
+#authModal .modal-footer {
+    border-color: var(--border-color, #2d3051);
+}
+
+#authModal .nav-tabs {
+    border-color: var(--border-color, #2d3051);
+}
+
+#authModal .nav-tabs .nav-link {
+    color: var(--text-secondary, #b0b3b8);
+}
+
+#authModal .nav-tabs .nav-link.active {
+    background-color: var(--bg-secondary, #151934);
+    border-color: var(--border-color, #2d3051) var(--border-color, #2d3051) var(--bg-secondary, #151934);
+    color: var(--text-primary, #e4e6eb);
+}
+
+#authModal .form-control {
+    background-color: var(--bg-secondary, #151934);
+    border-color: var(--border-color, #2d3051);
+    color: var(--text-primary, #e4e6eb);
+}
+
+#authModal .form-control:focus {
+    background-color: var(--bg-secondary, #151934);
+    border-color: var(--accent-blue, #1877f2);
+    color: var(--text-primary, #e4e6eb);
+    box-shadow: 0 0 0 0.2rem rgba(24, 119, 242, 0.25);
+}
+
+.auth-error {
+    font-size: 0.85rem;
+    min-height: 1.2rem;
+}
+
+/* ============================================================
+   Discogs OAuth verifier modal
+   ============================================================ */
+#discogsModal .modal-content {
+    background-color: var(--bg-card, #1e2139);
+    border: 1px solid var(--border-color, #2d3051);
+    color: var(--text-primary, #e4e6eb);
+}
+
+#discogsModal .modal-header,
+#discogsModal .modal-footer {
+    border-color: var(--border-color, #2d3051);
+}
+
+#discogsModal .form-control {
+    background-color: var(--bg-secondary, #151934);
+    border-color: var(--border-color, #2d3051);
+    color: var(--text-primary, #e4e6eb);
+    font-size: 1.1rem;
+    letter-spacing: 0.1em;
+    text-align: center;
+}
+
+#discogsModal .form-control:focus {
+    background-color: var(--bg-secondary, #151934);
+    border-color: #ffc107;
+    color: var(--text-primary, #e4e6eb);
+    box-shadow: 0 0 0 0.2rem rgba(255, 193, 7, 0.25);
+}
+
+/* ============================================================
+   Navbar: user auth buttons & dropdown
+   ============================================================ */
+.navbar-auth {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: 0.75rem;
+}
+
+/* ============================================================
+   User panes: Collection, Wantlist, Recommendations
+   ============================================================ */
+.user-pane-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem 1.5rem 0.5rem;
+    border-bottom: 1px solid var(--border-color, #2d3051);
+    flex-shrink: 0;
+}
+
+.user-pane-header h5 {
+    margin: 0;
+    color: var(--text-primary, #e4e6eb);
+}
+
+.user-pane-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1rem 1.5rem;
+}
+
+.user-pane-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    color: var(--text-secondary, #b0b3b8);
+    text-align: center;
+    padding: 2rem;
+}
+
+/* Collection/wantlist release list */
+.release-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.release-list-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border-color, #2d3051);
+    gap: 0.5rem;
+}
+
+.release-list-item:last-child {
+    border-bottom: none;
+}
+
+.release-list-title {
+    font-weight: 500;
+    color: var(--text-primary, #e4e6eb);
+    font-size: 0.9rem;
+}
+
+.release-list-meta {
+    font-size: 0.78rem;
+    color: var(--text-secondary, #b0b3b8);
+    margin-top: 0.15rem;
+}
+
+.release-list-year {
+    font-size: 0.8rem;
+    color: var(--text-secondary, #b0b3b8);
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Stats row */
+.stats-row {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.stat-card {
+    background: var(--bg-secondary, #151934);
+    border: 1px solid var(--border-color, #2d3051);
+    border-radius: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    flex: 1;
+    min-width: 120px;
+    text-align: center;
+}
+
+.stat-card .stat-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    color: var(--text-primary, #e4e6eb);
+    line-height: 1.2;
+}
+
+.stat-card .stat-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #b0b3b8);
+    margin-top: 0.15rem;
+}
+
+/* Pagination controls */
+.pane-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color, #2d3051);
+    margin-top: 0.5rem;
+}
+
+/* Recommendations list */
+.recommendation-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border-color, #2d3051);
+    gap: 0.5rem;
+}
+
+.recommendation-item:last-child {
+    border-bottom: none;
+}
+
+.recommendation-score {
+    font-size: 0.78rem;
+    color: #42b883;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+/* Discogs connection status badge */
+.discogs-badge {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+}
+
+/* Ownership badges on graph nodes */
+.ownership-badge {
+    display: inline-block;
+    font-size: 0.65rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 0.2rem;
+    margin-left: 0.25rem;
+    vertical-align: middle;
+    line-height: 1.4;
+}
+
+.ownership-badge.in-collection {
+    background-color: rgba(66, 184, 131, 0.2);
+    color: #42b883;
+    border: 1px solid rgba(66, 184, 131, 0.4);
+}
+
+.ownership-badge.in-wantlist {
+    background-color: rgba(255, 193, 7, 0.15);
+    color: #ffc107;
+    border: 1px solid rgba(255, 193, 7, 0.35);
+}
+
+/* Sync button spinner state */
+.btn-sync.syncing .fa-sync {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    0%   { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}

@@ -104,6 +104,156 @@ class ApiClient {
         if (!response.ok) return null;
         return response.json();
     }
+
+    // --- Auth ---
+
+    async register(email, password) {
+        const response = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+        });
+        return response.status === 201;
+    }
+
+    async login(email, password) {
+        const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, password }),
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async logout(token) {
+        if (!token) return;
+        await fetch('/api/auth/logout', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+    }
+
+    async getMe(token) {
+        if (!token) return null;
+        const response = await fetch('/api/auth/me', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    // --- Discogs OAuth ---
+
+    async authorizeDiscogs(token) {
+        if (!token) return null;
+        const response = await fetch('/api/oauth/authorize/discogs', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async verifyDiscogs(token, state, oauthVerifier) {
+        if (!token) return null;
+        const response = await fetch('/api/oauth/verify/discogs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+            body: JSON.stringify({ state, oauth_verifier: oauthVerifier }),
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getDiscogsStatus(token) {
+        if (!token) return null;
+        const response = await fetch('/api/oauth/status/discogs', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async revokeDiscogs(token) {
+        if (!token) return null;
+        const response = await fetch('/api/oauth/revoke/discogs', {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    // --- User data ---
+
+    async getUserCollection(token, limit = 50, offset = 0) {
+        if (!token) return null;
+        const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+        const response = await fetch(`/api/user/collection?${params}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getUserWantlist(token, limit = 50, offset = 0) {
+        if (!token) return null;
+        const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+        const response = await fetch(`/api/user/wantlist?${params}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getUserRecommendations(token, limit = 20) {
+        if (!token) return null;
+        const params = new URLSearchParams({ limit: String(limit) });
+        const response = await fetch(`/api/user/recommendations?${params}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getUserCollectionStats(token) {
+        if (!token) return null;
+        const response = await fetch('/api/user/collection/stats', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getUserStatus(ids, token = null) {
+        const params = new URLSearchParams({ ids: ids.join(',') });
+        const headers = {};
+        if (token) headers['Authorization'] = `Bearer ${token}`;
+        const response = await fetch(`/api/user/status?${params}`, { headers });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    // --- Sync ---
+
+    async triggerSync(token) {
+        if (!token) return null;
+        const response = await fetch('/api/sync', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getSyncStatus(token) {
+        if (!token) return null;
+        const response = await fetch('/api/sync/status', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
 }
 
 // Global instance

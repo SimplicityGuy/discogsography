@@ -329,7 +329,7 @@ class TestExploreSearchInteraction:
 
     def test_static_js_files_load(self, page: Page, test_server: str) -> None:
         """Test that all JavaScript files are served correctly."""
-        js_files = ["js/app.js", "js/api-client.js", "js/autocomplete.js", "js/graph.js", "js/trends.js"]
+        js_files = ["js/app.js", "js/api-client.js", "js/auth.js", "js/user-panes.js", "js/autocomplete.js", "js/graph.js", "js/trends.js"]
         for js_file in js_files:
             response = page.request.get(f"{test_server}/{js_file}")
             assert response.ok, f"Failed to load {js_file}"
