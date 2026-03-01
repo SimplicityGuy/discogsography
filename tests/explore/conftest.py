@@ -4,9 +4,6 @@ import os
 
 
 # Set environment variables BEFORE importing explore modules
-os.environ.setdefault("NEO4J_HOST", "bolt://localhost:7687")
-os.environ.setdefault("NEO4J_USERNAME", "neo4j")
-os.environ.setdefault("NEO4J_PASSWORD", "testpassword")
 os.environ.setdefault("JWT_SECRET_KEY", "test-jwt-secret-for-unit-tests")
 os.environ.setdefault("REDIS_HOST", "redis://localhost:6379/0")
 

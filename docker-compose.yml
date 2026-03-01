@@ -515,17 +515,13 @@ services:
     hostname: explore
     user: "${UID:-1000}:${GID:-1000}"
     environment:
-      # IMPORTANT: Must match JWT_SECRET_KEY used by api/curator services
-      JWT_SECRET_KEY: "dev-secret-change-in-production-use-a-256-bit-random-key"
-      NEO4J_HOST: neo4j
-      NEO4J_PASSWORD: discogsography
-      NEO4J_USERNAME: neo4j
+      API_BASE_URL: "http://api:8004"
       PYTHONUNBUFFERED: "1"
     depends_on:
+      api:
+        condition: service_healthy
       schema-init:
         condition: service_completed_successfully
-      neo4j:
-        condition: service_healthy
     networks:
       - discogsography
     healthcheck:

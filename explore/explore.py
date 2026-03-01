@@ -8,16 +8,15 @@ import os
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+import httpx
 import structlog
 import uvicorn
 
 from common import (
-    AsyncResilientNeo4jDriver,
-    ExploreConfig,
     HealthServer,
     setup_logging,
 )
@@ -29,15 +28,14 @@ logger = structlog.get_logger(__name__)
 _cors_origins_raw = os.environ.get("CORS_ORIGINS", "")
 _cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()] if _cors_origins_raw else None
 
-# Module-level state
-neo4j_driver: AsyncResilientNeo4jDriver | None = None
-config: ExploreConfig | None = None
+# API service base URL for proxying /api/* requests
+_api_base_url = os.environ.get("API_BASE_URL", "http://api:8004")
 
 
 def get_health_data() -> dict[str, Any]:
     """Return health check data."""
     return {
-        "status": "healthy" if neo4j_driver else "starting",
+        "status": "healthy",
         "service": "explore",
         "timestamp": datetime.now(UTC).isoformat(),
     }
@@ -48,36 +46,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifecycle."""
     logger.info("🚀 Starting Explore service")
 
-    global neo4j_driver, config
-    config = ExploreConfig.from_env()
-    logger.info("📋 Configuration loaded from environment")
-
     # Start health server on separate port
     health_server = HealthServer(8007, get_health_data)
     health_server.start_background()
     logger.info("🏥 Health server started on port 8007")
-
-    # Initialize Neo4j driver
-    try:
-        neo4j_driver = AsyncResilientNeo4jDriver(
-            uri=config.neo4j_host,
-            auth=(config.neo4j_username, config.neo4j_password),
-            max_retries=5,
-            encrypted=False,
-        )
-        logger.info("🔗 Connected to Neo4j with resilient driver")
-    except Exception as e:
-        logger.error("❌ Failed to connect to Neo4j", error=str(e))
-        raise
 
     logger.info("✅ Explore service ready")
     yield
 
     # Shutdown
     logger.info("🛑 Shutting down Explore service")
-    if neo4j_driver:
-        await neo4j_driver.close()
-        logger.info("🔌 Neo4j connection closed")
     health_server.stop()
     logger.info("✅ Explore service shutdown complete")
 
@@ -103,7 +81,37 @@ async def health_check() -> JSONResponse:
     return JSONResponse(content=get_health_data())
 
 
-# Serve UI — must be mounted after all API routes so /health takes priority
+_PROXY_SKIP_HEADERS = frozenset({"host", "content-length", "transfer-encoding"})
+
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> httpx.AsyncClient:
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(base_url=_api_base_url, timeout=30.0)
+    return _http_client
+
+
+@app.api_route("/api/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH"])
+async def proxy_api(path: str, request: Request) -> Response:
+    """Proxy /api/* requests to the API service."""
+    client = _get_http_client()
+    url = f"/api/{path}"
+    forward_headers = {k: v for k, v in request.headers.items() if k.lower() not in _PROXY_SKIP_HEADERS}
+    proxied = await client.request(
+        method=request.method,
+        url=url,
+        params=dict(request.query_params),
+        content=await request.body(),
+        headers=forward_headers,
+    )
+    skip_response_headers = {"content-encoding", "transfer-encoding", "content-length"}
+    response_headers = {k: v for k, v in proxied.headers.items() if k.lower() not in skip_response_headers}
+    return Response(content=proxied.content, status_code=proxied.status_code, headers=response_headers)
+
+
+# Serve UI — must be mounted after all API routes so /health and /api/* take priority
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
 
 

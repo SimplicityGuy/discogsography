@@ -674,29 +674,13 @@ class TestStaticFiles:
 class TestGetHealthData:
     """Test the get_health_data helper function."""
 
-    def test_health_data_when_driver_exists(self) -> None:
-        import explore.explore as explore_module
+    def test_health_data_returns_healthy(self) -> None:
+        from explore.explore import get_health_data
 
-        original_driver = explore_module.neo4j_driver
-        explore_module.neo4j_driver = MagicMock()
-
-        data = explore_module.get_health_data()
+        data = get_health_data()
         assert data["status"] == "healthy"
         assert data["service"] == "explore"
         assert "timestamp" in data
-
-        explore_module.neo4j_driver = original_driver
-
-    def test_health_data_when_driver_none(self) -> None:
-        import explore.explore as explore_module
-
-        original_driver = explore_module.neo4j_driver
-        explore_module.neo4j_driver = None
-
-        data = explore_module.get_health_data()
-        assert data["status"] == "starting"
-
-        explore_module.neo4j_driver = original_driver
 
 
 class TestGetCacheKey:
@@ -722,36 +706,14 @@ class TestLifespan:
     async def test_lifespan_startup_and_shutdown(self) -> None:
         from explore.explore import app, lifespan
 
-        mock_driver = MagicMock()
-        mock_driver.close = AsyncMock()
-
-        with (
-            patch("explore.explore.ExploreConfig") as mock_config_class,
-            patch("explore.explore.HealthServer") as mock_health_server_class,
-            patch("explore.explore.AsyncResilientNeo4jDriver", return_value=mock_driver),
-        ):
-            mock_config = MagicMock()
-            mock_config.neo4j_host = "bolt://localhost:7687"
-            mock_config.neo4j_username = "neo4j"
-            mock_config.neo4j_password = "password"
-            mock_config_class.from_env.return_value = mock_config
-
+        with patch("explore.explore.HealthServer") as mock_health_server_class:
             mock_health_server = MagicMock()
             mock_health_server_class.return_value = mock_health_server
 
-            import explore.explore as explore_module
-
-            original_driver = explore_module.neo4j_driver
-
             async with lifespan(app):
-                # During lifespan, driver should be set
-                assert explore_module.neo4j_driver is mock_driver
+                mock_health_server.start_background.assert_called_once()
 
-            # After lifespan, driver close should have been called
-            mock_driver.close.assert_awaited_once()
             mock_health_server.stop.assert_called_once()
-
-            explore_module.neo4j_driver = original_driver
 
 
 class TestJwtHelpers:
