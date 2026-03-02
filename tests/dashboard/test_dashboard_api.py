@@ -74,12 +74,7 @@ class TestDashboardAPI:
     def test_static_files(self, test_client: TestClient) -> None:
         """Test that static files are served."""
         # Static files are mounted at root, not under /static
-        # Test CSS
-        response = test_client.get("/styles.css")
-        assert response.status_code == 200
-        assert "text/css" in response.headers["content-type"]
-
-        # Test JavaScript
+        # Test JavaScript (CSS is tailwind.css, a build artifact not present in source)
         response = test_client.get("/dashboard.js")
         assert response.status_code == 200
         assert "javascript" in response.headers["content-type"]

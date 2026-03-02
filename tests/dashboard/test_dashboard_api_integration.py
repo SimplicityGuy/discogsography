@@ -80,12 +80,7 @@ class TestDashboardAPIIntegration:
 
     def test_static_files(self, client: TestClient) -> None:
         """Test that static files are served."""
-        # Test CSS
-        response = client.get("/styles.css")
-        assert response.status_code == 200
-        assert "text/css" in response.headers["content-type"]
-
-        # Test JS
+        # Test JS (CSS is tailwind.css, a build artifact not present in source)
         response = client.get("/dashboard.js")
         assert response.status_code == 200
         assert "javascript" in response.headers["content-type"]

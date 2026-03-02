@@ -263,11 +263,6 @@ def create_test_app() -> FastAPI:
             return FileResponse(str(index_path))
 
         # Serve static assets
-        @app.get("/styles.css", response_class=FileResponse)
-        async def serve_styles() -> FileResponse:
-            """Serve the styles.css file."""
-            return FileResponse(str(static_dir / "styles.css"))
-
         @app.get("/dashboard.js", response_class=FileResponse)
         async def serve_js() -> FileResponse:
             """Serve the dashboard.js file."""
