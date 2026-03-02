@@ -20,7 +20,7 @@ class TestAutocompleteEndpoint:
         assert "results" in data
 
     def test_autocomplete_minimum_length_validation(self, test_client: TestClient) -> None:
-        response = test_client.get("/api/autocomplete?q=a")
+        response = test_client.get("/api/autocomplete?q=ab")
         assert response.status_code == 422
 
     def test_autocomplete_invalid_type(self, test_client: TestClient) -> None:
@@ -370,7 +370,7 @@ class TestAutocompleteCache:
             # Adding one more should trigger eviction (removes _MAX//4 = 1 item)
             mock_func = AsyncMock(return_value=[{"id": "new", "name": "New", "score": 1.0}])
             with patch.dict("api.routers.explore.AUTOCOMPLETE_DISPATCH", {"artist": mock_func}):
-                response = test_client.get("/api/autocomplete?q=ne&type=artist&limit=10")
+                response = test_client.get("/api/autocomplete?q=new&type=artist&limit=10")
             assert response.status_code == 200
             # Cache should have shrunk and then grown by one
             assert len(explore_module._autocomplete_cache) <= 4
