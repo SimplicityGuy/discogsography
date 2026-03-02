@@ -53,7 +53,7 @@ def decrypt_oauth_token(token: str, key: str | None) -> str:
     If a key is provided but decryption fails, raises ValueError — silent
     fallback would return garbage or expose plaintext to callers.
     """
-    if not key:
+    if not key or not token:
         return token
     from cryptography.fernet import Fernet, InvalidToken
 
