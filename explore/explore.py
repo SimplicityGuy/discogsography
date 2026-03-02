@@ -99,13 +99,20 @@ async def proxy_api(path: str, request: Request) -> Response:
     client = _get_http_client()
     url = f"/api/{path}"
     forward_headers = {k: v for k, v in request.headers.items() if k.lower() not in _PROXY_SKIP_HEADERS}
-    proxied = await client.request(
-        method=request.method,
-        url=url,
-        params=dict(request.query_params),
-        content=await request.body(),
-        headers=forward_headers,
-    )
+    try:
+        proxied = await client.request(
+            method=request.method,
+            url=url,
+            params=dict(request.query_params),
+            content=await request.body(),
+            headers=forward_headers,
+        )
+    except httpx.TimeoutException:
+        logger.warning("⏱️ Proxy request timed out", path=path)
+        return JSONResponse(content={"error": "Request timed out"}, status_code=504)
+    except httpx.HTTPError as exc:
+        logger.error("❌ Proxy request failed", path=path, error=str(exc))
+        return JSONResponse(content={"error": "Upstream service error"}, status_code=502)
     skip_response_headers = {"content-encoding", "transfer-encoding", "content-length"}
     response_headers = {k: v for k, v in proxied.headers.items() if k.lower() not in skip_response_headers}
     return Response(content=proxied.content, status_code=proxied.status_code, headers=response_headers)

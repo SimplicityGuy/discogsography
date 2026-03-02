@@ -89,7 +89,7 @@ def _build_categories(entity_type: str, result: dict[str, Any]) -> list[dict[str
 @limiter.limit("30/minute")
 async def autocomplete(
     request: Request,  # noqa: ARG001
-    q: str = Query(..., min_length=2),
+    q: str = Query(..., min_length=3),
     type: str = Query("artist"),
     limit: int = Query(10, ge=1, le=50),
 ) -> JSONResponse:
