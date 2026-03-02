@@ -794,34 +794,34 @@ class TestRequireUserDependency:
 
     def test_user_collection_no_config_returns_503(self, test_client: TestClient) -> None:
         """When config is None, _require_user raises 503."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
 
-        original_config = explore_module._jwt_secret
-        explore_module._jwt_secret = None
+        original_config = deps_module._jwt_secret
+        deps_module._jwt_secret = None
 
         response = test_client.get("/api/user/collection")
         assert response.status_code == 503
 
-        explore_module._jwt_secret = original_config
+        deps_module._jwt_secret = original_config
 
     def test_user_collection_no_auth_returns_401(self, test_client: TestClient) -> None:
         """When no bearer token is provided, _require_user raises 401."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
 
-        original_config = explore_module._jwt_secret
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        original_config = deps_module._jwt_secret
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         response = test_client.get("/api/user/collection")
         assert response.status_code == 401
 
-        explore_module._jwt_secret = original_config
+        deps_module._jwt_secret = original_config
 
     def test_user_collection_invalid_token_returns_401(self, test_client: TestClient) -> None:
         """When token signature is invalid, _require_user raises 401."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
 
-        original_config = explore_module._jwt_secret
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        original_config = deps_module._jwt_secret
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         response = test_client.get(
             "/api/user/collection",
@@ -829,7 +829,7 @@ class TestRequireUserDependency:
         )
         assert response.status_code == 401
 
-        explore_module._jwt_secret = original_config
+        deps_module._jwt_secret = original_config
 
 
 class TestUserEndpoints:
@@ -853,12 +853,13 @@ class TestUserEndpoints:
 
     def test_user_collection_service_not_ready(self, test_client: TestClient) -> None:
         """When neo4j_driver is None (but config set), collection returns 503."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
+        import api.routers.user as user_module
 
-        original_config = explore_module._jwt_secret
-        original_driver = explore_module._neo4j_driver
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
-        explore_module._neo4j_driver = None
+        original_config = deps_module._jwt_secret
+        original_driver = user_module._neo4j_driver
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        user_module._neo4j_driver = None
 
         token = _make_explore_jwt()
         response = test_client.get(
@@ -867,15 +868,15 @@ class TestUserEndpoints:
         )
         assert response.status_code == 503
 
-        explore_module._jwt_secret = original_config
-        explore_module._neo4j_driver = original_driver
+        deps_module._jwt_secret = original_config
+        user_module._neo4j_driver = original_driver
 
     def test_user_collection_success(self, test_client: TestClient) -> None:
         """With valid auth and neo4j driver, collection endpoint returns 200."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
 
-        original_config = explore_module._jwt_secret
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        original_config = deps_module._jwt_secret
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         token = _make_explore_jwt()
         with patch("api.routers.user.get_user_collection", new=AsyncMock(return_value=([], 0))):
@@ -889,16 +890,17 @@ class TestUserEndpoints:
         assert "releases" in data
         assert data["total"] == 0
 
-        explore_module._jwt_secret = original_config
+        deps_module._jwt_secret = original_config
 
     def test_user_wantlist_service_not_ready(self, test_client: TestClient) -> None:
         """When neo4j_driver is None (but config set), wantlist returns 503."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
+        import api.routers.user as user_module
 
-        original_config = explore_module._jwt_secret
-        original_driver = explore_module._neo4j_driver
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
-        explore_module._neo4j_driver = None
+        original_config = deps_module._jwt_secret
+        original_driver = user_module._neo4j_driver
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        user_module._neo4j_driver = None
 
         token = _make_explore_jwt()
         response = test_client.get(
@@ -907,15 +909,15 @@ class TestUserEndpoints:
         )
         assert response.status_code == 503
 
-        explore_module._jwt_secret = original_config
-        explore_module._neo4j_driver = original_driver
+        deps_module._jwt_secret = original_config
+        user_module._neo4j_driver = original_driver
 
     def test_user_wantlist_success(self, test_client: TestClient) -> None:
         """With valid auth and neo4j driver, wantlist endpoint returns 200."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
 
-        original_config = explore_module._jwt_secret
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        original_config = deps_module._jwt_secret
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         token = _make_explore_jwt()
         with patch("api.routers.user.get_user_wantlist", new=AsyncMock(return_value=([], 0))):
@@ -928,16 +930,17 @@ class TestUserEndpoints:
         data = response.json()
         assert "releases" in data
 
-        explore_module._jwt_secret = original_config
+        deps_module._jwt_secret = original_config
 
     def test_user_recommendations_service_not_ready(self, test_client: TestClient) -> None:
         """When neo4j_driver is None, recommendations returns 503."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
+        import api.routers.user as user_module
 
-        original_config = explore_module._jwt_secret
-        original_driver = explore_module._neo4j_driver
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
-        explore_module._neo4j_driver = None
+        original_config = deps_module._jwt_secret
+        original_driver = user_module._neo4j_driver
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        user_module._neo4j_driver = None
 
         token = _make_explore_jwt()
         response = test_client.get(
@@ -946,15 +949,15 @@ class TestUserEndpoints:
         )
         assert response.status_code == 503
 
-        explore_module._jwt_secret = original_config
-        explore_module._neo4j_driver = original_driver
+        deps_module._jwt_secret = original_config
+        user_module._neo4j_driver = original_driver
 
     def test_user_recommendations_success(self, test_client: TestClient) -> None:
         """With valid auth and neo4j driver, recommendations endpoint returns 200."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
 
-        original_config = explore_module._jwt_secret
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        original_config = deps_module._jwt_secret
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         token = _make_explore_jwt()
         with patch("api.routers.user.get_user_recommendations", new=AsyncMock(return_value=[])):
@@ -967,16 +970,17 @@ class TestUserEndpoints:
         data = response.json()
         assert "recommendations" in data
 
-        explore_module._jwt_secret = original_config
+        deps_module._jwt_secret = original_config
 
     def test_user_collection_stats_service_not_ready(self, test_client: TestClient) -> None:
         """When neo4j_driver is None, collection stats returns 503."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
+        import api.routers.user as user_module
 
-        original_config = explore_module._jwt_secret
-        original_driver = explore_module._neo4j_driver
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
-        explore_module._neo4j_driver = None
+        original_config = deps_module._jwt_secret
+        original_driver = user_module._neo4j_driver
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        user_module._neo4j_driver = None
 
         token = _make_explore_jwt()
         response = test_client.get(
@@ -985,15 +989,15 @@ class TestUserEndpoints:
         )
         assert response.status_code == 503
 
-        explore_module._jwt_secret = original_config
-        explore_module._neo4j_driver = original_driver
+        deps_module._jwt_secret = original_config
+        user_module._neo4j_driver = original_driver
 
     def test_user_collection_stats_success(self, test_client: TestClient) -> None:
         """With valid auth and neo4j driver, collection stats returns 200."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
 
-        original_config = explore_module._jwt_secret
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        original_config = deps_module._jwt_secret
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         token = _make_explore_jwt()
         stats = {"genres": [], "decades": [], "labels": []}
@@ -1005,14 +1009,14 @@ class TestUserEndpoints:
 
         assert response.status_code == 200
 
-        explore_module._jwt_secret = original_config
+        deps_module._jwt_secret = original_config
 
     def test_user_status_with_auth_uses_db_query(self, test_client: TestClient) -> None:
         """With valid auth and driver, /api/user/status queries Neo4j."""
-        import api.routers.user as explore_module
+        import api.dependencies as deps_module
 
-        original_config = explore_module._jwt_secret
-        explore_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
+        original_config = deps_module._jwt_secret
+        deps_module._jwt_secret = TEST_EXPLORE_JWT_SECRET
 
         token = _make_explore_jwt()
         status_result = {"123": {"in_collection": True, "in_wantlist": False}}
@@ -1026,4 +1030,4 @@ class TestUserEndpoints:
         data = response.json()
         assert data["status"]["123"]["in_collection"] is True
 
-        explore_module._jwt_secret = original_config
+        deps_module._jwt_secret = original_config

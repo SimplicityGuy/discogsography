@@ -12,12 +12,14 @@ from api.services.discogs import (
     REDIS_OAUTH_STATE_TTL,
     REDIS_STATE_PREFIX,
     DiscogsOAuthError,
-    _build_oauth_header,
-    _hmac_sha1_signature,
-    _oauth_escape,
     exchange_oauth_verifier,
     fetch_discogs_identity,
     request_oauth_token,
+)
+from common.oauth import (
+    _build_oauth_header,
+    _hmac_sha1_signature,
+    _oauth_escape,
 )
 
 
