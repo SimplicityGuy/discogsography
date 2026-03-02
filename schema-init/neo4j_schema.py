@@ -71,6 +71,15 @@ SCHEMA_STATEMENTS: list[tuple[str, str]] = [
         "release_sha256",
         "CREATE INDEX release_sha256 IF NOT EXISTS FOR (r:Release) ON (r.sha256)",
     ),
+    # Name range indexes used by explore for artist/label lookups by name.
+    (
+        "artist_name",
+        "CREATE INDEX artist_name IF NOT EXISTS FOR (a:Artist) ON (a.name)",
+    ),
+    (
+        "label_name",
+        "CREATE INDEX label_name IF NOT EXISTS FOR (l:Label) ON (l.name)",
+    ),
     # Year range index used by explore for temporal queries.
     (
         "release_year_index",
@@ -89,6 +98,14 @@ SCHEMA_STATEMENTS: list[tuple[str, str]] = [
     (
         "label_name_fulltext",
         "CREATE FULLTEXT INDEX label_name_fulltext IF NOT EXISTS FOR (n:Label) ON EACH [n.name]",
+    ),
+    (
+        "genre_name_fulltext",
+        "CREATE FULLTEXT INDEX genre_name_fulltext IF NOT EXISTS FOR (n:Genre) ON EACH [n.name]",
+    ),
+    (
+        "style_name_fulltext",
+        "CREATE FULLTEXT INDEX style_name_fulltext IF NOT EXISTS FOR (n:Style) ON EACH [n.name]",
     ),
 ]
 
