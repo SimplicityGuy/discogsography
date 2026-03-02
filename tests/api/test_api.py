@@ -438,9 +438,9 @@ class TestDiscogsOAuthEndpoints:
     ) -> None:
         from unittest.mock import patch
 
-        mock_cur.fetchone.side_effect = [
-            {"value": "consumer_key_value"},
-            {"value": "consumer_secret_value"},
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "consumer_key_value"},
+            {"key": "discogs_consumer_secret", "value": "consumer_secret_value"},
         ]
 
         with patch(
@@ -462,9 +462,9 @@ class TestDiscogsOAuthEndpoints:
     ) -> None:
         from api.services.discogs import DiscogsOAuthError
 
-        mock_cur.fetchone.side_effect = [
-            {"value": "ckey"},
-            {"value": "csecret"},
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ckey"},
+            {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
 
         with patch(
@@ -482,9 +482,9 @@ class TestDiscogsOAuthEndpoints:
         mock_redis: AsyncMock,
         auth_headers: dict[str, str],
     ) -> None:
-        mock_cur.fetchone.side_effect = [
-            {"value": "ckey"},
-            {"value": "csecret"},
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ckey"},
+            {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
         mock_redis.get.return_value = "reqsecret"
 
@@ -516,9 +516,9 @@ class TestDiscogsOAuthEndpoints:
         mock_redis: AsyncMock,
         auth_headers: dict[str, str],
     ) -> None:
-        mock_cur.fetchone.side_effect = [
-            {"value": "ckey"},
-            {"value": "csecret"},
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ckey"},
+            {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
         mock_redis.get.return_value = None  # state expired
 
@@ -617,9 +617,9 @@ class TestDiscogsOAuthEndpoints:
         """Returns 400 when exchange_oauth_verifier raises DiscogsOAuthError."""
         from api.services.discogs import DiscogsOAuthError
 
-        mock_cur.fetchone.side_effect = [
-            {"value": "ckey"},
-            {"value": "csecret"},
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ckey"},
+            {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
         mock_redis.get.return_value = "reqsecret"
 

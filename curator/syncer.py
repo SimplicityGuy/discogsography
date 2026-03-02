@@ -151,22 +151,42 @@ async def sync_collection(
             if not releases:
                 break
 
-            # Upsert to PostgreSQL
-            async with pg_pool.connection() as conn, conn.cursor() as cur:
-                for item in releases:
-                    basic = item.get("basic_information", {})
-                    release_id = basic.get("id")
-                    if not release_id:
-                        continue
+            # Build batch params — skip items without a release_id
+            batch_params = []
+            for item in releases:
+                basic = item.get("basic_information", {})
+                release_id = basic.get("id")
+                if not release_id:
+                    continue
 
-                    artists = basic.get("artists", [])
-                    artist_name = artists[0]["name"] if artists else None
-                    labels = basic.get("labels", [])
-                    label_name = labels[0]["name"] if labels else None
-                    formats_raw = basic.get("formats", [])
-                    formats_json = json.dumps(formats_raw) if formats_raw else None
+                artists = basic.get("artists", [])
+                artist_name = artists[0]["name"] if artists else None
+                labels = basic.get("labels", [])
+                label_name = labels[0]["name"] if labels else None
+                formats_raw = basic.get("formats", [])
+                formats_json = json.dumps(formats_raw) if formats_raw else None
 
-                    await cur.execute(
+                batch_params.append(
+                    (
+                        str(user_uuid),
+                        release_id,
+                        item.get("instance_id"),
+                        item.get("folder_id"),
+                        basic.get("title"),
+                        artist_name,
+                        basic.get("year"),
+                        formats_json,
+                        label_name,
+                        item.get("rating", 0),
+                        item.get("date_added"),
+                        None,  # metadata reserved for future use
+                    )
+                )
+
+            # Upsert to PostgreSQL — one executemany per page instead of N round-trips
+            if batch_params:
+                async with pg_pool.connection() as conn, conn.cursor() as cur:
+                    await cur.executemany(
                         """
                             INSERT INTO user_collections (
                                 user_id, release_id, instance_id, folder_id,
@@ -188,23 +208,10 @@ async def sync_collection(
                                 date_added = EXCLUDED.date_added,
                                 metadata = EXCLUDED.metadata,
                                 updated_at = NOW()
-                            """,
-                        (
-                            str(user_uuid),
-                            release_id,
-                            item.get("instance_id"),
-                            item.get("folder_id"),
-                            basic.get("title"),
-                            artist_name,
-                            basic.get("year"),
-                            formats_json,
-                            label_name,
-                            item.get("rating", 0),
-                            item.get("date_added"),
-                            None,  # metadata reserved for future use
-                        ),
+                        """,
+                        batch_params,
                     )
-                    total_synced += 1
+                total_synced += len(batch_params)
 
             # Upsert to Neo4j — ensure User node and COLLECTED relationships
             cypher = """
@@ -314,22 +321,38 @@ async def sync_wantlist(
             if not wants:
                 break
 
-            # Upsert to PostgreSQL
-            async with pg_pool.connection() as conn, conn.cursor() as cur:
-                for item in wants:
-                    # CRITICAL: wantlist ID is at item['id'] (top-level)
-                    # unlike collection where it's at item['basic_information']['id']
-                    release_id = item.get("id")
-                    if not release_id:
-                        continue
+            # Build batch params — CRITICAL: wantlist ID is at item['id'] (top-level),
+            # unlike collection where it's at item['basic_information']['id']
+            batch_params = []
+            for item in wants:
+                release_id = item.get("id")
+                if not release_id:
+                    continue
 
-                    basic = item.get("basic_information", {})
-                    artists = basic.get("artists", [])
-                    artist_name = artists[0]["name"] if artists else None
-                    formats = basic.get("formats", [])
-                    fmt_name = formats[0]["name"] if formats else None
+                basic = item.get("basic_information", {})
+                artists = basic.get("artists", [])
+                artist_name = artists[0]["name"] if artists else None
+                formats = basic.get("formats", [])
+                fmt_name = formats[0]["name"] if formats else None
 
-                    await cur.execute(
+                batch_params.append(
+                    (
+                        str(user_uuid),
+                        release_id,
+                        basic.get("title"),
+                        artist_name,
+                        basic.get("year"),
+                        fmt_name,
+                        item.get("rating", 0),
+                        item.get("notes"),
+                        item.get("date_added"),
+                    )
+                )
+
+            # Upsert to PostgreSQL — one executemany per page instead of N round-trips
+            if batch_params:
+                async with pg_pool.connection() as conn, conn.cursor() as cur:
+                    await cur.executemany(
                         """
                             INSERT INTO user_wantlists (
                                 user_id, release_id,
@@ -349,20 +372,10 @@ async def sync_wantlist(
                                 notes = EXCLUDED.notes,
                                 date_added = EXCLUDED.date_added,
                                 updated_at = NOW()
-                            """,
-                        (
-                            str(user_uuid),
-                            release_id,
-                            basic.get("title"),
-                            artist_name,
-                            basic.get("year"),
-                            fmt_name,
-                            item.get("rating", 0),
-                            item.get("notes"),
-                            item.get("date_added"),
-                        ),
+                        """,
+                        batch_params,
                     )
-                    total_synced += 1
+                total_synced += len(batch_params)
 
             # Upsert to Neo4j — ensure User node and WANTS relationships
             cypher = """

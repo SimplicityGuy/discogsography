@@ -74,8 +74,8 @@ class TestCreatePostgresSchema:
         await create_postgres_schema(mock_pool)
 
         cursor = mock_pool.connection.return_value.__aenter__.return_value.cursor.return_value
-        # 3 statements per entity table (CREATE TABLE + 2 indexes) + specific indexes + user tables
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
+        # 2 statements per entity table (CREATE TABLE + hash index) + specific indexes + user tables
+        expected_calls = len(_ENTITY_TABLES) * 2 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio
@@ -95,7 +95,7 @@ class TestCreatePostgresSchema:
         # Must not raise
         await create_postgres_schema(mock_pool)
 
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
+        expected_calls = len(_ENTITY_TABLES) * 2 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio
@@ -123,7 +123,7 @@ class TestCreatePostgresSchema:
         # Must not raise
         await create_postgres_schema(mock_pool)
 
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
+        expected_calls = len(_ENTITY_TABLES) * 2 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio

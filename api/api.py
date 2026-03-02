@@ -478,6 +478,17 @@ async def _get_app_config(key: str) -> str | None:
     return row["value"] if row else None
 
 
+async def _get_discogs_app_config() -> tuple[str | None, str | None]:
+    """Fetch both Discogs app credentials in a single query."""
+    if _pool is None:
+        return None, None
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute("SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
+        rows = await cur.fetchall()
+    config = {row["key"]: row["value"] for row in rows}
+    return config.get("discogs_consumer_key"), config.get("discogs_consumer_secret")
+
+
 @app.get("/api/oauth/authorize/discogs")
 async def authorize_discogs(
     current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
@@ -494,8 +505,7 @@ async def authorize_discogs(
             detail="Service not ready",
         )
 
-    consumer_key = await _get_app_config("discogs_consumer_key")
-    consumer_secret = await _get_app_config("discogs_consumer_secret")
+    consumer_key, consumer_secret = await _get_discogs_app_config()
     if consumer_key:
         consumer_key = decrypt_oauth_token(consumer_key, _config.oauth_encryption_key)
     if consumer_secret:
@@ -554,8 +564,7 @@ async def verify_discogs(
             detail="Service not ready",
         )
 
-    consumer_key = await _get_app_config("discogs_consumer_key")
-    consumer_secret = await _get_app_config("discogs_consumer_secret")
+    consumer_key, consumer_secret = await _get_discogs_app_config()
     if consumer_key:
         consumer_key = decrypt_oauth_token(consumer_key, _config.oauth_encryption_key)
     if consumer_secret:

@@ -83,10 +83,6 @@ _USER_TABLES: list[tuple[str, str]] = [
         """,
     ),
     (
-        "idx_users_email",
-        "CREATE INDEX IF NOT EXISTS idx_users_email ON users (email)",
-    ),
-    (
         "oauth_tokens table",
         """
         CREATE TABLE IF NOT EXISTS oauth_tokens (
@@ -102,10 +98,6 @@ _USER_TABLES: list[tuple[str, str]] = [
             UNIQUE(user_id, provider)
         )
         """,
-    ),
-    (
-        "idx_oauth_tokens_user_provider",
-        "CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_provider ON oauth_tokens (user_id, provider)",
     ),
     (
         "app_config table",
@@ -196,8 +188,12 @@ _USER_TABLES: list[tuple[str, str]] = [
         """,
     ),
     (
-        "idx_sync_history_user_id",
-        "CREATE INDEX IF NOT EXISTS idx_sync_history_user_id ON sync_history (user_id)",
+        "idx_sync_history_user_started",
+        "CREATE INDEX IF NOT EXISTS idx_sync_history_user_started ON sync_history (user_id, started_at DESC)",
+    ),
+    (
+        "idx_sync_history_running",
+        "CREATE INDEX IF NOT EXISTS idx_sync_history_running ON sync_history (user_id) WHERE status = 'running'",
     ),
 ]
 
@@ -245,15 +241,6 @@ async def create_postgres_schema(pool: Any) -> None:
                             table=sql.Identifier(table_name),
                         ),
                     ),
-                    (
-                        f"idx_{table_name}_gin",
-                        sql.SQL(
-                            "CREATE INDEX IF NOT EXISTS {index} ON {table} USING GIN (data)"
-                        ).format(
-                            index=sql.Identifier(f"idx_{table_name}_gin"),
-                            table=sql.Identifier(table_name),
-                        ),
-                    ),
                 ]
                 for name, stmt in per_table:
                     try:
@@ -284,7 +271,7 @@ async def create_postgres_schema(pool: Any) -> None:
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 
-    total = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
+    total = len(_ENTITY_TABLES) * 2 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
     logger.info(
         f"✅ PostgreSQL schema creation complete: "
         f"{success_count} succeeded, {failure_count} failed (total: {total})"
