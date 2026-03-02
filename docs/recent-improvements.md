@@ -4,9 +4,60 @@
 
 **Summary of recent enhancements to the Discogsography platform**
 
-Last Updated: February 2026
+Last Updated: March 2026
 
 </div>
+
+## 🆕 Latest Improvements (March 2026)
+
+### 🔧 Shared OAuth, Auth, and Dependency Refactor
+
+**Overview**: Consolidated shared code (OAuth helpers, auth utilities, and dependency injection) into `common/` and `api/` to reduce duplication across services.
+
+- Extracted shared JWT decode helpers to `api/auth.py`
+- Consolidated OAuth token encryption/decryption into `common/oauth.py`
+- Removed duplicated implementations from individual routers
+
+### ⚡ PostgreSQL Performance Optimizations
+
+**Overview**: Improved query performance, indexing, and batch write throughput for PostgreSQL.
+
+- Optimized high-frequency queries with targeted indexes
+- Improved batch write logic in Tableinator for higher throughput
+- Added missing indexes on `user_collections` table including full JSONB `formats` column
+
+### ⚡ Neo4j Query and Index Optimizations
+
+**Overview**: Improved Neo4j query performance with better index coverage and query planning.
+
+- Added missing composite indexes for frequent query patterns
+- Optimized graph traversal queries in API explore/expand endpoints
+- Schema-init now creates all performance-critical indexes on first run
+
+### 🔍 Explore Auth UI and E2E Tests
+
+**Overview**: Added authentication UI to the Explore frontend and comprehensive E2E tests.
+
+- Login/register UI integrated into the Explore static frontend
+- User collection and wantlist panes visible after authentication
+- Playwright E2E tests covering auth flow and personalized UI states
+
+### 🔒 Autocomplete Minimum Length Raised to 3
+
+**Overview**: Autocomplete endpoint now requires at least 3 characters to reduce noise and improve index performance.
+
+- `GET /api/autocomplete?q=...` now returns `422` for queries shorter than 3 characters
+- Frontend debounce threshold updated to match
+
+### 🔒 Explore No Longer Uses Neo4j Directly
+
+**Overview**: The Explore service now serves static files only and proxies all `/api/*` requests to the API service.
+
+- Removed direct Neo4j connection from Explore — no `NEO4J_*` env vars required
+- All graph queries go through the API service (configured via `API_BASE_URL`)
+- Explore configuration simplified to `API_BASE_URL` and optional `CORS_ORIGINS`
+
+---
 
 ## 📋 Overview
 

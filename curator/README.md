@@ -28,14 +28,14 @@ The curator service:
 Environment variables:
 
 ```bash
-# PostgreSQL connection
-POSTGRES_HOST=postgres:5432
+# PostgreSQL connection (plain hostname — port 5432 added automatically)
+POSTGRES_HOST=postgres
 POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
 
-# Neo4j connection
-NEO4J_HOST=bolt://neo4j:7687
+# Neo4j connection (plain hostname — bolt:// prefix added automatically)
+NEO4J_HOST=neo4j
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=discogsography
 

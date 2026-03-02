@@ -42,9 +42,7 @@ open http://localhost:8004/api/explore
 uv sync --extra explore
 
 # Set environment variables
-export NEO4J_HOST="bolt://localhost:7687"
-export NEO4J_USERNAME="neo4j"
-export NEO4J_PASSWORD="password"
+export API_BASE_URL="http://localhost:8004"  # URL of the running API service
 
 # Start the explore service
 just explore
@@ -99,7 +97,7 @@ Parameters:
 
 | Parameter | Required | Default  | Description                                      |
 | --------- | -------- | -------- | ------------------------------------------------ |
-| `q`       | ✅       | —        | Search query (minimum 2 characters)              |
+| `q`       | ✅       | —        | Search query (minimum 3 characters)              |
 | `type`    |          | `artist` | Entity type: `artist`, `genre`, `label`, `style` |
 | `limit`   |          | `10`     | Maximum results (1–50)                           |
 
@@ -248,11 +246,10 @@ Example response:
 
 ## ⚙️ Configuration
 
-| Variable         | Description               | Default  |
-| ---------------- | ------------------------- | -------- |
-| `NEO4J_HOST`  | Neo4j bolt connection URL | Required |
-| `NEO4J_USERNAME` | Neo4j username            | Required |
-| `NEO4J_PASSWORD` | Neo4j password            | Required |
+| Variable         | Description                               | Default                 |
+| ---------------- | ----------------------------------------- | ----------------------- |
+| `API_BASE_URL`   | Base URL of the API service for proxying  | `http://api:8004`       |
+| `CORS_ORIGINS`   | Comma-separated list of allowed origins   | `localhost:3000,8003`   |
 
 ## 🔌 Ports
 

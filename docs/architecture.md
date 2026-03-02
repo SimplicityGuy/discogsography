@@ -63,7 +63,7 @@ graph TD
     GRAPH -->|4a. Build Graph| NEO4J
     TABLE -->|4b. Store Data| PG
 
-    EXPLORE -.->|Health Check| NEO4J
+    EXPLORE -.->|Proxy /api/*| API
 
     API -.->|User Accounts| PG
     API -.->|Graph Queries| NEO4J
@@ -279,8 +279,8 @@ See [Tableinator README](../tableinator/README.md) for details.
 
 **Configuration**:
 
-- `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
-- `JWT_SECRET_KEY`: Shared secret for token validation
+- `API_BASE_URL`: URL of the API service to proxy graph query requests (default: `http://api:8004`)
+- `CORS_ORIGINS`: Optional comma-separated list of allowed CORS origins
 
 See [Explore README](../explore/README.md) for details.
 
@@ -645,4 +645,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-03-02

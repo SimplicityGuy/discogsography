@@ -68,25 +68,34 @@ services:
 
 ### RabbitMQ Configuration
 
-| Variable          | Description             | Default                                                | Required |
-| ----------------- | ----------------------- | ------------------------------------------------------ | -------- |
-| `AMQP_CONNECTION` | RabbitMQ connection URL | `amqp://discogsography:discogsography@localhost:5672/` | Yes      |
+The AMQP connection URL is built automatically from component variables — do **not** set `AMQP_CONNECTION` directly.
 
-**Used By**: All services
+| Variable             | Description                  | Default          | Required |
+| -------------------- | ---------------------------- | ---------------- | -------- |
+| `RABBITMQ_HOST`      | RabbitMQ hostname            | `rabbitmq`       | No       |
+| `RABBITMQ_PORT`      | RabbitMQ AMQP port           | `5672`           | No       |
+| `RABBITMQ_USERNAME`  | RabbitMQ username            | `discogsography` | No       |
+| `RABBITMQ_PASSWORD`  | RabbitMQ password            | `discogsography` | No       |
 
-**Format**: `amqp://username:password@host:port/vhost`
+**Used By**: Extractor, Graphinator, Tableinator, Dashboard
+
+**Secret convention**: `RABBITMQ_USERNAME_FILE` / `RABBITMQ_PASSWORD_FILE` paths are supported for Docker Compose runtime secrets.
 
 **Examples**:
 
 ```bash
-# Local development (matches docker-compose default credentials)
-AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
+# Local development
+RABBITMQ_HOST=localhost
+RABBITMQ_USERNAME=discogsography
+RABBITMQ_PASSWORD=discogsography
 
-# Docker Compose (internal network)
-AMQP_CONNECTION="amqp://discogsography:discogsography@rabbitmq:5672//"
+# Docker Compose (internal network — these are the defaults)
+RABBITMQ_HOST=rabbitmq
 
-# Remote server with vhost
-AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
+# Remote broker with custom credentials
+RABBITMQ_HOST=rabbitmq.example.com
+RABBITMQ_USERNAME=myuser
+RABBITMQ_PASSWORD=mypassword
 ```
 
 **Connection Properties**:
@@ -145,7 +154,7 @@ AMQP_CONNECTION="amqp://user:pass@rabbitmq.example.com:5672/discogsography"
 | `NEO4J_USERNAME` | Neo4j username | `neo4j`                 | Yes      |
 | `NEO4J_PASSWORD` | Neo4j password | (none)                  | Yes      |
 
-**Used By**: Graphinator, Dashboard, Explore, Curator
+**Used By**: Graphinator, Dashboard, Curator
 
 **Connection Details**:
 
@@ -584,11 +593,17 @@ LOG_LEVEL=INFO
 
 ```bash
 # Required
-AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 DISCOGS_ROOT="/discogs-data"
+
+# RabbitMQ (built from components — do not set AMQP_CONNECTION)
+RABBITMQ_HOST=rabbitmq           # default: rabbitmq
+RABBITMQ_USERNAME=discogsography # default: discogsography
+RABBITMQ_PASSWORD=discogsography # default: discogsography
 
 # Optional
 PERIODIC_CHECK_DAYS=15
+BATCH_SIZE=100
+MAX_WORKERS=4
 LOG_LEVEL=INFO
 ```
 
@@ -598,10 +613,14 @@ Health check: http://localhost:8000/health
 
 ```bash
 # Required
-AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 NEO4J_HOST="localhost"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
+
+# RabbitMQ (built from components — do not set AMQP_CONNECTION)
+RABBITMQ_HOST=rabbitmq           # default: rabbitmq
+RABBITMQ_USERNAME=discogsography # default: discogsography
+RABBITMQ_PASSWORD=discogsography # default: discogsography
 
 # Optional - Consumer Management
 CONSUMER_CANCEL_DELAY=300
@@ -623,11 +642,15 @@ Health check: http://localhost:8001/health
 
 ```bash
 # Required
-AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 POSTGRES_HOST="localhost"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
+
+# RabbitMQ (built from components — do not set AMQP_CONNECTION)
+RABBITMQ_HOST=rabbitmq           # default: rabbitmq
+RABBITMQ_USERNAME=discogsography # default: discogsography
+RABBITMQ_PASSWORD=discogsography # default: discogsography
 
 # Optional - Consumer Management
 CONSUMER_CANCEL_DELAY=300
@@ -649,11 +672,10 @@ Health check: http://localhost:8002/health
 
 ```bash
 # Required
-NEO4J_HOST="localhost"
-NEO4J_USERNAME="neo4j"
-NEO4J_PASSWORD="discogsography"
+API_BASE_URL="http://api:8004"   # URL of the API service to proxy requests to
 
 # Optional
+CORS_ORIGINS="http://localhost:3000,http://localhost:8003"  # comma-separated origins
 LOG_LEVEL=INFO
 ```
 
@@ -663,7 +685,6 @@ Health check: http://localhost:8006/health (service), http://localhost:8007/heal
 
 ```bash
 # Required
-AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
 NEO4J_HOST="localhost"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
@@ -672,6 +693,11 @@ POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
 REDIS_HOST="localhost"
+
+# RabbitMQ (built from components — do not set AMQP_CONNECTION)
+RABBITMQ_HOST=rabbitmq           # default: rabbitmq
+RABBITMQ_USERNAME=discogsography # default: discogsography
+RABBITMQ_PASSWORD=discogsography # default: discogsography
 
 # Optional - RabbitMQ Management API access
 RABBITMQ_MANAGEMENT_USER=discogsography
@@ -695,8 +721,10 @@ Health check: http://localhost:8003/health
 ### Development (.env.development)
 
 ```bash
-# RabbitMQ
-AMQP_CONNECTION=amqp://discogsography:discogsography@localhost:5672/
+# RabbitMQ (built from components)
+RABBITMQ_HOST=localhost
+RABBITMQ_USERNAME=discogsography
+RABBITMQ_PASSWORD=discogsography
 
 # Neo4j
 NEO4J_HOST=localhost
@@ -757,8 +785,8 @@ See `secrets.example/` for reference placeholders and generation commands.
 **Step 2 — Set non-secret production environment** (safe to commit, no credentials):
 
 ```bash
-# RabbitMQ
-AMQP_CONNECTION=amqp://discogsography:@rabbitmq:5672/
+# RabbitMQ (hostname only — credentials come from Docker secrets)
+RABBITMQ_HOST=rabbitmq.prod.internal
 
 # Neo4j
 NEO4J_HOST=neo4j.prod.internal

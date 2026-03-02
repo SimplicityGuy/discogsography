@@ -79,7 +79,7 @@ graph TD
     GRAPH -->|4a. Build Graph| NEO4J
     TABLE -->|4b. Store Data| PG
 
-    EXPLORE -.->|Health Check| NEO4J
+    EXPLORE -.->|Proxy /api/*| API
 
     API -.->|User Accounts| PG
     API -.->|Graph Queries| NEO4J
