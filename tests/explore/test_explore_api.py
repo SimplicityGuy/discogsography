@@ -1031,3 +1031,120 @@ class TestUserEndpoints:
         assert data["status"]["123"]["in_collection"] is True
 
         deps_module._jwt_secret = original_config
+
+
+class TestGetHttpClient:
+    """Test the _get_http_client lazy initialization."""
+
+    def test_creates_client_when_none(self) -> None:
+        import httpx
+
+        import explore.explore as explore_module
+
+        original = explore_module._http_client
+        explore_module._http_client = None
+        try:
+            client = explore_module._get_http_client()
+            assert isinstance(client, httpx.AsyncClient)
+        finally:
+            explore_module._http_client = original
+
+    def test_returns_same_client_on_second_call(self) -> None:
+        import explore.explore as explore_module
+
+        original = explore_module._http_client
+        explore_module._http_client = None
+        try:
+            client1 = explore_module._get_http_client()
+            client2 = explore_module._get_http_client()
+            assert client1 is client2
+        finally:
+            explore_module._http_client = original
+
+
+class TestExploreServiceEndpoints:
+    """Test the explore service's own /health and /api/* proxy endpoints."""
+
+    @pytest.fixture
+    def explore_client(self) -> TestClient:
+        """Test client for explore.explore.app with HealthServer mocked."""
+        from explore.explore import app
+
+        with patch("explore.explore.HealthServer") as mock_hs_class:
+            mock_hs_class.return_value = MagicMock()
+            with TestClient(app, raise_server_exceptions=False) as client:
+                yield client
+
+    def test_health_endpoint_returns_200(self, explore_client: TestClient) -> None:
+        response = explore_client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "healthy"
+        assert data["service"] == "explore"
+        assert "timestamp" in data
+
+    def test_proxy_success(self, explore_client: TestClient) -> None:
+        """Successful proxy returns upstream response."""
+        import httpx
+
+        mock_proxied = MagicMock()
+        mock_proxied.status_code = 200
+        mock_proxied.content = b'{"artists": []}'
+        mock_proxied.headers = {"content-type": "application/json"}
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.request = AsyncMock(return_value=mock_proxied)
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/autocomplete?q=radio&type=artist")
+
+        assert response.status_code == 200
+
+    def test_proxy_timeout_returns_504(self, explore_client: TestClient) -> None:
+        """Proxy timeout returns 504 with error message."""
+        import httpx
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.request = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/autocomplete?q=radio&type=artist")
+
+        assert response.status_code == 504
+        assert response.json()["error"] == "Request timed out"
+
+    def test_proxy_http_error_returns_502(self, explore_client: TestClient) -> None:
+        """Proxy HTTP error returns 502 with error message."""
+        import httpx
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.request = AsyncMock(side_effect=httpx.HTTPError("connection failed"))
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/autocomplete?q=radio&type=artist")
+
+        assert response.status_code == 502
+        assert response.json()["error"] == "Upstream service error"
+
+    def test_proxy_strips_hop_headers(self, explore_client: TestClient) -> None:
+        """Proxy does not forward content-encoding / transfer-encoding in response."""
+        import httpx
+
+        mock_proxied = MagicMock()
+        mock_proxied.status_code = 200
+        mock_proxied.content = b'{"ok": true}'
+        mock_proxied.headers = {
+            "content-type": "application/json",
+            "content-encoding": "gzip",
+            "transfer-encoding": "chunked",
+        }
+
+        mock_client = AsyncMock(spec=httpx.AsyncClient)
+        mock_client.request = AsyncMock(return_value=mock_proxied)
+
+        with patch("explore.explore._get_http_client", return_value=mock_client):
+            response = explore_client.get("/api/test")
+
+        assert response.status_code == 200
+        assert "content-encoding" not in response.headers
+        assert "transfer-encoding" not in response.headers

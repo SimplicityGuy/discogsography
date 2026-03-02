@@ -122,7 +122,7 @@ async def proxy_api(path: str, request: Request) -> Response:
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     setup_logging("explore", log_file=Path("/logs/explore.log"))
 
     # fmt: off
