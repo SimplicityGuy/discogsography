@@ -67,7 +67,12 @@ class ExploreApp {
 
         if (loggedIn && discogsStatus?.connected) {
             if (statusDisplay) {
-                statusDisplay.innerHTML = `<span class="badge bg-success discogs-badge"><i class="fas fa-check me-1"></i>${discogsStatus.discogs_username || 'Connected'}</span>`;
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-success discogs-badge';
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-check me-1';
+                badge.append(icon, discogsStatus.discogs_username || 'Connected');
+                statusDisplay.replaceChildren(badge);
             }
             connectBtn?.classList.add('d-none');
             disconnectBtn?.classList.remove('d-none');

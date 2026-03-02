@@ -100,7 +100,14 @@ class UserPanes {
 
     _renderCollectionEmpty(container, msg) {
         if (!container) return;
-        container.innerHTML = `<div class="user-pane-empty"><i class="fas fa-record-vinyl fa-3x mb-3"></i><p>${msg}</p></div>`;
+        const div = document.createElement('div');
+        div.className = 'user-pane-empty';
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-record-vinyl fa-3x mb-3';
+        const p = document.createElement('p');
+        p.textContent = msg;
+        div.append(icon, p);
+        container.appendChild(div);
     }
 
     // ------------------------------------------------------------------ //
@@ -187,7 +194,14 @@ class UserPanes {
 
     _renderWantlistEmpty(container, msg) {
         if (!container) return;
-        container.innerHTML = `<div class="user-pane-empty"><i class="fas fa-heart fa-3x mb-3"></i><p>${msg}</p></div>`;
+        const div = document.createElement('div');
+        div.className = 'user-pane-empty';
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-heart fa-3x mb-3';
+        const p = document.createElement('p');
+        p.textContent = msg;
+        div.append(icon, p);
+        container.appendChild(div);
     }
 
     // ------------------------------------------------------------------ //
@@ -275,7 +289,13 @@ class UserPanes {
         fields.forEach(f => {
             const card = document.createElement('div');
             card.className = 'stat-card';
-            card.innerHTML = `<div class="stat-value">${typeof f.value === 'number' ? f.value.toLocaleString() : f.value}</div><div class="stat-label">${f.label}</div>`;
+            const statValue = document.createElement('div');
+            statValue.className = 'stat-value';
+            statValue.textContent = typeof f.value === 'number' ? f.value.toLocaleString() : f.value;
+            const statLabel = document.createElement('div');
+            statLabel.className = 'stat-label';
+            statLabel.textContent = f.label;
+            card.append(statValue, statLabel);
             el.appendChild(card);
         });
     }

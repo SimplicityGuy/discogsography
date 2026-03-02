@@ -406,6 +406,17 @@ impl Downloader {
                 continue;
             }
 
+            if let Err(e) = file.flush().await {
+                warn!("⚠️ Attempt {}/{} failed to flush {}: {}", attempt, MAX_DOWNLOAD_RETRIES, filename, e);
+                last_error = Some(anyhow::anyhow!("Failed to flush file: {}", e));
+                continue;
+            }
+            if let Err(e) = file.sync_data().await {
+                warn!("⚠️ Attempt {}/{} failed to sync {}: {}", attempt, MAX_DOWNLOAD_RETRIES, filename, e);
+                last_error = Some(anyhow::anyhow!("Failed to sync file: {}", e));
+                continue;
+            }
+
             pb.finish_with_message("Download complete");
 
             info!("✅ Downloaded {} ({:.2} MB)", filename, downloaded as f64 / 1_048_576.0);
