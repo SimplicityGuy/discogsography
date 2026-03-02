@@ -45,6 +45,7 @@ from common.neo4j_resilient import (
     with_async_neo4j_retry,
     with_neo4j_retry,
 )
+from common.oauth import _build_oauth_header, _hmac_sha1_signature, _oauth_escape
 from common.postgres_resilient import (
     AsyncPostgreSQLPool,
     AsyncResilientPostgreSQL,
@@ -102,6 +103,9 @@ __all__ = [
     "ResilientRabbitMQConnection",
     "StateMarker",
     "TableinatorConfig",
+    "_build_oauth_header",
+    "_hmac_sha1_signature",
+    "_oauth_escape",
     "async_resilient_connection",
     "get_config",
     "normalize_artist",

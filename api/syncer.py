@@ -11,6 +11,7 @@ Key Discogs API gotchas:
 
 import asyncio
 from datetime import UTC, datetime
+import json
 import os
 import time
 from typing import Any
@@ -129,8 +130,8 @@ async def sync_collection(
                 artist_name = artists[0]["name"] if artists else None
                 labels = basic.get("labels", [])
                 label_name = labels[0]["name"] if labels else None
-                formats = basic.get("formats", [])
-                fmt_name = formats[0]["name"] if formats else None
+                formats_raw = basic.get("formats", [])
+                formats_json = json.dumps(formats_raw) if formats_raw else None
 
                 batch_params.append(
                     (
@@ -141,7 +142,7 @@ async def sync_collection(
                         basic.get("title"),
                         artist_name,
                         basic.get("year"),
-                        fmt_name,
+                        formats_json,
                         label_name,
                         item.get("rating", 0),
                         item.get("date_added"),
@@ -156,11 +157,11 @@ async def sync_collection(
                         """
                             INSERT INTO user_collections (
                                 user_id, release_id, instance_id, folder_id,
-                                title, artist, year, format, label,
+                                title, artist, year, formats, label,
                                 rating, date_added, metadata, updated_at
                             ) VALUES (
                                 %s::uuid, %s, %s, %s,
-                                %s, %s, %s, %s, %s,
+                                %s, %s, %s, %s::jsonb, %s,
                                 %s, %s, %s::jsonb, NOW()
                             )
                             ON CONFLICT (user_id, release_id, instance_id) DO UPDATE SET
@@ -168,7 +169,7 @@ async def sync_collection(
                                 title = EXCLUDED.title,
                                 artist = EXCLUDED.artist,
                                 year = EXCLUDED.year,
-                                format = EXCLUDED.format,
+                                formats = EXCLUDED.formats,
                                 label = EXCLUDED.label,
                                 rating = EXCLUDED.rating,
                                 date_added = EXCLUDED.date_added,

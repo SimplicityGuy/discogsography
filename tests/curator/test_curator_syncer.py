@@ -10,66 +10,10 @@ from curator.syncer import (
     PAGE_SIZE,
     SYNC_DELAY_SECONDS,
     _auth_header,
-    _build_oauth_header,
-    _hmac_sha1,
-    _oauth_escape,
     run_full_sync,
     sync_collection,
     sync_wantlist,
 )
-
-
-class TestOAuthEscape:
-    """Tests for OAuth percent-encoding."""
-
-    def test_alphanumeric_unchanged(self) -> None:
-        assert _oauth_escape("abc123") == "abc123"
-
-    def test_space_encoded(self) -> None:
-        assert _oauth_escape("hello world") == "hello%20world"
-
-    def test_special_chars_encoded(self) -> None:
-        result = _oauth_escape("foo&bar=baz")
-        assert "&" not in result
-        assert "=" not in result
-
-    def test_empty_string(self) -> None:
-        assert _oauth_escape("") == ""
-
-    def test_slash_encoded(self) -> None:
-        # safe="" means slash must be encoded
-        assert "/" not in _oauth_escape("/path/to/resource")
-
-
-class TestBuildOAuthHeader:
-    """Tests for OAuth Authorization header construction."""
-
-    def test_header_starts_with_oauth(self) -> None:
-        params = {"oauth_consumer_key": "key", "oauth_token": "tok"}
-        header = _build_oauth_header(params)
-        assert header.startswith("OAuth ")
-
-    def test_params_sorted(self) -> None:
-        params = {"z_param": "z", "a_param": "a"}
-        header = _build_oauth_header(params)
-        # a_param should appear before z_param
-        assert header.index("a_param") < header.index("z_param")
-
-    def test_values_quoted(self) -> None:
-        params = {"key": "value"}
-        header = _build_oauth_header(params)
-        assert 'key="value"' in header
-
-    def test_multiple_params(self) -> None:
-        params = {
-            "oauth_consumer_key": "consumer",
-            "oauth_signature_method": "HMAC-SHA1",
-            "oauth_version": "1.0",
-        }
-        header = _build_oauth_header(params)
-        assert "oauth_consumer_key" in header
-        assert "oauth_signature_method" in header
-        assert "oauth_version" in header
 
 
 class TestSyncerConstants:
@@ -80,35 +24,6 @@ class TestSyncerConstants:
 
     def test_sync_delay_is_half_second(self) -> None:
         assert SYNC_DELAY_SECONDS == 0.5
-
-
-class TestHmacSha1:
-    """Tests for _hmac_sha1."""
-
-    def test_returns_base64_string(self) -> None:
-        import base64
-
-        sig = _hmac_sha1("GET", "https://api.discogs.com/token", {"k": "v"}, "csecret", "tokensec")
-        # Should be valid base64
-        base64.b64decode(sig + "==")
-
-    def test_different_methods_give_different_sigs(self) -> None:
-        params = {"oauth_nonce": "abc", "oauth_timestamp": "1234"}
-        sig_get = _hmac_sha1("GET", "https://api.discogs.com/token", params, "csecret", "tsecret")
-        sig_post = _hmac_sha1("POST", "https://api.discogs.com/token", params, "csecret", "tsecret")
-        assert sig_get != sig_post
-
-    def test_different_secrets_give_different_sigs(self) -> None:
-        params = {"k": "v"}
-        sig1 = _hmac_sha1("GET", "https://example.com", params, "secret1", "")
-        sig2 = _hmac_sha1("GET", "https://example.com", params, "secret2", "")
-        assert sig1 != sig2
-
-    def test_empty_token_secret(self) -> None:
-        # Should work without raising
-        sig = _hmac_sha1("GET", "https://example.com", {"k": "v"}, "csecret", "")
-        assert isinstance(sig, str)
-        assert len(sig) > 0
 
 
 class TestAuthHeader:
@@ -212,7 +127,7 @@ class TestSyncCollection:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=empty_resp)
 
-        with patch("curator.syncer.httpx.AsyncClient", return_value=mock_client):
+        with patch("api.syncer.httpx.AsyncClient", return_value=mock_client):
             total = await sync_collection(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
                 discogs_username="testuser",
@@ -258,8 +173,8 @@ class TestSyncCollection:
         mock_client.get = AsyncMock(return_value=resp)
 
         with (
-            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
-            patch("curator.syncer.asyncio.sleep", new=AsyncMock()),
+            patch("api.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("api.syncer.asyncio.sleep", new=AsyncMock()),
         ):
             total = await sync_collection(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
@@ -290,7 +205,7 @@ class TestSyncCollection:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=error_resp)
 
-        with patch("curator.syncer.httpx.AsyncClient", return_value=mock_client):
+        with patch("api.syncer.httpx.AsyncClient", return_value=mock_client):
             total = await sync_collection(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
                 discogs_username="testuser",
@@ -326,8 +241,8 @@ class TestSyncCollection:
 
         sleep_mock = AsyncMock()
         with (
-            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
-            patch("curator.syncer.asyncio.sleep", new=sleep_mock),
+            patch("api.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("api.syncer.asyncio.sleep", new=sleep_mock),
         ):
             total = await sync_collection(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
@@ -371,8 +286,8 @@ class TestSyncCollection:
         mock_client.get = AsyncMock(return_value=resp)
 
         with (
-            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
-            patch("curator.syncer.asyncio.sleep", new=AsyncMock()),
+            patch("api.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("api.syncer.asyncio.sleep", new=AsyncMock()),
         ):
             total = await sync_collection(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
@@ -423,8 +338,8 @@ class TestSyncCollection:
 
         sleep_mock = AsyncMock()
         with (
-            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
-            patch("curator.syncer.asyncio.sleep", new=sleep_mock),
+            patch("api.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("api.syncer.asyncio.sleep", new=sleep_mock),
         ):
             total = await sync_collection(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
@@ -460,7 +375,7 @@ class TestSyncWantlist:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=empty_resp)
 
-        with patch("curator.syncer.httpx.AsyncClient", return_value=mock_client):
+        with patch("api.syncer.httpx.AsyncClient", return_value=mock_client):
             total = await sync_wantlist(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
                 discogs_username="testuser",
@@ -504,8 +419,8 @@ class TestSyncWantlist:
         mock_client.get = AsyncMock(return_value=resp)
 
         with (
-            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
-            patch("curator.syncer.asyncio.sleep", new=AsyncMock()),
+            patch("api.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("api.syncer.asyncio.sleep", new=AsyncMock()),
         ):
             total = await sync_wantlist(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
@@ -542,8 +457,8 @@ class TestSyncWantlist:
 
         sleep_mock = AsyncMock()
         with (
-            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
-            patch("curator.syncer.asyncio.sleep", new=sleep_mock),
+            patch("api.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("api.syncer.asyncio.sleep", new=sleep_mock),
         ):
             total = await sync_wantlist(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
@@ -577,7 +492,7 @@ class TestSyncWantlist:
         mock_client.__aexit__ = AsyncMock(return_value=False)
         mock_client.get = AsyncMock(return_value=error_resp)
 
-        with patch("curator.syncer.httpx.AsyncClient", return_value=mock_client):
+        with patch("api.syncer.httpx.AsyncClient", return_value=mock_client):
             total = await sync_wantlist(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
                 discogs_username="testuser",
@@ -617,8 +532,8 @@ class TestSyncWantlist:
         mock_client.get = AsyncMock(return_value=resp)
 
         with (
-            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
-            patch("curator.syncer.asyncio.sleep", new=AsyncMock()),
+            patch("api.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("api.syncer.asyncio.sleep", new=AsyncMock()),
         ):
             total = await sync_wantlist(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
@@ -667,8 +582,8 @@ class TestSyncWantlist:
 
         sleep_mock = AsyncMock()
         with (
-            patch("curator.syncer.httpx.AsyncClient", return_value=mock_client),
-            patch("curator.syncer.asyncio.sleep", new=sleep_mock),
+            patch("api.syncer.httpx.AsyncClient", return_value=mock_client),
+            patch("api.syncer.asyncio.sleep", new=sleep_mock),
         ):
             total = await sync_wantlist(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),
@@ -757,8 +672,8 @@ class TestRunFullSync:
         driver = _make_mock_neo4j()
 
         with (
-            patch("curator.syncer.sync_collection", new=AsyncMock(return_value=10)),
-            patch("curator.syncer.sync_wantlist", new=AsyncMock(return_value=5)),
+            patch("api.syncer.sync_collection", new=AsyncMock(return_value=10)),
+            patch("api.syncer.sync_wantlist", new=AsyncMock(return_value=5)),
         ):
             result = await run_full_sync(
                 user_uuid=UUID("00000000-0000-0000-0000-000000000001"),

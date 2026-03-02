@@ -2,12 +2,12 @@
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import structlog
 
-from api.auth import decode_token
+import api.dependencies as _dependencies
+from api.dependencies import get_optional_user, require_user
 from api.queries.user_queries import (
     check_releases_user_status,
     get_user_collection,
@@ -20,47 +20,19 @@ from api.queries.user_queries import (
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
-_security = HTTPBearer(auto_error=False)
 
 _neo4j_driver: Any = None
-_jwt_secret: str | None = None
 
 
 def configure(neo4j: Any, jwt_secret: str | None) -> None:
-    global _neo4j_driver, _jwt_secret
+    global _neo4j_driver
     _neo4j_driver = neo4j
-    _jwt_secret = jwt_secret
-
-
-async def _get_optional_user(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_security)],
-) -> dict[str, Any] | None:
-    if credentials is None or _jwt_secret is None:
-        return None
-    try:
-        return decode_token(credentials.credentials, _jwt_secret)
-    except ValueError:
-        return None
-
-
-async def _require_user(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_security)],
-) -> dict[str, Any]:
-    if _jwt_secret is None:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Personalized endpoints not enabled")
-    if credentials is None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authentication required", headers={"WWW-Authenticate": "Bearer"})
-    try:
-        return decode_token(credentials.credentials, _jwt_secret)
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"}
-        ) from exc
+    _dependencies.configure(jwt_secret)
 
 
 @router.get("/api/user/collection")
 async def user_collection(
-    current_user: Annotated[dict[str, Any], Depends(_require_user)],
+    current_user: Annotated[dict[str, Any], Depends(require_user)],
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> JSONResponse:
@@ -73,7 +45,7 @@ async def user_collection(
 
 @router.get("/api/user/wantlist")
 async def user_wantlist(
-    current_user: Annotated[dict[str, Any], Depends(_require_user)],
+    current_user: Annotated[dict[str, Any], Depends(require_user)],
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ) -> JSONResponse:
@@ -86,7 +58,7 @@ async def user_wantlist(
 
 @router.get("/api/user/recommendations")
 async def user_recommendations(
-    current_user: Annotated[dict[str, Any], Depends(_require_user)],
+    current_user: Annotated[dict[str, Any], Depends(require_user)],
     limit: int = Query(20, ge=1, le=100),
 ) -> JSONResponse:
     if not _neo4j_driver:
@@ -98,7 +70,7 @@ async def user_recommendations(
 
 @router.get("/api/user/collection/stats")
 async def user_collection_stats(
-    current_user: Annotated[dict[str, Any], Depends(_require_user)],
+    current_user: Annotated[dict[str, Any], Depends(require_user)],
 ) -> JSONResponse:
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
@@ -110,7 +82,7 @@ async def user_collection_stats(
 @router.get("/api/user/status")
 async def user_release_status(
     ids: str = Query(...),
-    current_user: Annotated[dict[str, Any] | None, Depends(_get_optional_user)] = None,
+    current_user: Annotated[dict[str, Any] | None, Depends(get_optional_user)] = None,
 ) -> JSONResponse:
     release_ids = [rid.strip() for rid in ids.split(",") if rid.strip()]
     if not release_ids:

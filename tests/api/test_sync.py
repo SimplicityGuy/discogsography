@@ -187,63 +187,48 @@ class TestSyncStatusEndpoint:
 
 
 class TestVerifyToken:
-    """Tests for api.routers.sync._verify_token."""
+    """Tests for api.auth.decode_token (formerly sync._verify_token)."""
 
-    @pytest.mark.asyncio
-    async def test_valid_token_returns_payload(self, test_client: TestClient) -> None:  # noqa: ARG002
-        from api.routers.sync import _verify_token
+    def test_valid_token_returns_payload(self, test_client: TestClient) -> None:  # noqa: ARG002
+        from api.auth import decode_token
+        from tests.api.conftest import TEST_JWT_SECRET
 
         token = make_test_jwt()
-        payload = await _verify_token(token)
+        payload = decode_token(token, TEST_JWT_SECRET)
         assert payload["sub"] == TEST_USER_ID
         assert payload["email"] == TEST_USER_EMAIL
 
-    @pytest.mark.asyncio
-    async def test_wrong_signature_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
-        from api.routers.sync import _verify_token
+    def test_wrong_signature_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
+        from api.auth import decode_token
+        from tests.api.conftest import TEST_JWT_SECRET
 
         bad_token = make_test_jwt(secret="wrong-secret")  # noqa: S106
         with pytest.raises(ValueError, match="signature"):
-            await _verify_token(bad_token)
+            decode_token(bad_token, TEST_JWT_SECRET)
 
-    @pytest.mark.asyncio
-    async def test_expired_token_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
-        from api.routers.sync import _verify_token
+    def test_expired_token_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
+        from api.auth import decode_token
+        from tests.api.conftest import TEST_JWT_SECRET
 
         expired_token = make_test_jwt(exp=1)
         with pytest.raises(ValueError, match=r"[Ee]xpir"):
-            await _verify_token(expired_token)
+            decode_token(expired_token, TEST_JWT_SECRET)
 
-    @pytest.mark.asyncio
-    async def test_malformed_token_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
-        from api.routers.sync import _verify_token
+    def test_malformed_token_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
+        from api.auth import decode_token
+        from tests.api.conftest import TEST_JWT_SECRET
 
         with pytest.raises(ValueError, match="Invalid token"):
-            await _verify_token("only.two.parts.extra")
+            decode_token("only.two.parts.extra", TEST_JWT_SECRET)
 
-    @pytest.mark.asyncio
-    async def test_verify_token_config_none_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
-        """Line 48: _verify_token raises ValueError when _config is None."""
-        import api.routers.sync as sync_module
-        from api.routers.sync import _verify_token
-
-        original = sync_module._config
-        sync_module._config = None
-        try:
-            with pytest.raises(ValueError, match="Service not initialized"):
-                await _verify_token("a.b.c")
-        finally:
-            sync_module._config = original
-
-    @pytest.mark.asyncio
-    async def test_verify_token_body_padding_branch(self, test_client: TestClient) -> None:  # noqa: ARG002
-        """Line 63: _verify_token handles a JWT body whose base64url needs padding."""
+    def test_verify_token_body_padding_branch(self, test_client: TestClient) -> None:  # noqa: ARG002
+        """decode_token handles a JWT body whose base64url needs padding."""
         import base64
         import hashlib
         import hmac
         import json
 
-        from api.routers.sync import _verify_token
+        from api.auth import decode_token
         from tests.api.conftest import TEST_JWT_SECRET, TEST_USER_ID
 
         def b64url(data: bytes) -> str:
@@ -263,7 +248,7 @@ class TestVerifyToken:
         sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
         token = f"{header}.{body}.{sig}"
 
-        payload = await _verify_token(token)
+        payload = decode_token(token, TEST_JWT_SECRET)
         assert payload["sub"] == TEST_USER_ID
 
 

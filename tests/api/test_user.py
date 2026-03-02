@@ -214,10 +214,10 @@ class TestRequireUser:
 
     def test_jwt_secret_none_returns_503(self, test_client: TestClient) -> None:
         """Line 77: _require_user raises 503 when _jwt_secret is None."""
-        import api.routers.user as user_module
+        import api.dependencies as dependencies_module
 
-        original = user_module._jwt_secret
-        user_module._jwt_secret = None
+        original = dependencies_module._jwt_secret
+        dependencies_module._jwt_secret = None
         try:
             response = test_client.get(
                 "/api/user/collection",
@@ -225,7 +225,7 @@ class TestRequireUser:
             )
             assert response.status_code == 503
         finally:
-            user_module._jwt_secret = original
+            dependencies_module._jwt_secret = original
 
     def test_bad_token_returns_401(self, test_client: TestClient) -> None:
         """Line 82: _require_user raises 401 when _verify_jwt returns None (bad sig)."""

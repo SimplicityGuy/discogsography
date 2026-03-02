@@ -43,19 +43,13 @@ def configure(
     _redis = redis
 
 
-async def _verify_token(token: str) -> dict[str, Any]:
-    if _config is None:
-        raise ValueError("Service not initialized")
-    return decode_token(token, _config.jwt_secret_key)
-
-
 async def _get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(_security)],
 ) -> dict[str, Any]:
     if _config is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
     try:
-        payload = await _verify_token(credentials.credentials)
+        payload = decode_token(credentials.credentials, _config.jwt_secret_key)
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")

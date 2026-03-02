@@ -2,14 +2,13 @@
 
 import asyncio
 from collections import OrderedDict
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, Query, Request
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 import structlog
 
-from api.auth import decode_token
+import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.queries.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
@@ -24,27 +23,14 @@ from api.queries.neo4j_queries import (
 logger = structlog.get_logger(__name__)
 
 router = APIRouter()
-_security = HTTPBearer(auto_error=False)
 
 _neo4j_driver: Any = None
-_jwt_secret: str | None = None
 
 
 def configure(neo4j: Any, jwt_secret: str | None) -> None:
-    global _neo4j_driver, _jwt_secret
+    global _neo4j_driver
     _neo4j_driver = neo4j
-    _jwt_secret = jwt_secret
-
-
-async def _get_optional_user(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_security)],
-) -> dict[str, Any] | None:
-    if credentials is None or _jwt_secret is None:
-        return None
-    try:
-        return decode_token(credentials.credentials, _jwt_secret)
-    except ValueError:
-        return None
+    _dependencies.configure(jwt_secret)
 
 
 _autocomplete_cache: OrderedDict[tuple[str, str, int], list[dict[str, Any]]] = OrderedDict()

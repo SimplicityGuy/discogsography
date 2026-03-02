@@ -307,46 +307,46 @@ class TestJWT:
 
     @pytest.mark.asyncio
     async def test_get_optional_user_no_credentials(self) -> None:
-        from api.routers.explore import _get_optional_user
+        from api.dependencies import get_optional_user
 
-        result = await _get_optional_user(None)
+        result = await get_optional_user(None)
         assert result is None
 
     @pytest.mark.asyncio
     async def test_get_optional_user_no_secret(self) -> None:
         from unittest.mock import MagicMock
 
-        import api.routers.explore as explore_module
-        from api.routers.explore import _get_optional_user
+        import api.dependencies as dependencies_module
+        from api.dependencies import get_optional_user
 
-        original = explore_module._jwt_secret
-        explore_module._jwt_secret = None
+        original = dependencies_module._jwt_secret
+        dependencies_module._jwt_secret = None
         try:
             creds = MagicMock()
             creds.credentials = "some.token.here"
-            result = await _get_optional_user(creds)
+            result = await get_optional_user(creds)
             assert result is None
         finally:
-            explore_module._jwt_secret = original
+            dependencies_module._jwt_secret = original
 
     @pytest.mark.asyncio
     async def test_get_optional_user_with_valid_creds(self) -> None:
         from unittest.mock import MagicMock
 
-        import api.routers.explore as explore_module
-        from api.routers.explore import _get_optional_user
+        import api.dependencies as dependencies_module
+        from api.dependencies import get_optional_user
         from tests.api.conftest import make_test_jwt
 
-        original = explore_module._jwt_secret
-        explore_module._jwt_secret = "test-jwt-secret-for-unit-tests"
+        original = dependencies_module._jwt_secret
+        dependencies_module._jwt_secret = "test-jwt-secret-for-unit-tests"
         try:
             creds = MagicMock()
             creds.credentials = make_test_jwt()
-            result = await _get_optional_user(creds)
+            result = await get_optional_user(creds)
             assert result is not None
             assert "sub" in result
         finally:
-            explore_module._jwt_secret = original
+            dependencies_module._jwt_secret = original
 
 
 class TestAutocompleteCache:
@@ -396,22 +396,22 @@ class TestExpandInvalidCategory:
 
 
 class TestGetOptionalUserInvalidToken:
-    """Tests for _get_optional_user with an invalid token (explore router)."""
+    """Tests for get_optional_user with an invalid token (explore router)."""
 
     @pytest.mark.asyncio
     async def test_invalid_token_returns_none(self) -> None:
-        """explore.py:46-47 — bad Bearer token causes ValueError which returns None."""
+        """dependencies.py — bad Bearer token causes ValueError which returns None."""
         from unittest.mock import MagicMock
 
-        import api.routers.explore as explore_module
-        from api.routers.explore import _get_optional_user
+        import api.dependencies as dependencies_module
+        from api.dependencies import get_optional_user
 
-        original = explore_module._jwt_secret
-        explore_module._jwt_secret = "test-jwt-secret-for-unit-tests"
+        original = dependencies_module._jwt_secret
+        dependencies_module._jwt_secret = "test-jwt-secret-for-unit-tests"
         try:
             creds = MagicMock()
             creds.credentials = "not.a.valid.jwt"
-            result = await _get_optional_user(creds)
+            result = await get_optional_user(creds)
             assert result is None
         finally:
-            explore_module._jwt_secret = original
+            dependencies_module._jwt_secret = original

@@ -14,39 +14,39 @@ from tests.api.conftest import (
 
 
 class TestB64UrlHelpers:
-    """Tests for _b64url_encode and _b64url_decode."""
+    """Tests for b64url_encode and b64url_decode (from api.auth)."""
 
     def test_encode_decode_roundtrip(self) -> None:
-        from api.api import _b64url_decode, _b64url_encode
+        from api.auth import b64url_decode, b64url_encode
 
         data = b"hello world"
-        encoded = _b64url_encode(data)
+        encoded = b64url_encode(data)
         assert isinstance(encoded, str)
         assert "=" not in encoded  # no padding
-        assert _b64url_decode(encoded) == data
+        assert b64url_decode(encoded) == data
 
     def test_encode_produces_urlsafe_chars(self) -> None:
-        from api.api import _b64url_encode
+        from api.auth import b64url_encode
 
         # 0xFF bytes would produce '/' or '+' in standard base64
         data = bytes(range(256))
-        encoded = _b64url_encode(data)
+        encoded = b64url_encode(data)
         assert "+" not in encoded
         assert "/" not in encoded
 
     def test_decode_handles_missing_padding(self) -> None:
-        from api.api import _b64url_decode
+        from api.auth import b64url_decode
 
         # Standard base64 of b"a" is "YQ==" (2 padding chars)
         # urlsafe without padding is "YQ"
-        result = _b64url_decode("YQ")
+        result = b64url_decode("YQ")
         assert result == b"a"
 
     def test_decode_no_extra_padding_when_aligned(self) -> None:
-        from api.api import _b64url_decode
+        from api.auth import b64url_decode
 
         # "AAAA" is 4 chars, already aligned — no padding needed
-        result = _b64url_decode("AAAA")
+        result = b64url_decode("AAAA")
         assert result == b"\x00\x00\x00"
 
 
@@ -105,32 +105,37 @@ class TestJwtFunctions:
         assert expires_in == api_module._config.jwt_expire_minutes * 60  # type: ignore[union-attr]
 
     def test_create_then_decode(self, test_client: TestClient) -> None:  # noqa: ARG002
-        from api.api import _create_access_token, _decode_access_token
+        import api.api as api_module
+        from api.api import _create_access_token
+        from api.auth import decode_token
 
         token, _ = _create_access_token(TEST_USER_ID, TEST_USER_EMAIL)
-        payload = _decode_access_token(token)
+        payload = decode_token(token, api_module._config.jwt_secret_key)  # type: ignore[union-attr]
         assert payload["sub"] == TEST_USER_ID
         assert payload["email"] == TEST_USER_EMAIL
 
     def test_decode_wrong_signature_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
-        from api.api import _decode_access_token
+        from api.auth import decode_token
+        from tests.api.conftest import TEST_JWT_SECRET
 
         bad_token = make_test_jwt(secret="wrong-secret")  # noqa: S106
         with pytest.raises(ValueError, match="Invalid token signature"):
-            _decode_access_token(bad_token)
+            decode_token(bad_token, TEST_JWT_SECRET)
 
     def test_decode_expired_token_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
-        from api.api import _decode_access_token
+        from api.auth import decode_token
+        from tests.api.conftest import TEST_JWT_SECRET
 
         expired_token = make_test_jwt(exp=1)  # epoch 1970
         with pytest.raises(ValueError, match="expired"):
-            _decode_access_token(expired_token)
+            decode_token(expired_token, TEST_JWT_SECRET)
 
     def test_decode_malformed_token_raises(self, test_client: TestClient) -> None:  # noqa: ARG002
-        from api.api import _decode_access_token
+        from api.auth import decode_token
+        from tests.api.conftest import TEST_JWT_SECRET
 
         with pytest.raises(ValueError):
-            _decode_access_token("not.enough")
+            decode_token("not.enough", TEST_JWT_SECRET)
 
     def test_create_requires_config(self) -> None:
         import api.api as api_module
@@ -141,18 +146,6 @@ class TestJwtFunctions:
         try:
             with pytest.raises(RuntimeError, match="not initialized"):
                 _create_access_token("uid", "email@example.com")
-        finally:
-            api_module._config = original
-
-    def test_decode_requires_config(self) -> None:
-        import api.api as api_module
-        from api.api import _decode_access_token
-
-        original = api_module._config
-        api_module._config = None
-        try:
-            with pytest.raises(ValueError, match="not initialized"):
-                _decode_access_token("a.b.c")
         finally:
             api_module._config = original
 
@@ -912,20 +905,24 @@ class TestJtiBlacklist:
         assert response.status_code == 200
 
     def test_create_access_token_includes_jti(self, test_client: TestClient) -> None:  # noqa: ARG002
-        from api.api import _create_access_token, _decode_access_token
+        import api.api as api_module
+        from api.api import _create_access_token
+        from api.auth import decode_token
 
         token, _ = _create_access_token(TEST_USER_ID, TEST_USER_EMAIL)
-        payload = _decode_access_token(token)
+        payload = decode_token(token, api_module._config.jwt_secret_key)  # type: ignore[union-attr]
         assert "jti" in payload
         assert isinstance(payload["jti"], str)
         assert len(payload["jti"]) > 0
 
     def test_jti_is_unique_per_token(self, test_client: TestClient) -> None:  # noqa: ARG002
-        from api.api import _create_access_token, _decode_access_token
+        import api.api as api_module
+        from api.api import _create_access_token
+        from api.auth import decode_token
 
         t1, _ = _create_access_token(TEST_USER_ID, TEST_USER_EMAIL)
         t2, _ = _create_access_token(TEST_USER_ID, TEST_USER_EMAIL)
-        assert _decode_access_token(t1)["jti"] != _decode_access_token(t2)["jti"]
+        assert decode_token(t1, api_module._config.jwt_secret_key)["jti"] != decode_token(t2, api_module._config.jwt_secret_key)["jti"]  # type: ignore[union-attr]
 
 
 class TestSecurityHeaders:

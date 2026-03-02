@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 import hashlib
 import hmac
 import json
+import os
 from typing import Any
 
 
@@ -36,6 +37,32 @@ def decode_token(token: str, secret: str) -> dict[str, Any]:
     if exp and datetime.fromtimestamp(int(exp), UTC) < datetime.now(UTC):
         raise ValueError("Token has expired")
     return payload
+
+
+def _hash_password(password: str) -> str:
+    """Hash a password using PBKDF2-SHA256 with a random salt.
+
+    Returns a string in format: <hex_salt>:<hex_key>
+    """
+    salt = os.urandom(32)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
+    return salt.hex() + ":" + key.hex()
+
+
+def _verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify a password against its PBKDF2-SHA256 hash."""
+    try:
+        salt_hex, key_hex = hashed_password.split(":", 1)
+        salt = bytes.fromhex(salt_hex)
+        expected_key = bytes.fromhex(key_hex)
+        actual_key = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), salt, 100_000)
+        return hmac.compare_digest(actual_key, expected_key)
+    except (ValueError, TypeError):
+        return False
+
+
+# Pre-computed dummy hash for timing attack protection in login
+_DUMMY_HASH: str = _hash_password("__dummy_password_for_timing__")
 
 
 def encrypt_oauth_token(token: str, key: str) -> str:

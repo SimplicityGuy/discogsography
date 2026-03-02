@@ -1,7 +1,6 @@
 """API microservice for discogsography — user accounts and JWT authentication."""
 
 import asyncio
-import base64
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
@@ -25,7 +24,16 @@ from slowapi.errors import RateLimitExceeded
 import structlog
 import uvicorn
 
-from api.auth import decrypt_oauth_token, encrypt_oauth_token
+from api.auth import (
+    _DUMMY_HASH,
+    _hash_password,
+    _verify_password,
+    b64url_encode,
+    decode_token,
+    decrypt_oauth_token,
+    encrypt_oauth_token,
+)
+import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.models import LoginRequest, RegisterRequest
 import api.routers.explore as _explore_router
@@ -76,46 +84,6 @@ def get_health_data() -> dict[str, Any]:
     }
 
 
-def _b64url_encode(data: bytes) -> str:
-    """Base64url encode bytes without padding."""
-    return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
-
-
-def _b64url_decode(data: str) -> bytes:
-    """Base64url decode a string, adding padding as needed."""
-    padding = 4 - len(data) % 4
-    if padding != 4:
-        data += "=" * padding
-    return base64.urlsafe_b64decode(data)
-
-
-def _hash_password(password: str) -> str:
-    """Hash a password using PBKDF2-SHA256 with a random salt.
-
-    Returns a string in format: <hex_salt>:<hex_key>
-    """
-    salt = os.urandom(32)
-    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 100_000)
-    return salt.hex() + ":" + key.hex()
-
-
-def _verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verify a password against its PBKDF2-SHA256 hash."""
-    try:
-        salt_hex, key_hex = hashed_password.split(":", 1)
-        salt = bytes.fromhex(salt_hex)
-        expected_key = bytes.fromhex(key_hex)
-        actual_key = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), salt, 100_000)
-        return hmac.compare_digest(actual_key, expected_key)
-    except (ValueError, TypeError):
-        return False
-
-
-# Pre-computed dummy hash for timing attack protection in login (H4)
-# Ensures user-not-found path takes the same time as wrong-password path
-_DUMMY_HASH: str = _hash_password("__dummy_password_for_timing__")
-
-
 def _create_access_token(user_id: str, email: str) -> tuple[str, int]:
     """Create a HS256 JWT access token. Returns (token, expires_in_seconds)."""
     if _config is None:
@@ -131,36 +99,12 @@ def _create_access_token(user_id: str, email: str) -> tuple[str, int]:
         "jti": secrets.token_hex(16),
     }
 
-    header = _b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
-    body = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+    header = b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
     signing_input = f"{header}.{body}".encode("ascii")
-    signature = _b64url_encode(hmac.new(_config.jwt_secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    signature = b64url_encode(hmac.new(_config.jwt_secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest())
     token = f"{header}.{body}.{signature}"
     return token, expire_minutes * 60
-
-
-def _decode_access_token(token: str) -> dict[str, Any]:
-    """Decode and verify a HS256 JWT token."""
-    if _config is None:
-        raise ValueError("Service not initialized")
-
-    parts = token.split(".")
-    if len(parts) != 3:
-        raise ValueError("Invalid token format")
-
-    header_b64, body_b64, sig_b64 = parts
-    signing_input = f"{header_b64}.{body_b64}".encode("ascii")
-    expected_sig = _b64url_encode(hmac.new(_config.jwt_secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest())
-
-    if not hmac.compare_digest(sig_b64, expected_sig):
-        raise ValueError("Invalid token signature")
-
-    payload: dict[str, Any] = json.loads(_b64url_decode(body_b64))
-    exp = payload.get("exp")
-    if exp and datetime.fromtimestamp(int(exp), UTC) < datetime.now(UTC):
-        raise ValueError("Token has expired")
-
-    return payload
 
 
 async def _get_current_user(
@@ -173,7 +117,7 @@ async def _get_current_user(
             detail="Service not ready",
         )
     try:
-        payload = _decode_access_token(credentials.credentials)
+        payload = decode_token(credentials.credentials, _config.jwt_secret_key)
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise HTTPException(
@@ -242,6 +186,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         )
         logger.info("🔗 Neo4j driver initialized")
     jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_host else None
+    _dependencies.configure(jwt_secret_for_neo4j)
     _sync_router.configure(_pool, _neo4j, _config, _running_syncs, _redis)
     _explore_router.configure(_neo4j, jwt_secret_for_neo4j)
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
