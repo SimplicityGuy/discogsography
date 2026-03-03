@@ -263,7 +263,7 @@ def normalize_master(master_data: dict[str, Any]) -> dict[str, Any]:
     result = {
         "id": master_data.get("id"),
         "title": master_data.get("title"),
-        "year": master_data.get("year"),
+        "year": _extract_year_from_released(master_data.get("year")),
         "sha256": master_data.get("sha256"),
     }
 

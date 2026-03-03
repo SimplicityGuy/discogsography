@@ -257,7 +257,7 @@ class TestNormalizeMaster:
         result = normalize_master(master_data)
         assert result["id"] == "1000"
         assert result["title"] == "Abbey Road"
-        assert result["year"] == "1969"
+        assert result["year"] == 1969
 
     def test_master_with_artists(self) -> None:
         """Test normalizing master with artists."""

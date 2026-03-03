@@ -680,7 +680,7 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
         "ON MATCH SET m.title = $title, m.year = $year, m.sha256 = $sha256",
         id=record["id"],
         title=record.get("title", "Unknown Master"),
-        year=record.get("year", 0),
+        year=int(record.get("year", 0) or 0),
         sha256=record["sha256"],
     )
 
