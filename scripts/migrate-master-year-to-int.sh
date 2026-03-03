@@ -55,7 +55,7 @@ echo ""
 echo "📊 Verifying results..."
 INT_COUNT=$(docker exec "${CONTAINER}" cypher-shell \
     -u "${USER}" -p "${PASSWORD}" --format plain \
-    "MATCH (m:Master) WHERE m.year IS NOT NULL AND toFloat(m.year) = toFloat(toInteger(m.year)) RETURN count(m) AS n;" \
+    "MATCH (m:Master) WHERE valueType(m.year) = 'LONG NOT NULL' RETURN count(m) AS n;" \
     | tail -1)
 NULL_COUNT=$(docker exec "${CONTAINER}" cypher-shell \
     -u "${USER}" -p "${PASSWORD}" --format plain \
