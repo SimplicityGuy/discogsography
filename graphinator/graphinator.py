@@ -21,6 +21,7 @@ from common import (
     HealthServer,
     setup_logging,
 )
+from common.data_normalizer import _parse_year_int
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from orjson import loads
 
@@ -680,7 +681,7 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
         "ON MATCH SET m.title = $title, m.year = $year, m.sha256 = $sha256",
         id=record["id"],
         title=record.get("title", "Unknown Master"),
-        year=record.get("year", 0),
+        year=_parse_year_int(record.get("year")),
         sha256=record["sha256"],
     )
 

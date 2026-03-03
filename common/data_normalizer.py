@@ -263,7 +263,7 @@ def normalize_master(master_data: dict[str, Any]) -> dict[str, Any]:
     result = {
         "id": master_data.get("id"),
         "title": master_data.get("title"),
-        "year": master_data.get("year"),
+        "year": _parse_year_int(master_data.get("year")),
         "sha256": master_data.get("sha256"),
     }
 
@@ -299,17 +299,18 @@ def normalize_master(master_data: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _extract_year_from_released(released: Any) -> int | None:
-    """Extract a 4-digit year integer from a Discogs 'released' field.
+def _parse_year_int(value: Any) -> int | None:
+    """Parse a Discogs year value into an integer.
 
-    The field can be an integer year (1980), a date string ("1980-01-01"),
-    or absent/empty.  Returns None when no valid year is found.
+    Handles both plain year strings ("1969", as used in Master.<year>) and
+    full/partial date strings ("1969-09-26", "1969-00-00", as used in
+    Release.<released>).  Returns None when no valid year is found.
     """
-    if released is None:
+    if value is None:
         return None
-    if isinstance(released, int):
-        return released if released > 0 else None
-    s = str(released).strip()
+    if isinstance(value, int):
+        return value if value > 0 else None
+    s = str(value).strip()
     if not s:
         return None
     try:
@@ -331,7 +332,7 @@ def normalize_release(release_data: dict[str, Any]) -> dict[str, Any]:
     result = {
         "id": release_data.get("id"),
         "title": release_data.get("title"),
-        "year": _extract_year_from_released(release_data.get("released")),
+        "year": _parse_year_int(release_data.get("released")),
         "sha256": release_data.get("sha256"),
     }
 

@@ -10,7 +10,8 @@ on:
     branches:
       - main
   schedule:
-    - cron: "0 1 * * 6"
+    - cron: "0 1 * * 6" # Weekly Saturday 01:00 UTC (full build)
+    - cron: "0 4 * * 1" # Weekly Monday 04:00 UTC (security-focused)
 
 env:
   CI: true
