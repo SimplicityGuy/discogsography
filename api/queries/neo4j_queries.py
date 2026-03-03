@@ -7,9 +7,13 @@ Graph model reference:
   (Release)-[:ON]->(Label)          Release is on Label
   (Release)-[:IS]->(Genre)          Release is genre
   (Release)-[:IS]->(Style)          Release is style
-  (Release)-[:DERIVED_FROM]->(Master)  Release derived from Master (Master has year)
+  (Release)-[:DERIVED_FROM]->(Master)  Release derived from Master
   (Artist)-[:ALIAS_OF]->(Artist)    Artist alias
   (Artist)-[:MEMBER_OF]->(Artist)   Artist is member of group
+
+Note: Release.year is denormalised from the release's own 'released' date at
+ingest time, so queries can use r.year directly without joining to Master.
+The release_year_index on Release.year makes ORDER BY year efficient.
 """
 
 import re
@@ -170,10 +174,8 @@ async def _expand_releases(driver: AsyncResilientNeo4jDriver, match_clause: str,
     """Get paginated releases matching a MATCH clause (shared by artist/genre/label/style)."""
     cypher = f"""
     MATCH {match_clause}
-    OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)
-    WITH r, m.year AS year
     RETURN r.id AS id, r.title AS name, 'release' AS type,
-           CASE WHEN toInteger(year) > 0 THEN toInteger(year) ELSE null END AS year
+           CASE WHEN r.year > 0 THEN r.year ELSE null END AS year
     ORDER BY year DESC
     SKIP $offset
     LIMIT $limit
@@ -483,10 +485,8 @@ async def get_release_details(driver: AsyncResilientNeo4jDriver, node_id: str) -
     WITH r, artists, labels, collect(DISTINCT g.name) AS genres
     OPTIONAL MATCH (r)-[:IS]->(s:Style)
     WITH r, artists, labels, genres, collect(DISTINCT s.name) AS styles
-    OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)
-    WITH r, artists, labels, genres, styles,
-         CASE WHEN toInteger(m.year) > 0 THEN toInteger(m.year) ELSE null END AS year
-    RETURN r.id AS id, r.title AS name, year,
+    RETURN r.id AS id, r.title AS name,
+           CASE WHEN r.year > 0 THEN r.year ELSE null END AS year,
            artists, labels, genres, styles
     """
     return await _run_single(driver, cypher, id=node_id)
@@ -529,12 +529,11 @@ async def get_style_details(driver: AsyncResilientNeo4jDriver, node_id: str) -> 
 
 
 async def trends_artist(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
-    """Get release count by year for an artist (year from Master)."""
+    """Get release count by year for an artist."""
     cypher = """
-    MATCH (r:Release)-[:BY]->(a:Artist {name: $name}),
-          (r)-[:DERIVED_FROM]->(m:Master)
-    WHERE toInteger(m.year) > 0
-    WITH toInteger(m.year) AS year, count(DISTINCT r) AS count
+    MATCH (r:Release)-[:BY]->(a:Artist {name: $name})
+    WHERE r.year > 0
+    WITH r.year AS year, count(DISTINCT r) AS count
     RETURN year, count
     ORDER BY year
     """
@@ -542,12 +541,11 @@ async def trends_artist(driver: AsyncResilientNeo4jDriver, name: str) -> list[di
 
 
 async def trends_genre(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
-    """Get release count by year for a genre (year from Master)."""
+    """Get release count by year for a genre."""
     cypher = """
-    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}),
-          (r)-[:DERIVED_FROM]->(m:Master)
-    WHERE toInteger(m.year) > 0
-    WITH toInteger(m.year) AS year, count(DISTINCT r) AS count
+    MATCH (r:Release)-[:IS]->(g:Genre {name: $name})
+    WHERE r.year > 0
+    WITH r.year AS year, count(DISTINCT r) AS count
     RETURN year, count
     ORDER BY year
     """
@@ -555,12 +553,11 @@ async def trends_genre(driver: AsyncResilientNeo4jDriver, name: str) -> list[dic
 
 
 async def trends_label(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
-    """Get release count by year for a label (year from Master)."""
+    """Get release count by year for a label."""
     cypher = """
-    MATCH (r:Release)-[:ON]->(l:Label {name: $name}),
-          (r)-[:DERIVED_FROM]->(m:Master)
-    WHERE toInteger(m.year) > 0
-    WITH toInteger(m.year) AS year, count(DISTINCT r) AS count
+    MATCH (r:Release)-[:ON]->(l:Label {name: $name})
+    WHERE r.year > 0
+    WITH r.year AS year, count(DISTINCT r) AS count
     RETURN year, count
     ORDER BY year
     """
@@ -568,12 +565,11 @@ async def trends_label(driver: AsyncResilientNeo4jDriver, name: str) -> list[dic
 
 
 async def trends_style(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
-    """Get release count by year for a style (year from Master)."""
+    """Get release count by year for a style."""
     cypher = """
-    MATCH (r:Release)-[:IS]->(s:Style {name: $name}),
-          (r)-[:DERIVED_FROM]->(m:Master)
-    WHERE toInteger(m.year) > 0
-    WITH toInteger(m.year) AS year, count(DISTINCT r) AS count
+    MATCH (r:Release)-[:IS]->(s:Style {name: $name})
+    WHERE r.year > 0
+    WITH r.year AS year, count(DISTINCT r) AS count
     RETURN year, count
     ORDER BY year
     """

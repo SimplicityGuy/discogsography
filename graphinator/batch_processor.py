@@ -624,6 +624,7 @@ class Neo4jBatchProcessor:
                     UNWIND $releases AS release
                     MERGE (r:Release {id: release.id})
                     SET r.title = release.title,
+                        r.year = release.year,
                         r.sha256 = release.sha256
                     """,
                     releases=releases_to_process,
