@@ -349,7 +349,7 @@ class TestFlushQueue:
 
         ack = AsyncMock()
         nack = AsyncMock()
-        msg = PendingMessage("releases", {"id": "1", "title": "Release 1", "sha256": "hash1"}, ack, nack)
+        msg = PendingMessage("releases", {"id": "1", "title": "Release 1", "year": 1997, "sha256": "hash1"}, ack, nack)
         processor.queues["releases"].append(msg)
 
         await processor._flush_queue("releases")
@@ -616,6 +616,7 @@ class TestProcessReleasesBatch:
                 {
                     "id": "1",
                     "title": "Release 1",
+                    "year": 1997,
                     "sha256": "hash1",
                     "artists": [{"id": "A1"}],
                     "labels": [{"id": "L1"}],
@@ -938,7 +939,7 @@ class TestBatchTransactionLogic:
 
     @pytest.mark.asyncio
     async def test_releases_batch_all_up_to_date_early_return(self) -> None:
-        """Test early return when all releases already have matching hashes (lines 606, 615-616)."""
+        """Test early return when all releases already have matching hashes."""
         mock_driver, mock_session = create_async_session_mock()
 
         mock_result = create_async_result_mock([{"id": "1", "hash": "hash1"}])
@@ -946,16 +947,16 @@ class TestBatchTransactionLogic:
 
         processor = Neo4jBatchProcessor(mock_driver)
 
-        messages = [PendingMessage("releases", {"id": "1", "title": "Release 1", "sha256": "hash1"}, AsyncMock(), AsyncMock())]
+        messages = [PendingMessage("releases", {"id": "1", "title": "Release 1", "year": None, "sha256": "hash1"}, AsyncMock(), AsyncMock())]
 
         await processor._process_releases_batch(messages)
 
-        # execute_write should NOT be called (returned early at line 616)
+        # execute_write should NOT be called (returned early)
         mock_session.execute_write.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_releases_batch_transaction_executes_all_relationships(self) -> None:
-        """Test release batch_write closure executes artist/label/master/genre/style logic (lines 636-638, 645, 659-661, 668, 683, 690, 704-706, 713, 727-729, 736, 752-754, 761)."""
+        """Test release batch_write closure executes artist/label/master/genre/style logic."""
         mock_driver, mock_session = create_async_session_mock()
 
         mock_result = create_async_result_mock([{"id": "1", "hash": None}])
@@ -982,6 +983,7 @@ class TestBatchTransactionLogic:
                 {
                     "id": "1",
                     "title": "Release 1",
+                    "year": 1997,
                     "sha256": "hash1",
                     "artists": [{"id": "A1"}],
                     "labels": [{"id": "L1"}],
@@ -996,5 +998,43 @@ class TestBatchTransactionLogic:
 
         await processor._process_releases_batch(messages)
 
-        # release node + artists + labels + master + genres + styles + genre-style pairs
+        # release node (with year) + artists + labels + master + genres + styles + genre-style pairs
         assert len(executed_queries) >= 7
+
+    @pytest.mark.asyncio
+    async def test_releases_batch_year_written_to_node(self) -> None:
+        """Test that release.year is included in the Release node SET clause."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        captured_queries: list[tuple[str, Any]] = []
+
+        async def capture_query(query: str, **params: Any) -> None:
+            captured_queries.append((query, params))
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = capture_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage(
+                "releases",
+                {"id": "1", "title": "Release 1", "year": 1997, "sha256": "hash1"},
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_releases_batch(messages)
+
+        # The first query should set r.year
+        first_query = captured_queries[0][0]
+        assert "r.year" in first_query

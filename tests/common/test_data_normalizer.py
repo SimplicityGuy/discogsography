@@ -1,6 +1,7 @@
 """Tests for data normalization utilities."""
 
 from common.data_normalizer import (
+    _extract_year_from_released,
     ensure_list,
     normalize_artist,
     normalize_id,
@@ -283,11 +284,47 @@ class TestNormalizeMaster:
         assert result["styles"] == ["Pop Rock"]
 
 
+class TestExtractYearFromReleased:
+    """Test _extract_year_from_released helper."""
+
+    def test_integer_year(self) -> None:
+        """Test integer year input returns the year."""
+        assert _extract_year_from_released(1980) == 1980
+
+    def test_zero_integer_returns_none(self) -> None:
+        """Test zero integer returns None."""
+        assert _extract_year_from_released(0) is None
+
+    def test_year_only_string(self) -> None:
+        """Test string containing only year."""
+        assert _extract_year_from_released("1980") == 1980
+
+    def test_full_date_string(self) -> None:
+        """Test full date string extracts year prefix."""
+        assert _extract_year_from_released("1980-01-01") == 1980
+
+    def test_partial_date_string(self) -> None:
+        """Test partial date string (Discogs '1980-00-00' format)."""
+        assert _extract_year_from_released("1980-00-00") == 1980
+
+    def test_none_input(self) -> None:
+        """Test None input returns None."""
+        assert _extract_year_from_released(None) is None
+
+    def test_empty_string(self) -> None:
+        """Test empty string returns None."""
+        assert _extract_year_from_released("") is None
+
+    def test_non_numeric_string(self) -> None:
+        """Test non-numeric string returns None."""
+        assert _extract_year_from_released("unknown") is None
+
+
 class TestNormalizeRelease:
     """Test normalize_release function."""
 
     def test_basic_release(self) -> None:
-        """Test normalizing a basic release."""
+        """Test normalizing a basic release (no released field → year=None)."""
         release_data = {
             "id": "12345",
             "title": "Abbey Road",
@@ -296,6 +333,29 @@ class TestNormalizeRelease:
         result = normalize_release(release_data)
         assert result["id"] == "12345"
         assert result["title"] == "Abbey Road"
+        assert result["year"] is None
+
+    def test_release_with_year_string(self) -> None:
+        """Test year is extracted from released date string."""
+        release_data = {
+            "id": "12345",
+            "title": "Abbey Road",
+            "sha256": "abc123",
+            "released": "1969-09-26",
+        }
+        result = normalize_release(release_data)
+        assert result["year"] == 1969
+
+    def test_release_with_year_only_released(self) -> None:
+        """Test year extracted when released is just the year."""
+        release_data = {
+            "id": "12345",
+            "title": "Abbey Road",
+            "sha256": "abc123",
+            "released": "1969",
+        }
+        result = normalize_release(release_data)
+        assert result["year"] == 1969
 
     def test_release_with_artists_and_labels(self) -> None:
         """Test normalizing release with artists and labels."""
