@@ -61,7 +61,6 @@ class TestOnDataMessage:
 
         # Setup async cursor mock
         mock_cursor = AsyncMock()
-        mock_cursor.fetchone = AsyncMock(return_value=None)  # No existing record
 
         mock_cursor_cm = AsyncMock()
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -78,21 +77,23 @@ class TestOnDataMessage:
         # Verify message was acknowledged
         mock_message.ack.assert_called_once()
 
-        # Verify queries were executed
-        assert mock_cursor.execute.call_count == 2  # SELECT and INSERT
+        # Verify single upsert was executed (no separate SELECT)
+        assert mock_cursor.execute.call_count == 1
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_skip_unchanged_record(self, sample_artist_data: dict[str, Any], mock_postgres_connection: MagicMock, mock_async_pool: Any) -> None:
-        """Test skipping record with unchanged hash."""
+        """Test that unchanged records are handled via a single conditional upsert.
+
+        PostgreSQL's WHERE clause skips the write when hash is unchanged; there
+        is no separate SELECT round-trip and no early-return in Python code.
+        """
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = json.dumps(sample_artist_data).encode()
         mock_message.routing_key = "artists"
 
         # Setup async cursor mock
         mock_cursor = AsyncMock()
-        # Return existing record with same hash
-        mock_cursor.fetchone = AsyncMock(return_value=(sample_artist_data["sha256"],))
 
         mock_cursor_cm = AsyncMock()
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -109,7 +110,7 @@ class TestOnDataMessage:
         # Verify message was acknowledged
         mock_message.ack.assert_called_once()
 
-        # Only SELECT should be executed, no INSERT
+        # Single conditional upsert — PostgreSQL decides whether to write
         assert mock_cursor.execute.call_count == 1
 
     @pytest.mark.asyncio
@@ -576,7 +577,6 @@ class TestOnDataMessageExtended:
 
         # Setup async cursor mock
         mock_cursor = AsyncMock()
-        mock_cursor.fetchone = AsyncMock(return_value=None)
 
         mock_cursor_cm = AsyncMock()
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -618,7 +618,6 @@ class TestOnDataMessageExtended:
 
         # Setup async cursor mock
         mock_cursor = AsyncMock()
-        mock_cursor.fetchone = AsyncMock(return_value=None)
 
         mock_cursor_cm = AsyncMock()
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -660,7 +659,6 @@ class TestOnDataMessageExtended:
 
         # Setup async cursor mock
         mock_cursor = AsyncMock()
-        mock_cursor.fetchone = AsyncMock(return_value=None)
 
         mock_cursor_cm = AsyncMock()
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -1338,9 +1336,6 @@ class TestOnDataMessageProgressLogging:
         mock_connection = MagicMock()
         mock_cursor = AsyncMock()
 
-        # Mock cursor.fetchone to return a hash
-        mock_cursor.fetchone = AsyncMock(return_value=("abc123",))  # Same hash so it will ack and return
-
         # Setup async cursor context manager
         mock_cursor_cm = AsyncMock()
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -1418,7 +1413,6 @@ class TestOnDataMessageBatchMode:
 
         # Setup async cursor mock
         mock_cursor = AsyncMock()
-        mock_cursor.fetchone = AsyncMock(return_value=None)
 
         mock_cursor_cm = AsyncMock()
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -1432,8 +1426,8 @@ class TestOnDataMessageBatchMode:
         with patch("tableinator.tableinator.connection_pool", pool):
             await on_data_message(mock_message)
 
-        # Should have processed directly
-        assert mock_cursor.execute.call_count == 2  # SELECT and INSERT
+        # Should have processed directly with a single conditional upsert
+        assert mock_cursor.execute.call_count == 1
         mock_message.ack.assert_called_once()
 
 
@@ -1452,8 +1446,6 @@ class TestOnDataMessageDatabaseOperations:
 
         # Setup async cursor mock
         mock_cursor = AsyncMock()
-        # Return existing record with different hash
-        mock_cursor.fetchone = AsyncMock(return_value=("old_hash",))
 
         mock_cursor_cm = AsyncMock()
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
@@ -1467,8 +1459,8 @@ class TestOnDataMessageDatabaseOperations:
         with patch("tableinator.tableinator.connection_pool", pool):
             await on_data_message(mock_message)
 
-        # Should execute both SELECT and INSERT/UPDATE
-        assert mock_cursor.execute.call_count == 2
+        # Single conditional upsert handles both insert and update cases
+        assert mock_cursor.execute.call_count == 1
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio

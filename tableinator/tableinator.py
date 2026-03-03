@@ -564,30 +564,17 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
         async with connection_pool.connection() as conn:
             async with conn.cursor() as cursor:
-                # Check existing hash and update in a single transaction
-                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
-                    sql.SQL("SELECT hash FROM {table} WHERE data_id = %s;").format(
-                        table=sql.Identifier(data_type)
-                    ),
-                    (data_id,),
-                )
-
-                result = await cursor.fetchone()
-                old_hash: str = "-1" if result is None else result[0]
-                new_hash: str = data["sha256"]
-
-                if old_hash == new_hash:
-                    await message.ack()
-                    return
-
-                # Insert or update record in same transaction
+                # Single conditional upsert: PostgreSQL skips the write when hash is unchanged,
+                # eliminating the prior SELECT round-trip entirely.
                 await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                     sql.SQL(
                         "INSERT INTO {table} (hash, data_id, data) VALUES (%s, %s, %s) "
-                        "ON CONFLICT (data_id) DO UPDATE SET (hash, data_id, data) = (EXCLUDED.hash, EXCLUDED.data_id, EXCLUDED.data);"
+                        "ON CONFLICT (data_id) DO UPDATE "
+                        "SET hash = EXCLUDED.hash, data = EXCLUDED.data "
+                        "WHERE {table}.hash != EXCLUDED.hash;"
                     ).format(table=sql.Identifier(data_type)),
                     (
-                        new_hash,
+                        data["sha256"],
                         data_id,
                         Jsonb(data),
                     ),
