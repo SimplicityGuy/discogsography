@@ -162,7 +162,7 @@ jobs:
 
       - name: 📤 Upload test results
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-results-${{ matrix.os }}-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}
           path: test-results/
@@ -172,7 +172,7 @@ jobs:
 
       - name: 🎥 Upload test videos
         if: failure()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: playwright-videos-${{ matrix.os }}-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}
           path: test-results/**/*.webm
