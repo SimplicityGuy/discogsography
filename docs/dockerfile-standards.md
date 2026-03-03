@@ -18,7 +18,7 @@ at image build time, eliminating any CDN dependency at runtime:
 
 ```dockerfile
 # ── CSS build stage ────────────────────────────────────────────────────────────
-FROM node:22-slim AS css-builder
+FROM node:24-slim AS css-builder
 
 WORKDIR /build
 
