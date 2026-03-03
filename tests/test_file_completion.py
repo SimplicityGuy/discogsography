@@ -136,7 +136,6 @@ class TestFileCompletionHandling:
 
         # Setup async context managers
         mock_cursor.execute = AsyncMock()
-        mock_cursor.fetchone = AsyncMock(return_value=None)  # No existing record
         mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
         mock_cursor.__aexit__ = AsyncMock(return_value=None)
 
@@ -157,7 +156,7 @@ class TestFileCompletionHandling:
 
             # Verify normal processing occurred
             mock_message.ack.assert_called_once()
-            assert mock_cursor.execute.call_count == 2  # SELECT and INSERT
+            assert mock_cursor.execute.call_count == 1  # single upsert
 
     def test_progress_reporting_with_completed_files(self) -> None:
         """Test that progress reporting shows celebration emoji for completed files."""
