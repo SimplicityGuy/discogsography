@@ -1,7 +1,7 @@
 """Tests for data normalization utilities."""
 
 from common.data_normalizer import (
-    _extract_year_from_released,
+    _parse_year_int,
     ensure_list,
     normalize_artist,
     normalize_id,
@@ -284,40 +284,44 @@ class TestNormalizeMaster:
         assert result["styles"] == ["Pop Rock"]
 
 
-class TestExtractYearFromReleased:
-    """Test _extract_year_from_released helper."""
+class TestParseYearInt:
+    """Test _parse_year_int helper.
+
+    Covers both Master.<year> (always "YYYY") and Release.<released>
+    (can be "YYYY", "YYYY-MM", or "YYYY-MM-DD").
+    """
 
     def test_integer_year(self) -> None:
         """Test integer year input returns the year."""
-        assert _extract_year_from_released(1980) == 1980
+        assert _parse_year_int(1980) == 1980
 
     def test_zero_integer_returns_none(self) -> None:
         """Test zero integer returns None."""
-        assert _extract_year_from_released(0) is None
+        assert _parse_year_int(0) is None
 
     def test_year_only_string(self) -> None:
-        """Test string containing only year."""
-        assert _extract_year_from_released("1980") == 1980
+        """Test plain year string as used in Master.<year>."""
+        assert _parse_year_int("1980") == 1980
 
     def test_full_date_string(self) -> None:
-        """Test full date string extracts year prefix."""
-        assert _extract_year_from_released("1980-01-01") == 1980
+        """Test full date string as used in Release.<released>."""
+        assert _parse_year_int("1980-01-01") == 1980
 
     def test_partial_date_string(self) -> None:
         """Test partial date string (Discogs '1980-00-00' format)."""
-        assert _extract_year_from_released("1980-00-00") == 1980
+        assert _parse_year_int("1980-00-00") == 1980
 
     def test_none_input(self) -> None:
         """Test None input returns None."""
-        assert _extract_year_from_released(None) is None
+        assert _parse_year_int(None) is None
 
     def test_empty_string(self) -> None:
         """Test empty string returns None."""
-        assert _extract_year_from_released("") is None
+        assert _parse_year_int("") is None
 
     def test_non_numeric_string(self) -> None:
         """Test non-numeric string returns None."""
-        assert _extract_year_from_released("unknown") is None
+        assert _parse_year_int("unknown") is None
 
 
 class TestNormalizeRelease:
