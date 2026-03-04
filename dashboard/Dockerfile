@@ -9,7 +9,7 @@ ARG GID=1000
 # Replaces the Tailwind Play CDN (cdn.tailwindcss.com) with a locally-built
 # stylesheet so we can serve it with a proper SRI hash.  Node is only needed
 # at build time; the final image contains only the generated tailwind.css.
-FROM node:24-slim AS css-builder
+FROM node:25-slim AS css-builder
 
 WORKDIR /build
 
