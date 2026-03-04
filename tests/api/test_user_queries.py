@@ -273,11 +273,17 @@ class TestGetUserCollectionStats:
                 _MockResult(records=decade_records),  # decade query
                 _MockResult(records=label_records),  # label query
                 _MockResult(single={"total": 70}),  # total count
+                _MockResult(single={"total": 25}),  # unique artists count
+                _MockResult(single={"total": 8}),  # unique labels count
+                _MockResult(records=[{"average": 3.5}]),  # avg rating
             ]
         )
         result = await get_user_collection_stats(driver, "user-1")
 
         assert result["total"] == 70
+        assert result["unique_artists"] == 25
+        assert result["unique_labels"] == 8
+        assert result["average_rating"] == 3.5
         assert result["by_genre"] == [{"name": "Rock", "count": 50}, {"name": "Electronic", "count": 20}]
         assert result["by_decade"] == [{"decade": 1990, "count": 30}, {"decade": 2000, "count": 40}]
         assert result["by_label"] == [{"name": "Warp", "count": 15}]
@@ -292,10 +298,16 @@ class TestGetUserCollectionStats:
                 _MockResult(records=[]),
                 _MockResult(records=[]),
                 _MockResult(single={"total": 0}),
+                _MockResult(single={"total": 0}),
+                _MockResult(single={"total": 0}),
+                _MockResult(records=[{"average": None}]),
             ]
         )
         result = await get_user_collection_stats(driver, "user-empty")
         assert result["total"] == 0
+        assert result["unique_artists"] == 0
+        assert result["unique_labels"] == 0
+        assert result["average_rating"] is None
         assert result["by_genre"] == []
         assert result["by_decade"] == []
         assert result["by_label"] == []

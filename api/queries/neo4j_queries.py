@@ -23,12 +23,18 @@ from common import AsyncResilientNeo4jDriver
 
 
 # Lucene special characters that must be escaped in fulltext queries
-_LUCENE_SPECIAL_RE = re.compile(r'([+\-&|!(){}[\]^"~*?:\\/ ])')
+_LUCENE_SPECIAL_RE = re.compile(r'([+\-&|!(){}[\]^"~*?:\\/])')
 
 
 def _escape_lucene_query(query: str) -> str:
     """Escape Lucene special characters in a fulltext search query."""
     return _LUCENE_SPECIAL_RE.sub(r"\\\1", query)
+
+
+def _build_autocomplete_query(query: str) -> str:
+    """Build a Lucene fulltext query with wildcard on each term for prefix matching."""
+    terms = query.split()
+    return " AND ".join(_escape_lucene_query(term) + "*" for term in terms)
 
 
 # --- Query execution helpers ---
@@ -62,7 +68,6 @@ async def _run_count(driver: AsyncResilientNeo4jDriver, cypher: str, **params: A
 
 async def autocomplete_artist(driver: AsyncResilientNeo4jDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search artists by name using fulltext index."""
-    escaped = _escape_lucene_query(query)
     cypher = """
     CALL db.index.fulltext.queryNodes('artist_name_fulltext', $query)
     YIELD node, score
@@ -70,12 +75,11 @@ async def autocomplete_artist(driver: AsyncResilientNeo4jDriver, query: str, lim
     ORDER BY score DESC
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, query=escaped + "*", limit=limit)
+    return await _run_query(driver, cypher, query=_build_autocomplete_query(query), limit=limit)
 
 
 async def autocomplete_label(driver: AsyncResilientNeo4jDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search labels by name using fulltext index."""
-    escaped = _escape_lucene_query(query)
     cypher = """
     CALL db.index.fulltext.queryNodes('label_name_fulltext', $query)
     YIELD node, score
@@ -83,12 +87,11 @@ async def autocomplete_label(driver: AsyncResilientNeo4jDriver, query: str, limi
     ORDER BY score DESC
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, query=escaped + "*", limit=limit)
+    return await _run_query(driver, cypher, query=_build_autocomplete_query(query), limit=limit)
 
 
 async def autocomplete_genre(driver: AsyncResilientNeo4jDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search genres by name using fulltext index."""
-    escaped = _escape_lucene_query(query)
     cypher = """
     CALL db.index.fulltext.queryNodes('genre_name_fulltext', $query)
     YIELD node, score
@@ -96,12 +99,11 @@ async def autocomplete_genre(driver: AsyncResilientNeo4jDriver, query: str, limi
     ORDER BY score DESC
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, query=escaped + "*", limit=limit)
+    return await _run_query(driver, cypher, query=_build_autocomplete_query(query), limit=limit)
 
 
 async def autocomplete_style(driver: AsyncResilientNeo4jDriver, query: str, limit: int = 10) -> list[dict[str, Any]]:
     """Search styles by name using fulltext index."""
-    escaped = _escape_lucene_query(query)
     cypher = """
     CALL db.index.fulltext.queryNodes('style_name_fulltext', $query)
     YIELD node, score
@@ -109,7 +111,7 @@ async def autocomplete_style(driver: AsyncResilientNeo4jDriver, query: str, limi
     ORDER BY score DESC
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, query=escaped + "*", limit=limit)
+    return await _run_query(driver, cypher, query=_build_autocomplete_query(query), limit=limit)
 
 
 # --- Explore (center node + category nodes) ---

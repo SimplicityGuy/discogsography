@@ -162,16 +162,37 @@ async def get_user_collection_stats(
     MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)
     RETURN count(r) AS total
     """
+    artists_cypher = """
+    MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)-[:BY]->(a:Artist)
+    RETURN count(DISTINCT a) AS total
+    """
+    unique_labels_cypher = """
+    MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)-[:ON]->(l:Label)
+    RETURN count(DISTINCT l) AS total
+    """
+    avg_rating_cypher = """
+    MATCH (u:User {id: $user_id})-[c:COLLECTED]->(r:Release)
+    WHERE c.rating > 0
+    RETURN avg(c.rating) AS average
+    """
 
-    genres, decades, labels, total = (
+    genres, decades, labels, total, unique_artists, unique_labels, avg_rating_rows = (
         await _run_query(driver, genre_cypher, user_id=user_id),
         await _run_query(driver, decade_cypher, user_id=user_id),
         await _run_query(driver, label_cypher, user_id=user_id),
         await _run_count(driver, total_cypher, user_id=user_id),
+        await _run_count(driver, artists_cypher, user_id=user_id),
+        await _run_count(driver, unique_labels_cypher, user_id=user_id),
+        await _run_query(driver, avg_rating_cypher, user_id=user_id),
     )
+
+    avg_rating = avg_rating_rows[0]["average"] if avg_rating_rows and avg_rating_rows[0]["average"] is not None else None
 
     return {
         "total": total,
+        "unique_artists": unique_artists,
+        "unique_labels": unique_labels,
+        "average_rating": avg_rating,
         "by_genre": [{"name": r["name"], "count": r["count"]} for r in genres],
         "by_decade": [{"decade": r["decade"], "count": r["count"]} for r in decades],
         "by_label": [{"name": r["name"], "count": r["count"]} for r in labels],

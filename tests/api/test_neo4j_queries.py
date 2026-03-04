@@ -102,16 +102,33 @@ class TestEscapeLuceneQuery:
 
         assert _escape_lucene_query("AC+DC") == r"AC\+DC"
 
-    def test_escapes_space(self) -> None:
+    def test_preserves_space(self) -> None:
         from api.queries.neo4j_queries import _escape_lucene_query
 
-        assert r"\ " in _escape_lucene_query("Warp Records")
+        assert _escape_lucene_query("Warp Records") == "Warp Records"
 
     def test_escapes_colon(self) -> None:
         from api.queries.neo4j_queries import _escape_lucene_query
 
         result = _escape_lucene_query("key:value")
         assert r"\:" in result
+
+
+class TestBuildAutocompleteQuery:
+    def test_single_word(self) -> None:
+        from api.queries.neo4j_queries import _build_autocomplete_query
+
+        assert _build_autocomplete_query("Indecent") == "Indecent*"
+
+    def test_multi_word(self) -> None:
+        from api.queries.neo4j_queries import _build_autocomplete_query
+
+        assert _build_autocomplete_query("Indecent N") == "Indecent* AND N*"
+
+    def test_special_chars_escaped(self) -> None:
+        from api.queries.neo4j_queries import _build_autocomplete_query
+
+        assert _build_autocomplete_query("key:val test") == r"key\:val* AND test*"
 
 
 # ---------------------------------------------------------------------------
