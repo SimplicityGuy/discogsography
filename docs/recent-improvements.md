@@ -121,7 +121,7 @@ development experience enhancements.
 #### Features
 
 - **OAuth 1.0a OOB flow**: Users connect their Discogs account via `GET /api/oauth/authorize/discogs` → `POST /api/oauth/verify/discogs`. State token stored in Redis with TTL.
-- **Collection & wantlist sync**: `POST /api/sync` triggers a background job in the Curator service that fetches the user's Discogs collection and wantlist and writes `COLLECTED` / `WANTS` relationships to Neo4j.
+- **Collection & wantlist sync**: `POST /api/sync` triggers a background sync in the API service that fetches the user's Discogs collection and wantlist and writes `COLLECTED` / `WANTS` relationships to Neo4j.
 - **Sync history**: `GET /api/sync/status` returns the last 10 sync operations with status, item count, and error details.
 - **User endpoints**: `/api/user/collection`, `/api/user/wantlist`, `/api/user/recommendations`, `/api/user/collection/stats`, `/api/user/status` for personalised graph data.
 - **Operator setup**: Discogs app credentials configured once via the `discogs-setup` CLI bundled in the API container (reads/writes the `app_config` table).
@@ -130,7 +130,7 @@ development experience enhancements.
 
 ### 🏗️ API Consolidation (February 2026)
 
-**Overview**: All user-facing HTTP endpoints consolidated into the central **API service**. Explore and Curator now expose health-only endpoints.
+**Overview**: All user-facing HTTP endpoints consolidated into the central **API service**. The Curator service was removed entirely — its sync logic now lives in `api/routers/sync.py`. Explore now serves static files only.
 
 #### Before / After
 
@@ -143,7 +143,8 @@ development experience enhancements.
 #### Benefits
 
 - Single port (8004) for all client-facing API calls — simpler frontend configuration.
-- Explore and Curator internal services are now health-only, reducing their attack surface.
+- Curator eliminated as a separate service — sync logic migrated directly into the API, reducing operational complexity.
+- Explore is now a static file server only, reducing its attack surface.
 - Shared JWT authentication and rate limiting enforced uniformly at the API layer.
 
 ---

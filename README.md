@@ -43,8 +43,7 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 | Service                                                       | Purpose                                | Key Technologies                                  |
 | ------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- |
-| **[🔐](docs/emoji-guide.md#service-identifiers) API**         | User accounts and JWT authentication   | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 |
-| **[🗂️](docs/emoji-guide.md#service-identifiers) Curator**     | Background collection & wantlist sync  | `FastAPI`, `psycopg3`, `neo4j-driver`             |
+| **[🔐](docs/emoji-guide.md#service-identifiers) API**         | User accounts, JWT auth, and collection sync | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 |
 | **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI                 |
 | **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Serves graph exploration frontend (static files) | `FastAPI`, `D3.js`, `Plotly.js`                   |
 | **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     |
@@ -68,7 +67,6 @@ graph TD
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
     API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
-    CURATOR[["🗂️ Curator<br/>Collection<br/>Sync"]]
 
     SCHEMA -->|0. Create Indexes & Constraints| NEO4J
     SCHEMA -->|0. Create Tables & Indexes| PG
@@ -82,11 +80,8 @@ graph TD
     EXPLORE -.->|Proxy /api/*| API
 
     API -.->|User Accounts| PG
-    API -.->|Graph Queries| NEO4J
-    API -.->|OAuth State| REDIS
-
-    CURATOR -.->|Sync Collections| NEO4J
-    CURATOR -.->|Sync History| PG
+    API -.->|Graph Queries & Sync| NEO4J
+    API -.->|OAuth State & Cache| REDIS
 
     DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
@@ -109,7 +104,6 @@ graph TD
     style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
     style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
-    style CURATOR fill:#fff8e1,stroke:#f57f17,stroke-width:2px
 ```
 
 ## 🌟 Key Features

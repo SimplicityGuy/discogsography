@@ -124,9 +124,6 @@ test-parallel:
     uv run pytest tests/api/ -v > /tmp/test-api.log 2>&1 &
     pid_api=$!
 
-    uv run pytest tests/curator/ -v > /tmp/test-curator.log 2>&1 &
-    pid_curator=$!
-
     uv run pytest tests/common/ -v > /tmp/test-common.log 2>&1 &
     pid_common=$!
 
@@ -154,7 +151,6 @@ test-parallel:
     failed=0
 
     wait $pid_api || { echo "❌ API tests failed"; cat /tmp/test-api.log; failed=1; }
-    wait $pid_curator || { echo "❌ Curator tests failed"; cat /tmp/test-curator.log; failed=1; }
     wait $pid_common || { echo "❌ Common tests failed"; cat /tmp/test-common.log; failed=1; }
     wait $pid_dashboard || { echo "❌ Dashboard tests failed"; cat /tmp/test-dashboard.log; failed=1; }
     wait $pid_explore || { echo "❌ Explore tests failed"; cat /tmp/test-explore.log; failed=1; }
@@ -186,12 +182,6 @@ test-parallel:
 test-api:
     uv run pytest tests/api/ -v \
         --cov --cov-config=.coveragerc.api --cov-report=xml --cov-report=json --cov-report=term
-
-# Run curator service tests with coverage
-[group('test')]
-test-curator:
-    uv run pytest tests/curator/ -v \
-        --cov --cov-config=.coveragerc.curator --cov-report=xml --cov-report=json --cov-report=term
 
 # Run common/shared library tests with coverage
 [group('test')]
@@ -296,11 +286,6 @@ test-e2e-explore-mobile browser device:
 [group('services')]
 api:
     uv run python api/api.py
-
-# Run the curator service (Discogs collection & wantlist sync)
-[group('services')]
-curator:
-    uv run python curator/curator.py
 
 # Run the dashboard service (monitoring UI)
 [group('services')]
@@ -413,7 +398,6 @@ rebuild:
 build:
     docker-compose build \
         api \
-        curator \
         dashboard \
         explore \
         extractor \

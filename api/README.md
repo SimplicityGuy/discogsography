@@ -36,7 +36,7 @@ POSTGRES_DATABASE=discogsography
 # Redis (OAuth state + JTI blacklist storage)
 REDIS_HOST=redis
 
-# JWT signing secret (shared with Curator)
+# JWT signing secret
 JWT_SECRET_KEY=your-secret-key-here
 
 # Discogs API
@@ -67,7 +67,7 @@ All tokens are HS256 JWTs containing:
 - `iat`: Issued-at timestamp
 - `exp`: Expiry timestamp
 
-The same `JWT_SECRET_KEY` must be set in both the API and Curator services. JWT validation is stateless — Curator decodes tokens locally using the shared secret without making HTTP calls to the API.
+The API service handles all JWT validation locally. No other service requires the `JWT_SECRET_KEY`.
 
 ### Discogs OAuth Flow
 
@@ -77,7 +77,7 @@ The API implements Discogs OAuth 1.0a OOB (out-of-band) flow:
 1. **Authorize**: User visits the Discogs URL and approves access, receiving a PIN verifier code.
 1. **Complete**: `POST /api/oauth/verify/discogs` — exchanges the verifier for a permanent access token, which is stored in the `oauth_tokens` table.
 
-After the flow, the Curator service can read these tokens to sync the user's Discogs collection and wantlist.
+After the flow, the API service uses these tokens to sync the user's Discogs collection and wantlist directly (sync logic migrated from the former Curator service).
 
 ## Operator Setup
 

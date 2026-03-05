@@ -503,69 +503,6 @@ class ApiConfig:
         )
 
 
-@dataclass(frozen=True)
-class CuratorConfig:
-    """Configuration for the curator service."""
-
-    postgres_host: str
-    postgres_username: str
-    postgres_password: str
-    postgres_database: str
-    neo4j_host: str
-    neo4j_username: str
-    neo4j_password: str
-    discogs_user_agent: str = "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
-    cors_origins: list[str] | None = None
-
-    @classmethod
-    def from_env(cls) -> "CuratorConfig":
-        """Create configuration from environment variables."""
-        postgres_username = get_secret("POSTGRES_USERNAME")
-        postgres_password = get_secret("POSTGRES_PASSWORD")
-        postgres_database = getenv("POSTGRES_DATABASE")
-        neo4j_username = get_secret("NEO4J_USERNAME")
-        neo4j_password = get_secret("NEO4J_PASSWORD")
-
-        missing_vars = []
-        if not getenv("POSTGRES_HOST"):
-            missing_vars.append("POSTGRES_HOST")
-        if not postgres_username:
-            missing_vars.append("POSTGRES_USERNAME")
-        if not postgres_password:
-            missing_vars.append("POSTGRES_PASSWORD")
-        if not postgres_database:
-            missing_vars.append("POSTGRES_DATABASE")
-        if not getenv("NEO4J_HOST"):
-            missing_vars.append("NEO4J_HOST")
-        if not neo4j_username:
-            missing_vars.append("NEO4J_USERNAME")
-        if not neo4j_password:
-            missing_vars.append("NEO4J_PASSWORD")
-
-        if missing_vars:
-            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
-
-        discogs_user_agent = getenv(
-            "DISCOGS_USER_AGENT",
-            "discogsography/1.0 +https://github.com/SimplicityGuy/discogsography",
-        )
-
-        cors_origins_env = getenv("CORS_ORIGINS")
-        cors_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()] if cors_origins_env else None
-
-        return cls(
-            postgres_host=_build_postgres_connstr(),
-            postgres_username=cast("str", postgres_username),
-            postgres_password=cast("str", postgres_password),
-            postgres_database=cast("str", postgres_database),
-            neo4j_host=_build_neo4j_uri(),
-            neo4j_username=cast("str", neo4j_username),
-            neo4j_password=cast("str", neo4j_password),
-            discogs_user_agent=discogs_user_agent,
-            cors_origins=cors_origins,
-        )
-
-
 # Discovery service uses the same configuration as dashboard
 DiscoveryConfig = DashboardConfig
 

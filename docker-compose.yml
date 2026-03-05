@@ -246,60 +246,6 @@ services:
     tmpfs:
       - /tmp
 
-  # Curator service — Discogs collection and wantlist sync
-  curator:
-    build:
-      context: .
-      dockerfile: curator/Dockerfile
-      args:
-        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
-        UID: ${UID:-1000}
-        GID: ${GID:-1000}
-    image: discogsography/curator:latest
-    container_name: discogsography-curator
-    hostname: curator
-    user: "${UID:-1000}:${GID:-1000}"
-    environment:
-      # IMPORTANT: Must match the JWT_SECRET_KEY used by the api service
-      JWT_SECRET_KEY: "dev-secret-change-in-production-use-a-256-bit-random-key"
-      NEO4J_HOST: neo4j
-      NEO4J_PASSWORD: discogsography
-      NEO4J_USERNAME: neo4j
-      POSTGRES_DATABASE: discogsography
-      POSTGRES_HOST: postgres
-      POSTGRES_PASSWORD: discogsography
-      POSTGRES_USERNAME: discogsography
-      PYTHONUNBUFFERED: "1"
-      STARTUP_DELAY: "10"
-    volumes:
-      - curator_logs:/logs
-    depends_on:
-      schema-init:
-        condition: service_completed_successfully
-      postgres:
-        condition: service_healthy
-      neo4j:
-        condition: service_healthy
-      api:
-        condition: service_healthy
-    networks:
-      - discogsography
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8011/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 60s
-    restart: unless-stopped
-    logging: *default-logging
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    read_only: true
-    tmpfs:
-      - /tmp
-
   # Rust-based extractor service
   extractor:
     build:
@@ -552,4 +498,3 @@ volumes:
   extractor_logs:
   schema_init_logs:
   api_logs:
-  curator_logs:

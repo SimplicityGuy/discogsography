@@ -600,7 +600,7 @@ update_python_packages() {
         backup_file "pyproject.toml"
 
         # Backup all pyproject.toml files including nested ones
-        for service in api common curator dashboard explore graphinator schema-init tableinator; do
+        for service in api common dashboard explore graphinator schema-init tableinator; do
             if [[ -f "$service/pyproject.toml" ]]; then
                 backup_file "$service/pyproject.toml"
             fi
@@ -876,7 +876,6 @@ show_file_report() {
     echo "  ✓ pyproject.toml (root)"
     echo "  ✓ api/pyproject.toml"
     echo "  ✓ common/pyproject.toml"
-    echo "  ✓ curator/pyproject.toml"
     echo "  ✓ dashboard/pyproject.toml"
     echo "  ✓ explore/pyproject.toml"
     echo "  ✓ graphinator/pyproject.toml"
@@ -889,7 +888,6 @@ show_file_report() {
     # Docker files
     echo "🐳 Docker Configuration:"
     echo "  ✓ api/Dockerfile"
-    echo "  ✓ curator/Dockerfile"
     echo "  ✓ dashboard/Dockerfile"
     echo "  ✓ explore/Dockerfile"
     echo "  ✓ extractor/Dockerfile"
@@ -946,7 +944,6 @@ verify_components() {
         "pyproject.toml"
         "api/pyproject.toml"
         "common/pyproject.toml"
-        "curator/pyproject.toml"
         "dashboard/pyproject.toml"
         "explore/pyproject.toml"
         "graphinator/pyproject.toml"
@@ -967,7 +964,6 @@ verify_components() {
     print_info "Checking Dockerfiles..."
     local dockerfile_list=(
         "api/Dockerfile"
-        "curator/Dockerfile"
         "dashboard/Dockerfile"
         "explore/Dockerfile"
         "extractor/Dockerfile"

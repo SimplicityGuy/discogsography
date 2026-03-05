@@ -82,7 +82,6 @@ jobs:
           # Install workspace packages
           uv pip install -e api
           uv pip install -e common
-          uv pip install -e curator
           uv pip install -e dashboard
           uv pip install -e explore
 

@@ -40,17 +40,12 @@ Discogsography leverages cutting-edge Python tooling for maximum developer produ
 
 ```
 discogsography/
-├── 🔐 api/                 # User auth, graph queries, OAuth, sync trigger
+├── 🔐 api/                 # User auth, graph queries, OAuth, sync
 │   ├── api.py              # FastAPI application entry point
 │   ├── auth.py             # JWT helpers and OAuth token encryption
 │   ├── limiter.py          # Shared slowapi rate-limiter instance
 │   ├── setup.py            # discogs-setup CLI tool
 │   ├── routers/            # FastAPI routers (auth, explore, sync, user, snapshot, oauth)
-│   ├── README.md
-│   └── __init__.py
-├── 🗂️ curator/             # Background Discogs collection/wantlist sync
-│   ├── curator.py          # FastAPI health-only app
-│   ├── syncer.py           # Sync logic (collection + wantlist → Neo4j/PostgreSQL)
 │   ├── README.md
 │   └── __init__.py
 ├── 📦 common/              # Shared utilities and configuration
@@ -271,7 +266,6 @@ uv run pre-commit run --all-files
 tests/
 ├── api/              # API service tests (auth, routers, queries)
 ├── common/           # Common module tests
-├── curator/          # Curator service tests
 ├── dashboard/        # Dashboard tests
 │   └── test_dashboard_ui.py  # E2E tests with Playwright
 ├── explore/          # Explore service tests

@@ -211,9 +211,6 @@ Or run services directly with Python:
 # API (user auth & Discogs OAuth)
 uv run python -m api.api
 
-# Curator (collection sync)
-uv run python -m curator.curator
-
 # Dashboard
 uv run python dashboard/dashboard.py
 
@@ -241,7 +238,6 @@ curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
 curl http://localhost:8005/health  # API
 curl http://localhost:8007/health  # Explore
-curl http://localhost:8011/health  # Curator
 ```
 
 Expected response:

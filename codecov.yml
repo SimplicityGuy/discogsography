@@ -35,10 +35,6 @@ flags:
     paths:
       - "api/**"
     carryforward: true
-  curator:
-    paths:
-      - "curator/**"
-    carryforward: true
   common:
     paths:
       - "common/**"
@@ -109,10 +105,6 @@ component_management:
       name: API
       paths:
         - "api/**"
-    - component_id: curator
-      name: Curator
-      paths:
-        - "curator/**"
     - component_id: dashboard
       name: Dashboard
       paths:

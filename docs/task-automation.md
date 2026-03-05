@@ -55,14 +55,12 @@ Tasks are organized into logical groups for easier navigation:
 | `test-e2e`     | Run end-to-end browser tests                   |
 | `test-all`     | Run all tests including E2E                    |
 | `test-api`     | Run API service tests with coverage            |
-| `test-curator` | Run curator service tests with coverage        |
 
 ### 🚀 Services Group
 
 | Task          | Description                                              | Port |
 | ------------- | -------------------------------------------------------- | ---- |
 | `api`         | Run the API service (user accounts & JWT authentication) | 8004 |
-| `curator`     | Run the curator service (collection & wantlist sync)     | 8010 |
 | `dashboard`   | Run the dashboard service (monitoring UI)                | 8003 |
 | `explore`     | Run the explore service (graph exploration and trends)   | 8006 |
 | `extractor`   | Run the Rust extractor (Discogs data ingestion)          | -    |

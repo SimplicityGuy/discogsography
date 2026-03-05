@@ -61,22 +61,6 @@ services:
         delay: 5s
         max_attempts: 3
 
-  curator:
-    restart: always
-    environment:
-      JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret_key
-      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
-      POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
-    secrets:
-      - jwt_secret_key
-      - postgres_username
-      - postgres_password
-    deploy:
-      restart_policy:
-        condition: any
-        delay: 5s
-        max_attempts: 3
-
   extractor:
     restart: always
     environment:

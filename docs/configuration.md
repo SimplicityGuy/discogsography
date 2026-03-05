@@ -154,7 +154,7 @@ RABBITMQ_PASSWORD=mypassword
 | `NEO4J_USERNAME` | Neo4j username | `neo4j`                 | Yes      |
 | `NEO4J_PASSWORD` | Neo4j password | (none)                  | Yes      |
 
-**Used By**: Graphinator, Dashboard, Curator
+**Used By**: Graphinator, Dashboard
 
 **Connection Details**:
 
@@ -199,7 +199,7 @@ NEO4J_PASSWORD="your-secure-password"
 | `POSTGRES_PASSWORD` | PostgreSQL password  | (none)           | Yes      |
 | `POSTGRES_DATABASE` | Database name        | `discogsography` | Yes      |
 
-**Used By**: Tableinator, Dashboard, API, Curator
+**Used By**: Tableinator, Dashboard, API
 
 **Connection Details**:
 
@@ -277,18 +277,17 @@ REDIS_HOST="redis"
 
 | Variable             | Description                         | Default | Required           |
 | -------------------- | ----------------------------------- | ------- | ------------------ |
-| `JWT_SECRET_KEY`     | HMAC-SHA256 signing secret          | (none)  | Yes (API, Curator) |
-| `JWT_EXPIRE_MINUTES` | Token lifetime in minutes           | `1440`  | No                 |
-| `DISCOGS_USER_AGENT` | User-Agent for Discogs API requests | (none)  | Yes (API, Curator) |
+| `JWT_SECRET_KEY`     | HMAC-SHA256 signing secret          | (none)  | Yes (API) |
+| `JWT_EXPIRE_MINUTES` | Token lifetime in minutes           | `1440`  | No        |
+| `DISCOGS_USER_AGENT` | User-Agent for Discogs API requests | (none)  | Yes (API) |
 
-**Used By**: API, Curator
+**Used By**: API
 
 **JWT Details**:
 
 - Algorithm: HS256 (HMAC-SHA256)
 - Token format: Standard JWT (`header.body.signature`, base64url-encoded)
 - Payload claims: `sub` (user UUID), `email`, `iat`, `exp`
-- The same `JWT_SECRET_KEY` must be set in both API and Curator — tokens issued by API are validated locally by Curator
 
 **Security Notes**:
 
@@ -549,28 +548,6 @@ docker exec <api-container> discogs-setup --show
 
 See the [API README](../api/README.md#operator-setup) for full setup instructions.
 
-### Curator
-
-```bash
-# Required
-POSTGRES_HOST="localhost"
-POSTGRES_USERNAME="discogsography"
-POSTGRES_PASSWORD="discogsography"
-POSTGRES_DATABASE="discogsography"
-NEO4J_HOST="localhost"
-NEO4J_USERNAME="neo4j"
-NEO4J_PASSWORD="discogsography"
-JWT_SECRET_KEY="your-secret-key-here"  # Must match API service
-DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
-
-# Optional
-LOG_LEVEL=INFO
-```
-
-Health check: http://localhost:8010/health (service), http://localhost:8011/health (health check port)
-
-**Notes**: Curator validates JWTs locally using the same `JWT_SECRET_KEY` as the API service. It reads Discogs OAuth tokens from the `oauth_tokens` PostgreSQL table, which is populated when users connect their Discogs accounts through the API.
-
 ### Schema-Init
 
 ```bash
@@ -740,7 +717,7 @@ POSTGRES_DATABASE=discogsography_dev
 # Redis
 REDIS_HOST=localhost
 
-# JWT (API + Curator)
+# JWT (API)
 JWT_SECRET_KEY=dev-secret-key-not-for-production
 JWT_EXPIRE_MINUTES=1440
 DISCOGS_USER_AGENT="Discogsography/1.0-dev +https://github.com/SimplicityGuy/discogsography"
@@ -897,7 +874,6 @@ curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
 curl http://localhost:8005/health  # API (health check port)
 curl http://localhost:8007/health  # Explore
-curl http://localhost:8011/health  # Curator (health check port)
 ```
 
 Expected response for all:

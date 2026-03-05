@@ -19,7 +19,6 @@ Discogsography is built as a microservices platform that processes large-scale m
 | Service                                                  | Purpose                                     | Key Technologies                                  | Port(s)               |
 | -------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------- | --------------------- |
 | **[🔐](emoji-guide.md#service-identifiers) API**         | User auth, graph queries, and sync triggers | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 | 8004 (ext), 8005      |
-| **[🗂️](emoji-guide.md#service-identifiers) Curator**     | Background collection & wantlist sync jobs  | `FastAPI`, `psycopg3`, `neo4j-driver`             | 8010, 8011 (internal) |
 | **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor       | `tokio`, `quick-xml`, `lapin`                     | 8000 (health)         |
 | **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer              | `neo4j-driver`, `psycopg3`                        | —                     |
 | **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs               | `neo4j-driver`, graph algorithms                  | 8001 (health)         |
@@ -52,7 +51,6 @@ graph TD
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
     API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
-    CURATOR[["🗂️ Curator<br/>Collection<br/>Sync"]]
 
     SCHEMA -->|0. Create schemas| NEO4J
     SCHEMA -->|0. Create schemas| PG
@@ -68,9 +66,6 @@ graph TD
     API -.->|User Accounts| PG
     API -.->|Graph Queries| NEO4J
     API -.->|OAuth State + Snapshots| REDIS
-
-    CURATOR -.->|Sync Collections| NEO4J
-    CURATOR -.->|Sync History| PG
 
     DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
@@ -93,7 +88,6 @@ graph TD
     style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
-    style CURATOR fill:#fff8e1,stroke:#f57f17,stroke-width:2px
 ```
 
 ## Data Flow
@@ -318,7 +312,7 @@ See [Dashboard README](../dashboard/README.md) for details.
 - Discogs OAuth token storage and retrieval
 - Graph query endpoints (`/api/autocomplete`, `/api/explore`, `/api/expand`, `/api/node/{id}`, `/api/trends`)
 - User collection and wantlist queries (`/api/user/collection`, `/api/user/wantlist`, `/api/user/recommendations`, `/api/user/collection/stats`, `/api/user/status`)
-- Sync trigger for Curator service (`/api/sync`, `/api/sync/status`)
+- Collection and wantlist sync (`/api/sync`, `/api/sync/status`)
 - Graph snapshot save/restore (`/api/snapshot`, `/api/snapshot/{token}`)
 - Reads Discogs app credentials from `app_config` table (set via `discogs-setup` CLI)
 
@@ -338,32 +332,6 @@ See [Dashboard README](../dashboard/README.md) for details.
 - `DISCOGS_USER_AGENT`: User-Agent header for Discogs API calls
 
 See [API README](../api/README.md) for details.
-
-### Curator
-
-**Responsibilities**:
-
-- Run background async sync jobs for user Discogs collections and wantlists
-- Write synced data to Neo4j graph (COLLECTED, WANTS relationships)
-- Track sync history in PostgreSQL
-- Sync jobs are triggered via the **API service** (`POST /api/sync`)
-
-**Key Features**:
-
-- FastAPI health endpoint (internal-only, not exposed in Docker Compose)
-- Stateless JWT validation using shared `JWT_SECRET_KEY`
-- Background task orchestration with per-user sync state
-- Reads Discogs OAuth tokens stored by the API service
-- Prevents duplicate syncs for the same user
-
-**Configuration**:
-
-- `JWT_SECRET_KEY`: Shared secret for HS256 token validation
-- `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`: PostgreSQL connection
-- `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
-- `DISCOGS_USER_AGENT`: User-Agent header for Discogs API calls
-
-See [Curator README](../curator/README.md) for details.
 
 ## Message Queue Architecture
 
@@ -531,7 +499,6 @@ curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8007/health  # Explore
-curl http://localhost:8011/health  # Curator
 ```
 
 ### Logging
@@ -575,7 +542,6 @@ See [Monitoring](monitoring.md) for details.
 **Stateless Services** (can scale horizontally):
 
 - API (load balanced — JWT validation is stateless)
-- Curator (load balanced — background task state is per-request)
 - Extractor (one instance per data type)
 - Graphinator (multiple consumers per queue)
 - Tableinator (multiple consumers per queue)
