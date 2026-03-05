@@ -239,7 +239,7 @@ class UserPanes {
             if (f.rating != null) {
                 const stars = document.createElement('span');
                 stars.className = 'stat-stars';
-                stars.innerHTML = this._renderStarsHTML(f.rating);
+                stars.appendChild(this._renderStars(f.rating));
                 statValue.appendChild(stars);
             }
             card.append(statLabel, statValue);
@@ -368,9 +368,21 @@ class UserPanes {
 
         const titleArea = document.createElement('div');
         titleArea.className = 'release-table-title';
-        titleArea.innerHTML = `<span class="title-icon"><i class="fas ${iconClass}"></i></span>`
-            + `<h5>${this._escapeHTML(title)}</h5>`
-            + `<span class="title-count">Showing ${showFrom.toLocaleString()}–${showTo.toLocaleString()} of ${total.toLocaleString()}</span>`;
+
+        const titleIcon = document.createElement('span');
+        titleIcon.className = 'title-icon';
+        const titleIconI = document.createElement('i');
+        titleIconI.className = `fas ${iconClass}`;
+        titleIcon.appendChild(titleIconI);
+
+        const titleH5 = document.createElement('h5');
+        titleH5.textContent = title;
+
+        const titleCount = document.createElement('span');
+        titleCount.className = 'title-count';
+        titleCount.textContent = `Showing ${showFrom.toLocaleString()}\u2013${showTo.toLocaleString()} of ${total.toLocaleString()}`;
+
+        titleArea.append(titleIcon, titleH5, titleCount);
 
         const actions = document.createElement('div');
         actions.className = 'release-table-actions';
@@ -436,9 +448,15 @@ class UserPanes {
 
             const tdRating = document.createElement('td');
             if (r.rating && r.rating > 0) {
-                tdRating.innerHTML = `<span class="star-rating">${this._renderStarsHTML(r.rating)}</span>`;
+                const ratingSpan = document.createElement('span');
+                ratingSpan.className = 'star-rating';
+                ratingSpan.appendChild(this._renderStars(r.rating));
+                tdRating.appendChild(ratingSpan);
             } else {
-                tdRating.innerHTML = '<span class="star-rating-dash">—</span>';
+                const dashSpan = document.createElement('span');
+                dashSpan.className = 'star-rating-dash';
+                dashSpan.textContent = '\u2014';
+                tdRating.appendChild(dashSpan);
             }
 
             tr.append(tdArtist, tdTitle, tdLabel, tdYear, tdGenre, tdRating);
@@ -518,24 +536,17 @@ class UserPanes {
         return pages;
     }
 
-    _renderStarsHTML(rating) {
+    _renderStars(rating) {
+        const frag = document.createDocumentFragment();
         const rounded = Math.round(rating);
-        let html = '';
         for (let i = 1; i <= 5; i++) {
-            if (i <= rounded) {
-                html += '<i class="fas fa-star"></i>';
-            } else {
-                html += '<i class="fas fa-star star-empty"></i>';
-            }
+            const star = document.createElement('i');
+            star.className = i <= rounded ? 'fas fa-star' : 'fas fa-star star-empty';
+            frag.appendChild(star);
         }
-        return html;
+        return frag;
     }
 
-    _escapeHTML(str) {
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
-    }
 }
 
 // Global instance (created after DOM ready in app.js)
