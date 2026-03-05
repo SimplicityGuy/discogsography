@@ -23,7 +23,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer              | `neo4j-driver`, `psycopg3`                        | —                     |
 | **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs               | `neo4j-driver`, graph algorithms                  | 8001 (health)         |
 | **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables         | `psycopg3`, JSONB, full-text search               | 8002 (health)         |
-| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check      | `FastAPI`, `neo4j-driver`, `orjson`               | 8006, 8007 (internal) |
+| **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check      | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (internal) |
 | **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring                 | `FastAPI`, WebSocket, reactive UI                 | 8003 (ext)            |
 
 ### Infrastructure Components
@@ -261,13 +261,14 @@ See [Tableinator README](../tableinator/README.md) for details.
 
 **Responsibilities**:
 
-- Serve the interactive graph exploration frontend (D3.js, Plotly.js)
+- Serve the interactive graph exploration frontend (Tailwind CSS, Alpine.js, D3.js, Plotly.js)
 - Provide a health check endpoint
 - All graph query API endpoints are routed through the **API service**
 
 **Key Features**:
 
 - FastAPI static file serving (HTML, JS, CSS)
+- Tailwind CSS dark theme with Alpine.js reactive UI
 - D3.js force-directed graph and Plotly.js trends visualizations
 - Internal-only (not externally exposed in Docker Compose)
 
@@ -611,4 +612,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-02
+**Last Updated**: 2026-03-04

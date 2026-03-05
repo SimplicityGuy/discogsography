@@ -10,6 +10,47 @@ Last Updated: March 2026
 
 ## 🆕 Latest Improvements (March 2026)
 
+### 🗑️ Curator Service Removal
+
+**Overview**: Removed the Curator service entirely — it was dead code after sync logic was migrated to `api/routers/sync.py` during the API consolidation.
+
+#### Changes
+
+- Deleted `curator/` directory (service code, Dockerfile, pyproject.toml)
+- Removed Curator from `docker-compose.yml`
+- No functionality lost — sync endpoints continue to work at `POST /api/sync` and `GET /api/sync/status`
+
+#### Benefits
+
+- Reduced operational complexity (one fewer container to build, deploy, and monitor)
+- Cleaner codebase with no dead code
+
+---
+
+### 🎨 Explore UI Redesign — Tailwind CSS + Alpine.js
+
+**Overview**: Complete frontend redesign of the Explore service, migrating from Bootstrap + jQuery to Tailwind CSS + Alpine.js.
+
+#### Changes
+
+- **Tailwind CSS**: Dark theme matching the Dashboard redesign. Stylesheet built at Docker image build time by a dedicated `css-builder` Node stage (`tailwind.config.js` + `tailwind.input.css` → `explore/static/tailwind.css`)
+- **Alpine.js**: Replaced jQuery with Alpine.js for reactive UI state management (modals, auth state, panel toggling)
+- **Modular JS**: Split monolithic JavaScript into focused modules (`app.js`, `graph.js`, `trends.js`, `auth.js`, `autocomplete.js`, `api-client.js`, `user-panes.js`)
+- **D3.js + Plotly.js**: Retained for graph visualization and trends charts (unchanged)
+
+#### Static Files
+
+| File                                | Change                                                                     |
+| ----------------------------------- | -------------------------------------------------------------------------- |
+| `explore/static/index.html`        | Complete rewrite (dark Tailwind theme + Alpine.js)                         |
+| `explore/static/tailwind.css`      | New — generated at Docker build time by css-builder Node stage             |
+| `explore/static/css/styles.css`    | Simplified to base reset + custom styles                                   |
+| `explore/static/js/*.js`           | New — modular JS replacing monolithic script                               |
+| `explore/tailwind.config.js`       | New — Tailwind CLI config (content paths, plugins)                         |
+| `explore/tailwind.input.css`       | New — Tailwind source directives (`@tailwind base/components/utilities`)   |
+
+---
+
 ### 🔧 Shared OAuth, Auth, and Dependency Refactor
 
 **Overview**: Consolidated shared code (OAuth helpers, auth utilities, and dependency injection) into `common/` and `api/` to reduce duplication across services.

@@ -2,7 +2,7 @@
 
 🔍 **Interactive Graph Exploration and Trends Visualization**
 
-The Explore service serves the interactive frontend (D3.js, Plotly.js) for navigating the Discogs knowledge graph and visualizing release trends. All graph query API endpoints are consolidated in the **API service** (`/api/explore/*`, `/api/trends`, etc.).
+The Explore service serves the interactive frontend for navigating the Discogs knowledge graph and visualizing release trends. Built with **Tailwind CSS** (dark theme), **Alpine.js** (reactive UI), **D3.js** (force-directed graph), and **Plotly.js** (trends charts). All graph query API endpoints are consolidated in the **API service** (`/api/explore/*`, `/api/trends`, etc.).
 
 ## 🌟 Features
 
@@ -52,7 +52,7 @@ just explore
 
 ```mermaid
 graph TD
-    UI["🌐 Browser<br/>HTML + D3.js + Plotly.js"]
+    UI["🌐 Browser<br/>Tailwind CSS + Alpine.js<br/>D3.js + Plotly.js"]
     EXPLORE["🔍 Explore Service<br/>Static Files :8006"]
     HEALTH["🏥 Health Server<br/>:8007"]
     APISERVICE["🔐 API Service<br/>Graph Queries :8004"]

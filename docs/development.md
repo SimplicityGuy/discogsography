@@ -72,7 +72,13 @@ discogsography/
 │   └── README.md
 ├── 🔍 explore/             # Static frontend for graph exploration UI
 │   ├── explore.py          # FastAPI static file server (health check only)
-│   ├── static/             # Frontend HTML/CSS/JS (D3.js, Plotly.js)
+│   ├── tailwind.config.js  # Tailwind CLI configuration (content paths, plugins)
+│   ├── tailwind.input.css  # Tailwind source directives (@tailwind base/…)
+│   ├── static/             # Frontend HTML/CSS/JS (Tailwind, Alpine.js, D3.js, Plotly.js)
+│   │   ├── index.html
+│   │   ├── tailwind.css    # Generated at Docker build time by css-builder stage
+│   │   ├── css/styles.css
+│   │   └── js/             # Modular JS (app, graph, trends, auth, etc.)
 │   ├── README.md
 │   └── __init__.py
 ├── 🔗 graphinator/         # Neo4j graph database service
@@ -686,4 +692,4 @@ uv run pytest --pdb
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-18
+**Last Updated**: 2026-03-04
