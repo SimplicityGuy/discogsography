@@ -172,13 +172,17 @@ class ExploreApp {
             this.userPanes.triggerSync();
         });
 
-        // Collection / wantlist / recommendations refresh
-        document.getElementById('collectionRefreshBtn')?.addEventListener('click', () => {
-            this.userPanes.loadCollection(true);
-            this.userPanes.loadCollectionStats();
+        // Collection / wantlist / recommendations refresh (delegated — buttons are rendered dynamically)
+        document.getElementById('collectionPane')?.addEventListener('click', (e) => {
+            if (e.target.closest('#collectionRefreshBtn')) {
+                this.userPanes.loadCollection(true);
+                this.userPanes.loadCollectionStats();
+            }
         });
-        document.getElementById('wantlistRefreshBtn')?.addEventListener('click', () => {
-            this.userPanes.loadWantlist(true);
+        document.getElementById('wantlistPane')?.addEventListener('click', (e) => {
+            if (e.target.closest('#wantlistRefreshBtn')) {
+                this.userPanes.loadWantlist(true);
+            }
         });
         document.getElementById('recommendationsRefreshBtn')?.addEventListener('click', () => {
             this.userPanes.loadRecommendations();

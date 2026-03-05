@@ -44,11 +44,16 @@ async def get_user_collection(
     MATCH (u:User {id: $user_id})-[c:COLLECTED]->(r:Release)
     OPTIONAL MATCH (r)-[:BY]->(a:Artist)
     OPTIONAL MATCH (r)-[:ON]->(l:Label)
+    OPTIONAL MATCH (r)-[:IS]->(g:Genre)
+    OPTIONAL MATCH (r)-[:IS]->(s:Style)
     WITH r, c,
          collect(DISTINCT a.name)[0] AS artist_name,
-         collect(DISTINCT l.name)[0] AS label_name
+         collect(DISTINCT l.name)[0] AS label_name,
+         collect(DISTINCT g.name) AS genres,
+         collect(DISTINCT s.name) AS styles
     RETURN r.id AS id, r.title AS title, r.year AS year,
            artist_name AS artist, label_name AS label,
+           genres, styles,
            c.rating AS rating, c.date_added AS date_added,
            c.folder_id AS folder_id
     ORDER BY c.date_added DESC
@@ -79,11 +84,16 @@ async def get_user_wantlist(
     MATCH (u:User {id: $user_id})-[w:WANTS]->(r:Release)
     OPTIONAL MATCH (r)-[:BY]->(a:Artist)
     OPTIONAL MATCH (r)-[:ON]->(l:Label)
+    OPTIONAL MATCH (r)-[:IS]->(g:Genre)
+    OPTIONAL MATCH (r)-[:IS]->(s:Style)
     WITH r, w,
          collect(DISTINCT a.name)[0] AS artist_name,
-         collect(DISTINCT l.name)[0] AS label_name
+         collect(DISTINCT l.name)[0] AS label_name,
+         collect(DISTINCT g.name) AS genres,
+         collect(DISTINCT s.name) AS styles
     RETURN r.id AS id, r.title AS title, r.year AS year,
            artist_name AS artist, label_name AS label,
+           genres, styles,
            w.rating AS rating, w.date_added AS date_added
     ORDER BY w.date_added DESC
     SKIP $offset LIMIT $limit
