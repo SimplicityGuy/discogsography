@@ -46,12 +46,12 @@ class ExploreApp {
         const discogsStatus = window.authManager.getDiscogsStatus();
 
         // Toggle auth buttons vs user dropdown
-        document.getElementById('authButtons').classList.toggle('d-none', loggedIn);
-        document.getElementById('userDropdown').classList.toggle('d-none', !loggedIn);
+        document.getElementById('authButtons').classList.toggle('hidden', loggedIn);
+        document.getElementById('userDropdown').classList.toggle('hidden', !loggedIn);
 
         // Toggle auth-required nav items
         ['navCollection', 'navWantlist', 'navRecommendations'].forEach(id => {
-            document.getElementById(id)?.classList.toggle('d-none', !loggedIn);
+            document.getElementById(id)?.classList.toggle('hidden', !loggedIn);
         });
 
         if (loggedIn && user) {
@@ -68,29 +68,29 @@ class ExploreApp {
         if (loggedIn && discogsStatus?.connected) {
             if (statusDisplay) {
                 const badge = document.createElement('span');
-                badge.className = 'badge bg-success discogs-badge';
+                badge.className = 'badge bg-accent-green text-white discogs-badge';
                 const icon = document.createElement('i');
-                icon.className = 'fas fa-check me-1';
+                icon.className = 'fas fa-check mr-1';
                 badge.append(icon, discogsStatus.discogs_username || 'Connected');
                 statusDisplay.replaceChildren(badge);
             }
-            connectBtn?.classList.add('d-none');
-            disconnectBtn?.classList.remove('d-none');
-            syncBtn?.classList.remove('d-none');
+            connectBtn?.classList.add('hidden');
+            disconnectBtn?.classList.remove('hidden');
+            syncBtn?.classList.remove('hidden');
         } else if (loggedIn) {
             if (statusDisplay) {
-                statusDisplay.innerHTML = '<span class="badge bg-secondary discogs-badge">Not connected</span>';
+                statusDisplay.innerHTML = '<span class="badge bg-gray-600 text-text-secondary discogs-badge">Not connected</span>';
             }
-            connectBtn?.classList.remove('d-none');
-            disconnectBtn?.classList.add('d-none');
-            syncBtn?.classList.add('d-none');
+            connectBtn?.classList.remove('hidden');
+            disconnectBtn?.classList.add('hidden');
+            syncBtn?.classList.add('hidden');
         } else {
             if (statusDisplay) {
-                statusDisplay.innerHTML = '<span class="badge bg-secondary discogs-badge">Not connected</span>';
+                statusDisplay.innerHTML = '<span class="badge bg-gray-600 text-text-secondary discogs-badge">Not connected</span>';
             }
-            connectBtn?.classList.add('d-none');
-            disconnectBtn?.classList.add('d-none');
-            syncBtn?.classList.add('d-none');
+            connectBtn?.classList.add('hidden');
+            disconnectBtn?.classList.add('hidden');
+            syncBtn?.classList.add('hidden');
         }
 
         // If we just logged out and were on a personal pane, switch to explore
@@ -184,11 +184,12 @@ class ExploreApp {
             this.userPanes.loadRecommendations();
         });
 
-        // Clear error fields when switching auth tabs
-        document.getElementById('authModal')?.addEventListener('show.bs.modal', () => {
+        // Login button opens modal and clears errors
+        document.getElementById('navLoginBtn')?.addEventListener('click', () => {
+            if (window.Alpine) Alpine.store('modals').authOpen = true;
             document.getElementById('loginError').textContent = '';
             document.getElementById('registerError').textContent = '';
-            document.getElementById('registerSuccess').classList.add('d-none');
+            document.getElementById('registerSuccess')?.classList.add('hidden');
         });
     }
 
@@ -208,7 +209,7 @@ class ExploreApp {
         }
 
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Logging in...';
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Logging in...';
         if (errorEl) errorEl.textContent = '';
 
         try {
@@ -226,12 +227,12 @@ class ExploreApp {
             window.authManager.notify();
 
             // Close modal
-            bootstrap.Modal.getInstance(document.getElementById('authModal'))?.hide();
+            Alpine.store('modals').authOpen = false;
             document.getElementById('loginEmail').value = '';
             document.getElementById('loginPassword').value = '';
         } finally {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-sign-in-alt me-1"></i>Login';
+            submitBtn.innerHTML = '<i class="fas fa-sign-in-alt mr-1"></i>Login';
         }
     }
 
@@ -252,25 +253,24 @@ class ExploreApp {
         }
 
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Creating account...';
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Creating account...';
         if (errorEl) errorEl.textContent = '';
-        if (successEl) successEl.classList.add('d-none');
+        if (successEl) successEl.classList.add('hidden');
 
         try {
             const ok = await window.apiClient.register(email, password);
             if (ok) {
-                if (successEl) successEl.classList.remove('d-none');
+                if (successEl) successEl.classList.remove('hidden');
                 document.getElementById('registerEmail').value = '';
                 document.getElementById('registerPassword').value = '';
                 // Switch to login tab
-                const loginTab = document.getElementById('login-tab');
-                if (loginTab) new bootstrap.Tab(loginTab).show();
+                document.getElementById('login-tab')?.click();
             } else {
                 if (errorEl) errorEl.textContent = 'Registration failed. Please try again.';
             }
         } finally {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-user-plus me-1"></i>Create Account';
+            submitBtn.innerHTML = '<i class="fas fa-user-plus mr-1"></i>Create Account';
         }
     }
 
@@ -399,13 +399,13 @@ class ExploreApp {
         if (statusObj.in_collection) {
             const badge = document.createElement('span');
             badge.className = 'ownership-badge in-collection';
-            badge.innerHTML = '<i class="fas fa-check me-1"></i>In Collection';
+            badge.innerHTML = '<i class="fas fa-check mr-1"></i>In Collection';
             container.appendChild(badge);
         }
         if (statusObj.in_wantlist) {
             const badge = document.createElement('span');
             badge.className = 'ownership-badge in-wantlist';
-            badge.innerHTML = '<i class="fas fa-heart me-1"></i>In Wantlist';
+            badge.innerHTML = '<i class="fas fa-heart mr-1"></i>In Wantlist';
             container.appendChild(badge);
         }
 
@@ -423,15 +423,15 @@ class ExploreApp {
                 if (this.compareMode && this.primaryTrendsData) {
                     this.trends.addComparison(data);
                     document.getElementById('compareBadge').textContent = `vs ${data.name}`;
-                    document.getElementById('compareInfo').classList.remove('d-none');
-                    document.getElementById('compareHint').classList.add('d-none');
+                    document.getElementById('compareInfo').classList.remove('hidden');
+                    document.getElementById('compareHint').classList.add('hidden');
                     this.compareMode = false;
                 } else {
                     this.primaryTrendsData = data;
                     this.trends.render(data);
-                    document.getElementById('compareBtn').classList.remove('d-none');
-                    document.getElementById('compareHint').classList.add('d-none');
-                    document.getElementById('compareInfo').classList.add('d-none');
+                    document.getElementById('compareBtn').classList.remove('hidden');
+                    document.getElementById('compareHint').classList.add('hidden');
+                    document.getElementById('compareInfo').classList.add('hidden');
                     this.compareMode = false;
                 }
             }
@@ -443,16 +443,16 @@ class ExploreApp {
     _enableCompareMode() {
         if (!this.primaryTrendsData) return;
         this.compareMode = true;
-        document.getElementById('compareBtn').classList.add('d-none');
-        document.getElementById('compareHint').classList.remove('d-none');
+        document.getElementById('compareBtn').classList.add('hidden');
+        document.getElementById('compareHint').classList.remove('hidden');
     }
 
     _clearComparison() {
         this.compareMode = false;
         this.trends.clearComparison();
-        document.getElementById('compareBtn').classList.remove('d-none');
-        document.getElementById('compareHint').classList.add('d-none');
-        document.getElementById('compareInfo').classList.add('d-none');
+        document.getElementById('compareBtn').classList.remove('hidden');
+        document.getElementById('compareHint').classList.add('hidden');
+        document.getElementById('compareInfo').classList.add('hidden');
     }
 
     _pushState(name, type) {
@@ -521,12 +521,12 @@ class ExploreApp {
         const body = document.getElementById('infoPanelBody');
         const title = document.getElementById('infoPanelTitle');
 
-        body.innerHTML = '<p class="text-muted">Loading...</p>';
+        body.innerHTML = '<p class="text-text-secondary">Loading...</p>';
         panel.classList.add('open');
 
         const details = await window.apiClient.getNodeDetails(nodeId, type);
         if (!details) {
-            body.innerHTML = '<p class="text-muted">No details available</p>';
+            body.innerHTML = '<p class="text-text-secondary">No details available</p>';
             return;
         }
 
@@ -567,11 +567,11 @@ class ExploreApp {
         const explorableTypes = ['artist', 'genre', 'label', 'style'];
         if (explorableTypes.includes(type)) {
             const btn = document.createElement('button');
-            btn.className = 'btn btn-sm btn-outline-primary w-100 mb-3 explore-node-btn';
+            btn.className = 'btn-outline-primary btn-sm w-full mb-3 explore-node-btn';
             btn.dataset.name = details.name;
             btn.dataset.type = type;
             const icon = document.createElement('i');
-            icon.className = 'fas fa-project-diagram me-1';
+            icon.className = 'fas fa-project-diagram mr-1';
             btn.append(icon, `Explore ${details.name}`);
             nodes.push(btn);
         }
@@ -595,7 +595,7 @@ class ExploreApp {
 
         if (nodes.length === 0) {
             const p = document.createElement('p');
-            p.className = 'text-muted';
+            p.className = 'text-text-secondary';
             p.textContent = 'No additional details';
             nodes.push(p);
         }

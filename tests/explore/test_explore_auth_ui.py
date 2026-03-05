@@ -11,13 +11,20 @@ import pytest
 _MOCK_TOKEN = "mock-test-access-token-abc123"  # nosec B105
 
 
+def _wait_for_alpine(page: Page) -> None:
+    """Wait for Alpine.js to be fully initialised."""
+    page.wait_for_function("() => !!window.Alpine && !!Alpine.store('modals')", timeout=10000)
+
+
 def _set_logged_in(page: Page, test_server: str) -> None:
     """Helper: inject auth token into localStorage and reload so authManager initialises."""
     page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
+    _wait_for_alpine(page)
     page.evaluate(f"window.localStorage.setItem('auth_token', '{_MOCK_TOKEN}')")
     page.reload(wait_until="domcontentloaded", timeout=30000)
+    _wait_for_alpine(page)
     # Wait for authManager.init() async calls to complete and UI to update
-    expect(page.locator("#userDropdown")).not_to_have_class(re.compile(r"\bd-none\b"), timeout=8000)
+    expect(page.locator("#userDropdown")).not_to_have_class(re.compile(r"\bhidden\b"), timeout=8000)
 
 
 @pytest.mark.e2e
@@ -41,7 +48,7 @@ class TestExploreAuthNavbar:
         page.reload(wait_until="domcontentloaded", timeout=30000)
 
         user_dropdown = page.locator("#userDropdown")
-        expect(user_dropdown).to_have_class(re.compile(r"\bd-none\b"), timeout=5000)
+        expect(user_dropdown).to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
 
     def test_collection_nav_hidden_when_logged_out(self, page: Page, test_server: str) -> None:
         """Collection, Wantlist, and Discover nav items are hidden when logged out."""
@@ -50,21 +57,21 @@ class TestExploreAuthNavbar:
         page.reload(wait_until="domcontentloaded", timeout=30000)
 
         for nav_id in ["navCollection", "navWantlist", "navRecommendations"]:
-            expect(page.locator(f"#{nav_id}")).to_have_class(re.compile(r"\bd-none\b"), timeout=5000)
+            expect(page.locator(f"#{nav_id}")).to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
 
     def test_user_dropdown_visible_when_logged_in(self, page: Page, test_server: str) -> None:
         """User dropdown is visible after injecting an auth token."""
         _set_logged_in(page, test_server)
 
         user_dropdown = page.locator("#userDropdown")
-        expect(user_dropdown).not_to_have_class(re.compile(r"\bd-none\b"), timeout=5000)
+        expect(user_dropdown).not_to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
 
     def test_auth_buttons_hidden_when_logged_in(self, page: Page, test_server: str) -> None:
         """Login button area is hidden once the user is authenticated."""
         _set_logged_in(page, test_server)
 
         auth_buttons = page.locator("#authButtons")
-        expect(auth_buttons).to_have_class(re.compile(r"\bd-none\b"), timeout=5000)
+        expect(auth_buttons).to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
 
     def test_user_email_displayed_in_dropdown(self, page: Page, test_server: str) -> None:
         """Logged-in user's email appears in the navbar dropdown toggle."""
@@ -78,7 +85,7 @@ class TestExploreAuthNavbar:
         _set_logged_in(page, test_server)
 
         for nav_id in ["navCollection", "navWantlist", "navRecommendations"]:
-            expect(page.locator(f"#{nav_id}")).not_to_have_class(re.compile(r"\bd-none\b"), timeout=5000)
+            expect(page.locator(f"#{nav_id}")).not_to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
 
     def test_connect_discogs_button_visible_in_dropdown(self, page: Page, test_server: str) -> None:
         """Connect Discogs button is visible in the user dropdown when not connected."""
@@ -87,7 +94,7 @@ class TestExploreAuthNavbar:
         # Open the user dropdown
         page.locator("#userMenuToggle").click()
         connect_btn = page.locator("#connectDiscogsBtn")
-        expect(connect_btn).not_to_have_class(re.compile(r"\bd-none\b"), timeout=5000)
+        expect(connect_btn).not_to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
 
     def test_logout_button_visible_in_dropdown(self, page: Page, test_server: str) -> None:
         """Logout button is present in the user dropdown."""
@@ -108,7 +115,7 @@ class TestExploreAuthNavbar:
         # Login button should reappear
         expect(page.locator("#navLoginBtn")).to_be_visible(timeout=5000)
         # User dropdown should hide
-        expect(page.locator("#userDropdown")).to_have_class(re.compile(r"\bd-none\b"), timeout=5000)
+        expect(page.locator("#userDropdown")).to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
 
 
 @pytest.mark.e2e
@@ -127,16 +134,18 @@ class TestExploreAuthModal:
         page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
         page.evaluate("window.localStorage.removeItem('auth_token')")
         page.reload(wait_until="domcontentloaded", timeout=30000)
+        _wait_for_alpine(page)
 
         page.locator("#navLoginBtn").click()
         modal = page.locator("#authModal")
-        expect(modal).to_have_class(re.compile("show"), timeout=5000)
+        expect(modal).to_be_visible(timeout=5000)
 
     def test_auth_modal_has_login_tab(self, page: Page, test_server: str) -> None:
         """The auth modal has a Login tab."""
         page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
         page.evaluate("window.localStorage.removeItem('auth_token')")
         page.reload(wait_until="domcontentloaded", timeout=30000)
+        _wait_for_alpine(page)
 
         page.locator("#navLoginBtn").click()
         expect(page.locator("#login-tab")).to_be_visible(timeout=5000)
@@ -146,6 +155,7 @@ class TestExploreAuthModal:
         page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
         page.evaluate("window.localStorage.removeItem('auth_token')")
         page.reload(wait_until="domcontentloaded", timeout=30000)
+        _wait_for_alpine(page)
 
         page.locator("#navLoginBtn").click()
         expect(page.locator("#register-tab")).to_be_visible(timeout=5000)
@@ -155,6 +165,7 @@ class TestExploreAuthModal:
         page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
         page.evaluate("window.localStorage.removeItem('auth_token')")
         page.reload(wait_until="domcontentloaded", timeout=30000)
+        _wait_for_alpine(page)
 
         page.locator("#navLoginBtn").click()
         expect(page.locator("#loginEmail")).to_be_visible(timeout=5000)
@@ -165,13 +176,12 @@ class TestExploreAuthModal:
         page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
         page.evaluate("window.localStorage.removeItem('auth_token')")
         page.reload(wait_until="domcontentloaded", timeout=30000)
+        _wait_for_alpine(page)
 
         page.locator("#navLoginBtn").click()
         page.locator("#register-tab").click()
 
-        # Register pane should become active
-        register_pane = page.locator("#registerTabPane")
-        expect(register_pane).to_have_class(re.compile("active"), timeout=5000)
+        # Register form fields should become visible
         expect(page.locator("#registerEmail")).to_be_visible(timeout=5000)
         expect(page.locator("#registerPassword")).to_be_visible(timeout=5000)
 
@@ -180,6 +190,7 @@ class TestExploreAuthModal:
         page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
         page.evaluate("window.localStorage.removeItem('auth_token')")
         page.reload(wait_until="domcontentloaded", timeout=30000)
+        _wait_for_alpine(page)
 
         page.locator("#navLoginBtn").click()
         page.locator("#loginEmail").fill("wrong@example.com")
@@ -194,6 +205,7 @@ class TestExploreAuthModal:
         page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
         page.evaluate("window.localStorage.removeItem('auth_token')")
         page.reload(wait_until="domcontentloaded", timeout=30000)
+        _wait_for_alpine(page)
 
         page.locator("#navLoginBtn").click()
         page.locator("#loginEmail").fill("test@example.com")
@@ -202,10 +214,10 @@ class TestExploreAuthModal:
 
         # Modal should close
         modal = page.locator("#authModal")
-        expect(modal).not_to_have_class(re.compile("show"), timeout=8000)
+        expect(modal).not_to_be_visible(timeout=8000)
 
         # User dropdown should appear
-        expect(page.locator("#userDropdown")).not_to_have_class(re.compile(r"\bd-none\b"), timeout=8000)
+        expect(page.locator("#userDropdown")).not_to_have_class(re.compile(r"\bhidden\b"), timeout=8000)
 
 
 @pytest.mark.e2e

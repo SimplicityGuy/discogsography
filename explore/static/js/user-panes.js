@@ -51,7 +51,7 @@ class UserPanes {
 
         // Stats banner
         const statsBar = document.createElement('p');
-        statsBar.className = 'text-muted small mb-2';
+        statsBar.className = 'text-text-secondary text-sm mb-2';
         statsBar.textContent = `Showing ${this._collectionOffset + 1}–${this._collectionOffset + data.releases.length} of ${data.total.toLocaleString()} releases`;
         container.appendChild(statsBar);
 
@@ -146,7 +146,7 @@ class UserPanes {
         }
 
         const statsBar = document.createElement('p');
-        statsBar.className = 'text-muted small mb-2';
+        statsBar.className = 'text-text-secondary text-sm mb-2';
         statsBar.textContent = `Showing ${this._wantlistOffset + 1}–${this._wantlistOffset + data.releases.length} of ${data.total.toLocaleString()} releases`;
         container.appendChild(statsBar);
 
@@ -234,7 +234,7 @@ class UserPanes {
         }
 
         const intro = document.createElement('p');
-        intro.className = 'text-muted small mb-2';
+        intro.className = 'text-text-secondary text-sm mb-2';
         intro.textContent = `${data.recommendations.length} releases you might like`;
         container.appendChild(intro);
 
@@ -320,8 +320,7 @@ class UserPanes {
         window.open(data.authorize_url, '_blank', 'noopener,noreferrer');
 
         // Show verifier modal
-        const modal = new bootstrap.Modal(document.getElementById('discogsModal'));
-        modal.show();
+        Alpine.store('modals').discogsOpen = true;
     }
 
     async submitDiscogsVerifier() {
@@ -330,11 +329,11 @@ class UserPanes {
         const errorEl = document.getElementById('discogsVerifierError');
 
         if (!verifier) {
-            if (errorEl) { errorEl.textContent = 'Please enter the verification code.'; errorEl.classList.remove('d-none'); }
+            if (errorEl) { errorEl.textContent = 'Please enter the verification code.'; errorEl.classList.remove('hidden'); }
             return;
         }
         if (!this._discogsOAuthState) {
-            if (errorEl) { errorEl.textContent = 'Session expired. Please start again.'; errorEl.classList.remove('d-none'); }
+            if (errorEl) { errorEl.textContent = 'Session expired. Please start again.'; errorEl.classList.remove('hidden'); }
             return;
         }
 
@@ -345,7 +344,7 @@ class UserPanes {
         if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Connect'; }
 
         if (!result || !result.connected) {
-            if (errorEl) { errorEl.textContent = 'Verification failed. Please check the code and try again.'; errorEl.classList.remove('d-none'); }
+            if (errorEl) { errorEl.textContent = 'Verification failed. Please check the code and try again.'; errorEl.classList.remove('hidden'); }
             return;
         }
 
@@ -354,10 +353,10 @@ class UserPanes {
         window.authManager.setDiscogsStatus(status);
 
         // Close modal and notify
-        bootstrap.Modal.getInstance(document.getElementById('discogsModal'))?.hide();
+        Alpine.store('modals').discogsOpen = false;
         this._discogsOAuthState = null;
         document.getElementById('discogsVerifierInput').value = '';
-        if (errorEl) errorEl.classList.add('d-none');
+        if (errorEl) errorEl.classList.add('hidden');
 
         window.authManager.notify();
     }
@@ -411,17 +410,17 @@ class UserPanes {
         div.className = 'pane-pagination';
 
         const prevBtn = document.createElement('button');
-        prevBtn.className = 'btn btn-sm btn-outline-secondary';
+        prevBtn.className = 'btn-outline-secondary btn-sm';
         prevBtn.textContent = 'Previous';
         prevBtn.disabled = offset === 0;
         prevBtn.addEventListener('click', onPrev);
 
         const pageInfo = document.createElement('span');
-        pageInfo.className = 'text-muted small';
+        pageInfo.className = 'text-text-secondary text-sm';
         pageInfo.textContent = `Page ${page} of ${totalPages}`;
 
         const nextBtn = document.createElement('button');
-        nextBtn.className = 'btn btn-sm btn-outline-secondary';
+        nextBtn.className = 'btn-outline-secondary btn-sm';
         nextBtn.textContent = 'Next';
         nextBtn.disabled = !hasMore;
         nextBtn.addEventListener('click', onNext);

@@ -5,6 +5,28 @@ ARG PYTHON_VERSION=3.13
 ARG UID=1000
 ARG GID=1000
 
+# ── CSS build stage ────────────────────────────────────────────────────────────
+# Builds Tailwind CSS at build time so the final image serves a minified
+# stylesheet.  Node is only needed at build time.
+FROM node:24-slim AS css-builder
+
+WORKDIR /build
+
+# Copy only the files the CLI needs to generate the CSS
+COPY explore/tailwind.config.js ./
+COPY explore/tailwind.input.css ./
+COPY explore/static/index.html ./static/index.html
+COPY explore/static/js/ ./static/js/
+
+# Install Tailwind + the forms plugin, then emit a minified stylesheet
+RUN npm install tailwindcss@^3 @tailwindcss/forms@^0.5 --save-dev && \
+    ./node_modules/.bin/tailwindcss \
+        --config tailwind.config.js \
+        --input tailwind.input.css \
+        --output tailwind.css \
+        --minify
+
+# ── Python build stage ─────────────────────────────────────────────────────────
 # nosemgrep: dockerfile.security.missing-user.missing-user
 FROM python:${PYTHON_VERSION}-slim AS builder
 
@@ -95,6 +117,9 @@ WORKDIR /app
 COPY --from=builder --chown=discogsography:discogsography /app/.venv /app/.venv
 COPY --from=builder --chown=discogsography:discogsography /app/common /app/common
 COPY --from=builder --chown=discogsography:discogsography /app/explore /app/explore
+
+# Copy the pre-built Tailwind CSS
+COPY --from=css-builder --chown=discogsography:discogsography /build/tailwind.css /app/explore/static/tailwind.css
 
 # UV not needed at runtime
 

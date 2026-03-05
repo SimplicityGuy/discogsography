@@ -19,25 +19,13 @@
     --node-load-more-text: #a8c4e8;
 }
 
-body {
-    background-color: var(--bg-primary);
-    color: var(--text-primary);
-    overflow: hidden;
-    height: 100vh;
-}
-
-/* Navbar */
-.navbar {
-    z-index: 1000;
-}
-
 /* Search container */
 .search-container {
     position: relative;
     width: 400px;
 }
 
-.search-container .input-group {
+.search-container .flex {
     width: 100%;
 }
 
@@ -411,82 +399,6 @@ body {
     .info-panel.open {
         width: 280px;
     }
-}
-
-/* ============================================================
-   Auth modal
-   ============================================================ */
-#authModal .modal-content {
-    background-color: var(--bg-card, #1e2139);
-    border: 1px solid var(--border-color, #2d3051);
-    color: var(--text-primary, #e4e6eb);
-}
-
-#authModal .modal-header,
-#authModal .modal-footer {
-    border-color: var(--border-color, #2d3051);
-}
-
-#authModal .nav-tabs {
-    border-color: var(--border-color, #2d3051);
-}
-
-#authModal .nav-tabs .nav-link {
-    color: var(--text-secondary, #b0b3b8);
-}
-
-#authModal .nav-tabs .nav-link.active {
-    background-color: var(--bg-secondary, #151934);
-    border-color: var(--border-color, #2d3051) var(--border-color, #2d3051) var(--bg-secondary, #151934);
-    color: var(--text-primary, #e4e6eb);
-}
-
-#authModal .form-control {
-    background-color: var(--bg-secondary, #151934);
-    border-color: var(--border-color, #2d3051);
-    color: var(--text-primary, #e4e6eb);
-}
-
-#authModal .form-control:focus {
-    background-color: var(--bg-secondary, #151934);
-    border-color: var(--accent-blue, #1877f2);
-    color: var(--text-primary, #e4e6eb);
-    box-shadow: 0 0 0 0.2rem rgba(24, 119, 242, 0.25);
-}
-
-.auth-error {
-    font-size: 0.85rem;
-    min-height: 1.2rem;
-}
-
-/* ============================================================
-   Discogs OAuth verifier modal
-   ============================================================ */
-#discogsModal .modal-content {
-    background-color: var(--bg-card, #1e2139);
-    border: 1px solid var(--border-color, #2d3051);
-    color: var(--text-primary, #e4e6eb);
-}
-
-#discogsModal .modal-header,
-#discogsModal .modal-footer {
-    border-color: var(--border-color, #2d3051);
-}
-
-#discogsModal .form-control {
-    background-color: var(--bg-secondary, #151934);
-    border-color: var(--border-color, #2d3051);
-    color: var(--text-primary, #e4e6eb);
-    font-size: 1.1rem;
-    letter-spacing: 0.1em;
-    text-align: center;
-}
-
-#discogsModal .form-control:focus {
-    background-color: var(--bg-secondary, #151934);
-    border-color: #ffc107;
-    color: var(--text-primary, #e4e6eb);
-    box-shadow: 0 0 0 0.2rem rgba(255, 193, 7, 0.25);
 }
 
 /* ============================================================
