@@ -360,7 +360,8 @@ async def count_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: s
     OPTIONAL MATCH (a)-[:MEMBER_OF]->(grp:Artist)
     WITH a, alias_count, count(DISTINCT grp) AS group_count
     OPTIONAL MATCH (m:Artist)-[:MEMBER_OF]->(a)
-    RETURN alias_count + group_count + count(DISTINCT m) AS total
+    WITH alias_count, group_count, count(DISTINCT m) AS member_count
+    RETURN alias_count + group_count + member_count AS total
     """
     return await _run_count(driver, cypher, name=artist_name)
 
