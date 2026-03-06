@@ -212,7 +212,7 @@ class Dashboard {
             const q = graphinatorMap[type] || tableInatorMap[type];
             if (q) {
                 const processing = q.message_rate > 0;
-                el.textContent = processing ? 'Processing' : 'Idle';
+                el.textContent = processing ? `Processing (${q.messages.toLocaleString()})` : 'Idle';
                 el.className = processing ? 'text-blue-400' : 'text-emerald-400';
             } else {
                 el.textContent = '—';
