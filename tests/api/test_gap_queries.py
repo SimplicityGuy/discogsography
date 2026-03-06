@@ -225,6 +225,21 @@ class TestGetArtistGaps:
         assert results == []
         assert total == 0
 
+    @pytest.mark.asyncio
+    async def test_format_filter(self) -> None:
+        from api.queries.gap_queries import get_artist_gaps
+
+        releases = [{"id": "r2", "title": "Kid A", "year": 2000, "formats": ["CD"]}]
+        driver = _make_driver_with_results(
+            [
+                _MockResult(records=releases),
+                _MockResult(single={"total": 1}),
+            ]
+        )
+        results, total = await get_artist_gaps(driver, "user-1", "artist-1", formats=["CD"])
+        assert results == releases
+        assert total == 1
+
 
 # ---------------------------------------------------------------------------
 # get_artist_gap_summary / get_artist_metadata
@@ -311,6 +326,21 @@ class TestGetMasterGaps:
         results, total = await get_master_gaps(driver, "user-1", "master-1")
         assert results == []
         assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_format_filter(self) -> None:
+        from api.queries.gap_queries import get_master_gaps
+
+        releases = [{"id": "r3", "title": "OK Computer (JP)", "year": 1997, "formats": ["Vinyl"]}]
+        driver = _make_driver_with_results(
+            [
+                _MockResult(records=releases),
+                _MockResult(single={"total": 1}),
+            ]
+        )
+        results, total = await get_master_gaps(driver, "user-1", "master-1", formats=["Vinyl"])
+        assert results == releases
+        assert total == 1
 
 
 # ---------------------------------------------------------------------------

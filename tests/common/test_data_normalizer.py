@@ -466,3 +466,7 @@ class TestExtractFormatNames:
     def test_skips_items_without_name(self) -> None:
         data = [{"@qty": "1"}, {"@name": "Vinyl"}]
         assert extract_format_names(data) == ["Vinyl"]
+
+    def test_non_list_non_dict_returns_empty(self) -> None:
+        assert extract_format_names("Vinyl") == []
+        assert extract_format_names(42) == []

@@ -1,5 +1,6 @@
 """Tests for collection gap analysis endpoints (api/routers/collection.py)."""
 
+import time
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -212,3 +213,37 @@ class TestSummaryCache:
             response = test_client.get("/api/collection/gaps/label/label-1", headers=auth_headers)
         assert response.status_code == 200
         mock_summary.assert_not_called()
+
+    def test_get_cached_summary_miss(self) -> None:
+        from api.routers.collection import _get_cached_summary, _summary_cache
+
+        _summary_cache.clear()
+        assert _get_cached_summary("user-1", "label", "L1") is None
+
+    def test_get_cached_summary_hit(self) -> None:
+        from api.routers.collection import _get_cached_summary, _set_cached_summary, _summary_cache
+
+        _summary_cache.clear()
+        _set_cached_summary("user-1", "label", "L1", _MOCK_SUMMARY)
+        result = _get_cached_summary("user-1", "label", "L1")
+        assert result == _MOCK_SUMMARY
+        _summary_cache.clear()
+
+    def test_get_cached_summary_ttl_expired(self) -> None:
+        from api.routers.collection import _SUMMARY_CACHE_TTL, _get_cached_summary, _summary_cache
+
+        _summary_cache.clear()
+        key = ("user-1", "label", "L1")
+        _summary_cache[key] = (time.monotonic() - _SUMMARY_CACHE_TTL - 1, _MOCK_SUMMARY)
+        assert _get_cached_summary("user-1", "label", "L1") is None
+        assert key not in _summary_cache
+        _summary_cache.clear()
+
+    def test_set_cached_summary_eviction(self) -> None:
+        from api.routers.collection import _SUMMARY_CACHE_MAX, _set_cached_summary, _summary_cache
+
+        _summary_cache.clear()
+        for i in range(_SUMMARY_CACHE_MAX + 1):
+            _set_cached_summary(f"user-{i}", "label", "L1", {"total": i})
+        assert len(_summary_cache) == _SUMMARY_CACHE_MAX
+        _summary_cache.clear()
