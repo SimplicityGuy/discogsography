@@ -53,6 +53,10 @@ RABBITMQ_MANAGEMENT_URL=http://rabbitmq:15672
 - `GET /` - Dashboard web interface
 - `GET /health` - Health check endpoint (port 8003)
 - `GET /api/metrics` - Current system metrics
+- `GET /api/services` - Service-specific metrics
+- `GET /api/queues` - Queue metrics
+- `GET /api/databases` - Database metrics
+- `GET /metrics` - Prometheus metrics endpoint
 - `WS /ws` - WebSocket connection for real-time updates
 
 ## WebSocket Updates

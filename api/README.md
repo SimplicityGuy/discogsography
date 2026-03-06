@@ -173,6 +173,17 @@ Personalized endpoints that return data from the user's synced Discogs collectio
 | GET    | `/api/user/collection/stats` | Yes           | Collection statistics summary            |
 | GET    | `/api/user/status`           | Optional      | Check collection/wantlist status for IDs |
 
+### Collection Gap Analysis
+
+"Complete My Collection" endpoints that find releases the user does not own.
+
+| Method | Path                                     | Auth Required | Description                               |
+| ------ | ---------------------------------------- | ------------- | ----------------------------------------- |
+| GET    | `/api/collection/formats`                | Yes           | Distinct format names in user's collection |
+| GET    | `/api/collection/gaps/label/{label_id}`  | Yes           | Missing releases on a label               |
+| GET    | `/api/collection/gaps/artist/{artist_id}`| Yes           | Missing releases by an artist             |
+| GET    | `/api/collection/gaps/master/{master_id}`| Yes           | Missing pressings of a master release     |
+
 ### Snapshots
 
 Save and restore graph exploration states as shareable URLs.

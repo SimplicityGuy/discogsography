@@ -779,29 +779,91 @@ CREATE INDEX IF NOT EXISTS idx_releases_labels ON releases USING GIN ((data->'la
 
 ```sql
 CREATE TABLE IF NOT EXISTS users (
-    id VARCHAR PRIMARY KEY,
-    username VARCHAR NOT NULL,
-    ...
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    email           VARCHAR(255) UNIQUE NOT NULL,
+    hashed_password VARCHAR(255) NOT NULL,
+    is_active       BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+    id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id           UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    provider          VARCHAR(50) NOT NULL,
+    access_token      TEXT NOT NULL,
+    access_secret     TEXT NOT NULL,
+    provider_username VARCHAR(255),
+    provider_user_id  VARCHAR(255),
+    created_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at        TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, provider)
+);
+
+CREATE TABLE IF NOT EXISTS app_config (
+    key        VARCHAR(255) PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS user_collections (
-    user_id VARCHAR NOT NULL,
-    release_id VARCHAR NOT NULL,
-    rating INTEGER,
-    folder_id INTEGER,
-    date_added TIMESTAMPTZ,
-    synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (user_id, release_id)
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id      UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    release_id   BIGINT NOT NULL,
+    instance_id  BIGINT,
+    folder_id    INTEGER,
+    title        VARCHAR(500),
+    artist       VARCHAR(500),
+    year         INTEGER,
+    formats      JSONB,
+    label        VARCHAR(255),
+    condition    VARCHAR(100),
+    rating       SMALLINT,
+    notes        TEXT,
+    date_added   TIMESTAMP WITH TIME ZONE,
+    metadata     JSONB,
+    created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, release_id, instance_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_user_collections_user_id ON user_collections (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_collections_release_id ON user_collections (release_id);
+
 CREATE TABLE IF NOT EXISTS user_wantlists (
-    user_id VARCHAR NOT NULL,
-    release_id VARCHAR NOT NULL,
-    rating INTEGER,
-    date_added TIMESTAMPTZ,
-    synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    PRIMARY KEY (user_id, release_id)
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    release_id BIGINT NOT NULL,
+    title      VARCHAR(500),
+    artist     VARCHAR(500),
+    year       INTEGER,
+    format     VARCHAR(255),
+    rating     SMALLINT,
+    notes      TEXT,
+    date_added TIMESTAMP WITH TIME ZONE,
+    metadata   JSONB,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, release_id)
 );
+
+CREATE INDEX IF NOT EXISTS idx_user_wantlists_user_id ON user_wantlists (user_id);
+CREATE INDEX IF NOT EXISTS idx_user_wantlists_release_id ON user_wantlists (release_id);
+
+CREATE TABLE IF NOT EXISTS sync_history (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    sync_type     VARCHAR(50) NOT NULL,
+    status        VARCHAR(50) NOT NULL DEFAULT 'pending',
+    items_synced  INTEGER,
+    pages_fetched INTEGER,
+    error_message TEXT,
+    started_at    TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    completed_at  TIMESTAMP WITH TIME ZONE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sync_history_user_started ON sync_history (user_id, started_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sync_history_running ON sync_history (user_id) WHERE status = 'running';
 ```
 
 ### Common Queries

@@ -15,6 +15,8 @@ Full-text indexes enable efficient text search queries using `CONTAINS` and case
 | `artist_name_fulltext`   | Artist  | name       | Search endpoint artist queries  |
 | `release_title_fulltext` | Release | title      | Search endpoint release queries |
 | `label_name_fulltext`    | Label   | name       | Search endpoint label queries   |
+| `genre_name_fulltext`    | Genre   | name       | Search endpoint genre queries   |
+| `style_name_fulltext`    | Style   | name       | Search endpoint style queries   |
 
 **Example Query**:
 
@@ -152,10 +154,9 @@ All schema objects are defined in `schema-init/neo4j_schema.py` in the `SCHEMA_S
 ### Potential Relationship Indexes
 
 - `:BY` relationship - if release-to-artist traversal becomes a bottleneck
-- `:HAS_GENRE` relationship - if genre-based queries need optimization
+- `:IS` relationship - if genre/style-based queries need optimization
 
 ## Related Documentation
 
-- [Pagination Strategy](./pagination-strategy.md)
-- [Cache Strategy](./cache-strategy.md)
-- [Neo4j Performance Tuning](https://neo4j.com/docs/operations-manual/current/performance/)
+- [Database Schema](./database-schema.md)
+- [Performance Guide](./performance-guide.md)

@@ -10,6 +10,30 @@ Last Updated: March 2026
 
 ## 🆕 Latest Improvements (March 2026)
 
+### 🔍 Collection Gap Analysis — "Complete My Collection"
+
+**Overview**: Added gap analysis endpoints that let users discover which releases they are missing from a label, artist, or master.
+
+#### Features
+
+- **Three gap analysis endpoints**: `/api/collection/gaps/label/{id}`, `/api/collection/gaps/artist/{id}`, `/api/collection/gaps/master/{id}`
+- **Format filtering**: `/api/collection/formats` returns distinct formats in the user's collection; gap results can be filtered by format
+- **Wantlist awareness**: Gap results indicate which missing releases are already on the user's wantlist; optional `exclude_wantlist` filter
+- **Summary counts**: Each response includes total/owned/missing counts for the entity
+- **Frontend integration**: "What am I missing?" button on artist and label nodes in the Explore info panel opens a dedicated Missing pane with paginated results, format filters, and wantlist toggle
+
+#### Changes
+
+- `api/routers/collection.py` — New router with gap analysis and format endpoints
+- `api/queries/gap_queries.py` — Cypher queries for label, artist, and master gaps
+- `explore/static/js/user-panes.js` — Gap analysis pane rendering (table, filters, pagination)
+- `explore/static/js/app.js` — Info panel "What am I missing?" button wiring
+- `explore/static/js/api-client.js` — `getCollectionGaps()` and `getCollectionFormats()` methods
+- `explore/static/index.html` — Gaps pane and nav tab
+- `explore/static/css/styles.css` — Gap analysis styles
+
+---
+
 ### 🗑️ Curator Service Removal
 
 **Overview**: Removed the Curator service entirely — it was dead code after sync logic was migrated to `api/routers/sync.py` during the API consolidation.

@@ -87,34 +87,57 @@ See the [Configuration Guide](../docs/configuration.md#batch-processing-configur
 
 ### Node Types
 
-1. **Label** - Record labels
-
-   - Properties: id, name, profile, urls, hash
-   - Relationships: RELEASED (to releases)
-
 1. **Artist** - Musical artists
 
-   - Properties: id, name, real_name, profile, urls, hash
-   - Relationships: MEMBER_OF, COLLABORATED_WITH, PERFORMED_ON
+   - Properties: id, name, resource_url, releases_url, sha256
+   - Relationships: MEMBER_OF (to band), ALIAS_OF (to primary)
+
+1. **Label** - Record labels
+
+   - Properties: id, name, sha256
+   - Relationships: SUBLABEL_OF (to parent label)
 
 1. **Release** - Album/single releases
 
-   - Properties: id, title, year, country, genres, styles, hash
-   - Relationships: RELEASED_BY, PERFORMED_BY, VARIANT_OF
+   - Properties: id, title, year, formats, sha256
+   - Relationships: BY (to Artist), ON (to Label), DERIVED_FROM (to Master), IS (to Genre/Style)
 
 1. **Master** - Master recordings
 
-   - Properties: id, title, year, genres, styles, hash
-   - Relationships: HAS_RELEASE, MAIN_RELEASE
+   - Properties: id, title, year, sha256
+   - Relationships: BY (from Release via DERIVED_FROM)
+
+1. **Genre** - Musical genres
+
+   - Properties: name
+
+1. **Style** - Musical styles (sub-genres)
+
+   - Properties: name
+   - Relationships: PART_OF (to Genre)
+
+1. **User** - Authenticated Discogs users (created by API syncer, not graphinator)
+
+   - Properties: id
+   - Relationships: COLLECTED (to Release), WANTS (to Release)
 
 ### Relationship Types
 
-- `RELEASED` - Label released a recording
-- `PERFORMED_ON` - Artist performed on a release
-- `MEMBER_OF` - Artist is member of a group
-- `COLLABORATED_WITH` - Artists collaborated
-- `VARIANT_OF` - Release is variant of master
-- `HAS_RELEASE` - Master has multiple releases
+#### Created by Graphinator
+
+- `BY` - Release performed by an artist
+- `ON` - Release on a label
+- `DERIVED_FROM` - Release is a pressing of a master recording
+- `IS` - Release classified as a genre or style
+- `MEMBER_OF` - Artist is member of a group/band
+- `ALIAS_OF` - Artist is an alias of another artist
+- `SUBLABEL_OF` - Label is a sublabel of a parent label
+- `PART_OF` - Style belongs to a genre
+
+#### Created by API Syncer
+
+- `COLLECTED` - User has this release in their collection
+- `WANTS` - User wants this release
 
 ## Processing Logic
 
@@ -177,19 +200,18 @@ docker-compose up graphinator
 Example Cypher queries for exploring the data:
 
 ```cypher
-// Find all releases by a label
-MATCH (l:Label {name: "Blue Note"})-[:RELEASED]->(r:Release)
+// Find all releases on a label
+MATCH (r:Release)-[:ON]->(l:Label {name: "Blue Note"})
 RETURN r.title, r.year
 ORDER BY r.year
 
-// Find artist collaborations
-MATCH (a1:Artist)-[:COLLABORATED_WITH]->(a2:Artist)
-RETURN a1.name, a2.name
-LIMIT 25
+// Find band members
+MATCH (member:Artist)-[:MEMBER_OF]->(band:Artist {name: "The Beatles"})
+RETURN member.name
 
-// Find all variants of a master recording
-MATCH (m:Master {title: "Kind of Blue"})-[:HAS_RELEASE]->(r:Release)
-RETURN r.title, r.country, r.year
+// Find all pressings of a master recording
+MATCH (r:Release)-[:DERIVED_FROM]->(m:Master {title: "Kind of Blue"})
+RETURN r.title, r.year, r.formats
 ```
 
 ## Performance Optimization
