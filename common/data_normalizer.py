@@ -299,6 +299,41 @@ def normalize_master(master_data: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def extract_format_names(formats_data: Any) -> list[str]:
+    """Extract distinct format names from raw Discogs formats data.
+
+    Handles the XML-to-dict structure where formats can be:
+    - A dict with a 'format' key containing a single format dict or a list
+    - A single format dict with '@name'
+    - A list of format dicts with '@name'
+
+    Returns a deduplicated list of format name strings (e.g. ["Vinyl", "CD"]).
+    """
+    if not formats_data:
+        return []
+
+    # Unwrap the outer container if present
+    items = formats_data
+    if isinstance(items, dict) and "format" in items:
+        items = items["format"]
+
+    # Ensure we have a list
+    if isinstance(items, dict):
+        items = [items]
+
+    if not isinstance(items, list):
+        return []
+
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        name = item.get("@name") or item.get("name") if isinstance(item, dict) else None
+        if name and name not in seen:
+            seen.add(name)
+            result.append(name)
+    return result
+
+
 def _parse_year_int(value: Any) -> int | None:
     """Parse a Discogs year value into an integer.
 

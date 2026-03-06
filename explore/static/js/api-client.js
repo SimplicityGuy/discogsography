@@ -234,6 +234,34 @@ class ApiClient {
         return response.json();
     }
 
+    // --- Collection gap analysis ---
+
+    async getCollectionFormats(token) {
+        if (!token) return null;
+        const response = await fetch('/api/collection/formats', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getCollectionGaps(token, entityType, entityId, options = {}) {
+        if (!token) return null;
+        const params = new URLSearchParams({
+            limit: String(options.limit || 50),
+            offset: String(options.offset || 0),
+        });
+        if (options.excludeWantlist) params.set('exclude_wantlist', 'true');
+        if (options.formats?.length) {
+            options.formats.forEach(f => params.append('formats', f));
+        }
+        const response = await fetch(`/api/collection/gaps/${entityType}/${encodeURIComponent(entityId)}?${params}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
     // --- Sync ---
 
     async triggerSync(token) {

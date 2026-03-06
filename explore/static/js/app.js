@@ -53,6 +53,10 @@ class ExploreApp {
         ['navCollection', 'navWantlist', 'navRecommendations'].forEach(id => {
             document.getElementById(id)?.classList.toggle('hidden', !loggedIn);
         });
+        // Hide gaps nav when logged out (shown dynamically by gap analysis)
+        if (!loggedIn) {
+            document.getElementById('navGaps')?.classList.add('hidden');
+        }
 
         if (loggedIn && user) {
             const emailEl = document.getElementById('userEmailDisplay');
@@ -585,6 +589,9 @@ class ExploreApp {
             if (details.genres?.length) nodes.push(this._detailTags('Genres', details.genres));
             if (details.styles?.length) nodes.push(this._detailTags('Styles', details.styles));
             if (details.groups?.length) nodes.push(this._detailTags('Groups', details.groups));
+            if (window.authManager.isLoggedIn()) {
+                nodes.push(this._gapAnalysisButton('artist', nodeId, details.name));
+            }
         } else if (type === 'release') {
             if (details.year) nodes.push(this._detailStat('Year', details.year));
             if (details.artists?.length) nodes.push(this._detailTags('Artists', details.artists));
@@ -593,6 +600,9 @@ class ExploreApp {
             if (details.styles?.length) nodes.push(this._detailTags('Styles', details.styles));
         } else if (type === 'label') {
             nodes.push(this._detailStat('Releases', details.release_count || 0));
+            if (window.authManager.isLoggedIn()) {
+                nodes.push(this._gapAnalysisButton('label', nodeId, details.name));
+            }
         } else if (type === 'genre' || type === 'style') {
             nodes.push(this._detailStat('Artists', details.artist_count || 0));
         }
@@ -618,6 +628,20 @@ class ExploreApp {
         valueEl.textContent = label === 'Year' ? value : (typeof value === 'number' ? value.toLocaleString() : value);
         div.append(labelEl, valueEl);
         return div;
+    }
+
+    _gapAnalysisButton(entityType, entityId, entityName) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-outline-warning btn-sm w-full mt-3 gap-analysis-btn';
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-search-minus mr-1';
+        btn.append(icon, 'What am I missing?');
+        btn.addEventListener('click', () => {
+            const panel = document.getElementById('infoPanel');
+            if (panel) panel.classList.remove('open');
+            window.userPanes.loadGapAnalysis(entityType, entityId, true);
+        });
+        return btn;
     }
 
     _detailTags(label, tags) {

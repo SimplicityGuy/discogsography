@@ -21,7 +21,7 @@ from common import (
     HealthServer,
     setup_logging,
 )
-from common.data_normalizer import _parse_year_int
+from common.data_normalizer import _parse_year_int, extract_format_names
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from orjson import loads
 
@@ -776,12 +776,16 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
+    year = _parse_year_int(record.get("year") or record.get("released"))
+    formats = extract_format_names(record.get("formats"))
     tx.run(
         "MERGE (r:Release {id: $id}) "
-        "ON CREATE SET r.title = $title, r.sha256 = $sha256 "
-        "ON MATCH SET r.title = $title, r.sha256 = $sha256",
+        "ON CREATE SET r.title = $title, r.year = $year, r.formats = $formats, r.sha256 = $sha256 "
+        "ON MATCH SET r.title = $title, r.year = $year, r.formats = $formats, r.sha256 = $sha256",
         id=record["id"],
         title=record.get("title", "Unknown Release"),
+        year=year,
+        formats=formats,
         sha256=record["sha256"],
     )
 
