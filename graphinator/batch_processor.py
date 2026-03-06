@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 import structlog
 from common import normalize_record
+from common.data_normalizer import extract_format_names
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
 logger = structlog.get_logger(__name__)
@@ -609,6 +610,8 @@ class Neo4jBatchProcessor:
             release_id = msg.data.get("id")
             release_hash = msg.data.get("sha256")
             if release_id and existing_hashes.get(release_id) != release_hash:
+                # Enrich with extracted format names for graph storage
+                msg.data["format_names"] = extract_format_names(msg.data.get("formats"))
                 releases_to_process.append(msg.data)
 
         if not releases_to_process:
@@ -625,6 +628,7 @@ class Neo4jBatchProcessor:
                     MERGE (r:Release {id: release.id})
                     SET r.title = release.title,
                         r.year = release.year,
+                        r.formats = release.format_names,
                         r.sha256 = release.sha256
                     """,
                     releases=releases_to_process,

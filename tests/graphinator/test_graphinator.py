@@ -1693,7 +1693,7 @@ class TestArtistTransactionEdgeCases:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
     async def test_artist_with_members_without_ids(self, mock_neo4j_driver: MagicMock) -> None:
-        """Test handling artist members without IDs."""
+        """Test that members without IDs are filtered out by normalization."""
         from graphinator.graphinator import on_artist_message
 
         artist_data = {
@@ -1718,20 +1718,18 @@ class TestArtistTransactionEdgeCases:
 
         mock_session.execute_write.side_effect = execute_tx
 
-        with (
-            patch("graphinator.graphinator.graph", mock_neo4j_driver),
-            patch("graphinator.graphinator.logger") as mock_logger,
-        ):
+        with patch("graphinator.graphinator.graph", mock_neo4j_driver):
             await on_artist_message(mock_message)
 
-        # Should log warning about member without ID
-        assert any("Skipping member without ID" in str(call) for call in mock_logger.warning.call_args_list)
+        # Normalization filters out the member without ID; only M1 is processed
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert any("MEMBER_OF" in c for c in calls)
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
     async def test_artist_with_groups_without_ids(self, mock_neo4j_driver: MagicMock) -> None:
-        """Test handling artist groups without IDs."""
+        """Test that groups without IDs are filtered out by normalization."""
         from graphinator.graphinator import on_artist_message
 
         artist_data = {
@@ -1756,19 +1754,17 @@ class TestArtistTransactionEdgeCases:
 
         mock_session.execute_write.side_effect = execute_tx
 
-        with (
-            patch("graphinator.graphinator.graph", mock_neo4j_driver),
-            patch("graphinator.graphinator.logger") as mock_logger,
-        ):
+        with patch("graphinator.graphinator.graph", mock_neo4j_driver):
             await on_artist_message(mock_message)
 
-        # Should log warning about group without ID
-        assert any("Skipping group without ID" in str(call) for call in mock_logger.warning.call_args_list)
+        # Normalization filters out the group without ID; only G1 is processed
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert any("MEMBER_OF" in c for c in calls)
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
     async def test_artist_with_aliases_without_ids(self, mock_neo4j_driver: MagicMock) -> None:
-        """Test handling artist aliases without IDs."""
+        """Test that aliases without IDs are filtered out by normalization."""
         from graphinator.graphinator import on_artist_message
 
         artist_data = {
@@ -1793,13 +1789,12 @@ class TestArtistTransactionEdgeCases:
 
         mock_session.execute_write.side_effect = execute_tx
 
-        with (
-            patch("graphinator.graphinator.graph", mock_neo4j_driver),
-            patch("graphinator.graphinator.logger") as mock_logger,
-        ):
+        with patch("graphinator.graphinator.graph", mock_neo4j_driver):
             await on_artist_message(mock_message)
 
-        assert any("Skipping alias without ID" in str(call) for call in mock_logger.warning.call_args_list)
+        # Normalization filters out the alias without ID; only AL1 is processed
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert any("ALIAS_OF" in c for c in calls)
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
@@ -1846,7 +1841,7 @@ class TestLabelTransactionEdgeCases:
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
     async def test_label_with_parent_without_id(self, mock_neo4j_driver: MagicMock) -> None:
-        """Test handling label with parent that has no ID."""
+        """Test that parent label without ID is filtered out by normalization."""
         from graphinator.graphinator import on_label_message
 
         label_data = {
@@ -1871,19 +1866,17 @@ class TestLabelTransactionEdgeCases:
 
         mock_session.execute_write.side_effect = execute_tx
 
-        with (
-            patch("graphinator.graphinator.graph", mock_neo4j_driver),
-            patch("graphinator.graphinator.logger") as mock_logger,
-        ):
+        with patch("graphinator.graphinator.graph", mock_neo4j_driver):
             await on_label_message(mock_message)
 
-        # Should log warning about parent without ID
-        assert any("Skipping parent label without ID" in str(call) for call in mock_logger.warning.call_args_list)
+        # Normalization filters out parentLabel without ID; no SUBLABEL_OF created
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert not any("SUBLABEL_OF" in c for c in calls)
 
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", False)
     async def test_label_with_sublabels_without_ids(self, mock_neo4j_driver: MagicMock) -> None:
-        """Test handling sublabels without IDs."""
+        """Test that sublabels without IDs are filtered out by normalization."""
         from graphinator.graphinator import on_label_message
 
         label_data = {
@@ -1908,13 +1901,12 @@ class TestLabelTransactionEdgeCases:
 
         mock_session.execute_write.side_effect = execute_tx
 
-        with (
-            patch("graphinator.graphinator.graph", mock_neo4j_driver),
-            patch("graphinator.graphinator.logger") as mock_logger,
-        ):
+        with patch("graphinator.graphinator.graph", mock_neo4j_driver):
             await on_label_message(mock_message)
 
-        assert any("Skipping sublabel without ID" in str(call) for call in mock_logger.warning.call_args_list)
+        # Normalization filters out sublabel without ID; only SL1 is processed
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert any("SUBLABEL_OF" in c for c in calls)
 
 
 class TestReleaseMessageErrorHandling:
@@ -2191,10 +2183,10 @@ class TestRecoverConsumersEdgeCases:
 
 
 class TestProcessArtistEdgeCases:
-    """Test process_artist edge cases for string members/groups/aliases and missing IDs."""
+    """Test process_artist edge cases with normalized data."""
 
-    def test_string_member_is_used_as_id(self) -> None:
-        """Test string member is treated as member ID directly (line 510)."""
+    def test_member_with_id_creates_relationship(self) -> None:
+        """Test normalized member with ID creates MEMBER_OF relationship."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
@@ -2204,49 +2196,7 @@ class TestProcessArtistEdgeCases:
             "id": "artist-1",
             "sha256": "newhash",
             "name": "Test Artist",
-            "members": {"name": ["string-member-id"]},  # String, not dict
-        }
-
-        result = process_artist(mock_tx, record)
-        assert result is True
-        # Should run MEMBER_OF relationship with string-member-id
-        calls = [str(c) for c in mock_tx.run.call_args_list]
-        assert any("MEMBER_OF" in c for c in calls)
-
-    def test_member_without_id_logs_warning(self) -> None:
-        """Test member dict without @id or id logs a warning (lines 516-518)."""
-        from graphinator.graphinator import process_artist
-
-        mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
-
-        record = {
-            "id": "artist-1",
-            "sha256": "newhash",
-            "name": "Test Artist",
-            "members": {"name": [{"#text": "No ID Member"}]},  # Dict without @id or id
-        }
-
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = process_artist(mock_tx, record)
-
-        assert result is True
-        mock_logger.warning.assert_called()
-        warning_msg = str(mock_logger.warning.call_args_list)
-        assert "Skipping member" in warning_msg
-
-    def test_string_group_is_used_as_id(self) -> None:
-        """Test string group is treated as group ID directly (line 539)."""
-        from graphinator.graphinator import process_artist
-
-        mock_tx = MagicMock()
-        mock_tx.run.return_value.single.return_value = None
-
-        record = {
-            "id": "artist-1",
-            "sha256": "newhash",
-            "name": "Test Artist",
-            "groups": {"name": ["string-group-id"]},  # String, not dict
+            "members": [{"id": "string-member-id"}],
         }
 
         result = process_artist(mock_tx, record)
@@ -2254,8 +2204,8 @@ class TestProcessArtistEdgeCases:
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert any("MEMBER_OF" in c for c in calls)
 
-    def test_group_without_id_logs_warning(self) -> None:
-        """Test group dict without @id or id logs a warning (lines 545-547)."""
+    def test_member_without_id_skipped(self) -> None:
+        """Test normalized member without ID is silently skipped."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
@@ -2265,19 +2215,16 @@ class TestProcessArtistEdgeCases:
             "id": "artist-1",
             "sha256": "newhash",
             "name": "Test Artist",
-            "groups": {"name": [{"#text": "No ID Group"}]},
+            "members": [{"name": "No ID Member"}],
         }
 
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = process_artist(mock_tx, record)
-
+        result = process_artist(mock_tx, record)
         assert result is True
-        mock_logger.warning.assert_called()
-        warning_msg = str(mock_logger.warning.call_args_list)
-        assert "Skipping group" in warning_msg
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert not any("MEMBER_OF" in c for c in calls)
 
-    def test_string_alias_is_used_as_id(self) -> None:
-        """Test string alias is treated as alias ID directly (line 568)."""
+    def test_group_with_id_creates_relationship(self) -> None:
+        """Test normalized group with ID creates MEMBER_OF relationship."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
@@ -2287,7 +2234,45 @@ class TestProcessArtistEdgeCases:
             "id": "artist-1",
             "sha256": "newhash",
             "name": "Test Artist",
-            "aliases": {"name": ["string-alias-id"]},
+            "groups": [{"id": "string-group-id"}],
+        }
+
+        result = process_artist(mock_tx, record)
+        assert result is True
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert any("MEMBER_OF" in c for c in calls)
+
+    def test_group_without_id_skipped(self) -> None:
+        """Test normalized group without ID is silently skipped."""
+        from graphinator.graphinator import process_artist
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "artist-1",
+            "sha256": "newhash",
+            "name": "Test Artist",
+            "groups": [{"name": "No ID Group"}],
+        }
+
+        result = process_artist(mock_tx, record)
+        assert result is True
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert not any("MEMBER_OF" in c for c in calls)
+
+    def test_alias_with_id_creates_relationship(self) -> None:
+        """Test normalized alias with ID creates ALIAS_OF relationship."""
+        from graphinator.graphinator import process_artist
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        record = {
+            "id": "artist-1",
+            "sha256": "newhash",
+            "name": "Test Artist",
+            "aliases": [{"id": "string-alias-id"}],
         }
 
         result = process_artist(mock_tx, record)
@@ -2295,8 +2280,8 @@ class TestProcessArtistEdgeCases:
         calls = [str(c) for c in mock_tx.run.call_args_list]
         assert any("ALIAS_OF" in c for c in calls)
 
-    def test_alias_without_id_logs_warning(self) -> None:
-        """Test alias dict without @id or id logs a warning (lines 574-576)."""
+    def test_alias_without_id_skipped(self) -> None:
+        """Test normalized alias without ID is silently skipped."""
         from graphinator.graphinator import process_artist
 
         mock_tx = MagicMock()
@@ -2306,23 +2291,20 @@ class TestProcessArtistEdgeCases:
             "id": "artist-1",
             "sha256": "newhash",
             "name": "Test Artist",
-            "aliases": {"name": [{"#text": "No ID Alias"}]},
+            "aliases": [{"name": "No ID Alias"}],
         }
 
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = process_artist(mock_tx, record)
-
+        result = process_artist(mock_tx, record)
         assert result is True
-        mock_logger.warning.assert_called()
-        warning_msg = str(mock_logger.warning.call_args_list)
-        assert "Skipping alias" in warning_msg
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert not any("ALIAS_OF" in c for c in calls)
 
 
 class TestProcessLabelEdgeCases:
-    """Test process_label edge cases."""
+    """Test process_label edge cases with normalized data."""
 
-    def test_sublabel_without_id_logs_warning(self) -> None:
-        """Test sublabel dict without @id or id logs a warning (line 635)."""
+    def test_sublabel_without_id_skipped(self) -> None:
+        """Test normalized sublabel without ID is silently skipped."""
         from graphinator.graphinator import process_label
 
         mock_tx = MagicMock()
@@ -2332,19 +2314,16 @@ class TestProcessLabelEdgeCases:
             "id": "label-1",
             "sha256": "newhash",
             "name": "Test Label",
-            "sublabels": {"label": [{"#text": "No ID Sublabel"}]},  # Dict without @id or id
+            "sublabels": [{"name": "No ID Sublabel"}],
         }
 
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = process_label(mock_tx, record)
-
+        result = process_label(mock_tx, record)
         assert result is True
-        mock_logger.warning.assert_called()
-        warning_msg = str(mock_logger.warning.call_args_list)
-        assert "Skipping sublabel" in warning_msg
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert not any("SUBLABEL_OF" in c for c in calls)
 
-    def test_parent_label_without_id_logs_warning(self) -> None:
-        """Test parent label dict without @id or id logs a warning."""
+    def test_parent_label_without_id_skipped(self) -> None:
+        """Test normalized parent label without ID is silently skipped."""
         from graphinator.graphinator import process_label
 
         mock_tx = MagicMock()
@@ -2354,23 +2333,20 @@ class TestProcessLabelEdgeCases:
             "id": "label-1",
             "sha256": "newhash",
             "name": "Test Label",
-            "parentLabel": {"#text": "No ID Parent"},  # Dict without @id or id
+            "parentLabel": {"name": "No ID Parent"},
         }
 
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = process_label(mock_tx, record)
-
+        result = process_label(mock_tx, record)
         assert result is True
-        mock_logger.warning.assert_called()
-        warning_msg = str(mock_logger.warning.call_args_list)
-        assert "Skipping parent label" in warning_msg
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert not any("SUBLABEL_OF" in c for c in calls)
 
 
 class TestProcessMasterEdgeCases:
-    """Test process_master edge cases."""
+    """Test process_master edge cases with normalized data."""
 
-    def test_artist_without_id_logs_warning(self) -> None:
-        """Test master artist dict without id or @id logs a warning (line 709)."""
+    def test_artist_without_id_skipped(self) -> None:
+        """Test normalized artist without ID is silently skipped."""
         from graphinator.graphinator import process_master
 
         mock_tx = MagicMock()
@@ -2381,23 +2357,20 @@ class TestProcessMasterEdgeCases:
             "sha256": "newhash",
             "title": "Test Master",
             "year": 2023,
-            "artists": {"artist": [{"name": "Unknown Artist"}]},  # Dict without id or @id
+            "artists": [{"name": "Unknown Artist"}],
         }
 
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = process_master(mock_tx, record)
-
+        result = process_master(mock_tx, record)
         assert result is True
-        mock_logger.warning.assert_called()
-        warning_msg = str(mock_logger.warning.call_args_list)
-        assert "Skipping artist" in warning_msg
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert not any("BY" in c and "artist" in c for c in calls)
 
 
 class TestProcessLabelSublabelsString:
-    """Test process_label with sublabels as a bare string (line 635)."""
+    """Test process_label with normalized sublabels."""
 
-    def test_sublabels_as_string_creates_single_item_list(self) -> None:
-        """Test sublabels as a bare string hits line 635: sublabels_list = [sublabels]."""
+    def test_sublabels_list_creates_relationship(self) -> None:
+        """Test normalized sublabels list creates SUBLABEL_OF relationship."""
         from graphinator.graphinator import process_label
 
         mock_tx = MagicMock()
@@ -2407,21 +2380,20 @@ class TestProcessLabelSublabelsString:
             "id": "label-str-1",
             "sha256": "newhash",
             "name": "Parent Label",
-            "sublabels": "SubLabel As String",  # bare string, not list or dict
+            "sublabels": [{"id": "SubLabel As String"}],
         }
 
-        with patch("graphinator.graphinator.logger"):
-            result = process_label(mock_tx, record)
-
+        result = process_label(mock_tx, record)
         assert result is True
-        mock_tx.run.assert_called()
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert any("SUBLABEL_OF" in c for c in calls)
 
 
 class TestProcessReleaseArtistNoId:
-    """Test process_release with artist dict missing both id and @id (line 809)."""
+    """Test process_release with normalized artist missing ID."""
 
-    def test_artist_dict_missing_id_logs_warning(self) -> None:
-        """Test artist dict without id or @id key logs warning at line 809."""
+    def test_artist_without_id_skipped(self) -> None:
+        """Test normalized artist without ID is silently skipped."""
         from graphinator.graphinator import process_release
 
         mock_tx = MagicMock()
@@ -2431,27 +2403,22 @@ class TestProcessReleaseArtistNoId:
             "id": "release-no-artist-id",
             "sha256": "newhash",
             "title": "Test Release",
-            "artists": {
-                "artist": [
-                    {"name": "Unknown Artist", "role": "Producer"},  # no id or @id
-                ]
-            },
+            "artists": [
+                {"name": "Unknown Artist", "role": "Producer"},
+            ],
         }
 
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = process_release(mock_tx, record)
-
+        result = process_release(mock_tx, record)
         assert result is True
-        mock_logger.warning.assert_called()
-        warning_msg = str(mock_logger.warning.call_args_list)
-        assert "Skipping artist" in warning_msg
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert not any("BY" in c and "artist" in c for c in calls)
 
 
 class TestProcessReleaseLabelNoId:
-    """Test process_release with label dict missing both id and @id (line 838)."""
+    """Test process_release with normalized label missing ID."""
 
-    def test_label_dict_missing_id_logs_warning(self) -> None:
-        """Test label dict without @id or id key logs warning at line 838."""
+    def test_label_without_id_skipped(self) -> None:
+        """Test normalized label without ID is silently skipped."""
         from graphinator.graphinator import process_release
 
         mock_tx = MagicMock()
@@ -2461,27 +2428,22 @@ class TestProcessReleaseLabelNoId:
             "id": "release-no-label-id",
             "sha256": "newhash",
             "title": "Test Release",
-            "labels": {
-                "label": [
-                    {"name": "Unknown Label", "catno": "CAT001"},  # no @id or id
-                ]
-            },
+            "labels": [
+                {"name": "Unknown Label", "catno": "CAT001"},
+            ],
         }
 
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = process_release(mock_tx, record)
-
+        result = process_release(mock_tx, record)
         assert result is True
-        mock_logger.warning.assert_called()
-        warning_msg = str(mock_logger.warning.call_args_list)
-        assert "Skipping label" in warning_msg
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert not any(")-[:ON]->" in c for c in calls)
 
 
 class TestProcessReleaseMasterNoId:
-    """Test process_release with master_id dict missing text key (line 863)."""
+    """Test process_release with no master_id."""
 
-    def test_master_id_dict_without_text_logs_warning(self) -> None:
-        """Test master_id dict without the text key logs warning at line 863."""
+    def test_no_master_id_skips_relationship(self) -> None:
+        """Test that missing master_id skips DERIVED_FROM relationship."""
         from graphinator.graphinator import process_release
 
         mock_tx = MagicMock()
@@ -2491,16 +2453,12 @@ class TestProcessReleaseMasterNoId:
             "id": "release-no-master-text",
             "sha256": "newhash",
             "title": "Test Release",
-            "master_id": {"other": "value"},  # dict without "#text"
         }
 
-        with patch("graphinator.graphinator.logger") as mock_logger:
-            result = process_release(mock_tx, record)
-
+        result = process_release(mock_tx, record)
         assert result is True
-        mock_logger.warning.assert_called()
-        warning_msg = str(mock_logger.warning.call_args_list)
-        assert "Skipping master" in warning_msg
+        calls = [str(c) for c in mock_tx.run.call_args_list]
+        assert not any("DERIVED_FROM" in c for c in calls)
 
 
 class TestMainConfigError:

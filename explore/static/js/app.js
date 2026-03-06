@@ -17,6 +17,7 @@ class ExploreApp {
         this.graph = new GraphVisualization('graphContainer');
         this.trends = new TrendsChart('trendsChart');
         this.userPanes = new window.UserPanes();
+        window.userPanes = this.userPanes;
 
         // Wire up callbacks
         this.autocomplete.onSelect = (name) => this._onSearch(name);
@@ -53,6 +54,10 @@ class ExploreApp {
         ['navCollection', 'navWantlist', 'navRecommendations'].forEach(id => {
             document.getElementById(id)?.classList.toggle('hidden', !loggedIn);
         });
+        // Hide gaps nav when logged out (shown dynamically by gap analysis)
+        if (!loggedIn) {
+            document.getElementById('navGaps')?.classList.add('hidden');
+        }
 
         if (loggedIn && user) {
             const emailEl = document.getElementById('userEmailDisplay');
@@ -492,6 +497,9 @@ class ExploreApp {
     }
 
     async _shareSnapshot() {
+        const token = window.authManager.getToken();
+        if (!token) return;
+
         const nodes = this.graph.nodes
             .filter(n => !n.isCategory)
             .map(n => ({ id: n.nodeId || n.name, type: n.type }));
@@ -499,7 +507,7 @@ class ExploreApp {
         const centerType = this.graph.centerType;
         if (!centerName || nodes.length === 0) return;
 
-        const result = await window.apiClient.saveSnapshot(nodes, { id: centerName, type: centerType });
+        const result = await window.apiClient.saveSnapshot(nodes, { id: centerName, type: centerType }, token);
         if (!result) return;
 
         const url = `${window.location.origin}/?snapshot=${result.token}`;
@@ -535,7 +543,7 @@ class ExploreApp {
         }
 
         title.textContent = details.name || nodeId;
-        body.replaceChildren(...this._renderDetails(details, type));
+        body.replaceChildren(...this._renderDetails(details, type, nodeId));
 
         // Add ownership badges for release nodes
         if (type === 'release' && window.authManager.isLoggedIn()) {
@@ -565,7 +573,7 @@ class ExploreApp {
         await this._loadExplore(name, type);
     }
 
-    _renderDetails(details, type) {
+    _renderDetails(details, type, nodeId) {
         const nodes = [];
 
         const explorableTypes = ['artist', 'genre', 'label', 'style'];
@@ -585,6 +593,9 @@ class ExploreApp {
             if (details.genres?.length) nodes.push(this._detailTags('Genres', details.genres));
             if (details.styles?.length) nodes.push(this._detailTags('Styles', details.styles));
             if (details.groups?.length) nodes.push(this._detailTags('Groups', details.groups));
+            if (window.authManager.isLoggedIn() && details.id) {
+                nodes.push(this._gapAnalysisButton('artist', details.id, details.name));
+            }
         } else if (type === 'release') {
             if (details.year) nodes.push(this._detailStat('Year', details.year));
             if (details.artists?.length) nodes.push(this._detailTags('Artists', details.artists));
@@ -593,6 +604,9 @@ class ExploreApp {
             if (details.styles?.length) nodes.push(this._detailTags('Styles', details.styles));
         } else if (type === 'label') {
             nodes.push(this._detailStat('Releases', details.release_count || 0));
+            if (window.authManager.isLoggedIn() && details.id) {
+                nodes.push(this._gapAnalysisButton('label', details.id, details.name));
+            }
         } else if (type === 'genre' || type === 'style') {
             nodes.push(this._detailStat('Artists', details.artist_count || 0));
         }
@@ -618,6 +632,20 @@ class ExploreApp {
         valueEl.textContent = label === 'Year' ? value : (typeof value === 'number' ? value.toLocaleString() : value);
         div.append(labelEl, valueEl);
         return div;
+    }
+
+    _gapAnalysisButton(entityType, entityId, entityName) {
+        const btn = document.createElement('button');
+        btn.className = 'btn-outline-warning btn-sm w-full mt-3 gap-analysis-btn';
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-search-minus mr-1';
+        btn.append(icon, 'What am I missing?');
+        btn.addEventListener('click', () => {
+            const panel = document.getElementById('infoPanel');
+            if (panel) panel.classList.remove('open');
+            window.userPanes.loadGapAnalysis(entityType, entityId, true);
+        });
+        return btn;
     }
 
     _detailTags(label, tags) {

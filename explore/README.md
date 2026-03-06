@@ -249,7 +249,7 @@ Example response:
 | Variable         | Description                               | Default                 |
 | ---------------- | ----------------------------------------- | ----------------------- |
 | `API_BASE_URL`   | Base URL of the API service for proxying  | `http://api:8004`       |
-| `CORS_ORIGINS`   | Comma-separated list of allowed origins   | `localhost:3000,8003`   |
+| `CORS_ORIGINS`   | Comma-separated list of allowed origins   | `http://localhost:3000,http://localhost:8003` |
 
 ## 🔌 Ports
 

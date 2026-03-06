@@ -842,3 +842,59 @@
     0%   { transform: rotate(0deg); }
     100% { transform: rotate(360deg); }
 }
+
+/* Gap analysis */
+.gap-summary {
+    margin-bottom: 1rem;
+    padding: 1rem;
+    border: 1px solid var(--border-color);
+    border-radius: 0.5rem;
+    background: var(--bg-card);
+}
+
+.gap-entity-title {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+    color: var(--text-primary);
+}
+
+.gap-stats-row {
+    margin-top: 0.5rem;
+}
+
+.gap-filters {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.gap-format-select {
+    min-width: 160px;
+    max-width: 220px;
+}
+
+.gap-filter-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    user-select: none;
+}
+
+.gap-filter-toggle input[type="checkbox"] {
+    accent-color: var(--accent-blue);
+}
+
+.gap-analysis-btn {
+    border-color: var(--accent-yellow);
+    color: var(--accent-yellow);
+}
+.gap-analysis-btn:hover {
+    background: var(--accent-yellow);
+    color: var(--bg-primary);
+}

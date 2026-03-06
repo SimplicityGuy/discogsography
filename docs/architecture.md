@@ -114,11 +114,14 @@ graph TD
 
 ```json
 {
-  "type": "artist|label|release|master",
-  "data": {...},
-  "hash": "sha256_hash"
+  "type": "data",
+  "id": "<record_id>",
+  "sha256": "<64-char hex hash>",
+  ...entity-specific fields
 }
 ```
+
+See [Database Schema — Extractor Message Format](database-schema.md#extractor-message-format) for detailed examples.
 
 ### 3. Data Persistence Phase
 
@@ -144,6 +147,7 @@ graph TD
 - Trend analysis and pattern discovery (`/api/trends`)
 - Entity autocomplete and node detail lookup (`/api/autocomplete`, `/api/node/{id}`)
 - User collection and wantlist queries (`/api/user/collection`, `/api/user/wantlist`)
+- Collection gap analysis (`/api/collection/gaps/label/{id}`, `/api/collection/gaps/artist/{id}`, `/api/collection/gaps/master/{id}`)
 - Graph snapshot save/restore (`/api/snapshot`)
 
 **Explore Service** (static frontend):
@@ -313,6 +317,7 @@ See [Dashboard README](../dashboard/README.md) for details.
 - Discogs OAuth token storage and retrieval
 - Graph query endpoints (`/api/autocomplete`, `/api/explore`, `/api/expand`, `/api/node/{id}`, `/api/trends`)
 - User collection and wantlist queries (`/api/user/collection`, `/api/user/wantlist`, `/api/user/recommendations`, `/api/user/collection/stats`, `/api/user/status`)
+- Collection gap analysis (`/api/collection/gaps/{type}/{id}`, `/api/collection/formats`)
 - Collection and wantlist sync (`/api/sync`, `/api/sync/status`)
 - Graph snapshot save/restore (`/api/snapshot`, `/api/snapshot/{token}`)
 - Reads Discogs app credentials from `app_config` table (set via `discogs-setup` CLI)
@@ -407,15 +412,20 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 - Release (physical/digital releases)
 - Genre (musical genres)
 - Style (sub-genres, styles)
+- User (authenticated Discogs users)
 
 **Relationship Types**:
 
 - BY (release → artist)
 - ON (release → label)
-- MEMBER_OF (artist → band)
 - DERIVED_FROM (release → master)
-- SUBLABEL_OF (label → parent label)
 - IS (release → genre/style)
+- MEMBER_OF (artist → band)
+- ALIAS_OF (artist alias → primary artist)
+- SUBLABEL_OF (label → parent label)
+- PART_OF (style → genre)
+- COLLECTED (user → release)
+- WANTS (user → release)
 
 See [Database Schema](database-schema.md) for details.
 
@@ -612,4 +622,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-04
+**Last Updated**: 2026-03-05

@@ -219,6 +219,11 @@
                     <i class="fas fa-lightbulb mr-1"></i>Discover
                 </a>
             </li>
+            <li class="hidden" id="navGaps">
+                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-pane="gaps">
+                    <i class="fas fa-search-minus mr-1"></i>Missing
+                </a>
+            </li>
         </ul>
 
         <!-- Search bar -->
@@ -432,6 +437,22 @@
                     <div class="user-pane-empty">
                         <i class="fas fa-lightbulb fa-3x mb-3"></i>
                         <p>Log in and sync your collection to get personalised recommendations.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Gaps pane — "What am I missing?" -->
+        <div class="pane" id="gapsPane">
+            <div class="user-pane-body">
+                <div class="loading-overlay" id="gapsLoading">
+                    <div class="spinner" role="status"></div>
+                    <p class="mt-2 text-text-secondary">Analysing your collection...</p>
+                </div>
+                <div id="gapsBody">
+                    <div class="user-pane-empty">
+                        <i class="fas fa-search-minus fa-3x mb-3"></i>
+                        <p>Click "What am I missing?" on an artist or label to see what you don't have.</p>
                     </div>
                 </div>
             </div>

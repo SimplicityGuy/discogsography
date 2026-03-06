@@ -16,7 +16,7 @@ The dashboard service provides a web-based interface to monitor all Discogsograp
 
 - **Backend**: FastAPI with WebSocket support
 - **Frontend**: Tailwind CSS, Inter/JetBrains Mono fonts, SVG circular gauges, CSS bar charts
-- **Port**: 8003 (configurable via `DASHBOARD_PORT`)
+- **Port**: 8003
 - **Health Endpoint**: `/health` (port 8003)
 
 ## Configuration
@@ -24,15 +24,6 @@ The dashboard service provides a web-based interface to monitor all Discogsograp
 Environment variables:
 
 ```bash
-# Dashboard settings
-DASHBOARD_HOST=0.0.0.0    # Host to bind to
-DASHBOARD_PORT=8003       # Port for web interface
-
-# Service endpoints
-EXTRACTOR_URL=http://extractor:8000
-GRAPHINATOR_URL=http://graphinator:8001
-TABLEINATOR_URL=http://tableinator:8002
-
 # Database connections
 NEO4J_HOST=neo4j:7687
 NEO4J_USERNAME=neo4j
@@ -43,21 +34,31 @@ POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
 
-# RabbitMQ connection
-AMQP_CONNECTION=amqp://discogsography:discogsography@rabbitmq:5672
-RABBITMQ_MANAGEMENT_URL=http://rabbitmq:15672
+# RabbitMQ (also supports _FILE variants for Docker secrets)
+RABBITMQ_USERNAME=discogsography
+RABBITMQ_PASSWORD=discogsography
+
+# Optional
+CORS_ORIGINS="http://localhost:3000,http://localhost:8003"
+LOG_LEVEL=INFO
 ```
+
+Service health URLs (`http://extractor:8000/health`, etc.) and the RabbitMQ management URL (`http://rabbitmq:15672`) are hardcoded. The dashboard port is fixed at **8003**.
 
 ## API Endpoints
 
 - `GET /` - Dashboard web interface
 - `GET /health` - Health check endpoint (port 8003)
 - `GET /api/metrics` - Current system metrics
+- `GET /api/services` - Service-specific metrics
+- `GET /api/queues` - Queue metrics
+- `GET /api/databases` - Database metrics
+- `GET /metrics` - Prometheus metrics endpoint
 - `WS /ws` - WebSocket connection for real-time updates
 
 ## WebSocket Updates
 
-The dashboard broadcasts updates every 5 seconds with the following data:
+The dashboard broadcasts updates every 2 seconds with the following data:
 
 ```json
 {
@@ -115,16 +116,16 @@ uv run pytest tests/dashboard/test_dashboard_api_integration.py -v
 The frontend consists of static files in the `static/` directory:
 
 - `index.html` - Main dashboard page (Tailwind CSS, dark theme)
-- `tailwind.css` - Minified Tailwind stylesheet — **generated at Docker build time** (see below)
-- `styles.css` - Base reset and legacy selector stubs
 - `dashboard.js` - WebSocket client and UI update logic
+
+The `tailwind.css` stylesheet is **generated at Docker build time** and does not exist in the source tree.
 
 Two additional files in `dashboard/` (not `static/`) drive the CSS build:
 
 - `tailwind.config.js` - Tailwind CLI configuration (content paths, forms plugin)
 - `tailwind.input.css` - Tailwind source directives (`@tailwind base/components/utilities`)
 
-The Docker build uses a dedicated **`css-builder`** stage (Node 22) to run the Tailwind CLI, which
+The Docker build uses a dedicated **`css-builder`** stage (Node 24) to run the Tailwind CLI, which
 scans `index.html` and emits a minified `tailwind.css` into the final image. No CDN dependency is
 needed at runtime.
 

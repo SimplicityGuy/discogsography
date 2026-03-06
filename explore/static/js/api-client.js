@@ -84,10 +84,12 @@ class ApiClient {
      * @param {{id: string, type: string}} center - Center node
      * @returns {Promise<Object|null>} Snapshot response with token and url
      */
-    async saveSnapshot(nodes, center) {
+    async saveSnapshot(nodes, center, token) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
         const response = await fetch('/api/snapshot', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ nodes, center }),
         });
         if (!response.ok) return null;
@@ -230,6 +232,34 @@ class ApiClient {
         const headers = {};
         if (token) headers['Authorization'] = `Bearer ${token}`;
         const response = await fetch(`/api/user/status?${params}`, { headers });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    // --- Collection gap analysis ---
+
+    async getCollectionFormats(token) {
+        if (!token) return null;
+        const response = await fetch('/api/collection/formats', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getCollectionGaps(token, entityType, entityId, options = {}) {
+        if (!token) return null;
+        const params = new URLSearchParams({
+            limit: String(options.limit || 50),
+            offset: String(options.offset || 0),
+        });
+        if (options.excludeWantlist) params.set('exclude_wantlist', 'true');
+        if (options.formats?.length) {
+            options.formats.forEach(f => params.append('formats', f));
+        }
+        const response = await fetch(`/api/collection/gaps/${entityType}/${encodeURIComponent(entityId)}?${params}`, {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
         if (!response.ok) return null;
         return response.json();
     }

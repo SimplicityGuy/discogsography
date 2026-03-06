@@ -346,6 +346,285 @@ class UserPanes {
     }
 
     // ------------------------------------------------------------------ //
+    // Gap analysis — "What am I missing?"
+    // ------------------------------------------------------------------ //
+
+    _gapOffset = 0;
+    _gapTotal = 0;
+    _gapEntityType = null;
+    _gapEntityId = null;
+    _gapFormats = [];
+    _gapExcludeWantlist = false;
+    _gapAvailableFormats = null;
+
+    async loadGapAnalysis(entityType, entityId, reset = false) {
+        const token = window.authManager.getToken();
+        if (!token) return;
+
+        this._gapEntityType = entityType;
+        this._gapEntityId = entityId;
+        if (reset) this._gapOffset = 0;
+
+        // Switch to the gaps pane
+        const paneLinks = document.querySelectorAll('.nav-link');
+        paneLinks.forEach(l => l.classList.remove('active'));
+        document.querySelectorAll('.pane').forEach(p => p.classList.remove('active'));
+        const gapsPane = document.getElementById('gapsPane');
+        if (gapsPane) gapsPane.classList.add('active');
+        const navGaps = document.getElementById('navGaps');
+        if (navGaps) {
+            navGaps.classList.remove('hidden');
+            const link = navGaps.querySelector('.nav-link');
+            if (link) link.classList.add('active');
+        }
+
+        const loading = document.getElementById('gapsLoading');
+        const body = document.getElementById('gapsBody');
+        if (loading) loading.classList.add('active');
+
+        try {
+            // Load available formats for filter (once)
+            if (!this._gapAvailableFormats) {
+                const fmtData = await window.apiClient.getCollectionFormats(token);
+                this._gapAvailableFormats = fmtData?.formats || [];
+            }
+
+            const data = await window.apiClient.getCollectionGaps(token, entityType, entityId, {
+                limit: this._pageSize,
+                offset: this._gapOffset,
+                formats: this._gapFormats,
+                excludeWantlist: this._gapExcludeWantlist,
+            });
+            if (!data) {
+                this._renderGapsEmpty(body, 'Failed to load gap analysis.');
+                return;
+            }
+            this._gapTotal = data.pagination?.total || 0;
+            this._renderGaps(body, data);
+        } finally {
+            if (loading) loading.classList.remove('active');
+        }
+    }
+
+    _renderGaps(container, data) {
+        if (!container) return;
+        container.replaceChildren();
+
+        // Summary header
+        const summary = document.createElement('div');
+        summary.className = 'gap-summary';
+
+        const entityInfo = document.createElement('div');
+        entityInfo.className = 'gap-entity-info';
+        const entityIcon = data.entity?.type === 'artist' ? 'fa-user' : data.entity?.type === 'label' ? 'fa-tag' : 'fa-compact-disc';
+        const entityTitle = document.createElement('h4');
+        entityTitle.className = 'gap-entity-title';
+        const titleIcon = document.createElement('i');
+        titleIcon.className = `fas ${entityIcon} mr-2`;
+        entityTitle.append(titleIcon, data.entity?.name || 'Unknown');
+        entityInfo.appendChild(entityTitle);
+
+        const statsRow = document.createElement('div');
+        statsRow.className = 'stats-row gap-stats-row';
+
+        const fields = [
+            { label: 'Total', value: data.summary?.total || 0 },
+            { label: 'Owned', value: data.summary?.owned || 0 },
+            { label: 'Missing', value: data.summary?.missing || 0 },
+        ];
+        fields.forEach(f => {
+            const card = document.createElement('div');
+            card.className = 'stat-card';
+            const statLabel = document.createElement('div');
+            statLabel.className = 'stat-label';
+            statLabel.textContent = f.label;
+            const statValue = document.createElement('div');
+            statValue.className = 'stat-value';
+            statValue.textContent = typeof f.value === 'number' ? f.value.toLocaleString() : f.value;
+            card.append(statLabel, statValue);
+            statsRow.appendChild(card);
+        });
+
+        summary.append(entityInfo, statsRow);
+        container.appendChild(summary);
+
+        // Filters bar
+        const filtersBar = document.createElement('div');
+        filtersBar.className = 'gap-filters';
+
+        // Format filter dropdown
+        if (this._gapAvailableFormats && this._gapAvailableFormats.length > 0) {
+            const formatSelect = document.createElement('select');
+            formatSelect.className = 'form-input-dark gap-format-select';
+            const defaultOpt = document.createElement('option');
+            defaultOpt.value = '';
+            defaultOpt.textContent = 'All formats';
+            formatSelect.appendChild(defaultOpt);
+            this._gapAvailableFormats.forEach(f => {
+                const opt = document.createElement('option');
+                opt.value = f;
+                opt.textContent = f;
+                if (this._gapFormats.includes(f)) opt.selected = true;
+                formatSelect.appendChild(opt);
+            });
+            formatSelect.addEventListener('change', () => {
+                const selected = formatSelect.value;
+                this._gapFormats = selected ? [selected] : [];
+                this._gapOffset = 0;
+                this.loadGapAnalysis(this._gapEntityType, this._gapEntityId);
+            });
+            filtersBar.appendChild(formatSelect);
+        }
+
+        // Exclude wantlist toggle
+        const wantlistLabel = document.createElement('label');
+        wantlistLabel.className = 'gap-filter-toggle';
+        const wantlistCheckbox = document.createElement('input');
+        wantlistCheckbox.type = 'checkbox';
+        wantlistCheckbox.checked = this._gapExcludeWantlist;
+        wantlistCheckbox.addEventListener('change', () => {
+            this._gapExcludeWantlist = wantlistCheckbox.checked;
+            this._gapOffset = 0;
+            this.loadGapAnalysis(this._gapEntityType, this._gapEntityId);
+        });
+        wantlistLabel.append(wantlistCheckbox, ' Hide wantlisted');
+        filtersBar.appendChild(wantlistLabel);
+
+        container.appendChild(filtersBar);
+
+        // Results table
+        if (!data.results || data.results.length === 0) {
+            this._renderGapsEmpty(container, 'No missing releases found. You have them all!');
+            return;
+        }
+
+        const wrap = this._buildGapTable(
+            data.results,
+            data.pagination?.total || 0,
+            this._gapOffset,
+            (page) => {
+                this._gapOffset = page * this._pageSize;
+                this.loadGapAnalysis(this._gapEntityType, this._gapEntityId);
+            },
+            data.pagination?.has_more || false,
+        );
+        container.appendChild(wrap);
+    }
+
+    _buildGapTable(releases, total, offset, onPageChange, hasMore) {
+        const currentPage = Math.floor(offset / this._pageSize);
+        const totalPages = Math.ceil(total / this._pageSize);
+        const showFrom = offset + 1;
+        const showTo = offset + releases.length;
+
+        const wrap = document.createElement('div');
+        wrap.className = 'release-table-wrap';
+
+        // Header
+        const header = document.createElement('div');
+        header.className = 'release-table-header';
+        const titleArea = document.createElement('div');
+        titleArea.className = 'release-table-title';
+        const titleCount = document.createElement('span');
+        titleCount.className = 'title-count';
+        titleCount.textContent = `Showing ${showFrom.toLocaleString()}\u2013${showTo.toLocaleString()} of ${total.toLocaleString()} missing`;
+        titleArea.appendChild(titleCount);
+        header.appendChild(titleArea);
+        wrap.appendChild(header);
+
+        // Table
+        const scrollWrap = document.createElement('div');
+        scrollWrap.className = 'release-table-scroll';
+        const table = document.createElement('table');
+        table.className = 'release-table';
+
+        const thead = document.createElement('thead');
+        const headRow = document.createElement('tr');
+        ['Title', 'Artist', 'Label', 'Year', 'Formats', 'Genre', 'Status'].forEach(col => {
+            const th = document.createElement('th');
+            th.textContent = col;
+            headRow.appendChild(th);
+        });
+        thead.appendChild(headRow);
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        releases.forEach(r => {
+            const tr = document.createElement('tr');
+
+            const tdTitle = document.createElement('td');
+            tdTitle.className = 'release-list-title';
+            tdTitle.textContent = r.title || '(Unknown title)';
+
+            const tdArtist = document.createElement('td');
+            tdArtist.textContent = r.artist || '';
+
+            const tdLabel = document.createElement('td');
+            tdLabel.textContent = r.label || '';
+
+            const tdYear = document.createElement('td');
+            tdYear.className = 'cell-year';
+            tdYear.textContent = r.year || '';
+
+            const tdFormats = document.createElement('td');
+            const fmts = r.formats || [];
+            if (fmts.length) {
+                fmts.forEach(f => {
+                    const badge = document.createElement('span');
+                    badge.className = 'genre-badge';
+                    badge.textContent = f;
+                    tdFormats.appendChild(badge);
+                });
+            }
+
+            const tdGenre = document.createElement('td');
+            const genres = r.genres || [];
+            if (genres[0]) {
+                const badge = document.createElement('span');
+                badge.className = 'genre-badge';
+                badge.textContent = genres[0];
+                tdGenre.appendChild(badge);
+            }
+
+            const tdStatus = document.createElement('td');
+            if (r.on_wantlist) {
+                const badge = document.createElement('span');
+                badge.className = 'ownership-badge in-wantlist';
+                const icon = document.createElement('i');
+                icon.className = 'fas fa-heart mr-1';
+                badge.append(icon, 'Wanted');
+                tdStatus.appendChild(badge);
+            }
+
+            tr.append(tdTitle, tdArtist, tdLabel, tdYear, tdFormats, tdGenre, tdStatus);
+            tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        scrollWrap.appendChild(table);
+        wrap.appendChild(scrollWrap);
+
+        // Pagination
+        if (total > this._pageSize) {
+            const pag = this._buildPagination(currentPage, totalPages, onPageChange);
+            wrap.appendChild(pag);
+        }
+
+        return wrap;
+    }
+
+    _renderGapsEmpty(container, msg) {
+        if (!container) return;
+        const div = document.createElement('div');
+        div.className = 'user-pane-empty';
+        const icon = document.createElement('i');
+        icon.className = 'fas fa-check-circle fa-3x mb-3';
+        const p = document.createElement('p');
+        p.textContent = msg;
+        div.append(icon, p);
+        container.appendChild(div);
+    }
+
+    // ------------------------------------------------------------------ //
     // Helpers
     // ------------------------------------------------------------------ //
 

@@ -54,7 +54,7 @@ SNAPSHOT_TTL_DAYS=28     # Default: 28 days
 SNAPSHOT_MAX_NODES=100   # Default: 100 nodes per snapshot
 
 # Optional
-JWT_EXPIRE_MINUTES=1440   # Default: 24 hours
+JWT_EXPIRE_MINUTES=30     # Default: 30 minutes
 LOG_LEVEL=INFO
 ```
 
@@ -172,6 +172,17 @@ Personalized endpoints that return data from the user's synced Discogs collectio
 | GET    | `/api/user/recommendations`  | Yes           | Get recommended releases                 |
 | GET    | `/api/user/collection/stats` | Yes           | Collection statistics summary            |
 | GET    | `/api/user/status`           | Optional      | Check collection/wantlist status for IDs |
+
+### Collection Gap Analysis
+
+"Complete My Collection" endpoints that find releases the user does not own.
+
+| Method | Path                                     | Auth Required | Description                               |
+| ------ | ---------------------------------------- | ------------- | ----------------------------------------- |
+| GET    | `/api/collection/formats`                | Yes           | Distinct format names in user's collection |
+| GET    | `/api/collection/gaps/label/{label_id}`  | Yes           | Missing releases on a label               |
+| GET    | `/api/collection/gaps/artist/{artist_id}`| Yes           | Missing releases by an artist             |
+| GET    | `/api/collection/gaps/master/{master_id}`| Yes           | Missing pressings of a master release     |
 
 ### Snapshots
 

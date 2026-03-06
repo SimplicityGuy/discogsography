@@ -278,7 +278,7 @@ REDIS_HOST="redis"
 | Variable             | Description                         | Default | Required           |
 | -------------------- | ----------------------------------- | ------- | ------------------ |
 | `JWT_SECRET_KEY`     | HMAC-SHA256 signing secret          | (none)  | Yes (API) |
-| `JWT_EXPIRE_MINUTES` | Token lifetime in minutes           | `1440`  | No        |
+| `JWT_EXPIRE_MINUTES` | Token lifetime in minutes           | `30`    | No        |
 | `DISCOGS_USER_AGENT` | User-Agent for Discogs API requests | (none)  | Yes (API) |
 
 **Used By**: API
@@ -303,9 +303,9 @@ REDIS_HOST="redis"
 JWT_SECRET_KEY=$(openssl rand -hex 32)
 
 # Set token lifetime
-JWT_EXPIRE_MINUTES=1440   # 24 hours (default)
-JWT_EXPIRE_MINUTES=60     # 1 hour (more secure)
-JWT_EXPIRE_MINUTES=10080  # 7 days (more convenient)
+JWT_EXPIRE_MINUTES=30     # 30 minutes (default)
+JWT_EXPIRE_MINUTES=60     # 1 hour
+JWT_EXPIRE_MINUTES=1440   # 24 hours
 
 # Discogs User-Agent (required for Discogs API)
 DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
@@ -403,11 +403,11 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 | Variable                        | Description                              | Default | Range      |
 | ------------------------------- | ---------------------------------------- | ------- | ---------- |
 | `NEO4J_BATCH_MODE`              | Enable batch processing for Neo4j writes | `true`  | true/false |
-| `NEO4J_BATCH_SIZE`              | Records per batch for Neo4j              | `500`   | 10-1000    |
-| `NEO4J_BATCH_FLUSH_INTERVAL`    | Seconds between automatic flushes        | `2.0`   | 1.0-60.0   |
+| `NEO4J_BATCH_SIZE`              | Records per batch for Neo4j              | `100`   | 10-1000    |
+| `NEO4J_BATCH_FLUSH_INTERVAL`    | Seconds between automatic flushes        | `5.0`   | 1.0-60.0   |
 | `POSTGRES_BATCH_MODE`           | Enable batch processing for PostgreSQL   | `true`  | true/false |
-| `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL         | `500`   | 10-1000    |
-| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes        | `2.0`   | 1.0-60.0   |
+| `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL         | `100`   | 10-1000    |
+| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes        | `5.0`   | 1.0-60.0   |
 
 **Used By**: Graphinator (Neo4j), Tableinator (PostgreSQL)
 
@@ -461,9 +461,9 @@ NEO4J_BATCH_MODE=false
 Batch processing logs provide visibility into performance:
 
 ```
-🚀 Batch processing enabled (batch_size=500, flush_interval=2.0)
-📦 Flushing batch for artists (size=500)
-✅ Batch flushed successfully (artists: 500 records in 0.45s)
+🚀 Batch processing enabled (batch_size=100, flush_interval=5.0)
+📦 Flushing batch for artists (size=100)
+✅ Batch flushed successfully (artists: 100 records in 0.45s)
 ```
 
 See [Performance Guide](performance-guide.md) for detailed optimization strategies.

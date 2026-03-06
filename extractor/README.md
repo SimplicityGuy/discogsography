@@ -37,18 +37,22 @@ Based on disco-quick reference implementation:
 
 ## Configuration
 
-Extractor can be configured via environment variables or a TOML configuration file.
+Extractor is configured via environment variables.
 
 ### Environment Variables
 
-- `AMQP_CONNECTION`: RabbitMQ connection URL (required)
+- `RABBITMQ_USERNAME`: RabbitMQ username (default: `discogsography`; also supports `RABBITMQ_USERNAME_FILE` for Docker secrets)
+- `RABBITMQ_PASSWORD`: RabbitMQ password (default: `discogsography`; also supports `RABBITMQ_PASSWORD_FILE` for Docker secrets)
+- `RABBITMQ_HOST`: RabbitMQ hostname (default: `rabbitmq`)
+- `RABBITMQ_PORT`: RabbitMQ port (default: `5672`)
 - `DISCOGS_ROOT`: Directory for Discogs data (default: `/discogs-data`)
-- `PERIODIC_CHECK_DAYS`: Days between checks for new data (default: 15)
-- `LOG_LEVEL`: Logging level - DEBUG, INFO, WARNING, ERROR, CRITICAL (default: INFO)
-- `HEALTH_PORT`: Port for health server (default: 8000)
+- `PERIODIC_CHECK_DAYS`: Days between checks for new data (default: `15`)
+- `LOG_LEVEL`: Logging level - DEBUG, INFO, WARNING, ERROR, CRITICAL (default: `INFO`)
 - `MAX_WORKERS`: Number of worker threads (default: CPU count)
-- `BATCH_SIZE`: Message batch size for AMQP (default: 100)
-- `FORCE_REPROCESS`: Force reprocessing of all files (default: false)
+- `BATCH_SIZE`: Message batch size for AMQP (default: `100`)
+- `FORCE_REPROCESS`: Force reprocessing of all files (default: `false`; CLI argument with env override)
+
+The health server port is fixed at **8000**.
 
 ## Building
 
@@ -78,7 +82,7 @@ cargo run
 docker build -t extractor .
 
 # Run container
-docker run -e AMQP_CONNECTION=amqp://rabbitmq:5672 extractor
+docker run -e RABBITMQ_HOST=rabbitmq extractor
 ```
 
 ## Testing

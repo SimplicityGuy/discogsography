@@ -349,6 +349,7 @@ http://localhost:8000/api/health
 - Neo4j: 7474 (browser), 7687 (bolt)
 - PostgreSQL: 5433 (mapped from 5432)
 - RabbitMQ: 5672 (AMQP), 15672 (management)
+- Explore: 8006 (service), 8007 (health)
 - Extractor: 8000 (health)
 - Graphinator: 8001 (health)
 - Tableinator: 8002 (health)

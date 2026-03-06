@@ -3,6 +3,7 @@
 from common.data_normalizer import (
     _parse_year_int,
     ensure_list,
+    extract_format_names,
     normalize_artist,
     normalize_id,
     normalize_item_with_id,
@@ -431,3 +432,41 @@ class TestNormalizeRecord:
         data = {"id": "1", "custom": "field"}
         result = normalize_record("unknown", data)
         assert result == data
+
+
+class TestExtractFormatNames:
+    """Test extract_format_names function."""
+
+    def test_none_returns_empty(self) -> None:
+        assert extract_format_names(None) == []
+
+    def test_empty_dict_returns_empty(self) -> None:
+        assert extract_format_names({}) == []
+
+    def test_single_format_in_container(self) -> None:
+        data = {"format": {"@name": "Vinyl", "@qty": "1"}}
+        assert extract_format_names(data) == ["Vinyl"]
+
+    def test_multiple_formats_in_container(self) -> None:
+        data = {"format": [{"@name": "CD", "@qty": "1"}, {"@name": "DVD", "@qty": "1"}]}
+        assert extract_format_names(data) == ["CD", "DVD"]
+
+    def test_deduplicates(self) -> None:
+        data = {"format": [{"@name": "Vinyl"}, {"@name": "Vinyl"}]}
+        assert extract_format_names(data) == ["Vinyl"]
+
+    def test_direct_list(self) -> None:
+        data = [{"@name": "Cassette"}, {"@name": "Box Set"}]
+        assert extract_format_names(data) == ["Cassette", "Box Set"]
+
+    def test_name_key_variant(self) -> None:
+        data = [{"name": "CD"}]
+        assert extract_format_names(data) == ["CD"]
+
+    def test_skips_items_without_name(self) -> None:
+        data = [{"@qty": "1"}, {"@name": "Vinyl"}]
+        assert extract_format_names(data) == ["Vinyl"]
+
+    def test_non_list_non_dict_returns_empty(self) -> None:
+        assert extract_format_names("Vinyl") == []
+        assert extract_format_names(42) == []
