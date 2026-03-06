@@ -497,6 +497,9 @@ class ExploreApp {
     }
 
     async _shareSnapshot() {
+        const token = window.authManager.getToken();
+        if (!token) return;
+
         const nodes = this.graph.nodes
             .filter(n => !n.isCategory)
             .map(n => ({ id: n.nodeId || n.name, type: n.type }));
@@ -504,7 +507,7 @@ class ExploreApp {
         const centerType = this.graph.centerType;
         if (!centerName || nodes.length === 0) return;
 
-        const result = await window.apiClient.saveSnapshot(nodes, { id: centerName, type: centerType });
+        const result = await window.apiClient.saveSnapshot(nodes, { id: centerName, type: centerType }, token);
         if (!result) return;
 
         const url = `${window.location.origin}/?snapshot=${result.token}`;

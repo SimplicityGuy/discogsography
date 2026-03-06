@@ -84,10 +84,12 @@ class ApiClient {
      * @param {{id: string, type: string}} center - Center node
      * @returns {Promise<Object|null>} Snapshot response with token and url
      */
-    async saveSnapshot(nodes, center) {
+    async saveSnapshot(nodes, center, token) {
+        const headers = { 'Content-Type': 'application/json' };
+        if (token) headers['Authorization'] = `Bearer ${token}`;
         const response = await fetch('/api/snapshot', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers,
             body: JSON.stringify({ nodes, center }),
         });
         if (!response.ok) return null;
