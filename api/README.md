@@ -54,7 +54,7 @@ SNAPSHOT_TTL_DAYS=28     # Default: 28 days
 SNAPSHOT_MAX_NODES=100   # Default: 100 nodes per snapshot
 
 # Optional
-JWT_EXPIRE_MINUTES=1440   # Default: 24 hours
+JWT_EXPIRE_MINUTES=30     # Default: 30 minutes
 LOG_LEVEL=INFO
 ```
 

@@ -745,7 +745,7 @@ All entity tables follow the same basic structure with JSONB columns for flexibi
 ```sql
 CREATE TABLE IF NOT EXISTS <entity_type> (
     data_id VARCHAR PRIMARY KEY,     -- Discogs entity ID
-    hash VARCHAR NOT NULL UNIQUE,    -- SHA256 hash for deduplication
+    hash VARCHAR NOT NULL,            -- SHA256 hash for change detection
     data JSONB NOT NULL              -- Complete normalized record data
 );
 

@@ -25,26 +25,33 @@ The graphinator service:
 Environment variables:
 
 ```bash
-# Service configuration
-HEALTH_CHECK_PORT=8001              # Health check endpoint port
-
 # Neo4j connection
 NEO4J_HOST=neo4j:7687
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=discogsography
 
-# RabbitMQ
-AMQP_CONNECTION=amqp://discogsography:discogsography@rabbitmq:5672
+# RabbitMQ (also supports _FILE variants for Docker secrets)
+RABBITMQ_USERNAME=discogsography
+RABBITMQ_PASSWORD=discogsography
+RABBITMQ_HOST=rabbitmq              # Default: rabbitmq
+RABBITMQ_PORT=5672                  # Default: 5672
 
 # Consumer Management (Smart Connection Lifecycle)
 CONSUMER_CANCEL_DELAY=300           # Seconds before canceling idle consumers (default: 5 min)
 QUEUE_CHECK_INTERVAL=3600           # Seconds between queue checks when idle (default: 1 hr)
+STUCK_CHECK_INTERVAL=30             # Seconds between stuck-state checks (default: 30)
+
+# Idle Mode
+STARTUP_IDLE_TIMEOUT=30             # Seconds after startup with no messages before idle mode (default: 30)
+IDLE_LOG_INTERVAL=300               # Seconds between idle status logs (default: 300)
 
 # Batch Processing (Enabled by Default)
 NEO4J_BATCH_MODE=true               # Enable batch processing (default: true)
 NEO4J_BATCH_SIZE=100                # Records per batch (default: 100)
 NEO4J_BATCH_FLUSH_INTERVAL=5.0      # Seconds between automatic flushes (default: 5.0)
 ```
+
+The health server port is fixed at **8001**.
 
 ### Smart Connection Lifecycle
 
@@ -105,7 +112,7 @@ See the [Configuration Guide](../docs/configuration.md#batch-processing-configur
 1. **Master** - Master recordings
 
    - Properties: id, title, year, sha256
-   - Relationships: BY (from Release via DERIVED_FROM)
+   - Relationships: BY (to Artist), IS (to Genre/Style)
 
 1. **Genre** - Musical genres
 
@@ -125,10 +132,10 @@ See the [Configuration Guide](../docs/configuration.md#batch-processing-configur
 
 #### Created by Graphinator
 
-- `BY` - Release performed by an artist
+- `BY` - Release or Master performed by an artist
 - `ON` - Release on a label
 - `DERIVED_FROM` - Release is a pressing of a master recording
-- `IS` - Release classified as a genre or style
+- `IS` - Release or Master classified as a genre or style
 - `MEMBER_OF` - Artist is member of a group/band
 - `ALIAS_OF` - Artist is an alias of another artist
 - `SUBLABEL_OF` - Label is a sublabel of a parent label

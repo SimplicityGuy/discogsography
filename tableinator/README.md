@@ -7,7 +7,7 @@ Consumes Discogs data from AMQP queues and stores it in PostgreSQL relational da
 The tableinator service:
 
 - Consumes parsed Discogs data from RabbitMQ queues
-- Stores data in normalized PostgreSQL tables
+- Stores data as JSONB in PostgreSQL tables
 - Implements efficient bulk inserts with psycopg3
 - Provides deduplication using SHA256 hashes
 - Maintains data integrity with transactions
@@ -25,27 +25,35 @@ The tableinator service:
 Environment variables:
 
 ```bash
-# Service configuration
-HEALTH_CHECK_PORT=8002              # Health check endpoint port
-
 # PostgreSQL connection
 POSTGRES_HOST=postgres:5432
 POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
 
-# RabbitMQ
-AMQP_CONNECTION=amqp://discogsography:discogsography@rabbitmq:5672
+# RabbitMQ (individual vars; also supports _FILE variants for Docker secrets)
+RABBITMQ_USERNAME=discogsography
+RABBITMQ_PASSWORD=discogsography
+RABBITMQ_HOST=rabbitmq              # Default: rabbitmq
+RABBITMQ_PORT=5672                  # Default: 5672
 
 # Consumer Management (Smart Connection Lifecycle)
 CONSUMER_CANCEL_DELAY=300           # Seconds before canceling idle consumers (default: 5 min)
 QUEUE_CHECK_INTERVAL=3600           # Seconds between queue checks when idle (default: 1 hr)
+STUCK_CHECK_INTERVAL=30             # Seconds between stuck-state checks (default: 30)
+
+# Idle Mode
+STARTUP_IDLE_TIMEOUT=30             # Seconds after startup with no messages before idle mode (default: 30)
+IDLE_LOG_INTERVAL=300               # Seconds between idle status logs (default: 300)
+STARTUP_DELAY=5                     # Seconds to wait for dependent services at startup (default: 5)
 
 # Batch Processing (Enabled by Default)
 POSTGRES_BATCH_MODE=true            # Enable batch processing (default: true)
 POSTGRES_BATCH_SIZE=100             # Records per batch (default: 100)
 POSTGRES_BATCH_FLUSH_INTERVAL=5.0   # Seconds between automatic flushes (default: 5.0)
 ```
+
+The health server port is fixed at **8002**.
 
 ### Smart Connection Lifecycle
 
@@ -86,61 +94,24 @@ See the [Configuration Guide](../docs/configuration.md#batch-processing-configur
 
 ## Database Schema
 
-### Tables
+All four entity tables (artists, labels, masters, releases) share the same structure:
 
-1. **labels**
+```sql
+CREATE TABLE IF NOT EXISTS <entity_type> (
+    data_id VARCHAR PRIMARY KEY,     -- Discogs entity ID
+    hash    VARCHAR NOT NULL,        -- SHA256 hash for change detection
+    data    JSONB   NOT NULL         -- Complete normalized record
+);
 
-   ```sql
-   - id: INTEGER PRIMARY KEY
-   - name: TEXT
-   - profile: TEXT
-   - urls: TEXT[]
-   - hash: TEXT UNIQUE
-   ```
+CREATE INDEX IF NOT EXISTS idx_<entity>_hash ON <entity> (hash);
+```
 
-1. **artists**
-
-   ```sql
-   - id: INTEGER PRIMARY KEY
-   - name: TEXT
-   - real_name: TEXT
-   - profile: TEXT
-   - urls: TEXT[]
-   - aliases: TEXT[]
-   - hash: TEXT UNIQUE
-   ```
-
-1. **releases**
-
-   ```sql
-   - id: INTEGER PRIMARY KEY
-   - title: TEXT
-   - year: INTEGER
-   - country: TEXT
-   - genres: TEXT[]
-   - styles: TEXT[]
-   - formats: JSONB
-   - tracklist: JSONB
-   - hash: TEXT UNIQUE
-   ```
-
-1. **masters**
-
-   ```sql
-   - id: INTEGER PRIMARY KEY
-   - title: TEXT
-   - year: INTEGER
-   - genres: TEXT[]
-   - styles: TEXT[]
-   - main_release: INTEGER
-   - hash: TEXT UNIQUE
-   ```
+The `data` column stores the full normalized record from `normalize_record()`, preserving all fields (profile, tracklist, notes, etc.) as JSONB.
 
 ### Indexes
 
-- Primary key indexes on all `id` columns
-- Unique indexes on all `hash` columns for deduplication
-- Additional indexes on frequently queried columns
+- Primary key on `data_id` for each table
+- Hash index on `hash` for change detection lookups
 
 ## Processing Logic
 
@@ -153,16 +124,15 @@ queues = ["labels", "artists", "releases", "masters"]
 
 ### Database Operations
 
-- Uses psycopg3's native support for PostgreSQL arrays
-- JSONB columns for flexible nested data (formats, tracklist)
-- Prepared statements for performance
+- Uses psycopg3 with JSONB storage for all entity data
 - Connection pooling for efficiency
 
-### Deduplication
+### Upsert Strategy
 
-- SHA256 hash stored in each table
-- `ON CONFLICT (hash) DO NOTHING` for idempotent inserts
-- Ensures no duplicate processing
+- SHA256 hash stored alongside each record
+- `ON CONFLICT (data_id) DO UPDATE SET hash, data WHERE hash != EXCLUDED.hash`
+- Skips writes when the hash is unchanged (no-op update)
+- Updates data when the hash differs (content changed)
 
 ## Development
 
@@ -200,38 +170,35 @@ docker-compose up tableinator
 
 ## SQL Queries
 
-Example queries for data analysis:
+Example queries for data analysis (using JSONB operators):
 
 ```sql
--- Find most prolific labels
-SELECT name, COUNT(*) as release_count
-FROM labels l
-JOIN releases r ON l.id = r.label_id
-GROUP BY l.name
-ORDER BY release_count DESC
-LIMIT 10;
-
--- Find releases by genre and year
-SELECT title, year, genres
+-- Find all releases by title (JSONB field access)
+SELECT data_id, data->>'title' AS title, data->>'year' AS year
 FROM releases
-WHERE 'Jazz' = ANY(genres)
-  AND year BETWEEN 1950 AND 1960
-ORDER BY year;
+WHERE data->>'title' ILIKE '%Kind of Blue%';
 
--- Find artists with most aliases
-SELECT name, array_length(aliases, 1) as alias_count
+-- Count records per entity type
+SELECT 'artists' AS entity, COUNT(*) FROM artists
+UNION ALL
+SELECT 'labels', COUNT(*) FROM labels
+UNION ALL
+SELECT 'masters', COUNT(*) FROM masters
+UNION ALL
+SELECT 'releases', COUNT(*) FROM releases;
+
+-- Find artists by name
+SELECT data_id, data->>'name' AS name
 FROM artists
-WHERE aliases IS NOT NULL
-ORDER BY alias_count DESC
-LIMIT 20;
+WHERE data->>'name' ILIKE '%Beatles%';
 ```
 
 ## Performance Features
 
-- Bulk inserts with psycopg3's `execute_batch`
-- PostgreSQL array support for multi-valued fields
-- JSONB for flexible schema evolution
-- Connection pooling and prepared statements
+- Batch upserts with psycopg3
+- JSONB storage for flexible schema evolution
+- Connection pooling
+- Hash-based change detection to skip unchanged records
 
 ## Monitoring
 
