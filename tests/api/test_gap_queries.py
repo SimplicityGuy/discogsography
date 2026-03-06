@@ -80,10 +80,12 @@ class TestGetLabelGaps:
         from api.queries.gap_queries import get_label_gaps
 
         releases = [{"id": "r1", "title": "Blue Monday", "year": 1983, "artist": "New Order", "genres": ["Electronic"], "on_wantlist": False}]
-        driver = _make_driver_with_results([
-            _MockResult(records=releases),
-            _MockResult(single={"total": 1}),
-        ])
+        driver = _make_driver_with_results(
+            [
+                _MockResult(records=releases),
+                _MockResult(single={"total": 1}),
+            ]
+        )
         results, total = await get_label_gaps(driver, "user-1", "label-1", limit=50, offset=0)
         assert results == releases
         assert total == 1
@@ -92,10 +94,12 @@ class TestGetLabelGaps:
     async def test_empty_gaps(self) -> None:
         from api.queries.gap_queries import get_label_gaps
 
-        driver = _make_driver_with_results([
-            _MockResult(records=[]),
-            _MockResult(single={"total": 0}),
-        ])
+        driver = _make_driver_with_results(
+            [
+                _MockResult(records=[]),
+                _MockResult(single={"total": 0}),
+            ]
+        )
         results, total = await get_label_gaps(driver, "user-1", "label-1")
         assert results == []
         assert total == 0
@@ -104,10 +108,12 @@ class TestGetLabelGaps:
     async def test_exclude_wantlist(self) -> None:
         from api.queries.gap_queries import get_label_gaps
 
-        driver = _make_driver_with_results([
-            _MockResult(records=[]),
-            _MockResult(single={"total": 0}),
-        ])
+        driver = _make_driver_with_results(
+            [
+                _MockResult(records=[]),
+                _MockResult(single={"total": 0}),
+            ]
+        )
         results, total = await get_label_gaps(driver, "user-1", "label-1", exclude_wantlist=True)
         assert results == []
         assert total == 0
@@ -116,11 +122,23 @@ class TestGetLabelGaps:
     async def test_format_filter(self) -> None:
         from api.queries.gap_queries import get_label_gaps
 
-        releases = [{"id": "r1", "title": "Blue Monday", "year": 1983, "formats": ["Vinyl"], "artist": "New Order", "genres": ["Electronic"], "on_wantlist": False}]
-        driver = _make_driver_with_results([
-            _MockResult(records=releases),
-            _MockResult(single={"total": 1}),
-        ])
+        releases = [
+            {
+                "id": "r1",
+                "title": "Blue Monday",
+                "year": 1983,
+                "formats": ["Vinyl"],
+                "artist": "New Order",
+                "genres": ["Electronic"],
+                "on_wantlist": False,
+            }
+        ]
+        driver = _make_driver_with_results(
+            [
+                _MockResult(records=releases),
+                _MockResult(single={"total": 1}),
+            ]
+        )
         results, total = await get_label_gaps(driver, "user-1", "label-1", formats=["Vinyl"])
         assert results == releases
         assert total == 1
@@ -183,10 +201,12 @@ class TestGetArtistGaps:
         from api.queries.gap_queries import get_artist_gaps
 
         releases = [{"id": "r2", "title": "Kid A", "year": 2000, "label": "Parlophone", "genres": ["Rock"], "on_wantlist": True}]
-        driver = _make_driver_with_results([
-            _MockResult(records=releases),
-            _MockResult(single={"total": 5}),
-        ])
+        driver = _make_driver_with_results(
+            [
+                _MockResult(records=releases),
+                _MockResult(single={"total": 5}),
+            ]
+        )
         results, total = await get_artist_gaps(driver, "user-1", "artist-1", limit=50, offset=0)
         assert results == releases
         assert total == 5
@@ -195,10 +215,12 @@ class TestGetArtistGaps:
     async def test_empty_gaps(self) -> None:
         from api.queries.gap_queries import get_artist_gaps
 
-        driver = _make_driver_with_results([
-            _MockResult(records=[]),
-            _MockResult(single={"total": 0}),
-        ])
+        driver = _make_driver_with_results(
+            [
+                _MockResult(records=[]),
+                _MockResult(single={"total": 0}),
+            ]
+        )
         results, total = await get_artist_gaps(driver, "user-1", "artist-1")
         assert results == []
         assert total == 0
@@ -255,11 +277,23 @@ class TestGetMasterGaps:
     async def test_returns_results_and_total(self) -> None:
         from api.queries.gap_queries import get_master_gaps
 
-        releases = [{"id": "r3", "title": "OK Computer (UK)", "year": 1997, "artist": "Radiohead", "label": "Parlophone", "genres": ["Rock"], "on_wantlist": False}]
-        driver = _make_driver_with_results([
-            _MockResult(records=releases),
-            _MockResult(single={"total": 3}),
-        ])
+        releases = [
+            {
+                "id": "r3",
+                "title": "OK Computer (UK)",
+                "year": 1997,
+                "artist": "Radiohead",
+                "label": "Parlophone",
+                "genres": ["Rock"],
+                "on_wantlist": False,
+            }
+        ]
+        driver = _make_driver_with_results(
+            [
+                _MockResult(records=releases),
+                _MockResult(single={"total": 3}),
+            ]
+        )
         results, total = await get_master_gaps(driver, "user-1", "master-1", limit=50, offset=0)
         assert results == releases
         assert total == 3
@@ -268,10 +302,12 @@ class TestGetMasterGaps:
     async def test_empty_gaps(self) -> None:
         from api.queries.gap_queries import get_master_gaps
 
-        driver = _make_driver_with_results([
-            _MockResult(records=[]),
-            _MockResult(single={"total": 0}),
-        ])
+        driver = _make_driver_with_results(
+            [
+                _MockResult(records=[]),
+                _MockResult(single={"total": 0}),
+            ]
+        )
         results, total = await get_master_gaps(driver, "user-1", "master-1")
         assert results == []
         assert total == 0

@@ -112,16 +112,24 @@ async def label_gaps(
         _set_cached_summary(user_id, "label", label_id, summary)
 
     results, total = await get_label_gaps(
-        _neo4j_driver, user_id, label_id, limit, offset, exclude_wantlist, formats,
+        _neo4j_driver,
+        user_id,
+        label_id,
+        limit,
+        offset,
+        exclude_wantlist,
+        formats,
     )
 
-    return JSONResponse(content={
-        "entity": {"id": metadata["id"], "name": metadata["name"], "type": "label"},
-        "summary": summary,
-        "filters": {"formats": formats or []},
-        "results": results,
-        "pagination": {"total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total},
-    })
+    return JSONResponse(
+        content={
+            "entity": {"id": metadata["id"], "name": metadata["name"], "type": "label"},
+            "summary": summary,
+            "filters": {"formats": formats or []},
+            "results": results,
+            "pagination": {"total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total},
+        }
+    )
 
 
 @router.get("/api/collection/gaps/artist/{artist_id}")
@@ -148,16 +156,24 @@ async def artist_gaps(
         _set_cached_summary(user_id, "artist", artist_id, summary)
 
     results, total = await get_artist_gaps(
-        _neo4j_driver, user_id, artist_id, limit, offset, exclude_wantlist, formats,
+        _neo4j_driver,
+        user_id,
+        artist_id,
+        limit,
+        offset,
+        exclude_wantlist,
+        formats,
     )
 
-    return JSONResponse(content={
-        "entity": {"id": metadata["id"], "name": metadata["name"], "type": "artist"},
-        "summary": summary,
-        "filters": {"formats": formats or []},
-        "results": results,
-        "pagination": {"total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total},
-    })
+    return JSONResponse(
+        content={
+            "entity": {"id": metadata["id"], "name": metadata["name"], "type": "artist"},
+            "summary": summary,
+            "filters": {"formats": formats or []},
+            "results": results,
+            "pagination": {"total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total},
+        }
+    )
 
 
 @router.get("/api/collection/gaps/master/{master_id}")
@@ -184,13 +200,21 @@ async def master_gaps(
         _set_cached_summary(user_id, "master", master_id, summary)
 
     results, total = await get_master_gaps(
-        _neo4j_driver, user_id, master_id, limit, offset, exclude_wantlist, formats,
+        _neo4j_driver,
+        user_id,
+        master_id,
+        limit,
+        offset,
+        exclude_wantlist,
+        formats,
     )
 
-    return JSONResponse(content={
-        "entity": {"id": metadata["id"], "name": metadata["name"], "type": "master"},
-        "summary": summary,
-        "filters": {"formats": formats or []},
-        "results": results,
-        "pagination": {"total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total},
-    })
+    return JSONResponse(
+        content={
+            "entity": {"id": metadata["id"], "name": metadata["name"], "type": "master"},
+            "summary": summary,
+            "filters": {"formats": formats or []},
+            "results": results,
+            "pagination": {"total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total},
+        }
+    )
