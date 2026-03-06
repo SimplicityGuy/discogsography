@@ -450,4 +450,90 @@ mod tests {
             assert!(dlq_name.contains(data_type.as_str()));
         }
     }
+
+    #[tokio::test]
+    async fn test_new_connection_failure() {
+        // Use an invalid port so the connection will fail, with only 1 retry to keep the test fast
+        let result = MessageQueue::new("amqp://localhost:59999", 1).await;
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.err().unwrap());
+        assert!(err_msg.contains("Failed to connect to AMQP broker after retries"), "Unexpected error: {}", err_msg);
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_with_credentials_special_chars() {
+        // URL with percent-encoded special characters in credentials
+        let url = "amqp://user%40domain:p%40ss@host:5672/%2F";
+        let normalized = MessageQueue::normalize_amqp_url(url).unwrap();
+        // Credentials with special chars and explicit %2F vhost should be preserved
+        assert!(normalized.contains("user%40domain"));
+        assert!(normalized.contains("p%40ss"));
+        assert!(normalized.contains("/%2F"));
+    }
+
+    #[test]
+    fn test_normalize_amqp_url_amqps_scheme() {
+        // TLS scheme should be preserved
+        let url = "amqps://user:pass@host:5671/";
+        let normalized = MessageQueue::normalize_amqp_url(url).unwrap();
+        assert!(normalized.starts_with("amqps://"), "Expected amqps:// scheme, got: {}", normalized);
+        assert_eq!(normalized, "amqps://user:pass@host:5671");
+    }
+
+    #[test]
+    fn test_file_complete_message_serialization_format() {
+        let file_complete_msg = FileCompleteMessage {
+            data_type: "artists".to_string(),
+            timestamp: chrono::Utc::now(),
+            total_processed: 42,
+            file: "discogs_20250101_artists.xml.gz".to_string(),
+        };
+
+        let message = Message::FileComplete(file_complete_msg);
+        let json_str = serde_json::to_string(&message).unwrap();
+
+        // Verify the tagged enum produces "type": "file_complete"
+        assert!(json_str.contains(r#""type":"file_complete""#), "Expected type tag, got: {}", json_str);
+        assert!(json_str.contains(r#""data_type":"artists""#), "Expected data_type field, got: {}", json_str);
+        assert!(json_str.contains(r#""total_processed":42"#), "Expected total_processed field, got: {}", json_str);
+        assert!(json_str.contains(r#""file":"discogs_20250101_artists.xml.gz""#), "Expected file field, got: {}", json_str);
+        assert!(json_str.contains(r#""timestamp""#), "Expected timestamp field, got: {}", json_str);
+    }
+
+    #[test]
+    fn test_data_message_serialization_format() {
+        let data_msg = DataMessage {
+            id: "456".to_string(),
+            sha256: "deadbeef".to_string(),
+            data: serde_json::json!({"name": "Test Artist"}),
+        };
+
+        let message = Message::Data(data_msg);
+        let json_str = serde_json::to_string(&message).unwrap();
+
+        // Verify the tagged enum produces "type": "data"
+        assert!(json_str.contains(r#""type":"data""#), "Expected type tag, got: {}", json_str);
+        assert!(json_str.contains(r#""id":"456""#), "Expected id field, got: {}", json_str);
+        assert!(json_str.contains(r#""sha256":"deadbeef""#), "Expected sha256 field, got: {}", json_str);
+        // DataMessage uses #[serde(flatten)] on data, so fields appear at top level
+        assert!(json_str.contains(r#""name":"Test Artist""#), "Expected flattened data field, got: {}", json_str);
+    }
+
+    #[test]
+    fn test_message_properties_content_type() {
+        let props = MessageQueue::message_properties();
+        let content_type = props.content_type().as_ref().expect("content_type should be set");
+        assert_eq!(content_type.as_str(), "application/json");
+    }
+
+    #[tokio::test]
+    async fn test_new_connection_failure_with_retries() {
+        // Use 2 retries to exercise the retry backoff loop (lines 72-75):
+        // - First attempt: try_connect fails, retry_count=1 < 2, warn + sleep(1s) + backoff doubled
+        // - Second attempt: try_connect fails, retry_count=2 >= 2, return error
+        let result = MessageQueue::new("amqp://localhost:59999", 2).await;
+        assert!(result.is_err());
+        let err_msg = format!("{}", result.err().unwrap());
+        assert!(err_msg.contains("Failed to connect to AMQP broker after retries"), "Unexpected error: {}", err_msg);
+    }
 }

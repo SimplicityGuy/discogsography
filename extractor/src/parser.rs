@@ -676,4 +676,136 @@ mod tests {
         assert_eq!(genres_arr[0], json!("Rock"));
         assert_eq!(genres_arr[1], json!("Pop"));
     }
+
+    #[tokio::test]
+    async fn test_parse_self_closing_target_element() {
+        let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1" />
+</artists>"#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(xml_content.as_bytes()).unwrap();
+        let compressed = encoder.finish().unwrap();
+        temp_file.write_all(&compressed).unwrap();
+        temp_file.flush().unwrap();
+
+        let (sender, mut receiver) = mpsc::channel(10);
+        let parser = XmlParser::new(DataType::Artists, sender);
+        let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+        assert_eq!(count, 1);
+
+        let message = receiver.recv().await.unwrap();
+        assert_eq!(message.data["@id"], json!("1"));
+    }
+
+    #[tokio::test]
+    async fn test_parse_with_entity_references() {
+        let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Tom &amp; Jerry</name>
+        <profile>&lt;b&gt;Bold &amp; &apos;Quoted&apos; &quot;Text&quot;&lt;/b&gt;</profile>
+    </artist>
+</artists>"#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(xml_content.as_bytes()).unwrap();
+        let compressed = encoder.finish().unwrap();
+        temp_file.write_all(&compressed).unwrap();
+        temp_file.flush().unwrap();
+
+        let (sender, mut receiver) = mpsc::channel(10);
+        let parser = XmlParser::new(DataType::Artists, sender);
+        let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+        assert_eq!(count, 1);
+
+        let message = receiver.recv().await.unwrap();
+        assert_eq!(message.data["name"], json!("Tom & Jerry"));
+        assert_eq!(message.data["profile"], json!("<b>Bold & 'Quoted' \"Text\"</b>"));
+    }
+
+    #[tokio::test]
+    async fn test_parse_file_not_found() {
+        let (sender, _receiver) = mpsc::channel(10);
+        let parser = XmlParser::new(DataType::Artists, sender);
+        let result = parser.parse_file(Path::new("/nonexistent/path/file.xml.gz")).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn test_parse_self_closing_child_element() {
+        let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Test Artist</name>
+        <image height="100" width="100" />
+    </artist>
+</artists>"#;
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(xml_content.as_bytes()).unwrap();
+        let compressed = encoder.finish().unwrap();
+        temp_file.write_all(&compressed).unwrap();
+        temp_file.flush().unwrap();
+
+        let (sender, mut receiver) = mpsc::channel(10);
+        let parser = XmlParser::new(DataType::Artists, sender);
+        let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+        assert_eq!(count, 1);
+
+        let message = receiver.recv().await.unwrap();
+        assert_eq!(message.data["name"], json!("Test Artist"));
+        let image = &message.data["image"];
+        assert_eq!(image["@height"], json!("100"));
+        assert_eq!(image["@width"], json!("100"));
+    }
+
+    #[tokio::test]
+    async fn test_parse_receiver_dropped() {
+        // Create XML with multiple records
+        let mut xml_content = String::from(r#"<?xml version="1.0" encoding="UTF-8"?><artists>"#);
+        for i in 0..100 {
+            xml_content.push_str(&format!(r#"<artist id="{}"><name>Artist {}</name></artist>"#, i, i));
+        }
+        xml_content.push_str("</artists>");
+
+        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(xml_content.as_bytes()).unwrap();
+        let compressed = encoder.finish().unwrap();
+        temp_file.write_all(&compressed).unwrap();
+        temp_file.flush().unwrap();
+
+        // Use a channel with buffer size 1, then drop the receiver immediately
+        let (sender, receiver) = mpsc::channel(1);
+        drop(receiver);
+
+        let parser = XmlParser::new(DataType::Artists, sender);
+        let result = parser.parse_file(temp_file.path()).await;
+
+        // Should return Ok (breaks early) with a partial count
+        assert!(result.is_ok());
+        let count = result.unwrap();
+        assert!(count < 100, "Should have stopped early due to dropped receiver, got {}", count);
+    }
+
+    #[test]
+    fn test_calculate_record_hash_empty_value() {
+        let null_hash = calculate_record_hash(&Value::Null);
+        assert_eq!(null_hash.len(), 64);
+
+        let empty_obj_hash = calculate_record_hash(&Value::Object(Map::new()));
+        assert_eq!(empty_obj_hash.len(), 64);
+
+        // Null and empty object should produce different hashes
+        assert_ne!(null_hash, empty_obj_hash);
+    }
 }

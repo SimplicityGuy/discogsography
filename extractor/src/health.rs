@@ -247,6 +247,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_health_server_run_and_endpoints() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+        {
+            let mut s = state.write().await;
+            s.completed_files.insert("test.xml".to_string());
+        }
+
+        // Use a high port unlikely to conflict
+        let port = 19876u16;
+        let server = HealthServer::new(port, state.clone());
+
+        // Spawn the actual server.run() method
+        let handle = tokio::spawn(async move {
+            server.run().await.unwrap();
+        });
+
+        // Give the server a moment to start
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+
+        let base_url = format!("http://127.0.0.1:{}", port);
+
+        // Test /health endpoint
+        let resp = reqwest::get(format!("{}/health", base_url)).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let text = resp.text().await.unwrap();
+        let body: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(body["status"], "healthy");
+        assert_eq!(body["service"], "rust-extractor");
+
+        // Test /metrics endpoint
+        let resp = reqwest::get(format!("{}/metrics", base_url)).await.unwrap();
+        assert_eq!(resp.status(), 200);
+        let text = resp.text().await.unwrap();
+        let body: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(body["completed_files"], 1);
+
+        // Test /ready endpoint (should be 200 since we added a completed file)
+        let resp = reqwest::get(format!("{}/ready", base_url)).await.unwrap();
+        assert_eq!(resp.status(), 200);
+
+        // Clean up
+        handle.abort();
+    }
+
+    #[tokio::test]
+    async fn test_ready_handler_transitions() {
+        // Start with empty state — should be unavailable
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+        let status = ready_handler(State(state.clone())).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+
+        // Add a completed file — should become ready
+        {
+            let mut s = state.write().await;
+            s.completed_files.insert("discogs_20260101_artists.xml.gz".to_string());
+        }
+        let status = ready_handler(State(state.clone())).await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn test_metrics_json_format() {
         let state = Arc::new(RwLock::new(ExtractorState::default()));
         let (_, json) = metrics_handler(State(state)).await;

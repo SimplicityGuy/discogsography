@@ -671,4 +671,68 @@ mod tests {
         let expected_total = 480351382 + 86848860;
         assert_eq!(marker.download_phase.bytes_downloaded, expected_total, "total bytes_downloaded should sum individual file downloads");
     }
+
+    #[test]
+    fn test_file_downloaded_without_prior_tracking() {
+        let mut marker = StateMarker::new("20260101".to_string());
+        marker.start_download(1);
+
+        // Call file_downloaded without calling start_file_download first
+        marker.file_downloaded("discogs_20260101_artists.xml.gz", 5000);
+
+        let status = marker.download_phase.downloads_by_file.get("discogs_20260101_artists.xml.gz").unwrap();
+        assert_eq!(status.status, PhaseStatus::Completed);
+        assert_eq!(status.bytes_downloaded, 5000);
+        assert!(status.started_at.is_some());
+        assert!(status.completed_at.is_some());
+        assert_eq!(marker.download_phase.files_downloaded, 1);
+        assert_eq!(marker.download_phase.bytes_downloaded, 5000);
+    }
+
+    #[test]
+    fn test_should_process_failed_processing() {
+        let mut marker = StateMarker::new("20260101".to_string());
+
+        // Set processing phase to Failed
+        marker.processing_phase.status = PhaseStatus::Failed;
+        assert_eq!(marker.should_process(), ProcessingDecision::Continue);
+    }
+
+    #[test]
+    fn test_sync_phase_totals_multiple_files() {
+        let mut marker = StateMarker::new("20260101".to_string());
+        marker.start_processing(3);
+
+        // Start and update three files
+        marker.start_file_processing("discogs_20260101_artists.xml.gz");
+        marker.update_file_progress("discogs_20260101_artists.xml.gz", 200, 200, 4);
+
+        marker.start_file_processing("discogs_20260101_labels.xml.gz");
+        marker.update_file_progress("discogs_20260101_labels.xml.gz", 300, 300, 6);
+
+        marker.start_file_processing("discogs_20260101_releases.xml.gz");
+        marker.update_file_progress("discogs_20260101_releases.xml.gz", 500, 500, 10);
+
+        // Verify aggregated totals
+        assert_eq!(marker.processing_phase.records_extracted, 1000);
+        assert_eq!(marker.publishing_phase.messages_published, 1000);
+        assert_eq!(marker.publishing_phase.batches_sent, 20);
+    }
+
+    #[test]
+    fn test_complete_extraction_without_download_start() {
+        let mut marker = StateMarker::new("20260101".to_string());
+
+        // Never start download, so download_phase.started_at is None
+        // Start and complete processing directly
+        marker.start_processing(1);
+        marker.start_file_processing("discogs_20260101_artists.xml.gz");
+        marker.complete_file_processing("discogs_20260101_artists.xml.gz", 100);
+        marker.complete_processing();
+        marker.complete_extraction();
+
+        // total_duration_seconds should be None because download_phase.started_at is None
+        assert!(marker.summary.total_duration_seconds.is_none());
+        assert_eq!(marker.summary.overall_status, PhaseStatus::Completed);
+    }
 }

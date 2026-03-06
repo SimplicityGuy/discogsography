@@ -773,6 +773,404 @@ mod tests {
         assert!(result.iter().all(|f| !f.name.starts_with("data/")));
     }
 
+    #[tokio::test]
+    async fn test_with_state_marker() {
+        use crate::state_marker::StateMarker;
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker = StateMarker::new("20260101".to_string());
+        let marker_path = temp_dir.path().join(".extraction_status_20260101.json");
+
+        let downloader = Downloader::new(temp_dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .with_state_marker(marker, marker_path.clone());
+
+        assert!(downloader.state_marker.is_some());
+        assert!(downloader.marker_path.is_some());
+        assert_eq!(downloader.state_marker.as_ref().unwrap().current_version, "20260101");
+        assert_eq!(downloader.marker_path.as_ref().unwrap(), &marker_path);
+    }
+
+    #[tokio::test]
+    async fn test_save_state_marker_with_marker() {
+        use crate::state_marker::StateMarker;
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker = StateMarker::new("20260101".to_string());
+        let marker_path = temp_dir.path().join(".extraction_status_20260101.json");
+
+        let mut downloader = Downloader::new(temp_dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .with_state_marker(marker, marker_path.clone());
+
+        downloader.save_state_marker().await;
+
+        // Verify the file was written
+        assert!(marker_path.exists());
+        let contents = fs::read_to_string(&marker_path).await.unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&contents).unwrap();
+        assert_eq!(parsed["current_version"], "20260101");
+    }
+
+    #[tokio::test]
+    async fn test_save_state_marker_without_marker() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut downloader = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap();
+
+        // Should be a no-op, no error
+        downloader.save_state_marker().await;
+
+        assert!(downloader.state_marker.is_none());
+        assert!(downloader.marker_path.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_new_with_base_url() {
+        let temp_dir = TempDir::new().unwrap();
+        let custom_url = "https://custom.example.com/".to_string();
+        let downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), custom_url).await.unwrap();
+
+        // base_url is private, but we can verify the downloader was created successfully
+        assert_eq!(downloader.output_directory, temp_dir.path());
+        assert!(downloader.metadata.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_should_download_no_metadata_file_exists() {
+        let temp_dir = TempDir::new().unwrap();
+        let downloader = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap();
+
+        // Create a local file but do NOT add any metadata entry
+        let filename = "discogs_20241201_artists.xml.gz";
+        let local_path = temp_dir.path().join(filename);
+        fs::write(&local_path, b"some data").await.unwrap();
+
+        let file_info = S3FileInfo { name: filename.to_string(), size: 1024 };
+
+        // File exists locally but no metadata entry — should return true (download to be safe)
+        let should_download = downloader.should_download(&file_info).await.unwrap();
+        assert!(should_download);
+    }
+
+    #[test]
+    fn test_get_latest_monthly_files_empty_input() {
+        let temp_dir = TempDir::new().unwrap();
+        let downloader = tokio::runtime::Runtime::new().unwrap().block_on(Downloader::new(temp_dir.path().to_path_buf())).unwrap();
+
+        let files: Vec<S3FileInfo> = vec![];
+        let result = downloader.get_latest_monthly_files(&files).unwrap();
+        assert!(result.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_download_discogs_data_with_state_marker() {
+        use crate::state_marker::StateMarker;
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Set up mockito server
+        let mut server = mockito::Server::new_async().await;
+        let base_url = format!("{}/", server.url());
+
+        // Main page listing year directories
+        let main_page_html = r#"<html><body>
+            <a href="?prefix=data%2F2026%2F">2026/</a>
+        </body></html>"#;
+
+        let _main_mock = server
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body(main_page_html)
+            .create_async()
+            .await;
+
+        // Year page listing files (5 files = 4 data + 1 checksum for a complete set)
+        let year_page_html = format!(
+            r#"<html><body>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+        </body></html>"#
+        );
+
+        let _year_mock = server
+            .mock("GET", "/?prefix=data%2F2026%2F")
+            .with_status(200)
+            .with_body(&year_page_html)
+            .create_async()
+            .await;
+
+        // Mock download endpoints for each file
+        let file_types = ["artists", "labels", "masters", "releases"];
+        let mut _download_mocks = Vec::new();
+        for file_type in &file_types {
+            let download_path = format!(
+                "/?download=data%2F2026%2Fdiscogs_20260101_{}.xml.gz",
+                file_type
+            );
+            let mock = server
+                .mock("GET", download_path.as_str())
+                .with_status(200)
+                .with_body(format!("fake {} data", file_type))
+                .create_async()
+                .await;
+            _download_mocks.push(mock);
+        }
+
+        // Create downloader with state marker
+        let marker = StateMarker::new("20260101".to_string());
+        let marker_path = temp_dir.path().join(".extraction_status_20260101.json");
+
+        let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
+            .await
+            .unwrap()
+            .with_state_marker(marker, marker_path.clone());
+
+        let result = downloader.download_discogs_data().await.unwrap();
+
+        // Should have downloaded 4 data files
+        assert_eq!(result.len(), 4);
+
+        // State marker should have been saved and track downloads
+        assert!(marker_path.exists());
+        let marker = downloader.state_marker.as_ref().unwrap();
+        assert_eq!(marker.download_phase.files_downloaded, 4);
+        assert!(marker.download_phase.bytes_downloaded > 0);
+        assert_eq!(marker.download_phase.status, crate::state_marker::PhaseStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn test_download_discogs_data_skips_already_downloaded() {
+        use sha2::{Digest, Sha256};
+
+        let temp_dir = TempDir::new().unwrap();
+
+        // Set up mockito server
+        let mut server = mockito::Server::new_async().await;
+        let base_url = format!("{}/", server.url());
+
+        // Main page listing year directories
+        let main_page_html = r#"<html><body>
+            <a href="?prefix=data%2F2026%2F">2026/</a>
+        </body></html>"#;
+
+        let _main_mock = server
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body(main_page_html)
+            .create_async()
+            .await;
+
+        // Year page with complete 5-file set
+        let year_page_html = r#"<html><body>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+        </body></html>"#;
+
+        let _year_mock = server
+            .mock("GET", "/?prefix=data%2F2026%2F")
+            .with_status(200)
+            .with_body(year_page_html)
+            .create_async()
+            .await;
+
+        // Pre-create all 4 data files locally with known content and matching checksums
+        let file_types = ["artists", "labels", "masters", "releases"];
+        let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
+            .await
+            .unwrap();
+
+        for file_type in &file_types {
+            let filename = format!("discogs_20260101_{}.xml.gz", file_type);
+            let content = format!("existing {} data", file_type);
+            let local_path = temp_dir.path().join(&filename);
+            fs::write(&local_path, content.as_bytes()).await.unwrap();
+
+            // Compute actual SHA256 checksum
+            let mut hasher = Sha256::new();
+            hasher.update(content.as_bytes());
+            let checksum = format!("{:x}", hasher.finalize());
+
+            // Pre-populate metadata with correct checksum
+            downloader.metadata.insert(
+                filename,
+                LocalFileInfo {
+                    path: local_path.to_string_lossy().to_string(),
+                    checksum,
+                    version: "202601".to_string(),
+                    size: content.len() as u64,
+                },
+            );
+        }
+
+        // No download mocks are set up — if it tries to download, mockito will return
+        // an unexpected request error. The test succeeds only if downloads are skipped.
+
+        let result = downloader.download_discogs_data().await.unwrap();
+
+        // All 4 files should be returned (skipped but still tracked)
+        assert_eq!(result.len(), 4);
+        for file_type in &file_types {
+            let filename = format!("discogs_20260101_{}.xml.gz", file_type);
+            assert!(result.contains(&filename), "Expected {} in result", filename);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_list_s3_files_uses_cache() {
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let base_url = format!("{}/", server.url());
+
+        let main_page_html = r#"<html><body>
+            <a href="?prefix=data%2F2026%2F">2026/</a>
+        </body></html>"#;
+
+        // Expect the main page to be called exactly once
+        let _main_mock = server
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body(main_page_html)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let year_page_html = r#"<html><body>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+        </body></html>"#;
+
+        let _year_mock = server
+            .mock("GET", "/?prefix=data%2F2026%2F")
+            .with_status(200)
+            .with_body(year_page_html)
+            .expect(1)
+            .create_async()
+            .await;
+
+        let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
+            .await
+            .unwrap();
+
+        // First call — fetches from server
+        let first_result = downloader.list_s3_files().await.unwrap();
+        assert_eq!(first_result.len(), 5); // 4 data + 1 checksum
+
+        // Second call — should use cache, no additional HTTP requests
+        let second_result = downloader.list_s3_files().await.unwrap();
+        assert_eq!(second_result.len(), 5);
+        assert_eq!(first_result.len(), second_result.len());
+
+        // mockito expect(1) will panic on drop if mocks were hit more than once
+    }
+
+    #[tokio::test]
+    async fn test_download_discogs_data_with_state_marker_skips() {
+        use crate::state_marker::StateMarker;
+        use sha2::{Digest, Sha256};
+
+        let temp_dir = TempDir::new().unwrap();
+
+        let mut server = mockito::Server::new_async().await;
+        let base_url = format!("{}/", server.url());
+
+        let main_page_html = r#"<html><body>
+            <a href="?prefix=data%2F2026%2F">2026/</a>
+        </body></html>"#;
+
+        let _main_mock = server
+            .mock("GET", "/")
+            .with_status(200)
+            .with_body(main_page_html)
+            .create_async()
+            .await;
+
+        let year_page_html = r#"<html><body>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+        </body></html>"#;
+
+        let _year_mock = server
+            .mock("GET", "/?prefix=data%2F2026%2F")
+            .with_status(200)
+            .with_body(year_page_html)
+            .create_async()
+            .await;
+
+        // Pre-create all 4 data files with matching checksums
+        let file_types = ["artists", "labels", "masters", "releases"];
+        let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
+            .await
+            .unwrap();
+
+        let mut expected_sizes: HashMap<String, u64> = HashMap::new();
+
+        for file_type in &file_types {
+            let filename = format!("discogs_20260101_{}.xml.gz", file_type);
+            let content = format!("state marker {} data", file_type);
+            let local_path = temp_dir.path().join(&filename);
+            fs::write(&local_path, content.as_bytes()).await.unwrap();
+
+            let mut hasher = Sha256::new();
+            hasher.update(content.as_bytes());
+            let checksum = format!("{:x}", hasher.finalize());
+
+            expected_sizes.insert(filename.clone(), content.len() as u64);
+
+            downloader.metadata.insert(
+                filename,
+                LocalFileInfo {
+                    path: local_path.to_string_lossy().to_string(),
+                    checksum,
+                    version: "202601".to_string(),
+                    size: content.len() as u64,
+                },
+            );
+        }
+
+        // Attach a state marker
+        let marker = StateMarker::new("20260101".to_string());
+        let marker_path = temp_dir.path().join(".extraction_status_20260101.json");
+        downloader.state_marker = Some(marker);
+        downloader.marker_path = Some(marker_path.clone());
+
+        let result = downloader.download_discogs_data().await.unwrap();
+        assert_eq!(result.len(), 4);
+
+        // State marker should track all files as downloaded with correct byte sizes
+        let marker = downloader.state_marker.as_ref().unwrap();
+        assert_eq!(marker.download_phase.files_downloaded, 4);
+        assert_eq!(marker.download_phase.status, crate::state_marker::PhaseStatus::Completed);
+        assert!(marker.download_phase.bytes_downloaded > 0);
+
+        // Verify each file is tracked in the state marker with correct size
+        for file_type in &file_types {
+            let filename = format!("discogs_20260101_{}.xml.gz", file_type);
+            let file_status = marker.download_phase.downloads_by_file.get(&filename);
+            assert!(file_status.is_some(), "File {} should be tracked in state marker", filename);
+            let status = file_status.unwrap();
+            assert_eq!(status.status, crate::state_marker::PhaseStatus::Completed);
+            assert_eq!(status.bytes_downloaded, *expected_sizes.get(&filename).unwrap());
+        }
+
+        // Verify marker was persisted to disk
+        assert!(marker_path.exists());
+    }
+
     #[test]
     fn test_get_latest_monthly_files_multiple_versions() {
         let temp_dir = TempDir::new().unwrap();

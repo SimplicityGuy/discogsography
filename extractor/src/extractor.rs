@@ -962,4 +962,238 @@ mod tests {
         // State marker file should have been created by the periodic save
         assert!(marker_path.exists(), "State marker file should be written on periodic save");
     }
+
+    #[test]
+    fn test_extract_version_from_filename() {
+        assert_eq!(
+            extract_version_from_filename("discogs_20260101_artists.xml.gz"),
+            Some("20260101".to_string())
+        );
+        assert_eq!(
+            extract_version_from_filename("discogs_20241201_labels.xml.gz"),
+            Some("20241201".to_string())
+        );
+        assert_eq!(
+            extract_version_from_filename("discogs_20230615_masters.xml.gz"),
+            Some("20230615".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_version_from_filename_invalid() {
+        // No underscores
+        assert_eq!(extract_version_from_filename("nounderscore"), None);
+        // Single part with no underscore
+        assert_eq!(extract_version_from_filename("singlepart"), None);
+        // Empty string
+        assert_eq!(extract_version_from_filename(""), None);
+        // Single underscore should still work (parts.len() == 2)
+        assert_eq!(
+            extract_version_from_filename("discogs_20260101"),
+            Some("20260101".to_string())
+        );
+    }
+
+    #[test]
+    fn test_extract_data_type_with_path_prefix() {
+        // Filenames with path components - the split on '_' still works because
+        // the path prefix becomes part of parts[0]
+        assert_eq!(
+            extract_data_type("2026/discogs_20260101_artists.xml.gz"),
+            Some(DataType::Artists)
+        );
+        assert_eq!(
+            extract_data_type("data/discogs_20260101_releases.xml.gz"),
+            Some(DataType::Releases)
+        );
+        assert_eq!(
+            extract_data_type("some/deep/path/discogs_20260101_masters.xml.gz"),
+            Some(DataType::Masters)
+        );
+    }
+
+    #[test]
+    fn test_extract_data_type_empty_string() {
+        assert_eq!(extract_data_type(""), None);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_progress_reporter_stall_detection() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        // Set up state: Artists has a last_extraction_time but is NOT in completed_files
+        {
+            let mut s = state.write().await;
+            s.last_extraction_time.insert(DataType::Artists, Instant::now());
+            s.extraction_progress.increment(DataType::Artists);
+        }
+
+        let shutdown = Arc::new(tokio::sync::Notify::new());
+        let shutdown_clone = shutdown.clone();
+        let state_clone = state.clone();
+
+        let handle = tokio::spawn(async move {
+            progress_reporter(state_clone, shutdown_clone).await;
+        });
+
+        tokio::task::yield_now().await;
+
+        // Advance past the first 10s reporting interval
+        tokio::time::advance(Duration::from_secs(11)).await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+
+        // At this point, elapsed time for Artists is ~11s which is < 120s, no stall yet.
+        // Advance well past 120s total to trigger stall detection
+        tokio::time::advance(Duration::from_secs(120)).await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+
+        // The reporter should have detected the stall (elapsed > 120s, file not completed).
+        // We can't easily capture log output, but the code path is exercised.
+        // Reporter should still be running.
+        assert!(!handle.is_finished());
+
+        shutdown.notify_waiters();
+        tokio::task::yield_now().await;
+
+        assert!(handle.is_finished());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_progress_reporter_with_completed_files_and_active_connections() {
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        // Set up state with extraction progress, completed files, and active connections
+        {
+            let mut s = state.write().await;
+            s.extraction_progress.artists = 1000;
+            s.extraction_progress.labels = 500;
+            s.extraction_progress.masters = 200;
+            s.extraction_progress.releases = 300;
+            s.completed_files.insert("discogs_20260101_artists.xml.gz".to_string());
+            s.active_connections.insert(DataType::Labels, "discogs_20260101_labels.xml.gz".to_string());
+        }
+
+        let shutdown = Arc::new(tokio::sync::Notify::new());
+        let shutdown_clone = shutdown.clone();
+        let state_clone = state.clone();
+
+        let handle = tokio::spawn(async move {
+            progress_reporter(state_clone, shutdown_clone).await;
+        });
+
+        tokio::task::yield_now().await;
+
+        // Advance past the first 10s reporting interval to fire the timer
+        tokio::time::advance(Duration::from_secs(11)).await;
+        tokio::task::yield_now().await;
+        tokio::task::yield_now().await;
+
+        // Reporter should still be running
+        assert!(!handle.is_finished());
+
+        // Shutdown
+        shutdown.notify_waiters();
+        tokio::task::yield_now().await;
+
+        assert!(handle.is_finished());
+        handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_message_batcher_multiple_batch_sizes() {
+        use crate::state_marker::StateMarker;
+        use tempfile::TempDir;
+
+        let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(100);
+        let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(100);
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker_path = temp_dir.path().join(".extraction_status_test.json");
+        let state_marker = Arc::new(tokio::sync::Mutex::new(StateMarker::new("20260101".to_string())));
+
+        // Send 25 messages with batch_size=10 => expect 3 batches (10, 10, 5)
+        for i in 0..25 {
+            let message = DataMessage {
+                id: i.to_string(),
+                sha256: format!("sha{}", i),
+                data: serde_json::json!({ "test": format!("test{}", i) }),
+            };
+            parse_sender.send(message).await.unwrap();
+        }
+        drop(parse_sender);
+
+        let batcher_config = BatcherConfig {
+            batch_size: 10,
+            data_type: DataType::Releases,
+            state: state.clone(),
+            state_marker,
+            marker_path,
+            file_name: "test_file.xml.gz".to_string(),
+            state_save_interval: 50000,
+        };
+
+        tokio::spawn(async move {
+            message_batcher(parse_receiver, batch_sender, batcher_config).await.ok();
+        });
+
+        // Collect all batches
+        let mut batches = Vec::new();
+        while let Some(batch) = batch_receiver.recv().await {
+            batches.push(batch.len());
+        }
+
+        assert_eq!(batches.len(), 3, "Expected 3 batches, got {}: {:?}", batches.len(), batches);
+        assert_eq!(batches[0], 10);
+        assert_eq!(batches[1], 10);
+        assert_eq!(batches[2], 5);
+    }
+
+    #[test]
+    fn test_extract_data_type_checksum_file() {
+        // CHECKSUM is not a valid DataType, so extract_data_type should return None
+        assert_eq!(extract_data_type("discogs_20260101_CHECKSUM.txt"), None);
+    }
+
+    #[tokio::test]
+    async fn test_message_batcher_empty_input() {
+        use crate::state_marker::StateMarker;
+        use tempfile::TempDir;
+
+        let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(10);
+        let (batch_sender, mut batch_receiver) = mpsc::channel::<Vec<DataMessage>>(10);
+        let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker_path = temp_dir.path().join(".extraction_status_test.json");
+        let state_marker = Arc::new(tokio::sync::Mutex::new(StateMarker::new("20260101".to_string())));
+
+        // Drop sender immediately - zero messages
+        drop(parse_sender);
+
+        let batcher_config = BatcherConfig {
+            batch_size: 10,
+            data_type: DataType::Artists,
+            state: state.clone(),
+            state_marker,
+            marker_path,
+            file_name: "test_file.xml.gz".to_string(),
+            state_save_interval: 5000,
+        };
+
+        let handle = tokio::spawn(async move {
+            message_batcher(parse_receiver, batch_sender, batcher_config).await
+        });
+
+        // Should receive no batches
+        let result = batch_receiver.recv().await;
+        assert!(result.is_none(), "Should receive no batches for empty input");
+
+        // Batcher should exit cleanly
+        let batcher_result = handle.await.unwrap();
+        assert!(batcher_result.is_ok(), "Batcher should exit cleanly with no input");
+    }
 }
