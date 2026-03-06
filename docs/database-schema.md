@@ -1,10 +1,10 @@
-# 🗄️ Database Schema
+# Database Schema
 
 <div align="center">
 
 **Complete database schema documentation for Neo4j and PostgreSQL**
 
-[🏠 Back to Main](../README.md) | [📚 Documentation Index](README.md) | [🏛️ Architecture](architecture.md)
+[Back to Main](../README.md) | [Documentation Index](README.md) | [Architecture](architecture.md)
 
 </div>
 
@@ -22,9 +22,9 @@ All schema definitions are owned exclusively by the **`schema-init`** service, w
 - **`schema-init/neo4j_schema.py`**: All Neo4j constraints and indexes
 - **`schema-init/postgres_schema.py`**: All PostgreSQL tables and indexes
 
-All DDL statements use `IF NOT EXISTS` — the schema is never dropped and is safe to re-run on every startup. Graphinator and Tableinator only write data; they rely on schema-init to have prepared the database beforehand.
+All DDL statements use `IF NOT EXISTS` -- the schema is never dropped and is safe to re-run on every startup. Graphinator and Tableinator only write data; they rely on schema-init to have prepared the database beforehand.
 
-## 🔗 Neo4j Graph Database
+## Neo4j Graph Database
 
 ### Purpose
 
@@ -34,9 +34,15 @@ Neo4j stores music industry relationships as a graph, making it ideal for:
 - Discovery of connections between artists
 - Analysis of label ecosystems
 - Genre and style relationships
-- Collaboration networks
+- User collection analysis and gap detection
+
+### Data Pipeline
+
+Raw XML data from the Discogs dump is parsed by the **extractor** into JSON messages and published to RabbitMQ. Each message includes a `type` field (`"data"` or `"file_complete"`), an `id`, and a `sha256` hash. Before writing to Neo4j, the **graphinator** normalizes each message using `normalize_record()`, which flattens nested XML-dict structures, extracts IDs, and parses year values. See [Extractor Message Format](#extractor-message-format) for the raw data structure.
 
 ### Node Types
+
+The graphinator stores only the properties needed for graph traversal and querying. Detailed record data is stored in PostgreSQL. The following sections document the **actual properties written to Neo4j** by the graphinator.
 
 #### Artist Node
 
@@ -44,24 +50,21 @@ Represents musicians, bands, producers, and other music industry individuals.
 
 ```cypher
 (:Artist {
-  id: String,              # Discogs artist ID
-  name: String,            # Artist name
-  real_name: String?,      # Real name (if different)
-  profile: String?,        # Biography/description
-  data_quality: String?,   # Data quality indicator
-  namevariations: [String]?, # Alternative names
-  urls: [String]?,         # Associated URLs
-  members: [String]?,      # Band members (if group)
-  groups: [String]?,       # Groups this artist belongs to
-  sha256: String           # SHA256 hash of record content (for deduplication)
+  id: String,              -- Discogs artist ID
+  name: String,            -- Artist name
+  resource_url: String,    -- Discogs API resource URL
+  releases_url: String,    -- Discogs API releases URL
+  sha256: String           -- Content hash for change detection
 })
 ```
 
 **Constraints & Indexes**:
 
 ```cypher
-CREATE CONSTRAINT IF NOT EXISTS FOR (a:Artist) REQUIRE a.id IS UNIQUE;
+CREATE CONSTRAINT artist_id IF NOT EXISTS FOR (a:Artist) REQUIRE a.id IS UNIQUE;
 CREATE INDEX artist_sha256 IF NOT EXISTS FOR (a:Artist) ON (a.sha256);
+CREATE INDEX artist_name IF NOT EXISTS FOR (a:Artist) ON (a.name);
+CREATE FULLTEXT INDEX artist_name_fulltext IF NOT EXISTS FOR (n:Artist) ON EACH [n.name];
 ```
 
 #### Label Node
@@ -70,22 +73,19 @@ Represents record labels and their imprints.
 
 ```cypher
 (:Label {
-  id: String,              # Discogs label ID
-  name: String,            # Label name
-  profile: String?,        # Label description
-  contact_info: String?,   # Contact information
-  parent_label: String?,   # Parent label (if sublabel)
-  sublabels: [String]?,    # Sublabels
-  urls: [String]?,         # Associated URLs
-  sha256: String           # SHA256 hash of record content (for deduplication)
+  id: String,              -- Discogs label ID
+  name: String,            -- Label name
+  sha256: String           -- Content hash for change detection
 })
 ```
 
 **Constraints & Indexes**:
 
 ```cypher
-CREATE CONSTRAINT IF NOT EXISTS FOR (l:Label) REQUIRE l.id IS UNIQUE;
+CREATE CONSTRAINT label_id IF NOT EXISTS FOR (l:Label) REQUIRE l.id IS UNIQUE;
 CREATE INDEX label_sha256 IF NOT EXISTS FOR (l:Label) ON (l.sha256);
+CREATE INDEX label_name IF NOT EXISTS FOR (l:Label) ON (l.name);
+CREATE FULLTEXT INDEX label_name_fulltext IF NOT EXISTS FOR (n:Label) ON EACH [n.name];
 ```
 
 #### Master Node
@@ -94,22 +94,17 @@ Represents master recordings (the original recordings from which releases are de
 
 ```cypher
 (:Master {
-  id: String,              # Discogs master ID
-  title: String,           # Recording title
-  year: Integer?,          # Release year
-  main_release: String?,   # Main release ID
-  data_quality: String?,   # Data quality indicator
-  genres: [String]?,       # Musical genres
-  styles: [String]?,       # Musical styles
-  artists: [String]?,      # Primary artists
-  sha256: String           # SHA256 hash of record content (for deduplication)
+  id: String,              -- Discogs master ID
+  title: String,           -- Recording title
+  year: Integer?,          -- Release year (parsed to integer, null if absent/invalid)
+  sha256: String           -- Content hash for change detection
 })
 ```
 
 **Constraints & Indexes**:
 
 ```cypher
-CREATE CONSTRAINT IF NOT EXISTS FOR (m:Master) REQUIRE m.id IS UNIQUE;
+CREATE CONSTRAINT master_id IF NOT EXISTS FOR (m:Master) REQUIRE m.id IS UNIQUE;
 CREATE INDEX master_sha256 IF NOT EXISTS FOR (m:Master) ON (m.sha256);
 ```
 
@@ -119,27 +114,21 @@ Represents physical or digital releases (albums, singles, etc.).
 
 ```cypher
 (:Release {
-  id: String,              # Discogs release ID
-  title: String,           # Release title
-  year: Integer?,          # Release year
-  country: String?,        # Country of release
-  format: [String]?,       # Format (CD, Vinyl, etc.)
-  master_id: String?,      # Associated master ID
-  data_quality: String?,   # Data quality indicator
-  genres: [String]?,       # Musical genres
-  styles: [String]?,       # Musical styles
-  artists: [String]?,      # Primary artists
-  labels: [String]?,       # Release labels
-  tracklist: [Object]?,    # Track information
-  sha256: String           # SHA256 hash of record content (for deduplication)
+  id: String,              -- Discogs release ID
+  title: String,           -- Release title
+  year: Integer?,          -- Release year (parsed from 'released' date field, null if absent)
+  formats: [String]?,      -- Deduplicated format names (e.g., ["Vinyl", "LP", "Album"])
+  sha256: String           -- Content hash for change detection
 })
 ```
 
 **Constraints & Indexes**:
 
 ```cypher
-CREATE CONSTRAINT IF NOT EXISTS FOR (r:Release) REQUIRE r.id IS UNIQUE;
+CREATE CONSTRAINT release_id IF NOT EXISTS FOR (r:Release) REQUIRE r.id IS UNIQUE;
 CREATE INDEX release_sha256 IF NOT EXISTS FOR (r:Release) ON (r.sha256);
+CREATE INDEX release_year_index IF NOT EXISTS FOR (r:Release) ON (r.year);
+CREATE FULLTEXT INDEX release_title_fulltext IF NOT EXISTS FOR (n:Release) ON EACH [n.title];
 ```
 
 #### Genre Node
@@ -148,14 +137,15 @@ Represents musical genres.
 
 ```cypher
 (:Genre {
-  name: String             # Genre name (e.g., "Rock", "Electronic")
+  name: String             -- Genre name (e.g., "Rock", "Electronic")
 })
 ```
 
-**Constraints**:
+**Constraints & Indexes**:
 
 ```cypher
-CREATE CONSTRAINT IF NOT EXISTS FOR (g:Genre) REQUIRE g.name IS UNIQUE;
+CREATE CONSTRAINT genre_name IF NOT EXISTS FOR (g:Genre) REQUIRE g.name IS UNIQUE;
+CREATE FULLTEXT INDEX genre_name_fulltext IF NOT EXISTS FOR (n:Genre) ON EACH [n.name];
 ```
 
 #### Style Node
@@ -164,73 +154,34 @@ Represents musical styles (sub-genres).
 
 ```cypher
 (:Style {
-  name: String             # Style name (e.g., "Progressive Rock", "Techno")
+  name: String             -- Style name (e.g., "Progressive Rock", "Techno")
+})
+```
+
+**Constraints & Indexes**:
+
+```cypher
+CREATE CONSTRAINT style_name IF NOT EXISTS FOR (s:Style) REQUIRE s.name IS UNIQUE;
+CREATE FULLTEXT INDEX style_name_fulltext IF NOT EXISTS FOR (n:Style) ON EACH [n.name];
+```
+
+#### User Node
+
+Represents an authenticated Discogs user. Created by the collection sync process.
+
+```cypher
+(:User {
+  id: String               -- Discogs username
 })
 ```
 
 **Constraints**:
 
 ```cypher
-CREATE CONSTRAINT IF NOT EXISTS FOR (s:Style) REQUIRE s.name IS UNIQUE;
+CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE;
 ```
 
 ### Relationships
-
-#### Artist Relationships
-
-```mermaid
-graph LR
-    A1[Artist] -->|MEMBER_OF| A2[Artist/Band]
-    A1 -->|ALIAS_OF| A3[Artist]
-    A1 -->|COLLABORATED_WITH| A4[Artist]
-    A1 -->|PERFORMED_ON| R[Release]
-
-    style A1 fill:#e3f2fd
-    style A2 fill:#e3f2fd
-    style A3 fill:#e3f2fd
-    style A4 fill:#e3f2fd
-    style R fill:#f3e5f5
-```
-
-**MEMBER_OF**:
-
-```cypher
-(artist:Artist)-[:MEMBER_OF]->(band:Artist)
-```
-
-- Direction: Individual → Band
-- Properties: None
-- Example: (John Lennon)-[:MEMBER_OF]->(The Beatles)
-
-**ALIAS_OF**:
-
-```cypher
-(alias:Artist)-[:ALIAS_OF]->(primary:Artist)
-```
-
-- Direction: Alias → Primary
-- Properties: None
-- Example: (The Artist Formerly Known as Prince)-[:ALIAS_OF]->(Prince)
-
-**COLLABORATED_WITH**:
-
-```cypher
-(artist1:Artist)-[:COLLABORATED_WITH]-(artist2:Artist)
-```
-
-- Direction: Bidirectional
-- Properties: None
-- Example: (David Bowie)-[:COLLABORATED_WITH]-(Queen)
-
-**PERFORMED_ON**:
-
-```cypher
-(artist:Artist)-[:PERFORMED_ON {role: String}]->(release:Release)
-```
-
-- Direction: Artist → Release
-- Properties: `role` (e.g., "Vocals", "Guitar")
-- Example: (Miles Davis)-[:PERFORMED_ON {role: "Trumpet"}]->(Kind of Blue)
 
 #### Release Relationships
 
@@ -256,7 +207,7 @@ graph LR
 (release:Release)-[:BY]->(artist:Artist)
 ```
 
-- Direction: Release → Artist
+- Direction: Release -> Artist
 - Properties: None
 - Example: (Dark Side of the Moon)-[:BY]->(Pink Floyd)
 
@@ -266,9 +217,9 @@ graph LR
 (release:Release)-[:ON]->(label:Label)
 ```
 
-- Direction: Release → Label
-- Properties: `catalog_number: String?`
-- Example: (Dark Side of the Moon)-[:ON {catalog_number: "SHVL 804"}]->(Harvest Records)
+- Direction: Release -> Label
+- Properties: None
+- Example: (Dark Side of the Moon)-[:ON]->(Harvest Records)
 
 **DERIVED_FROM**:
 
@@ -276,7 +227,7 @@ graph LR
 (release:Release)-[:DERIVED_FROM]->(master:Master)
 ```
 
-- Direction: Release → Master
+- Direction: Release -> Master
 - Properties: None
 - Example: (Dark Side of the Moon [UK pressing])-[:DERIVED_FROM]->(Dark Side of the Moon [master])
 
@@ -286,9 +237,9 @@ graph LR
 (release:Release)-[:IS]->(genre:Genre)
 ```
 
-- Direction: Release → Genre
+- Direction: Release -> Genre
 - Properties: None
-- Example: (Dark Side of the Moon)-[:IS]->(Progressive Rock)
+- Example: (Dark Side of the Moon)-[:IS]->(Rock)
 
 **IS** (Style):
 
@@ -296,20 +247,51 @@ graph LR
 (release:Release)-[:IS]->(style:Style)
 ```
 
-- Direction: Release → Style
+- Direction: Release -> Style
 - Properties: None
 - Example: (Dark Side of the Moon)-[:IS]->(Psychedelic Rock)
+
+#### Artist Relationships
+
+```mermaid
+graph LR
+    A1[Artist] -->|MEMBER_OF| A2[Artist/Band]
+    A3[Artist] -->|ALIAS_OF| A4[Artist]
+
+    style A1 fill:#e3f2fd
+    style A2 fill:#e3f2fd
+    style A3 fill:#e3f2fd
+    style A4 fill:#e3f2fd
+```
+
+**MEMBER_OF**:
+
+```cypher
+(artist:Artist)-[:MEMBER_OF]->(band:Artist)
+```
+
+- Direction: Individual -> Band
+- Properties: None
+- Example: (John Lennon)-[:MEMBER_OF]->(The Beatles)
+
+**ALIAS_OF**:
+
+```cypher
+(alias:Artist)-[:ALIAS_OF]->(primary:Artist)
+```
+
+- Direction: Alias -> Primary
+- Properties: None
+- Example: (The Artist Formerly Known as Prince)-[:ALIAS_OF]->(Prince)
 
 #### Label Relationships
 
 ```mermaid
 graph TD
     L1[Label] -->|SUBLABEL_OF| L2[Parent Label]
-    L2 -->|SUBLABEL_OF| L3[Parent Label]
 
     style L1 fill:#fff9c4
     style L2 fill:#fff9c4
-    style L3 fill:#fff9c4
 ```
 
 **SUBLABEL_OF**:
@@ -318,7 +300,7 @@ graph TD
 (sublabel:Label)-[:SUBLABEL_OF]->(parent:Label)
 ```
 
-- Direction: Sublabel → Parent
+- Direction: Sublabel -> Parent
 - Properties: None
 - Example: (Harvest Records)-[:SUBLABEL_OF]->(EMI)
 
@@ -338,16 +320,64 @@ graph TD
 (style:Style)-[:PART_OF]->(genre:Genre)
 ```
 
-- Direction: Style → Genre
+- Direction: Style -> Genre
 - Properties: None
 - Example: (Progressive Rock)-[:PART_OF]->(Rock)
+
+#### User Relationships
+
+```mermaid
+graph LR
+    U[User] -->|COLLECTED| R1[Release]
+    U -->|WANTS| R2[Release]
+
+    style U fill:#e8eaf6
+    style R1 fill:#f3e5f5
+    style R2 fill:#f3e5f5
+```
+
+**COLLECTED**:
+
+```cypher
+(user:User)-[:COLLECTED {rating, folder_id, date_added, synced_at}]->(release:Release)
+```
+
+- Direction: User -> Release
+- Properties: `rating` (Integer?), `folder_id` (String?), `date_added` (String?), `synced_at` (String)
+- Created by the collection sync process
+
+**WANTS**:
+
+```cypher
+(user:User)-[:WANTS {rating, date_added, synced_at}]->(release:Release)
+```
+
+- Direction: User -> Release
+- Properties: `rating` (Integer?), `date_added` (String?), `synced_at` (String)
+- Created by the wantlist sync process
+
+### Complete Relationship Summary
+
+| Relationship | From | To | Properties |
+|---|---|---|---|
+| BY | Release | Artist | None |
+| ON | Release | Label | None |
+| DERIVED_FROM | Release | Master | None |
+| IS | Release | Genre | None |
+| IS | Release | Style | None |
+| MEMBER_OF | Artist | Artist (band) | None |
+| ALIAS_OF | Artist | Artist (primary) | None |
+| SUBLABEL_OF | Label | Label (parent) | None |
+| PART_OF | Style | Genre | None |
+| COLLECTED | User | Release | rating, folder_id, date_added, synced_at |
+| WANTS | User | Release | rating, date_added, synced_at |
 
 ### Common Queries
 
 #### Find all releases by an artist
 
 ```cypher
-MATCH (a:Artist {name: "Pink Floyd"})-[:BY]-(r:Release)
+MATCH (r:Release)-[:BY]->(a:Artist {name: "Pink Floyd"})
 RETURN r.title, r.year
 ORDER BY r.year;
 ```
@@ -356,7 +386,7 @@ ORDER BY r.year;
 
 ```cypher
 MATCH (member:Artist)-[:MEMBER_OF]->(band:Artist {name: "The Beatles"})
-RETURN member.name, member.real_name;
+RETURN member.name;
 ```
 
 #### Explore label catalog
@@ -364,16 +394,18 @@ RETURN member.name, member.real_name;
 ```cypher
 MATCH (r:Release)-[:ON]->(l:Label {name: "Blue Note"})
 WHERE r.year >= 1950 AND r.year <= 1970
-RETURN r.title, r.artist, r.year
+RETURN r.title, r.year
 ORDER BY r.year;
 ```
 
-#### Find artist collaborations
+#### Release timeline by genre
 
 ```cypher
-MATCH (a1:Artist {name: "Miles Davis"})-[:COLLABORATED_WITH]-(a2:Artist)
-RETURN DISTINCT a2.name
-ORDER BY a2.name;
+MATCH (r:Release)-[:IS]->(g:Genre {name: "Jazz"})
+WHERE r.year > 0
+WITH r.year AS year, count(DISTINCT r) AS count
+RETURN year, count
+ORDER BY year;
 ```
 
 #### Analyze genre connections
@@ -386,7 +418,314 @@ ORDER BY release_count DESC
 LIMIT 20;
 ```
 
-## 🐘 PostgreSQL Database
+#### Gap analysis (find missing releases on a label)
+
+```cypher
+MATCH (u:User {id: $user_id})
+MATCH (l:Label {id: $label_id})<-[:ON]-(r:Release)
+WHERE NOT (u)-[:COLLECTED]->(r)
+OPTIONAL MATCH (r)-[:BY]->(a:Artist)
+OPTIONAL MATCH (r)-[:IS]->(g:Genre)
+RETURN r.id, r.title, r.year, r.formats,
+       collect(DISTINCT a.name)[0] AS artist,
+       collect(DISTINCT g.name) AS genres
+ORDER BY r.year DESC;
+```
+
+## Extractor Message Format
+
+The Rust extractor parses Discogs XML dumps and publishes JSON messages to RabbitMQ. Each entity type has its own queue. Messages use xmltodict conventions: XML attributes are prefixed with `@`, text content with attributes uses `#text`, and single vs multiple child elements may be an object vs array.
+
+### Message Envelope
+
+Every message includes:
+
+```json
+{
+  "type": "data",
+  "id": "<record_id>",
+  "sha256": "<64-char hex hash of record content>",
+  ...entity-specific fields
+}
+```
+
+File completion markers:
+
+```json
+{
+  "type": "file_complete",
+  "data_type": "artists|labels|masters|releases",
+  "file": "discogs_20260301_artists.xml.gz",
+  "total_processed": 523847,
+  "timestamp": "2026-03-05T12:45:23.456Z"
+}
+```
+
+### Raw Artist Message
+
+Source XML:
+
+```xml
+<artist id="1">
+  <id>1</id>
+  <name>The Beatles</name>
+  <members>
+    <name id="10">John Lennon</name>
+    <name id="20">Paul McCartney</name>
+  </members>
+  <aliases>
+    <name id="100">Beatles, The</name>
+  </aliases>
+  <groups>
+    <name id="200">Plastic Ono Band</name>
+  </groups>
+</artist>
+```
+
+Raw JSON message:
+
+```json
+{
+  "type": "data",
+  "id": "1",
+  "sha256": "abc123...",
+  "name": "The Beatles",
+  "members": {
+    "name": [
+      { "@id": "10", "#text": "John Lennon" },
+      { "@id": "20", "#text": "Paul McCartney" }
+    ]
+  },
+  "aliases": {
+    "name": { "@id": "100", "#text": "Beatles, The" }
+  },
+  "groups": {
+    "name": { "@id": "200", "#text": "Plastic Ono Band" }
+  }
+}
+```
+
+After `normalize_record("artists", ...)`:
+
+```json
+{
+  "id": "1",
+  "name": "The Beatles",
+  "sha256": "abc123...",
+  "members": [
+    { "id": "10", "name": "John Lennon" },
+    { "id": "20", "name": "Paul McCartney" }
+  ],
+  "aliases": [{ "id": "100", "name": "Beatles, The" }],
+  "groups": [{ "id": "200", "name": "Plastic Ono Band" }]
+}
+```
+
+### Raw Label Message
+
+Source XML:
+
+```xml
+<label>
+  <id>1</id>
+  <name>EMI</name>
+  <parentLabel id="500">EMI Group</parentLabel>
+  <sublabels>
+    <label id="10">Parlophone</label>
+    <label id="20">Columbia</label>
+  </sublabels>
+</label>
+```
+
+Raw JSON message:
+
+```json
+{
+  "type": "data",
+  "id": "1",
+  "sha256": "def456...",
+  "name": "EMI",
+  "parentLabel": { "@id": "500", "#text": "EMI Group" },
+  "sublabels": {
+    "label": [
+      { "@id": "10", "#text": "Parlophone" },
+      { "@id": "20", "#text": "Columbia" }
+    ]
+  }
+}
+```
+
+After `normalize_record("labels", ...)`:
+
+```json
+{
+  "id": "1",
+  "name": "EMI",
+  "sha256": "def456...",
+  "parentLabel": { "id": "500", "name": "EMI Group" },
+  "sublabels": [
+    { "id": "10", "name": "Parlophone" },
+    { "id": "20", "name": "Columbia" }
+  ]
+}
+```
+
+### Raw Master Message
+
+Source XML:
+
+```xml
+<master id="1000">
+  <title>Abbey Road</title>
+  <year>1969</year>
+  <artists>
+    <artist>
+      <id>456</id>
+      <name>The Beatles</name>
+    </artist>
+  </artists>
+  <genres>
+    <genre>Rock</genre>
+    <genre>Pop</genre>
+  </genres>
+  <styles>
+    <style>Pop Rock</style>
+  </styles>
+</master>
+```
+
+Raw JSON message:
+
+```json
+{
+  "type": "data",
+  "id": "1000",
+  "sha256": "ghi789...",
+  "title": "Abbey Road",
+  "year": "1969",
+  "artists": {
+    "artist": { "id": "456", "name": "The Beatles" }
+  },
+  "genres": { "genre": ["Rock", "Pop"] },
+  "styles": { "style": "Pop Rock" }
+}
+```
+
+After `normalize_record("masters", ...)`:
+
+```json
+{
+  "id": "1000",
+  "title": "Abbey Road",
+  "year": 1969,
+  "sha256": "ghi789...",
+  "artists": [{ "id": "456", "name": "The Beatles" }],
+  "genres": ["Rock", "Pop"],
+  "styles": ["Pop Rock"]
+}
+```
+
+Note: `year` is parsed from the string `"1969"` to the integer `1969` by `_parse_year_int()`.
+
+### Raw Release Message
+
+Source XML:
+
+```xml
+<release id="123">
+  <title>Abbey Road</title>
+  <released>1969-09-26</released>
+  <artists>
+    <artist>
+      <id>456</id>
+      <name>The Beatles</name>
+    </artist>
+  </artists>
+  <labels>
+    <label id="100" name="Apple Records" catno="PCS 7088"/>
+  </labels>
+  <formats>
+    <format name="Vinyl" qty="1">
+      <descriptions><description>LP</description></descriptions>
+    </format>
+  </formats>
+  <genres>
+    <genre>Rock</genre>
+  </genres>
+  <styles>
+    <style>Pop Rock</style>
+  </styles>
+  <master_id is_main_release="true">1000</master_id>
+  <country>UK</country>
+</release>
+```
+
+Raw JSON message:
+
+```json
+{
+  "type": "data",
+  "id": "123",
+  "sha256": "jkl012...",
+  "title": "Abbey Road",
+  "released": "1969-09-26",
+  "artists": {
+    "artist": { "id": "456", "name": "The Beatles" }
+  },
+  "labels": {
+    "label": { "@id": "100", "@name": "Apple Records", "@catno": "PCS 7088" }
+  },
+  "formats": {
+    "format": {
+      "@name": "Vinyl",
+      "@qty": "1",
+      "descriptions": { "description": "LP" }
+    }
+  },
+  "genres": { "genre": "Rock" },
+  "styles": { "style": "Pop Rock" },
+  "master_id": { "#text": "1000", "@is_main_release": "true" },
+  "country": "UK"
+}
+```
+
+After `normalize_record("releases", ...)`:
+
+```json
+{
+  "id": "123",
+  "title": "Abbey Road",
+  "year": 1969,
+  "sha256": "jkl012...",
+  "artists": [{ "id": "456", "name": "The Beatles" }],
+  "labels": [{ "id": "100", "name": "Apple Records", "catno": "PCS 7088" }],
+  "master_id": "1000",
+  "genres": ["Rock"],
+  "styles": ["Pop Rock"],
+  "released": "1969-09-26",
+  "country": "UK",
+  "formats": { "format": { "@name": "Vinyl", "@qty": "1", "descriptions": { "description": "LP" } } }
+}
+```
+
+Notes:
+- `year` is parsed from the `released` date field (`"1969-09-26"` -> `1969`) by `_parse_year_int()`.
+- `master_id` is extracted from the `#text` field of the dict.
+- `formats` raw data is preserved; the graphinator separately calls `extract_format_names()` to produce `["Vinyl"]` for storage on the Release node.
+
+### XML-to-JSON Conventions
+
+| XML Pattern | JSON Result |
+|---|---|
+| `<name>Text</name>` | `"name": "Text"` |
+| `<el id="1">Text</el>` | `"el": {"@id": "1", "#text": "Text"}` |
+| `<el id="1"/>` | `"el": {"@id": "1"}` |
+| Multiple `<el>` children | `"el": [...]` (array) |
+| Single `<el>` child | `"el": {...}` (object, not array) |
+
+This single-vs-array ambiguity is why `normalize_record()` exists: it normalizes all list-like fields to consistent arrays.
+
+## PostgreSQL Database
 
 ### Purpose
 
@@ -399,140 +738,70 @@ PostgreSQL stores denormalized data for:
 
 ### Table Schema
 
-All tables follow the same basic structure with JSONB columns for flexibility.
+All entity tables follow the same basic structure with JSONB columns for flexibility.
 
-#### Artists Table
-
-```sql
-CREATE TABLE artists (
-    data_id VARCHAR PRIMARY KEY,              -- Discogs artist ID
-    hash VARCHAR NOT NULL UNIQUE,             -- SHA256 hash for deduplication
-    data JSONB NOT NULL                       -- Complete artist data
-);
-
--- Indexes for performance
-CREATE INDEX idx_artists_name ON artists ((data->>'name'));
-CREATE INDEX idx_artists_gin ON artists USING GIN (data);
-CREATE INDEX idx_artists_real_name ON artists ((data->>'real_name'));
-```
-
-**Data Structure**:
-
-```json
-{
-  "id": "123",
-  "name": "Pink Floyd",
-  "real_name": null,
-  "profile": "British progressive rock band...",
-  "data_quality": "Correct",
-  "namevariations": ["The Pink Floyd", "Pink Floyd Sound"],
-  "urls": ["https://www.pinkfloyd.com"],
-  "members": ["Roger Waters", "David Gilmour", ...],
-  "images": [...]
-}
-```
-
-#### Labels Table
+#### Entity Tables (artists, labels, masters, releases)
 
 ```sql
-CREATE TABLE labels (
-    data_id VARCHAR PRIMARY KEY,
-    hash VARCHAR NOT NULL UNIQUE,
-    data JSONB NOT NULL
+CREATE TABLE IF NOT EXISTS <entity_type> (
+    data_id VARCHAR PRIMARY KEY,     -- Discogs entity ID
+    hash VARCHAR NOT NULL UNIQUE,    -- SHA256 hash for deduplication
+    data JSONB NOT NULL              -- Complete normalized record data
 );
 
-CREATE INDEX idx_labels_name ON labels ((data->>'name'));
-CREATE INDEX idx_labels_gin ON labels USING GIN (data);
-CREATE INDEX idx_labels_parent ON labels ((data->>'parent_label'));
+CREATE INDEX IF NOT EXISTS idx_<entity>_hash ON <entity> (hash);
 ```
 
-**Data Structure**:
+The `data` column stores the **full normalized record** from `normalize_record()`, not just the properties written to Neo4j. This means PostgreSQL has access to all fields (profile, tracklist, notes, etc.) while Neo4j only stores the subset needed for graph traversal.
 
-```json
-{
-  "id": "456",
-  "name": "Blue Note",
-  "profile": "American jazz record label...",
-  "contact_info": "...",
-  "parent_label": "EMI",
-  "sublabels": ["Blue Note Japan"],
-  "urls": ["https://www.bluenote.com"]
-}
-```
-
-#### Masters Table
+#### Entity-Specific Indexes
 
 ```sql
-CREATE TABLE masters (
-    data_id VARCHAR PRIMARY KEY,
-    hash VARCHAR NOT NULL UNIQUE,
-    data JSONB NOT NULL
-);
+-- Artists
+CREATE INDEX IF NOT EXISTS idx_artists_name ON artists ((data->>'name'));
 
-CREATE INDEX idx_masters_title ON masters ((data->>'title'));
-CREATE INDEX idx_masters_year ON masters ((data->>'year'));
-CREATE INDEX idx_masters_gin ON masters USING GIN (data);
-CREATE INDEX idx_masters_genres ON masters USING GIN ((data->'genres'));
+-- Labels
+CREATE INDEX IF NOT EXISTS idx_labels_name ON labels ((data->>'name'));
+
+-- Masters
+CREATE INDEX IF NOT EXISTS idx_masters_title ON masters ((data->>'title'));
+CREATE INDEX IF NOT EXISTS idx_masters_year ON masters ((data->>'year'));
+
+-- Releases
+CREATE INDEX IF NOT EXISTS idx_releases_title ON releases ((data->>'title'));
+CREATE INDEX IF NOT EXISTS idx_releases_year ON releases ((data->>'year'));
+CREATE INDEX IF NOT EXISTS idx_releases_country ON releases ((data->>'country'));
+CREATE INDEX IF NOT EXISTS idx_releases_genres ON releases USING GIN ((data->'genres'));
+CREATE INDEX IF NOT EXISTS idx_releases_labels ON releases USING GIN ((data->'labels'));
 ```
 
-**Data Structure**:
-
-```json
-{
-  "id": "789",
-  "title": "Kind of Blue",
-  "year": 1959,
-  "main_release": "789-1",
-  "data_quality": "Correct",
-  "genres": ["Jazz"],
-  "styles": ["Modal", "Cool Jazz"],
-  "artists": [{"id": "111", "name": "Miles Davis"}]
-}
-```
-
-#### Releases Table
+#### User Tables
 
 ```sql
-CREATE TABLE releases (
-    data_id VARCHAR PRIMARY KEY,
-    hash VARCHAR NOT NULL UNIQUE,
-    data JSONB NOT NULL
-);
-
--- Performance indexes
-CREATE INDEX idx_releases_title ON releases ((data->>'title'));
-CREATE INDEX idx_releases_artist ON releases ((data->>'artist'));
-CREATE INDEX idx_releases_year ON releases ((data->>'year'));
-CREATE INDEX idx_releases_country ON releases ((data->>'country'));
-CREATE INDEX idx_releases_gin ON releases USING GIN (data);
-CREATE INDEX idx_releases_genres ON releases USING GIN ((data->'genres'));
-CREATE INDEX idx_releases_labels ON releases USING GIN ((data->'labels'));
-
--- Full-text search index
-CREATE INDEX idx_releases_title_fts ON releases
-  USING GIN (to_tsvector('english', data->>'title'));
-```
-
-**Data Structure**:
-
-```json
-{
-  "id": "1000",
-  "title": "Kind of Blue",
-  "year": 1959,
-  "country": "US",
-  "format": ["Vinyl", "LP", "Album"],
-  "master_id": "789",
-  "data_quality": "Correct",
-  "genres": ["Jazz"],
-  "styles": ["Modal", "Cool Jazz"],
-  "artists": [{"id": "111", "name": "Miles Davis"}],
-  "labels": [{"id": "456", "name": "Columbia", "catno": "CL 1355"}],
-  "tracklist": [
-    {"position": "A1", "title": "So What", "duration": "9:22"},
+CREATE TABLE IF NOT EXISTS users (
+    id VARCHAR PRIMARY KEY,
+    username VARCHAR NOT NULL,
     ...
-  ]
-}
+);
+
+CREATE TABLE IF NOT EXISTS user_collections (
+    user_id VARCHAR NOT NULL,
+    release_id VARCHAR NOT NULL,
+    rating INTEGER,
+    folder_id INTEGER,
+    date_added TIMESTAMPTZ,
+    synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, release_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_wantlists (
+    user_id VARCHAR NOT NULL,
+    release_id VARCHAR NOT NULL,
+    rating INTEGER,
+    date_added TIMESTAMPTZ,
+    synced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (user_id, release_id)
+);
 ```
 
 ### Common Queries
@@ -542,7 +811,6 @@ CREATE INDEX idx_releases_title_fts ON releases
 ```sql
 SELECT
     data->>'title' as title,
-    data->>'artist' as artist,
     data->>'year' as year
 FROM releases
 WHERE data->>'title' ILIKE '%dark side%'
@@ -557,9 +825,8 @@ SELECT
     data->>'title' as title,
     data->>'year' as year,
     data->'genres' as genres
-FROM releases
-WHERE data->>'artist' = 'Miles Davis'
-AND (data->>'year')::int BETWEEN 1950 AND 1960
+FROM releases, jsonb_array_elements(data->'artists') as artist
+WHERE artist->>'name' = 'Miles Davis'
 ORDER BY (data->>'year')::int;
 ```
 
@@ -578,32 +845,7 @@ ORDER BY release_count DESC
 LIMIT 20;
 ```
 
-#### Search by label
-
-```sql
-SELECT
-    data->>'title' as title,
-    data->>'year' as year
-FROM releases
-WHERE data @> '{"labels": [{"name": "Blue Note"}]}'
-ORDER BY (data->>'year')::int;
-```
-
-#### Complex JSONB query
-
-```sql
-SELECT
-    data->>'title' as title,
-    data->>'year' as year,
-    label->>'name' as label,
-    label->>'catno' as catalog_number
-FROM releases,
-     jsonb_array_elements(data->'labels') as label
-WHERE (data->>'year')::int = 1959
-AND label->>'name' = 'Columbia';
-```
-
-## 🔄 Data Synchronization
+## Data Synchronization
 
 Both databases receive the same source data but store it differently:
 
@@ -623,87 +865,92 @@ graph TD
     style PG fill:#e8f5e9
 ```
 
+### Processing Pipeline
+
+Both graphinator and tableinator follow the same normalization pipeline:
+
+1. Raw JSON message received from RabbitMQ
+2. `normalize_record(data_type, data)` called to flatten XML-dict structures
+3. Hash-based deduplication check (skip if unchanged)
+4. Write to database (Neo4j nodes/relationships or PostgreSQL JSONB)
+5. Acknowledge message
+
+Both batch and single-message processing paths call `normalize_record()` at the same point, ensuring identical data reaches the database regardless of processing mode.
+
 ### Consistency Guarantees
 
 - **Hash-based deduplication**: Prevents duplicate records
 - **Idempotent operations**: Re-processing same data is safe
 - **Eventual consistency**: Both databases will converge to same state
 - **No distributed transactions**: Services operate independently
+- **Identical normalization**: Both paths use `normalize_record()` before writing
 
 ### Data Flow
 
 1. **Schema-Init** creates all constraints, indexes, and tables in Neo4j and PostgreSQL (before any other service starts)
 1. Extractor parses XML and computes SHA256 hash
 1. Message published to RabbitMQ with data + hash
-1. Graphinator writes nodes and relationships to Neo4j (schema already exists)
-1. Tableinator writes JSONB records to PostgreSQL (schema already exists)
+1. Graphinator normalizes and writes nodes and relationships to Neo4j
+1. Tableinator normalizes and writes JSONB records to PostgreSQL
 1. New/changed records inserted/updated in both databases
 
-## 📊 Performance Considerations
+## Performance Considerations
 
 ### Neo4j Optimization
 
 **Index Strategy**:
 
-- Create indexes on frequently queried properties
-- Use composite indexes for complex queries
-- Monitor query performance with `PROFILE` command
+- Uniqueness constraints on all node ID properties
+- SHA256 indexes for fast deduplication lookups
+- Name/title indexes for query performance
+- Full-text indexes for autocomplete search
+- Year index on Release for timeline queries
 
 **Query Optimization**:
 
 - Use `LIMIT` to restrict result size
 - Avoid Cartesian products
 - Use parameters for repeated queries
-- Consider query caching
+- Year stored as integer to avoid runtime `toInteger()` coercion
 
 **Batch Operations**:
 
 - Use `UNWIND` for batch inserts
-- Transaction size: 1000-5000 operations
-- Periodic `COMMIT` for long-running operations
+- Transaction size: 100 records per batch (configurable)
+- Periodic flush for low-traffic periods
 
 ### PostgreSQL Optimization
 
 **Index Strategy**:
 
-- B-tree indexes for equality/range queries
-- GIN indexes for JSONB and full-text search
-- Analyze query plans with `EXPLAIN ANALYZE`
+- B-tree indexes for equality/range queries on extracted JSONB fields
+- GIN indexes for JSONB containment queries (genres, labels)
 
 **Query Optimization**:
 
 - Use `->` for key access, `->>` for text values
 - Cast types explicitly: `(data->>'year')::int`
 - Utilize GIN indexes for `@>` containment queries
-- Consider materialized views for complex analytics
 
 **Vacuum and Analyze**:
 
 ```sql
--- Regular maintenance
 VACUUM ANALYZE artists;
 VACUUM ANALYZE labels;
 VACUUM ANALYZE masters;
 VACUUM ANALYZE releases;
 ```
 
-## 🔧 Database Maintenance
+## Database Maintenance
 
 ### Neo4j Maintenance
 
 ```cypher
--- Check database stats
-CALL dbms.queryJmx('org.neo4j:*') YIELD name, attributes;
-
 -- List all indexes
 SHOW INDEXES;
 
 -- List all constraints
 SHOW CONSTRAINTS;
-
--- Rebuild indexes (if needed)
-DROP INDEX index_name IF EXISTS;
-CREATE INDEX index_name FOR (n:NodeType) ON (n.property);
 ```
 
 ### PostgreSQL Maintenance
@@ -713,11 +960,6 @@ CREATE INDEX index_name FOR (n:NodeType) ON (n.property);
 SELECT schemaname, tablename, n_live_tup, n_dead_tup
 FROM pg_stat_user_tables
 ORDER BY n_live_tup DESC;
-
--- Index usage
-SELECT schemaname, tablename, indexname, idx_scan, idx_tup_read, idx_tup_fetch
-FROM pg_stat_user_indexes
-ORDER BY idx_scan DESC;
 
 -- Table sizes
 SELECT
@@ -732,10 +974,9 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 ## Related Documentation
 
 - [Architecture Overview](architecture.md) - System architecture and data flow
-- [Usage Examples](usage-examples.md) - More query examples
-- [Performance Guide](performance-guide.md) - Database tuning
 - [Neo4j Indexing](neo4j-indexing.md) - Advanced indexing strategies
+- [State Marker System](state-marker-system.md) - Extractor progress tracking
 
-______________________________________________________________________
+---
 
-**Last Updated**: 2026-02-18
+**Last Updated**: 2026-03-05

@@ -21,7 +21,8 @@ from common import (
     HealthServer,
     setup_logging,
 )
-from common.data_normalizer import _parse_year_int, extract_format_names
+from common import normalize_record
+from common.data_normalizer import extract_format_names
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from orjson import loads
 
@@ -494,92 +495,47 @@ def process_artist(tx: Any, record: dict[str, Any]) -> bool:
         sha256=record["sha256"],
     )
 
-    # Handle members
-    members: dict[str, Any] | None = record.get("members")
-    if members is not None:
-        members_list = (
-            members["name"] if isinstance(members["name"], list) else [members["name"]]
-        )
-        if members_list:
-            valid_members = []
-            for member in members_list:
-                if isinstance(member, str):
-                    member_id = member
-                else:
-                    member_id = member.get("@id") or member.get("id")
-                if member_id:
-                    valid_members.append({"id": member_id})
-                else:
-                    logger.warning(
-                        f"⚠️ Skipping member without ID in artist {record['id']}: {member}"
-                    )
-            if valid_members:
-                tx.run(
-                    "UNWIND $members AS member "
-                    "MATCH (a:Artist {id: $artist_id}) "
-                    "MERGE (m_a:Artist {id: member.id}) "
-                    "MERGE (m_a)-[:MEMBER_OF]->(a)",
-                    members=valid_members,
-                    artist_id=record["id"],
-                )
+    # Handle members (normalized to list of {"id": ...} dicts)
+    members: list[dict[str, Any]] | None = record.get("members")
+    if members:
+        valid_members = [m for m in members if m.get("id")]
+        if valid_members:
+            tx.run(
+                "UNWIND $members AS member "
+                "MATCH (a:Artist {id: $artist_id}) "
+                "MERGE (m_a:Artist {id: member.id}) "
+                "MERGE (m_a)-[:MEMBER_OF]->(a)",
+                members=valid_members,
+                artist_id=record["id"],
+            )
 
-    # Handle groups
-    groups: dict[str, Any] | None = record.get("groups")
-    if groups is not None:
-        groups_list = (
-            groups["name"] if isinstance(groups["name"], list) else [groups["name"]]
-        )
-        if groups_list:
-            valid_groups = []
-            for group in groups_list:
-                if isinstance(group, str):
-                    group_id = group
-                else:
-                    group_id = group.get("@id") or group.get("id")
-                if group_id:
-                    valid_groups.append({"id": group_id})
-                else:
-                    logger.warning(
-                        f"⚠️ Skipping group without ID in artist {record['id']}: {group}"
-                    )
-            if valid_groups:
-                tx.run(
-                    "UNWIND $groups AS group "
-                    "MATCH (a:Artist {id: $artist_id}) "
-                    "MERGE (g_a:Artist {id: group.id}) "
-                    "MERGE (a)-[:MEMBER_OF]->(g_a)",
-                    groups=valid_groups,
-                    artist_id=record["id"],
-                )
+    # Handle groups (normalized to list of {"id": ...} dicts)
+    groups: list[dict[str, Any]] | None = record.get("groups")
+    if groups:
+        valid_groups = [g for g in groups if g.get("id")]
+        if valid_groups:
+            tx.run(
+                "UNWIND $groups AS group "
+                "MATCH (a:Artist {id: $artist_id}) "
+                "MERGE (g_a:Artist {id: group.id}) "
+                "MERGE (a)-[:MEMBER_OF]->(g_a)",
+                groups=valid_groups,
+                artist_id=record["id"],
+            )
 
-    # Handle aliases
-    aliases: dict[str, Any] | None = record.get("aliases")
-    if aliases is not None:
-        aliases_list = (
-            aliases["name"] if isinstance(aliases["name"], list) else [aliases["name"]]
-        )
-        if aliases_list:
-            valid_aliases = []
-            for alias in aliases_list:
-                if isinstance(alias, str):
-                    alias_id = alias
-                else:
-                    alias_id = alias.get("@id") or alias.get("id")
-                if alias_id:
-                    valid_aliases.append({"id": alias_id})
-                else:
-                    logger.warning(
-                        f"⚠️ Skipping alias without ID in artist {record['id']}: {alias}"
-                    )
-            if valid_aliases:
-                tx.run(
-                    "UNWIND $aliases AS alias "
-                    "MATCH (a:Artist {id: $artist_id}) "
-                    "MERGE (a_a:Artist {id: alias.id}) "
-                    "MERGE (a_a)-[:ALIAS_OF]->(a)",
-                    aliases=valid_aliases,
-                    artist_id=record["id"],
-                )
+    # Handle aliases (normalized to list of {"id": ...} dicts)
+    aliases: list[dict[str, Any]] | None = record.get("aliases")
+    if aliases:
+        valid_aliases = [a for a in aliases if a.get("id")]
+        if valid_aliases:
+            tx.run(
+                "UNWIND $aliases AS alias "
+                "MATCH (a:Artist {id: $artist_id}) "
+                "MERGE (a_a:Artist {id: alias.id}) "
+                "MERGE (a_a)-[:ALIAS_OF]->(a)",
+                aliases=valid_aliases,
+                artist_id=record["id"],
+            )
 
     return True  # Updated successfully
 
@@ -602,65 +558,30 @@ def process_label(tx: Any, record: dict[str, Any]) -> bool:
         sha256=record["sha256"],
     )
 
-    # Handle parent label relationship
-    parent: dict[str, Any] | str | None = record.get("parentLabel")
-    if parent is not None:
-        parent_id: str | None
-        if isinstance(parent, str):
-            parent_id = parent
-        else:
-            parent_id = parent.get("@id") or parent.get("id")
+    # Handle parent label relationship (normalized to {"id": ...} dict)
+    parent: dict[str, Any] | None = record.get("parentLabel")
+    if parent and parent.get("id"):
+        tx.run(
+            "MATCH (l:Label {id: $id}) "
+            "MERGE (p_l:Label {id: $p_id}) "
+            "MERGE (l)-[:SUBLABEL_OF]->(p_l)",
+            id=record["id"],
+            p_id=parent["id"],
+        )
 
-        if parent_id:
+    # Handle sublabels (normalized to list of {"id": ...} dicts)
+    sublabels: list[dict[str, Any]] | None = record.get("sublabels")
+    if sublabels:
+        valid_sublabels = [s for s in sublabels if s.get("id")]
+        if valid_sublabels:
             tx.run(
-                "MATCH (l:Label {id: $id}) "
-                "MERGE (p_l:Label {id: $p_id}) "
-                "MERGE (l)-[:SUBLABEL_OF]->(p_l)",
-                id=record["id"],
-                p_id=parent_id,
+                "UNWIND $sublabels AS sublabel "
+                "MATCH (l:Label {id: $label_id}) "
+                "MERGE (s_l:Label {id: sublabel.id}) "
+                "MERGE (s_l)-[:SUBLABEL_OF]->(l)",
+                sublabels=valid_sublabels,
+                label_id=record["id"],
             )
-        else:
-            logger.warning(
-                f"⚠️ Skipping parent label without ID in label {record['id']}: {parent}"
-            )
-
-    # Handle sublabels in batch
-    sublabels: dict[str, Any] | list[Any] | str | None = record.get("sublabels")
-    if sublabels is not None:
-        sublabels_list: list[Any] = []
-        if isinstance(sublabels, str):
-            sublabels_list = [sublabels]
-        elif isinstance(sublabels, list):
-            sublabels_list = sublabels
-        elif isinstance(sublabels, dict) and "label" in sublabels:
-            sublabels_list = (
-                sublabels["label"]
-                if isinstance(sublabels["label"], list)
-                else [sublabels["label"]]
-            )
-
-        if sublabels_list:
-            valid_sublabels = []
-            for sublabel in sublabels_list:
-                if isinstance(sublabel, str):
-                    sublabel_id = sublabel
-                else:
-                    sublabel_id = sublabel.get("@id") or sublabel.get("id")
-                if sublabel_id:
-                    valid_sublabels.append({"id": sublabel_id})
-                else:
-                    logger.warning(
-                        f"⚠️ Skipping sublabel without ID in label {record['id']}: {sublabel}"
-                    )
-            if valid_sublabels:
-                tx.run(
-                    "UNWIND $sublabels AS sublabel "
-                    "MATCH (l:Label {id: $label_id}) "
-                    "MERGE (s_l:Label {id: sublabel.id}) "
-                    "MERGE (s_l)-[:SUBLABEL_OF]->(l)",
-                    sublabels=valid_sublabels,
-                    label_id=record["id"],
-                )
 
     return True  # Updated successfully
 
@@ -681,73 +602,46 @@ def process_master(tx: Any, record: dict[str, Any]) -> bool:
         "ON MATCH SET m.title = $title, m.year = $year, m.sha256 = $sha256",
         id=record["id"],
         title=record.get("title", "Unknown Master"),
-        year=_parse_year_int(record.get("year")),
+        year=record.get("year"),
         sha256=record["sha256"],
     )
 
-    # Handle artist relationships in batch
-    artists: dict[str, Any] | None = record.get("artists")
-    if artists is not None:
-        artists_list = (
-            artists["artist"]
-            if isinstance(artists["artist"], list)
-            else [artists["artist"]]
-        )
-        if artists_list:
-            valid_artists = []
-            for artist in artists_list:
-                if isinstance(artist, str):
-                    artist_id = artist
-                else:
-                    artist_id = artist.get("id") or artist.get("@id")
-                if artist_id:
-                    valid_artists.append({"id": artist_id})
-                else:
-                    logger.warning(
-                        f"⚠️ Skipping artist without ID in master {record['id']}: {artist}"
-                    )
-            if valid_artists:
-                tx.run(
-                    "UNWIND $artists AS artist "
-                    "MATCH (m:Master {id: $master_id}) "
-                    "MERGE (a_m:Artist {id: artist.id}) "
-                    "MERGE (m)-[:BY]->(a_m)",
-                    artists=valid_artists,
-                    master_id=record["id"],
-                )
-
-    # Handle genres and styles
-    genres: dict[str, Any] | None = record.get("genres")
-    genres_list: list[str] = []
-    if genres is not None:
-        genres_list = (
-            genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
-        )
-        if genres_list:
+    # Handle artist relationships (normalized to list of {"id": ...} dicts)
+    artists: list[dict[str, Any]] | None = record.get("artists")
+    if artists:
+        valid_artists = [a for a in artists if a.get("id")]
+        if valid_artists:
             tx.run(
-                "UNWIND $genres AS genre "
+                "UNWIND $artists AS artist "
                 "MATCH (m:Master {id: $master_id}) "
-                "MERGE (g:Genre {name: genre.name}) "
-                "MERGE (m)-[:IS]->(g)",
-                genres=[{"name": genre} for genre in genres_list],
+                "MERGE (a_m:Artist {id: artist.id}) "
+                "MERGE (m)-[:BY]->(a_m)",
+                artists=valid_artists,
                 master_id=record["id"],
             )
 
-    styles: dict[str, Any] | None = record.get("styles")
-    styles_list: list[str] = []
-    if styles is not None:
-        styles_list = (
-            styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
+    # Handle genres and styles (normalized to string lists)
+    genres_list: list[str] = record.get("genres", [])
+    if genres_list:
+        tx.run(
+            "UNWIND $genres AS genre "
+            "MATCH (m:Master {id: $master_id}) "
+            "MERGE (g:Genre {name: genre.name}) "
+            "MERGE (m)-[:IS]->(g)",
+            genres=[{"name": genre} for genre in genres_list],
+            master_id=record["id"],
         )
-        if styles_list:
-            tx.run(
-                "UNWIND $styles AS style "
-                "MATCH (m:Master {id: $master_id}) "
-                "MERGE (s:Style {name: style.name}) "
-                "MERGE (m)-[:IS]->(s)",
-                styles=[{"name": style} for style in styles_list],
-                master_id=record["id"],
-            )
+
+    styles_list: list[str] = record.get("styles", [])
+    if styles_list:
+        tx.run(
+            "UNWIND $styles AS style "
+            "MATCH (m:Master {id: $master_id}) "
+            "MERGE (s:Style {name: style.name}) "
+            "MERGE (m)-[:IS]->(s)",
+            styles=[{"name": style} for style in styles_list],
+            master_id=record["id"],
+        )
 
     # Connect styles to genres if both exist
     if genres_list and styles_list:
@@ -776,7 +670,6 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     if existing_record and existing_record["hash"] == record["sha256"]:
         return False  # No update needed
 
-    year = _parse_year_int(record.get("year") or record.get("released"))
     formats = extract_format_names(record.get("formats"))
     tx.run(
         "MERGE (r:Release {id: $id}) "
@@ -784,119 +677,71 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
         "ON MATCH SET r.title = $title, r.year = $year, r.formats = $formats, r.sha256 = $sha256",
         id=record["id"],
         title=record.get("title", "Unknown Release"),
-        year=year,
+        year=record.get("year"),
         formats=formats,
         sha256=record["sha256"],
     )
 
-    # Handle artist relationships
-    artists: dict[str, Any] | None = record.get("artists")
-    if artists is not None:
-        artists_list = (
-            artists["artist"]
-            if isinstance(artists["artist"], list)
-            else [artists["artist"]]
-        )
-        if artists_list:
-            valid_artists = []
-            for artist in artists_list:
-                if isinstance(artist, str):
-                    artist_id = artist
-                else:
-                    artist_id = artist.get("id") or artist.get("@id")
-                if artist_id:
-                    valid_artists.append({"id": artist_id})
-                else:
-                    logger.warning(
-                        f"⚠️ Skipping artist without ID in release {record['id']}: {artist}"
-                    )
-            if valid_artists:
-                tx.run(
-                    "UNWIND $artists AS artist "
-                    "MATCH (r:Release {id: $release_id}) "
-                    "MERGE (a_r:Artist {id: artist.id}) "
-                    "MERGE (r)-[:BY]->(a_r)",
-                    artists=valid_artists,
-                    release_id=record["id"],
-                )
-
-    # Handle label relationships
-    labels: dict[str, Any] | None = record.get("labels")
-    if labels is not None:
-        labels_list = (
-            labels["label"] if isinstance(labels["label"], list) else [labels["label"]]
-        )
-        if labels_list:
-            valid_labels = []
-            for label in labels_list:
-                if isinstance(label, str):
-                    label_id = label
-                else:
-                    label_id = label.get("@id") or label.get("id")
-                if label_id:
-                    valid_labels.append({"id": label_id})
-                else:
-                    logger.warning(
-                        f"⚠️ Skipping label without ID in release {record['id']}: {label}"
-                    )
-            if valid_labels:
-                tx.run(
-                    "UNWIND $labels AS label "
-                    "MATCH (r:Release {id: $release_id}) "
-                    "MERGE (l_r:Label {id: label.id}) "
-                    "MERGE (r)-[:ON]->(l_r)",
-                    labels=valid_labels,
-                    release_id=record["id"],
-                )
-
-    # Handle master relationship
-    master_id: dict[str, Any] | None = record.get("master_id")
-    if master_id is not None:
-        m_id = master_id.get("#text") if isinstance(master_id, dict) else master_id
-        if m_id:
+    # Handle artist relationships (normalized to list of {"id": ...} dicts)
+    artists: list[dict[str, Any]] | None = record.get("artists")
+    if artists:
+        valid_artists = [a for a in artists if a.get("id")]
+        if valid_artists:
             tx.run(
-                "MATCH (r:Release {id: $id}),(m_r:Master {id: $m_id}) "
-                "MERGE (r)-[:DERIVED_FROM]->(m_r)",
-                id=record["id"],
-                m_id=m_id,
-            )
-        else:
-            logger.warning(
-                f"⚠️ Skipping master relationship without valid ID in release {record['id']}: {master_id}"
-            )
-
-    # Handle genres and styles in batch
-    genres: dict[str, Any] | None = record.get("genres")
-    genres_list: list[str] = []
-    if genres is not None:
-        genres_list = (
-            genres["genre"] if isinstance(genres["genre"], list) else [genres["genre"]]
-        )
-        if genres_list:
-            tx.run(
-                "UNWIND $genres AS genre "
+                "UNWIND $artists AS artist "
                 "MATCH (r:Release {id: $release_id}) "
-                "MERGE (g:Genre {name: genre.name}) "
-                "MERGE (r)-[:IS]->(g)",
-                genres=[{"name": genre} for genre in genres_list],
+                "MERGE (a_r:Artist {id: artist.id}) "
+                "MERGE (r)-[:BY]->(a_r)",
+                artists=valid_artists,
                 release_id=record["id"],
             )
 
-    styles: dict[str, Any] | None = record.get("styles")
-    styles_list: list[str] = []
-    if styles is not None:
-        styles_list = (
-            styles["style"] if isinstance(styles["style"], list) else [styles["style"]]
-        )
-        if styles_list:
+    # Handle label relationships (normalized to list of {"id": ...} dicts)
+    labels: list[dict[str, Any]] | None = record.get("labels")
+    if labels:
+        valid_labels = [lbl for lbl in labels if lbl.get("id")]
+        if valid_labels:
             tx.run(
-                "UNWIND $styles AS style "
+                "UNWIND $labels AS label "
                 "MATCH (r:Release {id: $release_id}) "
-                "MERGE (s:Style {name: style.name}) "
-                "MERGE (r)-[:IS]->(s)",
-                styles=[{"name": style} for style in styles_list],
+                "MERGE (l_r:Label {id: label.id}) "
+                "MERGE (r)-[:ON]->(l_r)",
+                labels=valid_labels,
                 release_id=record["id"],
             )
+
+    # Handle master relationship (normalized to string)
+    master_id = record.get("master_id")
+    if master_id:
+        tx.run(
+            "MATCH (r:Release {id: $id}),(m_r:Master {id: $m_id}) "
+            "MERGE (r)-[:DERIVED_FROM]->(m_r)",
+            id=record["id"],
+            m_id=master_id,
+        )
+
+    # Handle genres and styles (normalized to string lists)
+    genres_list: list[str] = record.get("genres", [])
+    if genres_list:
+        tx.run(
+            "UNWIND $genres AS genre "
+            "MATCH (r:Release {id: $release_id}) "
+            "MERGE (g:Genre {name: genre.name}) "
+            "MERGE (r)-[:IS]->(g)",
+            genres=[{"name": genre} for genre in genres_list],
+            release_id=record["id"],
+        )
+
+    styles_list: list[str] = record.get("styles", [])
+    if styles_list:
+        tx.run(
+            "UNWIND $styles AS style "
+            "MATCH (r:Release {id: $release_id}) "
+            "MERGE (s:Style {name: style.name}) "
+            "MERGE (r)-[:IS]->(s)",
+            styles=[{"name": style} for style in styles_list],
+            release_id=record["id"],
+        )
 
     # Connect styles to genres if both exist
     if genres_list and styles_list:
@@ -948,6 +793,7 @@ def make_message_handler(
                 last_message_time[data_type] = time.time()
                 return
 
+            record = normalize_record(data_type, record)
             record_id = record.get("id", "unknown")
             record_name = record.get(name_field, default_name)
 

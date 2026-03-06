@@ -17,6 +17,7 @@ class ExploreApp {
         this.graph = new GraphVisualization('graphContainer');
         this.trends = new TrendsChart('trendsChart');
         this.userPanes = new window.UserPanes();
+        window.userPanes = this.userPanes;
 
         // Wire up callbacks
         this.autocomplete.onSelect = (name) => this._onSearch(name);
@@ -539,7 +540,7 @@ class ExploreApp {
         }
 
         title.textContent = details.name || nodeId;
-        body.replaceChildren(...this._renderDetails(details, type));
+        body.replaceChildren(...this._renderDetails(details, type, nodeId));
 
         // Add ownership badges for release nodes
         if (type === 'release' && window.authManager.isLoggedIn()) {
@@ -569,7 +570,7 @@ class ExploreApp {
         await this._loadExplore(name, type);
     }
 
-    _renderDetails(details, type) {
+    _renderDetails(details, type, nodeId) {
         const nodes = [];
 
         const explorableTypes = ['artist', 'genre', 'label', 'style'];
@@ -589,8 +590,8 @@ class ExploreApp {
             if (details.genres?.length) nodes.push(this._detailTags('Genres', details.genres));
             if (details.styles?.length) nodes.push(this._detailTags('Styles', details.styles));
             if (details.groups?.length) nodes.push(this._detailTags('Groups', details.groups));
-            if (window.authManager.isLoggedIn()) {
-                nodes.push(this._gapAnalysisButton('artist', nodeId, details.name));
+            if (window.authManager.isLoggedIn() && details.id) {
+                nodes.push(this._gapAnalysisButton('artist', details.id, details.name));
             }
         } else if (type === 'release') {
             if (details.year) nodes.push(this._detailStat('Year', details.year));
@@ -600,8 +601,8 @@ class ExploreApp {
             if (details.styles?.length) nodes.push(this._detailTags('Styles', details.styles));
         } else if (type === 'label') {
             nodes.push(this._detailStat('Releases', details.release_count || 0));
-            if (window.authManager.isLoggedIn()) {
-                nodes.push(this._gapAnalysisButton('label', nodeId, details.name));
+            if (window.authManager.isLoggedIn() && details.id) {
+                nodes.push(this._gapAnalysisButton('label', details.id, details.name));
             }
         } else if (type === 'genre' || type === 'style') {
             nodes.push(this._detailStat('Artists', details.artist_count || 0));
