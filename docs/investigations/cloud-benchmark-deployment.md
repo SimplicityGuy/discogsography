@@ -872,3 +872,23 @@ ansible-playbook infra/playbooks/teardown.yml --ask-vault-pass
 - [ ] Test with 2 hosts first (controller + neo4j) before scaling to all 6
 - [ ] Run initial benchmark with synthetic dataset to validate the pipeline
 - [ ] Set $75 billing alert in Hetzner Console
+- [ ] Run `benchmarks/calibrate.py` on each CX53 host and save as `benchmarks/results/hetzner_cx53_calibration.json`
+
+## Scaling Results to Other Hardware
+
+After benchmarks complete, anyone can estimate how the results translate to their own hardware without re-running the full suite. See [shared-pre-work.md, Section 3](shared-pre-work.md#3-scaling-results-to-your-environment) for the full methodology.
+
+Quick start:
+
+```bash
+# Run calibration on your machine (~30 seconds)
+uv run python -m benchmarks.calibrate --output my-calibration.json
+
+# Scale any benchmark result file to your hardware
+uv run python -m benchmarks.scale_results \
+  --baseline benchmarks/results/hetzner_cx53_calibration.json \
+  --local my-calibration.json \
+  --benchmark-results benchmarks/results/neo4j_large_2026-03-10.json
+```
+
+The calibration runs the same micro-benchmarks (CPU, memory, sequential/random I/O) on both machines and computes per-dimension scaling factors. These are applied with workload-specific weights to produce estimated latency and throughput numbers for your hardware.

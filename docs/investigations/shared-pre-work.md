@@ -228,29 +228,32 @@ Two scale points provide enough data to understand how performance changes with 
 | `small` | 10,000 | 5,000 | 20,000 | 100,000 | ~135,000 | ~540,000 |
 | `large` | 100,000 | 50,000 | 200,000 | 1,000,000 | ~1,350,000 | ~5,400,000 |
 
-The ratios between data types are derived from the real Discogs dataset:
+The ratios between data types are derived from the real Discogs dataset (collected 2026-03-07):
 
-- ~19M releases, ~10M artists, ~2.5M masters, ~2.3M labels (~34M total nodes)
-- ~135M relationships (~4 relationships per node on average)
-- Releases dominate at ~55%, artists ~29%, masters ~7%, labels ~7%
+- 18.95M releases, 9.97M artists, 2.53M masters, 2.36M labels, 16 genres, 757 styles (~33.8M total nodes)
+- 134.4M relationships (3.97 relationships per node on average)
+- Releases ~56%, artists ~29.5%, masters ~7.5%, labels ~7%
 - The benchmark preserves these proportions and the ~4:1 relationship-to-node ratio
+- **Critical:** ~58% of artists and ~39% of labels are orphans (zero relationships) — synthetic data must reproduce this
 
 #### Relationship Generation
 
 Synthetic data generates relationships matching the real Discogs graph structure:
 
-| Relationship | Pattern | Fan-Out |
-|-------------|---------|---------|
-| `BY` | release→artist, master→artist | 1-5 per release/master (power-law) |
-| `ON` | release→label | 1-2 per release |
-| `DERIVED_FROM` | release→master | 0-1 per release (~60% have a master) |
-| `IS` | release→genre, release→style, master→genre, master→style | 1-3 genres, 1-5 styles |
-| `MEMBER_OF` | artist→artist (band members) | ~10% of artists are band members |
-| `ALIAS_OF` | artist→artist (aliases) | ~5% of artists have aliases |
-| `SUBLABEL_OF` | label→label (parent labels) | ~15% of labels have parents |
-| `PART_OF` | style→genre | Each style maps to 1 genre |
+| Relationship | Pattern | Real Distribution (2026-03-07) |
+|-------------|---------|-------------------------------|
+| `BY` | release→artist, master→artist | 26M total. Per release: avg 1.21, p50=1, p90=2, p99=4, max=49. Per artist (reverse): avg 8.17, p50=2, p90=10, p99=86, max=1.3M — heavy power-law |
+| `ON` | release→label | 20.7M total. Per release: avg 1.09, p50=1, p90=1, p95=2, max=100 |
+| `DERIVED_FROM` | release→master | 19M total. ~100% of releases have a master (not 60%). Per master: avg 7.50, p50=2, p90=7, p99=32 |
+| `IS` | release→genre, release→style | 61.2M total. Genres per release: avg 1.33, p50=1, p90=2, max=15. Styles per release: avg 1.79, p50=1, p90=3, max=90. ~0% missing genre, ~8% missing style |
+| `MEMBER_OF` | artist→artist (band members) | 2.3M total. 13.38% of artists are members, 6.55% are bands. Members per band: avg 3.54, p50=3, p90=6 |
+| `ALIAS_OF` | artist→artist (aliases) | 4.9M total. ~12.82% of artists have aliases |
+| `SUBLABEL_OF` | label→label (parent labels) | 278K total. 11.74% of labels are sublabels. Children per parent: avg 4.47, p50=1, p90=4, max=140K |
+| `PART_OF` | style→genre | 10.4K total (757 styles → 16 genres, ~14 per genre avg) |
 
-This produces approximately 4 relationships per node, matching the real dataset ratio of ~135M relationships across ~34M nodes.
+**Orphan nodes:** 57.81% of artists and 39.33% of labels have zero relationships of any kind. Only 28.15% of artists have any BY edges. Synthetic data must include orphan nodes at these rates.
+
+This produces 3.97 relationships per node, matching the real dataset ratio of ~134.4M relationships across ~33.8M nodes.
 
 #### Synthetic Data Generation
 
@@ -264,28 +267,38 @@ SCALES = {
     "large": {"artists": 100_000, "labels": 50_000, "masters": 200_000, "releases": 1_000_000},
 }
 
-# 15 genres with Zipf-like popularity (electronic and rock dominate, like real Discogs)
+# 16 genres ranked by real release count (2026-03-07 production data)
+# Weights derived from actual release counts — Rock dominates, not Electronic
 GENRES = [
-    "Electronic", "Rock", "Pop", "Hip Hop", "Jazz",
-    "Classical", "Folk, World, & Country", "Funk / Soul", "Reggae", "Blues",
-    "Latin", "Stage & Screen", "Non-Music", "Children's", "Brass & Military",
+    "Rock", "Electronic", "Pop", "Folk, World, & Country", "Jazz",
+    "Funk / Soul", "Classical", "Hip Hop", "Latin", "Stage & Screen",
+    "Reggae", "Blues", "Non-Music", "Children's", "Brass & Military",
+    "No Genre",
 ]
+# Zipf weights from real data (millions of releases):
+# Rock 6.18, Electronic 4.87, Pop 3.85, Folk 2.48, Jazz 1.51,
+# Funk/Soul 1.29, Classical 1.20, Hip Hop 0.96, Latin 0.85, Stage&Screen 0.58, ...
 
-# ~500 styles distributed across genres with Zipf-like frequency
-# Top styles (House, Techno, Punk, Ambient) appear far more often than tail styles
+# 757 styles distributed across genres with Zipf-like frequency
+# Top styles: Pop Rock 928K, House 705K, Vocal 638K, Experimental 625K, Punk 575K
 
 def generate_test_data(scale: str = "small") -> dict:
     """Generate synthetic nodes and relationships at the specified scale.
 
-    Preserves realistic characteristics:
-      - ~4 relationships per node (matching real dataset: ~135M rels / ~34M nodes)
-      - Relationship fan-out: releases per artist varies from 1 to hundreds
-        (power-law distribution — most artists have 1-5 releases, a few have 100+)
-      - Genre/style distribution: 15 genres, ~500 styles, Zipf-like popularity
+    Preserves realistic characteristics (calibrated from 2026-03-07 production data):
+      - 3.97 relationships per node (matching real dataset: ~134.4M rels / ~33.8M nodes)
+      - ~58% of artists and ~39% of labels are orphans (zero relationships)
+      - Only ~28% of artists have any BY edges
+      - Artists per release: avg 1.21, p50=1, p99=4 (NOT power-law on this side)
+      - Releases per artist (reverse): avg 8.17, p50=2, heavy power-law tail
+      - Genre/style distribution: 16 genres, 757 styles, Zipf-like popularity
       - SHA256 hashes on every node for deduplication testing
-      - Array properties (Release.formats) for index compatibility testing
-      - Realistic property shapes: name lengths 2-80 chars,
-        year distribution 1950-2025 weighted toward recent decades
+      - Year property on Master and Release nodes (Long type), 6.73% of masters lack it
+      - No formats property on Release nodes
+      - Artist name length: avg 13.77, p50=13, p99=34, max=255
+      - Release title length: avg 20.96, p50=17, p99=73, max=255
+      - DERIVED_FROM: ~100% of releases have a master (not 60%)
+      - ~8% of releases have no style; genre coverage near-complete
       - All 8 relationship types: BY, ON, DERIVED_FROM, IS, MEMBER_OF,
         ALIAS_OF, SUBLABEL_OF, PART_OF
     """
@@ -293,8 +306,10 @@ def generate_test_data(scale: str = "small") -> dict:
 
     artists = [
         {
-            "id": i,
-            "name": _random_artist_name(),
+            "id": str(i),                                    # String type, not integer
+            "name": _random_artist_name(),           # avg len ~14, p50=13, p99=34
+            "releases_url": f"https://api.discogs.com/artists/{i}/releases",
+            "resource_url": f"https://api.discogs.com/artists/{i}",
             "sha256": hashlib.sha256(f"artist-{i}".encode()).hexdigest(),
         }
         for i in range(counts["artists"])
@@ -302,8 +317,8 @@ def generate_test_data(scale: str = "small") -> dict:
 
     labels = [
         {
-            "id": i,
-            "name": _random_label_name(),
+            "id": str(i),                                    # String type
+            "name": _random_label_name(),            # avg len ~20, p50=18, p99=50
             "sha256": hashlib.sha256(f"label-{i}".encode()).hexdigest(),
         }
         for i in range(counts["labels"])
@@ -311,11 +326,11 @@ def generate_test_data(scale: str = "small") -> dict:
 
     masters = [
         {
-            "id": i,
-            "title": _random_title(),
-            "year": _random_year(),
+            "id": str(i),                                    # String type
+            "title": _random_title(),                # avg len ~21, p50=17, p99=73
+            "year": _maybe_year(),                   # 6.73% None; range 1860-2026; p50=1998; decade-weighted
             "genres": _pick_genres(),
-            "styles": _pick_styles(),
+            "styles": _maybe_pick_styles(),
             "sha256": hashlib.sha256(f"master-{i}".encode()).hexdigest(),
         }
         for i in range(counts["masters"])
@@ -323,30 +338,83 @@ def generate_test_data(scale: str = "small") -> dict:
 
     releases = [
         {
-            "id": i,
-            "title": _random_title(),
-            "year": _random_year(),
-            "artist_ids": _pick_artist_ids(counts["artists"]),   # 1-5 artists (power-law)
-            "label_ids": _pick_label_ids(counts["labels"]),      # 1-2 labels
-            "master_id": _maybe_pick_master(counts["masters"]),  # ~60% have a master
-            "genres": _pick_genres(),                            # 1-3 genres
-            "styles": _pick_styles(),                            # 1-5 styles
-            "formats": _pick_formats(),                          # array property
+            "id": str(i),                                    # String type
+            "title": _random_title(),             # avg len ~21, p50=17, p99=73
+            "artist_ids": _pick_artist_ids(counts["artists"]),   # avg 1.21, p50=1, p99=4
+            "label_ids": _pick_label_ids(counts["labels"]),      # avg 1.09, p50=1, p95=2
+            "master_id": _pick_master(counts["masters"]),        # ~100% have a master
+            "genres": _pick_genres(),                            # avg 1.33, p50=1, p90=2
+            "styles": _maybe_pick_styles(),                      # avg 1.79, p50=1, p90=3; ~8% have none
             "sha256": hashlib.sha256(f"release-{i}".encode()).hexdigest(),
+            "year": _maybe_year(),                            # same distribution as Master
+            # Note: no formats property (does not exist in real data)
         }
         for i in range(counts["releases"])
     ]
 
-    # Generate relationship data for MEMBER_OF (~10%), ALIAS_OF (~5%), SUBLABEL_OF (~15%)
-    member_of = _generate_band_memberships(artists, fraction=0.10)
-    alias_of = _generate_aliases(artists, fraction=0.05)
-    sublabel_of = _generate_sublabels(labels, fraction=0.15)
+    # Orphan nodes: ~58% of artists and ~39% of labels get no relationships at all.
+    # Only ~28% of artists have BY edges. This is achieved by concentrating
+    # release→artist assignments on a subset of artist IDs (power-law selection).
+
+    # Generate relationship data for MEMBER_OF (~13.4%), ALIAS_OF (~12.8%), SUBLABEL_OF (~11.7%)
+    member_of = _generate_band_memberships(artists, member_fraction=0.1338, band_fraction=0.0655, avg_members=3.54)
+    alias_of = _generate_aliases(artists, fraction=0.1282)
+    sublabel_of = _generate_sublabels(labels, fraction=0.1174)
 
     return {
         "artists": artists, "labels": labels, "masters": masters, "releases": releases,
         "member_of": member_of, "alias_of": alias_of, "sublabel_of": sublabel_of,
     }
 ```
+
+#### Production Data Reference (2026-03-07)
+
+These numbers were collected from the live Neo4j instance and used to calibrate all synthetic data parameters:
+
+| Metric | Value |
+|--------|-------|
+| Total nodes | 33,823,655 |
+| Total relationships | 134,366,055 |
+| Rels per node | 3.97 |
+| Releases | 18,954,226 |
+| Artists | 9,974,217 |
+| Masters | 2,531,018 |
+| Labels | 2,363,420 |
+| Genres | 16 |
+| Styles | 757 |
+| Orphan artists (no rels) | 57.81% |
+| Artists with BY edges | 28.15% |
+| Orphan labels (no rels) | 39.33% |
+| Artists per release | avg 1.21, p50=1, p99=4 |
+| Releases per artist | avg 8.17, p50=2, p90=10, p99=86 |
+| Labels per release | avg 1.09, p50=1, p95=2 |
+| Releases per master | avg 7.50, p50=2, p90=7, p99=32 |
+| DERIVED_FROM coverage | ~100% of releases |
+| Genres per release | avg 1.33, p50=1, p90=2 |
+| Styles per release | avg 1.79, p50=1, p90=3 |
+| Releases with no style | ~8.15% |
+| MEMBER_OF members | 13.38% of artists |
+| MEMBER_OF bands | 6.55% of artists |
+| Members per band | avg 3.54, p50=3, p90=6 |
+| ALIAS_OF | 12.82% of artists |
+| SUBLABEL_OF | 11.74% of labels |
+| Children per parent label | avg 4.47, p50=1, p90=4 |
+| Year property | On Master and Release (Long type) |
+| Masters with no year | 6.73% |
+| Artist name length | avg 13.77, p50=13, p99=34, max=255 |
+| Release title length | avg 20.96, p50=17, p99=73, max=255 |
+| Master title length | avg 21.06, p50=17, p99=73, max=255 |
+| Label name length | avg 20.28, p50=18, p99=50, max=255 |
+| All string max | 255 (truncated/capped) |
+| Node ID type | String (not integer) |
+| Node properties | id (String), sha256 (String), name/title (String), year (Long on Master+Release) |
+| Artist extra props | releases_url (String), resource_url (String) |
+| Year range | 1860–2026 (avg 1995.47, p10=1967, p50=1998, p90=2019) |
+| Year distribution (masters) | pre-1950: 1%, 1950s: 3%, 1960s: 7%, 1970s: 10%, 1980s: 12%, 1990s: 18%, 2000s: 18%, 2010s: 21%, 2020s: 8% |
+| Year peak | 2018 at 51,792 masters (all-time catalogued peak) |
+| Year recent trend | Declining from 2018 onward due to Discogs cataloguing lag, not production decline |
+| Top genres | Rock (6.18M), Electronic (4.87M), Pop (3.85M), Folk (2.48M), Jazz (1.51M) |
+| Top styles | Pop Rock (928K), House (705K), Vocal (638K), Experimental (625K), Punk (575K) |
 
 Data is inserted directly into each database using the `GraphBackend` abstraction — the benchmark script calls `backend.execute_write()` and `backend.execute_write_batch()` to create nodes and then relationships. This bypasses the extractor and graphinator entirely. The insertion order mirrors the graphinator's real write pattern: nodes first (artists, labels, masters, releases), then relationships (BY, ON, DERIVED_FROM, IS, MEMBER_OF, ALIAS_OF, SUBLABEL_OF, PART_OF).
 
@@ -559,7 +627,7 @@ Add all candidate databases as optional profiles:
 #### Work Items
 
 - [ ] Create `benchmarks/` directory structure
-- [ ] Implement `fixtures.py` — synthetic data generator with realistic characteristics (power-law fan-out, Zipf genre/style distribution, SHA256 hashes, array properties, year distributions, all 8 relationship types)
+- [ ] Implement `fixtures.py` — synthetic data generator calibrated from 2026-03-07 production data (power-law BY reverse fan-out, ~58% orphan artists, ~39% orphan labels, Zipf genre/style distributions, 757 styles, year on Master only, no formats property, ~100% DERIVED_FROM coverage, all 8 relationship types)
 - [ ] Implement `workloads.py` — seven workload definitions
 - [ ] Implement `runner.py` — benchmark execution engine with direct data insertion via `GraphBackend`
 - [ ] Implement `compare.py` — results comparison output
@@ -567,3 +635,106 @@ Add all candidate databases as optional profiles:
 - [ ] Add Docker Compose profiles for candidate databases
 - [ ] Baseline Neo4j results at both scale points (`small` and `large`)
 - [ ] Document hardware specs used for benchmarking (CPU, RAM, disk type)
+- [ ] Run calibration on Hetzner CX53 hosts and save baseline calibration JSON alongside results
+
+## 3. Scaling Results to Your Environment
+
+### Goal
+
+Allow anyone to take the Hetzner CX53 benchmark results and estimate how the same workloads would perform on their own hardware, without re-running the full benchmark suite.
+
+### How It Works
+
+A lightweight calibration script runs portable micro-benchmarks that stress the same hardware dimensions as the database workloads:
+
+| Dimension | Calibration Test | Database Workloads Affected |
+|-----------|-----------------|---------------------------|
+| CPU (single-thread) | SHA-256 hashing throughput | Query parsing, single-query execution, aggregation |
+| CPU (multi-thread) | SHA-256 across all cores | Concurrent mixed workloads |
+| Memory bandwidth | 64 MB sequential read/write | In-memory databases (Memgraph, FalkorDB), large result sets |
+| Sequential I/O | 256 MB write + read with fsync | Bulk data loading, WAL writes, batch inserts |
+| Random I/O | 4 KB random reads (IOPS) | Index lookups, point reads, graph traversals |
+| Python sort | Sort 1M floats | In-process query overhead |
+
+By comparing calibration output from the benchmark host against your machine, per-dimension scaling factors are computed. These are then applied to each workload type using a weighted model that reflects which hardware dimensions matter most for that workload.
+
+### Step-by-Step
+
+**1. Run calibration on your machine:**
+
+```bash
+uv run python -m benchmarks.calibrate --output my-calibration.json
+```
+
+This takes ~30 seconds and produces a JSON file with your hardware profile.
+
+**2. Get the baseline calibration from the benchmark host:**
+
+The Hetzner CX53 calibration file is saved alongside benchmark results at `benchmarks/results/hetzner_cx53_calibration.json` after each benchmark run.
+
+**3. Scale the benchmark results:**
+
+```bash
+uv run python -m benchmarks.scale_results \
+  --baseline benchmarks/results/hetzner_cx53_calibration.json \
+  --local my-calibration.json \
+  --benchmark-results benchmarks/results/neo4j_large_2026-03-10.json \
+  --output my-neo4j-estimates.json
+```
+
+This prints a summary table and optionally saves full scaled results.
+
+### Example Output
+
+```
+Per-dimension scaling factors (local / baseline):
+  Dimension            Factor   Interpretation
+  -------------------- --------  ------------------------------
+  CPU (single)            1.850  Local is 1.9x faster
+  CPU (multi)             2.400  Local is 2.4x faster
+  Memory bandwidth        1.320  Local is 1.3x faster
+  Sequential I/O          3.100  Local is 3.1x faster
+  Random I/O              5.200  Local is 5.2x faster
+
+Scaled workload estimates:
+  Workload                            Type                 Factor  p50 (orig)    p50 (est)
+  ----------------------------------- -------------------- -------  ------------  ------------
+  autocomplete_artist                 fulltext_search        2.933       2.1 ms        0.7 ms
+  explore_center_artist               graph_traversal        2.576       8.4 ms        3.3 ms
+  point_read                          point_read             3.560       1.2 ms        0.3 ms
+  batch_write_nodes                   batch_write_nodes      3.270      12.3 ms        3.8 ms
+```
+
+### Workload Weight Model
+
+Each workload type maps to a set of weights reflecting which hardware dimensions dominate its performance:
+
+| Workload Type | CPU-ST | CPU-MT | Memory | Seq-IO | Rand-IO |
+|--------------|--------|--------|--------|--------|---------|
+| point_read | 0.3 | 0.0 | 0.2 | 0.0 | 0.5 |
+| graph_traversal | 0.4 | 0.0 | 0.3 | 0.0 | 0.3 |
+| fulltext_search | 0.3 | 0.0 | 0.3 | 0.0 | 0.4 |
+| aggregation | 0.5 | 0.0 | 0.3 | 0.0 | 0.2 |
+| batch_write_nodes | 0.2 | 0.1 | 0.1 | 0.3 | 0.3 |
+| batch_write_full_tx | 0.2 | 0.1 | 0.1 | 0.3 | 0.3 |
+| concurrent_mixed | 0.1 | 0.4 | 0.2 | 0.1 | 0.2 |
+
+The composite scaling factor for a workload = weighted sum of per-dimension factors. A latency value is divided by this factor; a throughput value is multiplied.
+
+### Limitations
+
+These are order-of-magnitude estimates, not precise predictions. Factors not captured:
+
+- **Database internals**: Buffer pool sizing, query planner, internal concurrency, JIT compilation
+- **OS and kernel tuning**: Filesystem type, I/O scheduler, transparent huge pages, swappiness
+- **Dataset fit**: Whether the working set fits in RAM changes performance characteristics entirely
+- **Caching effects**: Warm cache behavior differs significantly from cold starts
+- **Network latency**: Only relevant if the database runs on a different host than the benchmark client
+
+Use the scaled numbers to understand whether your hardware is in the same ballpark as the benchmark host, significantly faster, or significantly slower — not for precise SLA planning.
+
+### Work Items
+
+- [ ] Run `benchmarks/calibrate.py` on the Hetzner CX53 hosts during benchmark setup
+- [ ] Save baseline calibration JSON to `benchmarks/results/hetzner_cx53_calibration.json`
+- [ ] Validate scaling model accuracy by comparing scaled predictions against actual local benchmark runs
