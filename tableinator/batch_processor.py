@@ -269,20 +269,29 @@ class PostgreSQLBatchProcessor:
 
                 # Step 2: Filter to only records that need updating
                 records_to_upsert = []
-                skipped_count = 0
+                unchanged_ids = []
                 for msg in messages:
                     existing_hash = existing_hashes.get(msg.data_id)
                     if existing_hash == msg.sha256:
-                        # Hash unchanged, skip this record
-                        skipped_count += 1
+                        # Hash unchanged — skip data write but track for updated_at refresh
+                        unchanged_ids.append(msg.data_id)
                         continue
                     records_to_upsert.append((msg.sha256, msg.data_id, Jsonb(msg.data)))
 
-                if skipped_count > 0:
+                if unchanged_ids:
                     logger.debug(
                         "⏩ Skipped unchanged records",
                         data_type=data_type,
-                        skipped=skipped_count,
+                        skipped=len(unchanged_ids),
+                    )
+                    # Refresh updated_at so post-extraction stale row purge
+                    # does not delete unchanged-but-still-present records
+                    await cursor.execute(
+                        sql.SQL(
+                            "UPDATE {table} SET updated_at = NOW() "
+                            "WHERE data_id = ANY(%s)"
+                        ).format(table=sql.Identifier(data_type)),
+                        (unchanged_ids,),
                     )
 
                 if not records_to_upsert:
@@ -303,7 +312,7 @@ class PostgreSQLBatchProcessor:
                     "🐘 Batch upserted records",
                     data_type=data_type,
                     upserted=len(records_to_upsert),
-                    skipped=skipped_count,
+                    skipped=len(unchanged_ids),
                 )
 
     async def flush_all(self) -> None:
