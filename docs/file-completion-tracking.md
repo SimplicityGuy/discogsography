@@ -24,7 +24,7 @@ optimal resource management.
 graph LR
     A[File Processing Starts] --> B[Records Extracted]
     B --> C[Messages Sent to RabbitMQ]
-    C --> D[File Complete Message Sent]
+    C --> D[File Complete Published to Fanout Exchange]
     D --> E[File Marked as Complete]
     E --> F[Consumer Cancellation Scheduled]
     F --> G[Stalled Detection Skips File]

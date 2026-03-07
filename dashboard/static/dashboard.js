@@ -174,8 +174,9 @@ class Dashboard {
         const TYPES = ['masters', 'releases', 'artists', 'labels'];
 
         // Build per-service maps for both regular and dead-letter queues.
-        // Queue naming convention: "discogsography-{service}-{type}" and
-        // "discogsography-{service}-{type}.dlq" for dead-letter queues.
+        // Each data type has its own fanout exchange (e.g. "discogsography-artists").
+        // Queue naming: "discogsography-{service}-{type}" and "{queue}.dlq" for dead-letter queues.
+        // Each consumer owns its own DLX: "discogsography-{service}-{type}.dlx".
         // Separate maps prevent DLQ entries from overwriting regular data.
         const graphinatorMap    = {};
         const tableInatorMap    = {};

@@ -9,10 +9,8 @@ use url::Url;
 
 use crate::types::{DataMessage, DataType, FileCompleteMessage, Message};
 
-const AMQP_EXCHANGE: &str = "discogsography-exchange";
-const AMQP_EXCHANGE_TYPE: ExchangeKind = ExchangeKind::Topic;
-const AMQP_QUEUE_PREFIX_GRAPHINATOR: &str = "discogsography-graphinator";
-const AMQP_QUEUE_PREFIX_TABLEINATOR: &str = "discogsography-tableinator";
+const AMQP_EXCHANGE_PREFIX: &str = "discogsography";
+const AMQP_EXCHANGE_TYPE: ExchangeKind = ExchangeKind::Fanout;
 
 pub struct MessageQueue {
     connection: Arc<RwLock<Option<Connection>>>,
@@ -22,6 +20,11 @@ pub struct MessageQueue {
 }
 
 impl MessageQueue {
+    /// Build the fanout exchange name for a given data type (e.g. "discogsography-artists")
+    fn exchange_name(data_type: DataType) -> String {
+        format!("{}-{}", AMQP_EXCHANGE_PREFIX, data_type)
+    }
+
     pub async fn new(url: &str, max_retries: u32) -> Result<Self> {
         // Normalize the AMQP URL to handle trailing slash consistently with Python extractor
         let normalized_url = Self::normalize_amqp_url(url)?;
@@ -94,76 +97,27 @@ impl MessageQueue {
         // Set QoS
         channel.basic_qos(100, BasicQosOptions::default()).await.context("Failed to set QoS")?;
 
-        // Declare exchange
-        channel
-            .exchange_declare(
-                AMQP_EXCHANGE.into(),
-                AMQP_EXCHANGE_TYPE,
-                ExchangeDeclareOptions { durable: true, auto_delete: false, ..Default::default() },
-                FieldTable::default(),
-            )
-            .await
-            .context("Failed to declare exchange")?;
-
         *self.connection.write().await = Some(conn);
         *self.channel.write().await = Some(channel);
 
         Ok(())
     }
 
-    pub async fn setup_queues(&self, data_type: DataType) -> Result<()> {
+    pub async fn setup_exchange(&self, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
+        let exchange_name = Self::exchange_name(data_type);
 
-        // Declare dead-letter exchange for poison messages
-        let dlx_exchange = format!("{}.dlx", AMQP_EXCHANGE);
         channel
             .exchange_declare(
-                dlx_exchange.as_str().into(),
+                exchange_name.as_str().into(),
                 AMQP_EXCHANGE_TYPE,
                 ExchangeDeclareOptions { durable: true, auto_delete: false, ..Default::default() },
                 FieldTable::default(),
             )
             .await
-            .context("Failed to declare dead-letter exchange")?;
+            .context(format!("Failed to declare fanout exchange for {}", data_type))?;
 
-        // Queue arguments for quorum queues with DLX
-        let mut queue_args = FieldTable::default();
-        queue_args.insert("x-queue-type".into(), lapin::types::AMQPValue::LongString("quorum".into()));
-        queue_args.insert("x-dead-letter-exchange".into(), lapin::types::AMQPValue::LongString(dlx_exchange.clone().into()));
-        queue_args.insert("x-delivery-limit".into(), lapin::types::AMQPValue::LongInt(20));
-
-        // DLQ arguments (classic queues)
-        let mut dlq_args = FieldTable::default();
-        dlq_args.insert("x-queue-type".into(), lapin::types::AMQPValue::LongString("classic".into()));
-
-        for prefix in [AMQP_QUEUE_PREFIX_GRAPHINATOR, AMQP_QUEUE_PREFIX_TABLEINATOR] {
-            let queue_name = format!("{}-{}", prefix, data_type);
-            let dlq_name = format!("{}.dlq", queue_name);
-
-            // Declare and bind DLQ
-            channel
-                .queue_declare(dlq_name.as_str().into(), QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, dlq_args.clone())
-                .await
-                .context(format!("Failed to declare {} DLQ", prefix))?;
-
-            channel
-                .queue_bind(dlq_name.as_str().into(), dlx_exchange.as_str().into(), data_type.routing_key().into(), QueueBindOptions::default(), FieldTable::default())
-                .await
-                .context(format!("Failed to bind {} DLQ", prefix))?;
-
-            // Declare and bind main queue (quorum)
-            channel
-                .queue_declare(queue_name.as_str().into(), QueueDeclareOptions { durable: true, auto_delete: false, ..Default::default() }, queue_args.clone())
-                .await
-                .context(format!("Failed to declare {} queue", prefix))?;
-
-            channel
-                .queue_bind(queue_name.as_str().into(), AMQP_EXCHANGE.into(), data_type.routing_key().into(), QueueBindOptions::default(), FieldTable::default())
-                .await
-                .context(format!("Failed to bind {} queue", prefix))?;
-        }
-
-        debug!("✅ Set up AMQP queues for {} (exchange: {}, type: quorum with DLX)", data_type, AMQP_EXCHANGE);
+        debug!("✅ Declared fanout exchange: {}", exchange_name);
 
         Ok(())
     }
@@ -177,13 +131,14 @@ impl MessageQueue {
 
     pub async fn publish(&self, message: Message, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
+        let exchange_name = Self::exchange_name(data_type);
         let payload = serde_json::to_vec(&message).context("Failed to serialize message")?;
 
         let confirm = channel
             .basic_publish(
-                AMQP_EXCHANGE.into(),
-                data_type.routing_key().into(),
-                BasicPublishOptions { mandatory: true, ..Default::default() },
+                exchange_name.as_str().into(),
+                "".into(),
+                BasicPublishOptions::default(),
                 &payload,
                 Self::message_properties(),
             )
@@ -201,15 +156,16 @@ impl MessageQueue {
 
     pub async fn publish_batch(&self, messages: Vec<DataMessage>, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
+        let exchange_name = Self::exchange_name(data_type);
 
         for message in messages {
             let payload = serde_json::to_vec(&Message::Data(message)).context("Failed to serialize message")?;
 
             let confirm = channel
                 .basic_publish(
-                    AMQP_EXCHANGE.into(),
-                    data_type.routing_key().into(),
-                    BasicPublishOptions { mandatory: true, ..Default::default() },
+                    exchange_name.as_str().into(),
+                    "".into(),
+                    BasicPublishOptions::default(),
                     &payload,
                     Self::message_properties(),
                 )
@@ -274,26 +230,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_queue_names() {
-        let data_type = DataType::Artists;
-        let graphinator = format!("{}-{}", AMQP_QUEUE_PREFIX_GRAPHINATOR, data_type);
-        let tableinator = format!("{}-{}", AMQP_QUEUE_PREFIX_TABLEINATOR, data_type);
-
-        assert_eq!(graphinator, "discogsography-graphinator-artists");
-        assert_eq!(tableinator, "discogsography-tableinator-artists");
-    }
-
-    #[test]
-    fn test_queue_names_all_types() {
-        for data_type in [DataType::Artists, DataType::Labels, DataType::Masters, DataType::Releases] {
-            let graphinator = format!("{}-{}", AMQP_QUEUE_PREFIX_GRAPHINATOR, data_type);
-            let tableinator = format!("{}-{}", AMQP_QUEUE_PREFIX_TABLEINATOR, data_type);
-
-            assert!(graphinator.starts_with("discogsography-graphinator-"));
-            assert!(tableinator.starts_with("discogsography-tableinator-"));
-            assert!(graphinator.ends_with(data_type.as_str()));
-            assert!(tableinator.ends_with(data_type.as_str()));
-        }
+    fn test_exchange_names() {
+        assert_eq!(MessageQueue::exchange_name(DataType::Artists), "discogsography-artists");
+        assert_eq!(MessageQueue::exchange_name(DataType::Labels), "discogsography-labels");
+        assert_eq!(MessageQueue::exchange_name(DataType::Masters), "discogsography-masters");
+        assert_eq!(MessageQueue::exchange_name(DataType::Releases), "discogsography-releases");
     }
 
     #[test]
@@ -411,19 +352,9 @@ mod tests {
     }
 
     #[test]
-    fn test_routing_key_generation() {
-        assert_eq!(DataType::Artists.routing_key(), "artists");
-        assert_eq!(DataType::Labels.routing_key(), "labels");
-        assert_eq!(DataType::Masters.routing_key(), "masters");
-        assert_eq!(DataType::Releases.routing_key(), "releases");
-    }
-
-    #[test]
     fn test_constants() {
-        assert_eq!(AMQP_EXCHANGE, "discogsography-exchange");
-        assert_eq!(AMQP_EXCHANGE_TYPE, ExchangeKind::Topic);
-        assert_eq!(AMQP_QUEUE_PREFIX_GRAPHINATOR, "discogsography-graphinator");
-        assert_eq!(AMQP_QUEUE_PREFIX_TABLEINATOR, "discogsography-tableinator");
+        assert_eq!(AMQP_EXCHANGE_PREFIX, "discogsography");
+        assert_eq!(AMQP_EXCHANGE_TYPE, ExchangeKind::Fanout);
     }
 
     #[test]
@@ -435,21 +366,6 @@ mod tests {
         assert!(props.content_encoding().is_some());
     }
 
-    #[test]
-    fn test_dlx_exchange_name_format() {
-        let dlx_name = format!("{}.dlx", AMQP_EXCHANGE);
-        assert_eq!(dlx_name, "discogsography-exchange.dlx");
-    }
-
-    #[test]
-    fn test_dlq_queue_names() {
-        for data_type in [DataType::Artists, DataType::Labels, DataType::Masters, DataType::Releases] {
-            let queue_name = format!("{}-{}", AMQP_QUEUE_PREFIX_GRAPHINATOR, data_type);
-            let dlq_name = format!("{}.dlq", queue_name);
-            assert!(dlq_name.ends_with(".dlq"));
-            assert!(dlq_name.contains(data_type.as_str()));
-        }
-    }
 
     #[tokio::test]
     async fn test_new_connection_failure() {

@@ -59,14 +59,6 @@ fn test_message_enum_file_complete_variant() {
 }
 
 #[test]
-fn test_data_type_routing_key() {
-    assert_eq!(DataType::Artists.routing_key(), "artists");
-    assert_eq!(DataType::Labels.routing_key(), "labels");
-    assert_eq!(DataType::Masters.routing_key(), "masters");
-    assert_eq!(DataType::Releases.routing_key(), "releases");
-}
-
-#[test]
 fn test_message_serialization_round_trip() {
     let data_msg = DataMessage { id: "test-id".to_string(), sha256: "test-sha".to_string(), data: json!({"field": "value"}) };
 

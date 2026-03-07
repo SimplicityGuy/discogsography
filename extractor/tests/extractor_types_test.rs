@@ -13,7 +13,6 @@ fn test_data_type_all_variants() {
         // Verify each variant has a valid string representation
         assert!(!data_type.as_str().is_empty());
         assert!(!data_type.to_string().is_empty());
-        assert!(!data_type.routing_key().is_empty());
     }
 }
 
@@ -37,8 +36,6 @@ fn test_data_type_all_conversions() {
         // Test as_str roundtrip
         assert_eq!(parsed.as_str(), string_val);
 
-        // Test routing_key matches
-        assert_eq!(parsed.routing_key(), string_val);
     }
 }
 

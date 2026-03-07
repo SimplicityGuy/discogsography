@@ -222,8 +222,8 @@ async fn process_single_file(
     // Connect to message queue
     let mq = Arc::new(MessageQueue::new(&config.amqp_connection, 3).await.context("Failed to connect to message queue")?);
 
-    // Setup queues for this data type
-    mq.setup_queues(data_type).await?;
+    // Declare fanout exchange for this data type
+    mq.setup_exchange(data_type).await?;
 
     // Track active connection
     {

@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
-    AMQP_EXCHANGE,
+    AMQP_EXCHANGE_PREFIX,
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_TABLEINATOR,
     DATA_TYPES,
@@ -374,38 +374,32 @@ async def _recover_consumers() -> None:
             active_connection = temp_connection
             active_channel = temp_channel
 
-            # Declare exchange and queues
-            exchange = await active_channel.declare_exchange(
-                AMQP_EXCHANGE,
-                AMQP_EXCHANGE_TYPE,
-                durable=True,
-                auto_delete=False,
-            )
-
-            # Declare dead-letter exchange for poison messages
-            dlx_exchange_name = f"{AMQP_EXCHANGE}.dlx"
-            dlx_exchange = await active_channel.declare_exchange(
-                dlx_exchange_name,
-                "topic",
-                durable=True,
-                auto_delete=False,
-            )
-
             # Set QoS - must match batch_size for efficient batch processing
             await active_channel.set_qos(prefetch_count=200)
 
-            # Queue arguments for quorum queues with DLX
-            queue_args = {
-                "x-queue-type": "quorum",
-                "x-dead-letter-exchange": dlx_exchange_name,
-                "x-delivery-limit": 20,
-            }
-
-            # Declare and bind all queues
+            # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
             for data_type in DATA_TYPES:
+                exchange_name = f"{AMQP_EXCHANGE_PREFIX}-{data_type}"
                 queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{data_type}"
+                dlx_name = f"{queue_name}.dlx"
                 dlq_name = f"{queue_name}.dlq"
+
+                # Declare fanout exchange (must match extractor)
+                exchange = await active_channel.declare_exchange(
+                    exchange_name,
+                    AMQP_EXCHANGE_TYPE,
+                    durable=True,
+                    auto_delete=False,
+                )
+
+                # Declare consumer-owned dead-letter exchange
+                dlx_exchange = await active_channel.declare_exchange(
+                    dlx_name,
+                    AMQP_EXCHANGE_TYPE,
+                    durable=True,
+                    auto_delete=False,
+                )
 
                 # Declare DLQ (classic queue for dead letters)
                 dlq = await active_channel.declare_queue(
@@ -414,22 +408,28 @@ async def _recover_consumers() -> None:
                     name=dlq_name,
                     arguments={"x-queue-type": "classic"},
                 )
-                await dlq.bind(dlx_exchange, routing_key=data_type)
+                await dlq.bind(dlx_exchange)
 
-                # Declare main quorum queue
+                # Declare main quorum queue with consumer-owned DLX
+                queue_args = {
+                    "x-queue-type": "quorum",
+                    "x-dead-letter-exchange": dlx_name,
+                    "x-delivery-limit": 20,
+                }
                 queue = await active_channel.declare_queue(
                     auto_delete=False,
                     durable=True,
                     name=queue_name,
                     arguments=queue_args,
                 )
-                await queue.bind(exchange, routing_key=data_type)
+                await queue.bind(exchange)
                 queues[data_type] = queue
 
             # Start consumers for queues with messages
             for data_type, msg_count in queues_with_messages:
                 if data_type in queues and data_type not in consumer_tags:
-                    consumer_tag = await queues[data_type].consume(on_data_message)
+                    handler = make_data_handler(data_type)
+                    consumer_tag = await queues[data_type].consume(handler)
                     consumer_tags[data_type] = consumer_tag
                     # Remove from completed files so it will be processed
                     completed_files.discard(data_type)
@@ -463,7 +463,18 @@ async def _recover_consumers() -> None:
             pass
 
 
-async def on_data_message(message: AbstractIncomingMessage) -> None:
+def make_data_handler(
+    data_type: str,
+) -> Any:
+    """Create a per-data-type message handler that injects data_type context."""
+
+    async def handler(message: AbstractIncomingMessage) -> None:
+        await on_data_message(message, data_type)
+
+    return handler
+
+
+async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> None:
     if shutdown_requested:
         logger.info("🛑 Shutdown requested, rejecting new messages")
         await message.nack(requeue=True)
@@ -471,7 +482,6 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
     try:
         data: dict[str, Any] = loads(message.body)
-        data_type: str = message.routing_key or "unknown"
 
         # Check if this is a file completion message
         if data.get("type") == "file_complete":
@@ -884,29 +894,23 @@ async def main() -> None:
         # With batch_size=100 (default), we use 200 to allow 2 batches in parallel
         await channel.set_qos(prefetch_count=200)
 
-        # Declare the shared exchange (must match extractor)
-        exchange = await channel.declare_exchange(
-            AMQP_EXCHANGE, AMQP_EXCHANGE_TYPE, durable=True, auto_delete=False
-        )
-
-        # Declare dead-letter exchange for poison messages
-        dlx_exchange_name = f"{AMQP_EXCHANGE}.dlx"
-        dlx_exchange = await channel.declare_exchange(
-            dlx_exchange_name, "topic", durable=True, auto_delete=False
-        )
-
-        # Queue arguments for quorum queues with DLX
-        queue_args = {
-            "x-queue-type": "quorum",
-            "x-dead-letter-exchange": dlx_exchange_name,
-            "x-delivery-limit": 20,
-        }
-
-        # Declare queues for all data types and bind them to exchange
+        # Declare per-data-type fanout exchanges and consumer-owned queues
         queues = {}
         for data_type in DATA_TYPES:
+            exchange_name = f"{AMQP_EXCHANGE_PREFIX}-{data_type}"
             queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{data_type}"
+            dlx_name = f"{queue_name}.dlx"
             dlq_name = f"{queue_name}.dlq"
+
+            # Declare fanout exchange (must match extractor)
+            exchange = await channel.declare_exchange(
+                exchange_name, AMQP_EXCHANGE_TYPE, durable=True, auto_delete=False
+            )
+
+            # Declare consumer-owned dead-letter exchange
+            dlx_exchange = await channel.declare_exchange(
+                dlx_name, AMQP_EXCHANGE_TYPE, durable=True, auto_delete=False
+            )
 
             # Declare DLQ (classic queue for dead letters)
             dlq = await channel.declare_queue(
@@ -915,24 +919,30 @@ async def main() -> None:
                 name=dlq_name,
                 arguments={"x-queue-type": "classic"},
             )
-            await dlq.bind(dlx_exchange, routing_key=data_type)
+            await dlq.bind(dlx_exchange)
 
-            # Declare main quorum queue
+            # Declare main quorum queue with consumer-owned DLX
+            queue_args = {
+                "x-queue-type": "quorum",
+                "x-dead-letter-exchange": dlx_name,
+                "x-delivery-limit": 20,
+            }
             queue = await channel.declare_queue(
                 auto_delete=False,
                 durable=True,
                 name=queue_name,
                 arguments=queue_args,
             )
-            await queue.bind(exchange, routing_key=data_type)
+            await queue.bind(exchange)
             queues[data_type] = queue
 
         # Start consumers for all data types
         for data_type in DATA_TYPES:
-            consumer_tags[data_type] = await queues[data_type].consume(on_data_message)
+            handler = make_data_handler(data_type)
+            consumer_tags[data_type] = await queues[data_type].consume(handler)
 
         logger.info(
-            f"🚀 Tableinator started! Connected to AMQP broker (exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE}). "
+            f"🚀 Tableinator started! Connected to AMQP broker ({len(DATA_TYPES)} fanout exchanges). "
             f"Consuming from {len(DATA_TYPES)} queues with connection pool (max 20 connections). "
             "Ready to process messages into PostgreSQL. Press CTRL+C to exit"
         )

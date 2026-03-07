@@ -28,7 +28,7 @@
 
 - ✅ **ALWAYS use `uv` for Python package management and running Python tools** - Never use pip, pipenv, or poetry.
 - ✅ **State Marker System** - The extractor uses version-specific state markers (`.extraction_status_<version>.json`) to track progress and enable safe restarts. See `docs/state-marker-system.md`.
-- ✅ **Extractor Architecture** - The Rust-based extractor declares 2 exchanges (main + DLX) and 4 queues (2 main + 2 DLQs) for poison message handling.
+- ✅ **Extractor Architecture** - The Rust-based extractor declares 4 per-data-type fanout exchanges and publishes messages. It has zero knowledge of consumers — each consumer independently declares its own queues, DLQs, and DLXs.
 - ✅ Create Mermaid style diagrams when diagrams are added to Markdown files.
 - ✅ New markdown files should have a lowercase filename preferring - instead \_, unless the document is a README. Do not rename any existing markdown files.
 - ✅ All pyproject.toml files should follow the standard structure and ordering (see pyproject.toml Standards section).

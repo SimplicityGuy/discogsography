@@ -42,7 +42,7 @@ graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
     EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     SCHEMA[["🔧 Schema-Init<br/>One-Shot DB<br/>Schema Initialiser"]]
-    RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>8 Queues + DLQs"}}
+    RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>4 Fanout Exchanges"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
     REDIS[("🔴 Redis<br/>Cache Layer<br/>Query Cache")]
@@ -99,16 +99,18 @@ graph TD
 - Downloads XML dumps from Discogs S3 bucket
 - High-performance XML parsing (20,000-400,000+ records/sec)
 - SHA256 hash-based deduplication
-- Publishes JSON messages to RabbitMQ queues
+- Publishes JSON messages to per-data-type RabbitMQ fanout exchanges
 
 ### 2. Message Distribution Phase
 
-**RabbitMQ Queues**:
+**RabbitMQ Fanout Exchanges** (one per data type, decoupled from consumers):
 
-- `artists_queue`: Artist and band data
-- `labels_queue`: Record label information
-- `releases_queue`: Release records
-- `masters_queue`: Master recording data
+- `discogsography-artists`: Artist and band data
+- `discogsography-labels`: Record label information
+- `discogsography-releases`: Release records
+- `discogsography-masters`: Master recording data
+
+Each consumer independently declares and binds its own queues to these exchanges.
 
 **Message Format**:
 

@@ -29,10 +29,6 @@ impl DataType {
         }
     }
 
-    /// Get the AMQP routing key
-    pub fn routing_key(&self) -> &'static str {
-        self.as_str()
-    }
 }
 
 impl fmt::Display for DataType {
@@ -173,14 +169,6 @@ mod tests {
         assert_eq!(DataType::Labels.as_str(), "labels");
         assert_eq!(DataType::Masters.as_str(), "masters");
         assert_eq!(DataType::Releases.as_str(), "releases");
-    }
-
-    #[test]
-    fn test_data_type_routing_key() {
-        assert_eq!(DataType::Artists.routing_key(), "artists");
-        assert_eq!(DataType::Labels.routing_key(), "labels");
-        assert_eq!(DataType::Masters.routing_key(), "masters");
-        assert_eq!(DataType::Releases.routing_key(), "releases");
     }
 
     #[test]

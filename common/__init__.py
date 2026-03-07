@@ -1,7 +1,7 @@
 """Common utilities and configuration for discogsography services."""
 
 from common.config import (
-    AMQP_EXCHANGE,
+    AMQP_EXCHANGE_PREFIX,
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_GRAPHINATOR,
     AMQP_QUEUE_PREFIX_TABLEINATOR,
@@ -68,7 +68,7 @@ from common.state_marker import (
 
 
 __all__ = [
-    "AMQP_EXCHANGE",
+    "AMQP_EXCHANGE_PREFIX",
     "AMQP_EXCHANGE_TYPE",
     "AMQP_QUEUE_PREFIX_GRAPHINATOR",
     "AMQP_QUEUE_PREFIX_TABLEINATOR",

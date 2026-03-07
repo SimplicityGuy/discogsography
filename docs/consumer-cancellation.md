@@ -24,8 +24,8 @@ sequenceDiagram
     participant CONS as Consumer<br/>(Graphinator/Tableinator)
     participant TIMER as Cancellation Timer
 
-    EXT->>RMQ: Publish file_complete message
-    RMQ->>CONS: Deliver file_complete message
+    EXT->>RMQ: Publish file_complete to fanout exchange
+    RMQ->>CONS: Deliver file_complete via consumer queue
     CONS->>CONS: Mark file as complete (🎉)
     CONS->>TIMER: Schedule cancellation (300s grace period)
 
