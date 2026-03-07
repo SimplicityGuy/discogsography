@@ -242,6 +242,15 @@ async def create_postgres_schema(pool: Any) -> None:
                             table=sql.Identifier(table_name),
                         ),
                     ),
+                    (
+                        f"idx_{table_name}_updated_at",
+                        sql.SQL(
+                            "CREATE INDEX IF NOT EXISTS {index} ON {table} (updated_at)"
+                        ).format(
+                            index=sql.Identifier(f"idx_{table_name}_updated_at"),
+                            table=sql.Identifier(table_name),
+                        ),
+                    ),
                 ]
                 for name, stmt in per_table:
                     try:
