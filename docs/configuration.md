@@ -70,12 +70,12 @@ services:
 
 The AMQP connection URL is built automatically from component variables — do **not** set `AMQP_CONNECTION` directly.
 
-| Variable             | Description                  | Default          | Required |
-| -------------------- | ---------------------------- | ---------------- | -------- |
-| `RABBITMQ_HOST`      | RabbitMQ hostname            | `rabbitmq`       | No       |
-| `RABBITMQ_PORT`      | RabbitMQ AMQP port           | `5672`           | No       |
-| `RABBITMQ_USERNAME`  | RabbitMQ username            | `discogsography` | No       |
-| `RABBITMQ_PASSWORD`  | RabbitMQ password            | `discogsography` | No       |
+| Variable            | Description        | Default          | Required |
+| ------------------- | ------------------ | ---------------- | -------- |
+| `RABBITMQ_HOST`     | RabbitMQ hostname  | `rabbitmq`       | No       |
+| `RABBITMQ_PORT`     | RabbitMQ AMQP port | `5672`           | No       |
+| `RABBITMQ_USERNAME` | RabbitMQ username  | `discogsography` | No       |
+| `RABBITMQ_PASSWORD` | RabbitMQ password  | `discogsography` | No       |
 
 **Used By**: Extractor, Graphinator, Tableinator, Dashboard
 
@@ -117,7 +117,7 @@ RABBITMQ_PASSWORD=mypassword
 **DISCOGS_ROOT Details**:
 
 - Must be writable by service user (UID 1000 in Docker)
-- Requires ~200GB free space for full dataset
+- Requires ~100GB free space for full dataset
 - Contains downloaded XML files and metadata cache
 
 **Directory Structure**:
@@ -148,11 +148,11 @@ RABBITMQ_PASSWORD=mypassword
 
 ### Neo4j Configuration
 
-| Variable         | Description      | Default     | Required |
-| ---------------- | ---------------- | ----------- | -------- |
-| `NEO4J_HOST`  | Neo4j hostname | `localhost` | Yes      |
-| `NEO4J_USERNAME` | Neo4j username | `neo4j`                 | Yes      |
-| `NEO4J_PASSWORD` | Neo4j password | (none)                  | Yes      |
+| Variable         | Description    | Default     | Required |
+| ---------------- | -------------- | ----------- | -------- |
+| `NEO4J_HOST`     | Neo4j hostname | `localhost` | Yes      |
+| `NEO4J_USERNAME` | Neo4j username | `neo4j`     | Yes      |
+| `NEO4J_PASSWORD` | Neo4j password | (none)      | Yes      |
 
 **Used By**: Graphinator, Dashboard
 
@@ -192,12 +192,12 @@ NEO4J_PASSWORD="your-secure-password"
 
 ### PostgreSQL Configuration
 
-| Variable            | Description             | Default     | Required |
-| ------------------- | ----------------------- | ----------- | -------- |
-| `POSTGRES_HOST`  | PostgreSQL hostname | `localhost` | Yes      |
-| `POSTGRES_USERNAME` | PostgreSQL username  | `postgres`       | Yes      |
-| `POSTGRES_PASSWORD` | PostgreSQL password  | (none)           | Yes      |
-| `POSTGRES_DATABASE` | Database name        | `discogsography` | Yes      |
+| Variable            | Description         | Default          | Required |
+| ------------------- | ------------------- | ---------------- | -------- |
+| `POSTGRES_HOST`     | PostgreSQL hostname | `localhost`      | Yes      |
+| `POSTGRES_USERNAME` | PostgreSQL username | `postgres`       | Yes      |
+| `POSTGRES_PASSWORD` | PostgreSQL password | (none)           | Yes      |
+| `POSTGRES_DATABASE` | Database name       | `discogsography` | Yes      |
 
 **Used By**: Tableinator, Dashboard, API
 
@@ -242,8 +242,8 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ### Redis Configuration
 
-| Variable    | Description      | Default     | Required             |
-| ----------- | ---------------- | ----------- | -------------------- |
+| Variable     | Description    | Default     | Required             |
+| ------------ | -------------- | ----------- | -------------------- |
 | `REDIS_HOST` | Redis hostname | `localhost` | Yes (Dashboard, API) |
 
 **Used By**: Dashboard, API
@@ -275,8 +275,8 @@ REDIS_HOST="redis"
 
 ## JWT Configuration
 
-| Variable             | Description                         | Default | Required           |
-| -------------------- | ----------------------------------- | ------- | ------------------ |
+| Variable             | Description                         | Default | Required  |
+| -------------------- | ----------------------------------- | ------- | --------- |
 | `JWT_SECRET_KEY`     | HMAC-SHA256 signing secret          | (none)  | Yes (API) |
 | `JWT_EXPIRE_MINUTES` | Token lifetime in minutes           | `30`    | No        |
 | `DISCOGS_USER_AGENT` | User-Agent for Discogs API requests | (none)  | Yes (API) |
@@ -925,4 +925,4 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-03-07

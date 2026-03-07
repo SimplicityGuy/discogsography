@@ -28,7 +28,7 @@ Last Updated: March 2026
 - No manual cleanup needed between extractions
 - Handles both additions and removals in Discogs dumps
 
----
+______________________________________________________________________
 
 ### 🔍 Collection Gap Analysis — "Complete My Collection"
 
@@ -52,7 +52,7 @@ Last Updated: March 2026
 - `explore/static/index.html` — Gaps pane and nav tab
 - `explore/static/css/styles.css` — Gap analysis styles
 
----
+______________________________________________________________________
 
 ### 🗑️ Curator Service Removal
 
@@ -69,7 +69,7 @@ Last Updated: March 2026
 - Reduced operational complexity (one fewer container to build, deploy, and monitor)
 - Cleaner codebase with no dead code
 
----
+______________________________________________________________________
 
 ### 🎨 Explore UI Redesign — Tailwind CSS + Alpine.js
 
@@ -84,16 +84,16 @@ Last Updated: March 2026
 
 #### Static Files
 
-| File                                | Change                                                                     |
-| ----------------------------------- | -------------------------------------------------------------------------- |
-| `explore/static/index.html`        | Complete rewrite (dark Tailwind theme + Alpine.js)                         |
-| `explore/static/tailwind.css`      | New — generated at Docker build time by css-builder Node stage             |
-| `explore/static/css/styles.css`    | Simplified to base reset + custom styles                                   |
-| `explore/static/js/*.js`           | New — modular JS replacing monolithic script                               |
-| `explore/tailwind.config.js`       | New — Tailwind CLI config (content paths, plugins)                         |
-| `explore/tailwind.input.css`       | New — Tailwind source directives (`@tailwind base/components/utilities`)   |
+| File                            | Change                                                                   |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| `explore/static/index.html`     | Complete rewrite (dark Tailwind theme + Alpine.js)                       |
+| `explore/static/tailwind.css`   | New — generated at Docker build time by css-builder Node stage           |
+| `explore/static/css/styles.css` | Simplified to base reset + custom styles                                 |
+| `explore/static/js/*.js`        | New — modular JS replacing monolithic script                             |
+| `explore/tailwind.config.js`    | New — Tailwind CLI config (content paths, plugins)                       |
+| `explore/tailwind.input.css`    | New — Tailwind source directives (`@tailwind base/components/utilities`) |
 
----
+______________________________________________________________________
 
 ### 🔧 Shared OAuth, Auth, and Dependency Refactor
 
@@ -142,7 +142,7 @@ Last Updated: March 2026
 - All graph queries go through the API service (configured via `API_BASE_URL`)
 - Explore configuration simplified to `API_BASE_URL` and optional `CORS_ORIGINS`
 
----
+______________________________________________________________________
 
 ## 📋 Overview
 
@@ -166,14 +166,14 @@ development experience enhancements.
 
 #### Benefits
 
-| Before | After |
-|---|---|
-| Lost on service restart | Persists across restarts (`appendonly yes`) |
-| Process-local only | Shared across multiple API replicas |
-| O(n) lazy eviction scan on every save | Native Redis TTL — zero overhead |
-| Unbounded memory growth | Bounded by Redis `maxmemory 512mb` + LRU |
+| Before                                | After                                       |
+| ------------------------------------- | ------------------------------------------- |
+| Lost on service restart               | Persists across restarts (`appendonly yes`) |
+| Process-local only                    | Shared across multiple API replicas         |
+| O(n) lazy eviction scan on every save | Native Redis TTL — zero overhead            |
+| Unbounded memory growth               | Bounded by Redis `maxmemory 512mb` + LRU    |
 
----
+______________________________________________________________________
 
 ### 🔒 Security Hardening — Issue #71 (February 2026)
 
@@ -197,7 +197,7 @@ development experience enhancements.
 - Added `api/limiter.py` for a shared SlowAPI `Limiter` instance.
 - Replaced all `type: ignore` pragmas with proper type narrowing across the codebase.
 
----
+______________________________________________________________________
 
 ### 👤 Discogs User Integration (February 2026)
 
@@ -211,7 +211,7 @@ development experience enhancements.
 - **User endpoints**: `/api/user/collection`, `/api/user/wantlist`, `/api/user/recommendations`, `/api/user/collection/stats`, `/api/user/status` for personalised graph data.
 - **Operator setup**: Discogs app credentials configured once via the `discogs-setup` CLI bundled in the API container (reads/writes the `app_config` table).
 
----
+______________________________________________________________________
 
 ### 🏗️ API Consolidation (February 2026)
 
@@ -219,11 +219,11 @@ development experience enhancements.
 
 #### Before / After
 
-| Endpoint group        | Before                     | After              |
-| --------------------- | -------------------------- | ------------------ |
-| Graph queries         | Explore service (:8006)    | API service (:8004) |
-| Sync triggers         | Curator service (:8010)    | API service (:8004) |
-| User collection data  | (new)                      | API service (:8004) |
+| Endpoint group       | Before                  | After               |
+| -------------------- | ----------------------- | ------------------- |
+| Graph queries        | Explore service (:8006) | API service (:8004) |
+| Sync triggers        | Curator service (:8010) | API service (:8004) |
+| User collection data | (new)                   | API service (:8004) |
 
 #### Benefits
 
@@ -232,7 +232,7 @@ development experience enhancements.
 - Explore is now a static file server only, reducing its attack surface.
 - Shared JWT authentication and rate limiting enforced uniformly at the API layer.
 
----
+______________________________________________________________________
 
 ### 🎨 Dashboard UI Redesign (February 2026)
 
@@ -257,15 +257,15 @@ development experience enhancements.
 
 #### Static Files
 
-| File                                   | Change                                                                     |
-| -------------------------------------- | -------------------------------------------------------------------------- |
-| `dashboard/static/index.html`          | Complete rewrite (dark Tailwind theme)                                     |
-| `dashboard/static/tailwind.css`        | New — generated at Docker build time by css-builder Node stage             |
-| `dashboard/static/styles.css`          | Simplified to base reset + legacy selector stubs                           |
-| `dashboard/static/dashboard.js`        | Complete rewrite (Chart.js removed, SVG gauges + CSS bars)                 |
+| File                                   | Change                                                                       |
+| -------------------------------------- | ---------------------------------------------------------------------------- |
+| `dashboard/static/index.html`          | Complete rewrite (dark Tailwind theme)                                       |
+| `dashboard/static/tailwind.css`        | New — generated at Docker build time by css-builder Node stage               |
+| `dashboard/static/styles.css`          | Simplified to base reset + legacy selector stubs                             |
+| `dashboard/static/dashboard.js`        | Complete rewrite (Chart.js removed, SVG gauges + CSS bars)                   |
 | `dashboard/tailwind.config.js`         | New — Tailwind CLI config (content paths, forms + container-queries plugins) |
-| `dashboard/tailwind.input.css`         | New — Tailwind source directives (`@tailwind base/components/utilities`)   |
-| `tests/dashboard/test_dashboard_ui.py` | Updated Playwright selectors                                               |
+| `dashboard/tailwind.input.css`         | New — Tailwind source directives (`@tailwind base/components/utilities`)     |
+| `tests/dashboard/test_dashboard_ui.py` | Updated Playwright selectors                                                 |
 
 ### 🧹 Code Simplification & Test Coverage (February 2026)
 

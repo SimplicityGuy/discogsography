@@ -246,10 +246,10 @@ Example response:
 
 ## ⚙️ Configuration
 
-| Variable         | Description                               | Default                 |
-| ---------------- | ----------------------------------------- | ----------------------- |
-| `API_BASE_URL`   | Base URL of the API service for proxying  | `http://api:8004`       |
-| `CORS_ORIGINS`   | Comma-separated list of allowed origins   | `http://localhost:3000,http://localhost:8003` |
+| Variable       | Description                              | Default                                       |
+| -------------- | ---------------------------------------- | --------------------------------------------- |
+| `API_BASE_URL` | Base URL of the API service for proxying | `http://api:8004`                             |
+| `CORS_ORIGINS` | Comma-separated list of allowed origins  | `http://localhost:3000,http://localhost:8003` |
 
 ## 🔌 Ports
 

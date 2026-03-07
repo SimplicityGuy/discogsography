@@ -358,19 +358,19 @@ graph LR
 
 ### Complete Relationship Summary
 
-| Relationship | From | To | Properties |
-|---|---|---|---|
-| BY | Release | Artist | None |
-| ON | Release | Label | None |
-| DERIVED_FROM | Release | Master | None |
-| IS | Release | Genre | None |
-| IS | Release | Style | None |
-| MEMBER_OF | Artist | Artist (band) | None |
-| ALIAS_OF | Artist | Artist (primary) | None |
-| SUBLABEL_OF | Label | Label (parent) | None |
-| PART_OF | Style | Genre | None |
-| COLLECTED | User | Release | rating, folder_id, date_added, synced_at |
-| WANTS | User | Release | rating, date_added, synced_at |
+| Relationship | From    | To               | Properties                               |
+| ------------ | ------- | ---------------- | ---------------------------------------- |
+| BY           | Release | Artist           | None                                     |
+| ON           | Release | Label            | None                                     |
+| DERIVED_FROM | Release | Master           | None                                     |
+| IS           | Release | Genre            | None                                     |
+| IS           | Release | Style            | None                                     |
+| MEMBER_OF    | Artist  | Artist (band)    | None                                     |
+| ALIAS_OF     | Artist  | Artist (primary) | None                                     |
+| SUBLABEL_OF  | Label   | Label (parent)   | None                                     |
+| PART_OF      | Style   | Genre            | None                                     |
+| COLLECTED    | User    | Release          | rating, folder_id, date_added, synced_at |
+| WANTS        | User    | Release          | rating, date_added, synced_at            |
 
 ### Common Queries
 
@@ -728,19 +728,20 @@ After `normalize_record("releases", ...)`:
 ```
 
 Notes:
+
 - `year` is parsed from the `released` date field (`"1969-09-26"` -> `1969`) by `_parse_year_int()`.
 - `master_id` is extracted from the `#text` field of the dict.
 - `formats` raw data is preserved; the graphinator separately calls `extract_format_names()` to produce `["Vinyl"]` for storage on the Release node.
 
 ### XML-to-JSON Conventions
 
-| XML Pattern | JSON Result |
-|---|---|
-| `<name>Text</name>` | `"name": "Text"` |
-| `<el id="1">Text</el>` | `"el": {"@id": "1", "#text": "Text"}` |
-| `<el id="1"/>` | `"el": {"@id": "1"}` |
-| Multiple `<el>` children | `"el": [...]` (array) |
-| Single `<el>` child | `"el": {...}` (object, not array) |
+| XML Pattern              | JSON Result                           |
+| ------------------------ | ------------------------------------- |
+| `<name>Text</name>`      | `"name": "Text"`                      |
+| `<el id="1">Text</el>`   | `"el": {"@id": "1", "#text": "Text"}` |
+| `<el id="1"/>`           | `"el": {"@id": "1"}`                  |
+| Multiple `<el>` children | `"el": [...]` (array)                 |
+| Single `<el>` child      | `"el": {...}` (object, not array)     |
 
 This single-vs-array ambiguity is why `normalize_record()` exists: it normalizes all list-like fields to consistent arrays.
 
@@ -955,10 +956,10 @@ graph TD
 Both graphinator and tableinator follow the same normalization pipeline:
 
 1. Raw JSON message received from RabbitMQ
-2. `normalize_record(data_type, data)` called to flatten XML-dict structures
-3. Hash-based deduplication check (skip data rewrite if unchanged, but always refresh `updated_at`)
-4. Write to database (Neo4j nodes/relationships or PostgreSQL JSONB)
-5. Acknowledge message
+1. `normalize_record(data_type, data)` called to flatten XML-dict structures
+1. Hash-based deduplication check (skip data rewrite if unchanged, but always refresh `updated_at`)
+1. Write to database (Neo4j nodes/relationships or PostgreSQL JSONB)
+1. Acknowledge message
 
 Both batch and single-message processing paths call `normalize_record()` at the same point, ensuring identical data reaches the database regardless of processing mode.
 
@@ -1075,6 +1076,6 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 - [Neo4j Indexing](neo4j-indexing.md) - Advanced indexing strategies
 - [State Marker System](state-marker-system.md) - Extractor progress tracking
 
----
+______________________________________________________________________
 
 **Last Updated**: 2026-03-07

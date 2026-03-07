@@ -16,15 +16,15 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### ⚙️ Service Components
 
-| Service                                                  | Purpose                                     | Key Technologies                                  | Port(s)               |
-| -------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------- | --------------------- |
-| **[🔐](emoji-guide.md#service-identifiers) API**         | User auth, graph queries, and sync triggers | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 | 8004 (ext), 8005      |
-| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor       | `tokio`, `quick-xml`, `lapin`                     | 8000 (health)         |
-| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer              | `neo4j-driver`, `psycopg3`                        | —                     |
-| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs               | `neo4j-driver`, graph algorithms                  | 8001 (health)         |
-| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables         | `psycopg3`, JSONB, full-text search               | 8002 (health)         |
+| Service                                                  | Purpose                                     | Key Technologies                                             | Port(s)               |
+| -------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------ | --------------------- |
+| **[🔐](emoji-guide.md#service-identifiers) API**         | User auth, graph queries, and sync triggers | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0            | 8004 (ext), 8005      |
+| **[⚡](emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor       | `tokio`, `quick-xml`, `lapin`                                | 8000 (health)         |
+| **[🔧](emoji-guide.md#service-identifiers) Schema-Init** | One-shot DB schema initializer              | `neo4j-driver`, `psycopg3`                                   | —                     |
+| **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs               | `neo4j-driver`, graph algorithms                             | 8001 (health)         |
+| **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables         | `psycopg3`, JSONB, full-text search                          | 8002 (health)         |
 | **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check      | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (internal) |
-| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring                 | `FastAPI`, WebSocket, reactive UI                 | 8003 (ext)            |
+| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring                 | `FastAPI`, WebSocket, reactive UI                            | 8003 (ext)            |
 
 ### Infrastructure Components
 
@@ -39,7 +39,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ```mermaid
 graph TD
-    S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
+    S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~11GB XML")]
     EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     SCHEMA[["🔧 Schema-Init<br/>One-Shot DB<br/>Schema Initialiser"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>4 Fanout Exchanges"}}
@@ -136,7 +136,6 @@ See [Database Schema — Extractor Message Format](database-schema.md#extractor-
 - Consumes messages from all 4 queues
 - Creates nodes: Artist, Label, Release, Master, Genre, Style
 - Builds relationships: BY, ON, MEMBER_OF, DERIVED_FROM, etc.
-- Batch processing: 1,000-2,000 records/sec
 - On `extraction_complete`: deletes stub nodes (no `sha256` property) created by cross-type MERGE operations
 
 **Tableinator** (PostgreSQL):
@@ -144,7 +143,6 @@ See [Database Schema — Extractor Message Format](database-schema.md#extractor-
 - Consumes messages from all 4 queues
 - Stores JSONB documents in relational tables; always refreshes `updated_at`, only rewrites data when hash differs
 - Creates indexes for fast queries
-- Batch processing: 3,000-5,000 records/sec
 - On `extraction_complete`: purges stale rows where `updated_at < started_at`
 
 See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extraction-cleanup) for details.
@@ -545,14 +543,16 @@ See [Monitoring](monitoring.md) for details.
 
 <div align="center">
 
-|                   Data Type                    | Record Count | XML Size | Processing Time |
-| :--------------------------------------------: | :----------: | :------: | :-------------: |
-| [📀](emoji-guide.md#music-domain) **Releases** | ~15 million  |  ~40GB   |    1-3 hours    |
-| [🎤](emoji-guide.md#music-domain) **Artists**  |  ~2 million  |   ~5GB   |   15-30 mins    |
-| [🎵](emoji-guide.md#music-domain) **Masters**  |  ~2 million  |   ~3GB   |   10-20 mins    |
-|                 🏢 **Labels**                  | ~1.5 million |   ~2GB   |   10-15 mins    |
+|                   Data Type                    | Record Count | XML Size | Initial Load | Update Run |
+| :--------------------------------------------: | :----------: | :------: | :----------: | :--------: |
+| [📀](emoji-guide.md#music-domain) **Releases** | ~19 million  |  ~10GB   |   ~6 days    | ~26 hours  |
+| [🎤](emoji-guide.md#music-domain) **Artists**  | ~10 million  |  ~460MB  |   ~3 days    | ~14 hours  |
+| [🎵](emoji-guide.md#music-domain) **Masters**  | ~2.5 million |  ~570MB  |  ~18 hours   |  ~4 hours  |
+|                 🏢 **Labels**                  | ~2.3 million |  ~83MB   |  ~19 hours   |  ~3 hours  |
 
-**📊 Total: ~20 million records • 50GB compressed • 100GB processed**
+**📊 Total: ~34 million records • ~11GB compressed • ~100GB on disk (25GB Neo4j + 72GB PostgreSQL)**
+
+**⏱️ Initial load: ~6 days (parallel, limited by releases) • Update run: ~26 hours (~5x faster)**
 
 </div>
 
