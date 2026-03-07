@@ -80,11 +80,6 @@ tests/
 │   ├── test_batch_processor_integration.py
 │   └── test_graphinator.py
 │
-├── load/                                # Load tests (Locust)
-│   ├── locustfile.py
-│   ├── scenarios.py
-│   └── README.md
-│
 ├── schema-init/
 │   ├── conftest.py                      # Adds schema-init/ to sys.path
 │   ├── test_neo4j_schema.py             # Neo4j schema statements & creation

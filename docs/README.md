@@ -66,7 +66,6 @@
 | **[File Completion Tracking](file-completion-tracking.md)**           | 📊 Intelligent completion tracking and stalled detection  |
 | **[Platform Targeting](platform-targeting.md)**                       | 🎯 Cross-platform compatibility guidelines                |
 | **[Neo4j Indexing](neo4j-indexing.md)**                               | 🔗 Advanced Neo4j indexing strategies                     |
-| **[Performance Benchmarks](performance-benchmarks.md)**               | 📈 Performance benchmarks and tuning results              |
 
 ## 🎯 Documentation by Role
 

@@ -105,7 +105,6 @@ discogsography/
 │   ├── dashboard/          # Dashboard tests (including E2E)
 │   ├── explore/            # Explore service tests
 │   ├── graphinator/        # Graphinator tests
-│   ├── load/               # Load tests (Locust)
 │   ├── schema-init/        # Schema initializer tests
 │   └── tableinator/        # Tableinator tests
 ├── 📝 docs/                # Documentation
@@ -276,7 +275,6 @@ tests/
 │   └── test_dashboard_ui.py  # E2E tests with Playwright
 ├── explore/          # Explore service tests
 ├── graphinator/      # Graphinator tests
-├── load/             # Load tests (Locust)
 ├── schema-init/      # Schema initializer tests
 └── tableinator/      # Tableinator tests
 ```

@@ -174,7 +174,6 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 | **[Troubleshooting Guide](docs/troubleshooting.md)**         | 🔧 Common issues, solutions, and debugging steps |
 | **[Maintenance Guide](docs/maintenance.md)**                 | 🔄 Package upgrades, dependency management       |
 | **[Performance Guide](docs/performance-guide.md)**           | ⚡ Database tuning, hardware specs, optimization |
-| **[Performance Benchmarks](docs/performance-benchmarks.md)** | 📈 Processing rates and tuning results           |
 | **[Database Resilience](docs/database-resilience.md)**       | 💾 Database connection patterns & error handling |
 
 ### 🐋 Infrastructure & CI/CD

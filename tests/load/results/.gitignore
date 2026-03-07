@@ -1,8 +1,0 @@
-# Ignore all load test result files
-*.csv
-*.html
-*.log
-
-# Keep the directory structure
-!.gitkeep
-!.gitignore

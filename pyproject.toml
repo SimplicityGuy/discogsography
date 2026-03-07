@@ -157,7 +157,6 @@ ignore = [
 "*/schema_init.py" = ["T201"]   # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]   # Allow print statements for ASCII art
 "tests/**/*.py" = ["S105"]  # Test files can have hardcoded passwords
-"tests/load/*.py" = ["S311"]  # Load tests use random for test data selection, not cryptography
 
 [tool.mypy]
 python_version = "3.13"
@@ -244,7 +243,6 @@ timeout = 60
 timeout_method = "thread"
 markers = [
     "e2e: End-to-end tests requiring external services (deselect with '-m \"not e2e\"')",
-    "benchmark: Performance benchmark tests (deselect with '-m \"not benchmark\"')",
 ]
 
 # Package discovery for multi-service setup
@@ -256,7 +254,6 @@ dev = [
     "bandit>=1.7.0",
     "black>=24.0.0",
     "isort>=5.13.0",
-    "locust>=2.0.0",                      # Load testing framework
     "mypy>=1.8.0",
     "pip-audit>=2.7.0",                   # Python dependency vulnerability scanning
     "pre-commit>=3.5.0",

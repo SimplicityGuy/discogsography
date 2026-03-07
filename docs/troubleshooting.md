@@ -247,10 +247,10 @@ PGPASSWORD=discogsography psql \
 
 ```bash
 # Check what's using the ports
-netstat -an | grep -E "(5672|7474|7687|5433|6379|8003|8006|8007)"
+netstat -an | grep -E "(5672|7474|7687|5433|6379|8003|8004|8005)"
 
 # Or on macOS
-lsof -i :8006
+lsof -i :8004
 lsof -i :7474
 
 # List all Docker containers
@@ -263,7 +263,7 @@ docker ps -a
 
    ```bash
    # Find process using port
-   lsof -i :8006
+   lsof -i :8004
 
    # Kill the process
    kill -9 <PID>
@@ -380,7 +380,8 @@ curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
-curl http://localhost:8007/health  # Explore
+curl http://localhost:8005/health  # API (health check port)
+# Note: Explore ports (8006/8007) are not exposed in Docker Compose
 ```
 
 Expected response:

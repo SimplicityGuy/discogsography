@@ -42,7 +42,7 @@ open http://localhost:8003
 - Tableinator (http://localhost:8002/health)
 - Dashboard (http://localhost:8003/health)
 - API (http://localhost:8004/health, http://localhost:8005/health)
-- Explore (http://localhost:8006/health, http://localhost:8007/health)
+- Explore (http://localhost:8007/health — internal only in Docker Compose)
 
 #### Queue Metrics Panel
 
@@ -517,8 +517,8 @@ curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
 curl http://localhost:8005/health  # API (health check port)
-curl http://localhost:8006/health  # Explore (service port)
-curl http://localhost:8007/health  # Explore (health check port)
+curl http://localhost:8006/health  # Explore (service port — local dev only, not exposed in Docker Compose)
+curl http://localhost:8007/health  # Explore (health check port — local dev only, not exposed in Docker Compose)
 ```
 
 ### Step 2: Enable Debug Logging

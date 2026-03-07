@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the Neo4j indexing strategy for the Discovery service to optimize query performance. Indexes are automatically created during service startup.
+This document describes the Neo4j indexing strategy for the API service to optimize query performance. Indexes are automatically created during service startup.
 
 ## Index Types
 

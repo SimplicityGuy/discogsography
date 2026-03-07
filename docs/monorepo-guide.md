@@ -157,7 +157,6 @@ uv sync --all-extras
 
 # Install specific service dependencies
 uv sync --extra dashboard
-uv sync --extra dashboard
 
 # Install only dev dependencies
 uv sync --extra dev
