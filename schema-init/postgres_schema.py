@@ -261,21 +261,6 @@ async def create_postgres_schema(pool: Any) -> None:
                         logger.error(f"❌ Failed to create schema object '{name}': {e}")
                         failure_count += 1
 
-            # ── Migrate: add updated_at column to existing entity tables ──────
-            for table_name in _ENTITY_TABLES:
-                migration_name = f"{table_name} add updated_at"
-                migration_stmt = sql.SQL(
-                    "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS "
-                    "updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
-                ).format(table=sql.Identifier(table_name))
-                try:
-                    await cursor.execute(migration_stmt)
-                    logger.info(f"✅ Migration: {migration_name}")
-                    success_count += 1
-                except Exception as e:
-                    logger.error(f"❌ Failed migration '{migration_name}': {e}")
-                    failure_count += 1
-
             # ── Table-specific JSONB field indexes ────────────────────────────
             for name, stmt in _SPECIFIC_INDEXES:
                 try:
