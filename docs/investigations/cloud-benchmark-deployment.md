@@ -659,29 +659,679 @@ RABBITMQ_URL=amqp://guest:guest@bench-extractor:5672
 | Discogs data download | Free | Public S3 bucket |
 | DNS/floating IPs | Not needed | Use IP addresses directly |
 
-## Prerequisites
+## Prerequisites and Provisioning Guide
 
 ### Local Machine Setup
 
 ```bash
-# Install Ansible + Hetzner collection
+# Install Ansible and cloud provider collections
 uv tool install ansible-core
-ansible-galaxy collection install hetzner.hcloud community.docker
-pip install hcloud  # Hetzner API client for Ansible
+ansible-galaxy collection install hetzner.hcloud community.docker community.general
+pip install hcloud  # Hetzner API client
 
-# Set Hetzner API token
-export HCLOUD_TOKEN="your-token-here"  # From Hetzner Cloud Console
+# For Vultr (alternative)
+ansible-galaxy collection install ngine_io.vultr
+pip install vultr   # Vultr API client
 
-# Generate SSH key (if needed)
-ssh-keygen -t ed25519 -f ~/.ssh/benchmark-key -N ""
+# For DigitalOcean (alternative)
+ansible-galaxy collection install community.digitalocean
+pip install python-digitalocean  # DO API client
+
+# Generate a dedicated SSH key for benchmarking
+ssh-keygen -t ed25519 -f ~/.ssh/benchmark-key -N "" -C "discogsography-benchmark"
 ```
 
-### Hetzner Account Setup
+### Provider Account Setup and API Keys
+
+#### Hetzner Cloud (Recommended)
 
 1. Create account at [console.hetzner.cloud](https://console.hetzner.cloud)
 2. Create a project (e.g., "discogsography-benchmark")
-3. Generate API token (Read/Write) under Security > API Tokens
-4. Set `HCLOUD_TOKEN` environment variable
+3. Go to **Security > API Tokens > Generate API Token**
+4. Select **Read & Write** permissions
+5. Copy the token (shown only once)
+
+```bash
+export HCLOUD_TOKEN="hetzner-api-token-here"
+```
+
+#### Vultr (Alternative 1)
+
+1. Create account at [my.vultr.com](https://my.vultr.com)
+2. Go to **Account > API > Enable API**
+3. Copy the API key
+4. Add your IP to the Access Control allowlist (or allow all)
+
+```bash
+export VULTR_API_KEY="vultr-api-key-here"
+```
+
+#### DigitalOcean (Alternative 2)
+
+1. Create account at [cloud.digitalocean.com](https://cloud.digitalocean.com)
+2. Go to **API > Tokens > Generate New Token**
+3. Select **Read and Write** scope
+4. Copy the token
+
+```bash
+export DO_API_TOKEN="digitalocean-token-here"
+```
+
+### Store API Keys Securely
+
+Create an Ansible vault file to avoid exporting tokens in your shell:
+
+```bash
+# Create encrypted vault for API credentials
+ansible-vault create infra/vault.yml
+```
+
+Contents of `vault.yml`:
+
+```yaml
+# Choose one provider — only that key is needed
+hcloud_token: "your-hetzner-token"
+vultr_api_key: "your-vultr-key"
+do_api_token: "your-digitalocean-token"
+```
+
+Reference in playbooks:
+
+```yaml
+vars_files:
+  - ../vault.yml
+```
+
+Run playbooks with vault:
+
+```bash
+ansible-playbook playbooks/provision.yml --ask-vault-pass
+# Or store the vault password in a file:
+echo "your-vault-password" > infra/.vault-pass
+chmod 600 infra/.vault-pass
+ansible-playbook playbooks/provision.yml --vault-password-file=infra/.vault-pass
+```
+
+Add to `.gitignore`:
+
+```
+infra/.vault-pass
+infra/vault.yml
+```
+
+## Provisioning Playbooks (Per Provider)
+
+### Hetzner Cloud Provisioning
+
+```yaml
+# infra/playbooks/provision-hetzner.yml
+---
+- name: Provision benchmark hosts on Hetzner Cloud
+  hosts: localhost
+  connection: local
+  vars_files:
+    - ../vault.yml
+  vars:
+    hcloud_token: "{{ hcloud_token }}"
+    server_type: cx43          # 4 vCPU / 16GB — change to ccx23 for dedicated
+    image: ubuntu-24.04
+    location: nbg1             # Nuremberg (cheapest). Alternatives: fsn1, hel1, ash
+    ssh_key_name: benchmark-key
+    servers:
+      - { name: bench-extractor, role: extractor }
+      - { name: bench-neo4j, role: neo4j }
+      - { name: bench-memgraph, role: memgraph }
+      - { name: bench-age, role: age }
+      - { name: bench-falkordb, role: falkordb }
+      - { name: bench-arangodb, role: arangodb }
+
+  tasks:
+    - name: Upload SSH key to Hetzner
+      hetzner.hcloud.ssh_key:
+        api_token: "{{ hcloud_token }}"
+        name: "{{ ssh_key_name }}"
+        public_key: "{{ lookup('file', '~/.ssh/benchmark-key.pub') }}"
+        state: present
+
+    - name: Create private network for inter-host communication
+      hetzner.hcloud.network:
+        api_token: "{{ hcloud_token }}"
+        name: bench-network
+        ip_range: 10.0.0.0/16
+        state: present
+      register: network
+
+    - name: Create subnet
+      hetzner.hcloud.subnetwork:
+        api_token: "{{ hcloud_token }}"
+        network: bench-network
+        ip_range: 10.0.1.0/24
+        type: cloud
+        network_zone: eu-central
+        state: present
+
+    - name: Create firewall
+      hetzner.hcloud.firewall:
+        api_token: "{{ hcloud_token }}"
+        name: bench-firewall
+        rules:
+          - description: SSH
+            direction: in
+            protocol: tcp
+            port: "22"
+            source_ips: ["0.0.0.0/0", "::/0"]
+          - description: RabbitMQ AMQP (private network only)
+            direction: in
+            protocol: tcp
+            port: "5672"
+            source_ips: ["10.0.0.0/16"]
+          - description: RabbitMQ Management
+            direction: in
+            protocol: tcp
+            port: "15672"
+            source_ips: ["0.0.0.0/0", "::/0"]
+          - description: Database ports (private network only)
+            direction: in
+            protocol: tcp
+            port: "5432-8529"
+            source_ips: ["10.0.0.0/16"]
+        state: present
+
+    - name: Create servers
+      hetzner.hcloud.server:
+        api_token: "{{ hcloud_token }}"
+        name: "{{ item.name }}"
+        server_type: "{{ server_type }}"
+        image: "{{ image }}"
+        location: "{{ location }}"
+        ssh_keys: ["{{ ssh_key_name }}"]
+        firewalls: [bench-firewall]
+        state: present
+      loop: "{{ servers }}"
+      register: created_servers
+
+    - name: Attach servers to private network
+      hetzner.hcloud.server_network:
+        api_token: "{{ hcloud_token }}"
+        server: "{{ item.name }}"
+        network: bench-network
+        state: present
+      loop: "{{ servers }}"
+
+    - name: Wait for SSH to become available
+      wait_for:
+        host: "{{ item.hcloud_server.ipv4_address }}"
+        port: 22
+        delay: 10
+        timeout: 120
+      loop: "{{ created_servers.results }}"
+
+    - name: Generate Ansible inventory
+      copy:
+        content: |
+          ---
+          all:
+            vars:
+              ansible_user: root
+              ansible_ssh_private_key_file: ~/.ssh/benchmark-key
+              ansible_python_interpreter: /usr/bin/python3
+              rabbitmq_host: "{{ created_servers.results[0].hcloud_server.ipv4_address }}"
+            children:
+              extractor:
+                hosts:
+                  bench-extractor:
+                    ansible_host: "{{ created_servers.results[0].hcloud_server.ipv4_address }}"
+              databases:
+                hosts:
+                  {% for server in created_servers.results[1:] %}
+                  {{ server.hcloud_server.name }}:
+                    ansible_host: "{{ server.hcloud_server.ipv4_address }}"
+                    db_role: "{{ servers[loop.index].role }}"
+                  {% endfor %}
+        dest: ../inventory/hosts.yml
+
+    - name: Display server IPs
+      debug:
+        msg: "{{ item.hcloud_server.name }}: {{ item.hcloud_server.ipv4_address }}"
+      loop: "{{ created_servers.results }}"
+```
+
+### Vultr Provisioning
+
+```yaml
+# infra/playbooks/provision-vultr.yml
+---
+- name: Provision benchmark hosts on Vultr
+  hosts: localhost
+  connection: local
+  vars_files:
+    - ../vault.yml
+  vars:
+    api_key: "{{ vultr_api_key }}"
+    plan: vc2-4c-8gb           # 4 vCPU / 8GB — $40/mo, $0.06/hr
+    # Alternative: vc2-4c-16gb for 16GB
+    os: "Ubuntu 24.04 LTS x64"
+    region: ewr                # New Jersey. Alternatives: ord (Chicago), lax, ams, fra
+    ssh_key_name: benchmark-key
+    servers:
+      - { name: bench-extractor, role: extractor }
+      - { name: bench-neo4j, role: neo4j }
+      - { name: bench-memgraph, role: memgraph }
+      - { name: bench-age, role: age }
+      - { name: bench-falkordb, role: falkordb }
+      - { name: bench-arangodb, role: arangodb }
+
+  tasks:
+    - name: Upload SSH key to Vultr
+      ngine_io.vultr.vultr_ssh_key:
+        api_key: "{{ api_key }}"
+        name: "{{ ssh_key_name }}"
+        ssh_key: "{{ lookup('file', '~/.ssh/benchmark-key.pub') }}"
+        state: present
+      register: ssh_key
+
+    - name: Create private network
+      ngine_io.vultr.vultr_network:
+        api_key: "{{ api_key }}"
+        name: bench-network
+        region: "{{ region }}"
+        cidr: 10.0.0.0/24
+        state: present
+      register: private_network
+
+    - name: Create firewall group
+      ngine_io.vultr.vultr_firewall_group:
+        api_key: "{{ api_key }}"
+        name: bench-firewall
+        state: present
+
+    - name: Allow SSH
+      ngine_io.vultr.vultr_firewall_rule:
+        api_key: "{{ api_key }}"
+        group: bench-firewall
+        protocol: tcp
+        port: 22
+        ip_type: v4
+        cidr: "0.0.0.0/0"
+
+    - name: Create servers
+      ngine_io.vultr.vultr_server:
+        api_key: "{{ api_key }}"
+        name: "{{ item.name }}"
+        plan: "{{ plan }}"
+        os: "{{ os }}"
+        region: "{{ region }}"
+        ssh_keys: ["{{ ssh_key_name }}"]
+        firewall_group: bench-firewall
+        private_network_enabled: yes
+        state: present
+      loop: "{{ servers }}"
+      register: created_servers
+
+    - name: Wait for SSH
+      wait_for:
+        host: "{{ item.vultr_server.v4_main_ip }}"
+        port: 22
+        delay: 30
+        timeout: 180
+      loop: "{{ created_servers.results }}"
+
+    - name: Generate Ansible inventory
+      copy:
+        content: |
+          ---
+          all:
+            vars:
+              ansible_user: root
+              ansible_ssh_private_key_file: ~/.ssh/benchmark-key
+              ansible_python_interpreter: /usr/bin/python3
+              rabbitmq_host: "{{ created_servers.results[0].vultr_server.v4_main_ip }}"
+            children:
+              extractor:
+                hosts:
+                  bench-extractor:
+                    ansible_host: "{{ created_servers.results[0].vultr_server.v4_main_ip }}"
+              databases:
+                hosts:
+                  {% for server in created_servers.results[1:] %}
+                  {{ server.vultr_server.name }}:
+                    ansible_host: "{{ server.vultr_server.v4_main_ip }}"
+                    db_role: "{{ servers[loop.index].role }}"
+                  {% endfor %}
+        dest: ../inventory/hosts.yml
+
+    - name: Display server IPs
+      debug:
+        msg: "{{ item.vultr_server.name }}: {{ item.vultr_server.v4_main_ip }}"
+      loop: "{{ created_servers.results }}"
+```
+
+### DigitalOcean Provisioning
+
+```yaml
+# infra/playbooks/provision-digitalocean.yml
+---
+- name: Provision benchmark hosts on DigitalOcean
+  hosts: localhost
+  connection: local
+  vars_files:
+    - ../vault.yml
+  vars:
+    api_token: "{{ do_api_token }}"
+    size: s-4vcpu-8gb          # 4 vCPU / 8GB — $48/mo, $0.071/hr
+    # Alternative: g-4vcpu-16gb for General Purpose 16GB
+    image: ubuntu-24-04-x64
+    region: nyc3               # New York. Alternatives: sfo3, ams3, fra1, lon1
+    ssh_key_name: benchmark-key
+    servers:
+      - { name: bench-extractor, role: extractor }
+      - { name: bench-neo4j, role: neo4j }
+      - { name: bench-memgraph, role: memgraph }
+      - { name: bench-age, role: age }
+      - { name: bench-falkordb, role: falkordb }
+      - { name: bench-arangodb, role: arangodb }
+
+  tasks:
+    - name: Upload SSH key to DigitalOcean
+      community.digitalocean.digital_ocean_sshkey:
+        oauth_token: "{{ api_token }}"
+        name: "{{ ssh_key_name }}"
+        ssh_pub_key: "{{ lookup('file', '~/.ssh/benchmark-key.pub') }}"
+        state: present
+      register: ssh_key
+
+    - name: Create VPC for private networking
+      community.digitalocean.digital_ocean_vpc:
+        oauth_token: "{{ api_token }}"
+        name: bench-vpc
+        region: "{{ region }}"
+        ip_range: 10.10.0.0/24
+        state: present
+      register: vpc
+
+    - name: Create firewall
+      community.digitalocean.digital_ocean_firewall:
+        oauth_token: "{{ api_token }}"
+        name: bench-firewall
+        inbound_rules:
+          - protocol: tcp
+            ports: "22"
+            sources:
+              addresses: ["0.0.0.0/0", "::/0"]
+          - protocol: tcp
+            ports: "1-65535"
+            sources:
+              addresses: ["10.10.0.0/24"]  # Private network only
+        outbound_rules:
+          - protocol: tcp
+            ports: "1-65535"
+            destinations:
+              addresses: ["0.0.0.0/0", "::/0"]
+          - protocol: udp
+            ports: "1-65535"
+            destinations:
+              addresses: ["0.0.0.0/0", "::/0"]
+        state: present
+
+    - name: Create droplets
+      community.digitalocean.digital_ocean_droplet:
+        oauth_token: "{{ api_token }}"
+        name: "{{ item.name }}"
+        size: "{{ size }}"
+        image: "{{ image }}"
+        region: "{{ region }}"
+        ssh_keys: ["{{ ssh_key.data.ssh_key.fingerprint }}"]
+        vpc_uuid: "{{ vpc.data.vpc.id }}"
+        monitoring: yes
+        unique_name: yes
+        state: present
+      loop: "{{ servers }}"
+      register: created_droplets
+
+    - name: Add droplets to firewall
+      community.digitalocean.digital_ocean_firewall:
+        oauth_token: "{{ api_token }}"
+        name: bench-firewall
+        droplet_ids: "{{ created_droplets.results | map(attribute='data.droplet.id') | list }}"
+        state: present
+
+    - name: Wait for SSH
+      wait_for:
+        host: "{{ item.data.droplet.networks.v4 | selectattr('type', 'eq', 'public') | map(attribute='ip_address') | first }}"
+        port: 22
+        delay: 30
+        timeout: 180
+      loop: "{{ created_droplets.results }}"
+
+    - name: Generate Ansible inventory
+      copy:
+        content: |
+          ---
+          all:
+            vars:
+              ansible_user: root
+              ansible_ssh_private_key_file: ~/.ssh/benchmark-key
+              ansible_python_interpreter: /usr/bin/python3
+              rabbitmq_host: "{{ (created_droplets.results[0].data.droplet.networks.v4 | selectattr('type', 'eq', 'public') | map(attribute='ip_address') | first) }}"
+            children:
+              extractor:
+                hosts:
+                  bench-extractor:
+                    ansible_host: "{{ (created_droplets.results[0].data.droplet.networks.v4 | selectattr('type', 'eq', 'public') | map(attribute='ip_address') | first) }}"
+              databases:
+                hosts:
+                  {% for droplet in created_droplets.results[1:] %}
+                  {{ droplet.data.droplet.name }}:
+                    ansible_host: "{{ (droplet.data.droplet.networks.v4 | selectattr('type', 'eq', 'public') | map(attribute='ip_address') | first) }}"
+                    db_role: "{{ servers[loop.index].role }}"
+                  {% endfor %}
+        dest: ../inventory/hosts.yml
+
+    - name: Display droplet IPs
+      debug:
+        msg: "{{ item.data.droplet.name }}: {{ (item.data.droplet.networks.v4 | selectattr('type', 'eq', 'public') | map(attribute='ip_address') | first) }}"
+      loop: "{{ created_droplets.results }}"
+```
+
+### Teardown Playbooks (Per Provider)
+
+```yaml
+# infra/playbooks/teardown-hetzner.yml
+---
+- name: Destroy Hetzner benchmark infrastructure
+  hosts: localhost
+  connection: local
+  vars_files:
+    - ../vault.yml
+  vars:
+    hcloud_token: "{{ hcloud_token }}"
+    servers:
+      - bench-extractor
+      - bench-neo4j
+      - bench-memgraph
+      - bench-age
+      - bench-falkordb
+      - bench-arangodb
+
+  tasks:
+    - name: Destroy servers
+      hetzner.hcloud.server:
+        api_token: "{{ hcloud_token }}"
+        name: "{{ item }}"
+        state: absent
+      loop: "{{ servers }}"
+
+    - name: Remove firewall
+      hetzner.hcloud.firewall:
+        api_token: "{{ hcloud_token }}"
+        name: bench-firewall
+        state: absent
+
+    - name: Remove network
+      hetzner.hcloud.network:
+        api_token: "{{ hcloud_token }}"
+        name: bench-network
+        state: absent
+
+    - name: Remove SSH key
+      hetzner.hcloud.ssh_key:
+        api_token: "{{ hcloud_token }}"
+        name: benchmark-key
+        state: absent
+```
+
+```yaml
+# infra/playbooks/teardown-vultr.yml
+---
+- name: Destroy Vultr benchmark infrastructure
+  hosts: localhost
+  connection: local
+  vars_files:
+    - ../vault.yml
+  vars:
+    api_key: "{{ vultr_api_key }}"
+    servers:
+      - bench-extractor
+      - bench-neo4j
+      - bench-memgraph
+      - bench-age
+      - bench-falkordb
+      - bench-arangodb
+
+  tasks:
+    - name: Destroy servers
+      ngine_io.vultr.vultr_server:
+        api_key: "{{ api_key }}"
+        name: "{{ item }}"
+        state: absent
+      loop: "{{ servers }}"
+
+    - name: Remove firewall group
+      ngine_io.vultr.vultr_firewall_group:
+        api_key: "{{ api_key }}"
+        name: bench-firewall
+        state: absent
+
+    - name: Remove SSH key
+      ngine_io.vultr.vultr_ssh_key:
+        api_key: "{{ api_key }}"
+        name: benchmark-key
+        state: absent
+```
+
+```yaml
+# infra/playbooks/teardown-digitalocean.yml
+---
+- name: Destroy DigitalOcean benchmark infrastructure
+  hosts: localhost
+  connection: local
+  vars_files:
+    - ../vault.yml
+  vars:
+    api_token: "{{ do_api_token }}"
+    servers:
+      - bench-extractor
+      - bench-neo4j
+      - bench-memgraph
+      - bench-age
+      - bench-falkordb
+      - bench-arangodb
+
+  tasks:
+    - name: Destroy droplets
+      community.digitalocean.digital_ocean_droplet:
+        oauth_token: "{{ api_token }}"
+        name: "{{ item }}"
+        unique_name: yes
+        state: absent
+      loop: "{{ servers }}"
+
+    - name: Remove firewall
+      community.digitalocean.digital_ocean_firewall:
+        oauth_token: "{{ api_token }}"
+        name: bench-firewall
+        state: absent
+
+    - name: Remove VPC
+      community.digitalocean.digital_ocean_vpc:
+        oauth_token: "{{ api_token }}"
+        name: bench-vpc
+        state: absent
+
+    - name: Remove SSH key
+      community.digitalocean.digital_ocean_sshkey:
+        oauth_token: "{{ api_token }}"
+        name: benchmark-key
+        state: absent
+```
+
+### Provider-Agnostic End-to-End Script
+
+```bash
+#!/usr/bin/env bash
+# infra/scripts/run-all.sh
+set -euo pipefail
+
+PROVIDER="${1:?Usage: ./run-all.sh <hetzner|vultr|digitalocean>}"
+
+case "$PROVIDER" in
+    hetzner|vultr|digitalocean) ;;
+    *) echo "Unknown provider: $PROVIDER. Use hetzner, vultr, or digitalocean."; exit 1 ;;
+esac
+
+echo "=== Provisioning on $PROVIDER ==="
+ansible-playbook playbooks/provision-${PROVIDER}.yml --ask-vault-pass
+
+echo "=== Setting up all hosts ==="
+ansible-playbook playbooks/setup-common.yml
+ansible-playbook playbooks/setup-extractor.yml
+ansible-playbook playbooks/setup-neo4j.yml
+ansible-playbook playbooks/setup-memgraph.yml
+ansible-playbook playbooks/setup-age.yml
+ansible-playbook playbooks/setup-falkordb.yml
+ansible-playbook playbooks/setup-arangodb.yml
+
+echo "=== Running data import ==="
+ansible-playbook playbooks/run-import.yml
+
+echo "=== Running benchmarks ==="
+ansible-playbook playbooks/run-benchmarks.yml
+
+echo "=== Collecting results ==="
+ansible-playbook playbooks/collect-results.yml
+
+echo "=== Results saved to ./results/ ==="
+echo "=== Review results before tearing down ==="
+read -p "Tear down infrastructure? [y/N] " confirm
+if [[ "$confirm" == "y" ]]; then
+    ansible-playbook playbooks/teardown-${PROVIDER}.yml --ask-vault-pass
+fi
+```
+
+### Quick Reference: Provisioning Commands
+
+```bash
+# --- Hetzner (recommended) ---
+export HCLOUD_TOKEN="your-token"  # or use vault
+ansible-playbook infra/playbooks/provision-hetzner.yml --ask-vault-pass
+# Teardown:
+ansible-playbook infra/playbooks/teardown-hetzner.yml --ask-vault-pass
+
+# --- Vultr ---
+export VULTR_API_KEY="your-key"   # or use vault
+ansible-playbook infra/playbooks/provision-vultr.yml --ask-vault-pass
+# Teardown:
+ansible-playbook infra/playbooks/teardown-vultr.yml --ask-vault-pass
+
+# --- DigitalOcean ---
+export DO_API_TOKEN="your-token"  # or use vault
+ansible-playbook infra/playbooks/provision-digitalocean.yml --ask-vault-pass
+# Teardown:
+ansible-playbook infra/playbooks/teardown-digitalocean.yml --ask-vault-pass
+
+# --- End-to-end (any provider) ---
+./infra/scripts/run-all.sh hetzner
+```
 
 ## Work Items
 
