@@ -106,7 +106,7 @@ class TestFileCompletionHandling:
         # Test the handler
         mock_completed: set[str] = set()
         with patch("tableinator.tableinator.completed_files", mock_completed):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "labels")
 
             assert "labels" in mock_completed
             mock_message.ack.assert_called_once()
@@ -152,7 +152,7 @@ class TestFileCompletionHandling:
             patch("tableinator.tableinator.message_counts", {"labels": 0}),
             patch("tableinator.tableinator.last_message_time", {"labels": 0}),
         ):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "labels")
 
             # Verify normal processing occurred
             mock_message.ack.assert_called_once()

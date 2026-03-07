@@ -189,8 +189,8 @@ class TableinatorConfig:
 
 
 # AMQP Configuration shared across all services
-AMQP_EXCHANGE = "discogsography-exchange"
-AMQP_EXCHANGE_TYPE = "topic"  # Use topic for routing by data type
+AMQP_EXCHANGE_PREFIX = "discogsography"
+AMQP_EXCHANGE_TYPE = "fanout"  # Fanout exchanges for decoupled pub/sub
 AMQP_QUEUE_PREFIX_GRAPHINATOR = "discogsography-graphinator"
 AMQP_QUEUE_PREFIX_TABLEINATOR = "discogsography-tableinator"
 

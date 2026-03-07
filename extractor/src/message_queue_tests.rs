@@ -47,14 +47,6 @@ mod message_queue_unit_tests {
     }
 
     #[test]
-    fn test_data_type_routing_keys() {
-        assert_eq!(DataType::Artists.routing_key(), "artists");
-        assert_eq!(DataType::Labels.routing_key(), "labels");
-        assert_eq!(DataType::Masters.routing_key(), "masters");
-        assert_eq!(DataType::Releases.routing_key(), "releases");
-    }
-
-    #[test]
     fn test_message_data_variant_round_trip() {
         let original = create_test_data_message("test-id");
         let message = Message::Data(original.clone());
