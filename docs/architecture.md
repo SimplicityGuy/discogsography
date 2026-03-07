@@ -142,7 +142,7 @@ See [Database Schema — Extractor Message Format](database-schema.md#extractor-
 **Tableinator** (PostgreSQL):
 
 - Consumes messages from all 4 queues
-- Stores JSONB documents in relational tables with `updated_at` timestamp
+- Stores JSONB documents in relational tables; always refreshes `updated_at`, only rewrites data when hash differs
 - Creates indexes for fast queries
 - Batch processing: 3,000-5,000 records/sec
 - On `extraction_complete`: purges stale rows where `updated_at < started_at`

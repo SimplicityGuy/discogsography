@@ -775,7 +775,7 @@ CREATE INDEX IF NOT EXISTS idx_<entity>_updated_at ON <entity> (updated_at);
 
 The `data` column stores the **full normalized record** from `normalize_record()`, not just the properties written to Neo4j. This means PostgreSQL has access to all fields (profile, tracklist, notes, etc.) while Neo4j only stores the subset needed for graph traversal.
 
-The `updated_at` column is set to `NOW()` on every upsert and is used by the [post-extraction cleanup](#post-extraction-cleanup) to identify and purge stale rows from prior extractions.
+The `updated_at` column is refreshed to `NOW()` on every upsert — even when the row's hash is unchanged — so the [post-extraction cleanup](#post-extraction-cleanup) can correctly identify stale rows. The `hash` and `data` columns are only rewritten when the hash actually differs, avoiding unnecessary WAL traffic for the large JSONB payload.
 
 #### Entity-Specific Indexes
 
@@ -956,7 +956,7 @@ Both graphinator and tableinator follow the same normalization pipeline:
 
 1. Raw JSON message received from RabbitMQ
 2. `normalize_record(data_type, data)` called to flatten XML-dict structures
-3. Hash-based deduplication check (skip if unchanged)
+3. Hash-based deduplication check (skip data rewrite if unchanged, but always refresh `updated_at`)
 4. Write to database (Neo4j nodes/relationships or PostgreSQL JSONB)
 5. Acknowledge message
 
@@ -974,7 +974,7 @@ This ensures database counts match the extractor's record counts after each run.
 
 ### Consistency Guarantees
 
-- **Hash-based deduplication**: Prevents duplicate records
+- **Hash-based deduplication**: Skips data rewrite for unchanged records (but refreshes `updated_at`)
 - **Idempotent operations**: Re-processing same data is safe
 - **Eventual consistency**: Both databases will converge to same state
 - **No distributed transactions**: Services operate independently
@@ -987,7 +987,7 @@ This ensures database counts match the extractor's record counts after each run.
 1. Extractor parses XML and computes SHA256 hash
 1. Message published to RabbitMQ with data + hash
 1. Graphinator normalizes and writes nodes and relationships to Neo4j
-1. Tableinator normalizes and writes JSONB records to PostgreSQL (setting `updated_at = NOW()`)
+1. Tableinator normalizes and upserts JSONB records to PostgreSQL (always refreshing `updated_at`, only rewriting data when hash differs)
 1. New/changed records inserted/updated in both databases
 1. After all files complete, extractor sends `extraction_complete` to all exchanges
 1. Graphinator deletes stub nodes (no `sha256`); Tableinator purges stale rows (`updated_at < started_at`)

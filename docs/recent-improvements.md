@@ -18,9 +18,9 @@ Last Updated: March 2026
 
 - **Extractor** (`extractor.rs`, `message_queue.rs`, `types.rs`): Records `extraction_started_at` and sends an `extraction_complete` message to all 4 fanout exchanges after all files finish. The message includes `version`, `started_at`, and per-type `record_counts`.
 - **Graphinator** (`graphinator.py`): On `extraction_complete`, flushes remaining batches and deletes stub nodes (nodes without a `sha256` property) for the given data type.
-- **Tableinator** (`tableinator.py`): On `extraction_complete`, flushes remaining batches and purges stale rows where `updated_at < started_at`.
+- **Tableinator** (`tableinator.py`): On `extraction_complete`, flushes remaining batches and purges stale rows where `updated_at < started_at`. Single-message upsert uses `CASE` expressions to skip JSONB data rewrite for unchanged rows while always refreshing `updated_at`.
 - **Schema** (`postgres_schema.py`): Added `updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()` column and index to all entity tables, with a migration for existing tables.
-- **Batch processor** (`batch_processor.py`): Upsert SQL now sets `updated_at = NOW()` on insert and conflict update.
+- **Batch processor** (`batch_processor.py`): Upsert SQL sets `updated_at = NOW()` on insert and conflict update. Unchanged rows (hash match) skip the data rewrite but get a lightweight bulk `UPDATE ... SET updated_at = NOW()` to stay marked as current.
 
 #### Benefits
 
