@@ -621,6 +621,444 @@ GRAPH_BACKEND={backend}                          # e.g., neo4j, memgraph, age, f
 RABBITMQ_URL=amqp://guest:guest@bench-extractor:5672
 ```
 
+## Graphinator Dockerfile Changes
+
+The current graphinator Dockerfile installs only Neo4j dependencies (`neo4j`, `aio-pika`). Each benchmark host needs a graphinator image with the correct backend-specific Python driver installed. Rather than building 5 separate images, use a single Dockerfile with a build argument to select the backend driver.
+
+### Modified Dockerfile (graphinator/Dockerfile)
+
+Add a `GRAPH_BACKEND` build argument that controls which driver package is installed:
+
+```dockerfile
+# After the existing pyproject.toml COPY and before uv sync:
+
+# Backend-specific driver selection
+ARG GRAPH_BACKEND=neo4j
+
+# Install base dependencies + backend-specific driver
+# hadolint ignore=SC2015
+RUN --mount=type=cache,target=/tmp/.cache/uv \
+    uv sync --frozen --no-dev --extra graphinator && \
+    # Install backend-specific driver
+    if [ "$GRAPH_BACKEND" = "memgraph" ]; then \
+        echo "Using neo4j driver (Memgraph is Bolt-compatible)"; \
+    elif [ "$GRAPH_BACKEND" = "age" ]; then \
+        uv pip install psycopg[binary]>=3.1.0 age>=0.0.1; \
+    elif [ "$GRAPH_BACKEND" = "falkordb" ]; then \
+        uv pip install falkordb>=1.0.0 redis>=5.0.0; \
+    elif [ "$GRAPH_BACKEND" = "arangodb" ]; then \
+        uv pip install python-arango>=8.0.0 python-arango-async>=0.1.0; \
+    fi && \
+    # Clean up cache and test files
+    find /app/.venv -type f -name "*.pyc" -delete && \
+    ...
+```
+
+Update the label to reflect the selected backend:
+
+```dockerfile
+LABEL com.discogsography.database="${GRAPH_BACKEND}"
+```
+
+### Building Per-Backend Images
+
+```bash
+# Neo4j (default — no extra drivers needed)
+docker build -f graphinator/Dockerfile --build-arg GRAPH_BACKEND=neo4j -t graphinator:neo4j .
+
+# Memgraph (uses the same neo4j driver over Bolt — no extra packages)
+docker build -f graphinator/Dockerfile --build-arg GRAPH_BACKEND=memgraph -t graphinator:memgraph .
+
+# Apache AGE (needs psycopg + age Python package)
+docker build -f graphinator/Dockerfile --build-arg GRAPH_BACKEND=age -t graphinator:age .
+
+# FalkorDB (needs falkordb + redis-py)
+docker build -f graphinator/Dockerfile --build-arg GRAPH_BACKEND=falkordb -t graphinator:falkordb .
+
+# ArangoDB (needs python-arango + python-arango-async)
+docker build -f graphinator/Dockerfile --build-arg GRAPH_BACKEND=arangodb -t graphinator:arangodb .
+```
+
+### Backend-Specific Driver Packages
+
+| Backend | Extra Packages | Why |
+|---------|---------------|-----|
+| Neo4j | None (already in pyproject.toml) | `neo4j>=6.1.0` is a base dependency |
+| Memgraph | None | Reuses `neo4j` driver over Bolt protocol |
+| Apache AGE | `psycopg[binary]>=3.1.0`, `age>=0.0.1` | PostgreSQL async driver + AGE Cypher wrapper |
+| FalkorDB | `falkordb>=1.0.0`, `redis>=5.0.0` | FalkorDB client + Redis async connection pool |
+| ArangoDB | `python-arango>=8.0.0`, `python-arango-async>=0.1.0` | ArangoDB sync + async drivers |
+
+## Docker Compose Templates
+
+Each database host runs a Docker Compose stack with the database, graphinator, and schema-init containers. The Ansible playbooks render these Jinja2 templates with host-specific variables.
+
+### Extractor Host Template
+
+```yaml
+# infra/templates/docker-compose.extractor.yml.j2
+---
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rabbitmq
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+      start_period: 45s
+    restart: unless-stopped
+
+  extractor:
+    image: discogsography/extractor:latest
+    container_name: extractor
+    environment:
+      BENCHMARK_MODE: "true"
+      DISCOGS_ROOT: /discogs-data
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      STARTUP_DELAY: "10"
+    volumes:
+      - discogs_data:/discogs-data
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: on-failure
+
+volumes:
+  rabbitmq_data:
+  discogs_data:
+```
+
+### Neo4j Host Template
+
+```yaml
+# infra/templates/docker-compose.neo4j.yml.j2
+---
+services:
+  neo4j:
+    image: neo4j:2026-community
+    container_name: neo4j
+    hostname: neo4j
+    environment:
+      NEO4J_AUTH: neo4j/discogsography
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_initial__size: 2G
+      NEO4J_server_memory_heap_max__size: 2G
+      NEO4J_server_memory_pagecache_size: 1G
+    ports:
+      - "7687:7687"
+      - "7474:7474"
+    volumes:
+      - neo4j_data:/data
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    restart: unless-stopped
+
+  schema-init:
+    image: discogsography/schema-init:latest
+    container_name: schema-init
+    environment:
+      GRAPH_BACKEND: neo4j
+      NEO4J_HOST: neo4j
+      NEO4J_PASSWORD: discogsography
+      NEO4J_USERNAME: neo4j
+    depends_on:
+      neo4j:
+        condition: service_healthy
+
+  graphinator:
+    image: graphinator:neo4j
+    container_name: graphinator
+    environment:
+      GRAPH_BACKEND: neo4j
+      NEO4J_HOST: neo4j
+      NEO4J_PASSWORD: discogsography
+      NEO4J_USERNAME: neo4j
+      NEO4J_BATCH_MODE: "true"
+      NEO4J_BATCH_SIZE: "500"
+      AMQP_QUEUE_PREFIX: bench-neo4j-graphinator
+      RABBITMQ_HOST: {{ rabbitmq_host }}
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      STARTUP_DELAY: "15"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+volumes:
+  neo4j_data:
+```
+
+### Memgraph Host Template
+
+```yaml
+# infra/templates/docker-compose.memgraph.yml.j2
+---
+services:
+  memgraph:
+    image: memgraph/memgraph:latest
+    container_name: memgraph
+    hostname: memgraph
+    command: ["--bolt-server-name-for-init=Neo4j/5.2.0"]
+    ports:
+      - "7687:7687"
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  schema-init:
+    image: discogsography/schema-init:latest
+    container_name: schema-init
+    environment:
+      GRAPH_BACKEND: memgraph
+      NEO4J_HOST: memgraph
+      NEO4J_PASSWORD: ""
+      NEO4J_USERNAME: ""
+    depends_on:
+      memgraph:
+        condition: service_healthy
+
+  graphinator:
+    image: graphinator:memgraph
+    container_name: graphinator
+    environment:
+      GRAPH_BACKEND: memgraph
+      NEO4J_HOST: memgraph
+      NEO4J_PASSWORD: ""
+      NEO4J_USERNAME: ""
+      NEO4J_BATCH_MODE: "true"
+      NEO4J_BATCH_SIZE: "500"
+      AMQP_QUEUE_PREFIX: bench-memgraph-graphinator
+      RABBITMQ_HOST: {{ rabbitmq_host }}
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      STARTUP_DELAY: "15"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+volumes:
+  memgraph_data:
+```
+
+### Apache AGE Host Template
+
+```yaml
+# infra/templates/docker-compose.age.yml.j2
+---
+services:
+  postgres-age:
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres-age
+    container_name: postgres-age
+    hostname: postgres-age
+    environment:
+      POSTGRES_DB: discogsography
+      POSTGRES_USER: discogsography
+      POSTGRES_PASSWORD: discogsography
+    ports:
+      - "5432:5432"
+    volumes:
+      - age_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U discogsography"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  schema-init:
+    image: discogsography/schema-init:latest
+    container_name: schema-init
+    environment:
+      GRAPH_BACKEND: age
+      POSTGRES_HOST: postgres-age
+      POSTGRES_DB: discogsography
+      POSTGRES_USER: discogsography
+      POSTGRES_PASSWORD: discogsography
+    depends_on:
+      postgres-age:
+        condition: service_healthy
+
+  graphinator:
+    image: graphinator:age
+    container_name: graphinator
+    environment:
+      GRAPH_BACKEND: age
+      POSTGRES_HOST: postgres-age
+      POSTGRES_DB: discogsography
+      POSTGRES_USER: discogsography
+      POSTGRES_PASSWORD: discogsography
+      NEO4J_BATCH_MODE: "true"
+      NEO4J_BATCH_SIZE: "500"
+      AMQP_QUEUE_PREFIX: bench-age-graphinator
+      RABBITMQ_HOST: {{ rabbitmq_host }}
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      STARTUP_DELAY: "15"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+volumes:
+  age_data:
+```
+
+### FalkorDB Host Template
+
+```yaml
+# infra/templates/docker-compose.falkordb.yml.j2
+---
+services:
+  falkordb:
+    image: falkordb/falkordb:latest
+    container_name: falkordb
+    hostname: falkordb
+    command: >
+      --loadmodule /usr/lib/redis/modules/falkordb.so
+      --save 60 1
+      --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - falkordb_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  schema-init:
+    image: discogsography/schema-init:latest
+    container_name: schema-init
+    environment:
+      GRAPH_BACKEND: falkordb
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: "6379"
+    depends_on:
+      falkordb:
+        condition: service_healthy
+
+  graphinator:
+    image: graphinator:falkordb
+    container_name: graphinator
+    environment:
+      GRAPH_BACKEND: falkordb
+      FALKORDB_HOST: falkordb
+      FALKORDB_PORT: "6379"
+      NEO4J_BATCH_MODE: "true"
+      NEO4J_BATCH_SIZE: "500"
+      AMQP_QUEUE_PREFIX: bench-falkordb-graphinator
+      RABBITMQ_HOST: {{ rabbitmq_host }}
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      STARTUP_DELAY: "15"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+volumes:
+  falkordb_data:
+```
+
+### ArangoDB Host Template
+
+```yaml
+# infra/templates/docker-compose.arangodb.yml.j2
+---
+services:
+  arangodb:
+    image: arangodb/arangodb:latest
+    container_name: arangodb
+    hostname: arangodb
+    environment:
+      ARANGO_ROOT_PASSWORD: discogsography
+    ports:
+      - "8529:8529"
+    volumes:
+      - arangodb_data:/var/lib/arangodb3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  schema-init:
+    image: discogsography/schema-init:latest
+    container_name: schema-init
+    environment:
+      GRAPH_BACKEND: arangodb
+      ARANGODB_HOST: arangodb
+      ARANGODB_PORT: "8529"
+      ARANGODB_PASSWORD: discogsography
+    depends_on:
+      arangodb:
+        condition: service_healthy
+
+  graphinator:
+    image: graphinator:arangodb
+    container_name: graphinator
+    environment:
+      GRAPH_BACKEND: arangodb
+      ARANGODB_HOST: arangodb
+      ARANGODB_PORT: "8529"
+      ARANGODB_PASSWORD: discogsography
+      NEO4J_BATCH_MODE: "true"
+      NEO4J_BATCH_SIZE: "500"
+      AMQP_QUEUE_PREFIX: bench-arangodb-graphinator
+      RABBITMQ_HOST: {{ rabbitmq_host }}
+      RABBITMQ_USERNAME: guest
+      RABBITMQ_PASSWORD: guest
+      STARTUP_DELAY: "15"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+    restart: on-failure
+
+volumes:
+  arangodb_data:
+```
+
+### Template Variables
+
+All templates use the following Jinja2 variable injected by Ansible:
+
+| Variable | Source | Description |
+|----------|--------|-------------|
+| `rabbitmq_host` | Inventory `all.vars.rabbitmq_host` | IP of the extractor host running RabbitMQ |
+
+Each graphinator connects to RabbitMQ on the extractor host over the private network (`10.0.x.x`). Database connections are local (`localhost` or container hostname) since the database and graphinator run on the same host.
+
 ## Cost Estimates
 
 ### Scenario 1: Quick Benchmark (Subset — 1M records, ~8 hours)

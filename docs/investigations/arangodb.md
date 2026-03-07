@@ -531,6 +531,304 @@ The rewrite is mechanical — each pattern has a direct AQL equivalent. A system
 - [ ] Test multi-collection transactions for batch processor
 - [ ] Compare `python-arango-async` stability with `python-arango` sync + executor
 
+## Adapted Batch Processor
+
+The current `graphinator/batch_processor.py` uses Neo4j Cypher (`UNWIND`/`MERGE`/`SET`) inside `session.execute_write()` transactions. ArangoDB requires a full rewrite to AQL using `UPSERT` for nodes and explicit edge collection inserts. Multi-statement transactions are supported via the `begin_transaction()` driver API.
+
+### Releases Batch (Most Complex — 6 Query Groups)
+
+```python
+async def _process_releases_batch(self, messages: list[PendingMessage]) -> None:
+    """Process a batch of release records using AQL UPSERT + edge inserts."""
+    releases_to_process = self._filter_by_hash(messages, "releases")
+    if not releases_to_process:
+        return
+
+    # Enrich with format names
+    for release in releases_to_process:
+        release["format_names"] = extract_format_names(release.get("formats"))
+
+    rel_data = self._build_release_relationships(releases_to_process)
+
+    # Multi-collection transaction — all writes are atomic
+    tx = self._db.begin_transaction(
+        read=[],
+        write=["releases", "artists", "labels", "masters", "genres", "styles",
+               "release_by_artist", "release_on_label", "release_derived_from_master",
+               "release_is_genre", "release_is_style", "style_part_of_genre"],
+    )
+
+    try:
+        # 1. Upsert release documents
+        tx.aql.execute(
+            """
+            FOR release IN @releases
+                UPSERT { id: release.id }
+                INSERT {
+                    id: release.id, title: release.title,
+                    year: release.year, formats: release.format_names,
+                    sha256: release.sha256
+                }
+                UPDATE {
+                    title: release.title, year: release.year,
+                    formats: release.format_names, sha256: release.sha256
+                }
+                IN releases
+            """,
+            bind_vars={"releases": releases_to_process},
+        )
+
+        # 2. Artist relationships: upsert artist docs + edges
+        if rel_data["artists"]:
+            tx.aql.execute(
+                """
+                FOR rel IN @artists
+                    UPSERT { id: rel.artist_id }
+                    INSERT { id: rel.artist_id }
+                    UPDATE {}
+                    IN artists
+                    LET release_key = FIRST(
+                        FOR r IN releases FILTER r.id == rel.release_id RETURN r._id
+                    )
+                    LET artist_key = FIRST(
+                        FOR a IN artists FILTER a.id == rel.artist_id RETURN a._id
+                    )
+                    FILTER release_key != null AND artist_key != null
+                    UPSERT { _from: release_key, _to: artist_key }
+                    INSERT { _from: release_key, _to: artist_key }
+                    UPDATE {}
+                    IN release_by_artist
+                """,
+                bind_vars={"artists": rel_data["artists"]},
+            )
+
+        # 3. Label relationships
+        if rel_data["labels"]:
+            tx.aql.execute(
+                """
+                FOR rel IN @labels
+                    UPSERT { id: rel.label_id }
+                    INSERT { id: rel.label_id }
+                    UPDATE {}
+                    IN labels
+                    LET release_key = FIRST(
+                        FOR r IN releases FILTER r.id == rel.release_id RETURN r._id
+                    )
+                    LET label_key = FIRST(
+                        FOR l IN labels FILTER l.id == rel.label_id RETURN l._id
+                    )
+                    FILTER release_key != null AND label_key != null
+                    UPSERT { _from: release_key, _to: label_key }
+                    INSERT { _from: release_key, _to: label_key }
+                    UPDATE {}
+                    IN release_on_label
+                """,
+                bind_vars={"labels": rel_data["labels"]},
+            )
+
+        # 4. Master relationships
+        if rel_data["masters"]:
+            tx.aql.execute(
+                """
+                FOR rel IN @masters
+                    UPSERT { id: rel.master_id }
+                    INSERT { id: rel.master_id }
+                    UPDATE {}
+                    IN masters
+                    LET release_key = FIRST(
+                        FOR r IN releases FILTER r.id == rel.release_id RETURN r._id
+                    )
+                    LET master_key = FIRST(
+                        FOR m IN masters FILTER m.id == rel.master_id RETURN m._id
+                    )
+                    FILTER release_key != null AND master_key != null
+                    UPSERT { _from: release_key, _to: master_key }
+                    INSERT { _from: release_key, _to: master_key }
+                    UPDATE {}
+                    IN release_derived_from_master
+                """,
+                bind_vars={"masters": rel_data["masters"]},
+            )
+
+        # 5. Genre relationships
+        if rel_data["genres"]:
+            tx.aql.execute(
+                """
+                FOR rel IN @genres
+                    UPSERT { name: rel.genre }
+                    INSERT { name: rel.genre }
+                    UPDATE {}
+                    IN genres
+                    LET release_key = FIRST(
+                        FOR r IN releases FILTER r.id == rel.release_id RETURN r._id
+                    )
+                    LET genre_key = FIRST(
+                        FOR g IN genres FILTER g.name == rel.genre RETURN g._id
+                    )
+                    FILTER release_key != null AND genre_key != null
+                    UPSERT { _from: release_key, _to: genre_key }
+                    INSERT { _from: release_key, _to: genre_key }
+                    UPDATE {}
+                    IN release_is_genre
+                """,
+                bind_vars={"genres": rel_data["genres"]},
+            )
+
+        # 6. Style relationships + style-to-genre edges
+        if rel_data["styles"]:
+            tx.aql.execute(
+                """
+                FOR rel IN @styles
+                    UPSERT { name: rel.style }
+                    INSERT { name: rel.style }
+                    UPDATE {}
+                    IN styles
+                    LET release_key = FIRST(
+                        FOR r IN releases FILTER r.id == rel.release_id RETURN r._id
+                    )
+                    LET style_key = FIRST(
+                        FOR s IN styles FILTER s.name == rel.style RETURN s._id
+                    )
+                    FILTER release_key != null AND style_key != null
+                    UPSERT { _from: release_key, _to: style_key }
+                    INSERT { _from: release_key, _to: style_key }
+                    UPDATE {}
+                    IN release_is_style
+                """,
+                bind_vars={"styles": rel_data["styles"]},
+            )
+
+        if rel_data["genre_styles"]:
+            tx.aql.execute(
+                """
+                FOR pair IN @pairs
+                    LET genre_key = FIRST(
+                        FOR g IN genres FILTER g.name == pair.genre RETURN g._id
+                    )
+                    LET style_key = FIRST(
+                        FOR s IN styles FILTER s.name == pair.style RETURN s._id
+                    )
+                    FILTER genre_key != null AND style_key != null
+                    UPSERT { _from: style_key, _to: genre_key }
+                    INSERT { _from: style_key, _to: genre_key }
+                    UPDATE {}
+                    IN style_part_of_genre
+                """,
+                bind_vars={"pairs": rel_data["genre_styles"]},
+            )
+
+        tx.commit_transaction()
+
+    except Exception:
+        tx.abort_transaction()
+        raise
+```
+
+### Key Differences from Neo4j Batch Processor
+
+| Aspect | Neo4j (`batch_processor.py`) | ArangoDB Adaptation |
+|--------|------------------------------|---------------------|
+| Node upsert | `MERGE (n:Label {id: x}) SET ...` | `UPSERT {id: x} INSERT {...} UPDATE {...} IN collection` |
+| Relationship creation | `MERGE (a)-[:REL]->(b)` | `UPSERT {_from: a._id, _to: b._id} INSERT ... IN edge_collection` |
+| Transaction wrapper | `session.execute_write(callback)` | `db.begin_transaction()` / `commit_transaction()` |
+| Node reference | Implicit (labels identify nodes) | Explicit `_id` lookups via `FIRST(FOR ... RETURN _id)` |
+| Batch iteration | `UNWIND $items AS item` | `FOR item IN @items` |
+| Hash check query | `OPTIONAL MATCH (n {id: id}) RETURN n.sha256` | `FOR doc IN collection FILTER doc.id IN @ids RETURN {id: doc.id, hash: doc.sha256}` |
+
+### Artists Batch (Simplified Example)
+
+The artists batch follows the same pattern but with member/group/alias edges instead of release relationships:
+
+```python
+async def _process_artists_batch(self, messages: list[PendingMessage]) -> None:
+    """Process a batch of artist records."""
+    artists_to_process = self._filter_by_hash(messages, "artists")
+    if not artists_to_process:
+        return
+
+    tx = self._db.begin_transaction(
+        read=[],
+        write=["artists", "artist_member_of", "artist_alias_of"],
+    )
+
+    try:
+        # Upsert artist documents
+        tx.aql.execute(
+            """
+            FOR artist IN @artists
+                UPSERT { id: artist.id }
+                INSERT {
+                    id: artist.id, name: artist.name, sha256: artist.sha256,
+                    resource_url: CONCAT('https://api.discogs.com/artists/', artist.id),
+                    releases_url: CONCAT('https://api.discogs.com/artists/', artist.id, '/releases')
+                }
+                UPDATE {
+                    name: artist.name, sha256: artist.sha256,
+                    resource_url: CONCAT('https://api.discogs.com/artists/', artist.id),
+                    releases_url: CONCAT('https://api.discogs.com/artists/', artist.id, '/releases')
+                }
+                IN artists
+            """,
+            bind_vars={"artists": artists_to_process},
+        )
+
+        # Member relationships
+        members_data = []
+        for artist in artists_to_process:
+            for member in artist.get("members", []):
+                if member.get("id"):
+                    members_data.append({"artist_id": artist["id"], "member_id": member["id"]})
+
+        if members_data:
+            tx.aql.execute(
+                """
+                FOR rel IN @members
+                    UPSERT { id: rel.member_id } INSERT { id: rel.member_id } UPDATE {} IN artists
+                    LET member_key = FIRST(FOR a IN artists FILTER a.id == rel.member_id RETURN a._id)
+                    LET group_key = FIRST(FOR a IN artists FILTER a.id == rel.artist_id RETURN a._id)
+                    FILTER member_key != null AND group_key != null
+                    UPSERT { _from: member_key, _to: group_key }
+                    INSERT { _from: member_key, _to: group_key }
+                    UPDATE {} IN artist_member_of
+                """,
+                bind_vars={"members": members_data},
+            )
+
+        # Groups and aliases follow the same pattern...
+
+        tx.commit_transaction()
+    except Exception:
+        tx.abort_transaction()
+        raise
+```
+
+### Hash Check Query (AQL)
+
+The hash-based deduplication check also needs rewriting from Cypher to AQL:
+
+```python
+async def _filter_by_hash(self, messages: list[PendingMessage], collection: str) -> list[dict]:
+    """Filter messages to only those needing updates (hash mismatch)."""
+    ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
+    if not ids:
+        return []
+
+    cursor = self._db.aql.execute(
+        """
+        FOR id IN @ids
+            LET doc = FIRST(FOR d IN @@collection FILTER d.id == id RETURN d.sha256)
+            RETURN { id: id, hash: doc }
+        """,
+        bind_vars={"ids": ids, "@collection": collection},
+    )
+    existing_hashes = {row["id"]: row["hash"] for row in cursor if row["hash"]}
+
+    return [
+        msg.data for msg in messages
+        if msg.data.get("id") and existing_hashes.get(msg.data["id"]) != msg.data.get("sha256")
+    ]
+```
+
 ## Docker Setup
 
 ```yaml

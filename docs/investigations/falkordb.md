@@ -416,6 +416,186 @@ memory = await r.execute_command("GRAPH.MEMORY", "USAGE", "discogsography")
 - [ ] Test `db.idx.fulltext.queryNodes` return format (does it include score?)
 - [ ] Create `redis-py` async backend as alternative to `falkordb` client
 
+## Adapted Batch Processor
+
+The current `graphinator/batch_processor.py` uses Neo4j's `session.execute_write(callback)` pattern where the callback runs 4–6 `tx.run()` calls in a single transaction. FalkorDB has no multi-statement transactions, so each batch method needs adaptation.
+
+Two approaches are shown below using `_process_releases_batch` as the reference (the most complex batch — 6 queries per transaction).
+
+### Approach A: Consolidated Single Query
+
+Combine all MERGE/SET operations into one query using `WITH` chaining. This is atomic because FalkorDB executes each `graph.query()` call as a single atomic operation:
+
+```python
+async def _process_releases_batch(self, messages: list[PendingMessage]) -> None:
+    """Process a batch of release records using consolidated single queries."""
+    releases_to_process = self._filter_by_hash(messages, "Release", "r")
+    if not releases_to_process:
+        return
+
+    # 1. Upsert release nodes (separate query — UNWIND is efficient)
+    await self._graph.query(
+        """
+        UNWIND $releases AS release
+        MERGE (r:Release {id: release.id})
+        SET r.title = release.title,
+            r.year = release.year,
+            r.formats = release.format_names,
+            r.sha256 = release.sha256
+        """,
+        params={"releases": releases_to_process},
+    )
+
+    # 2. Consolidated relationship query — artist + label + master in one pass
+    #    Each WITH resets the scope, allowing independent UNWIND chains
+    rel_data = self._build_release_relationships(releases_to_process)
+
+    if rel_data["artists"]:
+        await self._graph.query(
+            """
+            UNWIND $artists AS rel
+            MATCH (r:Release {id: rel.release_id})
+            MERGE (a:Artist {id: rel.artist_id})
+            MERGE (r)-[:BY]->(a)
+            """,
+            params={"artists": rel_data["artists"]},
+        )
+
+    if rel_data["labels"]:
+        await self._graph.query(
+            """
+            UNWIND $labels AS rel
+            MATCH (r:Release {id: rel.release_id})
+            MERGE (l:Label {id: rel.label_id})
+            MERGE (r)-[:ON]->(l)
+            """,
+            params={"labels": rel_data["labels"]},
+        )
+
+    if rel_data["masters"]:
+        await self._graph.query(
+            """
+            UNWIND $masters AS rel
+            MATCH (r:Release {id: rel.release_id})
+            MERGE (m:Master {id: rel.master_id})
+            MERGE (r)-[:DERIVED_FROM]->(m)
+            """,
+            params={"masters": rel_data["masters"]},
+        )
+
+    # 3. Genre/style relationships (same pattern)
+    if rel_data["genres"]:
+        await self._graph.query(
+            """
+            UNWIND $genres AS rel
+            MATCH (r:Release {id: rel.release_id})
+            MERGE (g:Genre {name: rel.genre})
+            MERGE (r)-[:IS]->(g)
+            """,
+            params={"genres": rel_data["genres"]},
+        )
+
+    if rel_data["styles"]:
+        await self._graph.query(
+            """
+            UNWIND $styles AS rel
+            MATCH (r:Release {id: rel.release_id})
+            MERGE (s:Style {name: rel.style})
+            MERGE (r)-[:IS]->(s)
+            """,
+            params={"styles": rel_data["styles"]},
+        )
+
+    if rel_data["genre_styles"]:
+        await self._graph.query(
+            """
+            UNWIND $pairs AS pair
+            MERGE (g:Genre {name: pair.genre})
+            MERGE (s:Style {name: pair.style})
+            MERGE (s)-[:PART_OF]->(g)
+            """,
+            params={"pairs": rel_data["genre_styles"]},
+        )
+```
+
+Each `graph.query()` call is individually atomic. The batch is not wrapped in a transaction, so a failure mid-batch leaves partial data. This is acceptable because all queries use idempotent `MERGE` — re-running the batch completes any missing operations.
+
+### Approach B: Redis MULTI/EXEC
+
+Wrap all queries in a Redis pipeline for all-or-nothing atomicity:
+
+```python
+async def _process_releases_batch(self, messages: list[PendingMessage]) -> None:
+    """Process a batch of release records using Redis MULTI/EXEC."""
+    releases_to_process = self._filter_by_hash(messages, "Release", "r")
+    if not releases_to_process:
+        return
+
+    rel_data = self._build_release_relationships(releases_to_process)
+
+    # Build all queries
+    queries = [
+        ("UNWIND $releases AS release "
+         "MERGE (r:Release {id: release.id}) "
+         "SET r.title = release.title, r.year = release.year, "
+         "r.formats = release.format_names, r.sha256 = release.sha256",
+         {"releases": releases_to_process}),
+    ]
+    if rel_data["artists"]:
+        queries.append((
+            "UNWIND $artists AS rel "
+            "MATCH (r:Release {id: rel.release_id}) "
+            "MERGE (a:Artist {id: rel.artist_id}) "
+            "MERGE (r)-[:BY]->(a)",
+            {"artists": rel_data["artists"]},
+        ))
+    # ... same pattern for labels, masters, genres, styles, genre_styles
+
+    # Execute all queries in a Redis MULTI/EXEC block
+    pipe = self._redis.pipeline(transaction=True)
+    for query, params in queries:
+        param_str = " ".join(f"{k}={_format_param(v)}" for k, v in params.items())
+        pipe.execute_command("GRAPH.QUERY", "discogsography", f"CYPHER {param_str} {query}")
+    await pipe.execute()
+```
+
+### Shared Helper: Relationship Data Builder
+
+Both approaches use the same helper to extract relationship data from the batch:
+
+```python
+def _build_release_relationships(self, releases: list[dict]) -> dict:
+    """Extract relationship data from a batch of releases."""
+    artists, labels, masters, genres, styles, genre_styles = [], [], [], [], [], []
+    for release in releases:
+        for artist in release.get("artists", []):
+            if artist.get("id"):
+                artists.append({"release_id": release["id"], "artist_id": artist["id"]})
+        for label in release.get("labels", []):
+            if label.get("id"):
+                labels.append({"release_id": release["id"], "label_id": label["id"]})
+        if release.get("master_id"):
+            masters.append({"release_id": release["id"], "master_id": str(release["master_id"])})
+        for genre in release.get("genres", []):
+            if genre:
+                genres.append({"release_id": release["id"], "genre": genre})
+        for style in release.get("styles", []):
+            if style:
+                styles.append({"release_id": release["id"], "style": style})
+        for genre in release.get("genres", []):
+            for style in release.get("styles", []):
+                if genre and style:
+                    genre_styles.append({"genre": genre, "style": style})
+    return {"artists": artists, "labels": labels, "masters": masters,
+            "genres": genres, "styles": styles, "genre_styles": genre_styles}
+```
+
+### Recommendation
+
+Use **Approach A** (sequential `graph.query()` calls) for initial implementation. It is simpler, the Cypher queries are identical to the Neo4j versions, and idempotent `MERGE` handles partial failures naturally. Only switch to Approach B if benchmarking shows the per-query round-trip overhead is significant.
+
+The artists, labels, and masters batch methods follow the same pattern — replace `session.execute_write(callback)` with sequential `graph.query()` calls, one per UNWIND block.
+
 ## Docker Setup
 
 ```yaml
