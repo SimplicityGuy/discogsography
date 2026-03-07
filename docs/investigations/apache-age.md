@@ -175,7 +175,11 @@ AGE returns `agtype` values that must be cast or parsed. The AGE Python driver h
 
 ### What to Benchmark Specifically
 
-In addition to the [shared workloads](shared-pre-work.md#workload-definitions):
+See [shared-pre-work.md](shared-pre-work.md) for the benchmark harness, workload definitions, metrics, and Docker Compose profiles shared across all candidates.
+
+Benchmarks use synthetic data inserted directly into each database via the `GraphBackend` abstraction — no extractor or graphinator changes needed. Two scale points (`small` ~135k nodes/~540k relationships and `large` ~1.35M nodes/~5.4M relationships) provide enough signal to understand approximate orders of magnitude of performance differences.
+
+In addition to the shared workloads:
 
 | Benchmark | Why It Matters for AGE |
 |-----------|----------------------|
@@ -184,6 +188,20 @@ In addition to the [shared workloads](shared-pre-work.md#workload-definitions):
 | Concurrent writes + reads | Tests PostgreSQL lock contention on graph tables |
 | Large UNWIND batches | Tests whether AGE's MERGE performance degrades at batch sizes >500 |
 | Schema init time | AGE creates internal tables per label; may be slower than Neo4j constraint creation |
+
+### Execution
+
+```bash
+docker compose --profile age up postgres-age -d
+
+# Synthetic data benchmarks at both scale points
+uv run python -m benchmarks.runner --backend age --host localhost:5434 --scale small --load
+uv run python -m benchmarks.runner --backend age --host localhost:5434 --scale small
+uv run python -m benchmarks.runner --backend age --host localhost:5434 --scale large --load
+uv run python -m benchmarks.runner --backend age --host localhost:5434 --scale large
+
+uv run python -m benchmarks.compare benchmarks/results/neo4j_*.json benchmarks/results/age_*.json
+```
 
 ### Hybrid Query Example (Unique to AGE)
 

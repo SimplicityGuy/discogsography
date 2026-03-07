@@ -279,7 +279,11 @@ from arango_async import ArangoClient as AsyncArangoClient
 
 ### What to Benchmark Specifically
 
-In addition to the [shared workloads](shared-pre-work.md#workload-definitions) (adapted to AQL):
+See [shared-pre-work.md](shared-pre-work.md) for the benchmark harness, workload definitions, metrics, and Docker Compose profiles shared across all candidates.
+
+Benchmarks use synthetic data inserted directly into each database via the `GraphBackend` abstraction — no extractor or graphinator changes needed. Two scale points (`small` ~135k nodes/~540k relationships and `large` ~1.35M nodes/~5.4M relationships) provide enough signal to understand approximate orders of magnitude of performance differences.
+
+In addition to the shared workloads (adapted to AQL):
 
 | Benchmark | Why It Matters for ArangoDB |
 |-----------|---------------------------|
@@ -289,6 +293,20 @@ In addition to the [shared workloads](shared-pre-work.md#workload-definitions) (
 | Multi-model query | Graph traversal + document filter + text search in one AQL query |
 | Cross-collection traversal | 3+ hop traversal across multiple edge collections |
 | Memory efficiency | C++ implementation may use less memory than Neo4j JVM |
+
+### Execution
+
+```bash
+docker compose --profile arangodb up arangodb -d
+
+# Synthetic data benchmarks at both scale points
+uv run python -m benchmarks.runner --backend arangodb --host localhost:8529 --scale small --load
+uv run python -m benchmarks.runner --backend arangodb --host localhost:8529 --scale small
+uv run python -m benchmarks.runner --backend arangodb --host localhost:8529 --scale large --load
+uv run python -m benchmarks.runner --backend arangodb --host localhost:8529 --scale large
+
+uv run python -m benchmarks.compare benchmarks/results/neo4j_*.json benchmarks/results/arangodb_*.json
+```
 
 ### Multi-Model Query Example (Unique to ArangoDB)
 

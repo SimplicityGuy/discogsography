@@ -210,7 +210,11 @@ This is a significant architectural difference. The graphinator batch processor 
 
 ### What to Benchmark Specifically
 
-In addition to the [shared workloads](shared-pre-work.md#workload-definitions):
+See [shared-pre-work.md](shared-pre-work.md) for the benchmark harness, workload definitions, metrics, and Docker Compose profiles shared across all candidates.
+
+Benchmarks use synthetic data inserted directly into each database via the `GraphBackend` abstraction — no extractor or graphinator changes needed. Two scale points (`small` ~135k nodes/~540k relationships and `large` ~1.35M nodes/~5.4M relationships) provide enough signal to understand approximate orders of magnitude of performance differences.
+
+In addition to the shared workloads:
 
 | Benchmark | Why It Matters for FalkorDB |
 |-----------|---------------------------|
@@ -220,6 +224,20 @@ In addition to the [shared workloads](shared-pre-work.md#workload-definitions):
 | Memory usage vs dataset size | Critical — all data in Redis memory |
 | Persistence overhead | RDB/AOF impact on write throughput |
 | Concurrent readers | Read replicas or single-instance bottleneck? |
+
+### Execution
+
+```bash
+docker compose --profile falkordb up falkordb -d
+
+# Synthetic data benchmarks at both scale points
+uv run python -m benchmarks.runner --backend falkordb --host localhost:6380 --scale small --load
+uv run python -m benchmarks.runner --backend falkordb --host localhost:6380 --scale small
+uv run python -m benchmarks.runner --backend falkordb --host localhost:6380 --scale large --load
+uv run python -m benchmarks.runner --backend falkordb --host localhost:6380 --scale large
+
+uv run python -m benchmarks.compare benchmarks/results/neo4j_*.json benchmarks/results/falkordb_*.json
+```
 
 ## Native Query Alternative: Redis Commands + Consolidated Cypher
 

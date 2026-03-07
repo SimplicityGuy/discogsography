@@ -262,6 +262,8 @@ For queries that **can** be expressed in Memgraph's Cypher (UNWIND/MERGE, OPTION
 
 See [shared-pre-work.md](shared-pre-work.md) for the benchmark harness, workload definitions, metrics, and Docker Compose profiles shared across all candidates.
 
+Benchmarks use synthetic data inserted directly into each database via the `GraphBackend` abstraction — no extractor or graphinator changes needed. Two scale points (`small` ~135k nodes/~540k relationships and `large` ~1.35M nodes/~5.4M relationships) provide enough signal to understand approximate orders of magnitude of performance differences.
+
 ### Docker Setup
 
 ```yaml
@@ -292,8 +294,13 @@ In addition to the shared workloads:
 
 ```bash
 docker compose --profile memgraph up memgraph -d
-uv run python -m benchmarks.runner --backend memgraph --host localhost:7688 --load
-uv run python -m benchmarks.runner --backend memgraph --host localhost:7688
+
+# Synthetic data benchmarks at both scale points
+uv run python -m benchmarks.runner --backend memgraph --host localhost:7688 --scale small --load
+uv run python -m benchmarks.runner --backend memgraph --host localhost:7688 --scale small
+uv run python -m benchmarks.runner --backend memgraph --host localhost:7688 --scale large --load
+uv run python -m benchmarks.runner --backend memgraph --host localhost:7688 --scale large
+
 uv run python -m benchmarks.compare benchmarks/results/neo4j_*.json benchmarks/results/memgraph_*.json
 ```
 

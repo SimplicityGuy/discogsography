@@ -189,7 +189,7 @@ GRAPH_BACKEND=arangodb
 
 ### Goal
 
-A reusable benchmark runner that loads identical test data and executes identical workloads against any `GraphBackend` implementation, producing comparable metrics.
+A reusable benchmark runner that inserts synthetic data directly into each database and executes identical workloads against any `GraphBackend` implementation, producing comparable metrics. Synthetic data is representative of the real Discogs dataset (~34M nodes, ~135M relationships) but scaled down to two controlled sizes. The benchmark can be fully automated without modifying the extractor or graphinator.
 
 ### Directory Structure
 
@@ -198,37 +198,159 @@ benchmarks/
   __init__.py
   runner.py              -- benchmark execution engine
   workloads.py           -- workload definitions (backend-agnostic)
-  fixtures.py            -- test data generation
+  fixtures.py            -- synthetic data generation
   compare.py             -- side-by-side results comparison
   results/               -- JSON output per run
-    neo4j_2026-03-06.json
-    memgraph_2026-03-06.json
+    neo4j_small_2026-03-06.json
+    neo4j_large_2026-03-06.json
+    memgraph_small_2026-03-06.json
 ```
 
-### Test Data Generation
+### Synthetic Data Benchmark
 
-Generate a representative subset of the Discogs graph:
+The benchmark uses synthetic data that is representative of real Discogs data but scaled down, inserted directly into each database using backend-specific drivers via the `GraphBackend` abstraction. No changes to the extractor or graphinator are required.
+
+#### Why Synthetic Data?
+
+The goal is to understand approximate orders of magnitude of performance differences between backends. Synthetic data is sufficient for this because:
+
+- It preserves the structural characteristics that matter (fan-out, property shapes, index patterns, relationship density)
+- It eliminates the need to modify the extractor's fanout logic or implement per-database graphinator backends
+- It can be generated at controlled scale points for reproducible comparisons
+- It isolates database performance from pipeline overhead (RabbitMQ, message parsing, etc.)
+
+#### Scale Points
+
+Two scale points provide enough data to understand how performance changes with volume:
+
+| Scale | Artists | Labels | Masters | Releases | Approx. Nodes | Approx. Relationships |
+|-------|---------|--------|---------|----------|----------------|------------------------|
+| `small` | 10,000 | 5,000 | 20,000 | 100,000 | ~135,000 | ~540,000 |
+| `large` | 100,000 | 50,000 | 200,000 | 1,000,000 | ~1,350,000 | ~5,400,000 |
+
+The ratios between data types are derived from the real Discogs dataset:
+
+- ~19M releases, ~10M artists, ~2.5M masters, ~2.3M labels (~34M total nodes)
+- ~135M relationships (~4 relationships per node on average)
+- Releases dominate at ~55%, artists ~29%, masters ~7%, labels ~7%
+- The benchmark preserves these proportions and the ~4:1 relationship-to-node ratio
+
+#### Relationship Generation
+
+Synthetic data generates relationships matching the real Discogs graph structure:
+
+| Relationship | Pattern | Fan-Out |
+|-------------|---------|---------|
+| `BY` | release→artist, master→artist | 1-5 per release/master (power-law) |
+| `ON` | release→label | 1-2 per release |
+| `DERIVED_FROM` | release→master | 0-1 per release (~60% have a master) |
+| `IS` | release→genre, release→style, master→genre, master→style | 1-3 genres, 1-5 styles |
+| `MEMBER_OF` | artist→artist (band members) | ~10% of artists are band members |
+| `ALIAS_OF` | artist→artist (aliases) | ~5% of artists have aliases |
+| `SUBLABEL_OF` | label→label (parent labels) | ~15% of labels have parents |
+| `PART_OF` | style→genre | Each style maps to 1 genre |
+
+This produces approximately 4 relationships per node, matching the real dataset ratio of ~135M relationships across ~34M nodes.
+
+#### Synthetic Data Generation
 
 ```python
 # benchmarks/fixtures.py
+import hashlib
+import random
+
+SCALES = {
+    "small": {"artists": 10_000, "labels": 5_000, "masters": 20_000, "releases": 100_000},
+    "large": {"artists": 100_000, "labels": 50_000, "masters": 200_000, "releases": 1_000_000},
+}
+
+# 15 genres with Zipf-like popularity (electronic and rock dominate, like real Discogs)
+GENRES = [
+    "Electronic", "Rock", "Pop", "Hip Hop", "Jazz",
+    "Classical", "Folk, World, & Country", "Funk / Soul", "Reggae", "Blues",
+    "Latin", "Stage & Screen", "Non-Music", "Children's", "Brass & Military",
+]
+
+# ~500 styles distributed across genres with Zipf-like frequency
+# Top styles (House, Techno, Punk, Ambient) appear far more often than tail styles
 
 def generate_test_data(scale: str = "small") -> dict:
-    """Generate test data at different scales.
+    """Generate synthetic nodes and relationships at the specified scale.
 
-    Scales:
-      small:  1k artists, 500 labels, 2k masters, 10k releases
-      medium: 10k artists, 5k labels, 20k masters, 100k releases
-      large:  100k artists, 50k labels, 200k masters, 1M releases
+    Preserves realistic characteristics:
+      - ~4 relationships per node (matching real dataset: ~135M rels / ~34M nodes)
+      - Relationship fan-out: releases per artist varies from 1 to hundreds
+        (power-law distribution — most artists have 1-5 releases, a few have 100+)
+      - Genre/style distribution: 15 genres, ~500 styles, Zipf-like popularity
+      - SHA256 hashes on every node for deduplication testing
+      - Array properties (Release.formats) for index compatibility testing
+      - Realistic property shapes: name lengths 2-80 chars,
+        year distribution 1950-2025 weighted toward recent decades
+      - All 8 relationship types: BY, ON, DERIVED_FROM, IS, MEMBER_OF,
+        ALIAS_OF, SUBLABEL_OF, PART_OF
     """
+    counts = SCALES[scale]
+
+    artists = [
+        {
+            "id": i,
+            "name": _random_artist_name(),
+            "sha256": hashlib.sha256(f"artist-{i}".encode()).hexdigest(),
+        }
+        for i in range(counts["artists"])
+    ]
+
+    labels = [
+        {
+            "id": i,
+            "name": _random_label_name(),
+            "sha256": hashlib.sha256(f"label-{i}".encode()).hexdigest(),
+        }
+        for i in range(counts["labels"])
+    ]
+
+    masters = [
+        {
+            "id": i,
+            "title": _random_title(),
+            "year": _random_year(),
+            "genres": _pick_genres(),
+            "styles": _pick_styles(),
+            "sha256": hashlib.sha256(f"master-{i}".encode()).hexdigest(),
+        }
+        for i in range(counts["masters"])
+    ]
+
+    releases = [
+        {
+            "id": i,
+            "title": _random_title(),
+            "year": _random_year(),
+            "artist_ids": _pick_artist_ids(counts["artists"]),   # 1-5 artists (power-law)
+            "label_ids": _pick_label_ids(counts["labels"]),      # 1-2 labels
+            "master_id": _maybe_pick_master(counts["masters"]),  # ~60% have a master
+            "genres": _pick_genres(),                            # 1-3 genres
+            "styles": _pick_styles(),                            # 1-5 styles
+            "formats": _pick_formats(),                          # array property
+            "sha256": hashlib.sha256(f"release-{i}".encode()).hexdigest(),
+        }
+        for i in range(counts["releases"])
+    ]
+
+    # Generate relationship data for MEMBER_OF (~10%), ALIAS_OF (~5%), SUBLABEL_OF (~15%)
+    member_of = _generate_band_memberships(artists, fraction=0.10)
+    alias_of = _generate_aliases(artists, fraction=0.05)
+    sublabel_of = _generate_sublabels(labels, fraction=0.15)
+
+    return {
+        "artists": artists, "labels": labels, "masters": masters, "releases": releases,
+        "member_of": member_of, "alias_of": alias_of, "sublabel_of": sublabel_of,
+    }
 ```
 
-Data characteristics to preserve:
-- Realistic relationship fan-out (releases per artist, releases per label)
-- Genre/style distribution matching real Discogs data
-- SHA256 hashes for deduplication testing
-- Array properties (`Release.formats`) for index compatibility testing
+Data is inserted directly into each database using the `GraphBackend` abstraction — the benchmark script calls `backend.execute_write()` and `backend.execute_write_batch()` to create nodes and then relationships. This bypasses the extractor and graphinator entirely. The insertion order mirrors the graphinator's real write pattern: nodes first (artists, labels, masters, releases), then relationships (BY, ON, DERIVED_FROM, IS, MEMBER_OF, ALIAS_OF, SUBLABEL_OF, PART_OF).
 
-### Workload Definitions
+#### Workload Definitions
 
 Seven workloads matching actual Discogsography usage patterns:
 
@@ -303,7 +425,7 @@ WORKLOADS = {
 }
 ```
 
-### Benchmark Runner
+#### Benchmark Runner
 
 ```python
 # benchmarks/runner.py
@@ -342,7 +464,7 @@ async def run_benchmark(
     }
 ```
 
-### Results Comparison
+#### Results Comparison
 
 ```python
 # benchmarks/compare.py
@@ -355,7 +477,7 @@ def compare_results(baseline_file: str, candidate_file: str) -> None:
     # point_read            | 1.2 ms    | 0.4 ms       | -66.7%
 ```
 
-### Metrics Collected Per Run
+#### Metrics Collected Per Run
 
 | Metric | Collection Method |
 |--------|-------------------|
@@ -367,11 +489,11 @@ def compare_results(baseline_file: str, candidate_file: str) -> None:
 | Disk usage (MB) | `docker system df` after data load |
 | Concurrent throughput (ops/sec) | Total ops across all tasks / wall clock time |
 
-### Execution Script
+#### Execution Script
 
 ```bash
 #!/usr/bin/env bash
-# benchmarks/run.sh
+# benchmarks/run.sh — synthetic data benchmark
 
 set -euo pipefail
 
@@ -379,24 +501,24 @@ BACKEND=${1:?Usage: ./run.sh <backend> [scale]}
 SCALE=${2:-small}
 TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
 
-echo "=== Benchmarking $BACKEND at scale=$SCALE ==="
+echo "=== Synthetic Benchmark — $BACKEND at scale=$SCALE ==="
 
-# Load test data
+# Generate and load synthetic data directly into the database
 uv run python -m benchmarks.runner \
   --backend "$BACKEND" \
   --scale "$SCALE" \
   --load-only
 
-# Run benchmarks
+# Run all workloads
 uv run python -m benchmarks.runner \
   --backend "$BACKEND" \
   --scale "$SCALE" \
-  --output "benchmarks/results/${BACKEND}_${TIMESTAMP}.json"
+  --output "benchmarks/results/${BACKEND}_${SCALE}_${TIMESTAMP}.json"
 
-echo "=== Results saved to benchmarks/results/${BACKEND}_${TIMESTAMP}.json ==="
+echo "=== Results saved to benchmarks/results/${BACKEND}_${SCALE}_${TIMESTAMP}.json ==="
 ```
 
-### Docker Compose Profiles
+#### Docker Compose Profiles
 
 Add all candidate databases as optional profiles:
 
@@ -434,14 +556,14 @@ Add all candidate databases as optional profiles:
   # See apache-age.md for setup instructions
 ```
 
-### Work Items
+#### Work Items
 
 - [ ] Create `benchmarks/` directory structure
-- [ ] Implement `fixtures.py` — test data generator at small/medium/large scales
-- [ ] Implement `runner.py` — benchmark execution engine
-- [ ] Implement `workloads.py` — workload definitions
+- [ ] Implement `fixtures.py` — synthetic data generator with realistic characteristics (power-law fan-out, Zipf genre/style distribution, SHA256 hashes, array properties, year distributions, all 8 relationship types)
+- [ ] Implement `workloads.py` — seven workload definitions
+- [ ] Implement `runner.py` — benchmark execution engine with direct data insertion via `GraphBackend`
 - [ ] Implement `compare.py` — results comparison output
 - [ ] Create `run.sh` execution script
 - [ ] Add Docker Compose profiles for candidate databases
-- [ ] Baseline Neo4j results at all three scales
+- [ ] Baseline Neo4j results at both scale points (`small` and `large`)
 - [ ] Document hardware specs used for benchmarking (CPU, RAM, disk type)
