@@ -483,7 +483,7 @@ async def purge_stale_rows(data_type: str, started_at: str) -> None:
     try:
         async with connection_pool.connection() as conn:
             async with conn.cursor() as cursor:
-                await cursor.execute(
+                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                     sql.SQL(
                         "DELETE FROM {table} WHERE updated_at < %s RETURNING data_id"
                     ).format(table=sql.Identifier(data_type)),

@@ -286,7 +286,7 @@ class PostgreSQLBatchProcessor:
                     )
                     # Refresh updated_at so post-extraction stale row purge
                     # does not delete unchanged-but-still-present records
-                    await cursor.execute(
+                    await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                         sql.SQL(
                             "UPDATE {table} SET updated_at = NOW() "
                             "WHERE data_id = ANY(%s)"
