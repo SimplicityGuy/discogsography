@@ -2181,6 +2181,65 @@ class TestRecoverConsumersEdgeCases:
         # No connection should be established
         assert graphinator.graphinator.active_connection is None
 
+    @pytest.mark.asyncio
+    async def test_recover_declares_fanout_exchanges_and_queues(self) -> None:
+        """Test that _recover_consumers declares per-data-type fanout exchanges and consumer-owned DLXs."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.active_connection = None
+        graphinator.graphinator.active_channel = None
+        graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = set()
+        graphinator.graphinator.queues = {}
+
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+
+        # Queue with messages for passive declare check
+        mock_declared_queue = AsyncMock()
+        mock_declared_queue.declaration_result.message_count = 10
+
+        # Queue/exchange returned by full declarations
+        mock_exchange = AsyncMock()
+        mock_queue = AsyncMock()
+        mock_queue.consume = AsyncMock(return_value="consumer-tag-artists")
+        mock_queue.bind = AsyncMock()
+
+        mock_channel.declare_exchange = AsyncMock(return_value=mock_exchange)
+        mock_channel.declare_queue = AsyncMock(return_value=mock_queue)
+        mock_channel.set_qos = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+
+        # First 4 calls are passive declares (one per data type), rest are full declares
+        call_count = [0]
+
+        async def declare_queue_side_effect(**kwargs: Any) -> Any:
+            call_count[0] += 1
+            if kwargs.get("passive"):
+                return mock_declared_queue
+            result = AsyncMock()
+            result.consume = AsyncMock(return_value=f"consumer-tag-{call_count[0]}")
+            result.bind = AsyncMock()
+            return result
+
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue_side_effect)
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_rabbitmq_manager.connect = AsyncMock(return_value=mock_connection)
+
+        with (
+            patch("graphinator.graphinator.rabbitmq_manager", mock_rabbitmq_manager),
+            patch("graphinator.graphinator.logger"),
+        ):
+            from graphinator.graphinator import _recover_consumers
+
+            await _recover_consumers()
+
+        # Should have declared exchanges (2 per data type: fanout + DLX = 8 total)
+        assert mock_channel.declare_exchange.call_count == 8
+        # Should have set active connection
+        assert graphinator.graphinator.active_connection is mock_connection
+
 
 class TestProcessArtistEdgeCases:
     """Test process_artist edge cases with normalized data."""

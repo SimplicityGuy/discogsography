@@ -17,6 +17,7 @@ from tableinator.tableinator import (
     get_connection,
     get_health_data,
     main,
+    make_data_handler,
     on_data_message,
     schedule_consumer_cancellation,
     signal_handler,
@@ -45,6 +46,37 @@ class TestGetConnection:
             pytest.raises(RuntimeError, match="Connection pool not initialized"),
         ):
             get_connection()
+
+
+class TestMakeDataHandler:
+    """Test make_data_handler creates per-data-type message handlers."""
+
+    @pytest.mark.asyncio
+    async def test_handler_delegates_to_on_data_message(self) -> None:
+        """Test that make_data_handler returns a handler that calls on_data_message with the correct data_type."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+
+        with patch("tableinator.tableinator.on_data_message", new_callable=AsyncMock) as mock_on_data:
+            handler = make_data_handler("artists")
+            await handler(mock_message)
+            mock_on_data.assert_called_once_with(mock_message, "artists")
+
+    @pytest.mark.asyncio
+    async def test_handler_preserves_data_type(self) -> None:
+        """Test that each handler captures its own data_type."""
+        with patch("tableinator.tableinator.on_data_message", new_callable=AsyncMock) as mock_on_data:
+            artists_handler = make_data_handler("artists")
+            labels_handler = make_data_handler("labels")
+
+            mock_msg1 = AsyncMock(spec=AbstractIncomingMessage)
+            mock_msg2 = AsyncMock(spec=AbstractIncomingMessage)
+
+            await artists_handler(mock_msg1)
+            await labels_handler(mock_msg2)
+
+            assert mock_on_data.call_count == 2
+            mock_on_data.assert_any_call(mock_msg1, "artists")
+            mock_on_data.assert_any_call(mock_msg2, "labels")
 
 
 class TestOnDataMessage:
