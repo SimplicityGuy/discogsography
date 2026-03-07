@@ -12,6 +12,7 @@ This directory contains investigation notes for evaluating alternative graph dat
 | [falkordb.md](falkordb.md) | FalkorDB (Redis module) | Compatibility analysis complete |
 | [arangodb.md](arangodb.md) | ArangoDB Community | Compatibility analysis complete |
 | [cloud-benchmark-deployment.md](cloud-benchmark-deployment.md) | — | Cloud deployment plan for parallel benchmarking |
+| [calibration/](calibration/) | — | Benchmark harness, calibration scripts, and results |
 
 ## Evaluation Order
 

@@ -412,7 +412,7 @@ infra/
   tasks:
     - name: Generate synthetic data
       command: >
-        uv run python -m benchmarks.datagen
+        uv run python docs/investigations/calibration/datagen.py
         --artists 300000
         --labels 100000
         --masters 200000
@@ -421,7 +421,7 @@ infra/
 
     - name: Insert synthetic data into each database
       command: >
-        uv run python -m benchmarks.insert
+        uv run python docs/investigations/calibration/insert.py
         --backend {{ item.name }}
         --host {{ item.host }}:{{ item.port }}
         --data-dir /opt/benchmark/synthetic-data/
@@ -432,7 +432,7 @@ infra/
 
     - name: Run benchmark suite for each database
       command: >
-        uv run python -m benchmarks.runner
+        uv run python docs/investigations/calibration/runner.py
         --backend {{ item.name }}
         --host {{ item.host }}:{{ item.port }}
         --output /opt/benchmark/results/{{ item.name }}_benchmark.json
@@ -444,7 +444,7 @@ infra/
 
     - name: Generate comparison report
       command: >
-        uv run python -m benchmarks.compare
+        uv run python docs/investigations/calibration/compare.py
         /opt/benchmark/results/*_benchmark.json
         --output /opt/benchmark/results/comparison.md
 
@@ -872,7 +872,7 @@ ansible-playbook infra/playbooks/teardown.yml --ask-vault-pass
 - [ ] Test with 2 hosts first (controller + neo4j) before scaling to all 6
 - [ ] Run initial benchmark with synthetic dataset to validate the pipeline
 - [ ] Set $75 billing alert in Hetzner Console
-- [ ] Run `benchmarks/calibrate.py` on each CX53 host and save as `benchmarks/results/hetzner_cx53_calibration.json`
+- [ ] Run `docs/investigations/calibration/calibrate.py` on each CX53 host and save as `docs/investigations/calibration/results/hetzner_cx53_calibration.json`
 
 ## Scaling Results to Other Hardware
 
@@ -882,13 +882,13 @@ Quick start:
 
 ```bash
 # Run calibration on your machine (~30 seconds)
-uv run python -m benchmarks.calibrate --output my-calibration.json
+uv run python docs/investigations/calibration/calibrate.py run --output my-calibration.json
 
 # Scale any benchmark result file to your hardware
-uv run python -m benchmarks.scale_results \
-  --baseline benchmarks/results/hetzner_cx53_calibration.json \
+uv run python docs/investigations/calibration/calibrate.py scale \
+  --baseline docs/investigations/calibration/results/hetzner_cx53_calibration.json \
   --local my-calibration.json \
-  --benchmark-results benchmarks/results/neo4j_large_2026-03-10.json
+  --benchmark-results docs/investigations/calibration/results/neo4j_large_2026-03-10.json
 ```
 
 The calibration runs the same micro-benchmarks (CPU, memory, sequential/random I/O) on both machines and computes per-dimension scaling factors. These are applied with workload-specific weights to produce estimated latency and throughput numbers for your hardware.

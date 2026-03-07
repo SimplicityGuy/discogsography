@@ -296,12 +296,12 @@ In addition to the shared workloads:
 docker compose --profile memgraph up memgraph -d
 
 # Synthetic data benchmarks at both scale points
-uv run python -m benchmarks.runner --backend memgraph --host localhost:7688 --scale small --load
-uv run python -m benchmarks.runner --backend memgraph --host localhost:7688 --scale small
-uv run python -m benchmarks.runner --backend memgraph --host localhost:7688 --scale large --load
-uv run python -m benchmarks.runner --backend memgraph --host localhost:7688 --scale large
+uv run python docs/investigations/calibration/runner.py --backend memgraph --host localhost:7688 --scale small --load
+uv run python docs/investigations/calibration/runner.py --backend memgraph --host localhost:7688 --scale small
+uv run python docs/investigations/calibration/runner.py --backend memgraph --host localhost:7688 --scale large --load
+uv run python docs/investigations/calibration/runner.py --backend memgraph --host localhost:7688 --scale large
 
-uv run python -m benchmarks.compare benchmarks/results/neo4j_*.json benchmarks/results/memgraph_*.json
+uv run python docs/investigations/calibration/compare.py docs/investigations/calibration/results/neo4j_*.json docs/investigations/calibration/results/memgraph_*.json
 ```
 
 ## Memgraph Backend Implementation

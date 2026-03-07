@@ -195,12 +195,12 @@ In addition to the shared workloads:
 docker compose --profile age up postgres-age -d
 
 # Synthetic data benchmarks at both scale points
-uv run python -m benchmarks.runner --backend age --host localhost:5434 --scale small --load
-uv run python -m benchmarks.runner --backend age --host localhost:5434 --scale small
-uv run python -m benchmarks.runner --backend age --host localhost:5434 --scale large --load
-uv run python -m benchmarks.runner --backend age --host localhost:5434 --scale large
+uv run python docs/investigations/calibration/runner.py --backend age --host localhost:5434 --scale small --load
+uv run python docs/investigations/calibration/runner.py --backend age --host localhost:5434 --scale small
+uv run python docs/investigations/calibration/runner.py --backend age --host localhost:5434 --scale large --load
+uv run python docs/investigations/calibration/runner.py --backend age --host localhost:5434 --scale large
 
-uv run python -m benchmarks.compare benchmarks/results/neo4j_*.json benchmarks/results/age_*.json
+uv run python docs/investigations/calibration/compare.py docs/investigations/calibration/results/neo4j_*.json docs/investigations/calibration/results/age_*.json
 ```
 
 ### Hybrid Query Example (Unique to AGE)

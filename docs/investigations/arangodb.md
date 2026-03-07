@@ -300,12 +300,12 @@ In addition to the shared workloads (adapted to AQL):
 docker compose --profile arangodb up arangodb -d
 
 # Synthetic data benchmarks at both scale points
-uv run python -m benchmarks.runner --backend arangodb --host localhost:8529 --scale small --load
-uv run python -m benchmarks.runner --backend arangodb --host localhost:8529 --scale small
-uv run python -m benchmarks.runner --backend arangodb --host localhost:8529 --scale large --load
-uv run python -m benchmarks.runner --backend arangodb --host localhost:8529 --scale large
+uv run python docs/investigations/calibration/runner.py --backend arangodb --host localhost:8529 --scale small --load
+uv run python docs/investigations/calibration/runner.py --backend arangodb --host localhost:8529 --scale small
+uv run python docs/investigations/calibration/runner.py --backend arangodb --host localhost:8529 --scale large --load
+uv run python docs/investigations/calibration/runner.py --backend arangodb --host localhost:8529 --scale large
 
-uv run python -m benchmarks.compare benchmarks/results/neo4j_*.json benchmarks/results/arangodb_*.json
+uv run python docs/investigations/calibration/compare.py docs/investigations/calibration/results/neo4j_*.json docs/investigations/calibration/results/arangodb_*.json
 ```
 
 ### Multi-Model Query Example (Unique to ArangoDB)

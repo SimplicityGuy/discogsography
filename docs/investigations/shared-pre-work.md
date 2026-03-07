@@ -194,8 +194,10 @@ A reusable benchmark runner that inserts synthetic data directly into each datab
 ### Directory Structure
 
 ```
-benchmarks/
+docs/investigations/calibration/
   __init__.py
+  calibrate.py           -- hardware calibration for environment scaling
+  (scale subcommand built into calibrate.py)
   runner.py              -- benchmark execution engine
   workloads.py           -- workload definitions (backend-agnostic)
   fixtures.py            -- synthetic data generation
@@ -204,6 +206,7 @@ benchmarks/
     neo4j_small_2026-03-06.json
     neo4j_large_2026-03-06.json
     memgraph_small_2026-03-06.json
+    hetzner_cx53_calibration.json
 ```
 
 ### Synthetic Data Benchmark
@@ -258,7 +261,7 @@ This produces 3.97 relationships per node, matching the real dataset ratio of ~1
 #### Synthetic Data Generation
 
 ```python
-# benchmarks/fixtures.py
+# docs/investigations/calibration/fixtures.py
 import hashlib
 import random
 
@@ -423,7 +426,7 @@ Data is inserted directly into each database using the `GraphBackend` abstractio
 Seven workloads matching actual Discogsography usage patterns:
 
 ```python
-# benchmarks/workloads.py
+# docs/investigations/calibration/workloads.py
 
 WORKLOADS = {
     "batch_write_nodes": {
@@ -496,7 +499,7 @@ WORKLOADS = {
 #### Benchmark Runner
 
 ```python
-# benchmarks/runner.py
+# docs/investigations/calibration/runner.py
 import asyncio, json, statistics, time
 from common.graph_backend import GraphBackend
 
@@ -535,7 +538,7 @@ async def run_benchmark(
 #### Results Comparison
 
 ```python
-# benchmarks/compare.py
+# docs/investigations/calibration/compare.py
 
 def compare_results(baseline_file: str, candidate_file: str) -> None:
     """Print side-by-side comparison table with delta percentages."""
@@ -561,7 +564,7 @@ def compare_results(baseline_file: str, candidate_file: str) -> None:
 
 ```bash
 #!/usr/bin/env bash
-# benchmarks/run.sh — synthetic data benchmark
+# docs/investigations/calibration/run.sh — synthetic data benchmark
 
 set -euo pipefail
 
@@ -572,18 +575,18 @@ TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
 echo "=== Synthetic Benchmark — $BACKEND at scale=$SCALE ==="
 
 # Generate and load synthetic data directly into the database
-uv run python -m benchmarks.runner \
+uv run python docs/investigations/calibration/runner.py \
   --backend "$BACKEND" \
   --scale "$SCALE" \
   --load-only
 
 # Run all workloads
-uv run python -m benchmarks.runner \
+uv run python docs/investigations/calibration/runner.py \
   --backend "$BACKEND" \
   --scale "$SCALE" \
-  --output "benchmarks/results/${BACKEND}_${SCALE}_${TIMESTAMP}.json"
+  --output "docs/investigations/calibration/results/${BACKEND}_${SCALE}_${TIMESTAMP}.json"
 
-echo "=== Results saved to benchmarks/results/${BACKEND}_${SCALE}_${TIMESTAMP}.json ==="
+echo "=== Results saved to docs/investigations/calibration/results/${BACKEND}_${SCALE}_${TIMESTAMP}.json ==="
 ```
 
 #### Docker Compose Profiles
@@ -626,7 +629,7 @@ Add all candidate databases as optional profiles:
 
 #### Work Items
 
-- [ ] Create `benchmarks/` directory structure
+- [ ] Create `docs/investigations/calibration/` directory structure
 - [ ] Implement `fixtures.py` — synthetic data generator calibrated from 2026-03-07 production data (power-law BY reverse fan-out, ~58% orphan artists, ~39% orphan labels, Zipf genre/style distributions, 757 styles, year on Master only, no formats property, ~100% DERIVED_FROM coverage, all 8 relationship types)
 - [ ] Implement `workloads.py` — seven workload definitions
 - [ ] Implement `runner.py` — benchmark execution engine with direct data insertion via `GraphBackend`
@@ -663,22 +666,22 @@ By comparing calibration output from the benchmark host against your machine, pe
 **1. Run calibration on your machine:**
 
 ```bash
-uv run python -m benchmarks.calibrate --output my-calibration.json
+uv run python docs/investigations/calibration/calibrate.py run --output my-calibration.json
 ```
 
 This takes ~30 seconds and produces a JSON file with your hardware profile.
 
 **2. Get the baseline calibration from the benchmark host:**
 
-The Hetzner CX53 calibration file is saved alongside benchmark results at `benchmarks/results/hetzner_cx53_calibration.json` after each benchmark run.
+The Hetzner CX53 calibration file is saved alongside benchmark results at `docs/investigations/calibration/results/hetzner_cx53_calibration.json` after each benchmark run.
 
 **3. Scale the benchmark results:**
 
 ```bash
-uv run python -m benchmarks.scale_results \
-  --baseline benchmarks/results/hetzner_cx53_calibration.json \
+uv run python docs/investigations/calibration/calibrate.py scale \
+  --baseline docs/investigations/calibration/results/hetzner_cx53_calibration.json \
   --local my-calibration.json \
-  --benchmark-results benchmarks/results/neo4j_large_2026-03-10.json \
+  --benchmark-results docs/investigations/calibration/results/neo4j_large_2026-03-10.json \
   --output my-neo4j-estimates.json
 ```
 
@@ -735,6 +738,6 @@ Use the scaled numbers to understand whether your hardware is in the same ballpa
 
 ### Work Items
 
-- [ ] Run `benchmarks/calibrate.py` on the Hetzner CX53 hosts during benchmark setup
-- [ ] Save baseline calibration JSON to `benchmarks/results/hetzner_cx53_calibration.json`
+- [ ] Run `docs/investigations/calibration/calibrate.py` on the Hetzner CX53 hosts during benchmark setup
+- [ ] Save baseline calibration JSON to `docs/investigations/calibration/results/hetzner_cx53_calibration.json`
 - [ ] Validate scaling model accuracy by comparing scaled predictions against actual local benchmark runs
