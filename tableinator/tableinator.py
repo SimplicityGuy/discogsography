@@ -642,16 +642,16 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         async with connection_pool.connection() as conn:
             async with conn.cursor() as cursor:
-                # Single conditional upsert: PostgreSQL skips the write when hash is unchanged,
-                # eliminating the prior SELECT round-trip entirely.
+                # Unconditional upsert: always writes hash, data, and updated_at.
+                # updated_at must always be refreshed so post-extraction stale row
+                # purge does not delete unchanged-but-still-present records.
                 await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                     sql.SQL(
                         "INSERT INTO {table} (hash, data_id, data, updated_at) "
                         "VALUES (%s, %s, %s, NOW()) "
                         "ON CONFLICT (data_id) DO UPDATE "
                         "SET hash = EXCLUDED.hash, data = EXCLUDED.data, "
-                        "updated_at = NOW() "
-                        "WHERE {table}.hash != EXCLUDED.hash;"
+                        "updated_at = NOW();"
                     ).format(table=sql.Identifier(data_type)),
                     (
                         data["sha256"],
