@@ -291,8 +291,10 @@ class PostgreSQLBatchProcessor:
                 # Step 3: Bulk upsert using executemany
                 await cursor.executemany(
                     sql.SQL(
-                        "INSERT INTO {table} (hash, data_id, data) VALUES (%s, %s, %s) "
-                        "ON CONFLICT (data_id) DO UPDATE SET hash = EXCLUDED.hash, data = EXCLUDED.data"
+                        "INSERT INTO {table} (hash, data_id, data, updated_at) "
+                        "VALUES (%s, %s, %s, NOW()) "
+                        "ON CONFLICT (data_id) DO UPDATE "
+                        "SET hash = EXCLUDED.hash, data = EXCLUDED.data, updated_at = NOW()"
                     ).format(table=sql.Identifier(data_type)),
                     records_to_upsert,
                 )

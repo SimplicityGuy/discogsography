@@ -555,6 +555,74 @@ class TestOnDataMessageExtended:
 
     @pytest.mark.asyncio
     @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_handles_extraction_complete_message(self) -> None:
+        """Test handling extraction_complete message."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+            "started_at": "2026-01-01T00:00:00Z",
+            "record_counts": {"artists": 100},
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch("tableinator.tableinator.connection_pool", None),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_flushes_batches(self) -> None:
+        """Test extraction_complete flushes batch processor."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_batch = AsyncMock()
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+            "started_at": "2026-01-01T00:00:00Z",
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", mock_batch),
+            patch("tableinator.tableinator.connection_pool", None),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_batch.flush_all.assert_called_once()
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_purges_stale_rows(self) -> None:
+        """Test extraction_complete triggers stale row purge."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+            "started_at": "2026-01-01T00:00:00Z",
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch("tableinator.tableinator.purge_stale_rows", new_callable=AsyncMock) as mock_purge,
+            patch("tableinator.tableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_purge.assert_called_once_with("artists", "2026-01-01T00:00:00Z")
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
     async def test_handles_missing_id_field(self) -> None:
         """Test handling message with missing 'id' field."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
@@ -1622,6 +1690,72 @@ class TestOnDataMessageFileCompletion:
         # Should not schedule cancellation
         mock_schedule.assert_not_called()
         assert "artists" in tableinator.tableinator.completed_files
+
+
+class TestPurgeStaleRows:
+    """Test purge_stale_rows function."""
+
+    @pytest.mark.asyncio
+    async def test_purges_stale_rows(self) -> None:
+        """Test deletes rows older than started_at."""
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[("old_id_1",), ("old_id_2",)])
+
+        mock_cursor_cm = MagicMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        mock_conn_cm = MagicMock()
+        mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = MagicMock()
+        mock_pool.connection.return_value = mock_conn_cm
+
+        import tableinator.tableinator
+
+        tableinator.tableinator.connection_pool = mock_pool
+
+        from tableinator.tableinator import purge_stale_rows
+
+        await purge_stale_rows("artists", "2026-01-01T00:00:00Z")
+
+        mock_cursor.execute.assert_called_once()
+        call_args = mock_cursor.execute.call_args
+        assert "2026-01-01T00:00:00Z" in call_args[0][1]
+
+        tableinator.tableinator.connection_pool = None
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_pool(self) -> None:
+        """Test does nothing when connection_pool is None."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.connection_pool = None
+
+        from tableinator.tableinator import purge_stale_rows
+
+        await purge_stale_rows("artists", "2026-01-01T00:00:00Z")
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_started_at(self) -> None:
+        """Test skips purge when started_at is empty."""
+        mock_pool = MagicMock()
+
+        import tableinator.tableinator
+
+        tableinator.tableinator.connection_pool = mock_pool
+
+        from tableinator.tableinator import purge_stale_rows
+
+        with patch("tableinator.tableinator.logger"):
+            await purge_stale_rows("artists", "")
+
+        mock_pool.connection.assert_not_called()
+        tableinator.tableinator.connection_pool = None
 
 
 class TestMainBatchProcessor:

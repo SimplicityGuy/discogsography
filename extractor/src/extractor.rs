@@ -32,6 +32,9 @@ pub async fn process_discogs_data(
     shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
 ) -> Result<bool> {
+    // Record extraction start time for consumer cleanup coordination
+    let extraction_started_at = chrono::Utc::now();
+
     // Reset progress for new run
     {
         let mut s = state.write().await;
@@ -188,11 +191,35 @@ pub async fn process_discogs_data(
     state_marker.save(&marker_path).await?;
     info!("✅ Processing phase completed: version {}", state_marker.current_version);
 
-    // Log completion
+    // Log completion and send extraction_complete to all consumers
     let s = state.read().await;
     if !s.completed_files.is_empty() {
         info!("🎉 All processing complete! Finished files: {:?}", s.completed_files);
         info!("📊 Final statistics: {} total records extracted", s.extraction_progress.total());
+
+        // Build per-type record counts from extraction progress
+        let mut record_counts = HashMap::new();
+        record_counts.insert("artists".to_string(), s.extraction_progress.artists);
+        record_counts.insert("labels".to_string(), s.extraction_progress.labels);
+        record_counts.insert("masters".to_string(), s.extraction_progress.masters);
+        record_counts.insert("releases".to_string(), s.extraction_progress.releases);
+
+        // Send extraction_complete to all consumer queues
+        drop(s); // Release read lock before async MQ operations
+        match MessageQueue::new(&config.amqp_connection, 3).await {
+            Ok(mq) => {
+                if let Err(e) = mq
+                    .send_extraction_complete(&version, extraction_started_at, record_counts)
+                    .await
+                {
+                    error!("❌ Failed to send extraction_complete message: {}", e);
+                }
+                let _ = mq.close().await;
+            }
+            Err(e) => {
+                error!("❌ Failed to connect to AMQP for extraction_complete: {}", e);
+            }
+        }
     }
 
     Ok(success)

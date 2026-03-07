@@ -814,6 +814,155 @@ class TestCheckFileCompletion:
         assert result is True
         mock_schedule.assert_called_once_with("artists", mock_queue)
 
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.batch_processor", None)
+    @patch("graphinator.graphinator.graph", None)
+    async def test_handles_extraction_complete_message(self) -> None:
+        """Test handles extraction_complete message correctly."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+            "started_at": "2026-01-01T00:00:00Z",
+            "record_counts": {"artists": 100},
+        }
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_extraction_complete_flushes_batches(self) -> None:
+        """Test extraction_complete flushes batch processor before cleanup."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_batch = AsyncMock()
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+        }
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = None  # Skip cleanup
+        graphinator.graphinator.batch_processor = mock_batch
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        mock_batch.flush_all.assert_called_once()
+        # Reset
+        graphinator.graphinator.batch_processor = None
+
+    @pytest.mark.asyncio
+    async def test_extraction_complete_triggers_stub_cleanup(self) -> None:
+        """Test extraction_complete triggers stub node cleanup."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+        }
+
+        mock_driver = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_driver.session.return_value = mock_session_ctx
+
+        mock_result = AsyncMock()
+        mock_record = {"deleted": 5}
+        mock_result.single = AsyncMock(return_value=mock_record)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.batch_processor = None
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        # Verify cleanup query was run for Artist nodes
+        mock_session.run.assert_called_once()
+        call_args = mock_session.run.call_args[0][0]
+        assert "Artist" in call_args
+        assert "sha256 IS NULL" in call_args
+        assert "DETACH DELETE" in call_args
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+
+class TestCleanupStubNodes:
+    """Test cleanup_stub_nodes function."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_with_stubs_found(self) -> None:
+        """Test cleanup deletes stub nodes and logs count."""
+        mock_driver = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_driver.session.return_value = mock_session_ctx
+
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"deleted": 17138})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import cleanup_stub_nodes
+
+        await cleanup_stub_nodes("artists")
+
+        mock_session.run.assert_called_once()
+        call_args = mock_session.run.call_args[0][0]
+        assert "Artist" in call_args
+        assert "sha256 IS NULL" in call_args
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_skips_unknown_data_type(self) -> None:
+        """Test cleanup does nothing for unknown data types."""
+        mock_driver = AsyncMock()
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import cleanup_stub_nodes
+
+        await cleanup_stub_nodes("unknown_type")
+
+        mock_driver.session.assert_not_called()
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_skips_when_no_driver(self) -> None:
+        """Test cleanup does nothing when graph driver is None."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = None
+
+        from graphinator.graphinator import cleanup_stub_nodes
+
+        # Should not raise
+        await cleanup_stub_nodes("artists")
+
 
 class TestScheduleConsumerCancellation:
     """Test schedule_consumer_cancellation function."""

@@ -452,7 +452,7 @@ async def _recover_consumers() -> None:
 async def check_file_completion(
     data: dict[str, Any], data_type: str, message: AbstractIncomingMessage
 ) -> bool:
-    """Check if message is a file completion message and handle it."""
+    """Check if message is a file completion or extraction completion message."""
     if data.get("type") == "file_complete":
         completed_files.add(data_type)
         total_processed = data.get("total_processed", 0)
@@ -467,7 +467,78 @@ async def check_file_completion(
 
         await message.ack()
         return True
+
+    if data.get("type") == "extraction_complete":
+        logger.info(
+            "🏁 Received extraction_complete signal",
+            data_type=data_type,
+            version=data.get("version"),
+        )
+
+        # Flush any remaining batches before cleanup
+        if batch_processor is not None:
+            await batch_processor.flush_all()
+
+        # Clean up stub nodes created by cross-type MERGE operations
+        if graph is not None:
+            await cleanup_stub_nodes(data_type)
+
+        await message.ack()
+        return True
+
     return False
+
+
+async def cleanup_stub_nodes(data_type: str) -> None:
+    """Delete stub nodes that have no sha256 property.
+
+    During extraction, MERGE operations in relationship queries create
+    skeleton nodes for cross-referenced entities (e.g., a release referencing
+    an artist that hasn't been processed yet). Primary records always set
+    sha256, so nodes without it are stubs that were never filled.
+    """
+    if graph is None:
+        return
+
+    # Map data types to their Neo4j labels
+    label_map = {
+        "artists": "Artist",
+        "labels": "Label",
+        "masters": "Master",
+        "releases": "Release",
+    }
+
+    label = label_map.get(data_type)
+    if not label:
+        return
+
+    try:
+        async with await graph.session(database="neo4j") as session:
+            result = await session.run(
+                f"MATCH (n:{label}) WHERE n.sha256 IS NULL "
+                "DETACH DELETE n "
+                "RETURN count(n) AS deleted",
+            )
+            record = await result.single()
+            deleted = record["deleted"] if record else 0
+
+            if deleted > 0:
+                logger.info(
+                    f"🧹 Cleaned up {deleted} stub {label} nodes (no sha256 property)",
+                    data_type=data_type,
+                    deleted=deleted,
+                )
+            else:
+                logger.info(
+                    f"✅ No stub {label} nodes to clean up",
+                    data_type=data_type,
+                )
+    except Exception as e:
+        logger.error(
+            f"❌ Failed to clean up stub {label} nodes",
+            data_type=data_type,
+            error=str(e),
+        )
 
 
 def process_artist(tx: Any, record: dict[str, Any]) -> bool:
