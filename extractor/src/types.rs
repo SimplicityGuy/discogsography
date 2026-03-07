@@ -29,10 +29,6 @@ impl DataType {
         }
     }
 
-    /// Get the AMQP routing key
-    pub fn routing_key(&self) -> &'static str {
-        self.as_str()
-    }
 }
 
 impl fmt::Display for DataType {
@@ -97,6 +93,8 @@ pub enum Message {
     Data(DataMessage),
     #[serde(rename = "file_complete")]
     FileComplete(FileCompleteMessage),
+    #[serde(rename = "extraction_complete")]
+    ExtractionComplete(ExtractionCompleteMessage),
 }
 
 /// Data message containing a parsed record
@@ -115,6 +113,15 @@ pub struct FileCompleteMessage {
     pub timestamp: DateTime<Utc>,
     pub total_processed: u64,
     pub file: String,
+}
+
+/// Extraction complete message — sent once after all files finish processing
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExtractionCompleteMessage {
+    pub version: String,
+    pub timestamp: DateTime<Utc>,
+    pub started_at: DateTime<Utc>,
+    pub record_counts: std::collections::HashMap<String, u64>,
 }
 
 /// File information from S3
@@ -173,14 +180,6 @@ mod tests {
         assert_eq!(DataType::Labels.as_str(), "labels");
         assert_eq!(DataType::Masters.as_str(), "masters");
         assert_eq!(DataType::Releases.as_str(), "releases");
-    }
-
-    #[test]
-    fn test_data_type_routing_key() {
-        assert_eq!(DataType::Artists.routing_key(), "artists");
-        assert_eq!(DataType::Labels.routing_key(), "labels");
-        assert_eq!(DataType::Masters.routing_key(), "masters");
-        assert_eq!(DataType::Releases.routing_key(), "releases");
     }
 
     #[test]
@@ -280,5 +279,50 @@ mod tests {
             Message::FileComplete(msg) => assert_eq!(msg.total_processed, 500),
             _ => panic!("Expected FileComplete variant"),
         }
+    }
+
+    #[test]
+    fn test_message_enum_extraction_complete() {
+        let mut record_counts = std::collections::HashMap::new();
+        record_counts.insert("artists".to_string(), 9957079);
+        record_counts.insert("labels".to_string(), 2349729);
+
+        let msg = ExtractionCompleteMessage {
+            version: "20260101".to_string(),
+            timestamp: Utc::now(),
+            started_at: Utc::now(),
+            record_counts,
+        };
+
+        let message = Message::ExtractionComplete(msg);
+        match message {
+            Message::ExtractionComplete(m) => {
+                assert_eq!(m.version, "20260101");
+                assert_eq!(m.record_counts["artists"], 9957079);
+                assert_eq!(m.record_counts["labels"], 2349729);
+            }
+            _ => panic!("Expected ExtractionComplete variant"),
+        }
+    }
+
+    #[test]
+    fn test_extraction_complete_serialization_format() {
+        let mut record_counts = std::collections::HashMap::new();
+        record_counts.insert("artists".to_string(), 100);
+
+        let msg = ExtractionCompleteMessage {
+            version: "20260101".to_string(),
+            timestamp: Utc::now(),
+            started_at: Utc::now(),
+            record_counts,
+        };
+
+        let message = Message::ExtractionComplete(msg);
+        let json_str = serde_json::to_string(&message).unwrap();
+
+        assert!(json_str.contains(r#""type":"extraction_complete""#), "Expected type tag, got: {}", json_str);
+        assert!(json_str.contains(r#""version":"20260101""#), "Expected version field, got: {}", json_str);
+        assert!(json_str.contains(r#""started_at""#), "Expected started_at field, got: {}", json_str);
+        assert!(json_str.contains(r#""record_counts""#), "Expected record_counts field, got: {}", json_str);
     }
 }

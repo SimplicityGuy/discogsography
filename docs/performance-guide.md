@@ -41,13 +41,12 @@ flowchart TD
 
 ## 🎯 Performance Goals
 
-| Metric                 | Target       | Current      | Optimization        |
-| ---------------------- | ------------ | ------------ | ------------------- |
-| **XML Parsing**        | 10,000 rec/s | 5,000-10,000 | I/O, Memory         |
-| **Message Processing** | 5,000 msg/s  | 3,000-5,000  | Network             |
-| **Neo4j Writes**       | 5,000 rec/s  | 3,000-5,000  | Batch processing ✅ |
-| **PostgreSQL Writes**  | 10,000 rec/s | 8,000-10,000 | Batch processing ✅ |
-| **API Response Time**  | \<100ms      | \<200ms      | Query complexity    |
+| Metric                | Observed              | Optimization        |
+| --------------------- | --------------------- | ------------------- |
+| **XML Parsing**       | 20,000-400,000+ rec/s | I/O, Memory         |
+| **Initial Load**      | ~6 days (parallel)    | Batch processing ✅ |
+| **Update Run**        | ~26 hours (parallel)  | SHA256 dedup ✅     |
+| **API Response Time** | \<200ms               | Query complexity    |
 
 > **Note**: ✅ indicates optimizations that are implemented and enabled by default.
 
@@ -622,3 +621,5 @@ Before deployment, ensure:
 ______________________________________________________________________
 
 Remember: Measure first, optimize second. Focus on bottlenecks that matter! 🚀
+
+**Last Updated**: 2026-03-07

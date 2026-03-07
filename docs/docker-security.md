@@ -99,16 +99,16 @@ deploy:
 
 These secrets are **never passed as plain environment variables in production**. Instead, they are mounted as in-memory tmpfs files via Docker Compose runtime secrets and read through the `_FILE` convention. See [Production Secrets Setup](#production-secrets-setup) below.
 
-| Secret | `_FILE` env var | Plain env var (dev only) |
-|--------|-----------------|--------------------------|
-| RabbitMQ password | `RABBITMQ_PASSWORD_FILE` | `RABBITMQ_PASSWORD` |
-| RabbitMQ username | `RABBITMQ_USERNAME_FILE` | `RABBITMQ_USERNAME` |
-| PostgreSQL password | `POSTGRES_PASSWORD_FILE` | `POSTGRES_PASSWORD` |
-| PostgreSQL username | `POSTGRES_USERNAME_FILE` | `POSTGRES_USERNAME` |
-| Neo4j password | (via entrypoint wrapper) | `NEO4J_AUTH` |
-| JWT secret key | `JWT_SECRET_KEY_FILE` | `JWT_SECRET_KEY` |
-| OAuth encryption key | `OAUTH_ENCRYPTION_KEY_FILE` | `OAUTH_ENCRYPTION_KEY` |
-| RabbitMQ mgmt user | `RABBITMQ_MANAGEMENT_USER_FILE` | `RABBITMQ_MANAGEMENT_USER` |
+| Secret                 | `_FILE` env var                     | Plain env var (dev only)       |
+| ---------------------- | ----------------------------------- | ------------------------------ |
+| RabbitMQ password      | `RABBITMQ_PASSWORD_FILE`            | `RABBITMQ_PASSWORD`            |
+| RabbitMQ username      | `RABBITMQ_USERNAME_FILE`            | `RABBITMQ_USERNAME`            |
+| PostgreSQL password    | `POSTGRES_PASSWORD_FILE`            | `POSTGRES_PASSWORD`            |
+| PostgreSQL username    | `POSTGRES_USERNAME_FILE`            | `POSTGRES_USERNAME`            |
+| Neo4j password         | (via entrypoint wrapper)            | `NEO4J_AUTH`                   |
+| JWT secret key         | `JWT_SECRET_KEY_FILE`               | `JWT_SECRET_KEY`               |
+| OAuth encryption key   | `OAUTH_ENCRYPTION_KEY_FILE`         | `OAUTH_ENCRYPTION_KEY`         |
+| RabbitMQ mgmt user     | `RABBITMQ_MANAGEMENT_USER_FILE`     | `RABBITMQ_MANAGEMENT_USER`     |
 | RabbitMQ mgmt password | `RABBITMQ_MANAGEMENT_PASSWORD_FILE` | `RABBITMQ_MANAGEMENT_PASSWORD` |
 
 Plain env vars work in development. The production overlay (`docker-compose.prod.yml`) switches to the `_FILE` convention automatically — application code handles both via `get_secret()` in `common/config.py`.

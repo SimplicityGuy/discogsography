@@ -17,6 +17,7 @@ from tableinator.tableinator import (
     get_connection,
     get_health_data,
     main,
+    make_data_handler,
     on_data_message,
     schedule_consumer_cancellation,
     signal_handler,
@@ -47,6 +48,37 @@ class TestGetConnection:
             get_connection()
 
 
+class TestMakeDataHandler:
+    """Test make_data_handler creates per-data-type message handlers."""
+
+    @pytest.mark.asyncio
+    async def test_handler_delegates_to_on_data_message(self) -> None:
+        """Test that make_data_handler returns a handler that calls on_data_message with the correct data_type."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+
+        with patch("tableinator.tableinator.on_data_message", new_callable=AsyncMock) as mock_on_data:
+            handler = make_data_handler("artists")
+            await handler(mock_message)
+            mock_on_data.assert_called_once_with(mock_message, "artists")
+
+    @pytest.mark.asyncio
+    async def test_handler_preserves_data_type(self) -> None:
+        """Test that each handler captures its own data_type."""
+        with patch("tableinator.tableinator.on_data_message", new_callable=AsyncMock) as mock_on_data:
+            artists_handler = make_data_handler("artists")
+            labels_handler = make_data_handler("labels")
+
+            mock_msg1 = AsyncMock(spec=AbstractIncomingMessage)
+            mock_msg2 = AsyncMock(spec=AbstractIncomingMessage)
+
+            await artists_handler(mock_msg1)
+            await labels_handler(mock_msg2)
+
+            assert mock_on_data.call_count == 2
+            mock_on_data.assert_any_call(mock_msg1, "artists")
+            mock_on_data.assert_any_call(mock_msg2, "labels")
+
+
 class TestOnDataMessage:
     """Test on_data_message handler."""
 
@@ -72,7 +104,7 @@ class TestOnDataMessage:
         pool = mock_async_pool(mock_postgres_connection)
 
         with patch("tableinator.tableinator.connection_pool", pool):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Verify message was acknowledged
         mock_message.ack.assert_called_once()
@@ -105,7 +137,7 @@ class TestOnDataMessage:
         pool = mock_async_pool(mock_postgres_connection)
 
         with patch("tableinator.tableinator.connection_pool", pool):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Verify message was acknowledged
         mock_message.ack.assert_called_once()
@@ -119,7 +151,7 @@ class TestOnDataMessage:
         """Test message rejection during shutdown."""
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
 
-        await on_data_message(mock_message)
+        await on_data_message(mock_message, "artists")
 
         mock_message.nack.assert_called_once_with(requeue=True)
         mock_message.ack.assert_not_called()
@@ -137,7 +169,7 @@ class TestOnDataMessage:
         mock_pool.connection.side_effect = Exception("Connection failed")
 
         with patch("tableinator.tableinator.connection_pool", mock_pool):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should nack with requeue
         mock_message.nack.assert_called_once_with(requeue=True)
@@ -149,7 +181,7 @@ class TestOnDataMessage:
         mock_message = AsyncMock(spec=AbstractIncomingMessage)
         mock_message.body = b"invalid json"
 
-        await on_data_message(mock_message)
+        await on_data_message(mock_message, "artists")
 
         # Should nack without requeue for bad messages
         mock_message.nack.assert_called_once_with(requeue=False)
@@ -513,12 +545,80 @@ class TestOnDataMessageExtended:
             patch("tableinator.tableinator.logger"),
             patch("tableinator.tableinator.CONSUMER_CANCEL_DELAY", 0),
         ):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Verify file was marked complete
         assert "artists" in tableinator.tableinator.completed_files
 
         # Verify message was acknowledged
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_handles_extraction_complete_message(self) -> None:
+        """Test handling extraction_complete message."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+            "started_at": "2026-01-01T00:00:00Z",
+            "record_counts": {"artists": 100},
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch("tableinator.tableinator.connection_pool", None),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_flushes_batches(self) -> None:
+        """Test extraction_complete flushes batch processor."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_batch = AsyncMock()
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+            "started_at": "2026-01-01T00:00:00Z",
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", mock_batch),
+            patch("tableinator.tableinator.connection_pool", None),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_batch.flush_all.assert_called_once()
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_purges_stale_rows(self) -> None:
+        """Test extraction_complete triggers stale row purge."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+            "started_at": "2026-01-01T00:00:00Z",
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch("tableinator.tableinator.purge_stale_rows", new_callable=AsyncMock) as mock_purge,
+            patch("tableinator.tableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_purge.assert_called_once_with("artists", "2026-01-01T00:00:00Z")
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
@@ -531,7 +631,7 @@ class TestOnDataMessageExtended:
         mock_message.routing_key = "artists"
 
         with patch("tableinator.tableinator.logger"):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should nack without requeue
         mock_message.nack.assert_called_once_with(requeue=False)
@@ -550,7 +650,7 @@ class TestOnDataMessageExtended:
         mock_message.routing_key = "artists"
 
         with patch("tableinator.tableinator.logger"):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should nack with requeue when connection pool not initialized
         mock_message.nack.assert_called_once_with(requeue=True)
@@ -591,7 +691,7 @@ class TestOnDataMessageExtended:
             patch("tableinator.tableinator.connection_pool", pool),
             patch("tableinator.tableinator.logger"),
         ):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "labels")
 
         # Verify message was acknowledged
         mock_message.ack.assert_called_once()
@@ -632,7 +732,7 @@ class TestOnDataMessageExtended:
             patch("tableinator.tableinator.connection_pool", pool),
             patch("tableinator.tableinator.logger"),
         ):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "releases")
 
         # Verify message was acknowledged
         mock_message.ack.assert_called_once()
@@ -673,7 +773,7 @@ class TestOnDataMessageExtended:
             patch("tableinator.tableinator.connection_pool", pool),
             patch("tableinator.tableinator.logger"),
         ):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "masters")
 
         # Verify message was acknowledged
         mock_message.ack.assert_called_once()
@@ -687,7 +787,7 @@ class TestOnDataMessageExtended:
         mock_message.routing_key = "artists"
 
         with patch("tableinator.tableinator.logger"):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should nack with requeue=True
         mock_message.nack.assert_called_once_with(requeue=True)
@@ -1353,7 +1453,7 @@ class TestOnDataMessageProgressLogging:
         tableinator.tableinator.last_message_time = {}
 
         with patch("tableinator.tableinator.logger") as mock_logger:
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should have logged progress because 10 % 10 == 0
         # Look for the progress log call
@@ -1387,7 +1487,7 @@ class TestOnDataMessageBatchMode:
         tableinator.tableinator.message_counts = {"artists": 0}
         tableinator.tableinator.last_message_time = {"artists": 0}
 
-        await on_data_message(mock_message)
+        await on_data_message(mock_message, "artists")
 
         # Should have called batch processor
         mock_batch_processor.add_message.assert_called_once()
@@ -1424,7 +1524,7 @@ class TestOnDataMessageBatchMode:
         pool = mock_async_pool(mock_postgres_connection)
 
         with patch("tableinator.tableinator.connection_pool", pool):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should have processed directly with a single conditional upsert
         assert mock_cursor.execute.call_count == 1
@@ -1457,7 +1557,7 @@ class TestOnDataMessageDatabaseOperations:
         pool = mock_async_pool(mock_postgres_connection)
 
         with patch("tableinator.tableinator.connection_pool", pool):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Single conditional upsert handles both insert and update cases
         assert mock_cursor.execute.call_count == 1
@@ -1480,7 +1580,7 @@ class TestOnDataMessageDatabaseOperations:
             patch("tableinator.tableinator.connection_pool", mock_pool),
             patch("tableinator.tableinator.logger") as mock_logger,
         ):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should nack with requeue
         mock_message.nack.assert_called_once_with(requeue=True)
@@ -1503,7 +1603,7 @@ class TestOnDataMessageDatabaseOperations:
             patch("tableinator.tableinator.connection_pool", mock_pool),
             patch("tableinator.tableinator.logger") as mock_logger,
         ):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should nack with requeue
         mock_message.nack.assert_called_once_with(requeue=True)
@@ -1525,7 +1625,7 @@ class TestOnDataMessageDatabaseOperations:
             patch("tableinator.tableinator.connection_pool", mock_pool),
             patch("tableinator.tableinator.logger") as mock_logger,
         ):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should log warning about nack failure
         assert any("Failed to nack message" in str(call) for call in mock_logger.warning.call_args_list)
@@ -1557,7 +1657,7 @@ class TestOnDataMessageFileCompletion:
             patch("tableinator.tableinator.logger"),
             patch("tableinator.tableinator.schedule_consumer_cancellation") as mock_schedule,
         ):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should have scheduled cancellation
         mock_schedule.assert_called_once()
@@ -1585,11 +1685,77 @@ class TestOnDataMessageFileCompletion:
             patch("tableinator.tableinator.logger"),
             patch("tableinator.tableinator.schedule_consumer_cancellation") as mock_schedule,
         ):
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "artists")
 
         # Should not schedule cancellation
         mock_schedule.assert_not_called()
         assert "artists" in tableinator.tableinator.completed_files
+
+
+class TestPurgeStaleRows:
+    """Test purge_stale_rows function."""
+
+    @pytest.mark.asyncio
+    async def test_purges_stale_rows(self) -> None:
+        """Test deletes rows older than started_at."""
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[("old_id_1",), ("old_id_2",)])
+
+        mock_cursor_cm = MagicMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        mock_conn_cm = MagicMock()
+        mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = MagicMock()
+        mock_pool.connection.return_value = mock_conn_cm
+
+        import tableinator.tableinator
+
+        tableinator.tableinator.connection_pool = mock_pool
+
+        from tableinator.tableinator import purge_stale_rows
+
+        await purge_stale_rows("artists", "2026-01-01T00:00:00Z")
+
+        mock_cursor.execute.assert_called_once()
+        call_args = mock_cursor.execute.call_args
+        assert "2026-01-01T00:00:00Z" in call_args[0][1]
+
+        tableinator.tableinator.connection_pool = None
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_pool(self) -> None:
+        """Test does nothing when connection_pool is None."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.connection_pool = None
+
+        from tableinator.tableinator import purge_stale_rows
+
+        await purge_stale_rows("artists", "2026-01-01T00:00:00Z")
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_started_at(self) -> None:
+        """Test skips purge when started_at is empty."""
+        mock_pool = MagicMock()
+
+        import tableinator.tableinator
+
+        tableinator.tableinator.connection_pool = mock_pool
+
+        from tableinator.tableinator import purge_stale_rows
+
+        with patch("tableinator.tableinator.logger"):
+            await purge_stale_rows("artists", "")
+
+        mock_pool.connection.assert_not_called()
+        tableinator.tableinator.connection_pool = None
 
 
 class TestMainBatchProcessor:
@@ -2106,7 +2272,7 @@ class TestOnDataMessageNoRecordName:
         mock_message.nack = AsyncMock()
 
         with patch("tableinator.tableinator.logger") as mock_logger:
-            await on_data_message(mock_message)
+            await on_data_message(mock_message, "unknown_type")
 
         # Should have called debug log (else branch - no record_name)
         debug_calls = [str(c) for c in mock_logger.debug.call_args_list]

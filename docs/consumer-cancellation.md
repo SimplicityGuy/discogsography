@@ -4,7 +4,7 @@
 
 **Automatic consumer lifecycle management for completed file processing**
 
-Last Updated: January 2025
+Last Updated: March 2026
 
 </div>
 
@@ -24,8 +24,8 @@ sequenceDiagram
     participant CONS as Consumer<br/>(Graphinator/Tableinator)
     participant TIMER as Cancellation Timer
 
-    EXT->>RMQ: Publish file_complete message
-    RMQ->>CONS: Deliver file_complete message
+    EXT->>RMQ: Publish file_complete to fanout exchange
+    RMQ->>CONS: Deliver file_complete via consumer queue
     CONS->>CONS: Mark file as complete (🎉)
     CONS->>TIMER: Schedule cancellation (300s grace period)
 
@@ -155,8 +155,12 @@ Both the Python and Rust extractor services integrate with consumer cancellation
 This prevents the extractors from incorrectly reporting files as "stalled" when they have actually completed processing
 and their consumers have been canceled.
 
-### Recent Improvements (January 2025)
+### Extraction Completion Signal (March 2026)
 
-- Added `completed_files` tracking in both extractors to prevent false stalled warnings
-- Enhanced progress reporting to show which file types are completed
-- Fixed issue where completed files would show as stalled after 2 minutes of inactivity
+After all files finish, the extractor sends an `extraction_complete` message to all 4 fanout exchanges. Consumers use this signal to:
+
+- **Flush remaining batches** before cleanup
+- **Graphinator**: Delete stub Neo4j nodes (no `sha256` property) created by cross-type MERGE operations
+- **Tableinator**: Purge stale PostgreSQL rows where `updated_at < started_at`
+
+This ensures database record counts match extractor counts after each run. See [File Completion Tracking](file-completion-tracking.md) and [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extraction-cleanup) for details.

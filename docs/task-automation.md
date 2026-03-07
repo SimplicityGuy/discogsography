@@ -48,13 +48,13 @@ Tasks are organized into logical groups for easier navigation:
 
 ### 🧪 Test Group
 
-| Task           | Description                                    |
-| -------------- | ---------------------------------------------- |
-| `test`         | Run unit and integration tests (excluding E2E) |
-| `test-cov`     | Run tests with coverage report                 |
-| `test-e2e`     | Run end-to-end browser tests                   |
-| `test-all`     | Run all tests including E2E                    |
-| `test-api`     | Run API service tests with coverage            |
+| Task       | Description                                    |
+| ---------- | ---------------------------------------------- |
+| `test`     | Run unit and integration tests (excluding E2E) |
+| `test-cov` | Run tests with coverage report                 |
+| `test-e2e` | Run end-to-end browser tests                   |
+| `test-all` | Run all tests including E2E                    |
+| `test-api` | Run API service tests with coverage            |
 
 ### 🚀 Services Group
 

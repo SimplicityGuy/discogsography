@@ -514,10 +514,10 @@ SELECT 'masters', COUNT(*) FROM masters;
 
 **Expected counts** (full dataset):
 
-- Artists: ~2 million
-- Releases: ~15 million
-- Labels: ~1.5 million
-- Masters: ~2 million
+- Artists: ~10 million
+- Releases: ~19 million
+- Labels: ~2.3 million
+- Masters: ~2.5 million
 
 ## 🔍 Service-Specific Issues
 

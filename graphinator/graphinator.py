@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
-    AMQP_EXCHANGE,
+    AMQP_EXCHANGE_PREFIX,
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_GRAPHINATOR,
     DATA_TYPES,
@@ -359,38 +359,32 @@ async def _recover_consumers() -> None:
             active_connection = temp_connection
             active_channel = temp_channel
 
-            # Declare exchange and queues
-            exchange = await active_channel.declare_exchange(
-                AMQP_EXCHANGE,
-                AMQP_EXCHANGE_TYPE,
-                durable=True,
-                auto_delete=False,
-            )
-
-            # Declare dead-letter exchange for poison messages
-            dlx_exchange_name = f"{AMQP_EXCHANGE}.dlx"
-            dlx_exchange = await active_channel.declare_exchange(
-                dlx_exchange_name,
-                "topic",
-                durable=True,
-                auto_delete=False,
-            )
-
             # Set QoS - must match batch_size for efficient batch processing
             await active_channel.set_qos(prefetch_count=200)
 
-            # Queue arguments for quorum queues with DLX
-            queue_args = {
-                "x-queue-type": "quorum",
-                "x-dead-letter-exchange": dlx_exchange_name,
-                "x-delivery-limit": 20,
-            }
-
-            # Declare and bind all queues
+            # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
             for data_type in DATA_TYPES:
+                exchange_name = f"{AMQP_EXCHANGE_PREFIX}-{data_type}"
                 queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+                dlx_name = f"{queue_name}.dlx"
                 dlq_name = f"{queue_name}.dlq"
+
+                # Declare fanout exchange (must match extractor)
+                exchange = await active_channel.declare_exchange(
+                    exchange_name,
+                    AMQP_EXCHANGE_TYPE,
+                    durable=True,
+                    auto_delete=False,
+                )
+
+                # Declare consumer-owned dead-letter exchange
+                dlx_exchange = await active_channel.declare_exchange(
+                    dlx_name,
+                    AMQP_EXCHANGE_TYPE,
+                    durable=True,
+                    auto_delete=False,
+                )
 
                 # Declare DLQ (classic queue for dead letters)
                 dlq = await active_channel.declare_queue(
@@ -399,16 +393,21 @@ async def _recover_consumers() -> None:
                     name=dlq_name,
                     arguments={"x-queue-type": "classic"},
                 )
-                await dlq.bind(dlx_exchange, routing_key=data_type)
+                await dlq.bind(dlx_exchange)
 
-                # Declare main quorum queue
+                # Declare main quorum queue with consumer-owned DLX
+                queue_args = {
+                    "x-queue-type": "quorum",
+                    "x-dead-letter-exchange": dlx_name,
+                    "x-delivery-limit": 20,
+                }
                 queue = await active_channel.declare_queue(
                     auto_delete=False,
                     durable=True,
                     name=queue_name,
                     arguments=queue_args,
                 )
-                await queue.bind(exchange, routing_key=data_type)
+                await queue.bind(exchange)
                 queues[data_type] = queue
 
             # Start consumers for queues with messages
@@ -453,7 +452,7 @@ async def _recover_consumers() -> None:
 async def check_file_completion(
     data: dict[str, Any], data_type: str, message: AbstractIncomingMessage
 ) -> bool:
-    """Check if message is a file completion message and handle it."""
+    """Check if message is a file completion or extraction completion message."""
     if data.get("type") == "file_complete":
         completed_files.add(data_type)
         total_processed = data.get("total_processed", 0)
@@ -468,7 +467,78 @@ async def check_file_completion(
 
         await message.ack()
         return True
+
+    if data.get("type") == "extraction_complete":
+        logger.info(
+            "🏁 Received extraction_complete signal",
+            data_type=data_type,
+            version=data.get("version"),
+        )
+
+        # Flush any remaining batches before cleanup
+        if batch_processor is not None:
+            await batch_processor.flush_all()
+
+        # Clean up stub nodes created by cross-type MERGE operations
+        if graph is not None:
+            await cleanup_stub_nodes(data_type)
+
+        await message.ack()
+        return True
+
     return False
+
+
+async def cleanup_stub_nodes(data_type: str) -> None:
+    """Delete stub nodes that have no sha256 property.
+
+    During extraction, MERGE operations in relationship queries create
+    skeleton nodes for cross-referenced entities (e.g., a release referencing
+    an artist that hasn't been processed yet). Primary records always set
+    sha256, so nodes without it are stubs that were never filled.
+    """
+    if graph is None:
+        return
+
+    # Map data types to their Neo4j labels
+    label_map = {
+        "artists": "Artist",
+        "labels": "Label",
+        "masters": "Master",
+        "releases": "Release",
+    }
+
+    label = label_map.get(data_type)
+    if not label:
+        return
+
+    try:
+        async with await graph.session(database="neo4j") as session:
+            result = await session.run(
+                f"MATCH (n:{label}) WHERE n.sha256 IS NULL "
+                "DETACH DELETE n "
+                "RETURN count(n) AS deleted",
+            )
+            record = await result.single()
+            deleted = record["deleted"] if record else 0
+
+            if deleted > 0:
+                logger.info(
+                    f"🧹 Cleaned up {deleted} stub {label} nodes (no sha256 property)",
+                    data_type=data_type,
+                    deleted=deleted,
+                )
+            else:
+                logger.info(
+                    f"✅ No stub {label} nodes to clean up",
+                    data_type=data_type,
+                )
+    except Exception as e:
+        logger.error(
+            f"❌ Failed to clean up stub {label} nodes",
+            data_type=data_type,
+            error=str(e),
+        )
 
 
 def process_artist(tx: Any, record: dict[str, Any]) -> bool:
@@ -1138,29 +1208,23 @@ async def main() -> None:
         # With batch_size=100 (default), we use 200 to allow 2 batches in parallel
         await channel.set_qos(prefetch_count=200)
 
-        # Declare the shared exchange (must match extractor)
-        exchange = await channel.declare_exchange(
-            AMQP_EXCHANGE, AMQP_EXCHANGE_TYPE, durable=True, auto_delete=False
-        )
-
-        # Declare dead-letter exchange for poison messages
-        dlx_exchange_name = f"{AMQP_EXCHANGE}.dlx"
-        dlx_exchange = await channel.declare_exchange(
-            dlx_exchange_name, "topic", durable=True, auto_delete=False
-        )
-
-        # Queue arguments for quorum queues with DLX
-        queue_args = {
-            "x-queue-type": "quorum",
-            "x-dead-letter-exchange": dlx_exchange_name,
-            "x-delivery-limit": 20,
-        }
-
-        # Declare queues for all data types and bind them to exchange
+        # Declare per-data-type fanout exchanges and consumer-owned queues
         queues = {}
         for data_type in DATA_TYPES:
+            exchange_name = f"{AMQP_EXCHANGE_PREFIX}-{data_type}"
             queue_name = f"{AMQP_QUEUE_PREFIX_GRAPHINATOR}-{data_type}"
+            dlx_name = f"{queue_name}.dlx"
             dlq_name = f"{queue_name}.dlq"
+
+            # Declare fanout exchange (must match extractor)
+            exchange = await channel.declare_exchange(
+                exchange_name, AMQP_EXCHANGE_TYPE, durable=True, auto_delete=False
+            )
+
+            # Declare consumer-owned dead-letter exchange
+            dlx_exchange = await channel.declare_exchange(
+                dlx_name, AMQP_EXCHANGE_TYPE, durable=True, auto_delete=False
+            )
 
             # Declare DLQ (classic queue for dead letters)
             dlq = await channel.declare_queue(
@@ -1169,16 +1233,21 @@ async def main() -> None:
                 name=dlq_name,
                 arguments={"x-queue-type": "classic"},
             )
-            await dlq.bind(dlx_exchange, routing_key=data_type)
+            await dlq.bind(dlx_exchange)
 
-            # Declare main quorum queue
+            # Declare main quorum queue with consumer-owned DLX
+            queue_args = {
+                "x-queue-type": "quorum",
+                "x-dead-letter-exchange": dlx_name,
+                "x-delivery-limit": 20,
+            }
             queue = await channel.declare_queue(
                 auto_delete=False,
                 durable=True,
                 name=queue_name,
                 arguments=queue_args,
             )
-            await queue.bind(exchange, routing_key=data_type)
+            await queue.bind(exchange)
             queues[data_type] = queue
 
         # Start consumers for all data types
@@ -1188,7 +1257,7 @@ async def main() -> None:
             )
 
         logger.info(
-            f"🚀 Graphinator started! Connected to AMQP broker (exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE}). "
+            f"🚀 Graphinator started! Connected to AMQP broker ({len(DATA_TYPES)} fanout exchanges). "
             f"Consuming from {len(DATA_TYPES)} queues. "
             "Ready to process messages into Neo4j. Press CTRL+C to exit"
         )

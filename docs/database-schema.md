@@ -358,19 +358,19 @@ graph LR
 
 ### Complete Relationship Summary
 
-| Relationship | From | To | Properties |
-|---|---|---|---|
-| BY | Release | Artist | None |
-| ON | Release | Label | None |
-| DERIVED_FROM | Release | Master | None |
-| IS | Release | Genre | None |
-| IS | Release | Style | None |
-| MEMBER_OF | Artist | Artist (band) | None |
-| ALIAS_OF | Artist | Artist (primary) | None |
-| SUBLABEL_OF | Label | Label (parent) | None |
-| PART_OF | Style | Genre | None |
-| COLLECTED | User | Release | rating, folder_id, date_added, synced_at |
-| WANTS | User | Release | rating, date_added, synced_at |
+| Relationship | From    | To               | Properties                               |
+| ------------ | ------- | ---------------- | ---------------------------------------- |
+| BY           | Release | Artist           | None                                     |
+| ON           | Release | Label            | None                                     |
+| DERIVED_FROM | Release | Master           | None                                     |
+| IS           | Release | Genre            | None                                     |
+| IS           | Release | Style            | None                                     |
+| MEMBER_OF    | Artist  | Artist (band)    | None                                     |
+| ALIAS_OF     | Artist  | Artist (primary) | None                                     |
+| SUBLABEL_OF  | Label   | Label (parent)   | None                                     |
+| PART_OF      | Style   | Genre            | None                                     |
+| COLLECTED    | User    | Release          | rating, folder_id, date_added, synced_at |
+| WANTS        | User    | Release          | rating, date_added, synced_at            |
 
 ### Common Queries
 
@@ -449,7 +449,7 @@ Every message includes:
 }
 ```
 
-File completion markers:
+File completion markers (sent per data type when a file finishes):
 
 ```json
 {
@@ -460,6 +460,25 @@ File completion markers:
   "timestamp": "2026-03-05T12:45:23.456Z"
 }
 ```
+
+Extraction completion signal (sent once to all 4 exchanges after all files finish):
+
+```json
+{
+  "type": "extraction_complete",
+  "version": "20260301",
+  "timestamp": "2026-03-05T14:00:00.000Z",
+  "started_at": "2026-03-05T10:00:00.000Z",
+  "record_counts": {
+    "artists": 9957079,
+    "labels": 2349729,
+    "masters": 2345678,
+    "releases": 18952204
+  }
+}
+```
+
+The `started_at` timestamp records when the extraction began and is used by consumers for post-extraction cleanup (see [Post-Extraction Cleanup](#post-extraction-cleanup)).
 
 ### Raw Artist Message
 
@@ -709,19 +728,20 @@ After `normalize_record("releases", ...)`:
 ```
 
 Notes:
+
 - `year` is parsed from the `released` date field (`"1969-09-26"` -> `1969`) by `_parse_year_int()`.
 - `master_id` is extracted from the `#text` field of the dict.
 - `formats` raw data is preserved; the graphinator separately calls `extract_format_names()` to produce `["Vinyl"]` for storage on the Release node.
 
 ### XML-to-JSON Conventions
 
-| XML Pattern | JSON Result |
-|---|---|
-| `<name>Text</name>` | `"name": "Text"` |
-| `<el id="1">Text</el>` | `"el": {"@id": "1", "#text": "Text"}` |
-| `<el id="1"/>` | `"el": {"@id": "1"}` |
-| Multiple `<el>` children | `"el": [...]` (array) |
-| Single `<el>` child | `"el": {...}` (object, not array) |
+| XML Pattern              | JSON Result                           |
+| ------------------------ | ------------------------------------- |
+| `<name>Text</name>`      | `"name": "Text"`                      |
+| `<el id="1">Text</el>`   | `"el": {"@id": "1", "#text": "Text"}` |
+| `<el id="1"/>`           | `"el": {"@id": "1"}`                  |
+| Multiple `<el>` children | `"el": [...]` (array)                 |
+| Single `<el>` child      | `"el": {...}` (object, not array)     |
 
 This single-vs-array ambiguity is why `normalize_record()` exists: it normalizes all list-like fields to consistent arrays.
 
@@ -744,15 +764,19 @@ All entity tables follow the same basic structure with JSONB columns for flexibi
 
 ```sql
 CREATE TABLE IF NOT EXISTS <entity_type> (
-    data_id VARCHAR PRIMARY KEY,     -- Discogs entity ID
-    hash VARCHAR NOT NULL,            -- SHA256 hash for change detection
-    data JSONB NOT NULL              -- Complete normalized record data
+    data_id    VARCHAR PRIMARY KEY,          -- Discogs entity ID
+    hash       VARCHAR NOT NULL,             -- SHA256 hash for change detection
+    data       JSONB NOT NULL,               -- Complete normalized record data
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()  -- Last upsert time (used for stale row purge)
 );
 
 CREATE INDEX IF NOT EXISTS idx_<entity>_hash ON <entity> (hash);
+CREATE INDEX IF NOT EXISTS idx_<entity>_updated_at ON <entity> (updated_at);
 ```
 
 The `data` column stores the **full normalized record** from `normalize_record()`, not just the properties written to Neo4j. This means PostgreSQL has access to all fields (profile, tracklist, notes, etc.) while Neo4j only stores the subset needed for graph traversal.
+
+The `updated_at` column is refreshed to `NOW()` on every upsert — even when the row's hash is unchanged — so the [post-extraction cleanup](#post-extraction-cleanup) can correctly identify stale rows. The `hash` and `data` columns are only rewritten when the hash actually differs, avoiding unnecessary WAL traffic for the large JSONB payload.
 
 #### Entity-Specific Indexes
 
@@ -932,20 +956,31 @@ graph TD
 Both graphinator and tableinator follow the same normalization pipeline:
 
 1. Raw JSON message received from RabbitMQ
-2. `normalize_record(data_type, data)` called to flatten XML-dict structures
-3. Hash-based deduplication check (skip if unchanged)
-4. Write to database (Neo4j nodes/relationships or PostgreSQL JSONB)
-5. Acknowledge message
+1. `normalize_record(data_type, data)` called to flatten XML-dict structures
+1. Hash-based deduplication check (skip data rewrite if unchanged, but always refresh `updated_at`)
+1. Write to database (Neo4j nodes/relationships or PostgreSQL JSONB)
+1. Acknowledge message
 
 Both batch and single-message processing paths call `normalize_record()` at the same point, ensuring identical data reaches the database regardless of processing mode.
 
+### Post-Extraction Cleanup
+
+After all files are processed, the extractor sends an `extraction_complete` message to all 4 fanout exchanges. Each consumer handles cleanup for its database:
+
+**Graphinator (Neo4j)** — Deletes stub nodes that have no `sha256` property. During extraction, `MERGE` operations in relationship queries create skeleton nodes for cross-referenced entities (e.g., a release referencing an artist that hasn't been processed yet). Primary records always set `sha256`, so nodes without it are stubs that were never filled by their own data file.
+
+**Tableinator (PostgreSQL)** — Purges stale rows where `updated_at < started_at`. The `started_at` timestamp from the `extraction_complete` message marks when the extraction began. Any row not touched during the current run was either removed from the Discogs dump or is left over from a prior extraction.
+
+This ensures database counts match the extractor's record counts after each run.
+
 ### Consistency Guarantees
 
-- **Hash-based deduplication**: Prevents duplicate records
+- **Hash-based deduplication**: Skips data rewrite for unchanged records (but refreshes `updated_at`)
 - **Idempotent operations**: Re-processing same data is safe
 - **Eventual consistency**: Both databases will converge to same state
 - **No distributed transactions**: Services operate independently
 - **Identical normalization**: Both paths use `normalize_record()` before writing
+- **Post-extraction cleanup**: Stale rows and stub nodes are purged after each extraction
 
 ### Data Flow
 
@@ -953,8 +988,10 @@ Both batch and single-message processing paths call `normalize_record()` at the 
 1. Extractor parses XML and computes SHA256 hash
 1. Message published to RabbitMQ with data + hash
 1. Graphinator normalizes and writes nodes and relationships to Neo4j
-1. Tableinator normalizes and writes JSONB records to PostgreSQL
+1. Tableinator normalizes and upserts JSONB records to PostgreSQL (always refreshing `updated_at`, only rewriting data when hash differs)
 1. New/changed records inserted/updated in both databases
+1. After all files complete, extractor sends `extraction_complete` to all exchanges
+1. Graphinator deletes stub nodes (no `sha256`); Tableinator purges stale rows (`updated_at < started_at`)
 
 ## Performance Considerations
 
@@ -1039,6 +1076,6 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 - [Neo4j Indexing](neo4j-indexing.md) - Advanced indexing strategies
 - [State Marker System](state-marker-system.md) - Extractor progress tracking
 
----
+______________________________________________________________________
 
-**Last Updated**: 2026-03-05
+**Last Updated**: 2026-03-07

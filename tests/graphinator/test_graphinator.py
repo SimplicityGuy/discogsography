@@ -814,6 +814,155 @@ class TestCheckFileCompletion:
         assert result is True
         mock_schedule.assert_called_once_with("artists", mock_queue)
 
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.batch_processor", None)
+    @patch("graphinator.graphinator.graph", None)
+    async def test_handles_extraction_complete_message(self) -> None:
+        """Test handles extraction_complete message correctly."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+            "started_at": "2026-01-01T00:00:00Z",
+            "record_counts": {"artists": 100},
+        }
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_extraction_complete_flushes_batches(self) -> None:
+        """Test extraction_complete flushes batch processor before cleanup."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_batch = AsyncMock()
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+        }
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = None  # Skip cleanup
+        graphinator.graphinator.batch_processor = mock_batch
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        mock_batch.flush_all.assert_called_once()
+        # Reset
+        graphinator.graphinator.batch_processor = None
+
+    @pytest.mark.asyncio
+    async def test_extraction_complete_triggers_stub_cleanup(self) -> None:
+        """Test extraction_complete triggers stub node cleanup."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+        }
+
+        mock_driver = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_driver.session.return_value = mock_session_ctx
+
+        mock_result = AsyncMock()
+        mock_record = {"deleted": 5}
+        mock_result.single = AsyncMock(return_value=mock_record)
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.batch_processor = None
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        # Verify cleanup query was run for Artist nodes
+        mock_session.run.assert_called_once()
+        call_args = mock_session.run.call_args[0][0]
+        assert "Artist" in call_args
+        assert "sha256 IS NULL" in call_args
+        assert "DETACH DELETE" in call_args
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+
+class TestCleanupStubNodes:
+    """Test cleanup_stub_nodes function."""
+
+    @pytest.mark.asyncio
+    async def test_cleanup_with_stubs_found(self) -> None:
+        """Test cleanup deletes stub nodes and logs count."""
+        mock_driver = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_driver.session.return_value = mock_session_ctx
+
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"deleted": 17138})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import cleanup_stub_nodes
+
+        await cleanup_stub_nodes("artists")
+
+        mock_session.run.assert_called_once()
+        call_args = mock_session.run.call_args[0][0]
+        assert "Artist" in call_args
+        assert "sha256 IS NULL" in call_args
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_skips_unknown_data_type(self) -> None:
+        """Test cleanup does nothing for unknown data types."""
+        mock_driver = AsyncMock()
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import cleanup_stub_nodes
+
+        await cleanup_stub_nodes("unknown_type")
+
+        mock_driver.session.assert_not_called()
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    async def test_cleanup_skips_when_no_driver(self) -> None:
+        """Test cleanup does nothing when graph driver is None."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = None
+
+        from graphinator.graphinator import cleanup_stub_nodes
+
+        # Should not raise
+        await cleanup_stub_nodes("artists")
+
 
 class TestScheduleConsumerCancellation:
     """Test schedule_consumer_cancellation function."""
@@ -2180,6 +2329,65 @@ class TestRecoverConsumersEdgeCases:
 
         # No connection should be established
         assert graphinator.graphinator.active_connection is None
+
+    @pytest.mark.asyncio
+    async def test_recover_declares_fanout_exchanges_and_queues(self) -> None:
+        """Test that _recover_consumers declares per-data-type fanout exchanges and consumer-owned DLXs."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.active_connection = None
+        graphinator.graphinator.active_channel = None
+        graphinator.graphinator.consumer_tags = {}
+        graphinator.graphinator.completed_files = set()
+        graphinator.graphinator.queues = {}
+
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+
+        # Queue with messages for passive declare check
+        mock_declared_queue = AsyncMock()
+        mock_declared_queue.declaration_result.message_count = 10
+
+        # Queue/exchange returned by full declarations
+        mock_exchange = AsyncMock()
+        mock_queue = AsyncMock()
+        mock_queue.consume = AsyncMock(return_value="consumer-tag-artists")
+        mock_queue.bind = AsyncMock()
+
+        mock_channel.declare_exchange = AsyncMock(return_value=mock_exchange)
+        mock_channel.declare_queue = AsyncMock(return_value=mock_queue)
+        mock_channel.set_qos = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+
+        # First 4 calls are passive declares (one per data type), rest are full declares
+        call_count = [0]
+
+        async def declare_queue_side_effect(**kwargs: Any) -> Any:
+            call_count[0] += 1
+            if kwargs.get("passive"):
+                return mock_declared_queue
+            result = AsyncMock()
+            result.consume = AsyncMock(return_value=f"consumer-tag-{call_count[0]}")
+            result.bind = AsyncMock()
+            return result
+
+        mock_channel.declare_queue = AsyncMock(side_effect=declare_queue_side_effect)
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_rabbitmq_manager.connect = AsyncMock(return_value=mock_connection)
+
+        with (
+            patch("graphinator.graphinator.rabbitmq_manager", mock_rabbitmq_manager),
+            patch("graphinator.graphinator.logger"),
+        ):
+            from graphinator.graphinator import _recover_consumers
+
+            await _recover_consumers()
+
+        # Should have declared exchanges (2 per data type: fanout + DLX = 8 total)
+        assert mock_channel.declare_exchange.call_count == 8
+        # Should have set active connection
+        assert graphinator.graphinator.active_connection is mock_connection
 
 
 class TestProcessArtistEdgeCases:

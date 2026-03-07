@@ -4,7 +4,7 @@
 
 **Intelligent file completion tracking and stalled detection management**
 
-Last Updated: January 2025
+Last Updated: March 2026
 
 [🏠 Back to Docs](README.md) | [🔄 Consumer Cancellation](consumer-cancellation.md)
 
@@ -24,20 +24,25 @@ optimal resource management.
 graph LR
     A[File Processing Starts] --> B[Records Extracted]
     B --> C[Messages Sent to RabbitMQ]
-    C --> D[File Complete Message Sent]
+    C --> D[file_complete Published to Fanout Exchange]
     D --> E[File Marked as Complete]
     E --> F[Consumer Cancellation Scheduled]
     F --> G[Stalled Detection Skips File]
+    G --> H{All Files Done?}
+    H -->|Yes| I[extraction_complete Sent to All Exchanges]
+    I --> J[Post-Extraction Cleanup]
 
     style D fill:#f9f,stroke:#333,stroke-width:4px
     style E fill:#9f9,stroke:#333,stroke-width:4px
+    style I fill:#ff9,stroke:#333,stroke-width:4px
+    style J fill:#9ff,stroke:#333,stroke-width:4px
 ```
 
 ### 2. Completion Tracking
 
 When a file finishes processing:
 
-1. **Python/Extractor** sends a `file_complete` message with:
+1. **Extractor** sends a `file_complete` message with:
 
    - `type`: "file_complete"
    - `data_type`: The type of data (artists, labels, masters, releases)
@@ -45,12 +50,31 @@ When a file finishes processing:
    - `total_processed`: Number of records processed
    - `file`: Original filename
 
-1. **Python/Extractor** adds the data type to `completed_files` set
+1. **Extractor** adds the data type to `completed_files` set
 
 1. **Consumers** (graphinator/tableinator) receive the message and:
 
    - Mark the file as complete (🎉 in logs)
    - Schedule consumer cancellation after grace period
+
+### 2a. Extraction Completion
+
+After **all** files finish processing, the extractor sends an `extraction_complete` message to all 4 fanout exchanges:
+
+1. **Extractor** builds an `extraction_complete` message with:
+
+   - `type`: "extraction_complete"
+   - `version`: The Discogs data version (e.g., "20260301")
+   - `timestamp`: Completion time
+   - `started_at`: When the extraction began (used for stale row detection)
+   - `record_counts`: Per-type record counts
+
+1. **Consumers** receive the message on each queue and perform post-extraction cleanup:
+
+   - **Graphinator**: Flushes remaining batches, then deletes stub nodes without a `sha256` property (skeleton nodes created by cross-type MERGE operations)
+   - **Tableinator**: Flushes remaining batches, then purges rows where `updated_at < started_at` (stale rows from prior extractions)
+
+This ensures database counts match the extractor's record counts after each run.
 
 ### 3. Stalled Detection
 
@@ -118,8 +142,11 @@ No additional configuration needed - the feature works automatically with existi
 
 **Consumers**:
 
-- `🎉 File processing complete for {type}!` - Completion received
+- `🎉 File processing complete for {type}!` - File completion received
 - `🔌 Canceling consumer for {type}` - Cancellation scheduled
+- `🏁 Received extraction_complete signal` - Extraction complete received
+- `🧹 Cleaned up N stub {Label} nodes` - Graphinator stub node cleanup
+- `🧹 Purged N stale {type} rows` - Tableinator stale row purge
 
 ## Troubleshooting
 
@@ -165,9 +192,11 @@ docker-compose logs -f extractor | grep -E "(Completed file types|Stalled extrac
 
 ### Integration Points
 
-1. **Python/Extractor → RabbitMQ**: Sends completion message
-1. **Python/Extractor Internal**: Updates completion tracking
+1. **Extractor → RabbitMQ**: Sends `file_complete` per data type
+1. **Extractor → RabbitMQ**: Sends `extraction_complete` to all exchanges after all files finish
+1. **Extractor Internal**: Updates completion tracking
 1. **Consumers → RabbitMQ**: Cancel queue consumers
+1. **Consumers → Database**: Post-extraction cleanup (stub nodes / stale rows)
 1. **Progress Reporter**: Excludes completed files
 
 ## Future Enhancements

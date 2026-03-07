@@ -126,12 +126,12 @@ If a user attempts to start the Discogs OAuth flow before credentials are config
 
 ### Authentication
 
-| Method | Path                 | Auth Required | Rate Limit | Description                     |
-| ------ | -------------------- | ------------- | ---------- | ------------------------------- |
-| POST   | `/api/auth/register` | No            | 3/min      | Register a new user account     |
-| POST   | `/api/auth/login`    | No            | 5/min      | Login and receive JWT token     |
+| Method | Path                 | Auth Required | Rate Limit | Description                      |
+| ------ | -------------------- | ------------- | ---------- | -------------------------------- |
+| POST   | `/api/auth/register` | No            | 3/min      | Register a new user account      |
+| POST   | `/api/auth/login`    | No            | 5/min      | Login and receive JWT token      |
 | POST   | `/api/auth/logout`   | Yes           | —          | Revoke JWT token (JTI blacklist) |
-| GET    | `/api/auth/me`       | Yes           | —          | Get current user details        |
+| GET    | `/api/auth/me`       | Yes           | —          | Get current user details         |
 
 ### Discogs OAuth
 
@@ -177,12 +177,12 @@ Personalized endpoints that return data from the user's synced Discogs collectio
 
 "Complete My Collection" endpoints that find releases the user does not own.
 
-| Method | Path                                     | Auth Required | Description                               |
-| ------ | ---------------------------------------- | ------------- | ----------------------------------------- |
-| GET    | `/api/collection/formats`                | Yes           | Distinct format names in user's collection |
-| GET    | `/api/collection/gaps/label/{label_id}`  | Yes           | Missing releases on a label               |
-| GET    | `/api/collection/gaps/artist/{artist_id}`| Yes           | Missing releases by an artist             |
-| GET    | `/api/collection/gaps/master/{master_id}`| Yes           | Missing pressings of a master release     |
+| Method | Path                                      | Auth Required | Description                                |
+| ------ | ----------------------------------------- | ------------- | ------------------------------------------ |
+| GET    | `/api/collection/formats`                 | Yes           | Distinct format names in user's collection |
+| GET    | `/api/collection/gaps/label/{label_id}`   | Yes           | Missing releases on a label                |
+| GET    | `/api/collection/gaps/artist/{artist_id}` | Yes           | Missing releases by an artist              |
+| GET    | `/api/collection/gaps/master/{master_id}` | Yes           | Missing pressings of a master release      |
 
 ### Snapshots
 

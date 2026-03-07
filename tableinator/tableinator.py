@@ -11,7 +11,7 @@ from typing import Any
 import structlog
 from aio_pika.abc import AbstractIncomingMessage
 from common import (
-    AMQP_EXCHANGE,
+    AMQP_EXCHANGE_PREFIX,
     AMQP_EXCHANGE_TYPE,
     AMQP_QUEUE_PREFIX_TABLEINATOR,
     DATA_TYPES,
@@ -374,38 +374,32 @@ async def _recover_consumers() -> None:
             active_connection = temp_connection
             active_channel = temp_channel
 
-            # Declare exchange and queues
-            exchange = await active_channel.declare_exchange(
-                AMQP_EXCHANGE,
-                AMQP_EXCHANGE_TYPE,
-                durable=True,
-                auto_delete=False,
-            )
-
-            # Declare dead-letter exchange for poison messages
-            dlx_exchange_name = f"{AMQP_EXCHANGE}.dlx"
-            dlx_exchange = await active_channel.declare_exchange(
-                dlx_exchange_name,
-                "topic",
-                durable=True,
-                auto_delete=False,
-            )
-
             # Set QoS - must match batch_size for efficient batch processing
             await active_channel.set_qos(prefetch_count=200)
 
-            # Queue arguments for quorum queues with DLX
-            queue_args = {
-                "x-queue-type": "quorum",
-                "x-dead-letter-exchange": dlx_exchange_name,
-                "x-delivery-limit": 20,
-            }
-
-            # Declare and bind all queues
+            # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
             for data_type in DATA_TYPES:
+                exchange_name = f"{AMQP_EXCHANGE_PREFIX}-{data_type}"
                 queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{data_type}"
+                dlx_name = f"{queue_name}.dlx"
                 dlq_name = f"{queue_name}.dlq"
+
+                # Declare fanout exchange (must match extractor)
+                exchange = await active_channel.declare_exchange(
+                    exchange_name,
+                    AMQP_EXCHANGE_TYPE,
+                    durable=True,
+                    auto_delete=False,
+                )
+
+                # Declare consumer-owned dead-letter exchange
+                dlx_exchange = await active_channel.declare_exchange(
+                    dlx_name,
+                    AMQP_EXCHANGE_TYPE,
+                    durable=True,
+                    auto_delete=False,
+                )
 
                 # Declare DLQ (classic queue for dead letters)
                 dlq = await active_channel.declare_queue(
@@ -414,22 +408,28 @@ async def _recover_consumers() -> None:
                     name=dlq_name,
                     arguments={"x-queue-type": "classic"},
                 )
-                await dlq.bind(dlx_exchange, routing_key=data_type)
+                await dlq.bind(dlx_exchange)
 
-                # Declare main quorum queue
+                # Declare main quorum queue with consumer-owned DLX
+                queue_args = {
+                    "x-queue-type": "quorum",
+                    "x-dead-letter-exchange": dlx_name,
+                    "x-delivery-limit": 20,
+                }
                 queue = await active_channel.declare_queue(
                     auto_delete=False,
                     durable=True,
                     name=queue_name,
                     arguments=queue_args,
                 )
-                await queue.bind(exchange, routing_key=data_type)
+                await queue.bind(exchange)
                 queues[data_type] = queue
 
             # Start consumers for queues with messages
             for data_type, msg_count in queues_with_messages:
                 if data_type in queues and data_type not in consumer_tags:
-                    consumer_tag = await queues[data_type].consume(on_data_message)
+                    handler = make_data_handler(data_type)
+                    consumer_tag = await queues[data_type].consume(handler)
                     consumer_tags[data_type] = consumer_tag
                     # Remove from completed files so it will be processed
                     completed_files.discard(data_type)
@@ -463,7 +463,67 @@ async def _recover_consumers() -> None:
             pass
 
 
-async def on_data_message(message: AbstractIncomingMessage) -> None:
+async def purge_stale_rows(data_type: str, started_at: str) -> None:
+    """Delete rows from prior extractions that were not updated in the current run.
+
+    The extraction_complete message includes started_at — the time the extraction
+    began. Any row with updated_at < started_at was not touched by the current
+    extraction and is stale (removed from the Discogs dump or from a prior run).
+    """
+    if connection_pool is None:
+        return
+
+    if not started_at:
+        logger.warning(
+            "⚠️ No started_at in extraction_complete, skipping stale row purge",
+            data_type=data_type,
+        )
+        return
+
+    try:
+        async with connection_pool.connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                    sql.SQL(
+                        "DELETE FROM {table} WHERE updated_at < %s RETURNING data_id"
+                    ).format(table=sql.Identifier(data_type)),
+                    (started_at,),
+                )
+                deleted_rows = await cursor.fetchall()
+                deleted_count = len(deleted_rows)
+
+                if deleted_count > 0:
+                    logger.info(
+                        f"🧹 Purged {deleted_count} stale {data_type} rows "
+                        f"(not updated since extraction started)",
+                        data_type=data_type,
+                        deleted=deleted_count,
+                    )
+                else:
+                    logger.info(
+                        f"✅ No stale {data_type} rows to purge",
+                        data_type=data_type,
+                    )
+    except Exception as e:
+        logger.error(
+            f"❌ Failed to purge stale {data_type} rows",
+            data_type=data_type,
+            error=str(e),
+        )
+
+
+def make_data_handler(
+    data_type: str,
+) -> Any:
+    """Create a per-data-type message handler that injects data_type context."""
+
+    async def handler(message: AbstractIncomingMessage) -> None:
+        await on_data_message(message, data_type)
+
+    return handler
+
+
+async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> None:
     if shutdown_requested:
         logger.info("🛑 Shutdown requested, rejecting new messages")
         await message.nack(requeue=True)
@@ -471,7 +531,6 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
     try:
         data: dict[str, Any] = loads(message.body)
-        data_type: str = message.routing_key or "unknown"
 
         # Check if this is a file completion message
         if data.get("type") == "file_complete":
@@ -485,6 +544,25 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
             # Schedule consumer cancellation if enabled
             if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
                 await schedule_consumer_cancellation(data_type, queues[data_type])
+
+            await message.ack()
+            return
+
+        # Check if this is an extraction completion message
+        if data.get("type") == "extraction_complete":
+            logger.info(
+                "🏁 Received extraction_complete signal",
+                data_type=data_type,
+                version=data.get("version"),
+            )
+
+            # Flush any remaining batches before cleanup
+            if batch_processor is not None:
+                await batch_processor.flush_all()
+
+            # Purge stale rows from prior extractions
+            if connection_pool is not None:
+                await purge_stale_rows(data_type, data.get("started_at", ""))
 
             await message.ack()
             return
@@ -564,14 +642,19 @@ async def on_data_message(message: AbstractIncomingMessage) -> None:
 
         async with connection_pool.connection() as conn:
             async with conn.cursor() as cursor:
-                # Single conditional upsert: PostgreSQL skips the write when hash is unchanged,
-                # eliminating the prior SELECT round-trip entirely.
+                # Conditional upsert: only rewrites hash and data when hash differs,
+                # but always refreshes updated_at so post-extraction stale row
+                # purge does not delete unchanged-but-still-present records.
                 await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                     sql.SQL(
-                        "INSERT INTO {table} (hash, data_id, data) VALUES (%s, %s, %s) "
+                        "INSERT INTO {table} (hash, data_id, data, updated_at) "
+                        "VALUES (%s, %s, %s, NOW()) "
                         "ON CONFLICT (data_id) DO UPDATE "
-                        "SET hash = EXCLUDED.hash, data = EXCLUDED.data "
-                        "WHERE {table}.hash != EXCLUDED.hash;"
+                        "SET hash = CASE WHEN {table}.hash != EXCLUDED.hash "
+                        "THEN EXCLUDED.hash ELSE {table}.hash END, "
+                        "data = CASE WHEN {table}.hash != EXCLUDED.hash "
+                        "THEN EXCLUDED.data ELSE {table}.data END, "
+                        "updated_at = NOW();"
                     ).format(table=sql.Identifier(data_type)),
                     (
                         data["sha256"],
@@ -884,29 +967,23 @@ async def main() -> None:
         # With batch_size=100 (default), we use 200 to allow 2 batches in parallel
         await channel.set_qos(prefetch_count=200)
 
-        # Declare the shared exchange (must match extractor)
-        exchange = await channel.declare_exchange(
-            AMQP_EXCHANGE, AMQP_EXCHANGE_TYPE, durable=True, auto_delete=False
-        )
-
-        # Declare dead-letter exchange for poison messages
-        dlx_exchange_name = f"{AMQP_EXCHANGE}.dlx"
-        dlx_exchange = await channel.declare_exchange(
-            dlx_exchange_name, "topic", durable=True, auto_delete=False
-        )
-
-        # Queue arguments for quorum queues with DLX
-        queue_args = {
-            "x-queue-type": "quorum",
-            "x-dead-letter-exchange": dlx_exchange_name,
-            "x-delivery-limit": 20,
-        }
-
-        # Declare queues for all data types and bind them to exchange
+        # Declare per-data-type fanout exchanges and consumer-owned queues
         queues = {}
         for data_type in DATA_TYPES:
+            exchange_name = f"{AMQP_EXCHANGE_PREFIX}-{data_type}"
             queue_name = f"{AMQP_QUEUE_PREFIX_TABLEINATOR}-{data_type}"
+            dlx_name = f"{queue_name}.dlx"
             dlq_name = f"{queue_name}.dlq"
+
+            # Declare fanout exchange (must match extractor)
+            exchange = await channel.declare_exchange(
+                exchange_name, AMQP_EXCHANGE_TYPE, durable=True, auto_delete=False
+            )
+
+            # Declare consumer-owned dead-letter exchange
+            dlx_exchange = await channel.declare_exchange(
+                dlx_name, AMQP_EXCHANGE_TYPE, durable=True, auto_delete=False
+            )
 
             # Declare DLQ (classic queue for dead letters)
             dlq = await channel.declare_queue(
@@ -915,24 +992,30 @@ async def main() -> None:
                 name=dlq_name,
                 arguments={"x-queue-type": "classic"},
             )
-            await dlq.bind(dlx_exchange, routing_key=data_type)
+            await dlq.bind(dlx_exchange)
 
-            # Declare main quorum queue
+            # Declare main quorum queue with consumer-owned DLX
+            queue_args = {
+                "x-queue-type": "quorum",
+                "x-dead-letter-exchange": dlx_name,
+                "x-delivery-limit": 20,
+            }
             queue = await channel.declare_queue(
                 auto_delete=False,
                 durable=True,
                 name=queue_name,
                 arguments=queue_args,
             )
-            await queue.bind(exchange, routing_key=data_type)
+            await queue.bind(exchange)
             queues[data_type] = queue
 
         # Start consumers for all data types
         for data_type in DATA_TYPES:
-            consumer_tags[data_type] = await queues[data_type].consume(on_data_message)
+            handler = make_data_handler(data_type)
+            consumer_tags[data_type] = await queues[data_type].consume(handler)
 
         logger.info(
-            f"🚀 Tableinator started! Connected to AMQP broker (exchange: {AMQP_EXCHANGE}, type: {AMQP_EXCHANGE_TYPE}). "
+            f"🚀 Tableinator started! Connected to AMQP broker ({len(DATA_TYPES)} fanout exchanges). "
             f"Consuming from {len(DATA_TYPES)} queues with connection pool (max 20 connections). "
             "Ready to process messages into PostgreSQL. Press CTRL+C to exit"
         )

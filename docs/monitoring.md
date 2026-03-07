@@ -642,8 +642,6 @@ docker-compose logs -f | grep "📊"
 
 # Expected rates
 # - Extractor: 20,000-400,000+ records/s
-# - Graphinator: 1,000-2,000 records/s
-# - Tableinator: 3,000-5,000 records/s
 ```
 
 ### Resource Usage
@@ -699,4 +697,4 @@ LIMIT 10;
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-21
+**Last Updated**: 2026-03-07

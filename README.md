@@ -28,7 +28,7 @@
 
 ## 🎯 What is Discogsography?
 
-Discogsography transforms monthly Discogs data dumps (50GB+ compressed XML) into:
+Discogsography transforms monthly Discogs data dumps (~11GB compressed XML) into:
 
 - **🔗 Neo4j Graph Database**: Navigate complex music industry relationships
 - **🐘 PostgreSQL Database**: High-performance queries and full-text search
@@ -41,24 +41,24 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 ### ⚙️ Core Services
 
-| Service                                                       | Purpose                                | Key Technologies                                  |
-| ------------------------------------------------------------- | -------------------------------------- | ------------------------------------------------- |
-| **[🔐](docs/emoji-guide.md#service-identifiers) API**         | User accounts, JWT auth, and collection sync | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0 |
-| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring            | `FastAPI`, WebSocket, reactive UI                 |
+| Service                                                       | Purpose                                          | Key Technologies                                             |
+| ------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------ |
+| **[🔐](docs/emoji-guide.md#service-identifiers) API**         | User accounts, JWT auth, and collection sync     | `FastAPI`, `psycopg3`, `redis`, Discogs OAuth 1.0            |
+| **[📊](docs/emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring                      | `FastAPI`, WebSocket, reactive UI                            |
 | **[🔍](docs/emoji-guide.md#service-identifiers) Explore**     | Serves graph exploration frontend (static files) | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` |
-| **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor  | `tokio`, `quick-xml`, `lapin`                     |
-| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs          | `neo4j-driver`, graph algorithms                  |
-| **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initializer   | `neo4j-driver`, `psycopg3`                        |
-| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables    | `psycopg3`, JSONB, full-text search               |
+| **[⚡](docs/emoji-guide.md#service-identifiers) Extractor**   | High-performance Rust-based extractor            | `tokio`, `quick-xml`, `lapin`                                |
+| **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs                    | `neo4j-driver`, graph algorithms                             |
+| **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initializer             | `neo4j-driver`, `psycopg3`                                   |
+| **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables              | `psycopg3`, JSONB, full-text search                          |
 
 ### 📐 System Architecture
 
 ```mermaid
 graph TD
-    S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~50GB XML")]
+    S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~11GB XML")]
     SCHEMA[["🔧 Schema-Init<br/>One-shot DDL<br/>Initialiser"]]
     EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
-    RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>8 Queues + DLQs"}}
+    RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>4 Fanout Exchanges"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
     REDIS[("🔴 Redis<br/>Cache Layer<br/>Query Cache")]
@@ -108,9 +108,9 @@ graph TD
 
 ## 🌟 Key Features
 
-- **⚡ High-Speed Processing**: 5,000–10,000 records/second XML parsing with Rust-based extractor
+- **⚡ High-Speed Processing**: 20,000–400,000+ records/second XML parsing with Rust-based extractor
 - **🔄 Smart Deduplication**: SHA256 hash-based change detection prevents reprocessing
-- **📈 Handles Big Data**: Processes 15M+ releases, 2M+ artists across ~50GB compressed XML
+- **📈 Handles Big Data**: Processes 19M+ releases, 10M+ artists across ~11GB compressed XML
 - **🔁 Auto-Recovery**: Automatic retries with exponential backoff and dead letter queues
 - **🐋 Container Security**: Non-root users, read-only filesystems, dropped capabilities
 - **📝 Type Safety**: Full type hints with strict mypy validation and Bandit security scanning
@@ -169,12 +169,12 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 
 ### 🔧 Operations
 
-| Document                                                     | Purpose                                          |
-| ------------------------------------------------------------ | ------------------------------------------------ |
-| **[Troubleshooting Guide](docs/troubleshooting.md)**         | 🔧 Common issues, solutions, and debugging steps |
-| **[Maintenance Guide](docs/maintenance.md)**                 | 🔄 Package upgrades, dependency management       |
-| **[Performance Guide](docs/performance-guide.md)**           | ⚡ Database tuning, hardware specs, optimization |
-| **[Database Resilience](docs/database-resilience.md)**       | 💾 Database connection patterns & error handling |
+| Document                                               | Purpose                                          |
+| ------------------------------------------------------ | ------------------------------------------------ |
+| **[Troubleshooting Guide](docs/troubleshooting.md)**   | 🔧 Common issues, solutions, and debugging steps |
+| **[Maintenance Guide](docs/maintenance.md)**           | 🔄 Package upgrades, dependency management       |
+| **[Performance Guide](docs/performance-guide.md)**     | ⚡ Database tuning, hardware specs, optimization |
+| **[Database Resilience](docs/database-resilience.md)** | 💾 Database connection patterns & error handling |
 
 ### 🐋 Infrastructure & CI/CD
 

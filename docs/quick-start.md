@@ -16,13 +16,12 @@ This guide will help you get Discogsography running quickly, whether you're usin
 
 ### System Requirements
 
-| Requirement | Minimum | Recommended | Notes                                             |
-| ----------- | ------- | ----------- | ------------------------------------------------- |
-| **Python**  | 3.13+   | Latest      | Install via [uv](https://github.com/astral-sh/uv) |
-| **Docker**  | 20.10+  | Latest      | With Docker Compose v2                            |
-| **Storage** | 100GB   | 200GB SSD   | For data + processing                             |
-| **Memory**  | 8GB     | 16GB+       | More RAM = faster processing                      |
-| **Network** | 10 Mbps | 100 Mbps+   | Initial download ~50GB                            |
+| Requirement | Details                                                   |
+| ----------- | --------------------------------------------------------- |
+| **Python**  | 3.13+ — install via [uv](https://github.com/astral-sh/uv) |
+| **Docker**  | 20.10+ with Docker Compose v2                             |
+| **Storage** | 200GB free SSD (~100GB databases + room for growth)       |
+| **Memory**  | 16GB RAM                                                  |
 
 ### Required Software
 
@@ -412,4 +411,4 @@ See [Development Guide](development.md) and [Contributing Guide](contributing.md
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-02-25
+**Last Updated**: 2026-03-07
