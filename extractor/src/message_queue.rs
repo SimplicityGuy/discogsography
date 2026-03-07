@@ -7,7 +7,7 @@ use tokio::time::sleep;
 use tracing::{debug, info, warn};
 use url::Url;
 
-use crate::types::{DataMessage, DataType, FileCompleteMessage, Message};
+use crate::types::{DataMessage, DataType, ExtractionCompleteMessage, FileCompleteMessage, Message};
 
 const AMQP_EXCHANGE_PREFIX: &str = "discogsography";
 const AMQP_EXCHANGE_TYPE: ExchangeKind = ExchangeKind::Fanout;
@@ -193,6 +193,34 @@ impl MessageQueue {
         Ok(())
     }
 
+    pub async fn send_extraction_complete(
+        &self,
+        version: &str,
+        started_at: chrono::DateTime<chrono::Utc>,
+        record_counts: std::collections::HashMap<String, u64>,
+    ) -> Result<()> {
+        let message = ExtractionCompleteMessage {
+            version: version.to_string(),
+            timestamp: chrono::Utc::now(),
+            started_at,
+            record_counts,
+        };
+
+        // Publish to all data type exchanges so every consumer queue receives it
+        for data_type in DataType::all() {
+            self.publish(Message::ExtractionComplete(message.clone()), data_type)
+                .await?;
+        }
+
+        info!(
+            "🏁 Extraction complete message sent to all {} exchanges (version: {})",
+            DataType::all().len(),
+            version,
+        );
+
+        Ok(())
+    }
+
     async fn get_channel(&self) -> Result<Channel> {
         let channel_guard = self.channel.read().await;
 
@@ -374,6 +402,33 @@ mod tests {
         assert!(result.is_err());
         let err_msg = format!("{}", result.err().unwrap());
         assert!(err_msg.contains("Failed to connect to AMQP broker after retries"), "Unexpected error: {}", err_msg);
+    }
+
+    #[test]
+    fn test_extraction_complete_message_roundtrip() {
+        let mut record_counts = std::collections::HashMap::new();
+        record_counts.insert("artists".to_string(), 9957079);
+        record_counts.insert("releases".to_string(), 18952204);
+
+        let msg = ExtractionCompleteMessage {
+            version: "20260101".to_string(),
+            timestamp: chrono::Utc::now(),
+            started_at: chrono::Utc::now(),
+            record_counts: record_counts.clone(),
+        };
+
+        let message = Message::ExtractionComplete(msg);
+        let serialized = serde_json::to_vec(&message).unwrap();
+        let deserialized: Message = serde_json::from_slice(&serialized).unwrap();
+
+        match deserialized {
+            Message::ExtractionComplete(m) => {
+                assert_eq!(m.version, "20260101");
+                assert_eq!(m.record_counts["artists"], 9957079);
+                assert_eq!(m.record_counts["releases"], 18952204);
+            }
+            _ => panic!("Expected ExtractionComplete message"),
+        }
     }
 
     #[test]

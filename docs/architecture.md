@@ -112,7 +112,11 @@ graph TD
 
 Each consumer independently declares and binds its own queues to these exchanges.
 
-**Message Format**:
+**Message Types**:
+
+- `data` — Individual records with SHA256 hash
+- `file_complete` — Sent per data type when a file finishes processing
+- `extraction_complete` — Sent once to all 4 exchanges after all files finish, carrying `started_at` timestamp and per-type record counts
 
 ```json
 {
@@ -133,13 +137,17 @@ See [Database Schema — Extractor Message Format](database-schema.md#extractor-
 - Creates nodes: Artist, Label, Release, Master, Genre, Style
 - Builds relationships: BY, ON, MEMBER_OF, DERIVED_FROM, etc.
 - Batch processing: 1,000-2,000 records/sec
+- On `extraction_complete`: deletes stub nodes (no `sha256` property) created by cross-type MERGE operations
 
 **Tableinator** (PostgreSQL):
 
 - Consumes messages from all 4 queues
-- Stores JSONB documents in relational tables
+- Stores JSONB documents in relational tables; always refreshes `updated_at`, only rewrites data when hash differs
 - Creates indexes for fast queries
 - Batch processing: 3,000-5,000 records/sec
+- On `extraction_complete`: purges stale rows where `updated_at < started_at`
+
+See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extraction-cleanup) for details.
 
 ### 4. Query and Analytics Phase
 
@@ -624,4 +632,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-05
+**Last Updated**: 2026-03-07

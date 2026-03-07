@@ -225,9 +225,10 @@ async def create_postgres_schema(pool: Any) -> None:
                         sql.SQL(
                             """
                             CREATE TABLE IF NOT EXISTS {table} (
-                                data_id VARCHAR PRIMARY KEY,
-                                hash    VARCHAR NOT NULL,
-                                data    JSONB   NOT NULL
+                                data_id    VARCHAR PRIMARY KEY,
+                                hash       VARCHAR NOT NULL,
+                                data       JSONB   NOT NULL,
+                                updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                             )
                             """
                         ).format(table=sql.Identifier(table_name)),
@@ -238,6 +239,15 @@ async def create_postgres_schema(pool: Any) -> None:
                             "CREATE INDEX IF NOT EXISTS {index} ON {table} (hash)"
                         ).format(
                             index=sql.Identifier(f"idx_{table_name}_hash"),
+                            table=sql.Identifier(table_name),
+                        ),
+                    ),
+                    (
+                        f"idx_{table_name}_updated_at",
+                        sql.SQL(
+                            "CREATE INDEX IF NOT EXISTS {index} ON {table} (updated_at)"
+                        ).format(
+                            index=sql.Identifier(f"idx_{table_name}_updated_at"),
                             table=sql.Identifier(table_name),
                         ),
                     ),

@@ -10,6 +10,26 @@ Last Updated: March 2026
 
 ## 🆕 Latest Improvements (March 2026)
 
+### 📊 Database Count Parity — Post-Extraction Cleanup
+
+**Overview**: After extraction, database record counts could drift from the extractor's counts due to stub nodes in Neo4j (created by cross-type MERGE operations) and stale rows in PostgreSQL (left over from prior extractions). A new `extraction_complete` message and per-consumer cleanup phase ensures count parity after every run.
+
+#### Changes
+
+- **Extractor** (`extractor.rs`, `message_queue.rs`, `types.rs`): Records `extraction_started_at` and sends an `extraction_complete` message to all 4 fanout exchanges after all files finish. The message includes `version`, `started_at`, and per-type `record_counts`.
+- **Graphinator** (`graphinator.py`): On `extraction_complete`, flushes remaining batches and deletes stub nodes (nodes without a `sha256` property) for the given data type.
+- **Tableinator** (`tableinator.py`): On `extraction_complete`, flushes remaining batches and purges stale rows where `updated_at < started_at`. Single-message upsert uses `CASE` expressions to skip JSONB data rewrite for unchanged rows while always refreshing `updated_at`.
+- **Schema** (`postgres_schema.py`): Added `updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()` column and index to all entity tables, with a migration for existing tables.
+- **Batch processor** (`batch_processor.py`): Upsert SQL sets `updated_at = NOW()` on insert and conflict update. Unchanged rows (hash match) skip the data rewrite but get a lightweight bulk `UPDATE ... SET updated_at = NOW()` to stay marked as current.
+
+#### Benefits
+
+- Database counts match extractor counts after each run
+- No manual cleanup needed between extractions
+- Handles both additions and removals in Discogs dumps
+
+---
+
 ### 🔍 Collection Gap Analysis — "Complete My Collection"
 
 **Overview**: Added gap analysis endpoints that let users discover which releases they are missing from a label, artist, or master.

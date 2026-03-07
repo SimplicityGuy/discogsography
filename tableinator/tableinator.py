@@ -463,6 +463,55 @@ async def _recover_consumers() -> None:
             pass
 
 
+async def purge_stale_rows(data_type: str, started_at: str) -> None:
+    """Delete rows from prior extractions that were not updated in the current run.
+
+    The extraction_complete message includes started_at — the time the extraction
+    began. Any row with updated_at < started_at was not touched by the current
+    extraction and is stale (removed from the Discogs dump or from a prior run).
+    """
+    if connection_pool is None:
+        return
+
+    if not started_at:
+        logger.warning(
+            "⚠️ No started_at in extraction_complete, skipping stale row purge",
+            data_type=data_type,
+        )
+        return
+
+    try:
+        async with connection_pool.connection() as conn:
+            async with conn.cursor() as cursor:
+                await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
+                    sql.SQL(
+                        "DELETE FROM {table} WHERE updated_at < %s RETURNING data_id"
+                    ).format(table=sql.Identifier(data_type)),
+                    (started_at,),
+                )
+                deleted_rows = await cursor.fetchall()
+                deleted_count = len(deleted_rows)
+
+                if deleted_count > 0:
+                    logger.info(
+                        f"🧹 Purged {deleted_count} stale {data_type} rows "
+                        f"(not updated since extraction started)",
+                        data_type=data_type,
+                        deleted=deleted_count,
+                    )
+                else:
+                    logger.info(
+                        f"✅ No stale {data_type} rows to purge",
+                        data_type=data_type,
+                    )
+    except Exception as e:
+        logger.error(
+            f"❌ Failed to purge stale {data_type} rows",
+            data_type=data_type,
+            error=str(e),
+        )
+
+
 def make_data_handler(
     data_type: str,
 ) -> Any:
@@ -495,6 +544,25 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             # Schedule consumer cancellation if enabled
             if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
                 await schedule_consumer_cancellation(data_type, queues[data_type])
+
+            await message.ack()
+            return
+
+        # Check if this is an extraction completion message
+        if data.get("type") == "extraction_complete":
+            logger.info(
+                "🏁 Received extraction_complete signal",
+                data_type=data_type,
+                version=data.get("version"),
+            )
+
+            # Flush any remaining batches before cleanup
+            if batch_processor is not None:
+                await batch_processor.flush_all()
+
+            # Purge stale rows from prior extractions
+            if connection_pool is not None:
+                await purge_stale_rows(data_type, data.get("started_at", ""))
 
             await message.ack()
             return
@@ -574,14 +642,19 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         async with connection_pool.connection() as conn:
             async with conn.cursor() as cursor:
-                # Single conditional upsert: PostgreSQL skips the write when hash is unchanged,
-                # eliminating the prior SELECT round-trip entirely.
+                # Conditional upsert: only rewrites hash and data when hash differs,
+                # but always refreshes updated_at so post-extraction stale row
+                # purge does not delete unchanged-but-still-present records.
                 await cursor.execute(  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # safe: psycopg2 sql.Identifier parameterizes the identifier, not user input
                     sql.SQL(
-                        "INSERT INTO {table} (hash, data_id, data) VALUES (%s, %s, %s) "
+                        "INSERT INTO {table} (hash, data_id, data, updated_at) "
+                        "VALUES (%s, %s, %s, NOW()) "
                         "ON CONFLICT (data_id) DO UPDATE "
-                        "SET hash = EXCLUDED.hash, data = EXCLUDED.data "
-                        "WHERE {table}.hash != EXCLUDED.hash;"
+                        "SET hash = CASE WHEN {table}.hash != EXCLUDED.hash "
+                        "THEN EXCLUDED.hash ELSE {table}.hash END, "
+                        "data = CASE WHEN {table}.hash != EXCLUDED.hash "
+                        "THEN EXCLUDED.data ELSE {table}.data END, "
+                        "updated_at = NOW();"
                     ).format(table=sql.Identifier(data_type)),
                     (
                         data["sha256"],
