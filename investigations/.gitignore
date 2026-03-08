@@ -1,0 +1,4 @@
+# Benchmark infrastructure (sensitive / generated)
+infra/vault.yml
+infra/.vault-pass
+infra/inventory/hosts.yml
