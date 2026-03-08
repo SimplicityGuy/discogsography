@@ -1,0 +1,88 @@
+# Auto-generated benchmark runner script. Runs on the controller host.
+# Started by run-benchmarks.yml via nohup. Logs to /opt/benchmark/benchmark.log.
+
+set -euo pipefail
+
+export PATH="/root/.local/bin:$PATH"
+
+BENCHMARK_DIR="{{ benchmark_dir }}"
+RESULTS_DIR="{{ results_dir }}"
+LOG_FILE="/opt/benchmark/benchmark.log"
+PID_FILE="/opt/benchmark/benchmark.pid"
+STATUS_FILE="/opt/benchmark/benchmark.status"
+
+echo $$ > "$PID_FILE"
+echo "running" > "$STATUS_FILE"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+cleanup() {
+    local exit_code=$?
+    if [ $exit_code -eq 0 ]; then
+        echo "completed" > "$STATUS_FILE"
+        log "All benchmarks completed successfully."
+    else
+        echo "failed" > "$STATUS_FILE"
+        log "Benchmarks failed with exit code $exit_code."
+    fi
+    rm -f "$PID_FILE"
+}
+trap cleanup EXIT
+
+cd "$BENCHMARK_DIR"
+
+# --- Calibration ---
+if [ ! -f "$RESULTS_DIR/controller_calibration.json" ]; then
+    log "Running hardware calibration on controller..."
+    PYTHONPATH="$BENCHMARK_DIR" uv run python investigations/calibration/calibrate.py run \
+        --output "$RESULTS_DIR/controller_calibration.json"
+    log "Controller calibration complete."
+else
+    log "Controller calibration already exists, skipping."
+fi
+
+# --- Benchmarks ---
+{% for db in databases %}
+{% for scale in scales %}
+log "========================================="
+log "Benchmarking: {{ db.name }} @ {{ scale }}"
+log "========================================="
+
+URI="{{ db.uri_prefix }}{{ db.host }}:{{ db.port }}{{ db.uri_suffix | default('') }}"
+
+USER_ARGS=""
+{% if db.user %}
+USER_ARGS="--user {{ db.user }} --password {{ db.password }}"
+{% endif %}
+
+PYTHONPATH="$BENCHMARK_DIR" uv run python -m investigations.benchmark.runner \
+    --backend {{ db.name }} \
+    --uri "$URI" \
+    --scale {{ scale }} \
+    --clear \
+    --output "$RESULTS_DIR/{{ db.name }}_{{ scale }}_$(date +%Y-%m-%d_%H%M%S).json" \
+    $USER_ARGS || {
+        log "WARNING: {{ db.name }} @ {{ scale }} failed, continuing..."
+    }
+
+{% if not loop.last %}
+log "Pausing 30s before next benchmark..."
+sleep 30
+{% endif %}
+
+{% endfor %}
+{% endfor %}
+
+# --- Comparison reports ---
+log "Generating comparison reports..."
+uv run python -m investigations.benchmark.compare \
+    "$RESULTS_DIR"/*_small_*.json \
+    > "$RESULTS_DIR/comparison_small.txt" 2>&1 || true
+
+uv run python -m investigations.benchmark.compare \
+    "$RESULTS_DIR"/*_large_*.json \
+    > "$RESULTS_DIR/comparison_large.txt" 2>&1 || true
+
+log "All done. Results in $RESULTS_DIR/"

@@ -83,11 +83,11 @@ Set a $75 billing alert in Hetzner Console > Account > Billing.
 
 | Playbook | Description |
 |----------|-------------|
-| `provision.yml` | Create Hetzner servers, network, firewall |
-| `setup-common.yml` | Install Docker and monitoring on all hosts |
+| `provision.yml` | Create Hetzner servers, network, firewalls |
+| `setup-common.yml` | Install Docker, monitoring, and interactive user on all hosts |
 | `setup-{neo4j,memgraph,age,falkordb,arangodb}.yml` | Deploy each database |
-| `run-benchmarks.yml` | Generate data, insert, run query benchmarks |
-| `collect-results.yml` | Fetch results to local machine |
+| `run-benchmarks.yml` | Setup controller, calibrate hosts, kick off benchmarks in background |
+| `fetch-results.yml` | Check status and fetch results + calibration to local machine |
 | `teardown.yml` | Destroy all infrastructure |
 
 ### Individual playbook usage
@@ -101,11 +101,11 @@ ansible-playbook playbooks/provision.yml --ask-vault-pass
 # Setup one database
 ansible-playbook playbooks/setup-neo4j.yml
 
-# Run benchmarks
+# Kick off benchmarks (returns immediately, runs in background)
 ansible-playbook playbooks/run-benchmarks.yml
 
-# Collect results
-ansible-playbook playbooks/collect-results.yml
+# Check status and fetch results (safe to run while benchmarks are in progress)
+ansible-playbook playbooks/fetch-results.yml
 
 # Partial teardown (keep controller for download)
 ansible-playbook playbooks/teardown.yml --ask-vault-pass -e keep_controller=true

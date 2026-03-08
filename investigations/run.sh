@@ -313,15 +313,15 @@ run_cloud() {
 	fi
 
 	echo ""
-	echo "=== Step 1/6: Provisioning Hetzner Cloud infrastructure ==="
+	echo "=== Step 1/5: Provisioning Hetzner Cloud infrastructure ==="
 	ansible-playbook playbooks/provision.yml "$VAULT_ARGS"
 
 	echo ""
-	echo "=== Step 2/6: Setting up all hosts (Docker, monitoring) ==="
+	echo "=== Step 2/5: Setting up all hosts (Docker, monitoring, bench user) ==="
 	ansible-playbook playbooks/setup-common.yml
 
 	echo ""
-	echo "=== Step 3/6: Deploying databases ==="
+	echo "=== Step 3/5: Deploying databases ==="
 	ansible-playbook playbooks/setup-neo4j.yml &
 	local PID_NEO4J=$!
 	ansible-playbook playbooks/setup-memgraph.yml &
@@ -336,46 +336,31 @@ run_cloud() {
 	echo "All databases deployed."
 
 	echo ""
-	echo "=== Step 4/6: Running benchmarks ==="
+	echo "=== Step 4/5: Calibrating database hosts ==="
+	echo "=== Step 5/5: Kicking off benchmarks (runs in background on controller) ==="
 	ansible-playbook playbooks/run-benchmarks.yml
 
-	echo ""
-	echo "=== Step 5/6: Collecting results ==="
-	ansible-playbook playbooks/collect-results.yml
+	# Extract controller IP from inventory for convenience messages
+	local CONTROLLER_IP
+	CONTROLLER_IP=$(grep -A1 'bench-controller' inventory/hosts.yml | grep ansible_host | awk '{print $2}' || echo '<controller-ip>')
 
 	echo ""
 	echo "========================================"
-	echo "  Benchmarks complete!"
-	echo "  Results saved to: investigations/benchmark/results/"
+	echo "  Benchmarks launched!"
 	echo "========================================"
 	echo ""
-
-	echo "=== Step 6/6: Teardown ==="
+	echo "  Benchmarks are running in the background on the controller."
+	echo "  Your laptop is free — close this terminal if you like."
 	echo ""
-	echo "Options:"
-	echo "  [d] Tear down database hosts only (keep controller for download)"
-	echo "  [a] Tear down ALL infrastructure"
-	echo "  [n] Keep everything running"
+	echo "  Monitor progress:"
+	echo "    ssh -i ~/.ssh/benchmark-key bench@${CONTROLLER_IP} 'tail -f /opt/benchmark/benchmark.log'"
 	echo ""
-	read -rp "Choose [d/a/n]: " choice
-
-	case "$choice" in
-	d)
-		echo "Tearing down database hosts (keeping controller)..."
-		ansible-playbook playbooks/teardown.yml "$VAULT_ARGS" -e keep_controller=true
-		echo "Controller still running. Full teardown later:"
-		echo "  cd investigations/infra && ansible-playbook playbooks/teardown.yml $VAULT_ARGS"
-		;;
-	a)
-		echo "Tearing down ALL infrastructure..."
-		ansible-playbook playbooks/teardown.yml "$VAULT_ARGS"
-		echo "Full teardown complete."
-		;;
-	*)
-		echo "Infrastructure still running. Remember to tear down when done:"
-		echo "  cd investigations/infra && ansible-playbook playbooks/teardown.yml $VAULT_ARGS"
-		;;
-	esac
+	echo "  Fetch results (safe to run while benchmarks are still going):"
+	echo "    cd investigations/infra && ansible-playbook playbooks/fetch-results.yml"
+	echo ""
+	echo "  Tear down when done:"
+	echo "    cd investigations/infra && ansible-playbook playbooks/teardown.yml $VAULT_ARGS"
+	echo ""
 }
 
 # ═══════════════════════════════════════════════════════

@@ -1,8 +1,9 @@
 ---
-# Run synthetic data generation, insertion, and benchmarks from the controller host.
+# Prepare the controller, run calibration on database hosts, and kick off
+# benchmarks in the background on the controller.
 #
-# The controller connects to each database host over the private network,
-# generates synthetic data, inserts it directly, and runs query benchmarks.
+# The benchmark runner script runs under nohup so it continues after this
+# playbook exits. Use fetch-results.yml to check progress and download results.
 #
 # Usage:
 #   ansible-playbook playbooks/run-benchmarks.yml
@@ -65,7 +66,7 @@
         cmd: python3 /opt/benchmark/calibrate.py run --output /opt/benchmark/results/calibration.json
         creates: /opt/benchmark/results/calibration.json
 
-- name: Run benchmarks against all databases
+- name: Deploy and start benchmark runner
   hosts: bench-controller
   become: true
   vars:
@@ -114,52 +115,25 @@
         state: directory
         mode: "0755"
 
-    - name: Run hardware calibration on controller
+    - name: Deploy benchmark runner script
+      ansible.builtin.template:
+        src: ../templates/run-benchmarks.sh.j2
+        dest: /opt/benchmark/run-benchmarks.sh
+        mode: "0755"
+
+    - name: Check if benchmarks are already running
+      ansible.builtin.stat:
+        path: /opt/benchmark/benchmark.pid
+      register: pid_file
+
+    - name: Start benchmarks in background
       ansible.builtin.shell: |
-        export PATH="/root/.local/bin:$PATH"
-        cd {{ benchmark_dir }}
-        PYTHONPATH={{ benchmark_dir }} uv run python investigations/calibration/calibrate.py run \
-          --output {{ results_dir }}/controller_calibration.json
-      args:
-        creates: "{{ results_dir }}/controller_calibration.json"
+        nohup bash /opt/benchmark/run-benchmarks.sh > /opt/benchmark/benchmark.log 2>&1 &
+      when: not pid_file.stat.exists
 
-    - name: Run benchmarks for each database at each scale
-      ansible.builtin.shell: |
-        export PATH="/root/.local/bin:$PATH"
-        cd {{ benchmark_dir }}
-
-        URI="{{ item.0.uri_prefix }}{{ item.0.host }}:{{ item.0.port }}{{ item.0.uri_suffix | default('') }}"
-
-        USER_ARGS=""
-        if [ -n "{{ item.0.user }}" ]; then
-          USER_ARGS="--user {{ item.0.user }} --password {{ item.0.password }}"
-        fi
-
-        PYTHONPATH={{ benchmark_dir }} uv run python -m investigations.benchmark.runner \
-          --backend {{ item.0.name }} \
-          --uri "$URI" \
-          --scale {{ item.1 }} \
-          --clear \
-          --output {{ results_dir }}/{{ item.0.name }}_{{ item.1 }}_$(date +%Y-%m-%d_%H%M%S).json \
-          $USER_ARGS
-      loop: "{{ databases | product(scales) | list }}"
-      loop_control:
-        pause: 30
-        label: "{{ item.0.name }} @ {{ item.1 }}"
-      register: benchmark_results
-      ignore_errors: true
-
-    - name: Generate comparison report
-      ansible.builtin.shell: |
-        export PATH="/root/.local/bin:$PATH"
-        cd {{ benchmark_dir }}
-        uv run python -m investigations.benchmark.compare \
-          {{ results_dir }}/*_small_*.json \
-          > {{ results_dir }}/comparison_small.txt 2>&1 || true
-        uv run python -m investigations.benchmark.compare \
-          {{ results_dir }}/*_large_*.json \
-          > {{ results_dir }}/comparison_large.txt 2>&1 || true
-
-    - name: Display benchmark status
+    - name: Show status
       ansible.builtin.debug:
-        msg: "Benchmarks complete. Results in {{ results_dir }}/"
+        msg: >
+          Benchmarks started in background on controller.
+          Monitor: ssh -i ~/.ssh/benchmark-key bench@{{ ansible_host }} 'tail -f /opt/benchmark/benchmark.log'
+          Fetch results: ansible-playbook playbooks/fetch-results.yml
