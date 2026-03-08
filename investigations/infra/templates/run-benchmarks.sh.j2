@@ -4,6 +4,7 @@
 set -euo pipefail
 
 export PATH="/root/.local/bin:$PATH"
+export PYTHONUNBUFFERED=1
 
 BENCHMARK_DIR="{{ benchmark_dir }}"
 RESULTS_DIR="{{ results_dir }}"

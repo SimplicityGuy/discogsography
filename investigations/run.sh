@@ -563,21 +563,22 @@ run_cloud() {
 	# check whether any running benchmark exceeds 5x the shortest completed duration.
 	if [[ ${#COMPLETED_DBS[@]} -gt 0 ]] && [[ ${#RUNNING_DBS[@]} -gt 0 ]]; then
 		local timing_output
-		timing_output=$($SSH_CMD '
-			NOW=$(date +%s)
-			for f in /opt/benchmark/results/*.start; do
-				[ -f "$f" ] || continue
-				db=$(basename "$f" .start)
-				start_epoch=$(date -d "$(cat "$f")" +%s 2>/dev/null || echo 0)
-				done_file="/opt/benchmark/results/${db}.done"
-				if [ -f "$done_file" ]; then
-					done_epoch=$(date -d "$(cat "$done_file")" +%s 2>/dev/null || echo 0)
-					echo "DURATION $db $((done_epoch - start_epoch))"
-				elif [ -f "/opt/benchmark/${db}-benchmark.pid" ]; then
-					echo "ELAPSED $db $((NOW - start_epoch))"
+		local all_dbs_str="${ALL_DBS[*]}"
+		timing_output=$($SSH_CMD "
+			NOW=\$(date +%s)
+			for db in $all_dbs_str; do
+				start_file=\"/opt/benchmark/results/\${db}.start\"
+				[ -f \"\$start_file\" ] || continue
+				start_epoch=\$(date -d \"\$(cat \"\$start_file\")\" +%s 2>/dev/null || echo 0)
+				done_file=\"/opt/benchmark/results/\${db}.done\"
+				if [ -f \"\$done_file\" ]; then
+					done_epoch=\$(date -d \"\$(cat \"\$done_file\")\" +%s 2>/dev/null || echo 0)
+					echo \"DURATION \$db \$((done_epoch - start_epoch))\"
+				elif [ -f \"/opt/benchmark/\${db}-benchmark.pid\" ]; then
+					echo \"ELAPSED \$db \$((NOW - start_epoch))\"
 				fi
 			done
-		' 2>/dev/null) || true
+		" 2>/dev/null) || true
 
 		# Find shortest completed duration
 		local shortest_duration=0

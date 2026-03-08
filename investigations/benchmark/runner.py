@@ -497,8 +497,7 @@ async def main_async(args: argparse.Namespace) -> None:
             print("\nData loaded. Skipping benchmarks (--load-only).")
             return
 
-        results = run_all_benchmarks(backend, data, skip_load=args.skip_load)
-        results_json = await results
+        results_json = await run_all_benchmarks(backend, data, skip_load=args.skip_load)
 
         output = Path(args.output)
         output.parent.mkdir(parents=True, exist_ok=True)

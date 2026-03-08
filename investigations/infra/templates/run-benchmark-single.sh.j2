@@ -9,6 +9,7 @@
 set -euo pipefail
 
 export PATH="/root/.local/bin:$PATH"
+export PYTHONUNBUFFERED=1
 
 DB_NAME="{{ db_name }}"
 BENCHMARK_DIR="{{ benchmark_dir }}"
