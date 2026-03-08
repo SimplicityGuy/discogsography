@@ -134,13 +134,13 @@ SHOW VERSION                 -- returns version string
 
 The following open issues in the [memgraph/memgraph](https://github.com/memgraph/memgraph) repository are relevant to this project's workload:
 
-| Issue | Description | Risk to Discogsography |
-|-------|-------------|----------------------|
+| Issue                                                                          | Description                                                                         | Risk to Discogsography                                                                                                                        |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | [#3737, #3736, #3735, #3734](https://github.com/memgraph/memgraph/issues/3737) | Inconsistent query results — different Cypher formulations return different outputs | High — complex queries with multiple `OPTIONAL MATCH` + `collect(DISTINCT ...)` patterns (node details, user queries) could return wrong data |
-| [#3825](https://github.com/memgraph/memgraph/issues/3825) | Text indexes don't support list-of-strings properties | Medium — `Release.formats` is stored as an array; text search on it won't work |
-| [#3782](https://github.com/memgraph/memgraph/issues/3782) | Thread pool leak on high-core systems (127 threads per complex query) | Medium — batch processing under load could exhaust resources |
-| [#3785](https://github.com/memgraph/memgraph/issues/3785) | SIGSEGV crash on startup with corrupted RocksDB MANIFEST | Medium — durability concern for production restarts |
-| [#3781](https://github.com/memgraph/memgraph/issues/3781) | Fine-grained auth queries take 32s in HA mode | Low — only affects HA deployments with auth |
+| [#3825](https://github.com/memgraph/memgraph/issues/3825)                      | Text indexes don't support list-of-strings properties                               | Medium — `Release.formats` is stored as an array; text search on it won't work                                                                |
+| [#3782](https://github.com/memgraph/memgraph/issues/3782)                      | Thread pool leak on high-core systems (127 threads per complex query)               | Medium — batch processing under load could exhaust resources                                                                                  |
+| [#3785](https://github.com/memgraph/memgraph/issues/3785)                      | SIGSEGV crash on startup with corrupted RocksDB MANIFEST                            | Medium — durability concern for production restarts                                                                                           |
+| [#3781](https://github.com/memgraph/memgraph/issues/3781)                      | Fine-grained auth queries take 32s in HA mode                                       | Low — only affects HA deployments with auth                                                                                                   |
 
 The query result inconsistency issues (#3734–#3737) are the most concerning. The Discogsography query patterns heavily use `OPTIONAL MATCH` chains with `collect(DISTINCT ...)` and `WITH` clause aggregation — exactly the patterns where these bugs manifest.
 
@@ -217,12 +217,12 @@ YIELD id, name, release_count, label_count, alias_count
 
 ### What This Eliminates
 
-| Incompatibility | Native Solution |
-|----------------|----------------|
-| COUNT {} subqueries | Custom `@mgp.read_proc` procedures that traverse and count natively |
-| Fulltext search | Custom procedure wrapping `text_search.search()` with consistent return shape |
-| Database stats | Custom procedure using `ctx.graph.vertices` count + Memgraph internals |
-| Schema idempotency | Custom `@mgp.write_proc` that checks existing constraints/indexes before creating |
+| Incompatibility     | Native Solution                                                                   |
+| ------------------- | --------------------------------------------------------------------------------- |
+| COUNT {} subqueries | Custom `@mgp.read_proc` procedures that traverse and count natively               |
+| Fulltext search     | Custom procedure wrapping `text_search.search()` with consistent return shape     |
+| Database stats      | Custom procedure using `ctx.graph.vertices` count + Memgraph internals            |
+| Schema idempotency  | Custom `@mgp.write_proc` that checks existing constraints/indexes before creating |
 
 ### Performance Considerations
 
@@ -236,16 +236,16 @@ For queries that **can** be expressed in Memgraph's Cypher (UNWIND/MERGE, OPTION
 
 ### Recommended Hybrid Approach
 
-| Query Type | Approach | Why |
-|-----------|----------|-----|
-| Batch writes (UNWIND/MERGE) | Memgraph Cypher | Fully supported, engine-optimized |
-| Expand/pagination queries | Memgraph Cypher | Standard Cypher, no gaps |
-| Trends/aggregation queries | Memgraph Cypher | Standard Cypher, no gaps |
-| User collection/wantlist | Memgraph Cypher | Standard Cypher, no gaps |
-| **Explore center-node (COUNT subqueries)** | **Custom `@mgp.read_proc`** | COUNT {} not supported |
-| **Autocomplete (fulltext search)** | **Custom `@mgp.read_proc`** wrapping `text_search.search()` | Normalize return format |
-| **Schema init** | **Custom `@mgp.write_proc`** | Idempotent constraint/index creation |
-| **Dashboard stats** | **Custom `@mgp.read_proc`** | Wraps `SHOW STORAGE INFO` parsing |
+| Query Type                                 | Approach                                                    | Why                                  |
+| ------------------------------------------ | ----------------------------------------------------------- | ------------------------------------ |
+| Batch writes (UNWIND/MERGE)                | Memgraph Cypher                                             | Fully supported, engine-optimized    |
+| Expand/pagination queries                  | Memgraph Cypher                                             | Standard Cypher, no gaps             |
+| Trends/aggregation queries                 | Memgraph Cypher                                             | Standard Cypher, no gaps             |
+| User collection/wantlist                   | Memgraph Cypher                                             | Standard Cypher, no gaps             |
+| **Explore center-node (COUNT subqueries)** | **Custom `@mgp.read_proc`**                                 | COUNT {} not supported               |
+| **Autocomplete (fulltext search)**         | **Custom `@mgp.read_proc`** wrapping `text_search.search()` | Normalize return format              |
+| **Schema init**                            | **Custom `@mgp.write_proc`**                                | Idempotent constraint/index creation |
+| **Dashboard stats**                        | **Custom `@mgp.read_proc`**                                 | Wraps `SHOW STORAGE INFO` parsing    |
 
 ### Additional Work Items (Native Approach)
 
@@ -283,12 +283,12 @@ The `--bolt-server-name-for-init=Neo4j/5.2.0` flag is required for Neo4j driver 
 
 In addition to the shared workloads:
 
-| Benchmark | Why It Matters for Memgraph |
-|-----------|---------------------------|
-| Cold start time | Must load entire graph from disk snapshots into RAM |
-| Memory usage at scale | In-memory-first — 20M+ nodes must fit in RAM |
+| Benchmark                | Why It Matters for Memgraph                             |
+| ------------------------ | ------------------------------------------------------- |
+| Cold start time          | Must load entire graph from disk snapshots into RAM     |
+| Memory usage at scale    | In-memory-first — 20M+ nodes must fit in RAM            |
 | Query result consistency | Verify #3734–#3737 bugs don't affect our query patterns |
-| Durability overhead | RocksDB snapshot frequency vs write throughput tradeoff |
+| Durability overhead      | RocksDB snapshot frequency vs write throughput tradeoff |
 
 ### Execution
 

@@ -4,15 +4,15 @@ This directory contains investigation notes for evaluating alternative graph dat
 
 ## Documents
 
-| Document | Database | Status |
-|----------|----------|--------|
-| [shared-pre-work.md](shared-pre-work.md) | — | Implemented: backend abstraction and benchmark harness |
-| [memgraph.md](memgraph.md) | Memgraph Community | Compatibility analysis complete |
-| [apache-age.md](apache-age.md) | Apache AGE (PostgreSQL extension) | Compatibility analysis complete |
-| [falkordb.md](falkordb.md) | FalkorDB (Redis module) | Compatibility analysis complete |
-| [arangodb.md](arangodb.md) | ArangoDB Community | Compatibility analysis complete |
-| [cloud-benchmark-deployment.md](cloud-benchmark-deployment.md) | — | Implemented: Hetzner Cloud convergence-based pipeline |
-| [investigations/](../../investigations/) | — | Implementation: backends, benchmark harness, calibration, infra |
+| Document                                                       | Database                          | Status                                                          |
+| -------------------------------------------------------------- | --------------------------------- | --------------------------------------------------------------- |
+| [shared-pre-work.md](shared-pre-work.md)                       | —                                 | Implemented: backend abstraction and benchmark harness          |
+| [memgraph.md](memgraph.md)                                     | Memgraph Community                | Compatibility analysis complete                                 |
+| [apache-age.md](apache-age.md)                                 | Apache AGE (PostgreSQL extension) | Compatibility analysis complete                                 |
+| [falkordb.md](falkordb.md)                                     | FalkorDB (Redis module)           | Compatibility analysis complete                                 |
+| [arangodb.md](arangodb.md)                                     | ArangoDB Community                | Compatibility analysis complete                                 |
+| [cloud-benchmark-deployment.md](cloud-benchmark-deployment.md) | —                                 | Implemented: Hetzner Cloud convergence-based pipeline           |
+| [investigations/](../../investigations/)                       | —                                 | Implementation: backends, benchmark harness, calibration, infra |
 
 ## Implementation
 

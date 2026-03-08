@@ -178,18 +178,18 @@ This is a significant architectural difference. The graphinator batch processor 
 
 ### Compatibility Summary
 
-| Feature | Neo4j | FalkorDB | Adaptation |
-|---------|-------|----------|------------|
-| Cypher queries | Native | openCypher | Minor syntax adjustments |
-| UNWIND / MERGE | Native | Supported | Works as-is |
-| OPTIONAL MATCH | Native | Supported | Works as-is |
-| COUNT {} subqueries | Supported | Not supported | Rewrite as aggregation |
-| Fulltext search | `db.index.fulltext.queryNodes()` | `db.idx.fulltext.queryNodes()` | Different procedure name |
-| Constraints | Cypher DDL with IF NOT EXISTS | Different syntax, no IF NOT EXISTS | Idempotency handling |
-| Driver | `neo4j` (Bolt, async) | `falkordb` (Redis protocol, async) | Complete driver change |
-| Multi-statement tx | `execute_write()` with callback | Redis MULTI/EXEC or single queries | Batch processor rework |
-| Stats/monitoring | APOC procedures | Redis INFO + Cypher procedures | Reimplemented |
-| Connection protocol | Bolt (7687) | Redis (6379) | Different protocol |
+| Feature             | Neo4j                            | FalkorDB                           | Adaptation               |
+| ------------------- | -------------------------------- | ---------------------------------- | ------------------------ |
+| Cypher queries      | Native                           | openCypher                         | Minor syntax adjustments |
+| UNWIND / MERGE      | Native                           | Supported                          | Works as-is              |
+| OPTIONAL MATCH      | Native                           | Supported                          | Works as-is              |
+| COUNT {} subqueries | Supported                        | Not supported                      | Rewrite as aggregation   |
+| Fulltext search     | `db.index.fulltext.queryNodes()` | `db.idx.fulltext.queryNodes()`     | Different procedure name |
+| Constraints         | Cypher DDL with IF NOT EXISTS    | Different syntax, no IF NOT EXISTS | Idempotency handling     |
+| Driver              | `neo4j` (Bolt, async)            | `falkordb` (Redis protocol, async) | Complete driver change   |
+| Multi-statement tx  | `execute_write()` with callback  | Redis MULTI/EXEC or single queries | Batch processor rework   |
+| Stats/monitoring    | APOC procedures                  | Redis INFO + Cypher procedures     | Reimplemented            |
+| Connection protocol | Bolt (7687)                      | Redis (6379)                       | Different protocol       |
 
 ## Performance Considerations
 
@@ -216,14 +216,14 @@ Benchmarks use synthetic data inserted directly into each database via the `Grap
 
 In addition to the shared workloads:
 
-| Benchmark | Why It Matters for FalkorDB |
-|-----------|---------------------------|
+| Benchmark                          | Why It Matters for FalkorDB                                            |
+| ---------------------------------- | ---------------------------------------------------------------------- |
 | Single-threaded throughput ceiling | Redis is single-threaded — what's the max ops/sec for mixed workloads? |
-| Large UNWIND batches | How does sparse matrix update scale with batch size? |
-| Multi-query "transaction" | Compare Redis MULTI/EXEC vs Neo4j execute_write for 6-query batches |
-| Memory usage vs dataset size | Critical — all data in Redis memory |
-| Persistence overhead | RDB/AOF impact on write throughput |
-| Concurrent readers | Read replicas or single-instance bottleneck? |
+| Large UNWIND batches               | How does sparse matrix update scale with batch size?                   |
+| Multi-query "transaction"          | Compare Redis MULTI/EXEC vs Neo4j execute_write for 6-query batches    |
+| Memory usage vs dataset size       | Critical — all data in Redis memory                                    |
+| Persistence overhead               | RDB/AOF impact on write throughput                                     |
+| Concurrent readers                 | Read replicas or single-instance bottleneck?                           |
 
 ### Execution
 
@@ -402,26 +402,26 @@ memory = await r.execute_command("GRAPH.MEMORY", "USAGE", "discogsography")
 
 ### What This Eliminates
 
-| Incompatibility | Native Solution |
-|----------------|----------------|
-| Multi-statement transactions | Consolidated single queries OR Redis MULTI/EXEC |
-| COUNT {} subqueries | `CALL {}` subqueries (if supported) or pre-aggregation |
-| Fulltext search | `db.idx.fulltext.queryNodes` — close to Neo4j, minor name difference |
-| Schema idempotency | `GRAPH.CONSTRAINT CREATE` — Redis command, handle errors |
-| Stats/monitoring | `GRAPH.INFO`, `GRAPH.MEMORY`, Redis `INFO` commands |
-| Driver abstraction | `redis-py` async — mature, well-tested library |
+| Incompatibility              | Native Solution                                                      |
+| ---------------------------- | -------------------------------------------------------------------- |
+| Multi-statement transactions | Consolidated single queries OR Redis MULTI/EXEC                      |
+| COUNT {} subqueries          | `CALL {}` subqueries (if supported) or pre-aggregation               |
+| Fulltext search              | `db.idx.fulltext.queryNodes` — close to Neo4j, minor name difference |
+| Schema idempotency           | `GRAPH.CONSTRAINT CREATE` — Redis command, handle errors             |
+| Stats/monitoring             | `GRAPH.INFO`, `GRAPH.MEMORY`, Redis `INFO` commands                  |
+| Driver abstraction           | `redis-py` async — mature, well-tested library                       |
 
 ### Recommended Hybrid Approach
 
-| Query Type | Approach | Why |
-|-----------|----------|-----|
-| Batch writes | **Consolidated Cypher** (single query with WITH chaining) | Atomic, no transaction needed |
-| Explore center-node | **CALL {} subqueries** (if supported) or pre-aggregation | Avoids COUNT {} gap |
-| Fulltext search | **Built-in `db.idx.fulltext`** procedures | Native, close to Neo4j |
-| Expand/pagination | **Standard Cypher** | Fully supported |
-| Schema init | **Redis `GRAPH.CONSTRAINT`** commands | Idempotent, command-level |
-| Stats/monitoring | **Redis commands** (`GRAPH.INFO`, `GRAPH.MEMORY`, `INFO`) | Native, no Cypher needed |
-| All other reads | **Standard Cypher** via `GRAPH.RO_QUERY` | Fully supported |
+| Query Type          | Approach                                                  | Why                           |
+| ------------------- | --------------------------------------------------------- | ----------------------------- |
+| Batch writes        | **Consolidated Cypher** (single query with WITH chaining) | Atomic, no transaction needed |
+| Explore center-node | **CALL {} subqueries** (if supported) or pre-aggregation  | Avoids COUNT {} gap           |
+| Fulltext search     | **Built-in `db.idx.fulltext`** procedures                 | Native, close to Neo4j        |
+| Expand/pagination   | **Standard Cypher**                                       | Fully supported               |
+| Schema init         | **Redis `GRAPH.CONSTRAINT`** commands                     | Idempotent, command-level     |
+| Stats/monitoring    | **Redis commands** (`GRAPH.INFO`, `GRAPH.MEMORY`, `INFO`) | Native, no Cypher needed      |
+| All other reads     | **Standard Cypher** via `GRAPH.RO_QUERY`                  | Fully supported               |
 
 ### Additional Work Items (Native Approach)
 

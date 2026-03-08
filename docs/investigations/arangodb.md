@@ -207,27 +207,27 @@ graph.create_edge_definition(
 
 ### What Translates Cleanly
 
-| Concept | Cypher | AQL | Effort |
-|---------|--------|-----|--------|
-| Node lookup by property | `MATCH (a:Artist {id: $id})` | `FOR a IN artists FILTER a.id == @id` | Low |
-| Traversal | `(r)-[:BY]->(a)` | `FOR a IN OUTBOUND r release_by_artist` | Medium |
-| Aggregation | `count(DISTINCT r)` | `COLLECT ... WITH COUNT INTO` | Medium |
-| Pagination | `SKIP $offset LIMIT $limit` | `LIMIT @offset, @limit` | Low |
-| Upsert | `MERGE ... SET` | `UPSERT ... INSERT ... UPDATE` | Low |
-| Batch | `UNWIND $items AS item` | `FOR item IN @items` | Low |
-| Conditional | `CASE WHEN ... END` | Ternary: `x > 0 ? x : null` | Low |
-| Subqueries | `OPTIONAL MATCH` chain | `LET x = (FOR ...)` subquery | Medium |
+| Concept                 | Cypher                       | AQL                                     | Effort |
+| ----------------------- | ---------------------------- | --------------------------------------- | ------ |
+| Node lookup by property | `MATCH (a:Artist {id: $id})` | `FOR a IN artists FILTER a.id == @id`   | Low    |
+| Traversal               | `(r)-[:BY]->(a)`             | `FOR a IN OUTBOUND r release_by_artist` | Medium |
+| Aggregation             | `count(DISTINCT r)`          | `COLLECT ... WITH COUNT INTO`           | Medium |
+| Pagination              | `SKIP $offset LIMIT $limit`  | `LIMIT @offset, @limit`                 | Low    |
+| Upsert                  | `MERGE ... SET`              | `UPSERT ... INSERT ... UPDATE`          | Low    |
+| Batch                   | `UNWIND $items AS item`      | `FOR item IN @items`                    | Low    |
+| Conditional             | `CASE WHEN ... END`          | Ternary: `x > 0 ? x : null`             | Low    |
+| Subqueries              | `OPTIONAL MATCH` chain       | `LET x = (FOR ...)` subquery            | Medium |
 
 ### What Requires Significant Rework
 
-| Area | Why | Effort |
-|------|-----|--------|
-| All ~50 Cypher queries | AQL is a completely different language | High |
-| Fulltext search | ArangoSearch views replace fulltext indexes | Medium |
-| Schema init | Document/edge collections + graph definition | Medium |
-| Driver layer | `python-arango` replaces `neo4j` driver | Medium |
-| Edge collections | One edge collection per relationship type (11 total) | Medium |
-| Batch processor | `UPSERT` replaces `MERGE`; edge inserts change | Medium |
+| Area                   | Why                                                  | Effort |
+| ---------------------- | ---------------------------------------------------- | ------ |
+| All ~50 Cypher queries | AQL is a completely different language               | High   |
+| Fulltext search        | ArangoSearch views replace fulltext indexes          | Medium |
+| Schema init            | Document/edge collections + graph definition         | Medium |
+| Driver layer           | `python-arango` replaces `neo4j` driver              | Medium |
+| Edge collections       | One edge collection per relationship type (11 total) | Medium |
+| Batch processor        | `UPSERT` replaces `MERGE`; edge inserts change       | Medium |
 
 ### Driver API
 
@@ -285,14 +285,14 @@ Benchmarks use synthetic data inserted directly into each database via the `Grap
 
 In addition to the shared workloads (adapted to AQL):
 
-| Benchmark | Why It Matters for ArangoDB |
-|-----------|---------------------------|
-| UPSERT batch throughput | AQL UPSERT vs Neo4j MERGE — core write pattern |
-| Edge creation throughput | Separate edge collection inserts vs Neo4j MERGE relationship |
-| ArangoSearch latency | BM25-ranked full-text search vs Neo4j fulltext index |
-| Multi-model query | Graph traversal + document filter + text search in one AQL query |
-| Cross-collection traversal | 3+ hop traversal across multiple edge collections |
-| Memory efficiency | C++ implementation may use less memory than Neo4j JVM |
+| Benchmark                  | Why It Matters for ArangoDB                                      |
+| -------------------------- | ---------------------------------------------------------------- |
+| UPSERT batch throughput    | AQL UPSERT vs Neo4j MERGE — core write pattern                   |
+| Edge creation throughput   | Separate edge collection inserts vs Neo4j MERGE relationship     |
+| ArangoSearch latency       | BM25-ranked full-text search vs Neo4j fulltext index             |
+| Multi-model query          | Graph traversal + document filter + text search in one AQL query |
+| Cross-collection traversal | 3+ hop traversal across multiple edge collections                |
+| Memory efficiency          | C++ implementation may use less memory than Neo4j JVM            |
 
 ### Execution
 
@@ -497,14 +497,14 @@ engine = db.engine()
 
 ### What This Approach Means
 
-| Concern | AQL Native Impact |
-|---------|------------------|
-| COUNT {} subqueries | Non-issue — AQL `LET x = LENGTH(...)` is the native way |
-| Fulltext search | Non-issue — ArangoSearch views with BM25 scoring |
-| Schema idempotency | Non-issue — driver API with `has_collection()` checks |
-| Multi-statement transactions | Non-issue — driver API `begin_transaction()` |
-| Stats/monitoring | Non-issue — driver API methods |
-| Async support | Requires `python-arango-async` (separate package) |
+| Concern                      | AQL Native Impact                                       |
+| ---------------------------- | ------------------------------------------------------- |
+| COUNT {} subqueries          | Non-issue — AQL `LET x = LENGTH(...)` is the native way |
+| Fulltext search              | Non-issue — ArangoSearch views with BM25 scoring        |
+| Schema idempotency           | Non-issue — driver API with `has_collection()` checks   |
+| Multi-statement transactions | Non-issue — driver API `begin_transaction()`            |
+| Stats/monitoring             | Non-issue — driver API methods                          |
+| Async support                | Requires `python-arango-async` (separate package)       |
 
 **The only real cost is the query rewrite** — all ~50 Cypher queries must be rewritten in AQL. But there are no compatibility shims, no workarounds, no partial support. Every AQL feature is native and fully supported.
 
@@ -512,24 +512,24 @@ engine = db.engine()
 
 The rewrite can be done systematically because AQL and Cypher map 1:1 at the concept level:
 
-| Cypher Concept | AQL Equivalent | Mechanical? |
-|---------------|---------------|-------------|
-| `MATCH (n:Label {prop: val})` | `FOR n IN collection FILTER n.prop == val` | Yes |
-| `(a)-[:REL]->(b)` | `FOR b IN OUTBOUND a edge_collection` | Yes |
-| `OPTIONAL MATCH` | `LET x = (FOR ... RETURN ...)` | Yes |
-| `UNWIND $list AS item` | `FOR item IN @list` | Yes |
-| `MERGE (n {id: x}) SET n.y = z` | `UPSERT {id: x} INSERT {...} UPDATE {y: z} IN coll` | Yes |
-| `collect(DISTINCT x)` | `RETURN DISTINCT x` or `COLLECT` | Yes |
-| `count(DISTINCT x)` | `COLLECT ... WITH COUNT INTO` | Yes |
-| `SKIP $n LIMIT $m` | `LIMIT @n, @m` | Yes |
-| `CASE WHEN ... END` | `condition ? true_val : false_val` | Yes |
+| Cypher Concept                  | AQL Equivalent                                      | Mechanical? |
+| ------------------------------- | --------------------------------------------------- | ----------- |
+| `MATCH (n:Label {prop: val})`   | `FOR n IN collection FILTER n.prop == val`          | Yes         |
+| `(a)-[:REL]->(b)`               | `FOR b IN OUTBOUND a edge_collection`               | Yes         |
+| `OPTIONAL MATCH`                | `LET x = (FOR ... RETURN ...)`                      | Yes         |
+| `UNWIND $list AS item`          | `FOR item IN @list`                                 | Yes         |
+| `MERGE (n {id: x}) SET n.y = z` | `UPSERT {id: x} INSERT {...} UPDATE {y: z} IN coll` | Yes         |
+| `collect(DISTINCT x)`           | `RETURN DISTINCT x` or `COLLECT`                    | Yes         |
+| `count(DISTINCT x)`             | `COLLECT ... WITH COUNT INTO`                       | Yes         |
+| `SKIP $n LIMIT $m`              | `LIMIT @n, @m`                                      | Yes         |
+| `CASE WHEN ... END`             | `condition ? true_val : false_val`                  | Yes         |
 
 The rewrite is mechanical — each pattern has a direct AQL equivalent. A systematic approach would:
 
 1. Create a query mapping spreadsheet (Cypher → AQL) for all ~50 queries
-2. Rewrite in batches by query type (autocomplete, explore, expand, count, trends, user, gaps, batch)
-3. Test each batch against Neo4j results for correctness
-4. Benchmark each batch for performance
+1. Rewrite in batches by query type (autocomplete, explore, expand, count, trends, user, gaps, batch)
+1. Test each batch against Neo4j results for correctness
+1. Benchmark each batch for performance
 
 ### Additional Work Items (Native AQL Approach)
 
@@ -744,14 +744,14 @@ async def _process_releases_batch(self, messages: list[PendingMessage]) -> None:
 
 ### Key Differences from Neo4j Batch Processor
 
-| Aspect | Neo4j (`batch_processor.py`) | ArangoDB Adaptation |
-|--------|------------------------------|---------------------|
-| Node upsert | `MERGE (n:Label {id: x}) SET ...` | `UPSERT {id: x} INSERT {...} UPDATE {...} IN collection` |
-| Relationship creation | `MERGE (a)-[:REL]->(b)` | `UPSERT {_from: a._id, _to: b._id} INSERT ... IN edge_collection` |
-| Transaction wrapper | `session.execute_write(callback)` | `db.begin_transaction()` / `commit_transaction()` |
-| Node reference | Implicit (labels identify nodes) | Explicit `_id` lookups via `FIRST(FOR ... RETURN _id)` |
-| Batch iteration | `UNWIND $items AS item` | `FOR item IN @items` |
-| Hash check query | `OPTIONAL MATCH (n {id: id}) RETURN n.sha256` | `FOR doc IN collection FILTER doc.id IN @ids RETURN {id: doc.id, hash: doc.sha256}` |
+| Aspect                | Neo4j (`batch_processor.py`)                  | ArangoDB Adaptation                                                                 |
+| --------------------- | --------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Node upsert           | `MERGE (n:Label {id: x}) SET ...`             | `UPSERT {id: x} INSERT {...} UPDATE {...} IN collection`                            |
+| Relationship creation | `MERGE (a)-[:REL]->(b)`                       | `UPSERT {_from: a._id, _to: b._id} INSERT ... IN edge_collection`                   |
+| Transaction wrapper   | `session.execute_write(callback)`             | `db.begin_transaction()` / `commit_transaction()`                                   |
+| Node reference        | Implicit (labels identify nodes)              | Explicit `_id` lookups via `FIRST(FOR ... RETURN _id)`                              |
+| Batch iteration       | `UNWIND $items AS item`                       | `FOR item IN @items`                                                                |
+| Hash check query      | `OPTIONAL MATCH (n {id: id}) RETURN n.sha256` | `FOR doc IN collection FILTER doc.id IN @ids RETURN {id: doc.id, hash: doc.sha256}` |
 
 ### Artists Batch (Simplified Example)
 

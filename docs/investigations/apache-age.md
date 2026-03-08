@@ -15,9 +15,9 @@
 Discogsography already runs PostgreSQL 18 for the tableinator analytics tables. Apache AGE would:
 
 1. **Eliminate Neo4j entirely** — graph data lives in the existing PostgreSQL instance
-2. **Remove an infrastructure service** — one fewer container, backup target, monitoring endpoint
-3. **Enable SQL+Cypher hybrid queries** — join graph traversals with JSONB analytics data in a single query
-4. **Simplify the stack** — same connection pool, same auth, same backup strategy
+1. **Remove an infrastructure service** — one fewer container, backup target, monitoring endpoint
+1. **Enable SQL+Cypher hybrid queries** — join graph traversals with JSONB analytics data in a single query
+1. **Simplify the stack** — same connection pool, same auth, same backup strategy
 
 ## Compatibility Analysis
 
@@ -65,6 +65,7 @@ Every query in `api/queries/graph_queries.py`, `user_queries.py`, and `gap_queri
 AGE does not have its own fulltext search. Instead, use PostgreSQL's native `tsvector` / `tsquery` full-text search on the underlying graph tables, or maintain a parallel text search strategy.
 
 Options:
+
 - **Option A:** Run fulltext queries as pure SQL against PostgreSQL's existing tsvector indexes (the tableinator tables already have these)
 - **Option B:** Create tsvector indexes on AGE's internal vertex tables
 - **Option C:** Keep fulltext search as a separate SQL path, not through the graph layer
@@ -134,6 +135,7 @@ with conn.cursor() as cur:
 ```
 
 **No async support** in the AGE Python driver currently. The project uses async throughout (`AsyncGraphDatabase`, `AsyncResilientNeo4jDriver`). Options:
+
 - Use psycopg3's native async support (`AsyncConnection`) and execute AGE queries directly
 - Contribute async support to the AGE Python driver
 - Use synchronous queries in a thread pool executor
@@ -144,18 +146,18 @@ AGE returns `agtype` values that must be cast or parsed. The AGE Python driver h
 
 ### Compatibility Summary
 
-| Feature | Neo4j | Apache AGE | Adaptation |
-|---------|-------|------------|------------|
-| Cypher queries | Native | Wrapped in SQL | All queries wrapped |
-| UNWIND / MERGE | Native | Supported | Works inside SQL wrapper |
-| OPTIONAL MATCH | Native | Supported | Works inside SQL wrapper |
-| COUNT {} subqueries | Supported | Not supported | Rewrite as aggregation |
-| Fulltext search | `db.index.fulltext.queryNodes()` | Not available | Use PostgreSQL tsvector |
-| Constraints | Cypher DDL | PostgreSQL DDL | Reimplemented |
-| Indexes | Cypher DDL | PostgreSQL DDL | Reimplemented |
-| Driver | `neo4j` (async) | `apache-age-python` (sync) | New driver, async wrapper needed |
-| Stats/monitoring | APOC procedures | PostgreSQL system catalogs | Reimplemented |
-| Transactions | `execute_write()` | psycopg3 transactions | Different API |
+| Feature             | Neo4j                            | Apache AGE                 | Adaptation                       |
+| ------------------- | -------------------------------- | -------------------------- | -------------------------------- |
+| Cypher queries      | Native                           | Wrapped in SQL             | All queries wrapped              |
+| UNWIND / MERGE      | Native                           | Supported                  | Works inside SQL wrapper         |
+| OPTIONAL MATCH      | Native                           | Supported                  | Works inside SQL wrapper         |
+| COUNT {} subqueries | Supported                        | Not supported              | Rewrite as aggregation           |
+| Fulltext search     | `db.index.fulltext.queryNodes()` | Not available              | Use PostgreSQL tsvector          |
+| Constraints         | Cypher DDL                       | PostgreSQL DDL             | Reimplemented                    |
+| Indexes             | Cypher DDL                       | PostgreSQL DDL             | Reimplemented                    |
+| Driver              | `neo4j` (async)                  | `apache-age-python` (sync) | New driver, async wrapper needed |
+| Stats/monitoring    | APOC procedures                  | PostgreSQL system catalogs | Reimplemented                    |
+| Transactions        | `execute_write()`                | psycopg3 transactions      | Different API                    |
 
 ## Performance Considerations
 
@@ -181,13 +183,13 @@ Benchmarks use synthetic data inserted directly into each database via the `Grap
 
 In addition to the shared workloads:
 
-| Benchmark | Why It Matters for AGE |
-|-----------|----------------------|
-| Deep traversal (3+ hops) | Tests whether relational joins keep up with native graph traversal |
-| SQL+Cypher hybrid query | Unique to AGE — join graph data with JSONB analytics in one query |
-| Concurrent writes + reads | Tests PostgreSQL lock contention on graph tables |
-| Large UNWIND batches | Tests whether AGE's MERGE performance degrades at batch sizes >500 |
-| Schema init time | AGE creates internal tables per label; may be slower than Neo4j constraint creation |
+| Benchmark                 | Why It Matters for AGE                                                              |
+| ------------------------- | ----------------------------------------------------------------------------------- |
+| Deep traversal (3+ hops)  | Tests whether relational joins keep up with native graph traversal                  |
+| SQL+Cypher hybrid query   | Unique to AGE — join graph data with JSONB analytics in one query                   |
+| Concurrent writes + reads | Tests PostgreSQL lock contention on graph tables                                    |
+| Large UNWIND batches      | Tests whether AGE's MERGE performance degrades at batch sizes >500                  |
+| Schema init time          | AGE creates internal tables per label; may be slower than Neo4j constraint creation |
 
 ### Execution
 
@@ -240,6 +242,7 @@ Each vertex table has columns: `id` (graphid type), `properties` (agtype — JSO
 ### Pure SQL Approach
 
 Instead of:
+
 ```sql
 SELECT * FROM ag_catalog.cypher('discogsography', $$
     MATCH (a:Artist {name: $name})
@@ -248,6 +251,7 @@ $$) AS (id agtype, name agtype, release_count agtype)
 ```
 
 Write pure SQL against the internal tables:
+
 ```sql
 -- Explore center-node: Artist with release count, label count, alias count
 SELECT
@@ -351,19 +355,20 @@ SELECT label, count(*) FROM (
 
 ### What This Eliminates
 
-| Incompatibility | Pure SQL Solution |
-|----------------|-------------------|
-| Cypher SQL wrapping | Not needed — query internal tables directly |
-| COUNT {} subqueries | `LEFT JOIN LATERAL (SELECT count(...))` — standard SQL |
-| Fulltext search | PostgreSQL `tsvector` / `tsquery` with GIN indexes |
-| Return column declaration | Standard SQL `SELECT` — no `AS (col type, ...)` needed |
-| Schema DDL | Standard PostgreSQL `CREATE INDEX`, `ALTER TABLE` |
-| Stats/monitoring | Standard PostgreSQL system catalogs |
-| Async support | psycopg3 `AsyncConnection` — fully supported, no AGE driver needed |
+| Incompatibility           | Pure SQL Solution                                                  |
+| ------------------------- | ------------------------------------------------------------------ |
+| Cypher SQL wrapping       | Not needed — query internal tables directly                        |
+| COUNT {} subqueries       | `LEFT JOIN LATERAL (SELECT count(...))` — standard SQL             |
+| Fulltext search           | PostgreSQL `tsvector` / `tsquery` with GIN indexes                 |
+| Return column declaration | Standard SQL `SELECT` — no `AS (col type, ...)` needed             |
+| Schema DDL                | Standard PostgreSQL `CREATE INDEX`, `ALTER TABLE`                  |
+| Stats/monitoring          | Standard PostgreSQL system catalogs                                |
+| Async support             | psycopg3 `AsyncConnection` — fully supported, no AGE driver needed |
 
 ### Performance Implications
 
 **Advantages of pure SQL:**
+
 - PostgreSQL's query planner optimizes JOIN order, index usage, and parallel execution
 - `LATERAL` subqueries are well-optimized in PostgreSQL 18
 - `INSERT ... ON CONFLICT` is faster than Cypher MERGE for bulk operations
@@ -371,23 +376,24 @@ SELECT label, count(*) FROM (
 - Full access to PostgreSQL's `EXPLAIN ANALYZE` for query tuning
 
 **Concerns:**
+
 - Graph traversals become JOIN chains — deep traversals (3+ hops) produce complex multi-way JOINs
 - No index-free adjacency — each hop requires an index lookup on edge tables
 - AGE internal table structure may change between versions (not a stable API)
-- Properties are stored as `agtype` (JSON-like) — property access requires `->>`  extraction
+- Properties are stored as `agtype` (JSON-like) — property access requires `->>` extraction
 
 ### Recommended Hybrid Approach
 
-| Query Type | Approach | Why |
-|-----------|----------|-----|
-| Batch writes | **Pure SQL** (`INSERT ... ON CONFLICT` or `COPY`) | Much faster than Cypher MERGE |
-| Fulltext search | **Pure SQL** (tsvector/tsquery) | More powerful than any Cypher fulltext |
-| Center-node counts | **Pure SQL** (LATERAL subqueries) | Eliminates COUNT {} incompatibility |
-| Stats/monitoring | **Pure SQL** (system catalogs) | Standard PostgreSQL |
-| Schema init | **Pure SQL** (CREATE INDEX, etc.) | Standard PostgreSQL DDL |
-| 1-2 hop traversals | **Either** SQL or Cypher | Both work well for shallow traversals |
-| Deep traversals (3+ hops) | **Cypher** via `ag_catalog.cypher()` | Graph pattern matching is more readable |
-| Gap analysis | **Cypher** via `ag_catalog.cypher()` | Exclusion patterns are cleaner in Cypher |
+| Query Type                | Approach                                          | Why                                      |
+| ------------------------- | ------------------------------------------------- | ---------------------------------------- |
+| Batch writes              | **Pure SQL** (`INSERT ... ON CONFLICT` or `COPY`) | Much faster than Cypher MERGE            |
+| Fulltext search           | **Pure SQL** (tsvector/tsquery)                   | More powerful than any Cypher fulltext   |
+| Center-node counts        | **Pure SQL** (LATERAL subqueries)                 | Eliminates COUNT {} incompatibility      |
+| Stats/monitoring          | **Pure SQL** (system catalogs)                    | Standard PostgreSQL                      |
+| Schema init               | **Pure SQL** (CREATE INDEX, etc.)                 | Standard PostgreSQL DDL                  |
+| 1-2 hop traversals        | **Either** SQL or Cypher                          | Both work well for shallow traversals    |
+| Deep traversals (3+ hops) | **Cypher** via `ag_catalog.cypher()`              | Graph pattern matching is more readable  |
+| Gap analysis              | **Cypher** via `ag_catalog.cypher()`              | Exclusion patterns are cleaner in Cypher |
 
 The most performant approach uses **Cypher for graph pattern matching** (traversals, path finding) and **pure SQL for everything else** (fulltext, aggregation, batch writes, stats).
 

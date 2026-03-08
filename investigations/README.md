@@ -25,8 +25,8 @@ Starts each database in Docker (one at a time), generates synthetic data, runs a
 Uses a **convergence model** — run the command repeatedly and it advances the pipeline:
 
 1. **1st run:** Provisions controller + 3 DB servers + baseline. Runs calibration, deploys databases, starts benchmarks.
-2. **2nd+ runs:** Checks status, tears down completed servers, provisions remaining databases.
-3. **Final run:** All done — tears down DB servers, fetches results. Controller remains for inspection.
+1. **2nd+ runs:** Checks status, tears down completed servers, provisions remaining databases.
+1. **Final run:** All done — tears down DB servers, fetches results. Controller remains for inspection.
 
 All prerequisites (Ansible, SSH keys, vault) are auto-installed — the only thing you need is a Hetzner Cloud API token.
 
@@ -75,18 +75,18 @@ uv run python -m investigations.benchmark.runner \
 
 All optional. Defaults work for local Docker.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `NEO4J_URI` | `bolt://localhost:7687` | Neo4j Bolt endpoint |
-| `NEO4J_USER` | `neo4j` | Neo4j username |
-| `NEO4J_PASSWORD` | `discogsography` | Neo4j password |
-| `MEMGRAPH_URI` | `bolt://localhost:7688` | Memgraph Bolt endpoint |
-| `AGE_URI` | `postgresql://discogsography:discogsography@localhost:5433/discogsography` | PostgreSQL+AGE connection string |
-| `FALKORDB_URI` | `redis://localhost:6380` | FalkorDB Redis endpoint |
-| `ARANGODB_URI` | `http://localhost:8529` | ArangoDB HTTP endpoint |
-| `ARANGODB_USER` | `root` | ArangoDB username |
-| `ARANGODB_PASSWORD` | `discogsography` | ArangoDB password |
-| `BENCHMARK_SCALE` | `small` | Scale point: `small` or `large` |
+| Variable            | Default                                                                    | Description                      |
+| ------------------- | -------------------------------------------------------------------------- | -------------------------------- |
+| `NEO4J_URI`         | `bolt://localhost:7687`                                                    | Neo4j Bolt endpoint              |
+| `NEO4J_USER`        | `neo4j`                                                                    | Neo4j username                   |
+| `NEO4J_PASSWORD`    | `discogsography`                                                           | Neo4j password                   |
+| `MEMGRAPH_URI`      | `bolt://localhost:7688`                                                    | Memgraph Bolt endpoint           |
+| `AGE_URI`           | `postgresql://discogsography:discogsography@localhost:5433/discogsography` | PostgreSQL+AGE connection string |
+| `FALKORDB_URI`      | `redis://localhost:6380`                                                   | FalkorDB Redis endpoint          |
+| `ARANGODB_URI`      | `http://localhost:8529`                                                    | ArangoDB HTTP endpoint           |
+| `ARANGODB_USER`     | `root`                                                                     | ArangoDB username                |
+| `ARANGODB_PASSWORD` | `discogsography`                                                           | ArangoDB password                |
+| `BENCHMARK_SCALE`   | `small`                                                                    | Scale point: `small` or `large`  |
 
 ## Directory Structure
 
@@ -125,26 +125,27 @@ investigations/
 
 ## Benchmark Workloads
 
-| Workload | Type | Iterations | What It Tests |
-|----------|------|-----------|---------------|
-| `batch_write_nodes` | write | 50 | UNWIND/MERGE node creation (graphinator pattern) |
-| `batch_write_full_tx` | write | 50 | Multi-statement transaction overhead |
-| `point_read` | read | 1000 | Single node lookup by indexed property |
-| `graph_traversal` | read | 200 | Multi-hop explore/expand pattern |
-| `fulltext_search` | read | 500 | Autocomplete fulltext search |
-| `aggregation` | read | 200 | Year-grouped trends query |
-| `concurrent_mixed` | mixed | 30s | 4 readers + 2 writers simultaneously |
+| Workload              | Type  | Iterations | What It Tests                                    |
+| --------------------- | ----- | ---------- | ------------------------------------------------ |
+| `batch_write_nodes`   | write | 50         | UNWIND/MERGE node creation (graphinator pattern) |
+| `batch_write_full_tx` | write | 50         | Multi-statement transaction overhead             |
+| `point_read`          | read  | 1000       | Single node lookup by indexed property           |
+| `graph_traversal`     | read  | 200        | Multi-hop explore/expand pattern                 |
+| `fulltext_search`     | read  | 500        | Autocomplete fulltext search                     |
+| `aggregation`         | read  | 200        | Year-grouped trends query                        |
+| `concurrent_mixed`    | mixed | 30s        | 4 readers + 2 writers simultaneously             |
 
 ## Synthetic Data
 
 Data is generated to match real Discogs production proportions (calibrated 2026-03-07):
 
-| Scale | Artists | Labels | Masters | Releases | Approx. Nodes | Approx. Rels |
-|-------|---------|--------|---------|----------|---------------|--------------|
-| `small` | 10,000 | 5,000 | 20,000 | 100,000 | ~135,000 | ~540,000 |
-| `large` | 100,000 | 50,000 | 200,000 | 1,000,000 | ~1,350,000 | ~5,400,000 |
+| Scale   | Artists | Labels | Masters | Releases  | Approx. Nodes | Approx. Rels |
+| ------- | ------- | ------ | ------- | --------- | ------------- | ------------ |
+| `small` | 10,000  | 5,000  | 20,000  | 100,000   | ~135,000      | ~540,000     |
+| `large` | 100,000 | 50,000 | 200,000 | 1,000,000 | ~1,350,000    | ~5,400,000   |
 
 Key characteristics preserved:
+
 - 3.97 relationships per node
 - ~58% orphan artists, ~39% orphan labels
 - Power-law artist popularity distribution

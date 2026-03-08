@@ -46,8 +46,8 @@ stateDiagram-v2
 ```
 
 1. **1st run:** Provisions controller + 3 DB servers + 1 baseline server. Runs baseline calibration (then tears down baseline). Deploys databases in parallel. Starts benchmarks.
-2. **2nd+ runs:** SSHs to controller to check sentinel files. Tears down completed DB servers. Provisions remaining databases up to `--server-limit` (default: 5). Retries errored benchmarks.
-3. **Final run:** All 5 benchmarks finished (completed or timed out). Tears down all remaining DB servers, fetches results. Controller remains for manual inspection.
+1. **2nd+ runs:** SSHs to controller to check sentinel files. Tears down completed DB servers. Provisions remaining databases up to `--server-limit` (default: 5). Retries errored benchmarks.
+1. **Final run:** All 5 benchmarks finished (completed or timed out). Tears down all remaining DB servers, fetches results. Controller remains for manual inspection.
 
 ### Timeout Detection
 
@@ -58,19 +58,19 @@ When at least one benchmark has completed and others are still running, the scri
 Each database gets its own shell script (from `run-benchmark-single.sh.j2` template) deployed to the controller. The runner:
 
 1. Sets database-specific URIs, credentials, and data paths
-2. Runs benchmarks at both scale points (small + large)
-3. Creates sentinel files: `.done` on success, `.err` on failure
+1. Runs benchmarks at both scale points (small + large)
+1. Creates sentinel files: `.done` on success, `.err` on failure
 
 Status tracking uses sentinel files on the controller:
 
-| File | Location | Meaning |
-|------|----------|---------|
-| `{db}.done` | `/opt/benchmark/results/` | Benchmark completed (contains timestamp) |
-| `{db}.err` | `/opt/benchmark/results/` | Benchmark errored (contains timestamp) |
-| `{db}.timeout` | `/opt/benchmark/results/` | Benchmark timed out (contains timestamp) |
-| `{db}.start` | `/opt/benchmark/results/` | Start timestamp |
-| `{db}-benchmark.pid` | `/opt/benchmark/` | Process is running |
-| `{db}-benchmark.log` | `/opt/benchmark/` | stdout/stderr |
+| File                 | Location                  | Meaning                                  |
+| -------------------- | ------------------------- | ---------------------------------------- |
+| `{db}.done`          | `/opt/benchmark/results/` | Benchmark completed (contains timestamp) |
+| `{db}.err`           | `/opt/benchmark/results/` | Benchmark errored (contains timestamp)   |
+| `{db}.timeout`       | `/opt/benchmark/results/` | Benchmark timed out (contains timestamp) |
+| `{db}.start`         | `/opt/benchmark/results/` | Start timestamp                          |
+| `{db}-benchmark.pid` | `/opt/benchmark/`         | Process is running                       |
+| `{db}-benchmark.log` | `/opt/benchmark/`         | stdout/stderr                            |
 
 ## Hetzner Cloud
 
@@ -85,26 +85,26 @@ Hetzner offers the best price/performance ratio by a significant margin among cl
 
 ### Pricing
 
-| Role | Instance | vCPU | RAM | Disk | Per Host/hr | Per Host/mo |
-|------|----------|------|-----|------|-------------|-------------|
-| Controller | **CX33** | 4 | 8 GB | 80 GB | €0.0088 | €5.49 |
-| Database | **CX53** | 16 | 32 GB | 320 GB | €0.0280 | €17.49 |
+| Role       | Instance | vCPU | RAM   | Disk   | Per Host/hr | Per Host/mo |
+| ---------- | -------- | ---- | ----- | ------ | ----------- | ----------- |
+| Controller | **CX33** | 4    | 8 GB  | 80 GB  | €0.0088     | €5.49       |
+| Database   | **CX53** | 16   | 32 GB | 320 GB | €0.0280     | €17.49      |
 
 ### Cost Estimates
 
-| Scenario | Duration | Controller (1x CX33) | DB Hosts (5x CX53) | Total |
-|----------|----------|---------------------|---------------------|-------|
-| Quick run (~8 hours) | 8 hr | €0.07 | €1.12 | **€1.19** |
-| Full run (~24 hours) | 24 hr | €0.21 | €3.36 | **€3.57** |
-| Extended (~48 hours) | 48 hr | €0.42 | €6.72 | **€7.14** |
+| Scenario             | Duration | Controller (1x CX33) | DB Hosts (5x CX53) | Total     |
+| -------------------- | -------- | -------------------- | ------------------ | --------- |
+| Quick run (~8 hours) | 8 hr     | €0.07                | €1.12              | **€1.19** |
+| Full run (~24 hours) | 24 hr    | €0.21                | €3.36              | **€3.57** |
+| Extended (~48 hours) | 48 hr    | €0.42                | €6.72              | **€7.14** |
 
 > **Note:** The convergence model tears down completed DB servers as benchmarks finish, so costs are lower if databases complete at different speeds. After all benchmarks complete, only the controller remains at €0.0088/hr.
 
 ### Additional Costs
 
-| Item | Cost | Notes |
-|------|------|-------|
-| Hetzner network | Free | 20TB included per server |
+| Item             | Cost       | Notes                     |
+| ---------------- | ---------- | ------------------------- |
+| Hetzner network  | Free       | 20TB included per server  |
 | DNS/floating IPs | Not needed | Use IP addresses directly |
 
 ### Billing Alert
@@ -112,9 +112,9 @@ Hetzner offers the best price/performance ratio by a significant margin among cl
 Set a spending alert in Hetzner Console to receive an email if costs exceed $75:
 
 1. Log in to [console.hetzner.cloud](https://console.hetzner.cloud)
-2. Go to **Account > Billing**
-3. Click on the cost values for the benchmark project
-4. Set the alert threshold to **$75**
+1. Go to **Account > Billing**
+1. Click on the cost values for the benchmark project
+1. Set the alert threshold to **$75**
 
 ## Infrastructure Details
 
@@ -143,23 +143,23 @@ ssh -i ~/.ssh/benchmark-key root@<controller-ip> 'tail -f /opt/benchmark/neo4j-b
 
 A background script (`metrics-collector.sh.j2`) runs on each database host, collecting system metrics to a JSONL file at `/opt/benchmark/results/system-metrics.jsonl`:
 
-| Metric | Collection Method | Frequency |
-|--------|-------------------|-----------|
-| CPU usage (%) | `/proc/stat` | Every 5s |
-| Memory usage (used/total KB) | `/proc/meminfo` | Every 5s |
-| Disk usage (bytes) | `df` | Every 5s |
-| Disk I/O (read/write sectors) | `/proc/diskstats` | Every 5s |
+| Metric                        | Collection Method | Frequency |
+| ----------------------------- | ----------------- | --------- |
+| CPU usage (%)                 | `/proc/stat`      | Every 5s  |
+| Memory usage (used/total KB)  | `/proc/meminfo`   | Every 5s  |
+| Disk usage (bytes)            | `df`              | Every 5s  |
+| Disk I/O (read/write sectors) | `/proc/diskstats` | Every 5s  |
 
 ### Benchmark Metrics
 
 Each benchmark run produces a JSON file with:
 
-| Metric | Collection Method |
-|--------|-------------------|
-| Insertion throughput (records/sec) | Per-entity-type timing in benchmark runner |
-| Latency p50 / p95 / p99 (ms) | `time.perf_counter_ns()` per operation |
-| Throughput (ops/sec) | Inverse of mean latency |
-| Concurrent throughput | Total ops across all tasks / wall clock time |
+| Metric                             | Collection Method                            |
+| ---------------------------------- | -------------------------------------------- |
+| Insertion throughput (records/sec) | Per-entity-type timing in benchmark runner   |
+| Latency p50 / p95 / p99 (ms)       | `time.perf_counter_ns()` per operation       |
+| Throughput (ops/sec)               | Inverse of mean latency                      |
+| Concurrent throughput              | Total ops across all tasks / wall clock time |
 
 ### Hardware Calibration
 
@@ -219,13 +219,14 @@ ansible-playbook playbooks/provision.yml --vault-password-file=.vault-pass \
 **`setup-{db}.yml`** — Deploys the per-database Docker Compose template from `templates/`, starts the database via `docker compose`, waits for health check, starts metrics collection.
 
 **`start-benchmark.yml`** — The main benchmark orchestration playbook. For a given `benchmark_db`:
+
 1. Syncs investigation code to controller via rsync
-2. Installs uv and Python dependencies on controller
-3. Generates synthetic data (small + large) if not cached
-4. Runs hardware calibration on the target DB host
-5. Fetches calibration results to controller
-6. Deploys per-DB runner script from `run-benchmark-single.sh.j2`
-7. Starts benchmark in background via `nohup`
+1. Installs uv and Python dependencies on controller
+1. Generates synthetic data (small + large) if not cached
+1. Runs hardware calibration on the target DB host
+1. Fetches calibration results to controller
+1. Deploys per-DB runner script from `run-benchmark-single.sh.j2`
+1. Starts benchmark in background via `nohup`
 
 ```bash
 ansible-playbook playbooks/start-benchmark.yml -e benchmark_db=neo4j
@@ -288,10 +289,10 @@ ssh-keygen -t ed25519 -f ~/.ssh/benchmark-key -N "" -C "discogsography-benchmark
 ### Hetzner Cloud Account Setup
 
 1. Create account at [console.hetzner.cloud](https://console.hetzner.cloud)
-2. Create a project (e.g., "discogsography-benchmark")
-3. Go to **Security > API Tokens > Generate API Token**
-4. Select **Read & Write** permissions
-5. Copy the token (shown only once)
+1. Create a project (e.g., "discogsography-benchmark")
+1. Go to **Security > API Tokens > Generate API Token**
+1. Select **Read & Write** permissions
+1. Copy the token (shown only once)
 
 ### Vault Setup
 

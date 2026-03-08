@@ -86,14 +86,14 @@ class GraphBackend(ABC):
 
 The interface isolates exactly the areas where backends diverge:
 
-| Area | Method | Why It Varies |
-|------|--------|---------------|
-| Schema DDL | `get_schema_statements()` | Constraint/index syntax differs across all candidates |
-| Fulltext search | `fulltext_search_query()` | Different procedure names, query formats |
-| COUNT subqueries | `count_subquery()` | Cypher 5.0 feature not supported by most alternatives |
-| Database stats | `stats_query()` | APOC vs SHOW commands vs AQL |
-| Version info | `version_query()` | `dbms.components()` vs `SHOW VERSION` vs HTTP API |
-| Batch writes | `execute_write_batch()` | Transaction semantics vary |
+| Area             | Method                    | Why It Varies                                         |
+| ---------------- | ------------------------- | ----------------------------------------------------- |
+| Schema DDL       | `get_schema_statements()` | Constraint/index syntax differs across all candidates |
+| Fulltext search  | `fulltext_search_query()` | Different procedure names, query formats              |
+| COUNT subqueries | `count_subquery()`        | Cypher 5.0 feature not supported by most alternatives |
+| Database stats   | `stats_query()`           | APOC vs SHOW commands vs AQL                          |
+| Version info     | `version_query()`         | `dbms.components()` vs `SHOW VERSION` vs HTTP API     |
+| Batch writes     | `execute_write_batch()`   | Transaction semantics vary                            |
 
 ### Neo4j Backend (Reference Implementation)
 
@@ -218,10 +218,10 @@ The goal is to understand approximate orders of magnitude of performance differe
 
 Two scale points provide enough data to understand how performance changes with volume:
 
-| Scale | Artists | Labels | Masters | Releases | Approx. Nodes | Approx. Relationships |
-|-------|---------|--------|---------|----------|----------------|------------------------|
-| `small` | 10,000 | 5,000 | 20,000 | 100,000 | ~135,000 | ~540,000 |
-| `large` | 100,000 | 50,000 | 200,000 | 1,000,000 | ~1,350,000 | ~5,400,000 |
+| Scale   | Artists | Labels | Masters | Releases  | Approx. Nodes | Approx. Relationships |
+| ------- | ------- | ------ | ------- | --------- | ------------- | --------------------- |
+| `small` | 10,000  | 5,000  | 20,000  | 100,000   | ~135,000      | ~540,000              |
+| `large` | 100,000 | 50,000 | 200,000 | 1,000,000 | ~1,350,000    | ~5,400,000            |
 
 The ratios between data types are derived from the real Discogs dataset (collected 2026-03-07):
 
@@ -235,16 +235,16 @@ The ratios between data types are derived from the real Discogs dataset (collect
 
 Synthetic data generates relationships matching the real Discogs graph structure:
 
-| Relationship | Pattern | Real Distribution (2026-03-07) |
-|-------------|---------|-------------------------------|
-| `BY` | release→artist, master→artist | 26M total. Per release: avg 1.21, p50=1, p90=2, p99=4, max=49. Per artist (reverse): avg 8.17, p50=2, p90=10, p99=86, max=1.3M — heavy power-law |
-| `ON` | release→label | 20.7M total. Per release: avg 1.09, p50=1, p90=1, p95=2, max=100 |
-| `DERIVED_FROM` | release→master | 19M total. ~100% of releases have a master (not 60%). Per master: avg 7.50, p50=2, p90=7, p99=32 |
-| `IS` | release→genre, release→style | 61.2M total. Genres per release: avg 1.33, p50=1, p90=2, max=15. Styles per release: avg 1.79, p50=1, p90=3, max=90. ~0% missing genre, ~8% missing style |
-| `MEMBER_OF` | artist→artist (band members) | 2.3M total. 13.38% of artists are members, 6.55% are bands. Members per band: avg 3.54, p50=3, p90=6 |
-| `ALIAS_OF` | artist→artist (aliases) | 4.9M total. ~12.82% of artists have aliases |
-| `SUBLABEL_OF` | label→label (parent labels) | 278K total. 11.74% of labels are sublabels. Children per parent: avg 4.47, p50=1, p90=4, max=140K |
-| `PART_OF` | style→genre | 10.4K total (757 styles → 16 genres, ~14 per genre avg) |
+| Relationship   | Pattern                       | Real Distribution (2026-03-07)                                                                                                                            |
+| -------------- | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BY`           | release→artist, master→artist | 26M total. Per release: avg 1.21, p50=1, p90=2, p99=4, max=49. Per artist (reverse): avg 8.17, p50=2, p90=10, p99=86, max=1.3M — heavy power-law          |
+| `ON`           | release→label                 | 20.7M total. Per release: avg 1.09, p50=1, p90=1, p95=2, max=100                                                                                          |
+| `DERIVED_FROM` | release→master                | 19M total. ~100% of releases have a master (not 60%). Per master: avg 7.50, p50=2, p90=7, p99=32                                                          |
+| `IS`           | release→genre, release→style  | 61.2M total. Genres per release: avg 1.33, p50=1, p90=2, max=15. Styles per release: avg 1.79, p50=1, p90=3, max=90. ~0% missing genre, ~8% missing style |
+| `MEMBER_OF`    | artist→artist (band members)  | 2.3M total. 13.38% of artists are members, 6.55% are bands. Members per band: avg 3.54, p50=3, p90=6                                                      |
+| `ALIAS_OF`     | artist→artist (aliases)       | 4.9M total. ~12.82% of artists have aliases                                                                                                               |
+| `SUBLABEL_OF`  | label→label (parent labels)   | 278K total. 11.74% of labels are sublabels. Children per parent: avg 4.47, p50=1, p90=4, max=140K                                                         |
+| `PART_OF`      | style→genre                   | 10.4K total (757 styles → 16 genres, ~14 per genre avg)                                                                                                   |
 
 **Orphan nodes:** 57.81% of artists and 39.33% of labels have zero relationships of any kind. Only 28.15% of artists have any BY edges. Synthetic data must include orphan nodes at these rates.
 
@@ -366,50 +366,50 @@ def generate_test_data(scale: str = "small") -> dict:
 
 These numbers were collected from the live Neo4j instance and used to calibrate all synthetic data parameters:
 
-| Metric | Value |
-|--------|-------|
-| Total nodes | 33,823,655 |
-| Total relationships | 134,366,055 |
-| Rels per node | 3.97 |
-| Releases | 18,954,226 |
-| Artists | 9,974,217 |
-| Masters | 2,531,018 |
-| Labels | 2,363,420 |
-| Genres | 16 |
-| Styles | 757 |
-| Orphan artists (no rels) | 57.81% |
-| Artists with BY edges | 28.15% |
-| Orphan labels (no rels) | 39.33% |
-| Artists per release | avg 1.21, p50=1, p99=4 |
-| Releases per artist | avg 8.17, p50=2, p90=10, p99=86 |
-| Labels per release | avg 1.09, p50=1, p95=2 |
-| Releases per master | avg 7.50, p50=2, p90=7, p99=32 |
-| DERIVED_FROM coverage | ~100% of releases |
-| Genres per release | avg 1.33, p50=1, p90=2 |
-| Styles per release | avg 1.79, p50=1, p90=3 |
-| Releases with no style | ~8.15% |
-| MEMBER_OF members | 13.38% of artists |
-| MEMBER_OF bands | 6.55% of artists |
-| Members per band | avg 3.54, p50=3, p90=6 |
-| ALIAS_OF | 12.82% of artists |
-| SUBLABEL_OF | 11.74% of labels |
-| Children per parent label | avg 4.47, p50=1, p90=4 |
-| Year property | On Master and Release (Long type) |
-| Masters with no year | 6.73% |
-| Artist name length | avg 13.77, p50=13, p99=34, max=255 |
-| Release title length | avg 20.96, p50=17, p99=73, max=255 |
-| Master title length | avg 21.06, p50=17, p99=73, max=255 |
-| Label name length | avg 20.28, p50=18, p99=50, max=255 |
-| All string max | 255 (truncated/capped) |
-| Node ID type | String (not integer) |
-| Node properties | id (String), sha256 (String), name/title (String), year (Long on Master+Release) |
-| Artist extra props | releases_url (String), resource_url (String) |
-| Year range | 1860–2026 (avg 1995.47, p10=1967, p50=1998, p90=2019) |
+| Metric                      | Value                                                                                                     |
+| --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| Total nodes                 | 33,823,655                                                                                                |
+| Total relationships         | 134,366,055                                                                                               |
+| Rels per node               | 3.97                                                                                                      |
+| Releases                    | 18,954,226                                                                                                |
+| Artists                     | 9,974,217                                                                                                 |
+| Masters                     | 2,531,018                                                                                                 |
+| Labels                      | 2,363,420                                                                                                 |
+| Genres                      | 16                                                                                                        |
+| Styles                      | 757                                                                                                       |
+| Orphan artists (no rels)    | 57.81%                                                                                                    |
+| Artists with BY edges       | 28.15%                                                                                                    |
+| Orphan labels (no rels)     | 39.33%                                                                                                    |
+| Artists per release         | avg 1.21, p50=1, p99=4                                                                                    |
+| Releases per artist         | avg 8.17, p50=2, p90=10, p99=86                                                                           |
+| Labels per release          | avg 1.09, p50=1, p95=2                                                                                    |
+| Releases per master         | avg 7.50, p50=2, p90=7, p99=32                                                                            |
+| DERIVED_FROM coverage       | ~100% of releases                                                                                         |
+| Genres per release          | avg 1.33, p50=1, p90=2                                                                                    |
+| Styles per release          | avg 1.79, p50=1, p90=3                                                                                    |
+| Releases with no style      | ~8.15%                                                                                                    |
+| MEMBER_OF members           | 13.38% of artists                                                                                         |
+| MEMBER_OF bands             | 6.55% of artists                                                                                          |
+| Members per band            | avg 3.54, p50=3, p90=6                                                                                    |
+| ALIAS_OF                    | 12.82% of artists                                                                                         |
+| SUBLABEL_OF                 | 11.74% of labels                                                                                          |
+| Children per parent label   | avg 4.47, p50=1, p90=4                                                                                    |
+| Year property               | On Master and Release (Long type)                                                                         |
+| Masters with no year        | 6.73%                                                                                                     |
+| Artist name length          | avg 13.77, p50=13, p99=34, max=255                                                                        |
+| Release title length        | avg 20.96, p50=17, p99=73, max=255                                                                        |
+| Master title length         | avg 21.06, p50=17, p99=73, max=255                                                                        |
+| Label name length           | avg 20.28, p50=18, p99=50, max=255                                                                        |
+| All string max              | 255 (truncated/capped)                                                                                    |
+| Node ID type                | String (not integer)                                                                                      |
+| Node properties             | id (String), sha256 (String), name/title (String), year (Long on Master+Release)                          |
+| Artist extra props          | releases_url (String), resource_url (String)                                                              |
+| Year range                  | 1860–2026 (avg 1995.47, p10=1967, p50=1998, p90=2019)                                                     |
 | Year distribution (masters) | pre-1950: 1%, 1950s: 3%, 1960s: 7%, 1970s: 10%, 1980s: 12%, 1990s: 18%, 2000s: 18%, 2010s: 21%, 2020s: 8% |
-| Year peak | 2018 at 51,792 masters (all-time catalogued peak) |
-| Year recent trend | Declining from 2018 onward due to Discogs cataloguing lag, not production decline |
-| Top genres | Rock (6.18M), Electronic (4.87M), Pop (3.85M), Folk (2.48M), Jazz (1.51M) |
-| Top styles | Pop Rock (928K), House (705K), Vocal (638K), Experimental (625K), Punk (575K) |
+| Year peak                   | 2018 at 51,792 masters (all-time catalogued peak)                                                         |
+| Year recent trend           | Declining from 2018 onward due to Discogs cataloguing lag, not production decline                         |
+| Top genres                  | Rock (6.18M), Electronic (4.87M), Pop (3.85M), Folk (2.48M), Jazz (1.51M)                                 |
+| Top styles                  | Pop Rock (928K), House (705K), Vocal (638K), Experimental (625K), Punk (575K)                             |
 
 Data is inserted directly into each database using the `GraphBackend` abstraction — the benchmark script calls `backend.execute_write()` and `backend.execute_write_batch()` to create nodes and then relationships. This bypasses the extractor and graphinator entirely. The insertion order mirrors the graphinator's real write pattern: nodes first (artists, labels, masters, releases), then relationships (BY, ON, DERIVED_FROM, IS, MEMBER_OF, ALIAS_OF, SUBLABEL_OF, PART_OF).
 
@@ -542,15 +542,15 @@ def compare_results(baseline_file: str, candidate_file: str) -> None:
 
 #### Metrics Collected Per Run
 
-| Metric | Collection Method |
-|--------|-------------------|
-| Latency p50 / p95 / p99 (ms) | `time.perf_counter_ns()` per operation |
-| Throughput (ops/sec) | Inverse of mean latency |
-| Batch throughput (records/sec) | Records in batch / batch latency |
-| Memory usage (MB) | Docker `stats` or backend-specific query |
-| Cold start time (sec) | Time from `docker compose up` to first successful health check |
-| Disk usage (MB) | `docker system df` after data load |
-| Concurrent throughput (ops/sec) | Total ops across all tasks / wall clock time |
+| Metric                          | Collection Method                                              |
+| ------------------------------- | -------------------------------------------------------------- |
+| Latency p50 / p95 / p99 (ms)    | `time.perf_counter_ns()` per operation                         |
+| Throughput (ops/sec)            | Inverse of mean latency                                        |
+| Batch throughput (records/sec)  | Records in batch / batch latency                               |
+| Memory usage (MB)               | Docker `stats` or backend-specific query                       |
+| Cold start time (sec)           | Time from `docker compose up` to first successful health check |
+| Disk usage (MB)                 | `docker system df` after data load                             |
+| Concurrent throughput (ops/sec) | Total ops across all tasks / wall clock time                   |
 
 #### Running Benchmarks
 
@@ -598,14 +598,14 @@ Allow anyone to take the Hetzner CX53 benchmark results and estimate how the sam
 
 A lightweight calibration script runs portable micro-benchmarks that stress the same hardware dimensions as the database workloads:
 
-| Dimension | Calibration Test | Database Workloads Affected |
-|-----------|-----------------|---------------------------|
-| CPU (single-thread) | SHA-256 hashing throughput | Query parsing, single-query execution, aggregation |
-| CPU (multi-thread) | SHA-256 across all cores | Concurrent mixed workloads |
-| Memory bandwidth | 64 MB sequential read/write | In-memory databases (Memgraph, FalkorDB), large result sets |
-| Sequential I/O | 256 MB write + read with fsync | Bulk data loading, WAL writes, batch inserts |
-| Random I/O | 4 KB random reads (IOPS) | Index lookups, point reads, graph traversals |
-| Python sort | Sort 1M floats | In-process query overhead |
+| Dimension           | Calibration Test               | Database Workloads Affected                                 |
+| ------------------- | ------------------------------ | ----------------------------------------------------------- |
+| CPU (single-thread) | SHA-256 hashing throughput     | Query parsing, single-query execution, aggregation          |
+| CPU (multi-thread)  | SHA-256 across all cores       | Concurrent mixed workloads                                  |
+| Memory bandwidth    | 64 MB sequential read/write    | In-memory databases (Memgraph, FalkorDB), large result sets |
+| Sequential I/O      | 256 MB write + read with fsync | Bulk data loading, WAL writes, batch inserts                |
+| Random I/O          | 4 KB random reads (IOPS)       | Index lookups, point reads, graph traversals                |
+| Python sort         | Sort 1M floats                 | In-process query overhead                                   |
 
 By comparing calibration output from the benchmark host against your machine, per-dimension scaling factors are computed. These are then applied to each workload type using a weighted model that reflects which hardware dimensions matter most for that workload.
 
@@ -660,15 +660,15 @@ Scaled workload estimates:
 
 Each workload type maps to a set of weights reflecting which hardware dimensions dominate its performance:
 
-| Workload Type | CPU-ST | CPU-MT | Memory | Seq-IO | Rand-IO |
-|--------------|--------|--------|--------|--------|---------|
-| point_read | 0.3 | 0.0 | 0.2 | 0.0 | 0.5 |
-| graph_traversal | 0.4 | 0.0 | 0.3 | 0.0 | 0.3 |
-| fulltext_search | 0.3 | 0.0 | 0.3 | 0.0 | 0.4 |
-| aggregation | 0.5 | 0.0 | 0.3 | 0.0 | 0.2 |
-| batch_write_nodes | 0.2 | 0.1 | 0.1 | 0.3 | 0.3 |
-| batch_write_full_tx | 0.2 | 0.1 | 0.1 | 0.3 | 0.3 |
-| concurrent_mixed | 0.1 | 0.4 | 0.2 | 0.1 | 0.2 |
+| Workload Type       | CPU-ST | CPU-MT | Memory | Seq-IO | Rand-IO |
+| ------------------- | ------ | ------ | ------ | ------ | ------- |
+| point_read          | 0.3    | 0.0    | 0.2    | 0.0    | 0.5     |
+| graph_traversal     | 0.4    | 0.0    | 0.3    | 0.0    | 0.3     |
+| fulltext_search     | 0.3    | 0.0    | 0.3    | 0.0    | 0.4     |
+| aggregation         | 0.5    | 0.0    | 0.3    | 0.0    | 0.2     |
+| batch_write_nodes   | 0.2    | 0.1    | 0.1    | 0.3    | 0.3     |
+| batch_write_full_tx | 0.2    | 0.1    | 0.1    | 0.3    | 0.3     |
+| concurrent_mixed    | 0.1    | 0.4    | 0.2    | 0.1    | 0.2     |
 
 The composite scaling factor for a workload = weighted sum of per-dimension factors. A latency value is divided by this factor; a throughput value is multiplied.
 
