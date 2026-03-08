@@ -7,8 +7,8 @@
 # File naming convention: {db}-{what}-{timestamp}
 #   Results:     {db}-{scale}-{timestamp}.json
 #   Logs:        {db}-benchmark.log, {db}-error.log
-#   Sentinels:   {db}.done, {db}.err
-#   Calibration: {db}-calibration.json
+#   Sentinels:   {db}.done, {db}.err, {db}.timeout, {db}.start
+#   Calibration: {db}-calibration.json, baseline-calibration.json
 #   Metrics:     {db}-system-metrics.jsonl
 #
 # Safe to run while benchmarks are still running — it will show progress
@@ -25,29 +25,24 @@
     local_results_dir: "{{ playbook_dir }}/../../results/"
 
   tasks:
-    - name: Read benchmark status
-      ansible.builtin.slurp:
-        src: /opt/benchmark/benchmark.status
-      register: status_raw
-      ignore_errors: true
+    - name: List per-database log files
+      ansible.builtin.find:
+        paths: /opt/benchmark
+        patterns: "*-benchmark.log"
+      register: db_log_files
 
-    - name: Set status fact
-      ansible.builtin.set_fact:
-        bench_status: "{{ (status_raw.content | default('') | b64decode | trim) if status_raw is succeeded else 'not started' }}"
-
-    - name: Display benchmark status
-      ansible.builtin.debug:
-        msg: "Benchmark status: {{ bench_status }}"
-
-    - name: Show recent log output
-      ansible.builtin.command: tail -20 /opt/benchmark/benchmark.log
-      register: log_tail
-      ignore_errors: true
+    - name: Show recent log output per database
+      ansible.builtin.command: "tail -20 {{ item.path }}"
+      register: log_tails
+      loop: "{{ db_log_files.files }}"
       changed_when: false
+      ignore_errors: true
 
-    - name: Display recent log
+    - name: Display recent logs
       ansible.builtin.debug:
-        msg: "{{ log_tail.stdout_lines | default(['No log file yet.']) }}"
+        msg: "{{ item.item.path | basename }}:\n{{ item.stdout }}"
+      loop: "{{ log_tails.results }}"
+      when: item.stdout | default('') | length > 0
 
     - name: List result files on controller
       ansible.builtin.find:
@@ -55,17 +50,38 @@
         patterns: "*.json,*.txt,*.jsonl,*.done,*.err,*.timeout,*.start,*.log"
       register: result_files
 
+    - name: Identify completed databases
+      ansible.builtin.find:
+        paths: /opt/benchmark/results
+        patterns: "*.done"
+      register: done_files
+
     - name: Identify errored databases
       ansible.builtin.find:
         paths: /opt/benchmark/results
         patterns: "*.err"
       register: err_files
 
+    - name: Identify timed out databases
+      ansible.builtin.find:
+        paths: /opt/benchmark/results
+        patterns: "*.timeout"
+      register: timeout_files
+
+    - name: Identify running databases
+      ansible.builtin.find:
+        paths: /opt/benchmark
+        patterns: "*-benchmark.pid"
+      register: pid_files
+
     - name: Display result count
       ansible.builtin.debug:
         msg: >-
-          Found {{ result_files.files | length }} result files on controller
-          ({{ err_files.files | length }} databases errored).
+          Found {{ result_files.files | length }} result files on controller:
+          {{ done_files.files | length }} completed,
+          {{ err_files.files | length }} errored,
+          {{ timeout_files.files | length }} timed out,
+          {{ pid_files.files | length }} still running.
 
     - name: Display errored databases
       ansible.builtin.debug:
@@ -80,25 +96,12 @@
         flat: true
       loop: "{{ result_files.files }}"
 
-    - name: Find per-database log files
-      ansible.builtin.find:
-        paths: /opt/benchmark
-        patterns: "*-benchmark.log"
-      register: db_log_files
-
     - name: Fetch per-database logs to local machine
       ansible.builtin.fetch:
         src: "{{ item.path }}"
         dest: "{{ local_results_dir }}"
         flat: true
       loop: "{{ db_log_files.files }}"
-
-    - name: Fetch benchmark log
-      ansible.builtin.fetch:
-        src: /opt/benchmark/benchmark.log
-        dest: "{{ local_results_dir }}benchmark.log"
-        flat: true
-      ignore_errors: true
 
     - name: Find synthetic data files
       ansible.builtin.find:
@@ -125,12 +128,11 @@
     - name: Summary
       ansible.builtin.debug:
         msg: >-
-          Status: {{ bench_status }}.
           Fetched {{ result_files.files | length }} result files + {{ db_log_files.files | length }} logs
           + {{ data_files.files | length }} data files to investigations/.
           {{ 'Benchmarks still running — run this playbook again later for final results.'
-             if bench_status == 'running'
-             else '' }}
+             if pid_files.files | length > 0
+             else 'All benchmarks finished.' }}
           {{ err_files.files | length ~ ' database(s) had errors — check .err sentinels and error logs.'
              if err_files.files | length > 0
              else '' }}
