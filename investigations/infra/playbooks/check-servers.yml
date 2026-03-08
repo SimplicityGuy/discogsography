@@ -20,10 +20,11 @@
         api_token: "{{ hcloud_token }}"
       register: all_servers
 
+    - name: Filter benchmark servers
+      ansible.builtin.set_fact:
+        bench_servers: "{{ all_servers.hcloud_server_info | selectattr('name', 'match', '^bench-') | sort(attribute='name') | list }}"
+
     - name: Write benchmark server list
       ansible.builtin.copy:
-        content: |
-          {% for s in all_servers.hcloud_server_info | selectattr('name', 'match', '^bench-') | sort(attribute='name') %}
-          {{ s.name }} {{ s.ipv4_address }} {{ s.status }}
-          {% endfor %}
+        content: "{% for s in bench_servers %}{{ s.name }} {{ s.ipv4_address }} {{ s.status }}\n{% endfor %}# end\n"
         dest: "{{ output_file }}"
