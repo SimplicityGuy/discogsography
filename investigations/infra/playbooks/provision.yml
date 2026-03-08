@@ -158,6 +158,7 @@
         proxy_cmd: >-
           ssh -i ~/.ssh/benchmark-key
           -o StrictHostKeyChecking=no
+          -o UserKnownHostsFile=/dev/null
           -W %h:%p root@{{ controller_result.hcloud_server.ipv4_address }}
       ansible.builtin.copy:
         content: |
