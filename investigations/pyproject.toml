@@ -21,6 +21,7 @@ dependencies = [
     "matplotlib>=3.10.0",   # Chart generation
     "numpy>=2.0.0",         # Numerical computation
     "seaborn>=0.13.0",      # Statistical visualization
+    "matplotlib-stubs>=0.3.11",
 ]
 
 [tool.hatch.build.targets.wheel]

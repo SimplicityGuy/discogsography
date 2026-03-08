@@ -10,13 +10,13 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import matplotlib  # type: ignore[import-not-found]
+import matplotlib
 
 
 matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # type: ignore[import-not-found]
-import matplotlib.ticker as ticker  # type: ignore[import-not-found]
-import numpy as np  # type: ignore[import-not-found]
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import numpy as np
 
 
 # --- Paths ---

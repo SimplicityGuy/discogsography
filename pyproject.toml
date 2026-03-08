@@ -208,9 +208,26 @@ module = [
     "sklearn.*",
     "networkx.*",
     "sentence_transformers.*",
+    "cryptography",
+    "cryptography.*",
+    "fastapi",
     "fastapi.*",
-    "uvicorn.*",
+    "httpx",
+    "httpx.*",
+    "matplotlib",
+    "matplotlib.*",
+    "numpy",
+    "numpy.*",
+    "prometheus_client",
+    "prometheus_client.*",
+    "pydantic",
     "pydantic.*",
+    "slowapi",
+    "slowapi.*",
+    "starlette",
+    "starlette.*",
+    "uvicorn",
+    "uvicorn.*",
 ]
 ignore_missing_imports = true
 
@@ -220,6 +237,10 @@ disallow_untyped_decorators = false
 
 [[tool.mypy.overrides]]
 module = [
+    "api.api",
+    "api.models",
+    "api.routers.*",
+    "dashboard.dashboard",
     "explore.explore",
 ]
 disallow_untyped_decorators = false

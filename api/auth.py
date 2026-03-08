@@ -70,7 +70,8 @@ def encrypt_oauth_token(token: str, key: str) -> str:
     from cryptography.fernet import Fernet
 
     f = Fernet(key.encode("ascii"))
-    return f.encrypt(token.encode("utf-8")).decode("ascii")
+    encrypted: bytes = f.encrypt(token.encode("utf-8"))
+    return encrypted.decode("ascii")
 
 
 def decrypt_oauth_token(token: str, key: str | None) -> str:
@@ -86,6 +87,7 @@ def decrypt_oauth_token(token: str, key: str | None) -> str:
 
     try:
         f = Fernet(key.encode("ascii"))
-        return f.decrypt(token.encode("ascii")).decode("utf-8")
+        decrypted: bytes = f.decrypt(token.encode("ascii"))
+        return decrypted.decode("utf-8")
     except (InvalidToken, Exception) as exc:
         raise ValueError(f"Failed to decrypt OAuth token: {exc}") from exc
