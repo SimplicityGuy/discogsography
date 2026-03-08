@@ -27,6 +27,7 @@ The `--cloud` flag auto-installs everything. For manual setup:
 # Ansible
 uv tool install ansible-core
 ansible-galaxy collection install hetzner.hcloud community.docker community.general ansible.posix
+ansible-galaxy role install geerlingguy.docker
 
 # Hetzner CLI (for manual inspection if needed)
 pip install hcloud

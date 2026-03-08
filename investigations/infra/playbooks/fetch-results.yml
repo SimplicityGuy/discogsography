@@ -39,12 +39,26 @@
     - name: List result files on controller
       ansible.builtin.find:
         paths: /opt/benchmark/results
-        patterns: "*.json,*.txt,*.jsonl"
+        patterns: "*.json,*.txt,*.jsonl,*.done,*.err,*.log"
       register: result_files
+
+    - name: Identify errored databases
+      ansible.builtin.find:
+        paths: /opt/benchmark/results
+        patterns: "*.err"
+      register: err_files
 
     - name: Display result count
       ansible.builtin.debug:
-        msg: "Found {{ result_files.files | length }} result files on controller"
+        msg: >-
+          Found {{ result_files.files | length }} result files on controller
+          ({{ err_files.files | length }} databases errored).
+
+    - name: Display errored databases
+      ansible.builtin.debug:
+        msg: "ERROR: {{ item.path | basename | regex_replace('\\.err$', '') }} had failures — see error log in results"
+      loop: "{{ err_files.files }}"
+      when: err_files.files | length > 0
 
     - name: Fetch benchmark results to local machine
       ansible.builtin.fetch:
@@ -52,6 +66,19 @@
         dest: "{{ playbook_dir }}/../../benchmark/results/"
         flat: true
       loop: "{{ result_files.files }}"
+
+    - name: Find per-database log files
+      ansible.builtin.find:
+        paths: /opt/benchmark
+        patterns: "benchmark-*.log"
+      register: db_log_files
+
+    - name: Fetch per-database logs to local machine
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "{{ playbook_dir }}/../../benchmark/results/"
+        flat: true
+      loop: "{{ db_log_files.files }}"
 
     - name: Check for controller calibration file
       ansible.builtin.stat:
@@ -76,9 +103,12 @@
       ansible.builtin.debug:
         msg: >-
           Status: {{ bench_status }}.
-          Fetched {{ result_files.files | length }} files to investigations/benchmark/results/.
+          Fetched {{ result_files.files | length }} result files + {{ db_log_files.files | length }} logs to investigations/benchmark/results/.
           {{ 'Benchmarks still running — run this playbook again later for final results.'
              if bench_status == 'running'
+             else '' }}
+          {{ err_files.files | length ~ ' database(s) had errors — check .err sentinels and error logs.'
+             if err_files.files | length > 0
              else '' }}
 
 - name: Fetch calibration and metrics from database hosts

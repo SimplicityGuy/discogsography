@@ -1,8 +1,34 @@
 ---
 # Common setup for all benchmark hosts: Docker, monitoring tools.
 #
+# The controller play runs first to ensure its private network interface is
+# ready — database hosts are only reachable via ProxyJump through it.
+#
 # Usage:
 #   ansible-playbook playbooks/setup-common.yml
+
+- name: Prepare controller and verify private network
+  hosts: controller
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Wait for controller SSH to become available
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 120
+
+    - name: Wait for private network interface
+      ansible.builtin.shell: |
+        # Hetzner Cloud assigns 10.0.1.1 to the controller via DHCP on ens10.
+        # cloud-init may still be running after first boot.
+        for i in $(seq 1 30); do
+          ip addr show | grep -q '10.0.1.1/' && exit 0
+          sleep 2
+        done
+        echo "Private network interface not ready after 60s" >&2
+        exit 1
+      changed_when: false
 
 - name: Common setup for all benchmark hosts
   hosts: all
@@ -13,7 +39,7 @@
     - name: Wait for SSH to become available
       ansible.builtin.wait_for_connection:
         delay: 5
-        timeout: 120
+        timeout: 300
 
     - name: Gather facts
       ansible.builtin.setup:
@@ -23,14 +49,9 @@
         update_cache: true
         cache_valid_time: 3600
 
-    - name: Install prerequisites
+    - name: Install monitoring and utility packages
       ansible.builtin.apt:
         name:
-          - apt-transport-https
-          - ca-certificates
-          - curl
-          - gnupg
-          - lsb-release
           - sysstat
           - iotop
           - htop
@@ -40,38 +61,11 @@
           - sudo
         state: present
 
-    - name: Create Docker keyring directory
-      ansible.builtin.file:
-        path: /etc/apt/keyrings
-        state: directory
-        mode: "0755"
-
-    - name: Download Docker GPG key
-      ansible.builtin.get_url:
-        url: "https://download.docker.com/linux/debian/gpg"
-        dest: /etc/apt/keyrings/docker.asc
-        mode: "0644"
-
-    - name: Add Docker repository
-      ansible.builtin.apt_repository:
-        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
-        state: present
-
-    - name: Install Docker
-      ansible.builtin.apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-          - docker-compose-plugin
-        state: present
-        update_cache: true
-
-    - name: Start and enable Docker
-      ansible.builtin.systemd:
-        name: docker
-        state: started
-        enabled: true
+    - name: Install Docker via geerlingguy.docker
+      ansible.builtin.include_role:
+        name: geerlingguy.docker
+      vars:
+        docker_install_compose_plugin: true
 
     - name: Create benchmark directories
       ansible.builtin.file:

@@ -112,15 +112,21 @@
         path: "{{ results_dir }}/{{ db_name }}.done"
       register: done_file
 
+    - name: Check if benchmark previously errored
+      ansible.builtin.stat:
+        path: "{{ results_dir }}/{{ db_name }}.err"
+      register: err_file
+
     - name: Start benchmark in background
       ansible.builtin.shell: |
         nohup bash /opt/benchmark/run-benchmark-{{ db_name }}.sh \
             > /opt/benchmark/benchmark-{{ db_name }}.log 2>&1 &
-      when: not pid_file.stat.exists and not done_file.stat.exists
+      when: not pid_file.stat.exists and not done_file.stat.exists and not err_file.stat.exists
 
     - name: Show status
       ansible.builtin.debug:
         msg: >-
           {% if done_file.stat.exists %}Benchmark for {{ db_name }} already complete.
+          {% elif err_file.stat.exists %}Benchmark for {{ db_name }} previously errored. Remove {{ results_dir }}/{{ db_name }}.err to retry.
           {% elif pid_file.stat.exists %}Benchmark for {{ db_name }} is already running.
           {% else %}Benchmark for {{ db_name }} started in background.{% endif %}

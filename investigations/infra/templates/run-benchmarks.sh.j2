@@ -65,6 +65,8 @@ PYTHONPATH="$BENCHMARK_DIR" uv run python -m investigations.benchmark.runner \
     --output "$RESULTS_DIR/{{ db.name }}_{{ scale }}_$(date +%Y-%m-%d_%H%M%S).json" \
     $USER_ARGS || {
         log "WARNING: {{ db.name }} @ {{ scale }} failed, continuing..."
+        date -u '+%Y-%m-%dT%H:%M:%SZ' > "$RESULTS_DIR/{{ db.name }}.err"
+        cp "$LOG_FILE" "$RESULTS_DIR/{{ db.name }}-error.log" 2>/dev/null || true
     }
 
 {% if not loop.last %}

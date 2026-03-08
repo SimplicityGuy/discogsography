@@ -28,6 +28,8 @@ USER_ARGS=""
 {% endif %}
 
 FAILED=0
+ERR_FILE="${RESULTS_DIR}/${DB_NAME}.err"
+LOG_FILE="/opt/benchmark/benchmark-${DB_NAME}.log"
 
 for SCALE in small large; do
     TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
@@ -54,5 +56,8 @@ if [ $FAILED -eq 0 ]; then
     date -u '+%Y-%m-%dT%H:%M:%SZ' > "$DONE_FILE"
     log "All benchmarks complete for ${DB_NAME}. Sentinel written."
 else
-    log "One or more benchmarks failed for ${DB_NAME}. No sentinel written."
+    date -u '+%Y-%m-%dT%H:%M:%SZ' > "$ERR_FILE"
+    log "One or more benchmarks failed for ${DB_NAME}. Error sentinel written."
+    # Copy log into results so fetch-results picks it up
+    cp "$LOG_FILE" "$RESULTS_DIR/${DB_NAME}-error.log" 2>/dev/null || true
 fi

@@ -294,6 +294,13 @@ cloud_prerequisites() {
 	done
 	echo "  Ansible collections: OK"
 
+	# Ansible roles
+	if ! ansible-galaxy role list 2>/dev/null | grep -q "geerlingguy.docker"; then
+		echo "  Installing Ansible role: geerlingguy.docker"
+		ansible-galaxy role install geerlingguy.docker 2>/dev/null
+	fi
+	echo "  Ansible roles: OK"
+
 	# hcloud Python package
 	if ! python3 -c "import hcloud" 2>/dev/null; then
 		echo "  Installing hcloud Python package..."
@@ -463,23 +470,32 @@ run_cloud() {
 		if ! kill -0 "$pid" 2>/dev/null; then rm -f "$f"; fi
 	done' 2>/dev/null || true
 
-	# Gather sentinel (.done) and PID files
+	# Gather sentinel (.done / .err) and PID files
+	local -a ERRORED_DBS=()
 	local status_output
-	status_output=$($SSH_CMD 'echo "=DONE="; ls /opt/benchmark/results/*.done 2>/dev/null || true; echo "=PID="; ls /opt/benchmark/benchmark-*.pid 2>/dev/null || true' 2>/dev/null) || {
+	status_output=$($SSH_CMD 'echo "=DONE="; ls /opt/benchmark/results/*.done 2>/dev/null || true; echo "=ERR="; ls /opt/benchmark/results/*.err 2>/dev/null || true; echo "=PID="; ls /opt/benchmark/benchmark-*.pid 2>/dev/null || true' 2>/dev/null) || {
 		echo "  Cannot reach controller at $CONTROLLER_IP. Try again in a few minutes."
 		return
 	}
 
-	local in_done=false in_pid=false
+	local in_done=false in_err=false in_pid=false
 	while IFS= read -r line; do
 		case "$line" in
 		"=DONE=")
 			in_done=true
+			in_err=false
+			in_pid=false
+			continue
+			;;
+		"=ERR=")
+			in_done=false
+			in_err=true
 			in_pid=false
 			continue
 			;;
 		"=PID=")
 			in_done=false
+			in_err=false
 			in_pid=true
 			continue
 			;;
@@ -489,6 +505,14 @@ run_cloud() {
 			local db_name
 			db_name=$(basename "$line" .done)
 			in_array "$db_name" "${ALL_DBS[@]}" && COMPLETED_DBS+=("$db_name")
+		elif $in_err; then
+			# /opt/benchmark/results/neo4j.err → neo4j
+			local db_name
+			db_name=$(basename "$line" .err)
+			if in_array "$db_name" "${ALL_DBS[@]}"; then
+				COMPLETED_DBS+=("$db_name")
+				ERRORED_DBS+=("$db_name")
+			fi
 		elif $in_pid; then
 			# /opt/benchmark/benchmark-neo4j.pid → neo4j
 			local db_name
@@ -499,6 +523,7 @@ run_cloud() {
 	done <<<"$status_output"
 
 	echo "  Completed: ${COMPLETED_DBS[*]:-none}"
+	[[ ${#ERRORED_DBS[@]} -gt 0 ]] && echo "  Errored:   ${ERRORED_DBS[*]}"
 	echo "  Running:   ${RUNNING_DBS[*]:-none}"
 
 	# ── Step 4: All benchmarks done? ──────────────────────────────
