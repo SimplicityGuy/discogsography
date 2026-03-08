@@ -7,8 +7,17 @@
 - name: Common setup for all benchmark hosts
   hosts: all
   become: true
+  gather_facts: false
 
   tasks:
+    - name: Wait for SSH to become available
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 120
+
+    - name: Gather facts
+      ansible.builtin.setup:
+
     - name: Update apt cache
       ansible.builtin.apt:
         update_cache: true
@@ -31,14 +40,21 @@
           - sudo
         state: present
 
-    - name: Add Docker GPG key
-      ansible.builtin.apt_key:
+    - name: Create Docker keyring directory
+      ansible.builtin.file:
+        path: /etc/apt/keyrings
+        state: directory
+        mode: "0755"
+
+    - name: Download Docker GPG key
+      ansible.builtin.get_url:
         url: "https://download.docker.com/linux/debian/gpg"
-        state: present
+        dest: /etc/apt/keyrings/docker.asc
+        mode: "0644"
 
     - name: Add Docker repository
       ansible.builtin.apt_repository:
-        repo: "deb [arch=amd64] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
+        repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian {{ ansible_distribution_release }} stable"
         state: present
 
     - name: Install Docker

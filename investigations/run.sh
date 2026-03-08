@@ -85,48 +85,54 @@ run_local() {
 	local TIMESTAMP
 	TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
 
-	# --- Configuration ---
-	declare -A DB_COMPOSE DB_URI DB_USER DB_PASSWORD
-	DB_COMPOSE=(
-		[neo4j]="investigations/docker/docker-compose.neo4j.yml"
-		[memgraph]="investigations/docker/docker-compose.memgraph.yml"
-		[age]="investigations/docker/docker-compose.age.yml"
-		[falkordb]="investigations/docker/docker-compose.falkordb.yml"
-		[arangodb]="investigations/docker/docker-compose.arangodb.yml"
-	)
-	DB_URI=(
-		[neo4j]="${NEO4J_URI:-bolt://localhost:7687}"
-		[memgraph]="${MEMGRAPH_URI:-bolt://localhost:7688}"
-		[age]="${AGE_URI:-postgresql://discogsography:discogsography@localhost:5433/discogsography}"
-		[falkordb]="${FALKORDB_URI:-redis://localhost:6380}"
-		[arangodb]="${ARANGODB_URI:-http://localhost:8529}"
-	)
-	DB_USER=(
-		[neo4j]="${NEO4J_USER:-neo4j}"
-		[memgraph]=""
-		[age]=""
-		[falkordb]=""
-		[arangodb]="${ARANGODB_USER:-root}"
-	)
-	DB_PASSWORD=(
-		[neo4j]="${NEO4J_PASSWORD:-discogsography}"
-		[memgraph]=""
-		[age]=""
-		[falkordb]=""
-		[arangodb]="${ARANGODB_PASSWORD:-discogsography}"
-	)
+	# --- Configuration (bash 3.2 compatible — no associative arrays) ---
+	db_compose() {
+		case "$1" in
+		neo4j) echo "investigations/docker/docker-compose.neo4j.yml" ;;
+		memgraph) echo "investigations/docker/docker-compose.memgraph.yml" ;;
+		age) echo "investigations/docker/docker-compose.age.yml" ;;
+		falkordb) echo "investigations/docker/docker-compose.falkordb.yml" ;;
+		arangodb) echo "investigations/docker/docker-compose.arangodb.yml" ;;
+		esac
+	}
+
+	db_uri() {
+		case "$1" in
+		neo4j) echo "${NEO4J_URI:-bolt://localhost:7687}" ;;
+		memgraph) echo "${MEMGRAPH_URI:-bolt://localhost:7688}" ;;
+		age) echo "${AGE_URI:-postgresql://discogsography:discogsography@localhost:5433/discogsography}" ;;
+		falkordb) echo "${FALKORDB_URI:-redis://localhost:6380}" ;;
+		arangodb) echo "${ARANGODB_URI:-http://localhost:8529}" ;;
+		esac
+	}
+
+	db_user() {
+		case "$1" in
+		neo4j) echo "${NEO4J_USER:-neo4j}" ;;
+		arangodb) echo "${ARANGODB_USER:-root}" ;;
+		*) echo "" ;;
+		esac
+	}
+
+	db_password() {
+		case "$1" in
+		neo4j) echo "${NEO4J_PASSWORD:-discogsography}" ;;
+		arangodb) echo "${ARANGODB_PASSWORD:-discogsography}" ;;
+		*) echo "" ;;
+		esac
+	}
 
 	start_db() {
 		local db="$1"
 		echo "Starting $db..."
-		docker compose -f "${DB_COMPOSE[$db]}" up -d --wait
+		docker compose -f "$(db_compose "$db")" up -d --wait
 		echo "$db is ready."
 	}
 
 	stop_db() {
 		local db="$1"
 		echo "Stopping $db..."
-		docker compose -f "${DB_COMPOSE[$db]}" down -v
+		docker compose -f "$(db_compose "$db")" down -v
 	}
 
 	run_benchmark() {
@@ -139,14 +145,17 @@ run_local() {
 		echo "  Benchmarking: $db (scale=$scale)"
 		echo "========================================"
 
+		local user pass
+		user="$(db_user "$db")"
+		pass="$(db_password "$db")"
 		local -a user_args=()
-		if [[ -n "${DB_USER[$db]}" ]]; then
-			user_args=("--user" "${DB_USER[$db]}" "--password" "${DB_PASSWORD[$db]}")
+		if [[ -n "$user" ]]; then
+			user_args=("--user" "$user" "--password" "$pass")
 		fi
 
 		uv run python -m investigations.benchmark.runner \
 			--backend "$db" \
-			--uri "${DB_URI[$db]}" \
+			--uri "$(db_uri "$db")" \
 			--scale "$scale" \
 			--clear \
 			--output "$output" \
