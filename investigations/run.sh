@@ -345,15 +345,6 @@ run_cloud() {
 	# All databases to benchmark (order determines provisioning priority)
 	local ALL_DBS=(neo4j memgraph age falkordb arangodb)
 
-	# Map database name → setup playbook
-	local -A DB_SETUP=(
-		["neo4j"]=setup-neo4j.yml
-		["memgraph"]=setup-memgraph.yml
-		["age"]=setup-age.yml
-		["falkordb"]=setup-falkordb.yml
-		["arangodb"]=setup-arangodb.yml
-	)
-
 	cloud_prerequisites "$INFRA_DIR"
 
 	local VAULT_ARGS="--vault-password-file=$VAULT_PASS_FILE"
@@ -417,7 +408,7 @@ run_cloud() {
 		echo ""
 		echo "=== Step 3/4: Deploying databases ==="
 		for db in "${initial_dbs[@]}"; do
-			ansible-playbook "playbooks/${DB_SETUP[$db]}" &
+			ansible-playbook "playbooks/setup-${db}.yml" &
 		done
 		wait
 
@@ -596,7 +587,7 @@ run_cloud() {
 			echo ""
 			echo "=== Setting up bench-$db ==="
 			ansible-playbook playbooks/setup-common.yml --limit "bench-$db"
-			ansible-playbook "playbooks/${DB_SETUP[$db]}"
+			ansible-playbook "playbooks/setup-${db}.yml"
 			ansible-playbook playbooks/start-benchmark.yml \
 				-e "benchmark_db=$db"
 		done
