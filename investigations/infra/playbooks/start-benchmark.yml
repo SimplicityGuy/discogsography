@@ -52,8 +52,18 @@
 
 - name: Calibrate target database host
   hosts: "bench-{{ benchmark_db }}"
+  become: true
 
   tasks:
+    - name: Create benchmark directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /opt/benchmark
+        - /opt/benchmark/results
+
     - name: Copy calibration script
       ansible.builtin.copy:
         src: "{{ playbook_dir }}/../../calibration/calibrate.py"
