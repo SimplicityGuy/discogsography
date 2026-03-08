@@ -53,6 +53,7 @@ show_help() {
 	echo "  --cloud      Hetzner Cloud benchmark pipeline (convergence mode)"
 	echo "  --fetch      Fetch results from cloud controller to investigations/results/"
 	echo "  --teardown   Destroy all cloud infrastructure (alias: --terminate)"
+	echo "  --clean      Remove vault, vault password, and SSH keys created by --cloud"
 	echo ""
 	echo "Local options:"
 	echo "  backend      neo4j, memgraph, age, falkordb, arangodb (default: all)"
@@ -848,6 +849,47 @@ run_teardown() {
 }
 
 # ═══════════════════════════════════════════════════════
+# Clean — remove vault, vault password, and SSH keys
+# ═══════════════════════════════════════════════════════
+
+run_clean() {
+	local INFRA_DIR="$SCRIPT_DIR/infra"
+	local VAULT_FILE="$INFRA_DIR/vault.yml"
+	local VAULT_PASS_FILE="$INFRA_DIR/.vault-pass"
+	local SSH_KEY="$HOME/.ssh/benchmark-key"
+
+	local files_to_remove=()
+	[[ -f "$VAULT_FILE" ]] && files_to_remove+=("$VAULT_FILE")
+	[[ -f "$VAULT_PASS_FILE" ]] && files_to_remove+=("$VAULT_PASS_FILE")
+	[[ -f "$SSH_KEY" ]] && files_to_remove+=("$SSH_KEY")
+	[[ -f "$SSH_KEY.pub" ]] && files_to_remove+=("$SSH_KEY.pub")
+
+	if [[ ${#files_to_remove[@]} -eq 0 ]]; then
+		echo "Nothing to clean — no vault or SSH key files found."
+		exit 0
+	fi
+
+	echo "This will remove the following files:"
+	for f in "${files_to_remove[@]}"; do
+		echo "  $f"
+	done
+	echo ""
+	read -rp "Proceed? [y/N] " proceed
+	if [[ ! "${proceed:-N}" =~ ^[Yy] ]]; then
+		echo "Aborted."
+		exit 0
+	fi
+
+	for f in "${files_to_remove[@]}"; do
+		rm -f "$f"
+		echo "  Removed $f"
+	done
+
+	echo ""
+	echo "Clean complete. Run --cloud again to regenerate keys and vault."
+}
+
+# ═══════════════════════════════════════════════════════
 # Main
 # ═══════════════════════════════════════════════════════
 
@@ -884,6 +926,10 @@ case "${1:-}" in
 	;;
 --teardown | --terminate)
 	run_teardown
+	exit 0
+	;;
+--clean)
+	run_clean
 	exit 0
 	;;
 *)
