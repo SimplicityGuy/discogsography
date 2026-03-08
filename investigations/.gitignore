@@ -2,12 +2,12 @@
 infra/vault.yml
 infra/.vault-pass
 infra/inventory/hosts.yml
-
-# Result data (fetched from benchmark runs)
-results/
-benchmark/results/
-calibration/results/
 infra/results/
 
+# Result data (fetched from benchmark runs)
+results/*
+!results/.gitkeep
+
 # Synthetic data files (generated, large)
-data/
+data/*
+!data/.gitkeep
