@@ -11,3 +11,6 @@ results/*
 # Synthetic data files (generated, large)
 data/*
 !data/.gitkeep
+
+# Generated PDFs (render from markdown instead)
+report/**/*.pdf
