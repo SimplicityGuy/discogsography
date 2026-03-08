@@ -64,6 +64,8 @@ tableinator = [
 ]
 investigations = [
     "falkordb>=1.0.0",
+    "neo4j>=6.1.0",
+    "psycopg[binary]>=3.3.3",
     "python-arango>=8.0.0",
 ]
 dev = [

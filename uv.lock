@@ -448,6 +448,8 @@ graphinator = [
 ]
 investigations = [
     { name = "falkordb", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "neo4j", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "psycopg", extra = ["binary"], marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "python-arango", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 schema-init = [
@@ -508,6 +510,7 @@ requires-dist = [
     { name = "neo4j", marker = "extra == 'dashboard'", specifier = ">=6.1.0" },
     { name = "neo4j", marker = "extra == 'explore'", specifier = ">=6.1.0" },
     { name = "neo4j", marker = "extra == 'graphinator'", specifier = ">=6.1.0" },
+    { name = "neo4j", marker = "extra == 'investigations'", specifier = ">=6.1.0" },
     { name = "neo4j", marker = "extra == 'schema-init'", specifier = ">=6.1.0" },
     { name = "orjson", specifier = ">=3.9.0" },
     { name = "orjson", marker = "extra == 'api'", specifier = ">=3.9.0" },
@@ -520,6 +523,7 @@ requires-dist = [
     { name = "psycopg", extras = ["binary"], specifier = ">=3.0.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'api'", specifier = ">=3.1.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'dashboard'", specifier = ">=3.1.0" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'investigations'", specifier = ">=3.3.3" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'schema-init'", specifier = ">=3.1.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'tableinator'", specifier = ">=3.1.0" },
     { name = "pydantic", marker = "extra == 'api'", specifier = ">=2.10.5" },
