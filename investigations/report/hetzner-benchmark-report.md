@@ -89,7 +89,7 @@ The factor weights: CPU single-thread 50%, memory bandwidth 20%, disk IOPS 20%, 
 
 The calibration micro-benchmarks confirm all servers had the same hardware spec but showed real-world performance variance — particularly FalkorDB's server, which underperformed on CPU, memory bandwidth, and disk IOPS.
 
-![Hardware Calibration Comparison](images/calibration-comparison.png)
+![Hardware Calibration Comparison](images/hetzner-calibration-comparison.png)
 
 FalkorDB's disadvantage was consistent: 5.3% slower CPU, 15% slower memory reads, 19.6% fewer disk IOPS. The composite 1.12x factor corrects for this.
 
@@ -117,7 +117,7 @@ AGE (PostgreSQL extension) timed out even earlier — during **node insertion** 
 
 ### Total Ingestion Time
 
-![Total Ingestion Time](images/total-ingestion-time.png)
+![Total Ingestion Time](images/hetzner-total-ingestion-time.png)
 
 | Scale | Neo4j | FalkorDB | ArangoDB |
 |-------|------:|---------:|---------:|
@@ -128,7 +128,7 @@ FalkorDB ingested the large dataset in **4.4 minutes** vs. Neo4j's 6.9 minutes a
 
 ### Per-Type Insertion Throughput
 
-![Insertion Throughput — Large Scale](images/insertion-throughput-large.png)
+![Insertion Throughput — Large Scale](images/hetzner-insertion-throughput-large.png)
 
 Key observations:
 
@@ -142,7 +142,7 @@ Key observations:
 
 ### P50 Latency (Median)
 
-![P50 Latency — Large Scale](images/p50-latency-large.png)
+![P50 Latency — Large Scale](images/hetzner-p50-latency-large.png)
 
 | Workload | Neo4j | FalkorDB | ArangoDB |
 |----------|------:|---------:|---------:|
@@ -155,7 +155,7 @@ FalkorDB delivered sub-millisecond median latency on 3 of 4 read workloads at la
 
 ### P95 Tail Latency
 
-![P95 Latency — Large Scale](images/p95-latency-large.png)
+![P95 Latency — Large Scale](images/hetzner-p95-latency-large.png)
 
 Tail latency tells a different story for ArangoDB:
 
@@ -169,7 +169,7 @@ ArangoDB's P99 latencies on graph traversal (346.6ms) and aggregation (95.0ms) r
 
 ### Throughput
 
-![Throughput — Large Scale](images/throughput-large.png)
+![Throughput — Large Scale](images/hetzner-throughput-large.png)
 
 FalkorDB achieved the highest throughput on every read workload. The aggregation gap was particularly stark: FalkorDB at **1,219 ops/sec** vs. ArangoDB at **282 ops/sec** — a 4.3x difference.
 
@@ -196,7 +196,7 @@ This matters for Discogsography's graphinator pipeline, which performs exactly t
 
 ## 7. Concurrent Mixed Workload
 
-![Concurrent Mixed Workload](images/concurrent-mixed.png)
+![Concurrent Mixed Workload](images/hetzner-concurrent-mixed.png)
 
 The concurrent workload ran 4 reader threads and 2 writer threads simultaneously for 30 seconds.
 
@@ -217,7 +217,7 @@ The concurrent workload ran 4 reader threads and 2 writer threads simultaneously
 
 ## 8. Scalability Analysis
 
-![Scalability Ratio](images/scalability-ratio.png)
+![Scalability Ratio](images/hetzner-scalability-ratio.png)
 
 The scalability chart shows how P50 latency changes when going from 135K to 1.35M nodes (10x data increase). A ratio of 1.0 means no degradation.
 
@@ -238,7 +238,7 @@ Interesting findings:
 
 ## 9. Overall Comparison
 
-![Radar Comparison](images/radar-comparison.png)
+![Radar Comparison](images/hetzner-radar-comparison.png)
 
 The radar chart normalizes all metrics to a 0-1 scale where 1.0 = best across the three databases. FalkorDB dominates on 6 of 8 dimensions. Neo4j is competitive on concurrent workloads and scalability. ArangoDB does not lead in any dimension.
 

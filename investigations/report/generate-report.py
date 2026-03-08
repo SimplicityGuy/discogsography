@@ -3,10 +3,19 @@
 
 Reads raw benchmark results and calibration data, normalizes to a baseline,
 and produces charts for the investigation report.
+
+Usage:
+    # Generate charts with no prefix (default)
+    uv run python investigations/report/generate-report.py
+
+    # Generate charts with a prefix and target calibration scaling
+    uv run python investigations/report/generate-report.py \
+      --prefix nox --target-calibration investigations/results/nox-calibration.json
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -18,6 +27,24 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 import numpy as np
 
+
+# --- CLI ---
+_parser = argparse.ArgumentParser(description="Generate benchmark report charts")
+_parser.add_argument(
+    "--prefix",
+    default="",
+    help="Prefix for output image filenames (e.g. 'nox' produces 'nox-p50-latency-large.png')",
+)
+_parser.add_argument(
+    "--target-calibration",
+    default=None,
+    help="Path to a target machine calibration JSON. When provided, results are scaled from the "
+    "baseline hardware to estimate performance on the target machine.",
+)
+_args = _parser.parse_args()
+
+IMAGE_PREFIX = f"{_args.prefix}-" if _args.prefix else ""
+TARGET_LABEL = _args.prefix.title() if _args.prefix else "Hetzner CX53"
 
 # --- Paths ---
 RESULTS_DIR = Path(__file__).parent.parent / "results"
@@ -176,6 +203,42 @@ for db in DATABASES:
     print(f"  {DB_LABELS[db]}: {factors[db]:.4f}")
 print()
 
+# ────────────────────────────────────────────
+# Optional: scale to target hardware
+# ────────────────────────────────────────────
+
+if _args.target_calibration:
+    target_cal = load_json(Path(_args.target_calibration))
+    target_factor = compute_calibration_factor(baseline, target_cal)
+    print(f"=== Target Calibration ({TARGET_LABEL}) ===")
+    print(f"  Composite factor (baseline/target): {target_factor:.4f}")
+
+    tb = target_cal["benchmarks"]
+    bb = baseline["benchmarks"]
+    print(
+        f"  CPU single:  baseline={bb['cpu_single_thread']['ops_per_sec']:.0f}  "
+        f"target={tb['cpu_single_thread']['ops_per_sec']:.0f}  "
+        f"ratio={bb['cpu_single_thread']['ops_per_sec'] / tb['cpu_single_thread']['ops_per_sec']:.4f}"
+    )
+    print(
+        f"  Mem read:    baseline={bb['memory_bandwidth']['read_mb_per_sec']:.0f}  "
+        f"target={tb['memory_bandwidth']['read_mb_per_sec']:.0f}  "
+        f"ratio={bb['memory_bandwidth']['read_mb_per_sec'] / tb['memory_bandwidth']['read_mb_per_sec']:.4f}"
+    )
+    print(
+        f"  Disk IOPS:   baseline={bb['disk_random_read']['iops']:.0f}  "
+        f"target={tb['disk_random_read']['iops']:.0f}  "
+        f"ratio={bb['disk_random_read']['iops'] / tb['disk_random_read']['iops']:.4f}"
+    )
+    print()
+
+    # Apply target scaling on top of normalization
+    for db in DATABASES:
+        for scale in ["small", "large"]:
+            if scale in norm_results[db]:
+                norm_results[db][scale]["benchmarks"] = normalize_benchmarks(norm_results[db][scale]["benchmarks"], target_factor)
+                norm_results[db][scale]["insertion_metrics"] = normalize_insertion(norm_results[db][scale]["insertion_metrics"], target_factor)
+
 
 # ────────────────────────────────────────────
 # Chart helpers
@@ -184,9 +247,10 @@ print()
 
 def save(fig: plt.Figure, name: str) -> None:
     fig.tight_layout()
-    fig.savefig(IMAGES_DIR / f"{name}.png", bbox_inches="tight")
+    fname = f"{IMAGE_PREFIX}{name}.png"
+    fig.savefig(IMAGES_DIR / fname, bbox_inches="tight")
     plt.close(fig)
-    print(f"  Saved {name}.png")
+    print(f"  Saved {fname}")
 
 
 # ────────────────────────────────────────────
@@ -209,7 +273,7 @@ for scale in ["small", "large"]:
 
     ax.set_xlabel("Workload")
     ax.set_ylabel("P50 Latency (ms) — lower is better")
-    ax.set_title(f"Normalized P50 Latency — {scale.title()} Scale ({('135K' if scale == 'small' else '1.35M')} nodes)")
+    ax.set_title(f"P50 Latency ({TARGET_LABEL}) — {scale.title()} Scale ({('135K' if scale == 'small' else '1.35M')} nodes)")
     ax.set_xticks(x + width)
     ax.set_xticklabels(wl_labels)
     ax.legend()
@@ -232,7 +296,7 @@ for scale in ["small", "large"]:
 
     ax.set_xlabel("Workload")
     ax.set_ylabel("Throughput (ops/sec) — higher is better")
-    ax.set_title(f"Normalized Throughput — {scale.title()} Scale ({('135K' if scale == 'small' else '1.35M')} nodes)")
+    ax.set_title(f"Throughput ({TARGET_LABEL}) — {scale.title()} Scale ({('135K' if scale == 'small' else '1.35M')} nodes)")
     ax.set_xticks(x + width)
     ax.set_xticklabels(wl_labels)
     ax.legend()
@@ -259,7 +323,7 @@ for scale in ["small", "large"]:
 
     ax.set_xlabel("Workload")
     ax.set_ylabel("P95 Latency (ms) — lower is better")
-    ax.set_title(f"Normalized P95 Tail Latency — {scale.title()} Scale ({('135K' if scale == 'small' else '1.35M')} nodes)")
+    ax.set_title(f"P95 Tail Latency ({TARGET_LABEL}) — {scale.title()} Scale ({('135K' if scale == 'small' else '1.35M')} nodes)")
     ax.set_xticks(x + width)
     ax.set_xticklabels(wl_labels)
     ax.legend()
@@ -287,7 +351,7 @@ for scale in ["small", "large"]:
         ax1.bar(x + i * width, vals, width, label=DB_LABELS[db], color=DB_COLORS[db], edgecolor="white", linewidth=0.5)
     ax1.set_xlabel("Node Type")
     ax1.set_ylabel("Records/sec — higher is better")
-    ax1.set_title(f"Node Insertion — {scale.title()} Scale")
+    ax1.set_title(f"Node Insertion ({TARGET_LABEL}) — {scale.title()} Scale")
     ax1.set_xticks(x + width)
     ax1.set_xticklabels(insert_labels)
     ax1.legend()
@@ -299,7 +363,7 @@ for scale in ["small", "large"]:
         ax2.bar(x + i * width, vals, width, label=DB_LABELS[db], color=DB_COLORS[db], edgecolor="white", linewidth=0.5)
     ax2.set_xlabel("Relationship Type")
     ax2.set_ylabel("Records/sec — higher is better")
-    ax2.set_title(f"Relationship Insertion — {scale.title()} Scale")
+    ax2.set_title(f"Relationship Insertion ({TARGET_LABEL}) — {scale.title()} Scale")
     ax2.set_xticks(x + width)
     ax2.set_xticklabels(rel_labels)
     ax2.legend()
@@ -322,7 +386,7 @@ for ax, scale in [(ax1, "small"), (ax2, "large")]:
         ax.text(bar.get_x() + bar.get_width() / 2, bar.get_height() + 1, f"{val:.0f}s", ha="center", va="bottom", fontsize=10)
     ax.set_ylabel("Total Duration (seconds) — lower is better")
     ax.set_title(
-        f"Total Ingestion Time — {scale.title()} Scale\n({('135K' if scale == 'small' else '1.35M')} nodes, {('540K' if scale == 'small' else '5.4M')} rels)"
+        f"Total Ingestion Time ({TARGET_LABEL}) — {scale.title()} Scale\n({('135K' if scale == 'small' else '1.35M')} nodes, {('540K' if scale == 'small' else '5.4M')} rels)"
     )
     ax.set_ylim(bottom=0)
 
@@ -362,7 +426,7 @@ for ax, scale in [(ax1, "small"), (ax2, "large")]:
     ax.bar(x + width / 2, all_write, width, label="Write ops/sec", color="#FF5722")
 
     ax.set_ylabel("Throughput (ops/sec)")
-    ax.set_title(f"Concurrent Mixed Workload — {scale.title()} Scale\n(4 readers + 2 writers, 30s)")
+    ax.set_title(f"Concurrent Mixed ({TARGET_LABEL}) — {scale.title()} Scale\n(4 readers + 2 writers, 30s)")
     ax.set_xticks(x)
     ax.set_xticklabels(all_labels)
     ax.legend()
@@ -397,7 +461,7 @@ for i, db in enumerate(DATABASES):
 ax.axhline(y=1.0, color="gray", linestyle="--", alpha=0.5, label="No degradation")
 ax.set_xlabel("Workload")
 ax.set_ylabel("P50 Ratio (large / small) — closer to 1.0 is better")
-ax.set_title("Scalability: P50 Latency Degradation from Small (135K) to Large (1.35M)")
+ax.set_title(f"Scalability ({TARGET_LABEL}): P50 Latency Degradation from Small (135K) to Large (1.35M)")
 ax.set_xticks(x + width)
 ax.set_xticklabels(read_labels_short)
 ax.legend()
@@ -471,7 +535,7 @@ for db in DATABASES:
 ax.set_xticks(angles[:-1])
 ax.set_xticklabels(categories, size=9)
 ax.set_ylim(0, 1.1)
-ax.set_title("Overall Comparison — Large Scale (normalized, 1.0 = best)", pad=20)
+ax.set_title(f"Overall Comparison ({TARGET_LABEL}) — Large Scale (1.0 = best)", pad=20)
 ax.legend(loc="upper right", bbox_to_anchor=(1.3, 1.1))
 save(fig, "radar-comparison")
 
@@ -492,17 +556,21 @@ cal_metrics = [
 all_cals = {"Baseline": baseline}
 for db in DATABASES:
     all_cals[DB_LABELS[db]] = calibrations[db]
+if _args.target_calibration:
+    all_cals[TARGET_LABEL] = target_cal
 
 for idx, (metric, key, title) in enumerate(cal_metrics):
     ax = axes[idx // 2][idx % 2]
     labels = list(all_cals.keys())
     vals = [all_cals[label]["benchmarks"][metric][key] for label in labels]
     colors = ["#888888"] + [DB_COLORS[db] for db in DATABASES]
+    if _args.target_calibration:
+        colors.append("#2E8B57")
     ax.bar(labels, vals, color=colors, edgecolor="white", linewidth=0.5)
     ax.set_title(title)
     ax.set_ylabel(key.replace("_", " "))
 
-fig.suptitle("Hardware Calibration Comparison", fontsize=14, fontweight="bold")
+fig.suptitle(f"Hardware Calibration Comparison ({TARGET_LABEL})", fontsize=14, fontweight="bold")
 save(fig, "calibration-comparison")
 
 
