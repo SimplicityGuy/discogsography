@@ -52,7 +52,7 @@ show_help() {
 	echo "  (default)    Run benchmarks locally via Docker Compose"
 	echo "  --cloud      Hetzner Cloud benchmark pipeline (convergence mode)"
 	echo "  --fetch      Fetch results from cloud controller to investigations/results/"
-	echo "  --teardown   Destroy all cloud infrastructure"
+	echo "  --teardown   Destroy all cloud infrastructure (alias: --terminate)"
 	echo ""
 	echo "Local options:"
 	echo "  backend      neo4j, memgraph, age, falkordb, arangodb (default: all)"
@@ -765,7 +765,7 @@ case "${1:-}" in
 	run_fetch
 	exit 0
 	;;
---teardown)
+--teardown | --terminate)
 	run_teardown
 	exit 0
 	;;
