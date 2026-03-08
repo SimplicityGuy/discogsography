@@ -46,7 +46,7 @@
       ansible.builtin.shell: |
         export PATH="/root/.local/bin:$PATH"
         cd /opt/benchmark/discogsography
-        uv sync --all-extras --extra investigations
+        uv sync --all-extras
       args:
         chdir: /opt/benchmark/discogsography
 
