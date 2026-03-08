@@ -1,0 +1,21 @@
+---
+services:
+  memgraph:
+    image: memgraph/memgraph:latest
+    container_name: memgraph
+    hostname: memgraph
+    command: ["--bolt-server-name-for-init=Neo4j/5.2.0", "--memory-limit=24000"]
+    ports:
+      - "7687:7687"
+    volumes:
+      - memgraph_data:/var/lib/memgraph
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  memgraph_data:

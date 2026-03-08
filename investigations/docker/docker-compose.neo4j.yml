@@ -1,0 +1,26 @@
+---
+services:
+  neo4j:
+    image: neo4j:2026-community
+    container_name: bench-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/discogsography
+      NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_initial__size: 2G
+      NEO4J_server_memory_heap_max__size: 2G
+      NEO4J_server_memory_pagecache_size: 1G
+    ports:
+      - "7687:7687"
+      - "7474:7474"
+    volumes:
+      - neo4j_bench_data:/data
+    healthcheck:
+      test: ["CMD", "neo4j", "status"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    restart: unless-stopped
+
+volumes:
+  neo4j_bench_data:

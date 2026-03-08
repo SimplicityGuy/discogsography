@@ -1,0 +1,30 @@
+---
+services:
+  postgres-age:
+    image: apache/age:latest
+    container_name: postgres-age
+    hostname: postgres-age
+    environment:
+      POSTGRES_DB: discogsography
+      POSTGRES_USER: discogsography
+      POSTGRES_PASSWORD: discogsography
+    ports:
+      - "5432:5432"
+    volumes:
+      - age_data:/var/lib/postgresql/data
+    command: >
+      postgres
+      -c shared_buffers=8GB
+      -c effective_cache_size=20GB
+      -c work_mem=256MB
+      -c maintenance_work_mem=2GB
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U discogsography"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  age_data:

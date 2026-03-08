@@ -1,0 +1,85 @@
+---
+# Common setup for all benchmark hosts: Docker, monitoring tools, firewall.
+#
+# Usage:
+#   ansible-playbook playbooks/setup-common.yml
+
+- name: Common setup for all benchmark hosts
+  hosts: all
+  become: true
+
+  tasks:
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Install prerequisites
+      ansible.builtin.apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - sysstat
+          - iotop
+          - htop
+          - jq
+          - python3-pip
+          - python3-venv
+        state: present
+
+    - name: Add Docker GPG key
+      ansible.builtin.apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      ansible.builtin.apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker
+      ansible.builtin.apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: true
+
+    - name: Start and enable Docker
+      ansible.builtin.systemd:
+        name: docker
+        state: started
+        enabled: true
+
+    - name: Create benchmark directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /opt/benchmark
+        - /opt/benchmark/results
+
+    - name: Deploy metrics collector script
+      ansible.builtin.template:
+        src: ../templates/metrics-collector.sh.j2
+        dest: /opt/benchmark/metrics-collector.sh
+        mode: "0755"
+
+    - name: Configure UFW firewall
+      community.general.ufw:
+        rule: allow
+        port: "{{ item }}"
+        proto: tcp
+      loop:
+        - "22"
+        - "7687"
+        - "5432"
+        - "6379"
+        - "8529"
+        - "7474"

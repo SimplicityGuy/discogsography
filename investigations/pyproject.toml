@@ -1,0 +1,20 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "discogsography-investigations"
+version = "0.1.0"
+description = "Graph database benchmark harness for Discogsography"
+authors = [{name = "Robert Wlodarczyk", email = "robert@simplicityguy.com"}]
+requires-python = ">=3.13"
+license = {text = "MIT"}
+dependencies = [
+    # All backends
+    "neo4j>=6.1.0",         # Neo4j + Memgraph (Bolt protocol)
+    "psycopg[binary]>=3.0.0",  # Apache AGE (PostgreSQL extension)
+    "falkordb>=1.0.0",      # FalkorDB (Redis module)
+    "python-arango>=8.0.0", # ArangoDB
+]
+
+# Tool configurations inherit from root pyproject.toml

@@ -193,6 +193,11 @@ docker-compose.override.yml
 .env.*.local
 secrets/
 
+# Benchmark infrastructure (sensitive / generated)
+investigations/infra/vault.yml
+investigations/infra/.vault-pass
+investigations/infra/inventory/hosts.yml
+
 # Dashboard/Frontend (if applicable)
 node_modules/
 static/build/

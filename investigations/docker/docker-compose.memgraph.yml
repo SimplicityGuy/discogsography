@@ -1,0 +1,20 @@
+---
+services:
+  memgraph:
+    image: memgraph/memgraph:latest
+    container_name: bench-memgraph
+    command: ["--bolt-server-name-for-init=Neo4j/5.2.0"]
+    ports:
+      - "7688:7687"
+    volumes:
+      - memgraph_bench_data:/var/lib/memgraph
+    healthcheck:
+      test: ["CMD-SHELL", "echo 'RETURN 1;' | mgconsole || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  memgraph_bench_data:

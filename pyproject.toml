@@ -62,6 +62,10 @@ graphinator = [
 tableinator = [
     "psycopg[binary]>=3.1.0",
 ]
+investigations = [
+    "falkordb>=1.0.0",
+    "python-arango>=8.0.0",
+]
 dev = [
     "bandit>=1.7.0",
     "black>=24.0.0",
@@ -181,11 +185,13 @@ exclude = "^tests/"
 [[tool.mypy.overrides]]
 module = [
     "aio_pika.*",
+    "arango.*",
     "bcrypt.*",
     "boto3.*",
     "botocore.*",
     "celery.*",
     "dict_hash",
+    "falkordb.*",
     "neo4j.*",
     "onnxruntime",
     "optimum.*",

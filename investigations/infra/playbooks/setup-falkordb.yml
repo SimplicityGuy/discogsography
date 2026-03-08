@@ -1,0 +1,31 @@
+---
+- name: Setup FalkorDB benchmark host
+  hosts: bench-falkordb
+  become: true
+
+  tasks:
+    - name: Deploy docker-compose
+      ansible.builtin.template:
+        src: ../templates/docker-compose.falkordb.yml.j2
+        dest: /opt/benchmark/docker-compose.yml
+        mode: "0644"
+
+    - name: Start FalkorDB
+      community.docker.docker_compose_v2:
+        project_src: /opt/benchmark
+        state: present
+
+    - name: Wait for FalkorDB to be healthy
+      ansible.builtin.command: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' falkordb
+      register: health
+      until: health.stdout == "healthy"
+      retries: 30
+      delay: 10
+
+    - name: Start metrics collection
+      ansible.builtin.shell: >
+        nohup /opt/benchmark/metrics-collector.sh
+        /opt/benchmark/results/system-metrics.jsonl 5
+        > /dev/null 2>&1 &
+      async: 0
+      poll: 0

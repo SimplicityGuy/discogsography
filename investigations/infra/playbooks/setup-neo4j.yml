@@ -1,0 +1,31 @@
+---
+- name: Setup Neo4j benchmark host
+  hosts: bench-neo4j
+  become: true
+
+  tasks:
+    - name: Deploy docker-compose
+      ansible.builtin.template:
+        src: ../templates/docker-compose.neo4j.yml.j2
+        dest: /opt/benchmark/docker-compose.yml
+        mode: "0644"
+
+    - name: Start Neo4j
+      community.docker.docker_compose_v2:
+        project_src: /opt/benchmark
+        state: present
+
+    - name: Wait for Neo4j to be healthy
+      ansible.builtin.command: docker inspect --format='{{ '{{' }}.State.Health.Status{{ '}}' }}' neo4j
+      register: health
+      until: health.stdout == "healthy"
+      retries: 30
+      delay: 10
+
+    - name: Start metrics collection
+      ansible.builtin.shell: >
+        nohup /opt/benchmark/metrics-collector.sh
+        /opt/benchmark/results/system-metrics.jsonl 5
+        > /dev/null 2>&1 &
+      async: 0
+      poll: 0

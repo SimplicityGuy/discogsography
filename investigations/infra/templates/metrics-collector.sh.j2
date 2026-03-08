@@ -1,0 +1,48 @@
+# System metrics collector — runs on each database host.
+# Writes JSONL with CPU, memory, disk, and I/O metrics every N seconds.
+#
+# Usage: ./metrics-collector.sh <output_file> [interval_seconds]
+
+set -euo pipefail
+
+OUTPUT="${1:-/opt/benchmark/results/system-metrics.jsonl}"
+INTERVAL="${2:-5}"
+
+echo "Collecting metrics to $OUTPUT every ${INTERVAL}s (Ctrl+C to stop)"
+
+# Track previous CPU values for delta calculation
+PREV_IDLE=0
+PREV_TOTAL=0
+
+while true; do
+    TIMESTAMP=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # CPU usage (delta since last sample)
+    read -r _ USER NICE SYSTEM IDLE IOWAIT IRQ SOFTIRQ _ < /proc/stat
+    TOTAL=$((USER + NICE + SYSTEM + IDLE + IOWAIT + IRQ + SOFTIRQ))
+    DIFF_IDLE=$((IDLE - PREV_IDLE))
+    DIFF_TOTAL=$((TOTAL - PREV_TOTAL))
+    if [ "$DIFF_TOTAL" -gt 0 ]; then
+        CPU=$(awk "BEGIN {printf \"%.1f\", (1 - $DIFF_IDLE / $DIFF_TOTAL) * 100}")
+    else
+        CPU="0.0"
+    fi
+    PREV_IDLE=$IDLE
+    PREV_TOTAL=$TOTAL
+
+    # Memory
+    MEM_TOTAL=$(awk '/MemTotal/ {print $2}' /proc/meminfo)
+    MEM_AVAIL=$(awk '/MemAvailable/ {print $2}' /proc/meminfo)
+    MEM_USED=$((MEM_TOTAL - MEM_AVAIL))
+
+    # Disk usage
+    DISK=$(df /opt/benchmark --output=used -B1 2>/dev/null | tail -1 | tr -d ' ' || echo "0")
+
+    # Disk I/O
+    IO_READ=$(awk '{r+=$6} END {print r}' /proc/diskstats 2>/dev/null || echo "0")
+    IO_WRITE=$(awk '{w+=$10} END {print w}' /proc/diskstats 2>/dev/null || echo "0")
+
+    echo "{\"ts\":\"$TIMESTAMP\",\"cpu\":$CPU,\"mem_used_kb\":$MEM_USED,\"mem_total_kb\":$MEM_TOTAL,\"disk_bytes\":$DISK,\"io_read_sectors\":$IO_READ,\"io_write_sectors\":$IO_WRITE}" >> "$OUTPUT"
+
+    sleep "$INTERVAL"
+done

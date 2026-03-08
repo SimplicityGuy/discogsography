@@ -1,0 +1,75 @@
+---
+# Destroy all benchmark infrastructure on Hetzner Cloud.
+#
+# WARNING: This permanently deletes all servers, data, networks, and firewall rules.
+#
+# Usage:
+#   ansible-playbook playbooks/teardown.yml --ask-vault-pass
+#
+# For partial teardown (keep controller for result download):
+#   ansible-playbook playbooks/teardown.yml --ask-vault-pass -e keep_controller=true
+
+- name: Destroy benchmark infrastructure
+  hosts: localhost
+  connection: local
+  vars_files:
+    - ../vault.yml
+  vars:
+    hcloud_token: "{{ vault_hcloud_token }}"
+    keep_controller: false
+    all_servers:
+      - bench-controller
+      - bench-neo4j
+      - bench-memgraph
+      - bench-age
+      - bench-falkordb
+      - bench-arangodb
+    db_servers:
+      - bench-neo4j
+      - bench-memgraph
+      - bench-age
+      - bench-falkordb
+      - bench-arangodb
+
+  tasks:
+    - name: Determine servers to destroy
+      ansible.builtin.set_fact:
+        servers_to_destroy: "{{ db_servers if keep_controller | bool else all_servers }}"
+
+    - name: Display teardown plan
+      ansible.builtin.debug:
+        msg: "Will destroy: {{ servers_to_destroy | join(', ') }}{{ ' (keeping controller)' if keep_controller | bool else '' }}"
+
+    - name: Destroy servers
+      hetzner.hcloud.server:
+        api_token: "{{ hcloud_token }}"
+        name: "{{ item }}"
+        state: absent
+      loop: "{{ servers_to_destroy }}"
+
+    - name: Remove firewall (only on full teardown)
+      hetzner.hcloud.firewall:
+        api_token: "{{ hcloud_token }}"
+        name: bench-firewall
+        state: absent
+      when: not keep_controller | bool
+
+    - name: Remove network (only on full teardown)
+      hetzner.hcloud.network:
+        api_token: "{{ hcloud_token }}"
+        name: bench-network
+        state: absent
+      when: not keep_controller | bool
+
+    - name: Remove SSH key (only on full teardown)
+      hetzner.hcloud.ssh_key:
+        api_token: "{{ hcloud_token }}"
+        name: benchmark-key
+        state: absent
+      when: not keep_controller | bool
+
+    - name: Teardown complete
+      ansible.builtin.debug:
+        msg: >
+          {{ 'Full teardown complete. All resources destroyed.' if not keep_controller | bool
+             else 'Partial teardown complete. Controller still running. Run again without -e keep_controller=true for full teardown.' }}

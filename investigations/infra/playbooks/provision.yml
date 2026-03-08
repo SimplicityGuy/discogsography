@@ -1,0 +1,135 @@
+---
+# Provision benchmark hosts on Hetzner Cloud.
+#
+# Creates 6 servers: 1 controller (CX33) + 5 database hosts (CX53),
+# a private network, and a firewall.
+#
+# Usage:
+#   ansible-playbook playbooks/provision.yml --ask-vault-pass
+#
+# Requires:
+#   - HCLOUD_TOKEN in vault.yml or environment
+#   - SSH key at ~/.ssh/benchmark-key.pub
+#   - ansible-galaxy collection install hetzner.hcloud
+
+- name: Provision benchmark hosts on Hetzner Cloud
+  hosts: localhost
+  connection: local
+  vars_files:
+    - ../vault.yml
+  vars:
+    hcloud_token: "{{ vault_hcloud_token }}"
+    controller_type: cx33
+    db_type: cx53
+    image: ubuntu-24.04
+    location: nbg1
+    ssh_key_name: benchmark-key
+    servers:
+      - {name: bench-controller, role: controller}
+      - {name: bench-neo4j, role: neo4j}
+      - {name: bench-memgraph, role: memgraph}
+      - {name: bench-age, role: age}
+      - {name: bench-falkordb, role: falkordb}
+      - {name: bench-arangodb, role: arangodb}
+
+  tasks:
+    - name: Upload SSH key to Hetzner
+      hetzner.hcloud.ssh_key:
+        api_token: "{{ hcloud_token }}"
+        name: "{{ ssh_key_name }}"
+        public_key: "{{ lookup('file', '~/.ssh/benchmark-key.pub') }}"
+        state: present
+
+    - name: Create private network
+      hetzner.hcloud.network:
+        api_token: "{{ hcloud_token }}"
+        name: bench-network
+        ip_range: 10.0.0.0/16
+        state: present
+      register: network
+
+    - name: Create subnet
+      hetzner.hcloud.subnetwork:
+        api_token: "{{ hcloud_token }}"
+        network: bench-network
+        ip_range: 10.0.1.0/24
+        type: cloud
+        network_zone: eu-central
+        state: present
+
+    - name: Create firewall
+      hetzner.hcloud.firewall:
+        api_token: "{{ hcloud_token }}"
+        name: bench-firewall
+        rules:
+          - description: SSH
+            direction: in
+            protocol: tcp
+            port: "22"
+            source_ips: ["0.0.0.0/0", "::/0"]
+          - description: Database ports (private network only)
+            direction: in
+            protocol: tcp
+            port: "5432-8529"
+            source_ips: ["10.0.0.0/16"]
+        state: present
+
+    - name: Create servers
+      hetzner.hcloud.server:
+        api_token: "{{ hcloud_token }}"
+        name: "{{ item.name }}"
+        server_type: "{{ controller_type if item.role == 'controller' else db_type }}"
+        image: "{{ image }}"
+        location: "{{ location }}"
+        ssh_keys: ["{{ ssh_key_name }}"]
+        firewalls: [bench-firewall]
+        state: present
+      loop: "{{ servers }}"
+      register: created_servers
+
+    - name: Attach servers to private network
+      hetzner.hcloud.server_network:
+        api_token: "{{ hcloud_token }}"
+        server: "{{ item.name }}"
+        network: bench-network
+        state: present
+      loop: "{{ servers }}"
+
+    - name: Wait for SSH
+      ansible.builtin.wait_for:
+        host: "{{ item.hcloud_server.ipv4_address }}"
+        port: 22
+        delay: 10
+        timeout: 120
+      loop: "{{ created_servers.results }}"
+
+    - name: Generate inventory file
+      ansible.builtin.copy:
+        content: |
+          ---
+          all:
+            vars:
+              ansible_user: root
+              ansible_ssh_private_key_file: ~/.ssh/benchmark-key
+              ansible_python_interpreter: /usr/bin/python3
+            children:
+              controller:
+                hosts:
+                  bench-controller:
+                    ansible_host: {{ created_servers.results[0].hcloud_server.ipv4_address }}
+              databases:
+                hosts:
+          {% for server in created_servers.results[1:] %}
+                  {{ server.hcloud_server.name }}:
+                    ansible_host: {{ server.hcloud_server.ipv4_address }}
+                    db_role: {{ servers[loop.index].role }}
+          {% endfor %}
+        dest: ../inventory/hosts.yml
+      vars:
+        # Jinja needs loop.index to start at 1 for servers list offset
+        loop: "{{ range(1, created_servers.results | length) }}"
+
+    - name: Display server IPs
+      ansible.builtin.debug:
+        msg: "{{ item.hcloud_server.name }}: {{ item.hcloud_server.ipv4_address }}"
+      loop: "{{ created_servers.results }}"

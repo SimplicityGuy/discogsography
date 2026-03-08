@@ -1,0 +1,150 @@
+---
+# Run synthetic data generation, insertion, and benchmarks from the controller host.
+#
+# The controller connects to each database host over the private network,
+# generates synthetic data, inserts it directly, and runs query benchmarks.
+#
+# Usage:
+#   ansible-playbook playbooks/run-benchmarks.yml
+
+- name: Setup controller host
+  hosts: bench-controller
+  become: true
+
+  tasks:
+    - name: Install Python and uv
+      ansible.builtin.apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+        state: present
+
+    - name: Install uv
+      ansible.builtin.shell: curl -LsSf https://astral.sh/uv/install.sh | sh
+      args:
+        creates: /root/.local/bin/uv
+
+    - name: Create benchmark workspace
+      ansible.builtin.file:
+        path: /opt/benchmark/discogsography
+        state: directory
+        mode: "0755"
+
+    - name: Sync investigation code to controller
+      ansible.posix.synchronize:
+        src: "{{ playbook_dir }}/../../"
+        dest: /opt/benchmark/discogsography/
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=__pycache__"
+          - "--exclude=.mypy_cache"
+          - "--exclude=node_modules"
+      delegate_to: localhost
+
+    - name: Install Python dependencies on controller
+      ansible.builtin.shell: |
+        export PATH="/root/.local/bin:$PATH"
+        cd /opt/benchmark/discogsography
+        uv sync --all-extras --extra investigations
+      args:
+        chdir: /opt/benchmark/discogsography
+
+- name: Run benchmarks against all databases
+  hosts: bench-controller
+  become: true
+  vars:
+    benchmark_dir: /opt/benchmark/discogsography
+    results_dir: /opt/benchmark/results
+    scales:
+      - small
+      - large
+    databases:
+      - name: neo4j
+        host: "{{ hostvars['bench-neo4j']['ansible_host'] }}"
+        port: 7687
+        uri_prefix: "bolt://"
+        user: neo4j
+        password: discogsography
+      - name: memgraph
+        host: "{{ hostvars['bench-memgraph']['ansible_host'] }}"
+        port: 7687
+        uri_prefix: "bolt://"
+        user: ""
+        password: ""
+      - name: age
+        host: "{{ hostvars['bench-age']['ansible_host'] }}"
+        port: 5432
+        uri_prefix: "postgresql://discogsography:discogsography@"
+        uri_suffix: "/discogsography"
+        user: ""
+        password: ""
+      - name: falkordb
+        host: "{{ hostvars['bench-falkordb']['ansible_host'] }}"
+        port: 6379
+        uri_prefix: "redis://"
+        user: ""
+        password: ""
+      - name: arangodb
+        host: "{{ hostvars['bench-arangodb']['ansible_host'] }}"
+        port: 8529
+        uri_prefix: "http://"
+        user: root
+        password: discogsography
+
+  tasks:
+    - name: Create results directory
+      ansible.builtin.file:
+        path: "{{ results_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Run hardware calibration on controller
+      ansible.builtin.shell: |
+        export PATH="/root/.local/bin:$PATH"
+        cd {{ benchmark_dir }}
+        PYTHONPATH={{ benchmark_dir }} uv run python investigations/calibration/calibrate.py run \
+          --output {{ results_dir }}/controller_calibration.json
+      args:
+        creates: "{{ results_dir }}/controller_calibration.json"
+
+    - name: Run benchmarks for each database at each scale
+      ansible.builtin.shell: |
+        export PATH="/root/.local/bin:$PATH"
+        cd {{ benchmark_dir }}
+
+        URI="{{ item.0.uri_prefix }}{{ item.0.host }}:{{ item.0.port }}{{ item.0.uri_suffix | default('') }}"
+
+        USER_ARGS=""
+        if [ -n "{{ item.0.user }}" ]; then
+          USER_ARGS="--user {{ item.0.user }} --password {{ item.0.password }}"
+        fi
+
+        PYTHONPATH={{ benchmark_dir }} uv run python -m investigations.benchmark.runner \
+          --backend {{ item.0.name }} \
+          --uri "$URI" \
+          --scale {{ item.1 }} \
+          --clear \
+          --output {{ results_dir }}/{{ item.0.name }}_{{ item.1 }}_$(date +%Y-%m-%d_%H%M%S).json \
+          $USER_ARGS
+      loop: "{{ databases | product(scales) | list }}"
+      loop_control:
+        pause: 30
+        label: "{{ item.0.name }} @ {{ item.1 }}"
+      register: benchmark_results
+      ignore_errors: true
+
+    - name: Generate comparison report
+      ansible.builtin.shell: |
+        export PATH="/root/.local/bin:$PATH"
+        cd {{ benchmark_dir }}
+        uv run python -m investigations.benchmark.compare \
+          {{ results_dir }}/*_small_*.json \
+          > {{ results_dir }}/comparison_small.txt 2>&1 || true
+        uv run python -m investigations.benchmark.compare \
+          {{ results_dir }}/*_large_*.json \
+          > {{ results_dir }}/comparison_large.txt 2>&1 || true
+
+    - name: Display benchmark status
+      ansible.builtin.debug:
+        msg: "Benchmarks complete. Results in {{ results_dir }}/"

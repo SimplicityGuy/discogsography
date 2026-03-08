@@ -1,0 +1,20 @@
+---
+services:
+  arangodb:
+    image: arangodb/arangodb:latest
+    container_name: bench-arangodb
+    environment:
+      ARANGO_ROOT_PASSWORD: discogsography
+    ports:
+      - "8529:8529"
+    volumes:
+      - arangodb_bench_data:/var/lib/arangodb3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  arangodb_bench_data:

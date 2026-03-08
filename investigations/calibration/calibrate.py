@@ -7,13 +7,13 @@ per-dimension scaling factors.
 
 Usage:
     # Run calibration on your machine
-    uv run python docs/investigations/calibration/calibrate.py run [--output calibration.json]
+    uv run python investigations/calibration/calibrate.py run [--output calibration.json]
 
     # Scale benchmark results using two calibration files
-    uv run python docs/investigations/calibration/calibrate.py scale \
+    uv run python investigations/calibration/calibrate.py scale \
       --baseline hetzner-calibration.json \
       --local my-calibration.json \
-      --benchmark-results docs/investigations/calibration/results/neo4j_large_2026-03-10.json
+      --benchmark-results investigations/benchmark/results/neo4j_large_2026-03-10.json
 """
 
 from __future__ import annotations
@@ -194,7 +194,7 @@ def _disk_random_iops(file_size_mb: int = 128, duration_sec: float = 5.0) -> dic
         with path.open("rb") as f:
             start = time.perf_counter()
             while time.perf_counter() - start < duration_sec:
-                offset = random.randint(0, max_offset) & ~(block_size - 1)  # nosec B311
+                offset = random.randint(0, max_offset) & ~(block_size - 1)  # noqa: S311  # nosec B311
                 f.seek(offset)
                 f.read(block_size)
                 count += 1
@@ -216,7 +216,7 @@ def _python_sort_throughput() -> dict[str, Any]:
     iterations = 5
     times = []
     for _ in range(iterations):
-        arr = [random.random() for _ in range(n)]  # nosec B311
+        arr = [random.random() for _ in range(n)]  # noqa: S311  # nosec B311
         start = time.perf_counter()
         arr.sort()
         times.append(time.perf_counter() - start)
@@ -252,8 +252,8 @@ def _system_info() -> dict[str, Any]:
     else:
         # macOS
         try:
-            result = subprocess.run(  # nosec: B603, B607
-                ["sysctl", "-n", "hw.memsize"],
+            result = subprocess.run(  # nosec B603 B607
+                ["sysctl", "-n", "hw.memsize"],  # noqa: S607
                 capture_output=True,
                 text=True,
                 check=True,
@@ -601,10 +601,10 @@ def cmd_run(args: argparse.Namespace) -> None:
     print("Next steps:")
     print("  1. Run this same script on the Hetzner CX53 benchmark host")
     print("  2. Scale benchmark results to your environment:")
-    print("     uv run python docs/investigations/calibration/calibrate.py scale \\")
+    print("     uv run python investigations/calibration/calibrate.py scale \\")
     print("       --baseline hetzner-calibration.json \\")
     print(f"       --local {args.output} \\")
-    print("       --benchmark-results docs/investigations/calibration/results/neo4j_large_*.json")
+    print("       --benchmark-results investigations/benchmark/results/neo4j_large_*.json")
 
 
 def cmd_scale(args: argparse.Namespace) -> None:
