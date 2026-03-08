@@ -44,7 +44,6 @@
           - iotop
           - htop
           - jq
-          - python3-pip
           - python3-venv
           - sudo
         state: present

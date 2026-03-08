@@ -301,10 +301,10 @@ cloud_prerequisites() {
 	fi
 	echo "  Ansible roles: OK"
 
-	# hcloud Python package
+	# hcloud Python package (needed by hetzner.hcloud Ansible collection)
 	if ! python3 -c "import hcloud" 2>/dev/null; then
 		echo "  Installing hcloud Python package..."
-		pip install --quiet hcloud 2>/dev/null || uv pip install hcloud 2>/dev/null || true
+		uv pip install --system hcloud 2>/dev/null || pip install --quiet hcloud 2>/dev/null || true
 	fi
 
 	# SSH key
