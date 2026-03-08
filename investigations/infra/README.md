@@ -1,6 +1,6 @@
 # Hetzner Cloud Benchmark Infrastructure
 
-Ansible automation for deploying 5 graph databases on Hetzner Cloud and running benchmarks under identical conditions.
+Ansible automation for deploying 5 graph databases on Hetzner Cloud (Debian 13) and running benchmarks under identical conditions.
 
 ## One Command
 
@@ -44,14 +44,30 @@ ssh-keygen -t ed25519 -f ~/.ssh/benchmark-key -N "" -C "discogsography-benchmark
 
 ## Infrastructure
 
-| Host | Instance | vCPU | RAM | Disk | Role |
-|------|----------|------|-----|------|------|
-| bench-controller | CX33 | 4 | 8 GB | 80 GB | Ansible, data gen, benchmark runner |
-| bench-neo4j | CX53 | 16 | 32 GB | 320 GB | Neo4j Community |
-| bench-memgraph | CX53 | 16 | 32 GB | 320 GB | Memgraph Community |
-| bench-age | CX53 | 16 | 32 GB | 320 GB | PostgreSQL + Apache AGE |
-| bench-falkordb | CX53 | 16 | 32 GB | 320 GB | FalkorDB |
-| bench-arangodb | CX53 | 16 | 32 GB | 320 GB | ArangoDB Community |
+| Host | Instance | vCPU | RAM | Disk | Private IP | Role |
+|------|----------|------|-----|------|------------|------|
+| bench-controller | CX33 | 4 | 8 GB | 80 GB | 10.0.1.1 | Bastion, data gen, benchmark runner |
+| bench-neo4j | CX53 | 16 | 32 GB | 320 GB | 10.0.1.10 | Neo4j Community |
+| bench-memgraph | CX53 | 16 | 32 GB | 320 GB | 10.0.1.11 | Memgraph Community |
+| bench-age | CX53 | 16 | 32 GB | 320 GB | 10.0.1.12 | PostgreSQL + Apache AGE |
+| bench-falkordb | CX53 | 16 | 32 GB | 320 GB | 10.0.1.13 | FalkorDB |
+| bench-arangodb | CX53 | 16 | 32 GB | 320 GB | 10.0.1.14 | ArangoDB Community |
+
+### Network Security
+
+- **Controller**: SSH accessible from the internet (only port 22). Interactive `bench` user with sudo.
+- **Database hosts**: Only reachable from the private network (10.0.1.0/24). No internet-facing ports.
+- Ansible reaches database hosts via SSH ProxyJump through the controller.
+
+### SSH Access
+
+```bash
+# SSH to controller as interactive user
+ssh -i ~/.ssh/benchmark-key bench@<controller-ip>
+
+# SSH to a database host (via controller bastion)
+ssh -i ~/.ssh/benchmark-key -J root@<controller-ip> root@10.0.1.10
+```
 
 ### Cost
 

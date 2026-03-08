@@ -2,7 +2,8 @@
 # Provision benchmark hosts on Hetzner Cloud.
 #
 # Creates 6 servers: 1 controller (CX33) + 5 database hosts (CX53),
-# a private network, and a firewall.
+# a private network, and two firewalls (controller: SSH from internet,
+# databases: private network only).
 #
 # Usage:
 #   ansible-playbook playbooks/provision.yml --ask-vault-pass
@@ -21,16 +22,16 @@
     hcloud_token: "{{ vault_hcloud_token }}"
     controller_type: cx33
     db_type: cx53
-    image: ubuntu-24.04
+    image: debian-13
     location: nbg1
     ssh_key_name: benchmark-key
     servers:
-      - {name: bench-controller, role: controller}
-      - {name: bench-neo4j, role: neo4j}
-      - {name: bench-memgraph, role: memgraph}
-      - {name: bench-age, role: age}
-      - {name: bench-falkordb, role: falkordb}
-      - {name: bench-arangodb, role: arangodb}
+      - {name: bench-controller, role: controller, private_ip: "10.0.1.1"}
+      - {name: bench-neo4j, role: neo4j, private_ip: "10.0.1.10"}
+      - {name: bench-memgraph, role: memgraph, private_ip: "10.0.1.11"}
+      - {name: bench-age, role: age, private_ip: "10.0.1.12"}
+      - {name: bench-falkordb, role: falkordb, private_ip: "10.0.1.13"}
+      - {name: bench-arangodb, role: arangodb, private_ip: "10.0.1.14"}
 
   tasks:
     - name: Upload SSH key to Hetzner
@@ -57,17 +58,34 @@
         network_zone: eu-central
         state: present
 
-    - name: Create firewall
+    - name: Create controller firewall (SSH from internet)
       hetzner.hcloud.firewall:
         api_token: "{{ hcloud_token }}"
-        name: bench-firewall
+        name: bench-fw-controller
         rules:
-          - description: SSH
+          - description: SSH from internet
             direction: in
             protocol: tcp
             port: "22"
             source_ips: ["0.0.0.0/0", "::/0"]
-          - description: Database ports (private network only)
+          - description: All traffic from private network
+            direction: in
+            protocol: tcp
+            port: "1-65535"
+            source_ips: ["10.0.0.0/16"]
+        state: present
+
+    - name: Create database firewall (private network only)
+      hetzner.hcloud.firewall:
+        api_token: "{{ hcloud_token }}"
+        name: bench-fw-database
+        rules:
+          - description: SSH from private network
+            direction: in
+            protocol: tcp
+            port: "22"
+            source_ips: ["10.0.0.0/16"]
+          - description: Database ports from private network
             direction: in
             protocol: tcp
             port: "5432-8529"
@@ -82,26 +100,27 @@
         image: "{{ image }}"
         location: "{{ location }}"
         ssh_keys: ["{{ ssh_key_name }}"]
-        firewalls: [bench-firewall]
+        firewalls:
+          - "{{ 'bench-fw-controller' if item.role == 'controller' else 'bench-fw-database' }}"
         state: present
       loop: "{{ servers }}"
       register: created_servers
 
-    - name: Attach servers to private network
+    - name: Attach servers to private network with static IPs
       hetzner.hcloud.server_network:
         api_token: "{{ hcloud_token }}"
         server: "{{ item.name }}"
         network: bench-network
+        ip: "{{ item.private_ip }}"
         state: present
       loop: "{{ servers }}"
 
-    - name: Wait for SSH
+    - name: Wait for controller SSH
       ansible.builtin.wait_for:
-        host: "{{ item.hcloud_server.ipv4_address }}"
+        host: "{{ created_servers.results[0].hcloud_server.ipv4_address }}"
         port: 22
         delay: 10
         timeout: 120
-      loop: "{{ created_servers.results }}"
 
     - name: Generate inventory file
       ansible.builtin.copy:
@@ -118,10 +137,12 @@
                   bench-controller:
                     ansible_host: {{ created_servers.results[0].hcloud_server.ipv4_address }}
               databases:
+                vars:
+                  ansible_ssh_common_args: '-o ProxyJump=root@{{ created_servers.results[0].hcloud_server.ipv4_address }} -o StrictHostKeyChecking=no'
                 hosts:
           {% for server in created_servers.results[1:] %}
                   {{ server.hcloud_server.name }}:
-                    ansible_host: {{ server.hcloud_server.ipv4_address }}
+                    ansible_host: {{ servers[loop.index].private_ip }}
                     db_role: {{ servers[loop.index].role }}
           {% endfor %}
         dest: ../inventory/hosts.yml

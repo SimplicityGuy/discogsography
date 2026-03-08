@@ -47,10 +47,17 @@
         state: absent
       loop: "{{ servers_to_destroy }}"
 
-    - name: Remove firewall (only on full teardown)
+    - name: Remove controller firewall (only on full teardown)
       hetzner.hcloud.firewall:
         api_token: "{{ hcloud_token }}"
-        name: bench-firewall
+        name: bench-fw-controller
+        state: absent
+      when: not keep_controller | bool
+
+    - name: Remove database firewall (only on full teardown)
+      hetzner.hcloud.firewall:
+        api_token: "{{ hcloud_token }}"
+        name: bench-fw-database
         state: absent
       when: not keep_controller | bool
 
