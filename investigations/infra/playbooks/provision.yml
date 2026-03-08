@@ -153,6 +153,12 @@
         timeout: 120
 
     - name: Generate inventory file
+      vars:
+        ctrl_ip: "{{ controller_result.hcloud_server.ipv4_address }}"
+        proxy_cmd: >-
+          ssh -i ~/.ssh/benchmark-key
+          -o StrictHostKeyChecking=no
+          -W %h:%p root@{{ controller_result.hcloud_server.ipv4_address }}
       ansible.builtin.copy:
         content: |
           ---
@@ -165,10 +171,10 @@
               controller:
                 hosts:
                   bench-controller:
-                    ansible_host: {{ controller_result.hcloud_server.ipv4_address }}
+                    ansible_host: {{ ctrl_ip }}
               databases:
                 vars:
-                  ansible_ssh_common_args: '-o ProxyCommand="ssh -i ~/.ssh/benchmark-key -W %h:%p root@{{ controller_result.hcloud_server.ipv4_address }}"'
+                  ansible_ssh_common_args: '-o ProxyCommand="{{ proxy_cmd }}"'
                 hosts:
           {% for result in db_results.results | default([]) %}
                   {{ result.hcloud_server.name }}:
