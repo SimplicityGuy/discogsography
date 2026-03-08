@@ -165,12 +165,12 @@ uv run python investigations/calibration/calibrate.py scale \
   --benchmark-results investigations/benchmark/results/neo4j_large_*.json
 ```
 
-See [docs/investigations/shared-pre-work.md](../../docs/investigations/shared-pre-work.md) for methodology details.
+See [docs/investigations/shared-pre-work.md](../docs/investigations/shared-pre-work.md) for methodology details.
 
 ## Related Documentation
 
 - [docs/investigations/README.md](../docs/investigations/README.md) — Investigation overview and evaluation order
-- [docs/investigations/shared-pre-work.md](../../docs/investigations/shared-pre-work.md) — Abstraction layer design and benchmark spec
+- [docs/investigations/shared-pre-work.md](../docs/investigations/shared-pre-work.md) — Abstraction layer design and benchmark spec
 - [docs/investigations/cloud-benchmark-deployment.md](../docs/investigations/cloud-benchmark-deployment.md) — Hetzner Cloud deployment plan
 - [docs/investigations/memgraph.md](../docs/investigations/memgraph.md) — Memgraph compatibility analysis
 - [docs/investigations/apache-age.md](../docs/investigations/apache-age.md) — Apache AGE compatibility analysis
