@@ -24,12 +24,14 @@
       - bench-age
       - bench-falkordb
       - bench-arangodb
+      - bench-baseline
     db_servers:
       - bench-neo4j
       - bench-memgraph
       - bench-age
       - bench-falkordb
       - bench-arangodb
+      - bench-baseline
 
   tasks:
     - name: Determine servers to destroy

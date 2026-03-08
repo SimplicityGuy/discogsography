@@ -10,8 +10,11 @@ Generates graph data at two scale points preserving realistic characteristics:
 
 from __future__ import annotations
 
+import gzip
 import hashlib
+import json
 import math
+from pathlib import Path
 import random
 import string
 from typing import Any
@@ -420,3 +423,62 @@ def generate_test_data(scale: str = "small", seed: int = 42) -> dict[str, Any]:
         "sublabel_of_rels": sublabel_of_rels,
         "part_of_rels": part_of_rels,
     }
+
+
+def save_test_data(data: dict[str, Any], path: str | Path) -> None:
+    """Save test data to a gzipped JSON file."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    print(f"Saving synthetic data to {path}...")
+    with gzip.open(path, "wt", encoding="utf-8") as f:
+        json.dump(data, f)
+    size_mb = path.stat().st_size / 1024 / 1024
+    print(f"  Saved ({size_mb:.1f} MB compressed)")
+
+
+def load_test_data(path: str | Path) -> dict[str, Any]:
+    """Load test data from a gzipped JSON file."""
+    path = Path(path)
+    size_mb = path.stat().st_size / 1024 / 1024
+    print(f"Loading synthetic data from {path} ({size_mb:.1f} MB)...")
+    with gzip.open(path, "rt", encoding="utf-8") as f:
+        data: dict[str, Any] = json.load(f)
+    total_nodes = len(data.get("artists", [])) + len(data.get("labels", [])) + len(data.get("masters", [])) + len(data.get("releases", []))
+    total_rels = sum(
+        len(data.get(k, []))
+        for k in (
+            "by_rels",
+            "on_rels",
+            "derived_from_rels",
+            "is_rels",
+            "member_of_rels",
+            "alias_of_rels",
+            "sublabel_of_rels",
+            "part_of_rels",
+        )
+    )
+    print(f"  Scale: {data.get('scale', 'unknown')}, Nodes: {total_nodes:,}, Rels: {total_rels:,}")
+    return data
+
+
+def main() -> None:
+    """CLI for generating synthetic data files."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Synthetic data generator for graph database benchmarks")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    gen_parser = subparsers.add_parser("generate", help="Generate synthetic data and save to file")
+    gen_parser.add_argument("--scale", default="small", choices=["small", "large"])
+    gen_parser.add_argument("--seed", type=int, default=42, help="Random seed (default: 42)")
+    gen_parser.add_argument("--output", "-o", required=True, help="Output path (.json.gz)")
+
+    args = parser.parse_args()
+
+    if args.command == "generate":
+        data = generate_test_data(scale=args.scale, seed=args.seed)
+        save_test_data(data, args.output)
+
+
+if __name__ == "__main__":
+    main()

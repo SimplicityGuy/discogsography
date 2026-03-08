@@ -38,6 +38,11 @@
       falkordb: {name: bench-falkordb, role: falkordb, private_ip: "10.0.1.13"}
       arangodb: {name: bench-arangodb, role: arangodb, private_ip: "10.0.1.14"}
 
+    # Baseline calibration server — same CX53 type as DB hosts for representative calibration.
+    # Set provision_baseline: true to create it (torn down after calibration completes).
+    baseline_spec: {name: bench-baseline, private_ip: "10.0.1.20"}
+    provision_baseline: false
+
     # Override with -e '{"active_dbs": ["neo4j", "memgraph"]}' to provision a subset.
     # Servers already created are idempotent (state: present returns existing info).
     _all_db_names: "{{ all_db_specs | list }}"
@@ -153,6 +158,31 @@
       register: net_result
       until: net_result is not failed
 
+    - name: Create baseline calibration server
+      hetzner.hcloud.server:
+        api_token: "{{ hcloud_token }}"
+        name: "{{ baseline_spec.name }}"
+        server_type: "{{ db_type }}"
+        image: "{{ image }}"
+        location: "{{ location }}"
+        ssh_keys: ["{{ ssh_key_name }}"]
+        firewalls: ["bench-fw-database"]
+        state: present
+      when: provision_baseline | bool
+
+    - name: Attach baseline to private network
+      hetzner.hcloud.server_network:
+        api_token: "{{ hcloud_token }}"
+        server: "{{ baseline_spec.name }}"
+        network: bench-network
+        ip: "{{ baseline_spec.private_ip }}"
+        state: present
+      when: provision_baseline | bool
+      retries: 3
+      delay: 5
+      register: baseline_net_result
+      until: baseline_net_result is not failed
+
     - name: Wait for controller SSH
       ansible.builtin.wait_for:
         host: "{{ controller_result.hcloud_server.ipv4_address }}"
@@ -190,6 +220,14 @@
                     ansible_host: {{ result.item.private_ip }}
                     db_role: {{ result.item.role }}
           {% endfor %}
+          {% if provision_baseline | default(false) | bool %}
+              baseline:
+                vars:
+                  ansible_ssh_common_args: '-o ProxyCommand="{{ proxy_cmd }}"'
+                hosts:
+                  bench-baseline:
+                    ansible_host: {{ baseline_spec.private_ip }}
+          {% endif %}
         dest: ../inventory/hosts.yml
 
     - name: Display provisioned infrastructure

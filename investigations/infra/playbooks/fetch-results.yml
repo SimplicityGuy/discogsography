@@ -52,7 +52,7 @@
     - name: List result files on controller
       ansible.builtin.find:
         paths: /opt/benchmark/results
-        patterns: "*.json,*.txt,*.jsonl,*.done,*.err,*.log"
+        patterns: "*.json,*.txt,*.jsonl,*.done,*.err,*.timeout,*.start,*.log"
       register: result_files
 
     - name: Identify errored databases
@@ -100,11 +100,34 @@
         flat: true
       ignore_errors: true
 
+    - name: Find synthetic data files
+      ansible.builtin.find:
+        paths: /opt/benchmark/data
+        patterns: "*.json.gz"
+      register: data_files
+
+    - name: Ensure local data directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../../data/"
+        state: directory
+        mode: "0755"
+      delegate_to: localhost
+      become: false
+      when: data_files.files | length > 0
+
+    - name: Fetch synthetic data files
+      ansible.builtin.fetch:
+        src: "{{ item.path }}"
+        dest: "{{ playbook_dir }}/../../data/"
+        flat: true
+      loop: "{{ data_files.files }}"
+
     - name: Summary
       ansible.builtin.debug:
         msg: >-
           Status: {{ bench_status }}.
-          Fetched {{ result_files.files | length }} result files + {{ db_log_files.files | length }} logs to investigations/results/.
+          Fetched {{ result_files.files | length }} result files + {{ db_log_files.files | length }} logs
+          + {{ data_files.files | length }} data files to investigations/.
           {{ 'Benchmarks still running — run this playbook again later for final results.'
              if bench_status == 'running'
              else '' }}

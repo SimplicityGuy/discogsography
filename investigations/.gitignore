@@ -8,3 +8,6 @@ results/
 benchmark/results/
 calibration/results/
 infra/results/
+
+# Synthetic data files (generated, large)
+data/

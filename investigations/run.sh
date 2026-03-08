@@ -232,8 +232,9 @@ compare_results() {
 # Each invocation checks the current state of Hetzner infrastructure and
 # benchmark results, then takes the next appropriate actions:
 #
-#   1st run:  No infrastructure → provision controller + 3 DB servers,
-#             start benchmarks.
+#   1st run:  No infrastructure → provision controller + 3 DB servers +
+#             baseline calibration server. Run baseline calibration, copy
+#             to controller, tear down baseline. Start benchmarks.
 #   2nd+ run: Check results on controller. Tear down servers whose
 #             benchmarks completed. Provision new servers for remaining
 #             databases (up to server limit). Restart any failed benchmarks.
@@ -383,6 +384,8 @@ run_cloud() {
 			[[ -z "$name" ]] && continue
 			if [[ "$name" == "bench-controller" ]]; then
 				CONTROLLER_IP="$ip"
+			elif [[ "$name" == bench-baseline ]]; then
+				: # Skip baseline server — not a database
 			elif [[ "$name" == bench-* ]]; then
 				EXISTING_DB_SERVERS+=("${name#bench-}")
 			fi
@@ -399,7 +402,7 @@ run_cloud() {
 		echo "  Starting initial deployment."
 		echo "========================================"
 		echo ""
-		echo "  Infrastructure: 1x CX33 controller + ${#initial_dbs[@]}x CX53 databases"
+		echo "  Infrastructure: 1x CX33 controller + ${#initial_dbs[@]}x CX53 databases + 1x CX53 baseline"
 		echo "  Databases: ${initial_dbs[*]}"
 		echo "  Server limit: $SERVER_LIMIT"
 		echo "  Scale: small (~135k nodes) + large (~1.35M nodes)"
@@ -414,16 +417,23 @@ run_cloud() {
 		dbs_json=$(to_json_array "${initial_dbs[@]}")
 
 		echo ""
-		echo "=== Step 1/4: Provisioning ==="
+		echo "=== Step 1/5: Provisioning ==="
 		ansible-playbook playbooks/provision.yml "$VAULT_ARGS" \
-			-e "{\"active_dbs\":$dbs_json}"
+			-e "{\"active_dbs\":$dbs_json,\"provision_baseline\":true}"
 
 		echo ""
-		echo "=== Step 2/4: Setting up hosts ==="
+		echo "=== Step 2/5: Setting up hosts ==="
 		ansible-playbook playbooks/setup-common.yml
 
 		echo ""
-		echo "=== Step 3/4: Deploying databases ==="
+		echo "=== Step 3/5: Baseline hardware calibration ==="
+		ansible-playbook playbooks/baseline-calibration.yml
+		echo "  Tearing down baseline instance..."
+		ansible-playbook playbooks/teardown.yml "$VAULT_ARGS" \
+			-e '{"destroy_servers":["bench-baseline"]}'
+
+		echo ""
+		echo "=== Step 4/5: Deploying databases ==="
 		local -a db_pids=()
 		for db in "${initial_dbs[@]}"; do
 			ansible-playbook "playbooks/setup-${db}.yml" &
@@ -442,7 +452,7 @@ run_cloud() {
 		fi
 
 		echo ""
-		echo "=== Step 4/4: Starting benchmarks ==="
+		echo "=== Step 5/5: Starting benchmarks ==="
 		for db in "${initial_dbs[@]}"; do
 			ansible-playbook playbooks/start-benchmark.yml \
 				-e "benchmark_db=$db"
@@ -483,63 +493,167 @@ run_cloud() {
 		if ! kill -0 "$pid" 2>/dev/null; then rm -f "$f"; fi
 	done' 2>/dev/null || true
 
-	# Gather sentinel (.done / .err) and PID files
+	# Gather sentinel (.done / .err / .timeout) and PID files
 	local -a ERRORED_DBS=()
+	local -a TIMED_OUT_DBS=()
 	local status_output
-	status_output=$($SSH_CMD 'echo "=DONE="; ls /opt/benchmark/results/*.done 2>/dev/null || true; echo "=ERR="; ls /opt/benchmark/results/*.err 2>/dev/null || true; echo "=PID="; ls /opt/benchmark/*-benchmark.pid 2>/dev/null || true' 2>/dev/null) || {
+	status_output=$($SSH_CMD 'echo "=DONE="; ls /opt/benchmark/results/*.done 2>/dev/null || true; echo "=ERR="; ls /opt/benchmark/results/*.err 2>/dev/null || true; echo "=PID="; ls /opt/benchmark/*-benchmark.pid 2>/dev/null || true; echo "=TIMEOUT="; ls /opt/benchmark/results/*.timeout 2>/dev/null || true' 2>/dev/null) || {
 		echo "  Cannot reach controller at $CONTROLLER_IP. Try again in a few minutes."
 		return
 	}
 
-	local in_done=false in_err=false in_pid=false
+	local in_done=false in_err=false in_pid=false in_timeout=false
 	while IFS= read -r line; do
 		case "$line" in
 		"=DONE=")
 			in_done=true
 			in_err=false
 			in_pid=false
+			in_timeout=false
 			continue
 			;;
 		"=ERR=")
 			in_done=false
 			in_err=true
 			in_pid=false
+			in_timeout=false
 			continue
 			;;
 		"=PID=")
 			in_done=false
 			in_err=false
 			in_pid=true
+			in_timeout=false
+			continue
+			;;
+		"=TIMEOUT=")
+			in_done=false
+			in_err=false
+			in_pid=false
+			in_timeout=true
 			continue
 			;;
 		esac
 		if $in_done; then
-			# /opt/benchmark/results/neo4j.done → neo4j
 			local db_name
 			db_name=$(basename "$line" .done)
 			in_array "$db_name" "${ALL_DBS[@]}" && COMPLETED_DBS+=("$db_name")
 		elif $in_err; then
-			# /opt/benchmark/results/neo4j.err → neo4j
 			local db_name
 			db_name=$(basename "$line" .err)
-			if in_array "$db_name" "${ALL_DBS[@]}"; then
-				ERRORED_DBS+=("$db_name")
-			fi
+			in_array "$db_name" "${ALL_DBS[@]}" && ERRORED_DBS+=("$db_name")
 		elif $in_pid; then
-			# /opt/benchmark/neo4j-benchmark.pid → neo4j
 			local db_name
 			db_name=$(basename "$line" -benchmark.pid)
 			in_array "$db_name" "${ALL_DBS[@]}" && RUNNING_DBS+=("$db_name")
+		elif $in_timeout; then
+			local db_name
+			db_name=$(basename "$line" .timeout)
+			in_array "$db_name" "${ALL_DBS[@]}" && TIMED_OUT_DBS+=("$db_name")
 		fi
 	done <<<"$status_output"
 
-	echo "  Completed: ${COMPLETED_DBS[*]:-none}"
-	[[ ${#ERRORED_DBS[@]} -gt 0 ]] && echo "  Errored:   ${ERRORED_DBS[*]}"
-	echo "  Running:   ${RUNNING_DBS[*]:-none}"
+	echo "  Completed:  ${COMPLETED_DBS[*]:-none}"
+	[[ ${#TIMED_OUT_DBS[@]} -gt 0 ]] && echo "  Timed out:  ${TIMED_OUT_DBS[*]}"
+	[[ ${#ERRORED_DBS[@]} -gt 0 ]] && echo "  Errored:    ${ERRORED_DBS[*]}"
+	echo "  Running:    ${RUNNING_DBS[*]:-none}"
+
+	# ── Step 3.4: Check for timeouts ────────────────────────────
+	# If at least one benchmark has completed and others are still running,
+	# check whether any running benchmark exceeds 5x the shortest completed duration.
+	if [[ ${#COMPLETED_DBS[@]} -gt 0 ]] && [[ ${#RUNNING_DBS[@]} -gt 0 ]]; then
+		local timing_output
+		timing_output=$($SSH_CMD '
+			NOW=$(date +%s)
+			for f in /opt/benchmark/results/*.start; do
+				[ -f "$f" ] || continue
+				db=$(basename "$f" .start)
+				start_epoch=$(date -d "$(cat "$f")" +%s 2>/dev/null || echo 0)
+				done_file="/opt/benchmark/results/${db}.done"
+				if [ -f "$done_file" ]; then
+					done_epoch=$(date -d "$(cat "$done_file")" +%s 2>/dev/null || echo 0)
+					echo "DURATION $db $((done_epoch - start_epoch))"
+				elif [ -f "/opt/benchmark/${db}-benchmark.pid" ]; then
+					echo "ELAPSED $db $((NOW - start_epoch))"
+				fi
+			done
+		' 2>/dev/null) || true
+
+		# Find shortest completed duration
+		local shortest_duration=0
+		while IFS=' ' read -r type db duration; do
+			[[ "$type" == "DURATION" ]] || continue
+			if [[ $shortest_duration -eq 0 ]] || [[ $duration -lt $shortest_duration ]]; then
+				shortest_duration=$duration
+			fi
+		done <<<"$timing_output"
+
+		if [[ $shortest_duration -gt 0 ]]; then
+			local timeout_threshold=$((shortest_duration * 5))
+			local -a newly_timed_out=()
+			while IFS=' ' read -r type db elapsed; do
+				[[ "$type" == "ELAPSED" ]] || continue
+				if [[ $elapsed -gt $timeout_threshold ]]; then
+					echo ""
+					echo "  TIMEOUT: $db running ${elapsed}s (threshold: ${timeout_threshold}s = 5x shortest ${shortest_duration}s)"
+					echo "  Marking $db as timed out..."
+
+					$SSH_CMD "
+						date -u '+%Y-%m-%dT%H:%M:%SZ' > /opt/benchmark/results/${db}.timeout
+						cp /opt/benchmark/${db}-benchmark.log /opt/benchmark/results/${db}-timeout.log 2>/dev/null || true
+						pid_file=/opt/benchmark/${db}-benchmark.pid
+						if [ -f \"\$pid_file\" ]; then
+							pid=\$(cat \"\$pid_file\")
+							kill \$pid 2>/dev/null || true
+							rm -f \"\$pid_file\"
+						fi
+					" 2>/dev/null || true
+
+					TIMED_OUT_DBS+=("$db")
+					newly_timed_out+=("$db")
+				fi
+			done <<<"$timing_output"
+
+			# Remove newly timed out from RUNNING_DBS
+			if [[ ${#newly_timed_out[@]} -gt 0 ]]; then
+				local -a updated_running=()
+				for r in ${RUNNING_DBS[@]+"${RUNNING_DBS[@]}"}; do
+					in_array "$r" "${newly_timed_out[@]}" || updated_running+=("$r")
+				done
+				RUNNING_DBS=(${updated_running[@]+"${updated_running[@]}"})
+			fi
+		fi
+	fi
+
+	# ── Step 3.5: Ensure baseline calibration exists ─────────────
+	local has_baseline
+	has_baseline=$($SSH_CMD 'test -f /opt/benchmark/results/baseline-calibration.json && echo yes || echo no' 2>/dev/null) || has_baseline="no"
+
+	if [[ "$has_baseline" != "yes" ]]; then
+		echo ""
+		echo "  Baseline calibration missing on controller — running calibration..."
+
+		# Build current active DBs list for inventory
+		local current_active_json
+		current_active_json=$(to_json_array ${EXISTING_DB_SERVERS[@]+"${EXISTING_DB_SERVERS[@]}"})
+
+		ansible-playbook playbooks/provision.yml "$VAULT_ARGS" \
+			-e "{\"active_dbs\":$current_active_json,\"provision_baseline\":true}"
+		ansible-playbook playbooks/baseline-calibration.yml
+		ansible-playbook playbooks/teardown.yml "$VAULT_ARGS" \
+			-e '{"destroy_servers":["bench-baseline"]}'
+
+		# Re-generate inventory without baseline
+		ansible-playbook playbooks/provision.yml "$VAULT_ARGS" \
+			-e "{\"active_dbs\":$current_active_json}" >/dev/null 2>&1 || true
+
+		echo "  Baseline calibration complete."
+	fi
 
 	# ── Step 4: All benchmarks done? ──────────────────────────────
-	# Only completed benchmarks count as finished — errored ones will be retried.
-	if [[ ${#COMPLETED_DBS[@]} -eq ${#ALL_DBS[@]} ]]; then
+	# Completed + timed out count as finished — errored ones will be retried.
+	local finished_count=$(( ${#COMPLETED_DBS[@]} + ${#TIMED_OUT_DBS[@]} ))
+	if [[ $finished_count -eq ${#ALL_DBS[@]} ]]; then
 		echo ""
 		echo "========================================"
 		echo "  All benchmarks complete!"
@@ -571,9 +685,9 @@ run_cloud() {
 		return
 	fi
 
-	# ── Step 5: Tear down completed DB servers ────────────────────
+	# ── Step 5: Tear down completed/timed-out DB servers ─────────
 	local -a torn_down=()
-	for db in ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"}; do
+	for db in ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"} ${TIMED_OUT_DBS[@]+"${TIMED_OUT_DBS[@]}"}; do
 		if in_array "$db" ${EXISTING_DB_SERVERS[@]+"${EXISTING_DB_SERVERS[@]}"}; then
 			echo ""
 			echo "  Tearing down bench-$db (benchmark complete)..."
@@ -591,10 +705,9 @@ run_cloud() {
 	local server_count=$((1 + ${#active_dbs[@]})) # controller + active DBs
 
 	# ── Step 6: Retry failed/errored benchmarks ──────────────────
-	# A server exists, benchmark isn't running, and isn't complete → re-setup and restart.
-	# This handles both crashed processes and errored benchmarks (e.g. database not running).
+	# A server exists, benchmark isn't running, isn't complete, and isn't timed out → re-setup and restart.
 	for db in ${active_dbs[@]+"${active_dbs[@]}"}; do
-		if ! in_array "$db" ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"} && ! in_array "$db" ${RUNNING_DBS[@]+"${RUNNING_DBS[@]}"}; then
+		if ! in_array "$db" ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"} && ! in_array "$db" ${RUNNING_DBS[@]+"${RUNNING_DBS[@]}"} && ! in_array "$db" ${TIMED_OUT_DBS[@]+"${TIMED_OUT_DBS[@]}"}; then
 			echo ""
 			if in_array "$db" ${ERRORED_DBS[@]+"${ERRORED_DBS[@]}"}; then
 				echo "  Retrying errored benchmark for $db..."
@@ -616,6 +729,7 @@ run_cloud() {
 	for db in "${ALL_DBS[@]}"; do
 		[[ $server_count -ge $SERVER_LIMIT ]] && break
 		in_array "$db" ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"} && continue
+		in_array "$db" ${TIMED_OUT_DBS[@]+"${TIMED_OUT_DBS[@]}"} && continue
 		in_array "$db" ${active_dbs[@]+"${active_dbs[@]}"} && continue
 		new_dbs+=("$db")
 		server_count=$((server_count + 1))
@@ -653,6 +767,7 @@ run_cloud() {
 	local -a queued=()
 	for db in "${ALL_DBS[@]}"; do
 		in_array "$db" ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"} && continue
+		in_array "$db" ${TIMED_OUT_DBS[@]+"${TIMED_OUT_DBS[@]}"} && continue
 		in_array "$db" ${active_dbs[@]+"${active_dbs[@]}"} && continue
 		in_array "$db" ${new_dbs[@]+"${new_dbs[@]}"} && continue
 		queued+=("$db")
@@ -660,9 +775,10 @@ run_cloud() {
 
 	echo ""
 	echo "========================================"
-	echo "  Status (${#COMPLETED_DBS[@]}/${#ALL_DBS[@]} complete)"
+	echo "  Status ($finished_count/${#ALL_DBS[@]} finished)"
 	echo "========================================"
 	[[ ${#COMPLETED_DBS[@]} -gt 0 ]] && echo "  Done:    ${COMPLETED_DBS[*]}"
+	[[ ${#TIMED_OUT_DBS[@]} -gt 0 ]] && echo "  Timeout: ${TIMED_OUT_DBS[*]}"
 	local all_running=(${active_dbs[@]+"${active_dbs[@]}"} ${new_dbs[@]+"${new_dbs[@]}"})
 	[[ ${#all_running[@]} -gt 0 ]] && echo "  Active:  ${all_running[*]}"
 	[[ ${#queued[@]} -gt 0 ]] && echo "  Queued:  ${queued[*]}"

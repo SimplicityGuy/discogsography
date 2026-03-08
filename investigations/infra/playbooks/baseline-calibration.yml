@@ -1,0 +1,99 @@
+---
+# Run hardware calibration on a dedicated baseline CX53 instance.
+# The baseline calibration is copied to the controller and saved locally.
+# The baseline instance should be torn down after this playbook completes.
+#
+# Prerequisites:
+#   - bench-baseline server provisioned (provision.yml with provision_baseline=true)
+#   - bench-baseline is in the Ansible inventory
+#
+# Usage:
+#   ansible-playbook playbooks/baseline-calibration.yml
+
+- name: Establish SSH to controller (for ProxyCommand)
+  hosts: controller
+  become: true
+  gather_facts: false
+
+  tasks:
+    - name: Wait for controller SSH
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 120
+
+- name: Run calibration on baseline host
+  hosts: bench-baseline
+  become: true
+
+  tasks:
+    - name: Wait for SSH
+      ansible.builtin.wait_for_connection:
+        delay: 5
+        timeout: 120
+
+    - name: Ensure python3 is available
+      ansible.builtin.apt:
+        name: python3
+        state: present
+        update_cache: true
+        cache_valid_time: 3600
+
+    - name: Create benchmark directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - /opt/benchmark
+        - /opt/benchmark/results
+
+    - name: Copy calibration script
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../calibration/calibrate.py"
+        dest: /opt/benchmark/calibrate.py
+        mode: "0644"
+
+    - name: Run hardware calibration
+      ansible.builtin.command:
+        cmd: python3 /opt/benchmark/calibrate.py run --output /opt/benchmark/results/calibration.json
+        creates: /opt/benchmark/results/calibration.json
+
+    - name: Fetch calibration to local temp
+      ansible.builtin.fetch:
+        src: /opt/benchmark/results/calibration.json
+        dest: /tmp/baseline-calibration.json
+        flat: true
+
+- name: Copy baseline calibration to controller
+  hosts: bench-controller
+  become: true
+
+  tasks:
+    - name: Create results directory
+      ansible.builtin.file:
+        path: /opt/benchmark/results
+        state: directory
+        mode: "0755"
+
+    - name: Copy baseline calibration
+      ansible.builtin.copy:
+        src: /tmp/baseline-calibration.json
+        dest: /opt/benchmark/results/baseline-calibration.json
+        mode: "0644"
+
+- name: Save baseline calibration locally
+  hosts: localhost
+  connection: local
+
+  tasks:
+    - name: Ensure local results directory exists
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/../../results"
+        state: directory
+        mode: "0755"
+
+    - name: Copy baseline calibration to local results
+      ansible.builtin.copy:
+        src: /tmp/baseline-calibration.json
+        dest: "{{ playbook_dir }}/../../results/baseline-calibration.json"
+        mode: "0644"

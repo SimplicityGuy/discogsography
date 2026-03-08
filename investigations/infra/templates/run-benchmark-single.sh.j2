@@ -4,7 +4,7 @@
 # File naming convention: {db}-{what}-{timestamp}
 #   Results:   {db}-{scale}-{timestamp}.json
 #   Logs:      {db}-benchmark.log, {db}-error.log
-#   Sentinels: {db}.done, {db}.err
+#   Sentinels: {db}.start, {db}.done, {db}.err, {db}.timeout
 
 set -euo pipefail
 
@@ -13,10 +13,12 @@ export PATH="/root/.local/bin:$PATH"
 DB_NAME="{{ db_name }}"
 BENCHMARK_DIR="{{ benchmark_dir }}"
 RESULTS_DIR="{{ results_dir }}"
+DATA_DIR="/opt/benchmark/data"
 PID_FILE="/opt/benchmark/${DB_NAME}-benchmark.pid"
 DONE_FILE="${RESULTS_DIR}/${DB_NAME}.done"
 
 echo $$ > "$PID_FILE"
+date -u '+%Y-%m-%dT%H:%M:%SZ' > "${RESULTS_DIR}/${DB_NAME}.start"
 trap 'rm -f "$PID_FILE"' EXIT
 
 cd "$BENCHMARK_DIR"
@@ -37,10 +39,18 @@ ERR_FILE="${RESULTS_DIR}/${DB_NAME}.err"
 LOG_FILE="/opt/benchmark/${DB_NAME}-benchmark.log"
 
 for SCALE in small large; do
+    # Find pre-generated data file
+    DATA_FILE=$(ls -1 "$DATA_DIR"/synthetic-data-${SCALE}-*.json.gz 2>/dev/null | head -1)
+    if [ -z "$DATA_FILE" ]; then
+        log "ERROR: No data file found for scale=${SCALE} in ${DATA_DIR}"
+        FAILED=1
+        continue
+    fi
+
     TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
     OUTPUT="$RESULTS_DIR/${DB_NAME}-${SCALE}-${TIMESTAMP}.json"
 
-    log "Starting ${DB_NAME} @ ${SCALE}..."
+    log "Starting ${DB_NAME} @ ${SCALE} (data: $(basename "$DATA_FILE"))..."
 
     PYTHONPATH="$BENCHMARK_DIR" uv run --directory "$BENCHMARK_DIR/investigations" \
         python -m investigations.benchmark.runner \
@@ -48,6 +58,7 @@ for SCALE in small large; do
         --uri "$URI" \
         --scale "$SCALE" \
         --clear \
+        --data-file "$DATA_FILE" \
         --output "$OUTPUT" \
         $USER_ARGS || {
             log "ERROR: ${DB_NAME} @ ${SCALE} failed"

@@ -22,7 +22,7 @@ import sys
 import time
 from typing import TYPE_CHECKING, Any
 
-from investigations.benchmark.fixtures import generate_test_data
+from investigations.benchmark.fixtures import generate_test_data, load_test_data
 from investigations.benchmark.workloads import WORKLOADS, WorkloadType, get_workload_params
 
 
@@ -490,7 +490,7 @@ async def main_async(args: argparse.Namespace) -> None:
             print("  Clearing existing data...")
             await backend.clear_all_data()
 
-        data = generate_test_data(scale=args.scale, seed=args.seed)
+        data = load_test_data(args.data_file) if args.data_file else generate_test_data(scale=args.scale, seed=args.seed)
 
         if args.load_only:
             await insert_data(backend, data)
@@ -538,6 +538,7 @@ Examples:
     parser.add_argument("--load-only", action="store_true", help="Only load data, skip benchmarks")
     parser.add_argument("--skip-load", action="store_true", help="Skip data loading, run benchmarks only")
     parser.add_argument("--clear", action="store_true", help="Clear existing data before loading")
+    parser.add_argument("--data-file", default=None, help="Load data from gzipped JSON file instead of generating")
 
     args = parser.parse_args()
 

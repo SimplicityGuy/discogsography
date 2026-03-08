@@ -51,6 +51,30 @@
       args:
         chdir: /opt/benchmark/discogsography/investigations
 
+    - name: Generate synthetic data files
+      ansible.builtin.shell: |
+        export PATH="/root/.local/bin:$PATH"
+        DATA_DIR=/opt/benchmark/data
+        mkdir -p "$DATA_DIR"
+
+        # Skip if data files already exist
+        if ls "$DATA_DIR"/synthetic-data-small-*.json.gz 1>/dev/null 2>&1; then
+          echo "SKIP: Data files already exist"
+          exit 0
+        fi
+
+        cd /opt/benchmark/discogsography
+        DATE=$(date +%Y-%m-%d)
+        for SCALE in small large; do
+          echo "Generating ${SCALE} dataset..."
+          PYTHONPATH=/opt/benchmark/discogsography uv run --directory investigations \
+            python -m investigations.benchmark.fixtures generate \
+            --scale "$SCALE" \
+            --output "$DATA_DIR/synthetic-data-${SCALE}-${DATE}.json.gz"
+        done
+      register: data_gen_result
+      changed_when: "'SKIP' not in data_gen_result.stdout"
+
 - name: Calibrate target database host
   hosts: "bench-{{ benchmark_db }}"
   become: true
@@ -75,6 +99,23 @@
       ansible.builtin.command:
         cmd: python3 /opt/benchmark/calibrate.py run --output /opt/benchmark/results/calibration.json
         creates: /opt/benchmark/results/calibration.json
+
+    - name: Fetch calibration to local temp
+      ansible.builtin.fetch:
+        src: /opt/benchmark/results/calibration.json
+        dest: "/tmp/{{ inventory_hostname }}-calibration.json"
+        flat: true
+
+- name: Copy {{ benchmark_db | default('unknown') }} calibration to controller
+  hosts: bench-controller
+  become: true
+
+  tasks:
+    - name: Copy calibration file
+      ansible.builtin.copy:
+        src: "/tmp/bench-{{ benchmark_db }}-calibration.json"
+        dest: "/opt/benchmark/results/{{ benchmark_db }}-calibration.json"
+        mode: "0644"
 
 - name: Start benchmark for {{ benchmark_db | default('unknown') }}
   hosts: bench-controller
