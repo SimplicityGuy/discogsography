@@ -25,7 +25,19 @@
         flat: true
       loop: "{{ result_files.files }}"
 
-- name: Collect system metrics from database hosts
+    - name: Check for controller calibration file
+      ansible.builtin.stat:
+        path: /opt/benchmark/results/controller_calibration.json
+      register: controller_calibration
+
+    - name: Fetch controller calibration to calibration results
+      ansible.builtin.fetch:
+        src: /opt/benchmark/results/controller_calibration.json
+        dest: "{{ playbook_dir }}/../../calibration/results/controller-calibration.json"
+        flat: true
+      when: controller_calibration.stat.exists
+
+- name: Collect system metrics and calibration from database hosts
   hosts: databases
 
   tasks:
@@ -40,3 +52,15 @@
         dest: "{{ playbook_dir }}/../../benchmark/results/{{ inventory_hostname }}-system-metrics.jsonl"
         flat: true
       when: metrics_file.stat.exists
+
+    - name: Check for calibration file
+      ansible.builtin.stat:
+        path: /opt/benchmark/results/calibration.json
+      register: calibration_file
+
+    - name: Fetch calibration file
+      ansible.builtin.fetch:
+        src: /opt/benchmark/results/calibration.json
+        dest: "{{ playbook_dir }}/../../calibration/results/{{ inventory_hostname }}-calibration.json"
+        flat: true
+      when: calibration_file.stat.exists

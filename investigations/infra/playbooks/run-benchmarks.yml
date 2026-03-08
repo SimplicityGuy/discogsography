@@ -50,6 +50,21 @@
       args:
         chdir: /opt/benchmark/discogsography
 
+- name: Run hardware calibration on database hosts
+  hosts: databases
+
+  tasks:
+    - name: Copy calibration script to database hosts
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../calibration/calibrate.py"
+        dest: /opt/benchmark/calibrate.py
+        mode: "0644"
+
+    - name: Run hardware calibration on database host
+      ansible.builtin.command:
+        cmd: python3 /opt/benchmark/calibrate.py run --output /opt/benchmark/results/calibration.json
+        creates: /opt/benchmark/results/calibration.json
+
 - name: Run benchmarks against all databases
   hosts: bench-controller
   become: true
