@@ -1,0 +1,126 @@
+---
+# Start a benchmark for a single database on the controller.
+# The benchmark runs in the background via nohup.
+#
+# Usage:
+#   ansible-playbook playbooks/start-benchmark.yml -e benchmark_db=neo4j
+
+- name: Ensure controller is ready
+  hosts: bench-controller
+  become: true
+
+  tasks:
+    - name: Install Python and uv
+      ansible.builtin.apt:
+        name:
+          - python3
+          - python3-pip
+          - python3-venv
+        state: present
+
+    - name: Install uv
+      ansible.builtin.shell: curl -LsSf https://astral.sh/uv/install.sh | sh
+      args:
+        creates: /root/.local/bin/uv
+
+    - name: Create benchmark workspace
+      ansible.builtin.file:
+        path: /opt/benchmark/discogsography
+        state: directory
+        mode: "0755"
+
+    - name: Sync investigation code to controller
+      ansible.posix.synchronize:
+        src: "{{ playbook_dir }}/../../"
+        dest: /opt/benchmark/discogsography/
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=__pycache__"
+          - "--exclude=.mypy_cache"
+          - "--exclude=node_modules"
+      delegate_to: localhost
+
+    - name: Install Python dependencies on controller
+      ansible.builtin.shell: |
+        export PATH="/root/.local/bin:$PATH"
+        cd /opt/benchmark/discogsography
+        uv sync --all-extras --extra investigations
+      args:
+        chdir: /opt/benchmark/discogsography
+
+- name: Calibrate target database host
+  hosts: "bench-{{ benchmark_db }}"
+
+  tasks:
+    - name: Copy calibration script
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../calibration/calibrate.py"
+        dest: /opt/benchmark/calibrate.py
+        mode: "0644"
+
+    - name: Run hardware calibration
+      ansible.builtin.command:
+        cmd: python3 /opt/benchmark/calibrate.py run --output /opt/benchmark/results/calibration.json
+        creates: /opt/benchmark/results/calibration.json
+
+- name: Start benchmark for {{ benchmark_db | default('unknown') }}
+  hosts: bench-controller
+  become: true
+  vars:
+    benchmark_dir: /opt/benchmark/discogsography
+    results_dir: /opt/benchmark/results
+    db_name: "{{ benchmark_db }}"
+    all_database_specs:
+      neo4j:
+        uri: "bolt://10.0.1.10:7687"
+        user_args: "--user neo4j --password discogsography"
+      memgraph:
+        uri: "bolt://10.0.1.11:7687"
+        user_args: ""
+      age:
+        uri: "postgresql://discogsography:discogsography@10.0.1.12:5432/discogsography"
+        user_args: ""
+      falkordb:
+        uri: "redis://10.0.1.13:6379"
+        user_args: ""
+      arangodb:
+        uri: "http://10.0.1.14:8529"
+        user_args: "--user root --password discogsography"
+    db_uri: "{{ all_database_specs[db_name].uri }}"
+    db_user_args: "{{ all_database_specs[db_name].user_args }}"
+
+  tasks:
+    - name: Create results directory
+      ansible.builtin.file:
+        path: "{{ results_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Deploy per-database benchmark script
+      ansible.builtin.template:
+        src: ../templates/run-benchmark-single.sh.j2
+        dest: "/opt/benchmark/run-benchmark-{{ db_name }}.sh"
+        mode: "0755"
+
+    - name: Check if benchmark is already running
+      ansible.builtin.stat:
+        path: "/opt/benchmark/benchmark-{{ db_name }}.pid"
+      register: pid_file
+
+    - name: Check if benchmark is already complete
+      ansible.builtin.stat:
+        path: "{{ results_dir }}/{{ db_name }}.done"
+      register: done_file
+
+    - name: Start benchmark in background
+      ansible.builtin.shell: |
+        nohup bash /opt/benchmark/run-benchmark-{{ db_name }}.sh \
+            > /opt/benchmark/benchmark-{{ db_name }}.log 2>&1 &
+      when: not pid_file.stat.exists and not done_file.stat.exists
+
+    - name: Show status
+      ansible.builtin.debug:
+        msg: >-
+          {% if done_file.stat.exists %}Benchmark for {{ db_name }} already complete.
+          {% elif pid_file.stat.exists %}Benchmark for {{ db_name }} is already running.
+          {% else %}Benchmark for {{ db_name }} started in background.{% endif %}

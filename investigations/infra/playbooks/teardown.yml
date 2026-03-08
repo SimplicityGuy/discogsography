@@ -34,7 +34,7 @@
   tasks:
     - name: Determine servers to destroy
       ansible.builtin.set_fact:
-        servers_to_destroy: "{{ db_servers if keep_controller | bool else all_servers }}"
+        servers_to_destroy: "{{ destroy_servers if destroy_servers is defined else (db_servers if keep_controller | bool else all_servers) }}"
 
     - name: Display teardown plan
       ansible.builtin.debug:

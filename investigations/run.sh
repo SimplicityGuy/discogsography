@@ -5,10 +5,15 @@
 #   ./investigations/run.sh                       # Benchmark all databases locally at small scale
 #   ./investigations/run.sh neo4j                 # Benchmark Neo4j only
 #   ./investigations/run.sh neo4j large           # Benchmark Neo4j at large scale
-#   ./investigations/run.sh --compare             # Compare all existing results
+#   ./investigations/run.sh --compare             # Compare all existing result files
 #
-# Cloud mode:
-#   ./investigations/run.sh --cloud               # Full Hetzner Cloud pipeline
+# Cloud mode (convergence — run repeatedly until all benchmarks complete):
+#   ./investigations/run.sh --cloud               # First run: provisions controller + 3 DBs
+#                                                 # Subsequent: tears down done, starts new
+#   ./investigations/run.sh --cloud --server-limit 4   # Custom server limit (default: 5)
+#
+# Teardown:
+#   ./investigations/run.sh --teardown            # Destroy all cloud infrastructure
 #
 # Prerequisites (local):
 #   - Docker Desktop running
@@ -45,12 +50,20 @@ show_help() {
 	echo ""
 	echo "Modes:"
 	echo "  (default)    Run benchmarks locally via Docker Compose"
-	echo "  --cloud      Provision Hetzner Cloud infrastructure and benchmark there"
+	echo "  --cloud      Hetzner Cloud benchmark pipeline (convergence mode)"
+	echo "  --teardown   Destroy all cloud infrastructure"
 	echo ""
 	echo "Local options:"
 	echo "  backend      neo4j, memgraph, age, falkordb, arangodb (default: all)"
 	echo "  scale        small, large (default: small)"
 	echo "  --compare    Compare all existing result files"
+	echo ""
+	echo "Cloud options:"
+	echo "  --server-limit N   Max concurrent servers (default: 5)"
+	echo "                     Run --cloud repeatedly to converge:"
+	echo "                     1st run: provisions controller + 3 DB servers"
+	echo "                     Next runs: tears down completed, starts remaining"
+	echo "                     Final run: all done, only controller remains"
 	echo ""
 	echo "Environment variables (optional, local mode):"
 	echo "  NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD"
@@ -203,21 +216,51 @@ compare_results() {
 }
 
 # ═══════════════════════════════════════════════════════
-# Cloud mode
+# Cloud mode — convergence-based
 # ═══════════════════════════════════════════════════════
+#
+# Each invocation checks the current state of Hetzner infrastructure and
+# benchmark results, then takes the next appropriate actions:
+#
+#   1st run:  No infrastructure → provision controller + 3 DB servers,
+#             start benchmarks.
+#   2nd+ run: Check results on controller. Tear down servers whose
+#             benchmarks completed. Provision new servers for remaining
+#             databases (up to server limit). Restart any failed benchmarks.
+#   Final:    All 5 benchmarks done → tear down all DB servers, fetch
+#             results. Only controller remains for manual inspection.
+#
 
-run_cloud() {
-	local INFRA_DIR="$SCRIPT_DIR/infra"
+# Check if a value exists in a list of arguments
+in_array() {
+	local needle="$1"
+	shift
+	for v in "$@"; do
+		[[ "$v" == "$needle" ]] && return 0
+	done
+	return 1
+}
+
+# Build a JSON array of strings from bash arguments: to_json_array a b c → ["a","b","c"]
+to_json_array() {
+	local result=""
+	for v in "$@"; do
+		result+="\"$v\","
+	done
+	echo "[${result%,}]"
+}
+
+cloud_prerequisites() {
+	local INFRA_DIR="$1"
 	local VAULT_FILE="$INFRA_DIR/vault.yml"
 	local VAULT_PASS_FILE="$INFRA_DIR/.vault-pass"
 	local SSH_KEY="$HOME/.ssh/benchmark-key"
 
-	# --- Prerequisites ---
 	echo "========================================"
 	echo "  Checking prerequisites..."
 	echo "========================================"
 
-	# 1. uv
+	# uv
 	if ! command -v uv &>/dev/null; then
 		echo "Installing uv..."
 		curl -LsSf https://astral.sh/uv/install.sh | sh
@@ -225,14 +268,14 @@ run_cloud() {
 	fi
 	echo "  uv: $(command -v uv)"
 
-	# 2. Ansible
+	# Ansible
 	if ! command -v ansible-playbook &>/dev/null; then
 		echo "Installing ansible-core via uv..."
 		uv tool install ansible-core
 	fi
 	echo "  ansible: $(command -v ansible-playbook)"
 
-	# 3. Ansible collections
+	# Ansible collections
 	local REQUIRED_COLLECTIONS=("hetzner.hcloud" "community.docker" "community.general" "ansible.posix")
 	for col in "${REQUIRED_COLLECTIONS[@]}"; do
 		if ! ansible-galaxy collection list 2>/dev/null | grep -q "$col"; then
@@ -242,20 +285,20 @@ run_cloud() {
 	done
 	echo "  Ansible collections: OK"
 
-	# 4. hcloud Python package (required by hetzner.hcloud collection)
+	# hcloud Python package
 	if ! python3 -c "import hcloud" 2>/dev/null; then
 		echo "  Installing hcloud Python package..."
 		pip install --quiet hcloud 2>/dev/null || uv pip install hcloud 2>/dev/null || true
 	fi
 
-	# 5. SSH key
+	# SSH key
 	if [[ ! -f "$SSH_KEY" ]]; then
 		echo "  Generating SSH key at $SSH_KEY..."
 		ssh-keygen -t ed25519 -f "$SSH_KEY" -N "" -C "discogsography-benchmark"
 	fi
 	echo "  SSH key: $SSH_KEY"
 
-	# 6. Vault password file
+	# Vault password file
 	if [[ ! -f "$VAULT_PASS_FILE" ]]; then
 		echo ""
 		echo "  No vault password file found at $VAULT_PASS_FILE"
@@ -266,9 +309,7 @@ run_cloud() {
 		echo "  Vault password saved to $VAULT_PASS_FILE"
 	fi
 
-	local VAULT_ARGS="--vault-password-file=$VAULT_PASS_FILE"
-
-	# 7. Vault file with Hetzner token
+	# Vault file with Hetzner token
 	if [[ ! -f "$VAULT_FILE" ]]; then
 		echo ""
 		echo "  No Ansible vault found. Creating one."
@@ -284,7 +325,7 @@ run_cloud() {
 		fi
 
 		echo "vault_hcloud_token: \"$HCLOUD_TOKEN\"" >"$VAULT_FILE.tmp"
-		ansible-vault encrypt "$VAULT_FILE.tmp" "$VAULT_ARGS"
+		ansible-vault encrypt "$VAULT_FILE.tmp" --vault-password-file="$VAULT_PASS_FILE"
 		mv "$VAULT_FILE.tmp" "$VAULT_FILE"
 		echo "  Vault created at $VAULT_FILE"
 	fi
@@ -293,74 +334,327 @@ run_cloud() {
 	echo ""
 	echo "  All prerequisites satisfied."
 	echo ""
+}
 
-	# --- Deployment pipeline ---
+run_cloud() {
+	local INFRA_DIR="$SCRIPT_DIR/infra"
+	local VAULT_PASS_FILE="$INFRA_DIR/.vault-pass"
+	local SERVER_LIMIT="${SERVER_LIMIT:-5}"
+	local INITIAL_BATCH=3
+
+	# All databases to benchmark (order determines provisioning priority)
+	local ALL_DBS=(neo4j memgraph age falkordb arangodb)
+
+	# Map database name → setup playbook
+	local -A DB_SETUP=(
+		["neo4j"]=setup-neo4j.yml
+		["memgraph"]=setup-memgraph.yml
+		["age"]=setup-age.yml
+		["falkordb"]=setup-falkordb.yml
+		["arangodb"]=setup-arangodb.yml
+	)
+
+	cloud_prerequisites "$INFRA_DIR"
+
+	local VAULT_ARGS="--vault-password-file=$VAULT_PASS_FILE"
 	cd "$INFRA_DIR"
 
-	echo "========================================"
-	echo "  Discogsography Benchmark Pipeline"
-	echo "========================================"
+	# ── Step 1: Check existing infrastructure ─────────────────────
+	echo "Checking Hetzner Cloud infrastructure..."
+	if ! ansible-playbook playbooks/check-servers.yml "$VAULT_ARGS" >/dev/null 2>&1; then
+		echo "ERROR: Could not query Hetzner Cloud API."
+		echo "Check your API token and network connection."
+		exit 1
+	fi
+
+	local CONTROLLER_IP=""
+	local -a EXISTING_DB_SERVERS=()
+
+	if [[ -f /tmp/bench-servers.txt ]]; then
+		while IFS=' ' read -r name ip _status; do
+			[[ -z "$name" ]] && continue
+			if [[ "$name" == "bench-controller" ]]; then
+				CONTROLLER_IP="$ip"
+			elif [[ "$name" == bench-* ]]; then
+				EXISTING_DB_SERVERS+=("${name#bench-}")
+			fi
+		done </tmp/bench-servers.txt
+	fi
+
+	# ── Step 2: First run — provision controller + initial batch ──
+	if [[ -z "$CONTROLLER_IP" ]]; then
+		local initial_dbs=("${ALL_DBS[@]:0:$INITIAL_BATCH}")
+
+		echo ""
+		echo "========================================"
+		echo "  No existing infrastructure found."
+		echo "  Starting initial deployment."
+		echo "========================================"
+		echo ""
+		echo "  Infrastructure: 1x CX33 controller + ${#initial_dbs[@]}x CX53 databases"
+		echo "  Databases: ${initial_dbs[*]}"
+		echo "  Server limit: $SERVER_LIMIT"
+		echo "  Scale: small (~135k nodes) + large (~1.35M nodes)"
+		echo ""
+		read -rp "  Proceed? [Y/n] " proceed
+		[[ "${proceed:-Y}" =~ ^[Nn] ]] && {
+			echo "Aborted."
+			exit 0
+		}
+
+		local dbs_json
+		dbs_json=$(to_json_array "${initial_dbs[@]}")
+
+		echo ""
+		echo "=== Step 1/4: Provisioning ==="
+		ansible-playbook playbooks/provision.yml "$VAULT_ARGS" \
+			-e "{\"active_dbs\":$dbs_json}"
+
+		echo ""
+		echo "=== Step 2/4: Setting up hosts ==="
+		ansible-playbook playbooks/setup-common.yml
+
+		echo ""
+		echo "=== Step 3/4: Deploying databases ==="
+		for db in "${initial_dbs[@]}"; do
+			ansible-playbook "playbooks/${DB_SETUP[$db]}" &
+		done
+		wait
+
+		echo ""
+		echo "=== Step 4/4: Starting benchmarks ==="
+		for db in "${initial_dbs[@]}"; do
+			ansible-playbook playbooks/start-benchmark.yml \
+				-e "benchmark_db=$db"
+		done
+
+		echo ""
+		echo "========================================"
+		echo "  Initial deployment complete!"
+		echo "========================================"
+		echo "  Benchmarks running: ${initial_dbs[*]}"
+		echo "  Remaining: ${ALL_DBS[*]:$INITIAL_BATCH}"
+		echo ""
+		echo "  Run this command again to check progress and scale up."
+		echo "  Monitor logs:"
+
+		# Re-read controller IP from the generated inventory
+		CONTROLLER_IP=$(grep -A1 'bench-controller' inventory/hosts.yml 2>/dev/null | grep ansible_host | awk '{print $2}' || echo '<controller-ip>')
+		for db in "${initial_dbs[@]}"; do
+			echo "    ssh -i ~/.ssh/benchmark-key root@${CONTROLLER_IP} 'tail -f /opt/benchmark/benchmark-${db}.log'"
+		done
+		return
+	fi
+
+	# ── Step 3: Controller exists — check benchmark status ────────
 	echo ""
-	echo "  Infrastructure: Hetzner Cloud (1x CX33 + 5x CX53)"
-	echo "  Databases: Neo4j, Memgraph, AGE, FalkorDB, ArangoDB"
-	echo "  Scale: small (~135k nodes) + large (~1.35M nodes)"
-	echo "  Estimated cost: ~EUR 3.57 (24 hours)"
+	echo "  Controller: $CONTROLLER_IP"
+	echo "  DB servers: ${EXISTING_DB_SERVERS[*]:-none}"
 	echo ""
-	read -rp "  Proceed? [Y/n] " proceed
-	if [[ "${proceed:-Y}" =~ ^[Nn] ]]; then
+
+	local -a COMPLETED_DBS=()
+	local -a RUNNING_DBS=()
+	local SSH_CMD="ssh -i $HOME/.ssh/benchmark-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$CONTROLLER_IP"
+
+	# Clean up stale PID files (process died without cleanup)
+	$SSH_CMD 'for f in /opt/benchmark/benchmark-*.pid; do
+		[ -f "$f" ] || continue
+		pid=$(cat "$f" 2>/dev/null)
+		if ! kill -0 "$pid" 2>/dev/null; then rm -f "$f"; fi
+	done' 2>/dev/null || true
+
+	# Gather sentinel (.done) and PID files
+	local status_output
+	status_output=$($SSH_CMD 'echo "=DONE="; ls /opt/benchmark/results/*.done 2>/dev/null || true; echo "=PID="; ls /opt/benchmark/benchmark-*.pid 2>/dev/null || true' 2>/dev/null) || {
+		echo "  Cannot reach controller at $CONTROLLER_IP. Try again in a few minutes."
+		return
+	}
+
+	local in_done=false in_pid=false
+	while IFS= read -r line; do
+		case "$line" in
+		"=DONE=")
+			in_done=true
+			in_pid=false
+			continue
+			;;
+		"=PID=")
+			in_done=false
+			in_pid=true
+			continue
+			;;
+		esac
+		if $in_done; then
+			# /opt/benchmark/results/neo4j.done → neo4j
+			local db_name
+			db_name=$(basename "$line" .done)
+			in_array "$db_name" "${ALL_DBS[@]}" && COMPLETED_DBS+=("$db_name")
+		elif $in_pid; then
+			# /opt/benchmark/benchmark-neo4j.pid → neo4j
+			local db_name
+			db_name=$(basename "$line" .pid)
+			db_name="${db_name#benchmark-}"
+			in_array "$db_name" "${ALL_DBS[@]}" && RUNNING_DBS+=("$db_name")
+		fi
+	done <<<"$status_output"
+
+	echo "  Completed: ${COMPLETED_DBS[*]:-none}"
+	echo "  Running:   ${RUNNING_DBS[*]:-none}"
+
+	# ── Step 4: All benchmarks done? ──────────────────────────────
+	if [[ ${#COMPLETED_DBS[@]} -eq ${#ALL_DBS[@]} ]]; then
+		echo ""
+		echo "========================================"
+		echo "  All benchmarks complete!"
+		echo "========================================"
+
+		# Tear down remaining DB servers
+		if [[ ${#EXISTING_DB_SERVERS[@]} -gt 0 ]]; then
+			echo ""
+			echo "  Tearing down DB servers..."
+			for db in "${EXISTING_DB_SERVERS[@]}"; do
+				echo "    bench-$db"
+				ansible-playbook playbooks/teardown.yml "$VAULT_ARGS" \
+					-e "{\"destroy_servers\":[\"bench-$db\"]}" >/dev/null 2>&1
+			done
+		fi
+
+		# Update inventory to controller-only for fetch
+		ansible-playbook playbooks/provision.yml "$VAULT_ARGS" \
+			-e '{"active_dbs":[]}' >/dev/null 2>&1 || true
+
+		echo ""
+		echo "  Fetching results..."
+		ansible-playbook playbooks/fetch-results.yml 2>/dev/null || true
+
+		echo ""
+		echo "  Results downloaded to investigations/benchmark/results/"
+		echo "  Controller still running at $CONTROLLER_IP for inspection."
+		echo "  To tear down everything: ./investigations/run.sh --teardown"
+		return
+	fi
+
+	# ── Step 5: Tear down completed DB servers ────────────────────
+	local -a torn_down=()
+	for db in "${COMPLETED_DBS[@]}"; do
+		if in_array "$db" "${EXISTING_DB_SERVERS[@]}"; then
+			echo ""
+			echo "  Tearing down bench-$db (benchmark complete)..."
+			ansible-playbook playbooks/teardown.yml "$VAULT_ARGS" \
+				-e "{\"destroy_servers\":[\"bench-$db\"]}"
+			torn_down+=("$db")
+		fi
+	done
+
+	# Build list of servers still running
+	local -a active_dbs=()
+	for db in "${EXISTING_DB_SERVERS[@]}"; do
+		in_array "$db" "${torn_down[@]}" || active_dbs+=("$db")
+	done
+	local server_count=$((1 + ${#active_dbs[@]})) # controller + active DBs
+
+	# ── Step 6: Restart failed benchmarks ─────────────────────────
+	# A server exists, benchmark isn't running, and isn't complete → restart
+	for db in "${active_dbs[@]}"; do
+		if ! in_array "$db" "${COMPLETED_DBS[@]}" && ! in_array "$db" "${RUNNING_DBS[@]}"; then
+			echo ""
+			echo "  Restarting benchmark for $db (previous run may have failed)..."
+			ansible-playbook playbooks/start-benchmark.yml \
+				-e "benchmark_db=$db"
+		fi
+	done
+
+	# ── Step 7: Provision new DB servers ──────────────────────────
+	local -a new_dbs=()
+	for db in "${ALL_DBS[@]}"; do
+		[[ $server_count -ge $SERVER_LIMIT ]] && break
+		in_array "$db" "${COMPLETED_DBS[@]}" && continue
+		in_array "$db" "${active_dbs[@]}" && continue
+		new_dbs+=("$db")
+		server_count=$((server_count + 1))
+	done
+
+	if [[ ${#new_dbs[@]} -gt 0 ]] || [[ ${#torn_down[@]} -gt 0 ]]; then
+		# Combine active + new for inventory
+		local all_active=("${active_dbs[@]}" "${new_dbs[@]}")
+
+		if [[ ${#all_active[@]} -gt 0 ]]; then
+			local dbs_json
+			dbs_json=$(to_json_array "${all_active[@]}")
+
+			echo ""
+			echo "=== Updating infrastructure ==="
+			ansible-playbook playbooks/provision.yml "$VAULT_ARGS" \
+				-e "{\"active_dbs\":$dbs_json}"
+		elif [[ ${#torn_down[@]} -gt 0 ]]; then
+			# All active servers torn down, no new ones — update inventory
+			ansible-playbook playbooks/provision.yml "$VAULT_ARGS" \
+				-e '{"active_dbs":[]}' >/dev/null 2>&1 || true
+		fi
+
+		for db in "${new_dbs[@]}"; do
+			echo ""
+			echo "=== Setting up bench-$db ==="
+			ansible-playbook playbooks/setup-common.yml --limit "bench-$db"
+			ansible-playbook "playbooks/${DB_SETUP[$db]}"
+			ansible-playbook playbooks/start-benchmark.yml \
+				-e "benchmark_db=$db"
+		done
+	fi
+
+	# ── Step 8: Status report ─────────────────────────────────────
+	local -a queued=()
+	for db in "${ALL_DBS[@]}"; do
+		in_array "$db" "${COMPLETED_DBS[@]}" && continue
+		in_array "$db" "${active_dbs[@]}" && continue
+		in_array "$db" "${new_dbs[@]}" && continue
+		queued+=("$db")
+	done
+
+	echo ""
+	echo "========================================"
+	echo "  Status (${#COMPLETED_DBS[@]}/${#ALL_DBS[@]} complete)"
+	echo "========================================"
+	[[ ${#COMPLETED_DBS[@]} -gt 0 ]] && echo "  Done:    ${COMPLETED_DBS[*]}"
+	local all_running=("${active_dbs[@]}" "${new_dbs[@]}")
+	[[ ${#all_running[@]} -gt 0 ]] && echo "  Active:  ${all_running[*]}"
+	[[ ${#queued[@]} -gt 0 ]] && echo "  Queued:  ${queued[*]}"
+	echo "  Servers: $server_count / $SERVER_LIMIT"
+	[[ ${#torn_down[@]} -gt 0 ]] && echo "  Freed:   ${torn_down[*]}"
+	[[ ${#new_dbs[@]} -gt 0 ]] && echo "  Started: ${new_dbs[*]}"
+	echo ""
+	if [[ ${#queued[@]} -gt 0 ]] || [[ ${#all_running[@]} -gt 0 ]]; then
+		echo "  Run this command again to check progress and continue."
+	fi
+}
+
+# ═══════════════════════════════════════════════════════
+# Teardown
+# ═══════════════════════════════════════════════════════
+
+run_teardown() {
+	local INFRA_DIR="$SCRIPT_DIR/infra"
+	local VAULT_PASS_FILE="$INFRA_DIR/.vault-pass"
+
+	if [[ ! -f "$VAULT_PASS_FILE" ]]; then
+		echo "No vault password file found at $VAULT_PASS_FILE"
+		echo "Nothing to tear down."
+		exit 1
+	fi
+
+	cd "$INFRA_DIR"
+	echo "This will destroy ALL benchmark infrastructure (servers, network, firewalls)."
+	read -rp "Proceed? [y/N] " proceed
+	if [[ ! "${proceed:-N}" =~ ^[Yy] ]]; then
 		echo "Aborted."
 		exit 0
 	fi
 
-	echo ""
-	echo "=== Step 1/5: Provisioning Hetzner Cloud infrastructure ==="
-	ansible-playbook playbooks/provision.yml "$VAULT_ARGS"
+	ansible-playbook playbooks/teardown.yml \
+		--vault-password-file="$VAULT_PASS_FILE"
 
 	echo ""
-	echo "=== Step 2/5: Setting up all hosts (Docker, monitoring, bench user) ==="
-	ansible-playbook playbooks/setup-common.yml
-
-	echo ""
-	echo "=== Step 3/5: Deploying databases ==="
-	ansible-playbook playbooks/setup-neo4j.yml &
-	local PID_NEO4J=$!
-	ansible-playbook playbooks/setup-memgraph.yml &
-	local PID_MEM=$!
-	ansible-playbook playbooks/setup-age.yml &
-	local PID_AGE=$!
-	ansible-playbook playbooks/setup-falkordb.yml &
-	local PID_FALK=$!
-	ansible-playbook playbooks/setup-arangodb.yml &
-	local PID_ARANGO=$!
-	wait $PID_NEO4J $PID_MEM $PID_AGE $PID_FALK $PID_ARANGO
-	echo "All databases deployed."
-
-	echo ""
-	echo "=== Step 4/5: Calibrating database hosts ==="
-	echo "=== Step 5/5: Kicking off benchmarks (runs in background on controller) ==="
-	ansible-playbook playbooks/run-benchmarks.yml
-
-	# Extract controller IP from inventory for convenience messages
-	local CONTROLLER_IP
-	CONTROLLER_IP=$(grep -A1 'bench-controller' inventory/hosts.yml | grep ansible_host | awk '{print $2}' || echo '<controller-ip>')
-
-	echo ""
-	echo "========================================"
-	echo "  Benchmarks launched!"
-	echo "========================================"
-	echo ""
-	echo "  Benchmarks are running in the background on the controller."
-	echo "  Your laptop is free — close this terminal if you like."
-	echo ""
-	echo "  Monitor progress:"
-	echo "    ssh -i ~/.ssh/benchmark-key bench@${CONTROLLER_IP} 'tail -f /opt/benchmark/benchmark.log'"
-	echo ""
-	echo "  Fetch results (safe to run while benchmarks are still going):"
-	echo "    cd investigations/infra && ansible-playbook playbooks/fetch-results.yml"
-	echo ""
-	echo "  Tear down when done:"
-	echo "    cd investigations/infra && ansible-playbook playbooks/teardown.yml $VAULT_ARGS"
-	echo ""
+	echo "Teardown complete. All cloud resources destroyed."
 }
 
 # ═══════════════════════════════════════════════════════
@@ -377,7 +671,25 @@ case "${1:-}" in
 	exit 0
 	;;
 --cloud)
+	shift
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--server-limit)
+			export SERVER_LIMIT="$2"
+			shift 2
+			;;
+		*)
+			echo "Unknown cloud option: $1"
+			show_help
+			exit 1
+			;;
+		esac
+	done
 	run_cloud
+	exit 0
+	;;
+--teardown)
+	run_teardown
 	exit 0
 	;;
 *)

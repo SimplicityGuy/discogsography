@@ -1,0 +1,58 @@
+# Auto-generated benchmark runner for {{ db_name }}. Runs on the controller host.
+# Started by start-benchmark.yml via nohup. Logs to /opt/benchmark/benchmark-{{ db_name }}.log.
+
+set -euo pipefail
+
+export PATH="/root/.local/bin:$PATH"
+
+DB_NAME="{{ db_name }}"
+BENCHMARK_DIR="{{ benchmark_dir }}"
+RESULTS_DIR="{{ results_dir }}"
+PID_FILE="/opt/benchmark/benchmark-${DB_NAME}.pid"
+DONE_FILE="${RESULTS_DIR}/${DB_NAME}.done"
+
+echo $$ > "$PID_FILE"
+trap 'rm -f "$PID_FILE"' EXIT
+
+cd "$BENCHMARK_DIR"
+
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"
+}
+
+URI="{{ db_uri }}"
+{% if db_user_args %}
+USER_ARGS="{{ db_user_args }}"
+{% else %}
+USER_ARGS=""
+{% endif %}
+
+FAILED=0
+
+for SCALE in small large; do
+    TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
+    OUTPUT="$RESULTS_DIR/${DB_NAME}_${SCALE}_${TIMESTAMP}.json"
+
+    log "Starting ${DB_NAME} @ ${SCALE}..."
+
+    PYTHONPATH="$BENCHMARK_DIR" uv run python -m investigations.benchmark.runner \
+        --backend "$DB_NAME" \
+        --uri "$URI" \
+        --scale "$SCALE" \
+        --clear \
+        --output "$OUTPUT" \
+        $USER_ARGS || {
+            log "ERROR: ${DB_NAME} @ ${SCALE} failed"
+            FAILED=1
+        }
+
+    log "${DB_NAME} @ ${SCALE} complete: $OUTPUT"
+    sleep 10
+done
+
+if [ $FAILED -eq 0 ]; then
+    date -u '+%Y-%m-%dT%H:%M:%SZ' > "$DONE_FILE"
+    log "All benchmarks complete for ${DB_NAME}. Sentinel written."
+else
+    log "One or more benchmarks failed for ${DB_NAME}. No sentinel written."
+fi

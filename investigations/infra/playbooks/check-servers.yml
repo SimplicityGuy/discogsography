@@ -1,0 +1,29 @@
+---
+# Query Hetzner Cloud API for existing benchmark servers.
+# Writes server names, IPs, and statuses to a local file for bash parsing.
+#
+# Usage:
+#   ansible-playbook playbooks/check-servers.yml --vault-password-file=.vault-pass
+
+- name: Check existing benchmark servers
+  hosts: localhost
+  connection: local
+  vars_files:
+    - ../vault.yml
+  vars:
+    hcloud_token: "{{ vault_hcloud_token }}"
+    output_file: /tmp/bench-servers.txt
+
+  tasks:
+    - name: Query Hetzner Cloud API for all servers
+      hetzner.hcloud.server_info:
+        api_token: "{{ hcloud_token }}"
+      register: all_servers
+
+    - name: Write benchmark server list
+      ansible.builtin.copy:
+        content: |
+          {% for s in all_servers.hcloud_server_info | selectattr('name', 'match', '^bench-') | sort(attribute='name') %}
+          {{ s.name }} {{ s.ipv4_address }} {{ s.status }}
+          {% endfor %}
+        dest: "{{ output_file }}"
