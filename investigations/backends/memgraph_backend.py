@@ -62,7 +62,8 @@ class MemgraphBackend(GraphBackend):
 
     async def execute_write(self, query: str, params: dict[str, Any] | None = None) -> None:
         async with self._driver.session() as session:
-            await session.run(query, params or {})
+            result = await session.run(query, params or {})
+            await result.consume()
 
     async def execute_write_batch(self, queries: list[tuple[str, dict[str, Any]]]) -> None:
         async with self._driver.session() as session:

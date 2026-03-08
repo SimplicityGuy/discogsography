@@ -11,10 +11,11 @@ services:
     volumes:
       - arangodb_data:/var/lib/arangodb3
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8529/_api/version"]
+      test: ["CMD", "arangosh", "--server.password", "discogsography", "--javascript.execute-string", "db._version()"]
       interval: 10s
       timeout: 5s
       retries: 10
+      start_period: 30s
     restart: unless-stopped
 
 volumes:

@@ -105,14 +105,30 @@ class ApacheAGEBackend(GraphBackend):
             return query
         result = query
         for key, value in params.items():
-            if isinstance(value, str):
-                result = result.replace(f"${key}", f"'{value}'")
-            elif isinstance(value, (list, dict)):
-                # For UNWIND $rows, AGE needs different handling
-                result = result.replace(f"${key}", str(value))
-            else:
-                result = result.replace(f"${key}", str(value))
+            result = result.replace(f"${key}", self._to_cypher_literal(value))
         return result
+
+    def _to_cypher_literal(self, value: Any) -> str:
+        """Convert a Python value to an AGE Cypher literal.
+
+        AGE map syntax: {key: 'string_val', num: 42}  (unquoted keys, single-quoted strings).
+        """
+        if value is None:
+            return "null"
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, (int, float)):
+            return str(value)
+        if isinstance(value, str):
+            escaped = value.replace("\\", "\\\\").replace("'", "\\'")
+            return f"'{escaped}'"
+        if isinstance(value, dict):
+            entries = ", ".join(f"{k}: {self._to_cypher_literal(v)}" for k, v in value.items())
+            return f"{{{entries}}}"
+        if isinstance(value, (list, tuple)):
+            items = ", ".join(self._to_cypher_literal(v) for v in value)
+            return f"[{items}]"
+        return str(value)
 
     def _infer_columns(self, query: str) -> str:
         """Infer result column definitions from RETURN clause for AGE SQL wrapper."""
