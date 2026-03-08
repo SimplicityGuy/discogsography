@@ -83,7 +83,31 @@ class ApacheAGEBackend(GraphBackend):
         if self._conn is None:
             msg = "Not connected to AGE"
             raise RuntimeError(msg)
+        # For UNWIND $rows queries, expand each row individually to avoid
+        # AGE's parameter handling limitations.
+        if params and "rows" in params and "UNWIND $rows" in query:
+            await self._execute_unwind_rows(query, params)
+            return
         resolved = self._resolve_params(query, params)
+        sql = self._cypher_sql(resolved)
+        async with self._conn.cursor() as cur:
+            await cur.execute(sql)
+
+    async def _execute_unwind_rows(self, query: str, params: dict[str, Any]) -> None:
+        """Execute an UNWIND $rows query by expanding rows into a Cypher literal list.
+
+        AGE doesn't support native Cypher parameters in the SQL wrapper, so we
+        must inline the full list as a Cypher literal.  The `_to_cypher_literal`
+        method produces valid AGE map syntax ({key: 'val'} — unquoted keys).
+        """
+        if self._conn is None:  # pragma: no cover — caller already checked
+            msg = "Not connected to AGE"
+            raise RuntimeError(msg)
+        rows_literal = self._to_cypher_literal(params["rows"])
+        # Merge any other params (unlikely, but safe)
+        other_params = {k: v for k, v in params.items() if k != "rows"}
+        resolved = query.replace("$rows", rows_literal)
+        resolved = self._resolve_params(resolved, other_params if other_params else None)
         sql = self._cypher_sql(resolved)
         async with self._conn.cursor() as cur:
             await cur.execute(sql)
@@ -94,10 +118,13 @@ class ApacheAGEBackend(GraphBackend):
             raise RuntimeError(msg)
         async with self._conn.transaction():
             for q, p in queries:
-                resolved = self._resolve_params(q, p)
-                sql = self._cypher_sql(resolved)
-                async with self._conn.cursor() as cur:
-                    await cur.execute(sql)
+                if p and "rows" in p and "UNWIND $rows" in q:
+                    await self._execute_unwind_rows(q, p)
+                else:
+                    resolved = self._resolve_params(q, p)
+                    sql = self._cypher_sql(resolved)
+                    async with self._conn.cursor() as cur:
+                        await cur.execute(sql)
 
     def _resolve_params(self, query: str, params: dict[str, Any] | None) -> str:
         """Replace $param placeholders with literal values for AGE."""

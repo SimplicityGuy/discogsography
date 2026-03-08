@@ -90,20 +90,21 @@ class ArangoDBBackend(GraphBackend):
 
     def get_schema_statements(self) -> list[str]:
         # ArangoDB schema is handled via collection/graph creation in connect()
-        # Return index creation AQL
-        return [
-            # Persistent indexes on vertex collections
-            "FOR doc IN artists COLLECT WITH COUNT INTO c RETURN c",  # no-op to verify collection
-        ]
+        # Indexes are created in apply_schema() via _ensure_indexes()
+        return []
+
+    async def apply_schema(self) -> None:
+        """Create persistent and fulltext indexes on ArangoDB collections."""
+        self._ensure_indexes()
 
     def _ensure_indexes(self) -> None:
-        """Create indexes on ArangoDB collections. Called after connect."""
+        """Create indexes on ArangoDB collections."""
         for col_name in self.VERTEX_COLLECTIONS:
             if self._db.has_collection(col_name):
                 col = self._db.collection(col_name)
                 col.add_persistent_index(fields=["entity_id"], unique=True)
                 col.add_persistent_index(fields=["name"])
-        # Fulltext indexes
+        # Fulltext indexes for text search workload
         if self._db.has_collection("artists"):
             self._db.collection("artists").add_fulltext_index(fields=["name"])
         if self._db.has_collection("labels"):

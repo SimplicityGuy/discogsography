@@ -85,9 +85,9 @@ class MemgraphBackend(GraphBackend):
             "CREATE INDEX ON :Release(year)",
             "CREATE INDEX ON :Genre(name)",
             "CREATE INDEX ON :Style(name)",
-            # Memgraph uses text indexes for fulltext search
-            "CREATE TEXT INDEX ON :Artist(name)",
-            "CREATE TEXT INDEX ON :Label(name)",
+            # Memgraph text indexes: CREATE TEXT INDEX <name> ON :<Label>
+            "CREATE TEXT INDEX artist_text ON :Artist",
+            "CREATE TEXT INDEX label_text ON :Label",
         ]
 
     async def clear_all_data(self) -> None:
@@ -113,9 +113,10 @@ class MemgraphBackend(GraphBackend):
         return f"UNWIND $rows AS row MATCH (a:{from_label} {{id: row.from_id}}) MATCH (b:{to_label} {{id: row.to_id}}) MERGE (a)-[:{rel_type}]->(b)"
 
     def fulltext_search_query(self, index_name: str, query_param: str, limit: int = 10) -> str:
-        # Memgraph text search syntax
-        label = "Artist" if "artist" in index_name.lower() else "Label"
-        return f"CALL text_search.search('{label}', ${query_param}) YIELD node RETURN node.id AS id, node.name AS name, 1.0 AS score LIMIT {limit}"
+        # Memgraph text search: index name must match CREATE TEXT INDEX name,
+        # and search queries use 'data.' prefix for property names.
+        text_index = "artist_text" if "artist" in index_name.lower() else "label_text"
+        return f"CALL text_search.search('{text_index}', 'data.name:' + ${query_param}) YIELD node RETURN node.id AS id, node.name AS name, 1.0 AS score LIMIT {limit}"
 
     def stats_query(self) -> str:
         return "MATCH (n) RETURN count(n) AS nodeCount"
