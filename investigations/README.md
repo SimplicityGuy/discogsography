@@ -48,6 +48,9 @@ Provisions 6 Hetzner Cloud VMs (1 controller + 5 database hosts), deploys databa
 # Full cloud pipeline (Hetzner Cloud)
 ./investigations/run.sh --cloud
 
+# Fetch results from cloud to investigations/results/
+./investigations/run.sh --fetch
+
 # Run the benchmark runner directly
 uv run python -m investigations.benchmark.runner \
   --backend neo4j --uri bolt://localhost:7687 --scale small
@@ -89,16 +92,15 @@ investigations/
     workloads.py                    # 7 workload definitions
     runner.py                       # CLI benchmark runner
     compare.py                      # Side-by-side results comparison
-    results/                        # JSON output per run
+  calibration/                      # Hardware calibration for scaling results
+    calibrate.py                    # Micro-benchmarks + scaling logic
+  results/                          # All output (benchmarks, calibration, metrics, logs)
   docker/                           # Per-database Docker Compose files
     docker-compose.neo4j.yml
     docker-compose.memgraph.yml
     docker-compose.age.yml
     docker-compose.falkordb.yml
     docker-compose.arangodb.yml
-  calibration/                        # Hardware calibration for scaling results
-    calibrate.py                    # Micro-benchmarks + scaling logic
-    results/                        # Calibration JSON output
   infra/                            # Cloud deployment (Ansible + Hetzner)
 ```
 
@@ -132,7 +134,7 @@ Key characteristics preserved:
 
 ## Results Output
 
-Each run produces a JSON file in `investigations/benchmark/results/`:
+Each run produces a JSON file in `investigations/results/`:
 
 ```json
 {
@@ -162,7 +164,7 @@ uv run python investigations/calibration/calibrate.py run --output my-calibratio
 uv run python investigations/calibration/calibrate.py scale \
   --baseline hetzner-calibration.json \
   --local my-calibration.json \
-  --benchmark-results investigations/benchmark/results/neo4j_large_*.json
+  --benchmark-results investigations/results/neo4j-large-*.json
 ```
 
 See [docs/investigations/shared-pre-work.md](../docs/investigations/shared-pre-work.md) for methodology details.

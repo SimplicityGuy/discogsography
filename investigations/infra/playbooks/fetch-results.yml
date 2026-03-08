@@ -1,6 +1,16 @@
 ---
 # Check benchmark status and fetch all results to local machine.
 #
+# All results (benchmark data, logs, calibration, metrics) are fetched
+# into a single directory: investigations/results/
+#
+# File naming convention: {db}-{what}-{timestamp}
+#   Results:     {db}-{scale}-{timestamp}.json
+#   Logs:        {db}-benchmark.log, {db}-error.log
+#   Sentinels:   {db}.done, {db}.err
+#   Calibration: {db}-calibration.json
+#   Metrics:     {db}-system-metrics.jsonl
+#
 # Safe to run while benchmarks are still running — it will show progress
 # and fetch whatever results exist so far. Run again after completion
 # to get the full set.
@@ -10,6 +20,9 @@
 
 - name: Check benchmark status and fetch results from controller
   hosts: bench-controller
+
+  vars:
+    local_results_dir: "{{ playbook_dir }}/../../results/"
 
   tasks:
     - name: Read benchmark status
@@ -63,39 +76,27 @@
     - name: Fetch benchmark results to local machine
       ansible.builtin.fetch:
         src: "{{ item.path }}"
-        dest: "{{ playbook_dir }}/../../benchmark/results/"
+        dest: "{{ local_results_dir }}"
         flat: true
       loop: "{{ result_files.files }}"
 
     - name: Find per-database log files
       ansible.builtin.find:
         paths: /opt/benchmark
-        patterns: "benchmark-*.log"
+        patterns: "*-benchmark.log"
       register: db_log_files
 
     - name: Fetch per-database logs to local machine
       ansible.builtin.fetch:
         src: "{{ item.path }}"
-        dest: "{{ playbook_dir }}/../../benchmark/results/"
+        dest: "{{ local_results_dir }}"
         flat: true
       loop: "{{ db_log_files.files }}"
-
-    - name: Check for controller calibration file
-      ansible.builtin.stat:
-        path: /opt/benchmark/results/controller_calibration.json
-      register: controller_calibration
-
-    - name: Fetch controller calibration to calibration results
-      ansible.builtin.fetch:
-        src: /opt/benchmark/results/controller_calibration.json
-        dest: "{{ playbook_dir }}/../../calibration/results/controller-calibration.json"
-        flat: true
-      when: controller_calibration.stat.exists
 
     - name: Fetch benchmark log
       ansible.builtin.fetch:
         src: /opt/benchmark/benchmark.log
-        dest: "{{ playbook_dir }}/../../benchmark/results/benchmark.log"
+        dest: "{{ local_results_dir }}benchmark.log"
         flat: true
       ignore_errors: true
 
@@ -103,7 +104,7 @@
       ansible.builtin.debug:
         msg: >-
           Status: {{ bench_status }}.
-          Fetched {{ result_files.files | length }} result files + {{ db_log_files.files | length }} logs to investigations/benchmark/results/.
+          Fetched {{ result_files.files | length }} result files + {{ db_log_files.files | length }} logs to investigations/results/.
           {{ 'Benchmarks still running — run this playbook again later for final results.'
              if bench_status == 'running'
              else '' }}
@@ -114,6 +115,9 @@
 - name: Fetch calibration and metrics from database hosts
   hosts: databases
 
+  vars:
+    local_results_dir: "{{ playbook_dir }}/../../results/"
+
   tasks:
     - name: Check for system metrics
       ansible.builtin.stat:
@@ -123,7 +127,7 @@
     - name: Fetch system metrics
       ansible.builtin.fetch:
         src: /opt/benchmark/results/system-metrics.jsonl
-        dest: "{{ playbook_dir }}/../../benchmark/results/{{ inventory_hostname }}-system-metrics.jsonl"
+        dest: "{{ local_results_dir }}{{ db_role }}-system-metrics.jsonl"
         flat: true
       when: metrics_file.stat.exists
 
@@ -135,6 +139,6 @@
     - name: Fetch calibration file
       ansible.builtin.fetch:
         src: /opt/benchmark/results/calibration.json
-        dest: "{{ playbook_dir }}/../../calibration/results/{{ inventory_hostname }}-calibration.json"
+        dest: "{{ local_results_dir }}{{ db_role }}-calibration.json"
         flat: true
       when: calibration_file.stat.exists

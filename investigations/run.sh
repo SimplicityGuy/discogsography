@@ -51,6 +51,7 @@ show_help() {
 	echo "Modes:"
 	echo "  (default)    Run benchmarks locally via Docker Compose"
 	echo "  --cloud      Hetzner Cloud benchmark pipeline (convergence mode)"
+	echo "  --fetch      Fetch results from cloud controller to investigations/results/"
 	echo "  --teardown   Destroy all cloud infrastructure"
 	echo ""
 	echo "Local options:"
@@ -138,7 +139,7 @@ run_local() {
 	run_benchmark() {
 		local db="$1"
 		local scale="${2:-$SCALE}"
-		local output="investigations/benchmark/results/${db}_${scale}_${TIMESTAMP}.json"
+		local output="investigations/results/${db}-${scale}-${TIMESTAMP}.json"
 
 		echo ""
 		echo "========================================"
@@ -185,7 +186,7 @@ run_local() {
 
 			start_db "$db"
 			run_benchmark "$db" "$scale"
-			results+=("investigations/benchmark/results/${db}_${scale}_${TIMESTAMP}.json")
+			results+=("investigations/results/${db}-${scale}-${TIMESTAMP}.json")
 			stop_db "$db"
 		done
 
@@ -215,7 +216,7 @@ run_local() {
 
 compare_results() {
 	cd "$REPO_ROOT"
-	local files=(investigations/benchmark/results/*.json)
+	local files=(investigations/results/*.json)
 	if [[ ${#files[@]} -lt 2 ]]; then
 		echo "Need at least 2 result files to compare."
 		echo "Run benchmarks first: ./investigations/run.sh"
@@ -460,7 +461,7 @@ run_cloud() {
 		# Re-read controller IP from the generated inventory
 		CONTROLLER_IP=$(grep -A1 'bench-controller' inventory/hosts.yml 2>/dev/null | grep ansible_host | awk '{print $2}' || echo '<controller-ip>')
 		for db in "${initial_dbs[@]}"; do
-			echo "    ssh -i ~/.ssh/benchmark-key root@${CONTROLLER_IP} 'tail -f /opt/benchmark/benchmark-${db}.log'"
+			echo "    ssh -i ~/.ssh/benchmark-key root@${CONTROLLER_IP} 'tail -f /opt/benchmark/${db}-benchmark.log'"
 		done
 		return
 	fi
@@ -476,7 +477,7 @@ run_cloud() {
 	local SSH_CMD="ssh -i $HOME/.ssh/benchmark-key -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@$CONTROLLER_IP"
 
 	# Clean up stale PID files (process died without cleanup)
-	$SSH_CMD 'for f in /opt/benchmark/benchmark-*.pid; do
+	$SSH_CMD 'for f in /opt/benchmark/*-benchmark.pid; do
 		[ -f "$f" ] || continue
 		pid=$(cat "$f" 2>/dev/null)
 		if ! kill -0 "$pid" 2>/dev/null; then rm -f "$f"; fi
@@ -485,7 +486,7 @@ run_cloud() {
 	# Gather sentinel (.done / .err) and PID files
 	local -a ERRORED_DBS=()
 	local status_output
-	status_output=$($SSH_CMD 'echo "=DONE="; ls /opt/benchmark/results/*.done 2>/dev/null || true; echo "=ERR="; ls /opt/benchmark/results/*.err 2>/dev/null || true; echo "=PID="; ls /opt/benchmark/benchmark-*.pid 2>/dev/null || true' 2>/dev/null) || {
+	status_output=$($SSH_CMD 'echo "=DONE="; ls /opt/benchmark/results/*.done 2>/dev/null || true; echo "=ERR="; ls /opt/benchmark/results/*.err 2>/dev/null || true; echo "=PID="; ls /opt/benchmark/*-benchmark.pid 2>/dev/null || true' 2>/dev/null) || {
 		echo "  Cannot reach controller at $CONTROLLER_IP. Try again in a few minutes."
 		return
 	}
@@ -525,10 +526,9 @@ run_cloud() {
 				ERRORED_DBS+=("$db_name")
 			fi
 		elif $in_pid; then
-			# /opt/benchmark/benchmark-neo4j.pid → neo4j
+			# /opt/benchmark/neo4j-benchmark.pid → neo4j
 			local db_name
-			db_name=$(basename "$line" .pid)
-			db_name="${db_name#benchmark-}"
+			db_name=$(basename "$line" -benchmark.pid)
 			in_array "$db_name" "${ALL_DBS[@]}" && RUNNING_DBS+=("$db_name")
 		fi
 	done <<<"$status_output"
@@ -565,7 +565,7 @@ run_cloud() {
 		ansible-playbook playbooks/fetch-results.yml 2>/dev/null || true
 
 		echo ""
-		echo "  Results downloaded to investigations/benchmark/results/"
+		echo "  Results downloaded to investigations/results/"
 		echo "  Controller still running at $CONTROLLER_IP for inspection."
 		echo "  To tear down everything: ./investigations/run.sh --teardown"
 		return
@@ -598,7 +598,7 @@ run_cloud() {
 			echo ""
 			if in_array "$db" ${ERRORED_DBS[@]+"${ERRORED_DBS[@]}"}; then
 				echo "  Retrying errored benchmark for $db..."
-				$SSH_CMD "rm -f /opt/benchmark/results/${db}.err" 2>/dev/null || true
+				$SSH_CMD "rm -f /opt/benchmark/results/${db}.err /opt/benchmark/results/${db}-error.log" 2>/dev/null || true
 			else
 				echo "  Restarting benchmark for $db (previous run crashed)..."
 			fi
@@ -676,6 +676,32 @@ run_cloud() {
 }
 
 # ═══════════════════════════════════════════════════════
+# Fetch results
+# ═══════════════════════════════════════════════════════
+
+run_fetch() {
+	local INFRA_DIR="$SCRIPT_DIR/infra"
+	local VAULT_PASS_FILE="$INFRA_DIR/.vault-pass"
+
+	if [[ ! -f "$VAULT_PASS_FILE" ]]; then
+		echo "No vault password file found at $VAULT_PASS_FILE"
+		echo "Run --cloud first to set up infrastructure."
+		exit 1
+	fi
+
+	cd "$INFRA_DIR"
+
+	echo "Fetching results from cloud infrastructure..."
+	echo "  Destination: investigations/results/"
+	echo ""
+
+	ansible-playbook playbooks/fetch-results.yml
+
+	echo ""
+	echo "Results saved to investigations/results/"
+}
+
+# ═══════════════════════════════════════════════════════
 # Teardown
 # ═══════════════════════════════════════════════════════
 
@@ -733,6 +759,10 @@ case "${1:-}" in
 		esac
 	done
 	run_cloud
+	exit 0
+	;;
+--fetch)
+	run_fetch
 	exit 0
 	;;
 --teardown)

@@ -91,7 +91,19 @@ class MemgraphBackend(GraphBackend):
         ]
 
     async def clear_all_data(self) -> None:
-        await self.execute_write("MATCH (n) DETACH DELETE n")
+        import asyncio
+
+        from neo4j.exceptions import TransientError
+
+        for attempt in range(3):
+            try:
+                await self.execute_write("MATCH (n) DETACH DELETE n")
+                return
+            except TransientError:
+                if attempt == 2:
+                    raise
+                logger.warning("TransientError during clear, retrying in %ds...", 2**attempt)
+                await asyncio.sleep(2**attempt)
 
     def batch_merge_nodes_query(self, label: str, properties: list[str]) -> str:
         set_clauses = ", ".join(f"n.{p} = row.{p}" for p in properties)

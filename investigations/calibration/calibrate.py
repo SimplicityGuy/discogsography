@@ -13,7 +13,7 @@ Usage:
     uv run python investigations/calibration/calibrate.py scale \
       --baseline hetzner-calibration.json \
       --local my-calibration.json \
-      --benchmark-results investigations/benchmark/results/neo4j_large_2026-03-10.json
+      --benchmark-results investigations/results/neo4j-large-2026-03-10.json
 """
 
 from __future__ import annotations
@@ -604,7 +604,7 @@ def cmd_run(args: argparse.Namespace) -> None:
     print("     uv run python investigations/calibration/calibrate.py scale \\")
     print("       --baseline hetzner-calibration.json \\")
     print(f"       --local {args.output} \\")
-    print("       --benchmark-results investigations/benchmark/results/neo4j_large_*.json")
+    print("       --benchmark-results investigations/results/neo4j-large-*.json")
 
 
 def cmd_scale(args: argparse.Namespace) -> None:

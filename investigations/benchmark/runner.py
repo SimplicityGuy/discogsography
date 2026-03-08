@@ -8,7 +8,7 @@ Usage:
       --backend neo4j \
       --uri bolt://localhost:7687 \
       --scale small \
-      --output investigations/benchmark/results/neo4j_small.json
+      --output investigations/results/neo4j-small.json
 """
 
 from __future__ import annotations
@@ -534,9 +534,7 @@ Examples:
     parser.add_argument("--password", default=None, help="Database password")
     parser.add_argument("--scale", default="small", choices=["small", "large"])
     parser.add_argument("--seed", type=int, default=42, help="Random seed for reproducibility")
-    parser.add_argument(
-        "--output", "-o", default=None, help="Output JSON path (default: investigations/benchmark/results/<backend>_<scale>_<timestamp>.json)"
-    )
+    parser.add_argument("--output", "-o", default=None, help="Output JSON path (default: investigations/results/<backend>-<scale>-<timestamp>.json)")
     parser.add_argument("--load-only", action="store_true", help="Only load data, skip benchmarks")
     parser.add_argument("--skip-load", action="store_true", help="Skip data loading, run benchmarks only")
     parser.add_argument("--clear", action="store_true", help="Clear existing data before loading")
@@ -545,7 +543,7 @@ Examples:
 
     if args.output is None:
         ts = time.strftime("%Y-%m-%d_%H%M%S")
-        args.output = f"investigations/benchmark/results/{args.backend}_{args.scale}_{ts}.json"
+        args.output = f"investigations/results/{args.backend}-{args.scale}-{ts}.json"
 
     asyncio.run(main_async(args))
 

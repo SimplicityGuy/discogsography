@@ -2,8 +2,8 @@
 
 Usage:
     uv run python -m investigations.benchmark.compare \
-      investigations/benchmark/results/neo4j_small_*.json \
-      investigations/benchmark/results/memgraph_small_*.json
+      investigations/results/neo4j-small-*.json \
+      investigations/results/memgraph-small-*.json
 """
 
 from __future__ import annotations

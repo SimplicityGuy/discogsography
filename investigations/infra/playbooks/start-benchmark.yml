@@ -117,7 +117,7 @@
 
     - name: Check if benchmark is already running
       ansible.builtin.stat:
-        path: "/opt/benchmark/benchmark-{{ db_name }}.pid"
+        path: "/opt/benchmark/{{ db_name }}-benchmark.pid"
       register: pid_file
 
     - name: Check if benchmark is already complete
@@ -133,7 +133,7 @@
     - name: Start benchmark in background
       ansible.builtin.shell: |
         nohup bash /opt/benchmark/run-benchmark-{{ db_name }}.sh \
-            > /opt/benchmark/benchmark-{{ db_name }}.log 2>&1 &
+            > /opt/benchmark/{{ db_name }}-benchmark.log 2>&1 &
       when: not pid_file.stat.exists and not done_file.stat.exists and not err_file.stat.exists
 
     - name: Show status

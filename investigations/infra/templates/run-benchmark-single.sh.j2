@@ -1,5 +1,10 @@
 # Auto-generated benchmark runner for {{ db_name }}. Runs on the controller host.
-# Started by start-benchmark.yml via nohup. Logs to /opt/benchmark/benchmark-{{ db_name }}.log.
+# Started by start-benchmark.yml via nohup. Logs to /opt/benchmark/{{ db_name }}-benchmark.log.
+#
+# File naming convention: {db}-{what}-{timestamp}
+#   Results:   {db}-{scale}-{timestamp}.json
+#   Logs:      {db}-benchmark.log, {db}-error.log
+#   Sentinels: {db}.done, {db}.err
 
 set -euo pipefail
 
@@ -8,7 +13,7 @@ export PATH="/root/.local/bin:$PATH"
 DB_NAME="{{ db_name }}"
 BENCHMARK_DIR="{{ benchmark_dir }}"
 RESULTS_DIR="{{ results_dir }}"
-PID_FILE="/opt/benchmark/benchmark-${DB_NAME}.pid"
+PID_FILE="/opt/benchmark/${DB_NAME}-benchmark.pid"
 DONE_FILE="${RESULTS_DIR}/${DB_NAME}.done"
 
 echo $$ > "$PID_FILE"
@@ -29,11 +34,11 @@ USER_ARGS=""
 
 FAILED=0
 ERR_FILE="${RESULTS_DIR}/${DB_NAME}.err"
-LOG_FILE="/opt/benchmark/benchmark-${DB_NAME}.log"
+LOG_FILE="/opt/benchmark/${DB_NAME}-benchmark.log"
 
 for SCALE in small large; do
     TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
-    OUTPUT="$RESULTS_DIR/${DB_NAME}_${SCALE}_${TIMESTAMP}.json"
+    OUTPUT="$RESULTS_DIR/${DB_NAME}-${SCALE}-${TIMESTAMP}.json"
 
     log "Starting ${DB_NAME} @ ${SCALE}..."
 

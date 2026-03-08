@@ -2,3 +2,9 @@
 infra/vault.yml
 infra/.vault-pass
 infra/inventory/hosts.yml
+
+# Result data (fetched from benchmark runs)
+results/
+benchmark/results/
+calibration/results/
+infra/results/
