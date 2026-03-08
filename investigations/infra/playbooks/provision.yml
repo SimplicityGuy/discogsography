@@ -145,6 +145,17 @@
         state: present
       loop: "{{ db_servers }}"
 
+    - name: Reboot database servers so cloud-init configures the private network interface
+      hetzner.hcloud.server:
+        api_token: "{{ hcloud_token }}"
+        name: "{{ item.name }}"
+        state: restarted
+      loop: "{{ db_servers }}"
+
+    - name: Wait for database servers to come back
+      ansible.builtin.pause:
+        seconds: 30
+
     - name: Wait for controller SSH
       ansible.builtin.wait_for:
         host: "{{ controller_result.hcloud_server.ipv4_address }}"
