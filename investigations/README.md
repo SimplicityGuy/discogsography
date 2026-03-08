@@ -4,29 +4,32 @@ Benchmark harness for evaluating Neo4j alternatives: Memgraph, Apache AGE, Falko
 
 ## Quick Start
 
-**One command to benchmark everything locally:**
+**One command to benchmark everything:**
 
 ```bash
+# Local — Docker Compose on your laptop
 ./investigations/run.sh
+
+# Cloud — Hetzner VMs with dedicated hardware per database
+./investigations/run.sh --cloud
 ```
 
-This will:
-1. Start each database in Docker (one at a time)
-2. Generate synthetic data matching real Discogs proportions
-3. Insert data and run 7 benchmark workloads
-4. Stop each database and move to the next
-5. Print a comparison table at the end
+### Local mode (default)
 
-## Prerequisites
+Starts each database in Docker (one at a time), generates synthetic data, runs all 7 workloads, and prints a comparison table.
 
-- **Docker Desktop** running
-- **uv** installed ([github.com/astral-sh/uv](https://github.com/astral-sh/uv))
-- Run from the **repository root**
+**Prerequisites:** Docker Desktop running, uv installed, run from repository root.
+
+### Cloud mode (`--cloud`)
+
+Provisions 6 Hetzner Cloud VMs (1 controller + 5 database hosts), deploys databases in parallel, runs benchmarks at both scale points, collects results, and offers teardown options. All prerequisites (Ansible, SSH keys, vault) are auto-installed — the only thing you need is a Hetzner Cloud API token.
+
+**Estimated cost:** ~EUR 3.57 for a full run (~24 hours).
 
 ## Usage
 
 ```bash
-# Benchmark all databases at small scale (~135k nodes)
+# Benchmark all databases locally at small scale (~135k nodes)
 ./investigations/run.sh
 
 # Benchmark a single database
@@ -41,6 +44,9 @@ This will:
 
 # Compare existing results
 ./investigations/run.sh --compare
+
+# Full cloud pipeline (Hetzner Cloud)
+./investigations/run.sh --cloud
 
 # Run the benchmark runner directly
 uv run python -m investigations.benchmark.runner \
@@ -93,7 +99,7 @@ investigations/
   calibration/                        # Hardware calibration for scaling results
     calibrate.py                    # Micro-benchmarks + scaling logic
     results/                        # Calibration JSON output
-  infra/                            # Cloud deployment (Ansible)
+  infra/                            # Cloud deployment (Ansible + Hetzner)
 ```
 
 ## Benchmark Workloads

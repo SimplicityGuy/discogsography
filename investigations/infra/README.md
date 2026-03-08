@@ -5,14 +5,23 @@ Ansible automation for deploying 5 graph databases on Hetzner Cloud and running 
 ## One Command
 
 ```bash
-./investigations/infra/scripts/run-all.sh
+./investigations/run.sh --cloud
 ```
 
-This provisions 6 Hetzner Cloud servers, deploys all databases, runs benchmarks at both scale points, collects results, and optionally tears everything down.
+This provisions 6 Hetzner Cloud servers, deploys all databases, runs benchmarks at both scale points, collects results, and optionally tears everything down. All prerequisites (Ansible, SSH keys, vault) are auto-installed — the only thing you need is a Hetzner Cloud API token.
 
 ## Prerequisites
 
-### 1. Local tools
+The `--cloud` flag auto-installs everything. For manual setup:
+
+### 1. Hetzner account
+
+1. Create account at [console.hetzner.cloud](https://console.hetzner.cloud)
+2. Create project "discogsography-benchmark"
+3. **Security > API Tokens > Generate API Token** (Read & Write)
+4. Copy the token — the script will prompt for it on first run
+
+### 2. Local tools (auto-installed by run.sh --cloud)
 
 ```bash
 # Ansible
@@ -24,25 +33,6 @@ pip install hcloud
 
 # SSH key for benchmark hosts
 ssh-keygen -t ed25519 -f ~/.ssh/benchmark-key -N "" -C "discogsography-benchmark"
-```
-
-### 2. Hetzner account
-
-1. Create account at [console.hetzner.cloud](https://console.hetzner.cloud)
-2. Create project "discogsography-benchmark"
-3. **Security > API Tokens > Generate API Token** (Read & Write)
-4. Copy the token
-
-### 3. Ansible vault
-
-```bash
-cd investigations/infra
-ansible-vault create vault.yml
-```
-
-Contents:
-```yaml
-vault_hcloud_token: "your-hetzner-api-token-here"
 ```
 
 ## Environment Variables
