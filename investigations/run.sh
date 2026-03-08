@@ -537,7 +537,7 @@ run_cloud() {
 		if [[ ${#EXISTING_DB_SERVERS[@]} -gt 0 ]]; then
 			echo ""
 			echo "  Tearing down DB servers..."
-			for db in "${EXISTING_DB_SERVERS[@]}"; do
+			for db in ${EXISTING_DB_SERVERS[@]+"${EXISTING_DB_SERVERS[@]}"}; do
 				echo "    bench-$db"
 				ansible-playbook playbooks/teardown.yml "$VAULT_ARGS" \
 					-e "{\"destroy_servers\":[\"bench-$db\"]}" >/dev/null 2>&1
@@ -561,8 +561,8 @@ run_cloud() {
 
 	# ── Step 5: Tear down completed DB servers ────────────────────
 	local -a torn_down=()
-	for db in "${COMPLETED_DBS[@]}"; do
-		if in_array "$db" "${EXISTING_DB_SERVERS[@]}"; then
+	for db in ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"}; do
+		if in_array "$db" ${EXISTING_DB_SERVERS[@]+"${EXISTING_DB_SERVERS[@]}"}; then
 			echo ""
 			echo "  Tearing down bench-$db (benchmark complete)..."
 			ansible-playbook playbooks/teardown.yml "$VAULT_ARGS" \
@@ -573,15 +573,15 @@ run_cloud() {
 
 	# Build list of servers still running
 	local -a active_dbs=()
-	for db in "${EXISTING_DB_SERVERS[@]}"; do
-		in_array "$db" "${torn_down[@]}" || active_dbs+=("$db")
+	for db in ${EXISTING_DB_SERVERS[@]+"${EXISTING_DB_SERVERS[@]}"}; do
+		in_array "$db" ${torn_down[@]+"${torn_down[@]}"} || active_dbs+=("$db")
 	done
 	local server_count=$((1 + ${#active_dbs[@]})) # controller + active DBs
 
 	# ── Step 6: Restart failed benchmarks ─────────────────────────
 	# A server exists, benchmark isn't running, and isn't complete → restart
-	for db in "${active_dbs[@]}"; do
-		if ! in_array "$db" "${COMPLETED_DBS[@]}" && ! in_array "$db" "${RUNNING_DBS[@]}"; then
+	for db in ${active_dbs[@]+"${active_dbs[@]}"}; do
+		if ! in_array "$db" ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"} && ! in_array "$db" ${RUNNING_DBS[@]+"${RUNNING_DBS[@]}"}; then
 			echo ""
 			echo "  Restarting benchmark for $db (previous run may have failed)..."
 			ansible-playbook playbooks/start-benchmark.yml \
@@ -593,15 +593,15 @@ run_cloud() {
 	local -a new_dbs=()
 	for db in "${ALL_DBS[@]}"; do
 		[[ $server_count -ge $SERVER_LIMIT ]] && break
-		in_array "$db" "${COMPLETED_DBS[@]}" && continue
-		in_array "$db" "${active_dbs[@]}" && continue
+		in_array "$db" ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"} && continue
+		in_array "$db" ${active_dbs[@]+"${active_dbs[@]}"} && continue
 		new_dbs+=("$db")
 		server_count=$((server_count + 1))
 	done
 
 	if [[ ${#new_dbs[@]} -gt 0 ]] || [[ ${#torn_down[@]} -gt 0 ]]; then
 		# Combine active + new for inventory
-		local all_active=("${active_dbs[@]}" "${new_dbs[@]}")
+		local all_active=(${active_dbs[@]+"${active_dbs[@]}"} ${new_dbs[@]+"${new_dbs[@]}"})
 
 		if [[ ${#all_active[@]} -gt 0 ]]; then
 			local dbs_json
@@ -617,7 +617,7 @@ run_cloud() {
 				-e '{"active_dbs":[]}' >/dev/null 2>&1 || true
 		fi
 
-		for db in "${new_dbs[@]}"; do
+		for db in ${new_dbs[@]+"${new_dbs[@]}"}; do
 			echo ""
 			echo "=== Setting up bench-$db ==="
 			ansible-playbook playbooks/setup-common.yml --limit "bench-$db"
@@ -630,9 +630,9 @@ run_cloud() {
 	# ── Step 8: Status report ─────────────────────────────────────
 	local -a queued=()
 	for db in "${ALL_DBS[@]}"; do
-		in_array "$db" "${COMPLETED_DBS[@]}" && continue
-		in_array "$db" "${active_dbs[@]}" && continue
-		in_array "$db" "${new_dbs[@]}" && continue
+		in_array "$db" ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"} && continue
+		in_array "$db" ${active_dbs[@]+"${active_dbs[@]}"} && continue
+		in_array "$db" ${new_dbs[@]+"${new_dbs[@]}"} && continue
 		queued+=("$db")
 	done
 
@@ -641,7 +641,7 @@ run_cloud() {
 	echo "  Status (${#COMPLETED_DBS[@]}/${#ALL_DBS[@]} complete)"
 	echo "========================================"
 	[[ ${#COMPLETED_DBS[@]} -gt 0 ]] && echo "  Done:    ${COMPLETED_DBS[*]}"
-	local all_running=("${active_dbs[@]}" "${new_dbs[@]}")
+	local all_running=(${active_dbs[@]+"${active_dbs[@]}"} ${new_dbs[@]+"${new_dbs[@]}"})
 	[[ ${#all_running[@]} -gt 0 ]] && echo "  Active:  ${all_running[*]}"
 	[[ ${#queued[@]} -gt 0 ]] && echo "  Queued:  ${queued[*]}"
 	echo "  Servers: $server_count / $SERVER_LIMIT"
