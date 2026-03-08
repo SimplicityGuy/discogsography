@@ -17,4 +17,7 @@ dependencies = [
     "python-arango>=8.0.0", # ArangoDB
 ]
 
+[tool.hatch.build.targets.wheel]
+packages = ["benchmark"]
+
 # Tool configurations inherit from root pyproject.toml
