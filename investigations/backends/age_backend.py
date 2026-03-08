@@ -58,9 +58,12 @@ class ApacheAGEBackend(GraphBackend):
             return False
 
     def _cypher_sql(self, cypher: str, result_columns: str = "v agtype") -> str:
-        """Wrap a Cypher query in the AGE SQL function call."""
-        escaped = cypher.replace("'", "''")
-        return f"SELECT * FROM cypher('{self.GRAPH_NAME}', $$ {escaped} $$) AS ({result_columns})"  # noqa: S608  # nosec B608
+        """Wrap a Cypher query in the AGE SQL function call.
+
+        Dollar-quoting ($$...$$) handles all escaping — single quotes
+        inside the Cypher body do not need to be doubled.
+        """
+        return f"SELECT * FROM cypher('{self.GRAPH_NAME}', $$ {cypher} $$) AS ({result_columns})"  # noqa: S608  # nosec B608
 
     async def execute_read(self, query: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         if self._conn is None:
@@ -135,23 +138,23 @@ class ApacheAGEBackend(GraphBackend):
         return ", ".join(cols) if cols else "v agtype"
 
     def get_schema_statements(self) -> list[str]:
-        # AGE uses PostgreSQL indexes on the underlying tables
-        return [
-            f"SELECT create_vlabel('{self.GRAPH_NAME}', 'Artist')",
-            f"SELECT create_vlabel('{self.GRAPH_NAME}', 'Label')",
-            f"SELECT create_vlabel('{self.GRAPH_NAME}', 'Master')",
-            f"SELECT create_vlabel('{self.GRAPH_NAME}', 'Release')",
-            f"SELECT create_vlabel('{self.GRAPH_NAME}', 'Genre')",
-            f"SELECT create_vlabel('{self.GRAPH_NAME}', 'Style')",
-            f"SELECT create_elabel('{self.GRAPH_NAME}', 'BY')",
-            f"SELECT create_elabel('{self.GRAPH_NAME}', 'ON')",
-            f"SELECT create_elabel('{self.GRAPH_NAME}', 'DERIVED_FROM')",
-            f"SELECT create_elabel('{self.GRAPH_NAME}', 'IS')",
-            f"SELECT create_elabel('{self.GRAPH_NAME}', 'MEMBER_OF')",
-            f"SELECT create_elabel('{self.GRAPH_NAME}', 'ALIAS_OF')",
-            f"SELECT create_elabel('{self.GRAPH_NAME}', 'SUBLABEL_OF')",
-            f"SELECT create_elabel('{self.GRAPH_NAME}', 'PART_OF')",
-        ]
+        # These are raw SQL — not Cypher — so they must bypass _cypher_sql().
+        # Returning empty here; schema is applied in apply_schema() instead.
+        return []
+
+    async def apply_schema(self) -> None:
+        """Create vertex and edge labels via raw SQL (not Cypher)."""
+        if self._conn is None:
+            msg = "Not connected to AGE"
+            raise RuntimeError(msg)
+        vlabels = ["Artist", "Label", "Master", "Release", "Genre", "Style"]
+        elabels = ["BY", "ON", "DERIVED_FROM", "IS", "MEMBER_OF", "ALIAS_OF", "SUBLABEL_OF", "PART_OF"]
+        for label in vlabels:
+            with contextlib.suppress(Exception):
+                await self._conn.execute(f"SELECT create_vlabel('{self.GRAPH_NAME}', '{label}')")
+        for label in elabels:
+            with contextlib.suppress(Exception):
+                await self._conn.execute(f"SELECT create_elabel('{self.GRAPH_NAME}', '{label}')")
 
     async def clear_all_data(self) -> None:
         if self._conn is None:

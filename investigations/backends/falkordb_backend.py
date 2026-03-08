@@ -76,7 +76,7 @@ class FalkorDBBackend(GraphBackend):
         """Convert FalkorDB result set to list of dicts."""
         if not result.result_set:
             return []
-        headers = result.header
+        headers = [h[1] if isinstance(h, list) else h for h in result.header]
         return [dict(zip(headers, row, strict=False)) for row in result.result_set]
 
     def get_schema_statements(self) -> list[str]:

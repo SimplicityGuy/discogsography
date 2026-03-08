@@ -10,7 +10,7 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - age_bench_data:/var/lib/postgresql/data
+      - age_bench_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U discogsography"]
       interval: 15s

@@ -135,6 +135,10 @@
         network: bench-network
         ip: "{{ controller_ip }}"
         state: present
+      retries: 3
+      delay: 5
+      register: ctrl_net_result
+      until: ctrl_net_result is not failed
 
     - name: Attach database servers to private network
       hetzner.hcloud.server_network:
@@ -144,6 +148,10 @@
         ip: "{{ item.private_ip }}"
         state: present
       loop: "{{ db_servers }}"
+      retries: 3
+      delay: 5
+      register: net_result
+      until: net_result is not failed
 
     - name: Wait for controller SSH
       ansible.builtin.wait_for:

@@ -11,7 +11,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - age_data:/var/lib/postgresql/data
+      - age_data:/var/lib/postgresql
     command: >
       postgres
       -c shared_buffers=8GB

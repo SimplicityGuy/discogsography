@@ -423,10 +423,22 @@ run_cloud() {
 
 		echo ""
 		echo "=== Step 3/4: Deploying databases ==="
+		local -a db_pids=()
 		for db in "${initial_dbs[@]}"; do
 			ansible-playbook "playbooks/setup-${db}.yml" &
+			db_pids+=($!)
 		done
-		wait
+		local db_setup_failed=0
+		for pid in "${db_pids[@]}"; do
+			wait "$pid" || db_setup_failed=1
+		done
+		if [[ $db_setup_failed -eq 1 ]]; then
+			echo ""
+			echo "WARNING: One or more database setups failed."
+			echo "  Run './investigations/run.sh --cloud' again to retry."
+			echo "  The convergence loop will re-run setup for any failed databases."
+			return
+		fi
 
 		echo ""
 		echo "=== Step 4/4: Starting benchmarks ==="
@@ -510,7 +522,6 @@ run_cloud() {
 			local db_name
 			db_name=$(basename "$line" .err)
 			if in_array "$db_name" "${ALL_DBS[@]}"; then
-				COMPLETED_DBS+=("$db_name")
 				ERRORED_DBS+=("$db_name")
 			fi
 		elif $in_pid; then
@@ -527,6 +538,7 @@ run_cloud() {
 	echo "  Running:   ${RUNNING_DBS[*]:-none}"
 
 	# ── Step 4: All benchmarks done? ──────────────────────────────
+	# Only completed benchmarks count as finished — errored ones will be retried.
 	if [[ ${#COMPLETED_DBS[@]} -eq ${#ALL_DBS[@]} ]]; then
 		echo ""
 		echo "========================================"
@@ -578,12 +590,22 @@ run_cloud() {
 	done
 	local server_count=$((1 + ${#active_dbs[@]})) # controller + active DBs
 
-	# ── Step 6: Restart failed benchmarks ─────────────────────────
-	# A server exists, benchmark isn't running, and isn't complete → restart
+	# ── Step 6: Retry failed/errored benchmarks ──────────────────
+	# A server exists, benchmark isn't running, and isn't complete → re-setup and restart.
+	# This handles both crashed processes and errored benchmarks (e.g. database not running).
 	for db in ${active_dbs[@]+"${active_dbs[@]}"}; do
 		if ! in_array "$db" ${COMPLETED_DBS[@]+"${COMPLETED_DBS[@]}"} && ! in_array "$db" ${RUNNING_DBS[@]+"${RUNNING_DBS[@]}"}; then
 			echo ""
-			echo "  Restarting benchmark for $db (previous run may have failed)..."
+			if in_array "$db" ${ERRORED_DBS[@]+"${ERRORED_DBS[@]}"}; then
+				echo "  Retrying errored benchmark for $db..."
+				$SSH_CMD "rm -f /opt/benchmark/results/${db}.err" 2>/dev/null || true
+			else
+				echo "  Restarting benchmark for $db (previous run crashed)..."
+			fi
+
+			# Re-run setup to ensure Docker is installed and database is running
+			ansible-playbook playbooks/setup-common.yml --limit "bench-controller,bench-$db"
+			ansible-playbook "playbooks/setup-${db}.yml"
 			ansible-playbook playbooks/start-benchmark.yml \
 				-e "benchmark_db=$db"
 		fi

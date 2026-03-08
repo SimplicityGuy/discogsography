@@ -64,6 +64,8 @@ async def insert_data(backend: GraphBackend, data: dict[str, Any], batch_size: i
 
     # Schema
     print("  Applying schema...")
+    if hasattr(backend, "apply_schema"):
+        await backend.apply_schema()
     for stmt in backend.get_schema_statements():
         try:
             await backend.execute_write(stmt)

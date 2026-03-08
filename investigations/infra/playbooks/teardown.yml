@@ -52,28 +52,28 @@
         api_token: "{{ hcloud_token }}"
         name: bench-fw-controller
         state: absent
-      when: not keep_controller | bool
+      when: destroy_servers is not defined and not keep_controller | bool
 
     - name: Remove database firewall (only on full teardown)
       hetzner.hcloud.firewall:
         api_token: "{{ hcloud_token }}"
         name: bench-fw-database
         state: absent
-      when: not keep_controller | bool
+      when: destroy_servers is not defined and not keep_controller | bool
 
     - name: Remove network (only on full teardown)
       hetzner.hcloud.network:
         api_token: "{{ hcloud_token }}"
         name: bench-network
         state: absent
-      when: not keep_controller | bool
+      when: destroy_servers is not defined and not keep_controller | bool
 
     - name: Remove SSH key (only on full teardown)
       hetzner.hcloud.ssh_key:
         api_token: "{{ hcloud_token }}"
         name: benchmark-key
         state: absent
-      when: not keep_controller | bool
+      when: destroy_servers is not defined and not keep_controller | bool
 
     - name: Teardown complete
       ansible.builtin.debug:

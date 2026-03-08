@@ -26,16 +26,17 @@
 
     - name: Create benchmark workspace
       ansible.builtin.file:
-        path: /opt/benchmark/discogsography
+        path: /opt/benchmark/discogsography/investigations
         state: directory
         mode: "0755"
 
     - name: Sync investigation code to controller
       ansible.posix.synchronize:
         src: "{{ playbook_dir }}/../../"
-        dest: /opt/benchmark/discogsography/
+        dest: /opt/benchmark/discogsography/investigations/
         rsync_opts:
           - "--exclude=.git"
+          - "--exclude=.venv"
           - "--exclude=__pycache__"
           - "--exclude=.mypy_cache"
           - "--exclude=node_modules"
@@ -45,10 +46,10 @@
     - name: Install Python dependencies on controller
       ansible.builtin.shell: |
         export PATH="/root/.local/bin:$PATH"
-        cd /opt/benchmark/discogsography
+        cd /opt/benchmark/discogsography/investigations
         uv sync --all-extras
       args:
-        chdir: /opt/benchmark/discogsography
+        chdir: /opt/benchmark/discogsography/investigations
 
 - name: Calibrate target database host
   hosts: "bench-{{ benchmark_db }}"

@@ -37,7 +37,8 @@ for SCALE in small large; do
 
     log "Starting ${DB_NAME} @ ${SCALE}..."
 
-    PYTHONPATH="$BENCHMARK_DIR" uv run python -m investigations.benchmark.runner \
+    PYTHONPATH="$BENCHMARK_DIR" uv run --directory "$BENCHMARK_DIR/investigations" \
+        python -m investigations.benchmark.runner \
         --backend "$DB_NAME" \
         --uri "$URI" \
         --scale "$SCALE" \
