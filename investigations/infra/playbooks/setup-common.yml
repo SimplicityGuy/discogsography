@@ -1,13 +1,13 @@
 ---
 # Common setup for all benchmark hosts: Docker, monitoring tools.
 #
-# The controller play runs first to ensure its private network interface is
-# ready — database hosts are only reachable via ProxyJump through it.
+# The controller play runs first so its ControlMaster SSH socket is
+# established before ProxyCommand connections to database hosts.
 #
 # Usage:
 #   ansible-playbook playbooks/setup-common.yml
 
-- name: Prepare controller and verify private network
+- name: Establish SSH to controller first
   hosts: controller
   become: true
   gather_facts: false
@@ -17,18 +17,6 @@
       ansible.builtin.wait_for_connection:
         delay: 5
         timeout: 120
-
-    - name: Wait for private network interface
-      ansible.builtin.shell: |
-        # Hetzner Cloud assigns 10.0.1.1 to the controller via DHCP on ens10.
-        # cloud-init may still be running after first boot.
-        for i in $(seq 1 30); do
-          ip addr show | grep -q '10.0.1.1/' && exit 0
-          sleep 2
-        done
-        echo "Private network interface not ready after 60s" >&2
-        exit 1
-      changed_when: false
 
 - name: Common setup for all benchmark hosts
   hosts: all

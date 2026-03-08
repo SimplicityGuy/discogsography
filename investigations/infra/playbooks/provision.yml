@@ -168,7 +168,7 @@
                     ansible_host: {{ controller_result.hcloud_server.ipv4_address }}
               databases:
                 vars:
-                  ansible_ssh_common_args: '-o ProxyJump=root@{{ controller_result.hcloud_server.ipv4_address }} -o StrictHostKeyChecking=no'
+                  ansible_ssh_common_args: '-o ProxyCommand="ssh -i ~/.ssh/benchmark-key -W %h:%p root@{{ controller_result.hcloud_server.ipv4_address }}"'
                 hosts:
           {% for result in db_results.results | default([]) %}
                   {{ result.hcloud_server.name }}:
