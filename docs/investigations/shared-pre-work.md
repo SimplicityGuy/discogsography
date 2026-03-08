@@ -174,17 +174,6 @@ GRAPH_BACKEND=falkordb
 GRAPH_BACKEND=arangodb
 ```
 
-### Work Items
-
-- [ ] Create `common/graph_backend.py` with abstract interface
-- [ ] Create `common/neo4j_backend.py` implementing the interface with current Neo4j behavior
-- [ ] Rename `api/queries/neo4j_queries.py` to `api/queries/graph_queries.py`
-- [ ] Split backend-specific queries (COUNT subqueries, fulltext, stats) from shared queries
-- [ ] Wire backend selection into service startup via `GRAPH_BACKEND` env var
-- [ ] Update `schema-init/` to use `backend.get_schema_statements()`
-- [ ] Update `dashboard/dashboard.py` to use `backend.stats_query()` and `backend.version_query()`
-- [ ] Verify all existing tests pass with `Neo4jBackend`
-
 ## 2. Benchmark Harness
 
 ### Goal
@@ -194,19 +183,22 @@ A reusable benchmark runner that inserts synthetic data directly into each datab
 ### Directory Structure
 
 ```
-docs/investigations/calibration/
-  __init__.py
-  calibrate.py           -- hardware calibration for environment scaling
-  (scale subcommand built into calibrate.py)
-  runner.py              -- benchmark execution engine
-  workloads.py           -- workload definitions (backend-agnostic)
-  fixtures.py            -- synthetic data generation
-  compare.py             -- side-by-side results comparison
-  results/               -- JSON output per run
-    neo4j_small_2026-03-06.json
-    neo4j_large_2026-03-06.json
-    memgraph_small_2026-03-06.json
-    hetzner_cx53_calibration.json
+investigations/
+  benchmark/
+    runner.py              -- benchmark execution engine
+    workloads.py           -- workload definitions (backend-agnostic)
+    fixtures.py            -- synthetic data generation
+    compare.py             -- side-by-side results comparison
+  backends/
+    base.py                -- abstract GraphBackend interface
+    neo4j_backend.py       -- Neo4j implementation (reference)
+    memgraph_backend.py    -- Memgraph implementation
+    age_backend.py         -- Apache AGE implementation
+    falkordb_backend.py    -- FalkorDB implementation
+    arangodb_backend.py    -- ArangoDB implementation
+  calibration/
+    calibrate.py           -- hardware calibration for environment scaling
+  results/                 -- JSON output per run
 ```
 
 ### Synthetic Data Benchmark
@@ -261,7 +253,7 @@ This produces 3.97 relationships per node, matching the real dataset ratio of ~1
 #### Synthetic Data Generation
 
 ```python
-# docs/investigations/calibration/fixtures.py
+# investigations/benchmark/fixtures.py
 import hashlib
 import random
 
@@ -426,7 +418,7 @@ Data is inserted directly into each database using the `GraphBackend` abstractio
 Seven workloads matching actual Discogsography usage patterns:
 
 ```python
-# docs/investigations/calibration/workloads.py
+# investigations/benchmark/workloads.py
 
 WORKLOADS = {
     "batch_write_nodes": {
@@ -499,7 +491,7 @@ WORKLOADS = {
 #### Benchmark Runner
 
 ```python
-# docs/investigations/calibration/runner.py
+# investigations/benchmark/runner.py
 import asyncio, json, statistics, time
 from common.graph_backend import GraphBackend
 
@@ -538,7 +530,7 @@ async def run_benchmark(
 #### Results Comparison
 
 ```python
-# docs/investigations/calibration/compare.py
+# investigations/benchmark/compare.py
 
 def compare_results(baseline_file: str, candidate_file: str) -> None:
     """Print side-by-side comparison table with delta percentages."""
@@ -560,85 +552,41 @@ def compare_results(baseline_file: str, candidate_file: str) -> None:
 | Disk usage (MB) | `docker system df` after data load |
 | Concurrent throughput (ops/sec) | Total ops across all tasks / wall clock time |
 
-#### Execution Script
+#### Running Benchmarks
 
 ```bash
-#!/usr/bin/env bash
-# docs/investigations/calibration/run.sh — synthetic data benchmark
+# Local — one command to benchmark all databases
+./investigations/run.sh
 
-set -euo pipefail
+# Local — single database at specific scale
+./investigations/run.sh neo4j large
 
-BACKEND=${1:?Usage: ./run.sh <backend> [scale]}
-SCALE=${2:-small}
-TIMESTAMP=$(date +%Y-%m-%d_%H%M%S)
+# Cloud — Hetzner VMs with dedicated hardware per database
+./investigations/run.sh --cloud
 
-echo "=== Synthetic Benchmark — $BACKEND at scale=$SCALE ==="
+# Run the benchmark runner directly
+uv run python -m investigations.benchmark.runner \
+  --backend neo4j --uri bolt://localhost:7687 --scale small --clear \
+  --output investigations/results/neo4j-small.json
 
-# Generate and load synthetic data directly into the database
-uv run python docs/investigations/calibration/runner.py \
-  --backend "$BACKEND" \
-  --scale "$SCALE" \
-  --load-only
-
-# Run all workloads
-uv run python docs/investigations/calibration/runner.py \
-  --backend "$BACKEND" \
-  --scale "$SCALE" \
-  --output "docs/investigations/calibration/results/${BACKEND}_${SCALE}_${TIMESTAMP}.json"
-
-echo "=== Results saved to docs/investigations/calibration/results/${BACKEND}_${SCALE}_${TIMESTAMP}.json ==="
+# Compare results
+./investigations/run.sh --compare
 ```
 
-#### Docker Compose Profiles
+#### Docker Compose Files
 
-Add all candidate databases as optional profiles:
+Per-database Docker Compose files are in `investigations/docker/`:
 
-```yaml
-# docker-compose.yml additions
-
-  memgraph:
-    image: memgraph/memgraph:latest
-    profiles: ["memgraph"]
-    ports:
-      - "7688:7687"
-    command: ["--bolt-server-name-for-init=Neo4j/5.2.0"]
-    volumes:
-      - memgraph_data:/var/lib/memgraph
-
-  falkordb:
-    image: falkordb/falkordb:latest
-    profiles: ["falkordb"]
-    ports:
-      - "6380:6379"
-    volumes:
-      - falkordb_data:/data
-
-  arangodb:
-    image: arangodb/arangodb:latest
-    profiles: ["arangodb"]
-    environment:
-      ARANGO_ROOT_PASSWORD: discogsography
-    ports:
-      - "8529:8529"
-    volumes:
-      - arangodb_data:/var/lib/arangodb3
-
-  # Apache AGE uses the existing postgres service with the extension loaded
-  # See apache-age.md for setup instructions
+```
+investigations/docker/
+  docker-compose.neo4j.yml
+  docker-compose.memgraph.yml
+  docker-compose.age.yml
+  docker-compose.falkordb.yml
+  docker-compose.arangodb.yml
 ```
 
-#### Work Items
-
-- [ ] Create `docs/investigations/calibration/` directory structure
-- [ ] Implement `fixtures.py` — synthetic data generator calibrated from 2026-03-07 production data (power-law BY reverse fan-out, ~58% orphan artists, ~39% orphan labels, Zipf genre/style distributions, 757 styles, year on Master only, no formats property, ~100% DERIVED_FROM coverage, all 8 relationship types)
-- [ ] Implement `workloads.py` — seven workload definitions
-- [ ] Implement `runner.py` — benchmark execution engine with direct data insertion via `GraphBackend`
-- [ ] Implement `compare.py` — results comparison output
-- [ ] Create `run.sh` execution script
-- [ ] Add Docker Compose profiles for candidate databases
-- [ ] Baseline Neo4j results at both scale points (`small` and `large`)
-- [ ] Document hardware specs used for benchmarking (CPU, RAM, disk type)
-- [ ] Run calibration on Hetzner CX53 hosts and save baseline calibration JSON alongside results
+Cloud deployments use Jinja2 templates in `investigations/infra/templates/` that are deployed to each database host.
 
 ## 3. Scaling Results to Your Environment
 
@@ -666,22 +614,22 @@ By comparing calibration output from the benchmark host against your machine, pe
 **1. Run calibration on your machine:**
 
 ```bash
-uv run python docs/investigations/calibration/calibrate.py run --output my-calibration.json
+uv run python investigations/calibration/calibrate.py run --output my-calibration.json
 ```
 
 This takes ~30 seconds and produces a JSON file with your hardware profile.
 
 **2. Get the baseline calibration from the benchmark host:**
 
-The Hetzner CX53 calibration file is saved alongside benchmark results at `docs/investigations/calibration/results/hetzner_cx53_calibration.json` after each benchmark run.
+The Hetzner CX53 calibration file is saved alongside benchmark results at `investigations/results/baseline-calibration.json` after each benchmark run.
 
 **3. Scale the benchmark results:**
 
 ```bash
-uv run python docs/investigations/calibration/calibrate.py scale \
-  --baseline docs/investigations/calibration/results/hetzner_cx53_calibration.json \
+uv run python investigations/calibration/calibrate.py scale \
+  --baseline investigations/results/baseline-calibration.json \
   --local my-calibration.json \
-  --benchmark-results docs/investigations/calibration/results/neo4j_large_2026-03-10.json \
+  --benchmark-results investigations/results/neo4j-large-*.json \
   --output my-neo4j-estimates.json
 ```
 
@@ -735,9 +683,3 @@ These are order-of-magnitude estimates, not precise predictions. Factors not cap
 - **Network latency**: Only relevant if the database runs on a different host than the benchmark client
 
 Use the scaled numbers to understand whether your hardware is in the same ballpark as the benchmark host, significantly faster, or significantly slower — not for precise SLA planning.
-
-### Work Items
-
-- [ ] Run `docs/investigations/calibration/calibrate.py` on the Hetzner CX53 hosts during benchmark setup
-- [ ] Save baseline calibration JSON to `docs/investigations/calibration/results/hetzner_cx53_calibration.json`
-- [ ] Validate scaling model accuracy by comparing scaled predictions against actual local benchmark runs

@@ -231,12 +231,12 @@ In addition to the shared workloads:
 docker compose --profile falkordb up falkordb -d
 
 # Synthetic data benchmarks at both scale points
-uv run python docs/investigations/calibration/runner.py --backend falkordb --host localhost:6380 --scale small --load
-uv run python docs/investigations/calibration/runner.py --backend falkordb --host localhost:6380 --scale small
-uv run python docs/investigations/calibration/runner.py --backend falkordb --host localhost:6380 --scale large --load
-uv run python docs/investigations/calibration/runner.py --backend falkordb --host localhost:6380 --scale large
+uv run python -m investigations.benchmark.runner --backend falkordb --host localhost:6380 --scale small --load
+uv run python -m investigations.benchmark.runner --backend falkordb --host localhost:6380 --scale small
+uv run python -m investigations.benchmark.runner --backend falkordb --host localhost:6380 --scale large --load
+uv run python -m investigations.benchmark.runner --backend falkordb --host localhost:6380 --scale large
 
-uv run python docs/investigations/calibration/compare.py docs/investigations/calibration/results/neo4j_*.json docs/investigations/calibration/results/falkordb_*.json
+uv run python -m investigations.benchmark.compare investigations/results/neo4j_*.json investigations/results/falkordb_*.json
 ```
 
 ## Native Query Alternative: Redis Commands + Consolidated Cypher

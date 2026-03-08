@@ -6,22 +6,33 @@ This directory contains investigation notes for evaluating alternative graph dat
 
 | Document | Database | Status |
 |----------|----------|--------|
-| [shared-pre-work.md](shared-pre-work.md) | — | Pre-requisite work shared across all evaluations |
+| [shared-pre-work.md](shared-pre-work.md) | — | Implemented: backend abstraction and benchmark harness |
 | [memgraph.md](memgraph.md) | Memgraph Community | Compatibility analysis complete |
 | [apache-age.md](apache-age.md) | Apache AGE (PostgreSQL extension) | Compatibility analysis complete |
 | [falkordb.md](falkordb.md) | FalkorDB (Redis module) | Compatibility analysis complete |
 | [arangodb.md](arangodb.md) | ArangoDB Community | Compatibility analysis complete |
-| [cloud-benchmark-deployment.md](cloud-benchmark-deployment.md) | — | Cloud deployment plan for parallel benchmarking |
+| [cloud-benchmark-deployment.md](cloud-benchmark-deployment.md) | — | Implemented: Hetzner Cloud convergence-based pipeline |
 | [investigations/](../../investigations/) | — | Implementation: backends, benchmark harness, calibration, infra |
 
-## Evaluation Order
+## Implementation
 
-1. Complete the [shared pre-work](shared-pre-work.md) first — graph backend abstraction layer and benchmark harness
-2. Deploy cloud infrastructure per [cloud-benchmark-deployment.md](cloud-benchmark-deployment.md) (synthetic data benchmarks on Hetzner)
-3. Evaluate candidates in priority order: Memgraph > Apache AGE > FalkorDB > ArangoDB
-4. Each database doc contains a self-contained task list for that evaluation
+The benchmark system is fully implemented in the `investigations/` directory at the repository root:
 
-> **Note:** Benchmarks use synthetic data inserted directly into each database via the `GraphBackend` abstraction — no extractor or graphinator changes needed. Two scale points (`small` ~135k nodes and `large` ~1.35M nodes) provide enough signal to understand approximate orders of magnitude of performance differences between backends.
+- **5 database backends** implementing the `GraphBackend` abstraction (Neo4j, Memgraph, AGE, FalkorDB, ArangoDB)
+- **Benchmark harness** with 7 workloads, synthetic data generation, and results comparison
+- **Hardware calibration** for cross-environment scaling
+- **Cloud infrastructure** with Ansible playbooks for Hetzner Cloud deployment
+- **One-command launcher** (`run.sh`) for both local Docker and cloud modes
+
+```bash
+# Local — Docker Compose on your laptop
+./investigations/run.sh
+
+# Cloud — Hetzner VMs with dedicated hardware per database
+./investigations/run.sh --cloud
+```
+
+See the [investigations README](../../investigations/README.md) for full usage details.
 
 ## Context
 

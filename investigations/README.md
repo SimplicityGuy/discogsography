@@ -22,9 +22,15 @@ Starts each database in Docker (one at a time), generates synthetic data, runs a
 
 ### Cloud mode (`--cloud`)
 
-Provisions 6 Hetzner Cloud VMs (1 controller + 5 database hosts), deploys databases in parallel, runs benchmarks at both scale points, collects results, and offers teardown options. All prerequisites (Ansible, SSH keys, vault) are auto-installed — the only thing you need is a Hetzner Cloud API token.
+Uses a **convergence model** — run the command repeatedly and it advances the pipeline:
 
-**Estimated cost:** ~EUR 3.57 for a full run (~24 hours).
+1. **1st run:** Provisions controller + 3 DB servers + baseline. Runs calibration, deploys databases, starts benchmarks.
+2. **2nd+ runs:** Checks status, tears down completed servers, provisions remaining databases.
+3. **Final run:** All done — tears down DB servers, fetches results. Controller remains for inspection.
+
+All prerequisites (Ansible, SSH keys, vault) are auto-installed — the only thing you need is a Hetzner Cloud API token.
+
+**Estimated cost:** ~€3.57 for a full run (~24 hours).
 
 ## Usage
 
@@ -45,11 +51,20 @@ Provisions 6 Hetzner Cloud VMs (1 controller + 5 database hosts), deploys databa
 # Compare existing results
 ./investigations/run.sh --compare
 
-# Full cloud pipeline (Hetzner Cloud)
+# Full cloud pipeline (convergence — run repeatedly)
 ./investigations/run.sh --cloud
+
+# Limit concurrent servers (default: 5)
+./investigations/run.sh --cloud --server-limit 3
 
 # Fetch results from cloud to investigations/results/
 ./investigations/run.sh --fetch
+
+# Destroy all cloud infrastructure
+./investigations/run.sh --teardown
+
+# Remove vault, SSH keys, and vault password
+./investigations/run.sh --clean
 
 # Run the benchmark runner directly
 uv run python -m investigations.benchmark.runner \
@@ -102,6 +117,10 @@ investigations/
     docker-compose.falkordb.yml
     docker-compose.arangodb.yml
   infra/                            # Cloud deployment (Ansible + Hetzner)
+    ansible.cfg                     # Ansible configuration
+    playbooks/                      # 13 playbooks (provision, setup, benchmark, teardown)
+    templates/                      # Jinja2 templates (Docker Compose, runner scripts, metrics)
+    inventory/                      # Generated host inventory (not in git)
 ```
 
 ## Benchmark Workloads
@@ -173,7 +192,8 @@ See [docs/investigations/shared-pre-work.md](../docs/investigations/shared-pre-w
 
 - [docs/investigations/README.md](../docs/investigations/README.md) — Investigation overview and evaluation order
 - [docs/investigations/shared-pre-work.md](../docs/investigations/shared-pre-work.md) — Abstraction layer design and benchmark spec
-- [docs/investigations/cloud-benchmark-deployment.md](../docs/investigations/cloud-benchmark-deployment.md) — Hetzner Cloud deployment plan
+- [docs/investigations/cloud-benchmark-deployment.md](../docs/investigations/cloud-benchmark-deployment.md) — Hetzner Cloud deployment details
+- [investigations/infra/README.md](infra/README.md) — Cloud infrastructure reference (playbooks, convergence model, server layout)
 - [docs/investigations/memgraph.md](../docs/investigations/memgraph.md) — Memgraph compatibility analysis
 - [docs/investigations/apache-age.md](../docs/investigations/apache-age.md) — Apache AGE compatibility analysis
 - [docs/investigations/falkordb.md](../docs/investigations/falkordb.md) — FalkorDB compatibility analysis
