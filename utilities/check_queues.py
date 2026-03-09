@@ -5,13 +5,15 @@ import os
 
 import requests
 
+from common.config import get_secret
+
 
 def check_rabbitmq_queues() -> None:
     """Check the status of graphinator queues in RabbitMQ."""
     base_url = os.environ.get("RABBITMQ_URL", "http://localhost:15672")
     url = f"{base_url}/api/queues"
     username = os.environ.get("RABBITMQ_USERNAME", "discogsography")
-    password = os.environ.get("RABBITMQ_PASSWORD", "")
+    password = get_secret("RABBITMQ_PASSWORD", "")
 
     try:
         response = requests.get(url, auth=(username, password), timeout=10)

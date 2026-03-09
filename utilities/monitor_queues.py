@@ -7,12 +7,17 @@ from typing import Any
 
 import requests
 
+from common.config import get_secret
+
 
 def get_queue_stats(
-    base_url: str = os.environ.get("RABBITMQ_URL", "http://localhost:15672"),
-    username: str = os.environ.get("RABBITMQ_USERNAME", "discogsography"),
-    password: str = os.environ.get("RABBITMQ_PASSWORD", ""),
+    base_url: str | None = None,
+    username: str | None = None,
+    password: str | None = None,
 ) -> list[dict[str, Any]] | None:
+    base_url = base_url or os.environ.get("RABBITMQ_URL", "http://localhost:15672")
+    username = username or os.environ.get("RABBITMQ_USERNAME", "discogsography")
+    password = password or get_secret("RABBITMQ_PASSWORD", "")
     """Fetch queue statistics from RabbitMQ Management API."""
     try:
         response = requests.get(f"{base_url}/api/queues", auth=(username, password), timeout=10)

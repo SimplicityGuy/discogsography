@@ -6,6 +6,7 @@ Run via docker exec on the API container:
 """
 
 import argparse
+import os
 import sys
 
 import psycopg
@@ -17,10 +18,10 @@ from common.config import get_secret
 
 def _build_conninfo() -> str:
     """Build a psycopg conninfo string from environment variables."""
-    address = get_secret("POSTGRES_HOST") or ""
-    username = get_secret("POSTGRES_USERNAME") or ""
+    address = os.environ.get("POSTGRES_HOST", "")
+    username = os.environ.get("POSTGRES_USERNAME", "")
     password = get_secret("POSTGRES_PASSWORD") or ""
-    database = get_secret("POSTGRES_DATABASE") or ""
+    database = os.environ.get("POSTGRES_DATABASE", "")
 
     missing = []
     if not address:

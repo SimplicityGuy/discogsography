@@ -7,13 +7,17 @@ from typing import Any
 
 import pika
 
+from common.config import get_secret
+
 
 def get_message_from_queue(
     queue_name: str,
     host: str = "localhost",
-    username: str = os.environ.get("RABBITMQ_USERNAME", "discogsography"),
-    password: str = os.environ.get("RABBITMQ_PASSWORD", ""),
+    username: str | None = None,
+    password: str | None = None,
 ) -> dict[str, Any] | None:
+    username = username or os.environ.get("RABBITMQ_USERNAME", "discogsography")
+    password = password or get_secret("RABBITMQ_PASSWORD", "")
     """Peek at a message from the queue without consuming it."""
     try:
         # Connect to RabbitMQ

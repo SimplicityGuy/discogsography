@@ -765,16 +765,13 @@ class TestGetSecretViaFromEnv:
     """
 
     def test_graphinator_config_reads_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """GraphinatorConfig reads NEO4J_USERNAME and NEO4J_PASSWORD via _FILE."""
-        username_file = tmp_path / "neo4j_user.txt"
+        """GraphinatorConfig reads NEO4J_PASSWORD via _FILE."""
         password_file = tmp_path / "neo4j_pass.txt"
-        username_file.write_text("graph_user\n")
         password_file.write_text("graph_pass\n")
 
         monkeypatch.setenv("NEO4J_HOST", "localhost")
-        monkeypatch.setenv("NEO4J_USERNAME_FILE", str(username_file))
+        monkeypatch.setenv("NEO4J_USERNAME", "graph_user")
         monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(password_file))
-        monkeypatch.delenv("NEO4J_USERNAME", raising=False)
         monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
 
         from common.config import GraphinatorConfig
@@ -784,17 +781,14 @@ class TestGetSecretViaFromEnv:
         assert config.neo4j_password == "graph_pass"
 
     def test_tableinator_config_reads_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """TableinatorConfig reads POSTGRES_USERNAME and POSTGRES_PASSWORD via _FILE."""
-        user_file = tmp_path / "pg_user.txt"
+        """TableinatorConfig reads POSTGRES_PASSWORD via _FILE."""
         pass_file = tmp_path / "pg_pass.txt"
-        user_file.write_text("table_user\n")
         pass_file.write_text("table_pass\n")
 
         monkeypatch.setenv("POSTGRES_HOST", "localhost")
-        monkeypatch.setenv("POSTGRES_USERNAME_FILE", str(user_file))
+        monkeypatch.setenv("POSTGRES_USERNAME", "table_user")
         monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(pass_file))
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
-        monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
         monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
 
         from common.config import TableinatorConfig
@@ -804,23 +798,23 @@ class TestGetSecretViaFromEnv:
         assert config.postgres_password == "table_pass"
 
     def test_api_config_reads_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """ApiConfig reads POSTGRES_USERNAME, POSTGRES_PASSWORD, JWT_SECRET_KEY, and OAUTH_ENCRYPTION_KEY via _FILE."""
-        user_file = tmp_path / "pg_user.txt"
+        """ApiConfig reads POSTGRES_PASSWORD, JWT_SECRET_KEY, and OAUTH_ENCRYPTION_KEY via _FILE."""
         pass_file = tmp_path / "pg_pass.txt"
         jwt_file = tmp_path / "jwt.txt"
         oauth_file = tmp_path / "oauth.txt"
-        user_file.write_text("api_user\n")
         pass_file.write_text("api_pass\n")
         jwt_file.write_text("api_jwt_secret\n")
         oauth_file.write_text("api_fernet_key\n")
 
         monkeypatch.setenv("POSTGRES_HOST", "localhost")
-        monkeypatch.setenv("POSTGRES_USERNAME_FILE", str(user_file))
+        monkeypatch.setenv("POSTGRES_USERNAME", "api_user")
         monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(pass_file))
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
         monkeypatch.setenv("JWT_SECRET_KEY_FILE", str(jwt_file))
         monkeypatch.setenv("OAUTH_ENCRYPTION_KEY_FILE", str(oauth_file))
-        monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
+        monkeypatch.setenv("NEO4J_HOST", "localhost")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
         monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
         monkeypatch.delenv("OAUTH_ENCRYPTION_KEY", raising=False)
@@ -834,19 +828,16 @@ class TestGetSecretViaFromEnv:
         assert config.oauth_encryption_key == "api_fernet_key"
 
     def test_explore_config_reads_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """ExploreConfig reads NEO4J credentials and JWT key via _FILE."""
-        neo_user_file = tmp_path / "neo_user.txt"
+        """ExploreConfig reads NEO4J_PASSWORD and JWT key via _FILE."""
         neo_pass_file = tmp_path / "neo_pass.txt"
         jwt_file = tmp_path / "jwt.txt"
-        neo_user_file.write_text("exp_neo_user\n")
         neo_pass_file.write_text("exp_neo_pass\n")
         jwt_file.write_text("exp_jwt_secret\n")
 
         monkeypatch.setenv("NEO4J_HOST", "localhost")
-        monkeypatch.setenv("NEO4J_USERNAME_FILE", str(neo_user_file))
+        monkeypatch.setenv("NEO4J_USERNAME", "exp_neo_user")
         monkeypatch.setenv("NEO4J_PASSWORD_FILE", str(neo_pass_file))
         monkeypatch.setenv("JWT_SECRET_KEY_FILE", str(jwt_file))
-        monkeypatch.delenv("NEO4J_USERNAME", raising=False)
         monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
 
@@ -858,15 +849,12 @@ class TestGetSecretViaFromEnv:
         assert config.jwt_secret_key == "exp_jwt_secret"
 
     def test_dashboard_config_reads_rabbitmq_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """DashboardConfig reads RABBITMQ_USERNAME and RABBITMQ_PASSWORD via _FILE."""
-        user_file = tmp_path / "rmq_user.txt"
+        """DashboardConfig reads RABBITMQ_PASSWORD via _FILE."""
         pass_file = tmp_path / "rmq_pass.txt"
-        user_file.write_text("dash_rmq_user\n")
         pass_file.write_text("dash_rmq_pass\n")
 
-        monkeypatch.setenv("RABBITMQ_USERNAME_FILE", str(user_file))
+        monkeypatch.setenv("RABBITMQ_USERNAME", "dash_rmq_user")
         monkeypatch.setenv("RABBITMQ_PASSWORD_FILE", str(pass_file))
-        monkeypatch.delenv("RABBITMQ_USERNAME", raising=False)
         monkeypatch.delenv("RABBITMQ_PASSWORD", raising=False)
 
         from common.config import DashboardConfig

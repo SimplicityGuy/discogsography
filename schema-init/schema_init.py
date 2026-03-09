@@ -25,6 +25,7 @@ from common import (
     AsyncResilientNeo4jDriver,
     setup_logging,
 )
+from common.config import get_secret
 from neo4j_schema import create_neo4j_schema
 from postgres_schema import create_postgres_schema
 
@@ -36,11 +37,11 @@ logger = structlog.get_logger(__name__)
 _neo4j_host = os.environ.get("NEO4J_HOST", "localhost")
 NEO4J_URI = f"bolt://{_neo4j_host}:7687"
 NEO4J_USERNAME = os.environ.get("NEO4J_USERNAME", "neo4j")
-NEO4J_PASSWORD = os.environ.get("NEO4J_PASSWORD", "discogsography")
+NEO4J_PASSWORD = get_secret("NEO4J_PASSWORD", "discogsography")
 
 POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")
 POSTGRES_USERNAME = os.environ.get("POSTGRES_USERNAME", "discogsography")
-POSTGRES_PASSWORD = os.environ.get("POSTGRES_PASSWORD", "discogsography")
+POSTGRES_PASSWORD = get_secret("POSTGRES_PASSWORD", "discogsography")
 POSTGRES_DATABASE = os.environ.get("POSTGRES_DATABASE", "discogsography")
 
 
