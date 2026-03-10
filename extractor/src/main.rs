@@ -22,7 +22,7 @@ use health::HealthServer;
 #[clap(author, version, about, long_about = None)]
 struct Args {
     /// Force reprocess all files
-    #[clap(short, long, env = "FORCE_REPROCESS")]
+    #[clap(short, long, env = "FORCE_REPROCESS", value_parser = clap::builder::BoolishValueParser::new(), default_value_t = false)]
     force_reprocess: bool,
 }
 
