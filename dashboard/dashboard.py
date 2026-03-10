@@ -72,6 +72,8 @@ class ServiceStatus(BaseModel):
     current_task: str | None
     progress: float | None  # 0.0 to 1.0
     error: str | None
+    extraction_progress: dict[str, int] | None = None  # extractor only: per-type counts + total
+    last_extraction_time: dict[str, float | None] | None = None  # extractor only: seconds since last activity
 
 
 class QueueInfo(BaseModel):
@@ -249,6 +251,8 @@ class DashboardApp:
                                 current_task=data.get("current_task"),
                                 progress=data.get("progress"),
                                 error=None,
+                                extraction_progress=data.get("extraction_progress"),
+                                last_extraction_time=data.get("last_extraction_time"),
                             )
                         )
                     else:

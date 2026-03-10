@@ -165,6 +165,38 @@ class Dashboard {
                 badge.className = this._serviceBadgeClasses(service.status);
                 badge.textContent = this._statusLabel(service.status);
             }
+
+            // Extractor card – use extraction_progress from health endpoint
+            if (service.name === 'extractor' && service.extraction_progress) {
+                const TYPES = ['masters', 'releases', 'artists', 'labels'];
+                const progress = service.extraction_progress;
+                const elapsed = service.last_extraction_time || {};
+
+                TYPES.forEach(type => {
+                    const el = document.getElementById(`extractor-${type}-state`);
+                    if (!el) return;
+                    const count = progress[type] || 0;
+                    // Active if last extraction was within 30 seconds
+                    const active = elapsed[type] != null && elapsed[type] < 30;
+                    if (active) {
+                        el.textContent = `Processing (${count.toLocaleString()})`;
+                        el.className = 'text-blue-400';
+                    } else if (count > 0) {
+                        el.textContent = 'Idle';
+                        el.className = 'text-emerald-400';
+                    } else {
+                        el.textContent = 'Idle';
+                        el.className = 'text-emerald-400';
+                    }
+                });
+
+                // Update total records
+                const totalEl = document.getElementById('extractor-total-records');
+                if (totalEl) {
+                    const total = progress.total || 0;
+                    totalEl.textContent = total > 0 ? total.toLocaleString() : '—';
+                }
+            }
         });
     }
 
@@ -205,21 +237,6 @@ class Dashboard {
         const isDlq         = document.getElementById('dlq-toggle')?.checked ?? false;
         const activeGraphMap = isDlq ? graphinatorDlqMap : graphinatorMap;
         const activeTableMap = isDlq ? tableInatorDlqMap : tableInatorMap;
-
-        // Extractor card – queue state based on publish rate (always uses regular queues).
-        TYPES.forEach(type => {
-            const el = document.getElementById(`extractor-${type}-state`);
-            if (!el) return;
-            const q = graphinatorMap[type] || tableInatorMap[type];
-            if (q) {
-                const processing = q.message_rate > 0;
-                el.textContent = processing ? `Processing (${q.messages.toLocaleString()})` : 'Idle';
-                el.className = processing ? 'text-blue-400' : 'text-emerald-400';
-            } else {
-                el.textContent = '—';
-                el.className = 'text-zinc-500';
-            }
-        });
 
         // Graphinator card – total messages in active queue set.
         TYPES.forEach(type => {
