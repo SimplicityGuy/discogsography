@@ -22,7 +22,7 @@ quick-xml = { version = "0.39", features = ["serialize"] }
 flate2 = "1.1"
 
 # Message queue (AMQP) - latest
-lapin = "4.0"
+lapin = "4.3"
 futures = "0.3"
 
 # Serialization
