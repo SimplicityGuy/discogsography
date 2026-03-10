@@ -105,7 +105,7 @@ Indexes are automatically created during system startup by the **schema-init** s
 Create all schema objects manually:
 
 ```bash
-python -c "
+uv run python -c "
 import asyncio
 from schema_init.neo4j_schema import create_neo4j_schema
 from common import AsyncResilientNeo4jDriver

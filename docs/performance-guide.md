@@ -127,71 +127,12 @@ async def monitor_resources():
 
 ### 1. XML Parsing Optimization
 
-#### Current Implementation
+The extractor is written in Rust for maximum parsing performance. Key strategies:
 
-```python
-# Streaming parser with deduplication
-async def parse_xml_file(file_path: Path) -> AsyncIterator[dict]:
-    seen_hashes = set()
-
-    async for event, elem in etree.iterparse(file_path, events=("end",)):
-        if elem.tag in TARGET_TAGS:
-            data = element_to_dict(elem)
-            data_hash = calculate_hash(data)
-
-            if data_hash not in seen_hashes:
-                seen_hashes.add(data_hash)
-                yield data
-
-            elem.clear()  # Free memory
-```
-
-#### Optimizations
-
-```python
-# 1. Use orjson for faster JSON operations
-import orjson
-
-
-def element_to_dict_optimized(elem) -> dict:
-    # Convert to dict
-    data = {child.tag: child.text for child in elem}
-
-    # Use orjson for serialization (3x faster)
-    json_bytes = orjson.dumps(data)
-    return orjson.loads(json_bytes)
-
-
-# 2. Batch processing for better throughput
-async def parse_xml_batched(file_path: Path, batch_size: int = 1000):
-    batch = []
-
-    async for data in parse_xml_file(file_path):
-        batch.append(data)
-
-        if len(batch) >= batch_size:
-            yield batch
-            batch = []
-
-    if batch:  # Yield remaining
-        yield batch
-
-
-# 3. Parallel processing with multiprocessing
-from concurrent.futures import ProcessPoolExecutor
-
-
-async def parse_xml_parallel(file_path: Path):
-    with ProcessPoolExecutor(max_workers=4) as executor:
-        # Split file into chunks
-        chunks = split_xml_file(file_path, num_chunks=4)
-
-        # Process in parallel
-        futures = [executor.submit(parse_chunk, chunk) for chunk in chunks]
-
-        for future in futures:
-            yield from future.result()
-```
+- **Streaming parser**: Uses `quick-xml` for zero-copy streaming XML parsing
+- **Deduplication**: SHA256 hashing prevents duplicate records
+- **Batch publishing**: Messages are batched before publishing to RabbitMQ
+- **Memory efficiency**: Elements are processed and discarded as they stream through
 
 ### 2. Message Queue Optimization
 
@@ -200,44 +141,9 @@ async def parse_xml_parallel(file_path: Path):
 ```python
 # Optimal prefetch for consumers
 PREFETCH_COUNT = 100  # Adjust based on processing speed
-
-
-# Connection pooling
-class ConnectionPool:
-    def __init__(self, size: int = 10):
-        self.pool = asyncio.Queue(maxsize=size)
-        self.size = size
-
-    async def get_connection(self):
-        try:
-            return self.pool.get_nowait()
-        except asyncio.QueueEmpty:
-            return await aio_pika.connect_robust(AMQP_URL)
-
-    async def return_connection(self, conn):
-        try:
-            self.pool.put_nowait(conn)
-        except asyncio.QueueFull:
-            await conn.close()
 ```
 
-#### Batch Publishing
-
-```python
-async def publish_batch(messages: list[dict], queue_name: str):
-    """Publish messages in batch for better throughput."""
-    async with get_channel() as channel:
-        # Use transactions for batch
-        async with channel.transaction():
-            for message in messages:
-                await channel.default_exchange.publish(
-                    aio_pika.Message(
-                        body=orjson.dumps(message),
-                        delivery_mode=DeliveryMode.PERSISTENT,
-                    ),
-                    routing_key=queue_name,
-                )
-```
+The extractor publishes to 4 fanout exchanges (one per data type). Each consumer independently declares its own queues and controls its prefetch count.
 
 ### 3. Database Optimization
 

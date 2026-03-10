@@ -142,10 +142,6 @@ ignore:
   - "**/.venv/**"
   - "**/venv/**"
   - "**/*.pyc"
-  # Removed modules - carried-forward reports reference these old paths
-  - "discovery/**"
-  - "extractor/pyextractor/**"
-  - "extractor/rustextractor/**"
 
 # Parsers configuration - disable unused parsers to prevent warnings
 parsers:

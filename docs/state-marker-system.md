@@ -202,60 +202,22 @@ marker.complete_extraction();
 marker.save(&marker_path).await?;
 ```
 
-## Usage in Python Extractor
+## Usage in Python Services
+
+The `StateMarker` class from `common` is also available to Python services for reading extraction state:
 
 ```python
 from pathlib import Path
-from common import StateMarker, ProcessingDecision, PhaseStatus
+from common import StateMarker, ProcessingDecision
 
-# Load existing state or create new
+# Load existing state
 marker_path = StateMarker.file_path(Path(config.discogs_root), version)
-marker = StateMarker.load(marker_path) or StateMarker(current_version=version)
+marker = StateMarker.load(marker_path)
 
-# Check what to do
+# Check extraction status
 decision = marker.should_process()
 if decision == ProcessingDecision.SKIP:
-    logger.info("✅ Version already processed, skipping", version=version)
-    return True
-elif decision == ProcessingDecision.REPROCESS:
-    logger.warning("⚠️ Will re-download and re-process")
-    marker = StateMarker(current_version=version)
-elif decision == ProcessingDecision.CONTINUE:
-    logger.info("🔄 Will continue processing")
-
-# Track download phase
-marker.start_download(len(files))
-for file in files:
-    download_file(file)
-    marker.file_downloaded(file.size)
-    marker.save(marker_path)
-
-marker.complete_download()
-marker.save(marker_path)
-
-# Track processing phase
-marker.start_processing(len(files))
-marker.save(marker_path)
-
-for file in files:
-    # Skip if already completed
-    file_status = marker.processing_phase.progress_by_file.get(file)
-    if file_status and file_status.status == PhaseStatus.COMPLETED:
-        logger.info("✅ Skipping already processed file", file=file)
-        continue
-
-    marker.start_file_processing(file)
-    marker.save(marker_path)
-
-    # Process file...
-    records = process_file(file)
-
-    marker.complete_file_processing(file, records)
-    marker.save(marker_path)
-
-marker.complete_processing()
-marker.complete_extraction()
-marker.save(marker_path)
+    logger.info("✅ Version already processed, skipping")
 ```
 
 ## Benefits
@@ -352,20 +314,6 @@ if total_records % state_save_interval as u64 == 0 {
     marker.update_file_progress(&file_name, total_records, total_records);
     marker.save(&marker_path).await?;
 }
-```
-
-**Pyextractor** (`extractor.py`):
-
-```python
-# In __queue_record method
-if self.total_count % self.state_save_interval == 0:
-    self.state_marker.update_file_progress(
-        self.input_file,
-        self.total_count,
-        self.total_count // self.batch_size
-    )
-    marker_path = StateMarker.file_path(...)
-    self.state_marker.save(marker_path)
 ```
 
 ### Benefits

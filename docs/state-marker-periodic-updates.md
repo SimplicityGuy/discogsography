@@ -8,8 +8,7 @@ This document describes the implementation of periodic state marker updates in t
 
 Prior to this fix:
 
-- **extractor**: Only saved state marker when file processing started (0 records) and completed (final count)
-- **Previous implementation**: The Python extractor had periodic saves every 5,000 records
+- **Extractor**: Only saved state marker when file processing started (0 records) and completed (final count)
 - **Impact**: Extractor could lose hours of progress if it crashed or was restarted
 
 ## Solution
@@ -144,4 +143,4 @@ Can be adjusted if needed, but 5,000 provides good balance between:
 ## Related Documentation
 
 - [State Marker System](state-marker-system.md) - Overall state marker architecture
-- [Crash Recovery](../README.md#crash-recovery) - User-facing crash recovery docs
+- [State Marker Periodic Updates](../README.md) - Referenced from project README

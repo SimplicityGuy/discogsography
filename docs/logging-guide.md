@@ -433,24 +433,7 @@ logger = structlog.get_logger(__name__)
 
 ### JSON Logging (Production)
 
-```python
-import logging
-import json
-from datetime import datetime
-
-
-class JSONFormatter(logging.Formatter):
-    def format(self, record):
-        return json.dumps(
-            {
-                "timestamp": datetime.utcnow().isoformat(),
-                "level": record.levelname,
-                "logger": record.name,
-                "message": record.getMessage(),
-                "extra": getattr(record, "extra", {}),
-            }
-        )
-```
+JSON logging is handled automatically by structlog via `setup_logging()`. The configured `JSONRenderer` uses `orjson` for efficient serialization. No custom `JSONFormatter` is needed.
 
 ## 🔍 Troubleshooting
 

@@ -188,7 +188,7 @@ For all async code going forward:
 1. ⬜ Enable batch mode in subset of existing tests
 1. ⬜ Add mypy strict async checking
 1. ⬜ Create pre-commit hook for async patterns
-1. ⬜ Update CONTRIBUTING.md with async testing standards
+1. ⬜ Update docs/contributing.md with async testing standards
 
 ## Metrics
 

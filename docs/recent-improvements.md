@@ -283,7 +283,7 @@ Reduced complexity and improved readability across all Python and Rust services 
   `ValueError` on double-removal, and to track connection count accurately with `Gauge.set()`
 - Hardened PostgreSQL address parsing to handle addresses without an explicit port (defaults to 5432)
 
-**Explore** (`explore/explore.py`, `explore/neo4j_queries.py`):
+**API** (`api/routers/explore.py`, `api/neo4j_queries.py` — previously in explore service, consolidated into API):
 
 - Added `_run_query()`, `_run_single()`, and `_run_count()` helpers to eliminate ~20 repeated
   `async with driver.session()` blocks across all query functions
@@ -338,7 +338,7 @@ graph entity processing.
 **Key Changes**:
 
 - **Quorum Queues**: Migrated all 8 message queues from classic to quorum type for improved data safety and replication
-- **Dead-Letter Exchange (DLX)**: Implemented `discogsography.dlx` exchange with 8 dead-letter queues for poison message handling
+- **Dead-Letter Exchanges (DLX)**: Each consumer declares its own DLQs and consumer-owned DLXs for poison message handling
 - **Delivery Limit**: Set to 20 retries before routing to DLQ, preventing infinite retry loops
 - **Files Modified**: docker-compose.yml, extractor.py, graphinator.py, tableinator.py, message_queue.rs
 
@@ -357,7 +357,7 @@ graph entity processing.
 
 - **Calendar Versioning**: Switched from semantic versioning (5.x) to calendar versioning (YYYY.MM.PATCH)
 - **Python Driver**: Upgraded neo4j driver from 5.x → 6.1.x across all services
-- **Files Modified**: docker-compose.yml + 6 pyproject.toml files (root, common, graphinator, dashboard, explore)
+- **Files Modified**: docker-compose.yml + pyproject.toml files (root, common, api, graphinator, dashboard)
 
 **Benefits**:
 
@@ -418,7 +418,7 @@ ______________________________________________________________________
 - ✅ **Rust Implementation**: `extractor/extractor/src/state_marker.rs` with 11 unit tests
 - ✅ **Python Implementation**: `common/state_marker.py` with 22 unit tests
 - ✅ **Documentation**: Complete usage guide in `docs/state-marker-system.md`
-- ✅ **Cross-Platform**: Identical functionality in both Rust and Python extractors
+- ✅ **Cross-Platform**: Rust extractor and Python `common` library share identical state marker functionality
 
 #### Benefits
 
@@ -569,7 +569,7 @@ All workflows now have status badges for quick health monitoring:
 - [![Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/test.yml)
 - [![E2E Tests](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml/badge.svg)](https://github.com/SimplicityGuy/discogsography/actions/workflows/e2e-test.yml)
 
-## 🔄 Message Processing Improvements (January 2025)
+## 🔄 Message Processing Improvements (January 2026)
 
 ### Consumer Lifecycle Management
 

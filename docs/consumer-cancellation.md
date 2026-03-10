@@ -116,14 +116,10 @@ Watch for these log messages:
 Use the provided test scripts:
 
 1. **test_file_completion.py** - Tests the file completion message handling
-1. **test_consumer_cancellation.py** - Tests and monitors consumer cancellation
 
 ```bash
 # Run with short delay for testing
 CONSUMER_CANCEL_DELAY=10 docker-compose up -d tableinator graphinator
-
-# Send test completion messages
-python test_consumer_cancellation.py
 
 # Watch the logs
 docker-compose logs -f tableinator graphinator
@@ -143,13 +139,13 @@ docker-compose logs -f tableinator graphinator
 - Cancellation tasks are tracked to allow proper cleanup on shutdown
 - The `nowait=True` parameter prevents hanging if RabbitMQ is slow to respond
 
-## Python/Extractor Integration
+## Extractor Integration
 
-Both the Python and Rust extractor services integrate with consumer cancellation by:
+The Rust extractor integrates with consumer cancellation by:
 
-1. **Sending File Completion Messages**: When a file finishes processing, the extractor (Python or Rust) sends a
+1. **Sending File Completion Messages**: When a file finishes processing, the extractor sends a
    "file_complete" message
-1. **Tracking Completed Files**: Both extractors maintain a `completed_files` set to avoid false stalled warnings
+1. **Tracking Completed Files**: The extractor maintains a `completed_files` set to avoid false stalled warnings
 1. **Progress Monitoring**: Completed files are excluded from stalled detection logic
 
 This prevents the extractors from incorrectly reporting files as "stalled" when they have actually completed processing

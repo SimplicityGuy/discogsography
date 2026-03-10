@@ -358,10 +358,26 @@ graph LR
     end
 
     subgraph RabbitMQ
-        AQ[artists_queue]
-        LQ[labels_queue]
-        RQ[releases_queue]
-        MQ[masters_queue]
+        subgraph Fanout Exchanges
+            AX[discogsography-artists]
+            LX[discogsography-labels]
+            RX[discogsography-releases]
+            MX[discogsography-masters]
+        end
+
+        subgraph Graphinator Queues
+            GAQ[graphinator-artists]
+            GLQ[graphinator-labels]
+            GRQ[graphinator-releases]
+            GMQ[graphinator-masters]
+        end
+
+        subgraph Tableinator Queues
+            TAQ[tableinator-artists]
+            TLQ[tableinator-labels]
+            TRQ[tableinator-releases]
+            TMQ[tableinator-masters]
+        end
     end
 
     subgraph Consumers
@@ -369,19 +385,29 @@ graph LR
         TABLE[Tableinator]
     end
 
-    EXT --> AQ
-    EXT --> LQ
-    EXT --> RQ
-    EXT --> MQ
+    EXT --> AX
+    EXT --> LX
+    EXT --> RX
+    EXT --> MX
 
-    AQ --> GRAPH
-    AQ --> TABLE
-    LQ --> GRAPH
-    LQ --> TABLE
-    RQ --> GRAPH
-    RQ --> TABLE
-    MQ --> GRAPH
-    MQ --> TABLE
+    AX --> GAQ
+    AX --> TAQ
+    LX --> GLQ
+    LX --> TLQ
+    RX --> GRQ
+    RX --> TRQ
+    MX --> GMQ
+    MX --> TMQ
+
+    GAQ --> GRAPH
+    GLQ --> GRAPH
+    GRQ --> GRAPH
+    GMQ --> GRAPH
+
+    TAQ --> TABLE
+    TLQ --> TABLE
+    TRQ --> TABLE
+    TMQ --> TABLE
 
     style EXT fill:#ffccbc,stroke:#d84315
     style GRAPH fill:#f3e5f5,stroke:#4a148c
@@ -466,8 +492,6 @@ See [Database Schema](database-schema.md) for details.
 - Graph snapshots (API — native Redis TTL, default 28 days, survives service restarts)
 - JWT revocation blacklist (API — JTI claims with TTL matching token expiry)
 - Query result caching (Dashboard)
-- Embedding vectors
-- Graph algorithm results
 - Dashboard metrics
 
 **Configuration**:

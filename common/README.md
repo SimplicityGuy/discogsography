@@ -16,7 +16,7 @@ Shared utilities and configuration for all discogsography services.
 
 ### Key Constants (`__init__.py`)
 
-- `AMQP_EXCHANGE`: Exchange name (`discogsography-exchange`)
-- `AMQP_EXCHANGE_TYPE`: Exchange type (`topic`)
+- `AMQP_EXCHANGE_PREFIX`: Exchange name prefix (`discogsography`)
+- `AMQP_EXCHANGE_TYPE`: Exchange type (`fanout`)
 - `AMQP_QUEUE_PREFIX_GRAPHINATOR`: Queue prefix for graphinator consumers
 - `AMQP_QUEUE_PREFIX_TABLEINATOR`: Queue prefix for tableinator consumers

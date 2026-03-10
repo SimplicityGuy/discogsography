@@ -151,7 +151,7 @@ When the extractor restarts, it checks the state marker and decides:
 | Processing in progress | **Continue**  | Resume unfinished files |
 | All completed          | **Skip**      | Wait for next check     |
 
-See **[State Marker System](../../docs/state-marker-system.md)** for complete documentation.
+See **[State Marker System](../docs/state-marker-system.md)** for complete documentation.
 
 ## Architecture
 
@@ -196,7 +196,7 @@ Set the `LOG_LEVEL` environment variable to control logging verbosity:
 
 Extractor integrates with the Discogsography platform:
 
-- Publishes to RabbitMQ queues consumed by Graphinator (Neo4j) and Tableinator (PostgreSQL)
+- Publishes to 4 RabbitMQ fanout exchanges (one per data type) consumed by Graphinator (Neo4j) and Tableinator (PostgreSQL)
 - Supports all four data types: artists, labels, masters, releases
 - Provides HTTP health, metrics, and readiness endpoints
 

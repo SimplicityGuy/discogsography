@@ -42,7 +42,7 @@ update-hooks:
 [group('setup')]
 check-updates:
     @echo '🐍 Python dependency updates:'
-    uv pip list --outdated
+    uv run pip list --outdated
     @echo ''
     @echo '🦀 Rust dependency updates:'
     @if [ -d 'extractor' ]; then \

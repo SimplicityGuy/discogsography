@@ -52,7 +52,7 @@
 | Document                                            | Description                                          |
 | --------------------------------------------------- | ---------------------------------------------------- |
 | **[GitHub Actions Guide](github-actions-guide.md)** | 🔄 CI/CD workflows, automation & best practices      |
-| **[Task Automation](task-automation.md)**           | ⚡ Complete taskipy command reference                |
+| **[Task Automation](task-automation.md)**           | ⚡ Complete `just` and `uv` command reference        |
 | **[Monorepo Guide](monorepo-guide.md)**             | 📦 Managing Python monorepo with shared dependencies |
 
 ### 📋 Reference Guides
@@ -260,7 +260,7 @@ If you can't find what you're looking for:
 Help us improve documentation:
 
 - **Missing something?** [Create an issue](https://github.com/SimplicityGuy/discogsography/issues/new?labels=documentation)
-- **Found a typo?** [Submit a PR](../CONTRIBUTING.md)
+- **Found a typo?** [Submit a PR](contributing.md)
 - **Have a question?** [Ask in Discussions](https://github.com/SimplicityGuy/discogsography/discussions/new?category=q-a)
 - **Want to contribute?** See [Contributing Guide](contributing.md)
 

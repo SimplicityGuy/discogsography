@@ -413,7 +413,7 @@ docker-compose down
 docker-compose up -d
 
 # Or for specific service
-LOG_LEVEL=DEBUG uv run python explore/explore.py
+LOG_LEVEL=DEBUG uv run python -m explore.explore
 ```
 
 **DEBUG level includes**:
@@ -437,8 +437,8 @@ docker-compose logs -f --timestamps graphinator
 # Filter for errors
 docker-compose logs -f | grep -E "(ERROR|❌)"
 
-# Filter for Neo4j queries (DEBUG mode)
-docker-compose logs -f explore | grep "🔍 Executing Neo4j query"
+# Filter for Neo4j queries (DEBUG mode — queries are handled by the API service)
+docker-compose logs -f api | grep "🔍 Executing Neo4j query"
 ```
 
 ### Step 4: Check Queue Status
@@ -448,7 +448,7 @@ docker-compose logs -f explore | grep "🔍 Executing Neo4j query"
 open http://localhost:15672
 
 # Or use CLI monitoring
-uv run task monitor
+just monitor
 
 # Or API
 curl -u discogsography:discogsography \

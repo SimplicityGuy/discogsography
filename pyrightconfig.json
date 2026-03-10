@@ -1,20 +1,23 @@
 {
   "extraPaths": [
     ".",
+    "api",
     "common",
     "dashboard",
     "explore",
     "graphinator",
+    "schema-init",
     "tableinator"
   ],
   "include": [
+    "api",
     "common",
     "dashboard",
     "explore",
     "graphinator",
+    "schema-init",
     "tableinator",
-    "utilities",
-    "config.py"
+    "utilities"
   ],
   "pythonVersion": "3.13",
   "reportMissingImports": true,

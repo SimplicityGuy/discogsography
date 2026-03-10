@@ -251,7 +251,7 @@ Examples:
 
 Before submitting, ensure:
 
-- [ ] Code follows style guide (ruff, black, mypy pass)
+- [ ] Code follows style guide (ruff, mypy pass)
 - [ ] All tests pass (`just test`)
 - [ ] E2E tests pass if applicable (`just test-e2e`)
 - [ ] Security scan passes (`just security`)

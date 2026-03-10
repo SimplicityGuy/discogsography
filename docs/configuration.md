@@ -154,7 +154,7 @@ RABBITMQ_PASSWORD=mypassword
 | `NEO4J_USERNAME` | Neo4j username | `neo4j`     | Yes      |
 | `NEO4J_PASSWORD` | Neo4j password | (none)      | Yes      |
 
-**Used By**: Graphinator, Dashboard
+**Used By**: Graphinator, API, Schema-Init, Dashboard
 
 **Connection Details**:
 
@@ -269,7 +269,7 @@ REDIS_HOST="redis"
 **Cache Configuration**:
 
 - Default TTL: 3600 seconds (1 hour)
-- Max memory: 256MB (configurable in docker-compose.yml)
+- Max memory: 512MB (configurable in docker-compose.yml)
 - Eviction policy: allkeys-lru
 - Persistence: Disabled (cache only)
 
@@ -517,7 +517,7 @@ JWT_SECRET_KEY="your-secret-key-here"
 DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
 # Required — Discogs OAuth token encryption (Fernet symmetric key)
-# Generate with: python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
+# Generate with: uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
 # In production, supply via OAUTH_ENCRYPTION_KEY_FILE (Docker secret)
 OAUTH_ENCRYPTION_KEY="your-fernet-key-here"
 

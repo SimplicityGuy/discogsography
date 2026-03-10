@@ -508,10 +508,7 @@ async def check_custom_condition():
 ### Step 1: Check Service Health
 
 ```bash
-# Health check all services
-./scripts/check-all-health.sh
-
-# Or individually
+# Health check all services individually
 curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator

@@ -291,10 +291,10 @@ just test
 just test-cov
 
 # Specific test file
-uv run pytest tests/extractor/test_extractor.py
+uv run pytest tests/api/test_neo4j_queries.py
 
 # Specific test function
-uv run pytest tests/extractor/test_extractor.py::test_parse_artist
+uv run pytest tests/api/test_neo4j_queries.py::test_search_artists
 
 # Sequential execution (for debugging, shows cleaner output)
 uv run pytest -n 0 -s
@@ -331,8 +331,7 @@ See [Testing Guide](testing-guide.md) for comprehensive testing documentation.
 
 **Follow PEP 8** with these tools:
 
-- **ruff**: Linting and formatting (replaces flake8, isort, pyupgrade)
-- **black**: Code formatting (88 character line length)
+- **ruff**: Linting and formatting (replaces flake8, isort, pyupgrade, black — 88 character line length)
 - **mypy**: Static type checking
 
 ```bash

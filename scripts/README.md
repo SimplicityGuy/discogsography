@@ -68,10 +68,10 @@ The script provides:
 
 The script now includes comprehensive component verification and updates **all** project files:
 
-**Python Configuration (7 files)**:
+**Python Configuration (8 files)**:
 
 - ✅ Root `pyproject.toml`
-- ✅ All Python service `pyproject.toml` files (common, dashboard, explore, graphinator, schema-init, tableinator)
+- ✅ All Python service `pyproject.toml` files (api, common, dashboard, explore, graphinator, schema-init, tableinator)
 
 **Docker Configuration (7 files)**:
 
@@ -131,43 +131,6 @@ The script now includes comprehensive component verification and updates **all**
    - Update 3 Python packages
    "
 ```
-
-## 🐍 update-python-version.sh
-
-Standalone script for updating Python version across the codebase. This is called by `update-project.sh` when using the `--python` flag.
-
-### Usage
-
-```bash
-# Update to Python 3.13 (default)
-./scripts/update-python-version.sh
-
-# Update to specific version
-./scripts/update-python-version.sh 3.12
-```
-
-### What it updates
-
-- All `pyproject.toml` files in:
-  - Root directory
-  - `common/`, `dashboard/`, `explore/`, `graphinator/`, `schema-init/`, `tableinator/`
-- All Dockerfiles including nested ones in:
-  - `dashboard/`, `explore/`, `graphinator/`, `tableinator/`
-  - `docs/dockerfile-standards.md`
-- GitHub workflow files
-- `pyrightconfig.json`
-- `.env.example` (if exists)
-
-## 📦 upgrade-packages.sh (Deprecated)
-
-**Note**: This script is now deprecated. Use `update-project.sh` instead.
-
-The original package upgrade script. Its functionality has been integrated into `update-project.sh` with improvements:
-
-- Better change tracking
-- Emoji logging
-- UV version updates
-- More comprehensive summaries
 
 ## 🤖 GitHub Actions Integration
 

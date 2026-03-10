@@ -284,4 +284,4 @@ class TestAsyncFeature:
 1. ⬜ Add mypy strict async checking to CI/CD
 1. ⬜ Create shared async driver fixtures for all services
 1. ⬜ Add pre-commit hook for async pattern checking
-1. ⬜ Document async testing standards in CONTRIBUTING.md
+1. ⬜ Document async testing standards in docs/contributing.md

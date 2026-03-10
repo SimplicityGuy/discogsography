@@ -162,8 +162,10 @@ docker-compose up -d neo4j postgres rabbitmq redis
 Create a `.env` file or export variables:
 
 ```bash
-# Core connections
-export AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
+# RabbitMQ settings (AMQP_CONNECTION is built automatically from these)
+export RABBITMQ_HOST="localhost"
+export RABBITMQ_USERNAME="discogsography"
+export RABBITMQ_PASSWORD="discogsography"
 
 # Neo4j settings
 export NEO4J_HOST="localhost"
@@ -178,6 +180,10 @@ export POSTGRES_DATABASE="discogsography"
 
 # Redis settings
 export REDIS_HOST="localhost"
+
+# API settings
+export JWT_SECRET_KEY="dev-secret-key-change-in-production"
+export DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
 # Optional: Set log level
 export LOG_LEVEL="INFO"  # or DEBUG for detailed output

@@ -86,22 +86,13 @@ The extractors' progress monitoring:
 
 ## Implementation Details
 
-### Python/Extractor Changes
+### Extractor Changes
 
-```python
-# Global tracking variables
-completed_files = set()  # Track which files have been completed
+The Rust extractor tracks completed files to prevent false stall warnings:
 
-# When sending file completion message
-completed_files.add(self.data_type)
-
-# During stalled detection
-for data_type, last_time in last_extraction_time.items():
-    # Skip if this file type has been completed
-    if data_type in completed_files:
-        continue
-    # ... stalled detection logic
-```
+- Maintains a `completed_files` set
+- Marks each data type as complete after sending the file completion message
+- Excludes completed file types from stalled detection logic
 
 ### Progress Reporting
 
@@ -134,7 +125,7 @@ No additional configuration needed - the feature works automatically with existi
 
 ### Log Messages to Watch
 
-**Python/Extractor**:
+**Extractor**:
 
 - `✅ Sent file completion message for {type}` - File marked complete
 - `✅ Completed file types: [...]` - Shows all completed files
@@ -175,7 +166,6 @@ docker-compose up -d
 
 # Watch logs for completion tracking
 docker-compose logs -f extractor | grep -E "(Completed file types|Stalled extractors)"
-docker-compose logs -f extractor | grep -E "(Completed file types|Stalled extractors)"    # For Rust
 
 # Force a quick test with small files
 # Files will complete quickly and should not show as stalled

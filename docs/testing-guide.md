@@ -72,7 +72,7 @@ tests/
 │   ├── conftest.py
 │   ├── test_explore_api.py              # API unit tests
 │   ├── test_explore_ui.py               # E2E tests (playwright, @pytest.mark.e2e)
-│   └── test_neo4j_queries.py
+│   └── test_snapshot.py
 │
 ├── graphinator/
 │   ├── conftest.py
@@ -311,7 +311,7 @@ just test-cov
 
 # Run specific service tests (parallel)
 uv run pytest tests/dashboard/
-uv run pytest tests/extractor/
+uv run pytest tests/explore/
 
 # Run only unit tests (parallel, exclude E2E and benchmarks)
 uv run pytest -m "not e2e and not benchmark"

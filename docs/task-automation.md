@@ -62,7 +62,7 @@ Tasks are organized into logical groups for easier navigation:
 | ------------- | -------------------------------------------------------- | ---- |
 | `api`         | Run the API service (user accounts & JWT authentication) | 8004 |
 | `dashboard`   | Run the dashboard service (monitoring UI)                | 8003 |
-| `explore`     | Run the explore service (graph exploration and trends)   | 8006 |
+| `explore`     | Run the explore service (static file serving for graph UI) | 8006 |
 | `extractor`   | Run the Rust extractor (Discogs data ingestion)          | -    |
 | `graphinator` | Run the graphinator service (Neo4j graph builder)        | -    |
 | `schema-init` | Run the schema initializer (one-time Neo4j + PostgreSQL) | -    |

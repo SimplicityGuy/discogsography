@@ -87,7 +87,7 @@ If updating manually, ensure you update:
 1. **Root pyproject.toml**:
 
    ```toml
-   [tool.poetry]
+   [project]
    requires-python = ">=3.14"
 
    [tool.ruff]

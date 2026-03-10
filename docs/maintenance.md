@@ -448,7 +448,7 @@ docker-compose logs --since 24h > last-24h.txt
 
 ```bash
 # Check for errors
-uv run task check-errors
+just check-errors
 
 # View recent errors
 docker-compose logs --since 1h | grep "ERROR"
@@ -596,10 +596,10 @@ docker stats discogsography-dashboard-1
 
 ```bash
 # Queue monitoring
-uv run task monitor
+just monitor
 
 # System monitoring
-uv run task system-monitor
+just system-monitor
 
 # Check processing rates
 docker-compose logs -f | grep "📊"

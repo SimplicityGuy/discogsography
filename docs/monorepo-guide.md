@@ -15,6 +15,9 @@ graph TD
 
     RootFiles[pyproject.toml<br/>uv.lock<br/>.python-version]
 
+    API[api/<br/>API Service]
+    APIFiles[api.py<br/>routers/]
+
     Common[common/<br/>Shared Library]
     CommonFiles[config.py<br/>health_server.py]
 
@@ -24,36 +27,45 @@ graph TD
     Extractor[extractor/<br/>Data Extraction]
     ExtractorFiles[src/main.rs<br/>Cargo.toml]
 
-    Explore[explore/<br/>Graph Exploration]
+    Explore[explore/<br/>Static File Serving]
     ExploreFiles[explore.py]
 
     Graphinator[graphinator/<br/>Neo4j Service]
     GraphFiles[graphinator.py]
 
+    SchemaInit[schema-init/<br/>DB Schema Init]
+    SchemaFiles[neo4j_schema.py<br/>postgres_schema.py]
+
     Tableinator[tableinator/<br/>PostgreSQL Service]
     TableFiles[tableinator.py]
 
     Root --> RootFiles
+    Root --> API
     Root --> Common
     Root --> Dashboard
     Root --> Extractor
     Root --> Explore
     Root --> Graphinator
+    Root --> SchemaInit
     Root --> Tableinator
 
+    API --> APIFiles
     Common --> CommonFiles
     Dashboard --> DashFiles
     Extractor --> ExtractorFiles
     Explore --> ExploreFiles
     Graphinator --> GraphFiles
+    SchemaInit --> SchemaFiles
     Tableinator --> TableFiles
 
     style Root fill:#f3e5f5,stroke:#9c27b0,stroke-width:3px
+    style API fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
     style Common fill:#e8f5e9,stroke:#4caf50,stroke-width:2px
     style Dashboard fill:#e3f2fd,stroke:#2196f3,stroke-width:2px
     style Extractor fill:#fff3e0,stroke:#ff9800,stroke-width:2px
     style Explore fill:#fce4ec,stroke:#e91e63,stroke-width:2px
     style Graphinator fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
+    style SchemaInit fill:#f1f8e9,stroke:#689f38,stroke-width:2px
     style Tableinator fill:#e0f2f1,stroke:#009688,stroke-width:2px
 ```
 
@@ -64,6 +76,11 @@ discogsography/                    # Root workspace
 ├── pyproject.toml                 # Root configuration & shared dev dependencies
 ├── uv.lock                        # Single lock file for entire workspace
 ├── .python-version                # Python version for uv
+│
+├── api/                           # API service (workspace member)
+│   ├── pyproject.toml            # Service-specific dependencies
+│   ├── api.py                    # Service entry point
+│   └── routers/                  # FastAPI routers
 │
 ├── common/                        # Shared library (workspace member)
 │   ├── pyproject.toml            # Declares [project] with name
@@ -76,18 +93,23 @@ discogsography/                    # Root workspace
 │   ├── dashboard.py             # Service entry point
 │   └── static/                  # Service assets
 │
-├── extractor/                     # Data extraction service
+├── extractor/                     # Data extraction service (Rust — not a uv workspace member)
 │   ├── Cargo.toml                # Rust dependencies
 │   └── src/
 │       └── main.rs              # Rust entry point
 │
-├── explore/                       # Graph exploration service
+├── explore/                       # Static file serving (workspace member)
 │   ├── pyproject.toml            # Service dependencies
 │   └── explore.py                # Service entry point
 │
 ├── graphinator/                   # Service (workspace member)
 │   ├── pyproject.toml           # Neo4j dependencies
 │   └── graphinator.py
+│
+├── schema-init/                   # Database schema initializer (workspace member)
+│   ├── pyproject.toml           # Schema dependencies
+│   ├── neo4j_schema.py          # Neo4j constraints & indexes
+│   └── postgres_schema.py       # PostgreSQL tables
 │
 └── tableinator/                   # Service (workspace member)
     ├── pyproject.toml           # PostgreSQL dependencies
@@ -124,11 +146,12 @@ The root `pyproject.toml` defines:
 # Root pyproject.toml
 [tool.uv.workspace]
 members = [
+    "api",
     "common",
     "dashboard",
-
-    "extractor",
+    "explore",
     "graphinator",
+    "schema-init",
     "tableinator"
 ]
 
@@ -183,9 +206,9 @@ uv add "neo4j>=5.15.0"
 uv run python dashboard/dashboard.py
 uv run python explore/explore.py
 
-# Using task commands
-uv run task dashboard
-uv run task extractor
+# Using just commands
+just dashboard
+just extractor
 ```
 
 ### Import Patterns
@@ -216,7 +239,7 @@ edit common/config.py
 # (common is installed in editable mode)
 
 # 3. Test affected services
-uv run task test
+just test
 ```
 
 ### 2. Adding a New Service
@@ -340,11 +363,11 @@ RUN uv sync --frozen --no-dev --extra dashboard
 ### Check Workspace Members
 
 ```bash
-# List all workspace members
-uv list
-
 # Show dependency tree
 uv tree
+
+# List installed packages
+uv pip list
 ```
 
 ### Verify Installation

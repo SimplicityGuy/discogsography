@@ -108,7 +108,7 @@ uv run pytest tests/dashboard/test_dashboard_api.py -v
 uv run pytest tests/dashboard/test_dashboard_api_integration.py -v
 
 # Run E2E tests (requires running dashboard)
-./scripts/test-e2e.sh
+just test-e2e
 ```
 
 ### Frontend Development

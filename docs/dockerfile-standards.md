@@ -256,7 +256,9 @@ Service-specific additions:
 
 Only expose ports for services with HTTP endpoints:
 
+- **api**: `EXPOSE 8004 8005`
 - **dashboard**: `EXPOSE 8003`
+- **explore**: `EXPOSE 8006 8007`
 
 ### 9. Volume Declaration
 

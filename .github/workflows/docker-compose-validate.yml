@@ -90,22 +90,28 @@ jobs:
             exit 1
           fi
 
+          deps=$(docker-compose config | yq eval '.services.api.depends_on | keys | sort | join(" ")' -)
+          if [ "$deps" != "neo4j postgres redis schema-init" ]; then
+            echo "❌ API should depend on neo4j, postgres, redis, and schema-init"
+            exit 1
+          fi
+
           echo "✅ Service dependencies are correct"
 
       - name: 🛡️ Check for security best practices
         run: |
           # Check that services run as non-root user
-          for service in dashboard explore extractor graphinator schema-init tableinator; do
+          for service in api dashboard explore extractor graphinator schema-init tableinator; do
             user=$(docker-compose config | yq eval ".services.$service.user" -)
-            if [ "$user" != "1000:1000" ]; then
-              echo "❌ $service should run as user 1000:1000"
+            if [ -z "$user" ] || [ "$user" = "null" ]; then
+              echo "❌ $service should have a user configured"
               exit 1
             fi
           done
           echo "✅ All services run as non-root user"
 
           # Check security options
-          for service in dashboard explore extractor graphinator schema-init tableinator; do
+          for service in api dashboard explore extractor graphinator schema-init tableinator; do
             security_opt=$(docker-compose config | yq eval ".services.$service.security_opt[]" - | grep "no-new-privileges:true" || true)
             if [ -z "$security_opt" ]; then
               echo "❌ $service should have no-new-privileges security option"

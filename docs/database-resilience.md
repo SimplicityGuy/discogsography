@@ -75,7 +75,7 @@ During database outages:
 
 ## Service-Specific Implementation
 
-### Python/Extractor Services
+### Python Services
 
 - Uses `ResilientRabbitMQConnection` for publishing
 - Buffers messages during connection issues
@@ -167,7 +167,6 @@ When databases undergo nightly maintenance:
 
 Each service exposes health data including connection status:
 
-- Python Extractor: `http://localhost:8000/health`
 - Extractor: `http://localhost:8000/health`
 - Graphinator: `http://localhost:8001/health`
 - Tableinator: `http://localhost:8002/health`
@@ -257,7 +256,7 @@ If messages remain queued after recovery:
 1. Check service health endpoints
 1. Verify database connectivity manually
 1. Look for poison messages causing repeated failures
-1. Consider implementing dead letter queues (future enhancement)
+1. Check dead letter queues for poison messages (each consumer has its own DLQ)
 
 ### Performance Issues
 
