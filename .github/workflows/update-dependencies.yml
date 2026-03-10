@@ -74,6 +74,11 @@ jobs:
 
           # Save output for PR body
           echo "$OUTPUT" > update-output.txt
+          {
+            echo "output<<ENDOFOUTPUT"
+            echo "$OUTPUT"
+            echo "ENDOFOUTPUT"
+          } >> "$GITHUB_OUTPUT"
 
           # Check if changes were made
           if git diff --quiet; then
@@ -116,6 +121,11 @@ jobs:
 
           # Save summary for PR body
           echo "$SUMMARY" > summary.txt
+          {
+            echo "summary<<ENDOFSUMMARY"
+            echo "$SUMMARY"
+            echo "ENDOFSUMMARY"
+          } >> "$GITHUB_OUTPUT"
 
       - name: 📝 Create Pull Request
         if: steps.update.outputs.no_changes != 'true'
@@ -158,7 +168,7 @@ jobs:
                ```
             4. **Review security advisories**:
                ```bash
-               uv pip audit
+               uv run pip-audit
                ```
 
             ### 📝 Notes
