@@ -658,20 +658,20 @@ class TestPostgreSQLBatchProcessor:
         mock_connection_pool = MagicMock()
         processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
-        # Mock _flush_queue
-        processor._flush_queue = AsyncMock()  # type: ignore[method-assign]
+        # Mock flush_queue (flush_all delegates to flush_queue per data type)
+        processor.flush_queue = AsyncMock()  # type: ignore[method-assign]
 
         await processor.flush_all()
 
         # Should flush all data types
-        assert processor._flush_queue.call_count == 4
+        assert processor.flush_queue.call_count == 4
         expected_calls = [
             call("artists"),
             call("labels"),
             call("masters"),
             call("releases"),
         ]
-        processor._flush_queue.assert_has_calls(expected_calls, any_order=True)
+        processor.flush_queue.assert_has_calls(expected_calls, any_order=True)
 
     @pytest.mark.asyncio
     async def test_periodic_flush(self) -> None:

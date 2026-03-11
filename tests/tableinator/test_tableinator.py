@@ -595,7 +595,7 @@ class TestOnDataMessageExtended:
         ):
             await on_data_message(mock_message, "artists")
 
-        mock_batch.flush_all.assert_called_once()
+        mock_batch.flush_queue.assert_called_once_with("artists")
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
