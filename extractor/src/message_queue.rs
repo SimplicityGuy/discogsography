@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::time::sleep;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use url::Url;
 
 use crate::types::{DataMessage, DataType, ExtractionCompleteMessage, FileCompleteMessage, Message};
@@ -175,7 +175,7 @@ impl MessageQueue {
                 .context("Failed to confirm message delivery")?;
 
             if !confirm.is_ack() {
-                warn!("⚠️ Message was not acknowledged by broker");
+                return Err(anyhow::anyhow!("Message was not acknowledged by broker"));
             }
         }
 
@@ -207,16 +207,36 @@ impl MessageQueue {
         };
 
         // Publish to all data type exchanges so every consumer queue receives it
+        // Attempt all exchanges before returning, so a single failure doesn't prevent
+        // other consumers from receiving the signal
+        let mut errors = Vec::new();
         for data_type in DataType::all() {
-            self.publish(Message::ExtractionComplete(message.clone()), data_type)
-                .await?;
+            if let Err(e) = self.publish(Message::ExtractionComplete(message.clone()), data_type).await {
+                error!("❌ Failed to send extraction_complete to {}: {}", data_type, e);
+                errors.push(format!("{}: {}", data_type, e));
+            }
         }
 
-        info!(
-            "🏁 Extraction complete message sent to all {} exchanges (version: {})",
-            DataType::all().len(),
-            version,
-        );
+        if errors.is_empty() {
+            info!(
+                "🏁 Extraction complete message sent to all {} exchanges (version: {})",
+                DataType::all().len(),
+                version,
+            );
+        } else {
+            let succeeded = DataType::all().len() - errors.len();
+            warn!(
+                "⚠️ Extraction complete sent to {}/{} exchanges (version: {})",
+                succeeded,
+                DataType::all().len(),
+                version,
+            );
+            return Err(anyhow::anyhow!(
+                "Failed to send extraction_complete to {} exchange(s): {}",
+                errors.len(),
+                errors.join("; ")
+            ));
+        }
 
         Ok(())
     }

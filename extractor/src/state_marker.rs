@@ -210,7 +210,10 @@ impl StateMarker {
 
         let json = serde_json::to_string_pretty(self).context("Failed to serialize state marker")?;
 
-        fs::write(path, json).await.context("Failed to write state marker file")?;
+        // Write to temp file then atomic rename to prevent corruption on crash
+        let tmp_path = path.with_extension("json.tmp");
+        fs::write(&tmp_path, json).await.context("Failed to write state marker temp file")?;
+        fs::rename(&tmp_path, path).await.context("Failed to rename state marker temp file")?;
 
         debug!("💾 Saved state marker to: {}", path.display());
         Ok(())
