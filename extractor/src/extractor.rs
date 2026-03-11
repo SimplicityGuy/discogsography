@@ -378,7 +378,7 @@ pub async fn message_batcher(mut receiver: mpsc::Receiver<DataMessage>, sender: 
                 // Channel closed, send remaining messages
                 if !batch.is_empty() {
                     sender.send(batch).await?;
-                    // Note: total_batches is not incremented here as it's not used after loop exit
+                    total_batches += 1;
                 }
                 break;
             }
@@ -391,6 +391,15 @@ pub async fn message_batcher(mut receiver: mpsc::Receiver<DataMessage>, sender: 
                     last_flush = Instant::now();
                 }
             }
+        }
+    }
+
+    // Save final state marker with accurate batch count
+    {
+        let mut marker = state_marker.lock().await;
+        marker.update_file_progress(&file_name, total_records, total_records, total_batches);
+        if let Err(e) = marker.save(&marker_path).await {
+            warn!("⚠️ Failed to save final state marker progress: {}", e);
         }
     }
 
@@ -413,6 +422,7 @@ async fn message_publisher(
                 error!("❌ Failed to publish batch: {}", e);
                 let mut s = state.write().await;
                 s.error_count += 1;
+                return Err(e).context("Failed to publish batch to AMQP");
             }
         }
     }
