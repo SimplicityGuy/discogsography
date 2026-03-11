@@ -47,16 +47,22 @@ impl ElementContext {
             result.insert(format!("@{}", key), value);
         }
 
-        // If there's only text content and no children, return just the text or combine with attributes
-        let trimmed_text = self.text_content.trim();
+        // Preserve text content as-is (matching xmltodict which does not trim whitespace)
+        let text = &self.text_content;
+        let has_text = !text.trim().is_empty();
+
         if self.children.is_empty() {
-            if result.is_empty() && !trimmed_text.is_empty() {
+            if result.is_empty() && has_text {
                 // Just text content, return as string
-                return Value::String(trimmed_text.to_string());
-            } else if !trimmed_text.is_empty() {
+                return Value::String(text.to_string());
+            } else if has_text {
                 // Has attributes and text, use #text for the text content
-                result.insert("#text".to_string(), Value::String(trimmed_text.to_string()));
+                result.insert("#text".to_string(), Value::String(text.to_string()));
             }
+        } else if has_text {
+            // Has children AND text (mixed content) — preserve text as #text
+            // (matching xmltodict behavior)
+            result.insert("#text".to_string(), Value::String(text.to_string()));
         }
 
         // Add children
@@ -64,8 +70,8 @@ impl ElementContext {
             result.insert(key, value);
         }
 
-        if result.is_empty() && !trimmed_text.is_empty() {
-            Value::String(trimmed_text.to_string())
+        if result.is_empty() && has_text {
+            Value::String(text.to_string())
         } else if result.is_empty() {
             Value::Null
         } else {
@@ -541,7 +547,8 @@ mod tests {
         let mut context = ElementContext::new();
         context.text_content = "  Test text  ".to_string();
         let value = context.into_value();
-        assert_eq!(value, Value::String("Test text".to_string()));
+        // Whitespace is preserved to match xmltodict behavior
+        assert_eq!(value, Value::String("  Test text  ".to_string()));
     }
 
     #[test]
@@ -564,6 +571,31 @@ mod tests {
         let obj = value.as_object().unwrap();
         assert_eq!(obj.get("@id"), Some(&Value::String("123".to_string())));
         assert_eq!(obj.get("#text"), Some(&Value::String("Text content".to_string())));
+    }
+
+    #[test]
+    fn test_element_context_to_value_mixed_content() {
+        // Element with both text and children (mixed content)
+        // xmltodict preserves the text as #text alongside children
+        let mut context = ElementContext::new();
+        context.text_content = "Some text".to_string();
+        context.add_child("child".to_string(), Value::String("child value".to_string()));
+        let value = context.into_value();
+        assert!(value.is_object());
+        let obj = value.as_object().unwrap();
+        assert_eq!(obj.get("#text"), Some(&Value::String("Some text".to_string())));
+        assert_eq!(obj.get("child"), Some(&Value::String("child value".to_string())));
+    }
+
+    #[test]
+    fn test_element_context_to_value_whitespace_preserved() {
+        // Whitespace should be preserved to match xmltodict behavior
+        let mut context = ElementContext::new();
+        context.attributes.insert("id".to_string(), Value::String("1".to_string()));
+        context.text_content = "  spaced text  ".to_string();
+        let value = context.into_value();
+        let obj = value.as_object().unwrap();
+        assert_eq!(obj.get("#text"), Some(&Value::String("  spaced text  ".to_string())));
     }
 
     #[test]

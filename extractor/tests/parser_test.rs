@@ -292,8 +292,8 @@ async fn test_parse_with_whitespace() {
     assert_eq!(count, 1);
 
     let message = receiver.recv().await.unwrap();
-    // Whitespace should be trimmed
-    assert_eq!(message.data["name"], json!("Artist Name"));
+    // Whitespace is preserved to match xmltodict behavior
+    assert_eq!(message.data["name"], json!("  Artist Name  "));
 }
 
 #[tokio::test]
