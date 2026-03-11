@@ -27,6 +27,11 @@ class BatchConfig:
     batch_size: int = 100  # Number of records per batch
     flush_interval: float = 5.0  # Seconds before force flush
     max_pending: int = 1000  # Maximum pending records before blocking
+    max_concurrent_flushes: int = 2  # Max simultaneous PostgreSQL flush operations
+    min_batch_size: int = 10  # Floor for adaptive batch sizing
+    backoff_initial: float = 1.0  # Initial backoff delay on PostgreSQL errors (seconds)
+    backoff_max: float = 30.0  # Maximum backoff delay (seconds)
+    backoff_multiplier: float = 2.0  # Exponential backoff multiplier
 
 
 @dataclass
@@ -93,11 +98,40 @@ class PostgreSQLBatchProcessor:
         # Shutdown flag
         self._shutdown = False
 
+        # Concurrency limiter — prevents all 4 data types from flushing
+        # simultaneously and exhausting the PostgreSQL connection pool
+        self._flush_semaphore = asyncio.Semaphore(self.config.max_concurrent_flushes)
+
+        # Adaptive batch sizing — reduces under PostgreSQL pressure, recovers on success
+        # Per-data-type so pressure on one type doesn't affect others
+        self._effective_batch_size: dict[str, int] = {
+            "artists": self.config.batch_size,
+            "labels": self.config.batch_size,
+            "masters": self.config.batch_size,
+            "releases": self.config.batch_size,
+        }
+        self._consecutive_failures: dict[str, int] = {
+            "artists": 0,
+            "labels": 0,
+            "masters": 0,
+            "releases": 0,
+        }
+
+        # Backoff state — delay between retries when PostgreSQL is struggling
+        self._backoff_until: dict[str, float] = {
+            "artists": 0.0,
+            "labels": 0.0,
+            "masters": 0.0,
+            "releases": 0.0,
+        }
+
         # Load batch size from environment
         env_batch_size = os.environ.get("POSTGRES_BATCH_SIZE")
         if env_batch_size:
             try:
                 self.config.batch_size = int(env_batch_size)
+                for dt in self._effective_batch_size:
+                    self._effective_batch_size[dt] = self.config.batch_size
                 logger.info(
                     "🔧 Using batch size from environment",
                     batch_size=self.config.batch_size,
@@ -163,14 +197,17 @@ class PostgreSQLBatchProcessor:
             )
         )
 
-        # Check if we should flush
-        if len(queue) >= self.config.batch_size:
+        # Check if we should flush (use adaptive batch size)
+        if len(queue) >= self._effective_batch_size[data_type]:
             await self._flush_queue(data_type)
         elif time.time() - self.last_flush[data_type] >= self.config.flush_interval:
             await self._flush_queue(data_type)
 
     async def _flush_queue(self, data_type: str) -> None:
         """Flush a queue by processing all pending messages.
+
+        Uses a semaphore to limit concurrent PostgreSQL operations across data types,
+        exponential backoff on PostgreSQL errors, and adaptive batch sizing.
 
         Args:
             data_type: The data type queue to flush
@@ -179,9 +216,14 @@ class PostgreSQLBatchProcessor:
         if not queue:
             return
 
-        # Get all messages from queue up to batch size
+        # Skip if in backoff period for this data type
+        now = time.time()
+        if now < self._backoff_until[data_type]:
+            return
+
+        # Use effective (adaptive) batch size
         messages: list[PendingMessage] = []
-        while queue and len(messages) < self.config.batch_size:
+        while queue and len(messages) < self._effective_batch_size[data_type]:
             messages.append(queue.popleft())
 
         if not messages:
@@ -190,27 +232,67 @@ class PostgreSQLBatchProcessor:
         batch_start = time.time()
         success = False
 
-        try:
-            await self._process_batch(data_type, messages)
-            success = True
+        # Limit concurrent PostgreSQL operations to prevent pool exhaustion
+        async with self._flush_semaphore:
+            try:
+                await self._process_batch(data_type, messages)
+                success = True
 
-        except (InterfaceError, OperationalError) as e:
-            logger.error(
-                "❌ PostgreSQL connection error during batch",
-                data_type=data_type,
-                batch_size=len(messages),
-                error=str(e),
-            )
-            # Put messages back for retry
-            for msg in reversed(messages):
-                queue.appendleft(msg)
-        except Exception as e:
-            logger.error(
-                "❌ Batch processing error",
-                data_type=data_type,
-                batch_size=len(messages),
-                error=str(e),
-            )
+            except (InterfaceError, OperationalError) as e:
+                logger.error(
+                    "❌ PostgreSQL connection error during batch",
+                    data_type=data_type,
+                    batch_size=len(messages),
+                    error=str(e),
+                )
+                # Put messages back for retry
+                for msg in reversed(messages):
+                    queue.appendleft(msg)
+
+                # Exponential backoff — prevent tight retry loop that worsens pool exhaustion
+                self._consecutive_failures[data_type] += 1
+                delay = min(
+                    self.config.backoff_initial
+                    * (
+                        self.config.backoff_multiplier
+                        ** (self._consecutive_failures[data_type] - 1)
+                    ),
+                    self.config.backoff_max,
+                )
+                self._backoff_until[data_type] = time.time() + delay
+
+                # Adaptive batch sizing — halve on failure (floor at min_batch_size)
+                old_size = self._effective_batch_size[data_type]
+                self._effective_batch_size[data_type] = max(
+                    self.config.min_batch_size,
+                    self._effective_batch_size[data_type] // 2,
+                )
+                if self._effective_batch_size[data_type] != old_size:
+                    logger.warning(
+                        "📉 Reduced batch size due to PostgreSQL pressure",
+                        old_size=old_size,
+                        new_size=self._effective_batch_size[data_type],
+                        backoff_seconds=round(delay, 1),
+                        consecutive_failures=self._consecutive_failures[data_type],
+                    )
+                else:
+                    logger.warning(
+                        "⏳ Backing off before retry",
+                        data_type=data_type,
+                        backoff_seconds=round(delay, 1),
+                        consecutive_failures=self._consecutive_failures[data_type],
+                    )
+
+                # Messages are back on deque for retry — do NOT nack them
+                return
+
+            except Exception as e:
+                logger.error(
+                    "❌ Batch processing error",
+                    data_type=data_type,
+                    batch_size=len(messages),
+                    error=str(e),
+                )
 
         batch_duration = time.time() - batch_start
 
@@ -225,6 +307,24 @@ class PostgreSQLBatchProcessor:
             self.processed_counts[data_type] += len(messages)
             self.batch_counts[data_type] += 1
             self.last_flush[data_type] = time.time()
+
+            # Reset failure tracking on success
+            self._consecutive_failures[data_type] = 0
+
+            # Adaptive batch sizing — gradually recover toward configured size
+            if self._effective_batch_size[data_type] < self.config.batch_size:
+                old_size = self._effective_batch_size[data_type]
+                self._effective_batch_size[data_type] = min(
+                    self.config.batch_size,
+                    self._effective_batch_size[data_type]
+                    + max(10, self.config.batch_size // 10),
+                )
+                if self._effective_batch_size[data_type] != old_size:
+                    logger.info(
+                        "📈 Increased batch size after success",
+                        old_size=old_size,
+                        new_size=self._effective_batch_size[data_type],
+                    )
 
             logger.info(
                 "✅ Batch processed",
@@ -316,8 +416,21 @@ class PostgreSQLBatchProcessor:
                 )
 
     async def flush_all(self) -> None:
-        """Flush all pending queues."""
+        """Flush all pending queues, draining each completely."""
         for data_type in self.queues:
+            await self.flush_queue(data_type)
+
+    async def flush_queue(self, data_type: str) -> None:
+        """Fully drain a single data type queue.
+
+        Unlike _flush_queue which processes up to one batch, this loops
+        until the queue is completely empty. Yields to the event loop
+        during backoff periods instead of busy-spinning.
+        """
+        while self.queues.get(data_type):
+            wait = self._backoff_until[data_type] - time.time()
+            if wait > 0:
+                await asyncio.sleep(wait)
             await self._flush_queue(data_type)
 
     async def periodic_flush(self) -> None:
@@ -347,4 +460,7 @@ class PostgreSQLBatchProcessor:
             "processed": self.processed_counts.copy(),
             "batches": self.batch_counts.copy(),
             "pending": {k: len(v) for k, v in self.queues.items()},
+            "effective_batch_size": self._effective_batch_size.copy(),
+            "configured_batch_size": self.config.batch_size,
+            "consecutive_failures": self._consecutive_failures.copy(),
         }

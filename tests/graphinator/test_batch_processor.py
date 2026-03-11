@@ -643,13 +643,13 @@ class TestFlushAll:
         mock_driver = MagicMock()
         processor = Neo4jBatchProcessor(mock_driver)
 
-        # Mock the _flush_queue method
-        processor._flush_queue = AsyncMock()  # type: ignore[method-assign]
+        # Mock flush_queue (flush_all delegates to flush_queue per data type)
+        processor.flush_queue = AsyncMock()  # type: ignore[method-assign]
 
         await processor.flush_all()
 
         # Should flush all 4 data types
-        assert processor._flush_queue.call_count == 4
+        assert processor.flush_queue.call_count == 4
 
 
 class TestPeriodicFlush:

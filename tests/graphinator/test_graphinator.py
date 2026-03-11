@@ -854,7 +854,7 @@ class TestCheckFileCompletion:
         result = await check_file_completion(completion_data, "artists", mock_message)
 
         assert result is True
-        mock_batch.flush_all.assert_called_once()
+        mock_batch.flush_queue.assert_called_once_with("artists")
         # Reset
         graphinator.graphinator.batch_processor = None
 
