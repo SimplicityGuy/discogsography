@@ -17,6 +17,7 @@ WORKDIR /build
 COPY dashboard/tailwind.config.js ./
 COPY dashboard/tailwind.input.css ./
 COPY dashboard/static/index.html ./static/index.html
+COPY dashboard/static/dashboard.js ./static/dashboard.js
 
 # Install Tailwind + the forms plugin, then emit a minified stylesheet
 RUN npm install tailwindcss@^3 @tailwindcss/forms@^0.5 --save-dev && \

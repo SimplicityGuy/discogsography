@@ -13,11 +13,43 @@ class Dashboard {
 
         this.initializeWebSocket();
         this.fetchInitialData();
+        this.initializeThemeToggle();
 
         const dlqToggle = document.getElementById('dlq-toggle');
         if (dlqToggle) {
             dlqToggle.addEventListener('change', () => this._onDlqToggle());
         }
+    }
+
+    // ─── Theme toggle ────────────────────────────────────────────────────────
+
+    initializeThemeToggle() {
+        const btn = document.getElementById('theme-toggle');
+        const sunIcon = document.getElementById('theme-icon-sun');
+        const moonIcon = document.getElementById('theme-icon-moon');
+        if (!btn || !sunIcon || !moonIcon) return;
+
+        const updateIcons = () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            sunIcon.classList.toggle('hidden', isDark);
+            moonIcon.classList.toggle('hidden', !isDark);
+        };
+
+        updateIcons();
+
+        btn.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.toggle('dark');
+            localStorage.setItem('theme', isDark ? 'dark' : 'light');
+            updateIcons();
+        });
+
+        // Listen for OS-level theme changes when no explicit preference is saved
+        window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
+            if (!localStorage.getItem('theme')) {
+                document.documentElement.classList.toggle('dark', e.matches);
+                updateIcons();
+            }
+        });
     }
 
     // ─── WebSocket ────────────────────────────────────────────────────────────
@@ -93,16 +125,22 @@ class Dashboard {
         const allHealthy = services.length > 0 && services.every(s => s.status === 'healthy');
         const anyUnhealthy = services.some(s => s.status === 'unhealthy');
 
+        const allUnhealthy = services.length > 0 && services.every(s => s.status === 'unhealthy');
+
         if (allHealthy) {
-            dot.className = 'w-2 h-2 rounded-full bg-emerald-500 animate-pulse';
+            dot.className = 'w-3 h-3 rounded-full bg-emerald-500 animate-pulse';
             text.className = 'text-[10px] text-emerald-500 font-bold uppercase tracking-widest';
             text.textContent = 'Operational';
-        } else if (anyUnhealthy) {
-            dot.className = 'w-2 h-2 rounded-full bg-red-500';
+        } else if (allUnhealthy) {
+            dot.className = 'w-3 h-3 rounded-full bg-red-500';
             text.className = 'text-[10px] text-red-500 font-bold uppercase tracking-widest';
+            text.textContent = 'Offline';
+        } else if (anyUnhealthy) {
+            dot.className = 'w-3 h-3 rounded-full bg-yellow-500';
+            text.className = 'text-[10px] text-yellow-500 font-bold uppercase tracking-widest';
             text.textContent = 'Degraded';
         } else {
-            dot.className = 'w-2 h-2 rounded-full bg-yellow-500 animate-pulse';
+            dot.className = 'w-3 h-3 rounded-full bg-yellow-500 animate-pulse';
             text.className = 'text-[10px] text-yellow-500 font-bold uppercase tracking-widest';
             text.textContent = 'Unknown';
         }
@@ -353,7 +391,7 @@ class Dashboard {
             const fill = s.max > 0 ? rate / s.max : 0;
             circle.style.strokeDashoffset = fill > 0 ? C - fill * C : C;
             text.textContent = this._formatRate(rate);
-            text.className = rate > 0 ? '' : 'text-zinc-600';
+            text.className = rate > 0 ? '' : 't-muted';
 
             // Show min–max below the gauge label
             const container = text.closest('.flex.flex-col');
@@ -361,7 +399,7 @@ class Dashboard {
                 let statsEl = container.querySelector('.gauge-stats');
                 if (!statsEl) {
                     statsEl = document.createElement('span');
-                    statsEl.className = 'gauge-stats text-[8px] text-zinc-600 font-mono';
+                    statsEl.className = 'gauge-stats text-[8px] t-muted font-mono';
                     container.appendChild(statsEl);
                 }
                 const minStr = s.min === Infinity ? '—' : this._formatRate(s.min);
@@ -451,7 +489,7 @@ class Dashboard {
                 row.className = 'flex items-start space-x-4 log-entry';
 
                 const ts = document.createElement('span');
-                ts.className = 'text-zinc-600 shrink-0';
+                ts.className = 't-muted shrink-0';
                 ts.textContent = e.timestamp;
 
                 const lv = document.createElement('span');
@@ -459,7 +497,7 @@ class Dashboard {
                 lv.textContent = levelLbl[e.type] || '[INFO]';
 
                 const msg = document.createElement('span');
-                msg.className = 'text-zinc-300';
+                msg.style.color = 'var(--log-msg)';
                 msg.textContent = e.message;
 
                 row.append(ts, lv, msg);
