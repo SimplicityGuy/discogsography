@@ -29,13 +29,13 @@ RUN touch src/main.rs && \
     cargo build --release
 
 # Runtime stage
-FROM rust:1.94-slim
+FROM debian:13-slim
 
 # Install runtime dependencies
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libssl3 \
+    libssl3t64 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 

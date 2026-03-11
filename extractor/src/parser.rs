@@ -158,7 +158,7 @@ impl XmlParser {
                         // Send immediately since it's self-closing
                         let record = ElementContext::with_attributes(&e).into_value();
                         if let Value::Object(ref obj) = record {
-                            let id = obj.get("id").and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
+                            let id = obj.get("@id").or_else(|| obj.get("id")).and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
                             let sha256 = calculate_record_hash(&record);
                             let message = DataMessage { id, sha256, data: record.clone() };
 
@@ -698,6 +698,7 @@ mod tests {
         assert_eq!(count, 1);
 
         let message = receiver.recv().await.unwrap();
+        assert_eq!(message.id, "1", "self-closing element ID should use @id attribute");
         assert_eq!(message.data["@id"], json!("1"));
     }
 

@@ -109,6 +109,7 @@ impl Downloader {
                     }
                     Err(e) => {
                         error!("❌ Failed to download {}: {}", filename, e);
+                        return Err(e).context(format!("Failed to download {}", filename));
                     }
                 }
             } else {
