@@ -293,7 +293,7 @@ class Dashboard {
         });
 
         this._updateBarChart(activeGraphMap, activeTableMap, TYPES, isDlq);
-        this._updateRateCircles(graphinatorMap, tableInatorMap, TYPES);
+        this._updateRateCircles(graphinatorMap, tableInatorMap, TYPES, isDlq);
 
         // Log high message counts (regular queues only)
         queues.forEach(queue => {
@@ -328,6 +328,7 @@ class Dashboard {
         });
 
         this._updateBarChart(activeGraphMap, activeTableMap, TYPES, isDlq);
+        this._updateRateCircles(graphinatorMap, tableInatorMap, TYPES, isDlq);
     }
 
     // ─── Bar chart (CSS height bars) ─────────────────────────────────────────
@@ -374,13 +375,24 @@ class Dashboard {
 
     // ─── Circular rate gauges ─────────────────────────────────────────────────
 
-    _updateRateCircles(graphinatorMap, tableInatorMap, types) {
+    _updateRateCircles(graphinatorMap, tableInatorMap, types, isDlq = false) {
         const C = this.CIRCUMFERENCE;
 
-        const updateGauge = (circleId, textId, rate) => {
+        const updateGauge = (circleId, textId, rate, disabled) => {
             const circle = document.getElementById(circleId);
             const text   = document.getElementById(textId);
             if (!circle || !text) return;
+
+            if (disabled) {
+                circle.style.strokeDashoffset = C;
+                text.textContent = 'N/A';
+                text.className = 't-muted';
+                // Hide min–max stats when disabled
+                const container = text.closest('.flex.flex-col');
+                const statsEl = container?.querySelector('.gauge-stats');
+                if (statsEl) statsEl.textContent = '';
+                return;
+            }
 
             // Track per-gauge min (non-zero) and max
             const s = this.gaugeStats[circleId] ??= { min: Infinity, max: 0 };
@@ -410,10 +422,10 @@ class Dashboard {
         types.forEach(type => {
             const gq = graphinatorMap[type];
             const tq = tableInatorMap[type];
-            updateGauge(`rate-circle-graphinator-${type}-publish`, `rate-text-graphinator-${type}-publish`, gq?.message_rate || 0);
-            updateGauge(`rate-circle-tableinator-${type}-publish`, `rate-text-tableinator-${type}-publish`, tq?.message_rate || 0);
-            updateGauge(`rate-circle-graphinator-${type}-ack`,     `rate-text-graphinator-${type}-ack`,     gq?.ack_rate     || 0);
-            updateGauge(`rate-circle-tableinator-${type}-ack`,     `rate-text-tableinator-${type}-ack`,     tq?.ack_rate     || 0);
+            updateGauge(`rate-circle-graphinator-${type}-publish`, `rate-text-graphinator-${type}-publish`, gq?.message_rate || 0, isDlq);
+            updateGauge(`rate-circle-tableinator-${type}-publish`, `rate-text-tableinator-${type}-publish`, tq?.message_rate || 0, isDlq);
+            updateGauge(`rate-circle-graphinator-${type}-ack`,     `rate-text-graphinator-${type}-ack`,     gq?.ack_rate     || 0, isDlq);
+            updateGauge(`rate-circle-tableinator-${type}-ack`,     `rate-text-tableinator-${type}-ack`,     tq?.ack_rate     || 0, isDlq);
         });
     }
 
