@@ -28,7 +28,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: extractions/setup-just@v3
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
 
       - name: 💾 Cache pre-commit
         uses: actions/cache@v5
