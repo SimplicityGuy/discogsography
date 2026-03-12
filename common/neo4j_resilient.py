@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import time
 from typing import Any
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
@@ -179,8 +180,6 @@ def with_neo4j_retry(func: Any, max_retries: int = 3, backoff: ExponentialBackof
                 if attempt < max_retries - 1:
                     delay = backoff.get_delay(attempt)
                     logger.warning(f"⚠️ Neo4j transaction failed (attempt {attempt + 1}/{max_retries}): {e}. Retrying in {delay:.1f} seconds...")
-                    import time
-
                     time.sleep(delay)
                 else:
                     logger.error(f"❌ Neo4j transaction failed after {max_retries} attempts")

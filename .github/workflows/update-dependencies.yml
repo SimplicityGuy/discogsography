@@ -206,7 +206,7 @@ jobs:
         run: |
           if [[ "${{ steps.update.outputs.no_changes }}" == "true" ]]; then
             echo "✅ All dependencies are already up to date!"
-          elif [[ "${{ steps.update.conclusion }}" == "success" ]]; then
+          elif [[ "${{ steps.update.outcome }}" == "success" ]]; then
             echo "✅ Successfully created PR with dependency updates"
             echo "🔗 Review the PR: ${{ steps.create-pr.outputs.pull-request-url }}"
           else

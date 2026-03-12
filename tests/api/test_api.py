@@ -479,6 +479,7 @@ class TestDiscogsOAuthEndpoints:
             {"key": "discogs_consumer_key", "value": "ckey"},
             {"key": "discogs_consumer_secret", "value": "csecret"},
         ]
+        mock_cur.fetchone.return_value = {"id": 1}
         mock_redis.get.return_value = "reqsecret"
 
         with (

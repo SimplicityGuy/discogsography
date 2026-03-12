@@ -110,7 +110,7 @@ SCHEMA_STATEMENTS: list[tuple[str, str]] = [
 ]
 
 
-async def create_neo4j_schema(driver: Any) -> None:
+async def create_neo4j_schema(driver: Any) -> int:
     """Create all Neo4j constraints and indexes.
 
     Safe to call on every startup. Every statement uses IF NOT EXISTS so
@@ -118,6 +118,9 @@ async def create_neo4j_schema(driver: Any) -> None:
 
     Args:
         driver: An AsyncResilientNeo4jDriver instance (from common.neo4j_resilient).
+
+    Returns:
+        Number of failed schema statements (0 means all succeeded).
     """
     logger.info("🔧 Creating Neo4j schema (constraints and indexes)...")
 
@@ -139,3 +142,4 @@ async def create_neo4j_schema(driver: Any) -> None:
         f"✅ Neo4j schema creation complete: "
         f"{success_count} succeeded, {failure_count} failed (total: {total})"
     )
+    return failure_count

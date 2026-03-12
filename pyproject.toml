@@ -129,8 +129,9 @@ select = [
     "E",   # pycodestyle errors
     "F",   # pyflakes
     "I",   # isort
-    "PTH", # flake8-use-pathlib
-    "RUF", # ruff-specific rules
+    "PLC",  # pylint conventions
+    "PTH",  # flake8-use-pathlib
+    "RUF",     # ruff-specific rules
     "S",   # bandit security rules
     "SIM", # flake8-simplify
     "T20", # flake8-print (no print statements)
@@ -156,7 +157,7 @@ ignore = [
 "*/graphinator.py" = ["T201"]   # Allow print statements for ASCII art
 "*/schema_init.py" = ["T201"]   # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]   # Allow print statements for ASCII art
-"tests/**/*.py" = ["S105"]  # Test files can have hardcoded passwords
+"tests/**/*.py" = ["PLC", "S105"]  # Test files can have pylint convention violations and hardcoded passwords
 
 [tool.mypy]
 python_version = "3.13"

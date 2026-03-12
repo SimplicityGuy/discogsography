@@ -103,7 +103,12 @@ async def _init_postgres(params: dict[str, str | int]) -> bool:
             health_check_interval=30,
         )
         await pool.initialize()
-        await create_postgres_schema(pool)
+        failures = await create_postgres_schema(pool)
+        if failures > 0:
+            logger.error(
+                "❌ PostgreSQL schema had partial failures", failure_count=failures
+            )
+            return False
         return True
     except Exception as e:
         logger.error("❌ PostgreSQL schema init failed", error=str(e))
@@ -131,7 +136,10 @@ async def _init_neo4j() -> bool:
             await result.single()
         logger.info("✅ Neo4j connectivity verified")
 
-        await create_neo4j_schema(driver)
+        failures = await create_neo4j_schema(driver)
+        if failures > 0:
+            logger.error("❌ Neo4j schema had partial failures", failure_count=failures)
+            return False
         return True
     except Exception as e:
         logger.error("❌ Neo4j schema init failed", error=str(e))

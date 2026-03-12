@@ -142,7 +142,10 @@ class TestInitPostgres:
 
     @pytest.mark.asyncio
     async def test_success_returns_true(self) -> None:
-        with patch("schema_init.AsyncPostgreSQLPool") as MockPool, patch("schema_init.create_postgres_schema", new_callable=AsyncMock):
+        with (
+            patch("schema_init.AsyncPostgreSQLPool") as MockPool,
+            patch("schema_init.create_postgres_schema", new_callable=AsyncMock, return_value=0),
+        ):
             mock_pool = AsyncMock()
             MockPool.return_value = mock_pool
 
@@ -214,7 +217,7 @@ class TestInitNeo4j:
         mock_driver = self._make_mock_driver()
         with (
             patch("schema_init.AsyncResilientNeo4jDriver", return_value=mock_driver),
-            patch("schema_init.create_neo4j_schema", new_callable=AsyncMock),
+            patch("schema_init.create_neo4j_schema", new_callable=AsyncMock, return_value=0),
         ):
             result = await _init_neo4j()
 

@@ -211,18 +211,17 @@ def dashboard_mock_httpx_client() -> MagicMock:
             }
         elif "api/queues" in url:
             # Mock RabbitMQ management API
-            response.json = AsyncMock(
-                return_value=[
-                    {
-                        "name": "discogsography-graphinator-artists",
-                        "messages": 5,
-                        "messages_ready": 3,
-                        "messages_unacknowledged": 2,
-                        "consumers": 1,
-                        "message_stats": {"ack_details": {"rate": 1.5}},
-                    }
-                ]
-            )
+            response.status_code = 200
+            response.json = lambda: [
+                {
+                    "name": "discogsography-graphinator-artists",
+                    "messages": 5,
+                    "messages_ready": 3,
+                    "messages_unacknowledged": 2,
+                    "consumers": 1,
+                    "message_stats": {"ack_details": {"rate": 1.5}},
+                }
+            ]
         else:
             response.status_code = 404
             response.json = lambda: {"error": "Not found"}

@@ -239,8 +239,12 @@ impl Downloader {
         let mut ids: std::collections::HashMap<String, Vec<S3FileInfo>> = std::collections::HashMap::new();
 
         for file in files {
-            // Split the full S3 key exactly like Python does
-            let parts: Vec<&str> = file.name.split('_').collect();
+            // Extract basename before splitting — the full S3 key may contain path separators
+            let basename = std::path::Path::new(&file.name)
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or(&file.name);
+            let parts: Vec<&str> = basename.split('_').collect();
             if parts.len() >= 2 {
                 let id = parts[1].to_string();
                 ids.entry(id).or_default().push(file.clone());

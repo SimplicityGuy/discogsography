@@ -8,6 +8,8 @@ import json
 import os
 from typing import Any
 
+from cryptography.fernet import Fernet, InvalidToken
+
 
 def b64url_encode(data: bytes) -> str:
     """Base64url encode bytes without padding."""
@@ -67,8 +69,6 @@ _DUMMY_HASH: str = _hash_password("__dummy_password_for_timing__")
 
 def encrypt_oauth_token(token: str, key: str) -> str:
     """Encrypt an OAuth token using Fernet symmetric encryption."""
-    from cryptography.fernet import Fernet
-
     f = Fernet(key.encode("ascii"))
     return f.encrypt(token.encode("utf-8")).decode("ascii")
 
@@ -82,10 +82,9 @@ def decrypt_oauth_token(token: str, key: str | None) -> str:
     """
     if not key or not token:
         return token
-    from cryptography.fernet import Fernet, InvalidToken
 
     try:
         f = Fernet(key.encode("ascii"))
         return f.decrypt(token.encode("ascii")).decode("utf-8")
-    except (InvalidToken, Exception) as exc:
+    except (InvalidToken, ValueError, UnicodeDecodeError) as exc:
         raise ValueError(f"Failed to decrypt OAuth token: {exc}") from exc

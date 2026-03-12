@@ -94,9 +94,6 @@ impl MessageQueue {
         // Enable publisher confirms
         channel.confirm_select(ConfirmSelectOptions::default()).await.context("Failed to enable publisher confirms")?;
 
-        // Set QoS
-        channel.basic_qos(100, BasicQosOptions::default()).await.context("Failed to set QoS")?;
-
         *self.connection.write().await = Some(conn);
         *self.channel.write().await = Some(channel);
 
@@ -125,7 +122,7 @@ impl MessageQueue {
     fn message_properties() -> BasicProperties {
         BasicProperties::default()
             .with_content_type("application/json".into())
-            .with_content_encoding("application/json".into())
+            .with_content_encoding("UTF-8".into())
             .with_delivery_mode(2) // Persistent
     }
 
