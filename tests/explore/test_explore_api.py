@@ -62,6 +62,53 @@ class TestHealthEndpoint:
         assert data["status"] == "healthy"
 
 
+class TestExploreLifespanShutdown:
+    """Test that the explore lifespan closes the httpx client on shutdown."""
+
+    @pytest.mark.asyncio
+    async def test_shutdown_closes_http_client(self) -> None:
+        """Line 59-60: _http_client.aclose() called during shutdown."""
+        import explore.explore as explore_module
+        from explore.explore import lifespan
+
+        mock_client = AsyncMock()
+        mock_client.aclose = AsyncMock()
+        original = explore_module._http_client
+        explore_module._http_client = mock_client
+
+        mock_health = MagicMock()
+        mock_health.start_background = MagicMock()
+        mock_health.stop = MagicMock()
+
+        try:
+            with patch("explore.explore.HealthServer", return_value=mock_health):
+                async with lifespan(MagicMock()):
+                    pass  # Trigger shutdown on exit
+            mock_client.aclose.assert_awaited_once()
+        finally:
+            explore_module._http_client = original
+
+    @pytest.mark.asyncio
+    async def test_shutdown_handles_none_http_client(self) -> None:
+        """No error when _http_client is None during shutdown."""
+        import explore.explore as explore_module
+        from explore.explore import lifespan
+
+        original = explore_module._http_client
+        explore_module._http_client = None
+
+        mock_health = MagicMock()
+        mock_health.start_background = MagicMock()
+        mock_health.stop = MagicMock()
+
+        try:
+            with patch("explore.explore.HealthServer", return_value=mock_health):
+                async with lifespan(MagicMock()):
+                    pass  # Should not raise
+        finally:
+            explore_module._http_client = original
+
+
 class TestAutocompleteEndpoint:
     """Test the autocomplete endpoint."""
 

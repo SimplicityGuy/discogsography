@@ -946,6 +946,77 @@ class TestSecurityHeaders:
         assert "geolocation=()" in response.headers.get("permissions-policy", "")
 
 
+class TestVerifyDiscogsOAuthErrorCleansRedis:
+    """Test that DiscogsOAuthError during verify cleans up Redis state for retry."""
+
+    def test_exchange_error_deletes_redis_state(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Line 557: redis.delete(redis_key) called on DiscogsOAuthError."""
+        from api.services.discogs import DiscogsOAuthError
+
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ckey"},
+            {"key": "discogs_consumer_secret", "value": "csecret"},
+        ]
+        mock_redis.get.return_value = "reqsecret"
+
+        with patch(
+            "api.api.exchange_oauth_verifier",
+            new=AsyncMock(side_effect=DiscogsOAuthError("bad verifier")),
+        ):
+            response = test_client.post(
+                "/api/oauth/verify/discogs",
+                headers=auth_headers,
+                json={"state": "reqtok", "oauth_verifier": "bad"},
+            )
+        assert response.status_code == 400
+        # Verify redis.delete was called to clean up state
+        mock_redis.delete.assert_awaited()
+
+
+class TestVerifyDiscogsUpsertFetchoneNone:
+    """Test that verify_discogs raises 500 when INSERT RETURNING returns no row."""
+
+    def test_fetchone_none_raises_500(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Lines 597-602: fetchone() returns None after upsert raises 500."""
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ckey"},
+            {"key": "discogs_consumer_secret", "value": "csecret"},
+        ]
+        mock_redis.get.return_value = "reqsecret"
+        mock_cur.fetchone.return_value = None  # INSERT RETURNING fails
+
+        with (
+            patch(
+                "api.api.exchange_oauth_verifier",
+                new=AsyncMock(return_value={"oauth_token": "acctok", "oauth_token_secret": "accsec"}),
+            ),
+            patch(
+                "api.api.fetch_discogs_identity",
+                new=AsyncMock(return_value={"username": "user", "id": 1}),
+            ),
+        ):
+            response = test_client.post(
+                "/api/oauth/verify/discogs",
+                headers=auth_headers,
+                json={"state": "reqtok", "oauth_verifier": "verif"},
+            )
+
+        assert response.status_code == 500
+        assert "persist" in response.json()["detail"].lower()
+
+
 class TestBlindRegistration:
     """Tests for L1: blind registration (no user enumeration)."""
 
