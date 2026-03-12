@@ -15,22 +15,19 @@ This document describes the caching strategy used across all GitHub workflows to
 **Used in**: All workflows via `.github/actions/setup-python-uv/action.yml` composite action
 **Rationale**: Shared across all workflows since they use the same dependencies
 
-### 2. Test Results Cache
+### 2. Rust Test Cache
 
-**Key Pattern**:
-
-- Rust tests: `${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}`
-- E2E tests: `${{ runner.os }}-test-e2e-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-${{ github.sha }}`
-
+**Key Pattern**: `${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}`
 **Paths**:
 
 - `.pytest_cache` - Pytest cache
 - `.coverage` - Coverage data
 - `htmlcov` - Coverage HTML report
-- `test-results` - Test results directory (E2E tests only)
 
-**Used in**: test.yml (Rust cache), e2e-test.yml (E2E cache)
-**Rationale**: Separate caches for different test types to avoid conflicts
+**Used in**: test.yml
+**Rationale**: Rust compilation is slow; caching test artifacts avoids redundant work
+
+> **Note**: E2E test results (`.pytest_cache`, `.coverage`, `test-results`) are **not cached** — they are ephemeral outputs already uploaded as artifacts via `actions/upload-artifact`. Caching them with `github.sha` keys caused excessive cache proliferation with no meaningful speedup.
 
 ### 3. Pre-commit Cache
 
@@ -110,4 +107,3 @@ Caches are automatically invalidated when:
 - Dependencies change (uv.lock, pyproject.toml, Cargo.lock)
 - Tool versions change
 - Configuration files change (.pre-commit-config.yaml)
-- New commits are pushed (for test and build caches)

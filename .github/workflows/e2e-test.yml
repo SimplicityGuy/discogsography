@@ -76,22 +76,6 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      # Test cache (pytest + playwright results + coverage)
-      - name: 🧪 Cache test results
-        uses: actions/cache@v5
-        with:
-          path: |
-            .pytest_cache
-            test-results
-            .coverage
-            htmlcov
-          key: ${{ runner.os }}-test-e2e-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-test-e2e-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}-
-            ${{ runner.os }}-test-e2e-${{ matrix.browser }}-
-            ${{ runner.os }}-test-e2e-
-            ${{ runner.os }}-test-
-
       # Browser cache (Playwright)
       - name: 🌐 Cache Playwright browsers
         uses: actions/cache@v5
