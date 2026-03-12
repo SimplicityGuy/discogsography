@@ -36,7 +36,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: ./.github/actions/setup-just
+        uses: extractions/setup-just@v3
 
       - name: 📦 Install dependencies
         run: just install
@@ -74,7 +74,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: ./.github/actions/setup-just
+        uses: extractions/setup-just@v3
 
       - name: 📦 Install dependencies
         run: just install
@@ -112,7 +112,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: ./.github/actions/setup-just
+        uses: extractions/setup-just@v3
 
       - name: 📦 Install dependencies
         run: just install
@@ -155,7 +155,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: ./.github/actions/setup-just
+        uses: extractions/setup-just@v3
 
       - name: 📦 Install dependencies
         run: just install
@@ -193,7 +193,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: ./.github/actions/setup-just
+        uses: extractions/setup-just@v3
 
       - name: 📦 Install dependencies
         run: just install
@@ -231,7 +231,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: ./.github/actions/setup-just
+        uses: extractions/setup-just@v3
 
       - name: 📦 Install dependencies
         run: just install
@@ -269,7 +269,7 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
 
       - name: 🔧 Setup Just
-        uses: ./.github/actions/setup-just
+        uses: extractions/setup-just@v3
 
       - name: 📦 Install dependencies
         run: just install
@@ -320,7 +320,7 @@ jobs:
 
       - name: 🔧 Setup Just
         if: steps.check-rust.outputs.exists == 'true'
-        uses: ./.github/actions/setup-just
+        uses: extractions/setup-just@v3
 
       - name: 🦀 Setup Rust toolchain
         if: steps.check-rust.outputs.exists == 'true'

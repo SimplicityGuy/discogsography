@@ -144,3 +144,52 @@ class TestSnapshotAuth:
             headers={"Authorization": "Bearer not.a.valid.jwt"},
         )
         assert response.status_code == 401
+
+    def test_revoked_jti_returns_401(self, test_client: TestClient) -> None:
+        """snapshot.py:42-50 — 401 when jti is in the revocation blacklist."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+        from unittest.mock import AsyncMock
+
+        from tests.api.conftest import TEST_JWT_SECRET, TEST_USER_EMAIL, TEST_USER_ID
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        jti_value = "snapshot-revoked-jti-456"
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body_payload = b64url(
+            json.dumps(
+                {"sub": TEST_USER_ID, "email": TEST_USER_EMAIL, "exp": 9_999_999_999, "jti": jti_value},
+                separators=(",", ":"),
+            ).encode()
+        )
+        signing_input = f"{header}.{body_payload}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        token = f"{header}.{body_payload}.{sig}"
+
+        import api.routers.snapshot as snap_module
+
+        original_redis = snap_module._redis
+        mock_redis = AsyncMock()
+
+        async def fake_get(key: str) -> str | None:
+            if key == f"revoked:jti:{jti_value}":
+                return "1"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=fake_get)
+        snap_module._redis = mock_redis
+        try:
+            body = {"nodes": [{"id": "1", "type": "artist"}], "center": {"id": "1", "type": "artist"}}
+            response = test_client.post(
+                "/api/snapshot",
+                json=body,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert response.status_code == 401
+            assert "revoked" in response.json()["detail"].lower()
+        finally:
+            snap_module._redis = original_redis
