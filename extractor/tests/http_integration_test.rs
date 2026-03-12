@@ -278,6 +278,104 @@ async fn test_concurrent_year_scraping() {
 }
 
 #[tokio::test]
+async fn test_download_failure_cleans_up_partial_file() {
+    // Tests that after all retries fail, partial files are cleaned up (lines 449-453)
+    let mut server = Server::new_async().await;
+    let temp_dir = TempDir::new().unwrap();
+
+    // Mock download that always fails
+    let _m = server
+        .mock("GET", "/?download=data%2Fpartial_file.xml.gz")
+        .with_status(500)
+        .with_body("Server Error")
+        .expect_at_least(1)
+        .create_async()
+        .await;
+
+    let mut downloader = Downloader::new_with_base_url(
+        temp_dir.path().to_path_buf(),
+        format!("{}/", server.url()),
+    )
+    .await
+    .unwrap();
+
+    let file_info = S3FileInfo {
+        name: "partial_file.xml.gz".to_string(),
+        size: 1024,
+    };
+
+    let result = downloader.download_file(&file_info).await;
+    assert!(result.is_err());
+
+    // Verify partial file was cleaned up
+    let partial_path = temp_dir.path().join("partial_file.xml.gz");
+    assert!(
+        !partial_path.exists(),
+        "Partial file should be cleaned up after all retries fail"
+    );
+}
+
+#[tokio::test]
+async fn test_download_discogs_data_propagates_download_error() {
+    // Tests that download_file errors propagate from download_discogs_data (line 114)
+    let mut server = Server::new_async().await;
+    let temp_dir = TempDir::new().unwrap();
+
+    // Mock main page
+    let _m1 = server
+        .mock("GET", "/")
+        .with_status(200)
+        .with_body(create_main_page_html(&["2026"]))
+        .create_async()
+        .await;
+
+    // Mock year page with complete set
+    let _m2 = server
+        .mock("GET", "/?prefix=data%2F2026%2F")
+        .with_status(200)
+        .with_body(create_year_page_html(
+            "2026",
+            &[
+                ("20260101", "artists.xml.gz"),
+                ("20260101", "labels.xml.gz"),
+                ("20260101", "masters.xml.gz"),
+                ("20260101", "releases.xml.gz"),
+                ("20260101", "CHECKSUM.txt"),
+            ],
+        ))
+        .create_async()
+        .await;
+
+    // Mock all download endpoints to fail
+    for file_type in &["artists.xml.gz", "labels.xml.gz", "masters.xml.gz", "releases.xml.gz"] {
+        let path = format!("/?download=data%2Fdiscogs_20260101_{}", file_type);
+        let _m = server
+            .mock("GET", path.as_str())
+            .with_status(500)
+            .with_body("Server Error")
+            .expect_at_least(1)
+            .create_async()
+            .await;
+    }
+
+    let mut downloader = Downloader::new_with_base_url(
+        temp_dir.path().to_path_buf(),
+        format!("{}/", server.url()),
+    )
+    .await
+    .unwrap();
+
+    let result = downloader.download_discogs_data().await;
+    assert!(result.is_err(), "Should propagate download error");
+    let err_msg = format!("{}", result.err().unwrap());
+    assert!(
+        err_msg.contains("Failed to download"),
+        "Error should mention download failure, got: {}",
+        err_msg
+    );
+}
+
+#[tokio::test]
 async fn test_http_download_retries_on_failure_then_succeeds() {
     let mut server = Server::new_async().await;
     let temp_dir = TempDir::new().unwrap();

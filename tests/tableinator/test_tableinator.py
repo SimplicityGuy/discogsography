@@ -2512,3 +2512,119 @@ class TestProgressReporterAdditionalPaths:
         mock_close.assert_not_called()
         # But idle mode should be active
         assert tableinator.tableinator.idle_mode is True
+
+
+class TestCoverageGaps:
+    """Tests targeting specific uncovered lines from PR #111."""
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_file_complete_flushes_batch_processor(self) -> None:
+        """Test file_complete flushes batch processor before cancellation (lines 547-548)."""
+        import tableinator.tableinator
+
+        tableinator.tableinator.completed_files = set()
+        tableinator.tableinator.queues = {"artists": AsyncMock()}
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_batch = AsyncMock()
+        completion_data = {
+            "type": "file_complete",
+            "total_processed": 1000,
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.CONSUMER_CANCEL_DELAY", 0),
+            patch("tableinator.tableinator.batch_processor", mock_batch),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        mock_batch.flush_queue.assert_called_once_with("artists")
+        mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_extraction_complete_nacks_on_purge_failure(self) -> None:
+        """Test extraction_complete nacks message when purge fails (lines 574-585)."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+            "started_at": "2026-01-01T00:00:00Z",
+        }
+        mock_message.body = json.dumps(completion_data).encode()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.batch_processor", None),
+            patch(
+                "tableinator.tableinator.purge_stale_rows",
+                new_callable=AsyncMock,
+                side_effect=Exception("DB connection lost"),
+            ),
+            patch("tableinator.tableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        # Should nack with requeue on purge failure
+        mock_message.nack.assert_called_once_with(requeue=True)
+        mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_purge_stale_rows_reraises_exception(self) -> None:
+        """Test purge_stale_rows re-raises exceptions (line 514)."""
+        from tableinator.tableinator import purge_stale_rows
+
+        mock_pool = MagicMock()
+        # Make connection() return an async context manager that raises on __aenter__
+        mock_conn_ctx = AsyncMock()
+        mock_conn_ctx.__aenter__ = AsyncMock(side_effect=Exception("DB connection lost"))
+        mock_conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection.return_value = mock_conn_ctx
+
+        with (
+            patch("tableinator.tableinator.connection_pool", mock_pool),
+            patch("tableinator.tableinator.logger"),
+            pytest.raises(Exception, match="DB connection lost"),
+        ):
+            await purge_stale_rows("artists", "2026-01-01T00:00:00Z")
+
+    def test_health_timestamp_is_utc(self) -> None:
+        """Test get_health_data timestamp uses UTC (line 142)."""
+        with (
+            patch("tableinator.tableinator.connection_pool", MagicMock()),
+            patch("tableinator.tableinator.consumer_tags", {}),
+            patch(
+                "tableinator.tableinator.message_counts",
+                {"artists": 0, "labels": 0, "masters": 0, "releases": 0},
+            ),
+        ):
+            from tableinator.tableinator import get_health_data
+
+            result = get_health_data()
+
+            # UTC timestamps end with +00:00
+            assert result["timestamp"].endswith("+00:00")
+
+    @pytest.mark.asyncio
+    @patch("tableinator.tableinator.shutdown_requested", False)
+    async def test_sha256_defaults_to_empty_string_in_batch_mode(self) -> None:
+        """Test data without sha256 field processed in batch mode (line 675)."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_batch = AsyncMock()
+        # Message without sha256 field
+        data = {"id": "123", "name": "Test Artist"}
+        mock_message.body = json.dumps(data).encode()
+
+        with (
+            patch("tableinator.tableinator.logger"),
+            patch("tableinator.tableinator.BATCH_MODE", True),
+            patch("tableinator.tableinator.batch_processor", mock_batch),
+        ):
+            await on_data_message(mock_message, "artists")
+
+        # Should delegate to batch processor without error
+        mock_batch.add_message.assert_called_once()
