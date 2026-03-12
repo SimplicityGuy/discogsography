@@ -73,6 +73,8 @@ jobs:
 
       - name: 🔧 Setup Just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       # Test cache (pytest + playwright results + coverage)
       - name: 🧪 Cache test results

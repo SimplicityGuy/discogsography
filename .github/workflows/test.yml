@@ -37,6 +37,8 @@ jobs:
 
       - name: 🔧 Setup Just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📦 Install dependencies
         run: just install
@@ -75,6 +77,8 @@ jobs:
 
       - name: 🔧 Setup Just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📦 Install dependencies
         run: just install
@@ -113,6 +117,8 @@ jobs:
 
       - name: 🔧 Setup Just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📦 Install dependencies
         run: just install
@@ -156,6 +162,8 @@ jobs:
 
       - name: 🔧 Setup Just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📦 Install dependencies
         run: just install
@@ -194,6 +202,8 @@ jobs:
 
       - name: 🔧 Setup Just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📦 Install dependencies
         run: just install
@@ -232,6 +242,8 @@ jobs:
 
       - name: 🔧 Setup Just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📦 Install dependencies
         run: just install
@@ -270,6 +282,8 @@ jobs:
 
       - name: 🔧 Setup Just
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 📦 Install dependencies
         run: just install
@@ -321,6 +335,8 @@ jobs:
       - name: 🔧 Setup Just
         if: steps.check-rust.outputs.exists == 'true'
         uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: 🦀 Setup Rust toolchain
         if: steps.check-rust.outputs.exists == 'true'
