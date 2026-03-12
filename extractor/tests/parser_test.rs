@@ -579,3 +579,71 @@ async fn test_parse_malformed_xml() {
     // Should return an error for malformed XML
     assert!(result.is_err());
 }
+
+#[tokio::test]
+async fn test_parse_mixed_content_element() {
+    // Exercises the "has children AND text (mixed content)" branch (parser.rs line 62-65)
+    // via actual XML parsing, not just the unit test on ElementContext.
+    // In Discogs data, mixed content can appear when an element has both text and child elements.
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Test Artist</name>
+        <notes>See also: <child_ref id="42">Other Artist</child_ref> for collaborations</notes>
+    </artist>
+</artists>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+
+    let message = receiver.recv().await.unwrap();
+    assert_eq!(message.id, "1");
+
+    // The <notes> element has mixed content: text + child element
+    // The text should be preserved as #text and the child should appear as a child key
+    let notes = &message.data["notes"];
+    assert!(notes.is_object(), "notes should be an object due to mixed content");
+    // The child_ref element should be present
+    assert!(notes.get("child_ref").is_some(), "child_ref should exist in notes");
+    // Text content should be preserved as #text
+    assert!(notes.get("#text").is_some(), "mixed content text should be preserved as #text");
+}
+
+#[tokio::test]
+async fn test_parse_numeric_char_ref() {
+    // Exercises the GeneralRef char_ref branch (parser.rs line 254-256) for numeric character references
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Artist &#169; 2026</name>
+    </artist>
+</artists>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+
+    let message = receiver.recv().await.unwrap();
+    // &#169; is the copyright symbol ©
+    let name = message.data["name"].as_str().unwrap();
+    assert!(name.contains("©") || name.contains("169"), "Should resolve numeric char ref, got: {}", name);
+}

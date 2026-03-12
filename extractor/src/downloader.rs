@@ -1213,4 +1213,27 @@ mod tests {
         // Verify all files are from the latest version
         assert!(result.iter().all(|f| f.name.contains("20241215")));
     }
+
+    #[tokio::test]
+    async fn test_save_state_marker_failure_warns() {
+        // Exercises the warn! path in save_state_marker (line 57)
+        // by pointing the marker path to a non-existent parent directory.
+        use crate::state_marker::StateMarker;
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker = StateMarker::new("20260101".to_string());
+        // Path with non-existent parent directory so save() fails
+        let bad_path = PathBuf::from("/nonexistent/dir/marker.json");
+
+        let mut downloader = Downloader::new(temp_dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .with_state_marker(marker, bad_path.clone());
+
+        // Should not panic — just warns internally
+        downloader.save_state_marker().await;
+
+        // Marker file should NOT exist (save failed)
+        assert!(!bad_path.exists());
+    }
 }
