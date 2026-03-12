@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from enum import Enum
 import logging
+import random
 from threading import Lock
 import time
 from typing import Any, TypeVar, cast
@@ -141,8 +142,6 @@ class ExponentialBackoff:
 
         if self.jitter:
             # Add random jitter (0-25% of delay)
-            import random
-
             jitter_value = random.uniform(0, 0.25)  # noqa: S311  # nosec B311
             delay = delay * (1 + jitter_value)
 
