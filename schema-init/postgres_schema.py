@@ -198,7 +198,7 @@ _USER_TABLES: list[tuple[str, str]] = [
 ]
 
 
-async def create_postgres_schema(pool: Any) -> None:
+async def create_postgres_schema(pool: Any) -> int:
     """Create all PostgreSQL tables and indexes.
 
     Safe to call on every startup; all statements use IF NOT EXISTS so
@@ -206,6 +206,9 @@ async def create_postgres_schema(pool: Any) -> None:
 
     Args:
         pool: An AsyncPostgreSQLPool instance (from common.postgres_resilient).
+
+    Returns:
+        Number of failed schema statements (0 means all succeeded).
     """
     logger.info("🔧 Creating PostgreSQL schema (tables and indexes)...")
 
@@ -281,8 +284,9 @@ async def create_postgres_schema(pool: Any) -> None:
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 
-    total = len(_ENTITY_TABLES) * 2 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
+    total = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
     logger.info(
         f"✅ PostgreSQL schema creation complete: "
         f"{success_count} succeeded, {failure_count} failed (total: {total})"
     )
+    return failure_count

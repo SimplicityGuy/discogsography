@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy Cargo files from extractor subdirectory
+COPY Cargo.lock ./
 COPY extractor/Cargo.toml ./
 COPY extractor/benches ./benches
 

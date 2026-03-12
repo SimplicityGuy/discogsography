@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 import logging
 import os
 from pathlib import Path
+from typing import cast
 
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,7 +17,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 import orjson
-from prometheus_client import Counter, Gauge, generate_latest
+from prometheus_client import REGISTRY, Counter, Gauge, generate_latest
 from pydantic import BaseModel
 
 from common import (
@@ -40,10 +41,6 @@ def _get_or_create_gauge(name: str, description: str) -> Gauge:
     try:
         return Gauge(name, description)
     except ValueError:
-        from typing import cast
-
-        from prometheus_client import REGISTRY
-
         return cast("Gauge", REGISTRY._names_to_collectors[name])
 
 
@@ -51,10 +48,6 @@ def _get_or_create_counter(name: str, description: str, labels: list[str]) -> Co
     try:
         return Counter(name, description, labels)
     except ValueError:
-        from typing import cast
-
-        from prometheus_client import REGISTRY
-
         return cast("Counter", REGISTRY._names_to_collectors[name + "_total"])
 
 
@@ -526,7 +519,7 @@ async def get_queues() -> JSONResponse:
     if not dashboard:
         return JSONResponse(content=[])
     queues = await dashboard.get_queue_info()
-    return JSONResponse(content=[q.model_dump() for q in queues])
+    return JSONResponse(content=[q.model_dump(mode="json") for q in queues])
 
 
 @app.get("/api/databases")
@@ -536,7 +529,7 @@ async def get_databases() -> JSONResponse:
     if not dashboard:
         return JSONResponse(content=[])
     databases = await dashboard.get_database_info()
-    return JSONResponse(content=[d.model_dump() for d in databases])
+    return JSONResponse(content=[d.model_dump(mode="json") for d in databases])
 
 
 @app.get("/metrics")

@@ -202,12 +202,18 @@ pub async fn process_discogs_data(
 
     reporter.abort();
 
-    // Mark processing as complete
+    // Only mark processing as complete if all tasks succeeded
     let mut state_marker = state_marker_arc.lock().await;
-    state_marker.complete_processing();
-    state_marker.complete_extraction();
-    state_marker.save(&marker_path).await?;
-    info!("✅ Processing phase completed: version {}", state_marker.current_version);
+    if success {
+        state_marker.complete_processing();
+        state_marker.complete_extraction();
+        state_marker.save(&marker_path).await?;
+        info!("✅ Processing phase completed: version {}", state_marker.current_version);
+    } else {
+        // Save current progress without marking complete — allows restart to resume
+        state_marker.save(&marker_path).await?;
+        error!("❌ Processing phase finished with errors — not marking complete");
+    }
 
     // Log completion and send extraction_complete to all consumers
     {

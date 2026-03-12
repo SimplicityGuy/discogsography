@@ -138,13 +138,21 @@ class StateMarker:
             return None
 
     def save(self, path: Path) -> None:
-        """Save state marker to file."""
+        """Save state marker to file atomically via tmp + rename."""
         # Convert to dict and handle datetime serialization
         data = self._to_dict()
         data["last_updated"] = datetime.now(UTC).isoformat()
 
-        with path.open("w") as f:
-            json.dump(data, f, indent=2, default=str)
+        tmp_path = path.with_suffix(".json.tmp")
+        try:
+            with tmp_path.open("w") as f:
+                json.dump(data, f, indent=2, default=str)
+                f.flush()
+            tmp_path.replace(path)
+        except BaseException:
+            # Clean up partial tmp file on any failure
+            tmp_path.unlink(missing_ok=True)
+            raise
 
         logger.debug("💾 Saved state marker", path=str(path))
 
@@ -459,6 +467,6 @@ class StateMarker:
 def _extract_data_type(filename: str) -> str | None:
     """Extract data type from filename (e.g., 'discogs_20260101_artists.xml.gz' -> 'artists')."""
     try:
-        return filename.split("_")[2].split(".")[0]
+        return filename.split("_", maxsplit=2)[2].split(".", maxsplit=1)[0]
     except (IndexError, AttributeError):
         return None

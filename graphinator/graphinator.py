@@ -4,7 +4,7 @@ import os
 import signal
 import time
 from asyncio import run
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -144,7 +144,7 @@ def get_health_data() -> dict[str, Any]:
         "last_message_time": last_message_time.copy(),
         "active_consumers": list(consumer_tags.keys()),
         "completed_files": list(completed_files),
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 

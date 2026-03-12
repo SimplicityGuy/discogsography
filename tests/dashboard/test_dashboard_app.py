@@ -229,9 +229,9 @@ class TestDashboardAppMetrics:
             mock_databases = [DatabaseInfo(name="neo4j", status="healthy", connection_count=5, size="1GB", error=None)]
 
             with (
-                patch.object(app, "get_service_statuses", return_value=mock_services),
-                patch.object(app, "get_queue_info", return_value=mock_queues),
-                patch.object(app, "get_database_info", return_value=mock_databases),
+                patch.object(app, "get_service_statuses", new_callable=AsyncMock, return_value=mock_services),
+                patch.object(app, "get_queue_info", new_callable=AsyncMock, return_value=mock_queues),
+                patch.object(app, "get_database_info", new_callable=AsyncMock, return_value=mock_databases),
             ):
                 metrics = await app.collect_all_metrics()
 

@@ -290,6 +290,16 @@ class Neo4jBatchProcessor:
                 self._consecutive_failures[data_type] = (
                     self._consecutive_failures.get(data_type, 0) + 1
                 )
+                # Apply backoff to prevent tight retry loop on persistent errors
+                delay = min(
+                    self.config.backoff_initial
+                    * (
+                        self.config.backoff_multiplier
+                        ** (self._consecutive_failures[data_type] - 1)
+                    ),
+                    self.config.backoff_max,
+                )
+                self._backoff_until[data_type] = time.time() + delay
 
         batch_duration = time.time() - batch_start
 
