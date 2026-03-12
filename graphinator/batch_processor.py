@@ -205,6 +205,10 @@ class Neo4jBatchProcessor:
         if now < self._backoff_until[data_type]:
             return
 
+        # Update last_flush immediately to prevent concurrent add_message()
+        # calls from triggering redundant flushes while this one is in progress
+        self.last_flush[data_type] = now
+
         # Use effective (adaptive) batch size
         messages: list[PendingMessage] = []
         while queue and len(messages) < self._effective_batch_size[data_type]:
