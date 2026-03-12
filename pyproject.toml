@@ -123,21 +123,21 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = [
-    "ARG", # flake8-unused-arguments
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "E",   # pycodestyle errors
-    "F",   # pyflakes
-    "I",   # isort
+    "ARG",  # flake8-unused-arguments
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
     "PLC",  # pylint conventions
     "PTH",  # flake8-use-pathlib
-    "RUF",     # ruff-specific rules
-    "S",   # bandit security rules
-    "SIM", # flake8-simplify
-    "T20", # flake8-print (no print statements)
-    "TCH", # flake8-type-checking
-    "UP",  # pyupgrade
-    "W",   # pycodestyle warnings
+    "RUF",  # ruff-specific rules
+    "S",    # bandit security rules
+    "SIM",  # flake8-simplify
+    "T20",  # flake8-print (no print statements)
+    "TCH",  # flake8-type-checking
+    "UP",   # pyupgrade
+    "W",    # pycodestyle warnings
     "W191", # indentation contains tabs (explicit tab detection)
 ]
 fixable = ["ALL"]
