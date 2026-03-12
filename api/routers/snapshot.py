@@ -16,6 +16,7 @@ router = APIRouter()
 _snapshot_store: SnapshotStore | None = None
 _security = HTTPBearer()
 _jwt_secret: str | None = None
+_redis: aioredis.Redis | None = None
 
 
 def configure(
@@ -24,8 +25,9 @@ def configure(
     ttl_days: int = 28,
     max_nodes: int = 100,
 ) -> None:
-    global _snapshot_store, _jwt_secret
+    global _snapshot_store, _jwt_secret, _redis
     _jwt_secret = jwt_secret
+    _redis = redis_client
     _snapshot_store = SnapshotStore(redis_client, ttl_days=ttl_days, max_nodes=max_nodes) if redis_client is not None else None
 
 
@@ -35,7 +37,18 @@ async def _get_current_user(
     if _jwt_secret is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not configured")
     try:
-        return decode_token(credentials.credentials, _jwt_secret)
+        payload = decode_token(credentials.credentials, _jwt_secret)
+        # Check jti blacklist (revoked tokens via logout)
+        jti: str | None = payload.get("jti")
+        if jti and _redis:
+            revoked = await _redis.get(f"revoked:jti:{jti}")
+            if revoked:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+        return payload
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

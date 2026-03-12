@@ -176,7 +176,14 @@ class ResilientPostgreSQLPool:
                     logger.warning("⚠️ Got unhealthy connection from pool, creating new one")
                     with contextlib.suppress(Exception):
                         conn.close()
-                    conn = self._create_connection()
+                    with self._lock:
+                        self.active_connections += 1
+                    try:
+                        conn = self._create_connection()
+                    except Exception:
+                        with self._lock:
+                            self.active_connections -= 1
+                        raise
 
                 if conn:
                     break

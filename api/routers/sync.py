@@ -53,6 +53,16 @@ async def _get_current_user(
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        # Check jti blacklist (revoked tokens via logout)
+        jti: str | None = payload.get("jti")
+        if jti and _redis:
+            revoked = await _redis.get(f"revoked:jti:{jti}")
+            if revoked:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Token has been revoked",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
         return payload
     except ValueError as exc:
         raise HTTPException(
@@ -82,6 +92,14 @@ async def trigger_sync(
             return JSONResponse(
                 content={"status": "cooldown", "message": "Sync rate limited. Please wait before triggering again."},
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+
+        # Atomic lock to prevent duplicate sync tasks from concurrent requests
+        acquired = await _redis.set(f"sync:lock:{user_id}", "1", nx=True, ex=30)
+        if not acquired:
+            return JSONResponse(
+                content={"status": "already_running"},
+                status_code=status.HTTP_202_ACCEPTED,
             )
 
     if user_id in _running_syncs and not _running_syncs[user_id].done():

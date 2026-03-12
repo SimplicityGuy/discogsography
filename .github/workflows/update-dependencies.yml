@@ -55,20 +55,22 @@ jobs:
           PYTHON_VERSION_INPUT: ${{ github.event.inputs.python_version }}
           MAJOR_UPGRADES: ${{ github.event.inputs.major_upgrades }}
         run: |
-          # Build command based on workflow inputs
-          UPDATE_CMD="./scripts/update-project.sh --no-backup"
-
+          # Validate python version input if provided
           if [[ "$UPDATE_PYTHON" == "true" ]]; then
-            UPDATE_CMD="$UPDATE_CMD --python \"$PYTHON_VERSION_INPUT\""
+            if [[ ! "$PYTHON_VERSION_INPUT" =~ ^[0-9]+\.[0-9]+$ ]]; then
+              echo "❌ Invalid python version: $PYTHON_VERSION_INPUT"
+              exit 1
+            fi
           fi
 
-          if [[ "$MAJOR_UPGRADES" == "true" ]]; then
-            UPDATE_CMD="$UPDATE_CMD --major"
-          fi
+          # Build command arguments
+          CMD_ARGS=(--no-backup)
+          [[ "$UPDATE_PYTHON" == "true" ]] && CMD_ARGS+=(--python "$PYTHON_VERSION_INPUT")
+          [[ "$MAJOR_UPGRADES" == "true" ]] && CMD_ARGS+=(--major)
 
           # Run the update script and capture output
           set +e
-          OUTPUT=$(eval "$UPDATE_CMD" 2>&1)
+          OUTPUT=$(./scripts/update-project.sh "${CMD_ARGS[@]}" 2>&1)
           EXIT_CODE=$?
           set -e
 
