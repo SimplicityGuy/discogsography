@@ -408,7 +408,8 @@ mod tests {
         // delivery_mode 2 = persistent (messages survive broker restart)
         assert_eq!(props.delivery_mode(), &Some(2));
         assert!(props.content_type().is_some());
-        assert!(props.content_encoding().is_some());
+        let encoding = props.content_encoding().as_ref().expect("content_encoding should be set");
+        assert_eq!(encoding.as_str(), "UTF-8", "content_encoding should be UTF-8");
     }
 
 

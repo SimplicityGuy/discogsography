@@ -629,6 +629,36 @@ mod tests {
         assert_eq!(loaded.download_phase.bytes_downloaded, 1000);
     }
 
+    #[tokio::test]
+    async fn test_atomic_save_no_temp_file_remains() {
+        use tempfile::TempDir;
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker_path = temp_dir.path().join("test_marker.json");
+
+        let mut marker = StateMarker::new("20260101".to_string());
+        marker.start_download(2);
+        marker.file_downloaded("discogs_20260101_artists.xml.gz", 1000);
+
+        // Save to a path with .json extension
+        marker.save(&marker_path).await.unwrap();
+
+        // Verify the .json file exists
+        assert!(marker_path.exists(), "State marker .json file should exist after save");
+
+        // Verify no .json.tmp file remains (atomic rename should have removed it)
+        let tmp_path = marker_path.with_extension("json.tmp");
+        assert!(!tmp_path.exists(), "Temp file .json.tmp should not remain after atomic save");
+
+        // Verify the saved file can be loaded back
+        let loaded = StateMarker::load(&marker_path).await.unwrap();
+        assert!(loaded.is_some(), "Should be able to load saved state marker");
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.current_version, "20260101");
+        assert_eq!(loaded.download_phase.files_downloaded, 1);
+        assert_eq!(loaded.download_phase.bytes_downloaded, 1000);
+    }
+
     #[test]
     fn test_complete_file_processing_syncs_messages_with_records() {
         let mut marker = StateMarker::new("20260101".to_string());
