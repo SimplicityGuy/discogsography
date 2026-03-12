@@ -374,3 +374,49 @@ class TestModuleVariables:
 
     def test_postgres_database_has_default(self) -> None:
         assert schema_init.POSTGRES_DATABASE
+
+
+class TestInitPostgresPartialFailure:
+    """Test _init_postgres() when create_postgres_schema returns partial failures."""
+
+    @pytest.mark.asyncio
+    async def test_partial_failures_returns_false(self) -> None:
+        """Lines 107-111: create_postgres_schema returns failures > 0."""
+        with (
+            patch("schema_init.AsyncPostgreSQLPool") as MockPool,
+            patch("schema_init.create_postgres_schema", new_callable=AsyncMock, return_value=2),
+        ):
+            mock_pool = AsyncMock()
+            MockPool.return_value = mock_pool
+
+            result = await _init_postgres({"host": "localhost", "port": 5432, "dbname": "db", "user": "u", "password": "p"})
+
+        assert result is False
+        mock_pool.initialize.assert_awaited_once()
+        mock_pool.close.assert_awaited_once()
+
+
+class TestInitNeo4jPartialFailure:
+    """Test _init_neo4j() when create_neo4j_schema returns partial failures."""
+
+    @pytest.mark.asyncio
+    async def test_partial_failures_returns_false(self) -> None:
+        """Lines 140-142: create_neo4j_schema returns failures > 0."""
+        mock_driver = MagicMock()
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"health": 1})
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session = AsyncMock(return_value=mock_session)
+        mock_driver.close = AsyncMock()
+
+        with (
+            patch("schema_init.AsyncResilientNeo4jDriver", return_value=mock_driver),
+            patch("schema_init.create_neo4j_schema", new_callable=AsyncMock, return_value=2),
+        ):
+            result = await _init_neo4j()
+
+        assert result is False
+        mock_driver.close.assert_awaited_once()
