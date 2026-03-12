@@ -503,3 +503,51 @@ async fn test_large_file_streaming() {
     let metadata = fs::metadata(&downloaded_path).await.unwrap();
     assert_eq!(metadata.len(), test_content.len() as u64);
 }
+
+#[tokio::test]
+async fn test_download_with_state_marker_save_failure() {
+    // Exercises the save_state_marker warn! path (downloader.rs line 57)
+    // during an actual download_file call. The state marker path points to
+    // a non-existent directory so save() fails, but download still succeeds.
+    use extractor::state_marker::StateMarker;
+
+    let mut server = Server::new_async().await;
+    let temp_dir = TempDir::new().unwrap();
+
+    let test_content = b"state marker failure test";
+
+    let _m = server
+        .mock("GET", "/?download=data%2Fstate_test.xml.gz")
+        .with_status(200)
+        .with_body(test_content)
+        .create_async()
+        .await;
+
+    let marker = StateMarker::new("20260101".to_string());
+    // Point marker path to non-existent directory — save will fail with warn
+    let bad_marker_path = std::path::PathBuf::from("/nonexistent/dir/marker.json");
+
+    let mut downloader = Downloader::new_with_base_url(
+        temp_dir.path().to_path_buf(),
+        format!("{}/", server.url()),
+    )
+    .await
+    .unwrap()
+    .with_state_marker(marker, bad_marker_path.clone());
+
+    let file_info = S3FileInfo {
+        name: "state_test.xml.gz".to_string(),
+        size: test_content.len() as u64,
+    };
+
+    // Download should succeed even though state marker save fails
+    let result = downloader.download_file(&file_info).await;
+    assert!(result.is_ok(), "Download should succeed despite state marker save failure");
+
+    // Verify file was downloaded
+    let downloaded_path = temp_dir.path().join("state_test.xml.gz");
+    assert!(downloaded_path.exists());
+
+    // Marker file should NOT exist (save failed)
+    assert!(!bad_marker_path.exists());
+}
