@@ -90,11 +90,12 @@ services:
       NEO4J_apoc_import_file_use__neo4j__config: 'true'
       NEO4J_AUTH: neo4j/discogsography
       NEO4J_dbms_logs_debug_level: WARN
-      NEO4J_dbms_memory_heap_initial__size: 1G
-      NEO4J_dbms_memory_heap_max__size: 2G
-      NEO4J_dbms_memory_pagecache_size: 1G
       NEO4J_dbms_memory_transaction_total_max: 6G
+      NEO4J_dbms_security_procedures_unrestricted: 'apoc.*'
       NEO4J_PLUGINS: '["apoc"]'
+      NEO4J_server_memory_heap_initial__size: 1G
+      NEO4J_server_memory_heap_max__size: 2G
+      NEO4J_server_memory_pagecache_size: 1G
     ports:
       - "7474:7474"      # HTTP
       - "7687:7687"      # Bolt
@@ -121,7 +122,7 @@ services:
 
   # Redis cache
   redis:
-    image: redis:7.2-alpine
+    image: redis:7-alpine
     container_name: discogsography-redis
     hostname: redis
     command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
@@ -259,11 +260,13 @@ services:
     user: "1000:1000"
     environment:
       DISCOGS_ROOT: /discogs-data
+      FORCE_REPROCESS: "false"
       LOG_LEVEL: INFO
+      PERIODIC_CHECK_DAYS: "5"
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_USERNAME: discogsography
-      STARTUP_DELAY: "10"
+      STARTUP_DELAY: "30"
     volumes:
       - discogs_data:/discogs-data
       - extractor_logs:/logs
@@ -276,8 +279,8 @@ services:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
-      retries: 3
-      start_period: 60s
+      retries: 5
+      start_period: 120s
     restart: on-failure
     logging: *default-logging
     security_opt:
@@ -439,9 +442,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8003/health"]
       interval: 30s
-      timeout: 3s
+      timeout: 10s
       retries: 3
-      start_period: 40s
+      start_period: 45s
     restart: unless-stopped
     logging: *default-logging
     security_opt:
@@ -470,6 +473,9 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       API_BASE_URL: "http://api:8004"
+      NEO4J_HOST: neo4j
+      NEO4J_PASSWORD: discogsography
+      NEO4J_USERNAME: neo4j
       PYTHONUNBUFFERED: "1"
     depends_on:
       api:

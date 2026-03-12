@@ -9,6 +9,8 @@
 secrets:
   jwt_secret_key:
     file: ./secrets/jwt_secret_key.txt
+  neo4j_password:
+    file: ./secrets/neo4j_password.txt
   oauth_encryption_key:
     file: ./secrets/oauth_encryption_key.txt
   postgres_password:
@@ -41,17 +43,29 @@ services:
     restart: always
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
-      NEO4J_dbms_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-2G}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-2G}
+
+  schema-init:
+    environment:
+      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
+    secrets:
+      - neo4j_password
+      - postgres_username
+      - postgres_password
 
   api:
     restart: always
     environment:
       JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret_key
+      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
       OAUTH_ENCRYPTION_KEY_FILE: /run/secrets/oauth_encryption_key
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
     secrets:
       - jwt_secret_key
+      - neo4j_password
       - oauth_encryption_key
       - postgres_username
       - postgres_password
@@ -79,9 +93,11 @@ services:
   graphinator:
     restart: always
     environment:
+      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
       RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
     secrets:
+      - neo4j_password
       - rabbitmq_username
       - rabbitmq_password
     deploy:
@@ -111,11 +127,29 @@ services:
   dashboard:
     restart: always
     environment:
+      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
       RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
     secrets:
+      - neo4j_password
+      - postgres_username
+      - postgres_password
       - rabbitmq_username
       - rabbitmq_password
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+
+  explore:
+    restart: always
+    environment:
+      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
+    secrets:
+      - neo4j_password
     deploy:
       restart_policy:
         condition: any
