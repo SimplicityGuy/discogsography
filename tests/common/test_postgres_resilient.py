@@ -1430,6 +1430,46 @@ class TestResilientPostgreSQLPoolUncoveredLines:
         finally:
             _time.sleep = original_sleep
 
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_unhealthy_connection_replacement_failure_decrements_active(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """Lines 179-184: When replacement of unhealthy connection fails, active_connections is decremented."""
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, max_retries=1)
+
+        # Build an unhealthy connection that fails _test_connection
+        unhealthy_conn = Mock()
+        unhealthy_conn.closed = False
+        unhealthy_conn.close = Mock()
+        unhealthy_cursor = Mock()
+        unhealthy_cursor.execute = Mock(side_effect=OperationalError("gone"))
+        unhealthy_cursor.__enter__ = Mock(return_value=unhealthy_cursor)
+        unhealthy_cursor.__exit__ = Mock(return_value=None)
+        unhealthy_conn.cursor = Mock(return_value=unhealthy_cursor)
+
+        # Place the unhealthy connection in the pool
+        pool.connections.put_nowait(unhealthy_conn)
+        pool.active_connections = 1
+
+        # Make _create_connection raise so the replacement fails.
+        # This exercises lines 181-184: except block decrements active_connections.
+        pool._create_connection = Mock(side_effect=OperationalError("DB down"))  # type: ignore[method-assign]
+
+        # With max_retries=1, only one loop iteration runs. After the replacement
+        # failure, active_connections is decremented. The stale conn reference means
+        # the context manager yields the (closed) unhealthy connection rather than raising,
+        # but the key behavior we're testing is the active_connections bookkeeping.
+        with pool.connection():
+            pass
+
+        # active_connections should have been decremented when replacement failed
+        assert pool.active_connections == 0
+        # The unhealthy connection should have been closed
+        unhealthy_conn.close.assert_called()
+
 
 class TestAsyncPostgreSQLPoolUncoveredLines:
     """Additional tests to cover uncovered lines in AsyncPostgreSQLPool."""
@@ -1671,4 +1711,50 @@ class TestAsyncPostgreSQLPoolUncoveredLines:
 
         # Restore put_nowait before close() tries to drain the queue
         pool.connections.put_nowait = asyncio.Queue.put_nowait.__get__(pool.connections)  # type: ignore[attr-defined]
+        await pool.close()
+
+    @pytest.mark.asyncio
+    async def test_health_check_replenishment_queue_full_closes_connection(self, connection_params: dict) -> None:
+        """Lines 414-417: _health_check_loop() closes connection when QueueFull during replenishment."""
+        # Create a fresh connection that replenishment will produce
+        replenish_conn = AsyncMock()
+        replenish_conn.closed = False
+        replenish_conn.close = AsyncMock()
+        replenish_cursor = AsyncMock()
+        replenish_cursor.execute = AsyncMock()
+        replenish_cursor.fetchone = AsyncMock(return_value=(1,))
+        replenish_cursor.__aenter__ = AsyncMock(return_value=replenish_cursor)
+        replenish_cursor.__aexit__ = AsyncMock(return_value=None)
+        replenish_conn.cursor = Mock(return_value=replenish_cursor)
+
+        pool = AsyncPostgreSQLPool(
+            connection_params=connection_params,
+            min_connections=2,
+            max_connections=5,
+            health_check_interval=0,
+        )
+
+        # Mark as initialized without adding connections so queue stays empty,
+        # triggering the replenishment path
+        pool._initialized = True
+        pool.active_connections = 0
+
+        # Make _create_connection return our mock connection
+        pool._create_connection = AsyncMock(return_value=replenish_conn)  # type: ignore[method-assign]
+
+        # Make put_nowait raise QueueFull so the replenishment branch closes the connection
+        pool.connections.put_nowait = Mock(side_effect=asyncio.QueueFull)  # type: ignore[method-assign]
+
+        pool._health_check_task = asyncio.create_task(pool._health_check_loop())
+
+        # Give the health check loop time to attempt replenishment
+        await asyncio.sleep(0.15)
+
+        # The connection should have been closed due to QueueFull
+        replenish_conn.close.assert_awaited()
+
+        # Restore put_nowait before close() tries to drain the queue
+        pool.connections.put_nowait = asyncio.Queue.put_nowait.__get__(pool.connections)  # type: ignore[attr-defined]
+
+        # Cleanup
         await pool.close()

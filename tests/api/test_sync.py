@@ -365,3 +365,57 @@ class TestSyncRedisCooldown:
 
         # Verify getattr used on config with oauth_encryption_key
         assert hasattr(sync_module._config, "jwt_secret_key")
+
+
+class TestSyncTokenRevocation:
+    """Tests for jti-based token revocation in sync._get_current_user (lines 56-65)."""
+
+    def test_revoked_jti_returns_401(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """A JWT with a jti claim that has been revoked should return 401."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        jti_value = "revoked-jti-123"
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body = b64url(
+            json.dumps(
+                {"sub": TEST_USER_ID, "email": TEST_USER_EMAIL, "exp": 9_999_999_999, "jti": jti_value},
+                separators=(",", ":"),
+            ).encode()
+        )
+        signing_input = f"{header}.{body}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        token = f"{header}.{body}.{sig}"
+
+        # mock_redis.get returns truthy for the revoked key
+        async def fake_get(key: str) -> str | None:
+            if key == f"revoked:jti:{jti_value}":
+                return "1"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=fake_get)
+
+        response = test_client.post("/api/sync", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
+        assert "revoked" in response.json()["detail"].lower()
+
+
+class TestSyncAtomicLock:
+    """Tests for atomic lock preventing duplicate sync tasks (lines 97-103)."""
+
+    def test_lock_not_acquired_returns_202_already_running(
+        self, test_client: TestClient, mock_redis: AsyncMock, auth_headers: dict[str, str]
+    ) -> None:
+        """When Redis nx lock is not acquired, should return 202 with already_running."""
+        mock_redis.get.return_value = None  # not in cooldown
+        mock_redis.set = AsyncMock(return_value=None)  # lock NOT acquired
+
+        response = test_client.post("/api/sync", headers=auth_headers)
+        assert response.status_code == 202
+        data = response.json()
+        assert data["status"] == "already_running"

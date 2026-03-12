@@ -147,7 +147,7 @@ async def _get_current_user(
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     """Manage API service lifecycle."""
-    global _pool, _config, _redis
+    global _pool, _config, _redis, _neo4j
 
     logger.info("🚀 API service starting...")
     _config = ApiConfig.from_env()
@@ -341,7 +341,8 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: 
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not user["is_active"] or not _verify_password(body.password, user["hashed_password"]):
+    password_ok = _verify_password(body.password, user["hashed_password"])
+    if not user["is_active"] or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",
@@ -552,12 +553,14 @@ async def verify_discogs(
         )
     except DiscogsOAuthError as exc:
         logger.error("❌ Discogs OAuth exchange failed", error=str(exc))
+        # Clean up state so user can retry immediately
+        await _redis.delete(redis_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid verifier code or OAuth flow failed",
         ) from exc
 
-    # Clean up state from Redis
+    # Clean up state from Redis on success
     await _redis.delete(redis_key)
 
     user_id = current_user.get("sub")
@@ -591,6 +594,12 @@ async def verify_discogs(
                 discogs_user_id,
             ),
         )
+        row = await cur.fetchone()
+        if not row:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to persist OAuth token",
+            )
 
     logger.info("✅ Discogs account connected", user_id=user_id, discogs_username=discogs_username)
     return JSONResponse(

@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 import logging
 import os
 from pathlib import Path
+from typing import cast
 
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,8 +17,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 import orjson
-from prometheus_client import Counter, Gauge, generate_latest
-import psycopg
+from prometheus_client import REGISTRY, Counter, Gauge, generate_latest
 from pydantic import BaseModel
 
 from common import (
@@ -41,10 +41,6 @@ def _get_or_create_gauge(name: str, description: str) -> Gauge:
     try:
         return Gauge(name, description)
     except ValueError:
-        from typing import cast
-
-        from prometheus_client import REGISTRY
-
         return cast("Gauge", REGISTRY._names_to_collectors[name])
 
 
@@ -52,10 +48,6 @@ def _get_or_create_counter(name: str, description: str, labels: list[str]) -> Co
     try:
         return Counter(name, description, labels)
     except ValueError:
-        from typing import cast
-
-        from prometheus_client import REGISTRY
-
         return cast("Counter", REGISTRY._names_to_collectors[name + "_total"])
 
 
@@ -328,49 +320,39 @@ class DashboardApp:
 
         # Check PostgreSQL
         try:
-            if ":" in self.config.postgres_host:
-                pg_host, pg_port_str = self.config.postgres_host.split(":", 1)
-                pg_port = int(pg_port_str)
-            else:
-                pg_host = self.config.postgres_host
-                pg_port = 5432
-            async with await psycopg.AsyncConnection.connect(
-                host=pg_host,
-                port=pg_port,
-                dbname=self.config.postgres_database,
-                user=self.config.postgres_username,
-                password=self.config.postgres_password,
-            ) as conn:
-                async with conn.cursor() as cur:
-                    await cur.execute(
-                        "SELECT COUNT(*) FROM pg_stat_activity WHERE datname = %s",
-                        (self.config.postgres_database,),
-                    )
-                    result = await cur.fetchone()
-                    connection_count = result[0] if result else 0
-
-                    await cur.execute(
-                        "SELECT pg_database_size(%s)",
-                        (self.config.postgres_database,),
-                    )
-                    result = await cur.fetchone()
-                    raw_bytes = result[0] if result else 0
-                    if raw_bytes >= 1024**3:
-                        gb = raw_bytes / 1024**3
-                        db_size = f"{gb:,.2f} GB"
-                    else:
-                        mb = raw_bytes / 1024**2
-                        db_size = f"{mb:,.0f} MB"
-
-                databases.append(
-                    DatabaseInfo(
-                        name="PostgreSQL",
-                        status="healthy",
-                        connection_count=connection_count,
-                        size=db_size,
-                        error=None,
-                    )
+            if self.postgres_conn is None:
+                raise RuntimeError("PostgreSQL resilient connection not initialized")
+            conn = await self.postgres_conn.get_connection()
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    "SELECT COUNT(*) FROM pg_stat_activity WHERE datname = %s",
+                    (self.config.postgres_database,),
                 )
+                result = await cur.fetchone()
+                connection_count = result[0] if result else 0
+
+                await cur.execute(
+                    "SELECT pg_database_size(%s)",
+                    (self.config.postgres_database,),
+                )
+                result = await cur.fetchone()
+                raw_bytes = result[0] if result else 0
+                if raw_bytes >= 1024**3:
+                    gb = raw_bytes / 1024**3
+                    db_size = f"{gb:,.2f} GB"
+                else:
+                    mb = raw_bytes / 1024**2
+                    db_size = f"{mb:,.0f} MB"
+
+            databases.append(
+                DatabaseInfo(
+                    name="PostgreSQL",
+                    status="healthy",
+                    connection_count=connection_count,
+                    size=db_size,
+                    error=None,
+                )
+            )
         except Exception as e:
             databases.append(
                 DatabaseInfo(
@@ -537,7 +519,7 @@ async def get_queues() -> JSONResponse:
     if not dashboard:
         return JSONResponse(content=[])
     queues = await dashboard.get_queue_info()
-    return JSONResponse(content=[q.model_dump() for q in queues])
+    return JSONResponse(content=[q.model_dump(mode="json") for q in queues])
 
 
 @app.get("/api/databases")
@@ -547,7 +529,7 @@ async def get_databases() -> JSONResponse:
     if not dashboard:
         return JSONResponse(content=[])
     databases = await dashboard.get_database_info()
-    return JSONResponse(content=[d.model_dump() for d in databases])
+    return JSONResponse(content=[d.model_dump(mode="json") for d in databases])
 
 
 @app.get("/metrics")

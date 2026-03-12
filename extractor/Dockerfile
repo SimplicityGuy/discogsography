@@ -12,6 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # Copy Cargo files from extractor subdirectory
+COPY Cargo.lock ./
 COPY extractor/Cargo.toml ./
 COPY extractor/benches ./benches
 
@@ -29,13 +30,13 @@ RUN touch src/main.rs && \
     cargo build --release
 
 # Runtime stage
-FROM rust:1.94-slim
+FROM debian:13-slim
 
 # Install runtime dependencies
 # hadolint ignore=DL3008
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    libssl3 \
+    libssl3t64 \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
@@ -57,7 +58,7 @@ ENV LOG_LEVEL=INFO
 ENV RUST_EXTRACTOR_CONFIG=/config.toml
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # Expose health port

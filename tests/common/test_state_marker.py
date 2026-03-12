@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from common.state_marker import (
     DownloadPhase,
     ExtractionSummary,
@@ -400,6 +402,61 @@ class TestExtractDataType:
         """Test extracting data type from invalid filename."""
         assert _extract_data_type("invalid.xml.gz") is None
         assert _extract_data_type("") is None
+
+
+class TestExtractDataTypeMaxsplit:
+    """Test _extract_data_type with maxsplit robustness."""
+
+    def test_filename_with_extra_underscores(self):
+        """maxsplit=2 preserves underscores after the second split."""
+        assert _extract_data_type("discogs_20260101_artists_v2.xml.gz") == "artists_v2"
+
+    def test_filename_with_multiple_dots(self):
+        """maxsplit=1 on dot split preserves dots after the first."""
+        assert _extract_data_type("discogs_20260101_artists.xml.gz") == "artists"
+
+    def test_too_few_underscores_returns_none(self):
+        """Filename with fewer than 2 underscores returns None."""
+        assert _extract_data_type("discogs_artists.xml.gz") is None
+
+
+class TestStateMarkerAtomicSave:
+    """Test atomic save via tmp + rename."""
+
+    def test_save_creates_final_file_not_tmp(self, tmp_path: Path):
+        """After save, only the final file exists (no leftover .tmp)."""
+        marker = StateMarker(current_version="20260101")
+        path = tmp_path / ".extraction_status_20260101.json"
+        marker.save(path)
+
+        assert path.exists()
+        assert not path.with_suffix(".json.tmp").exists()
+
+    def test_save_cleans_tmp_on_failure(self, tmp_path: Path):
+        """If json.dump fails, the tmp file is cleaned up."""
+        from unittest.mock import patch
+
+        marker = StateMarker(current_version="20260101")
+        path = tmp_path / ".extraction_status_20260101.json"
+
+        with patch("common.state_marker.json.dump", side_effect=OSError("disk full")), pytest.raises(OSError, match="disk full"):
+            marker.save(path)
+
+        assert not path.exists()
+        assert not path.with_suffix(".json.tmp").exists()
+
+    def test_save_overwrites_existing_file_atomically(self, tmp_path: Path):
+        """Saving twice overwrites via atomic rename."""
+        marker = StateMarker(current_version="v1")
+        path = tmp_path / "state.json"
+        marker.save(path)
+
+        marker.current_version = "v2"
+        marker.save(path)
+
+        loaded = StateMarker.load(path)
+        assert loaded is not None
+        assert loaded.current_version == "v2"
 
 
 class TestProcessingDecision:

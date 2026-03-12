@@ -474,18 +474,21 @@ async def run_full_sync(
 
     # Update sync_history record
     final_status = "failed" if error_message else "completed"
-    async with pg_pool.connection() as conn, conn.cursor() as cur:
-        await cur.execute(
-            """
-                UPDATE sync_history
-                SET status = %s,
-                    items_synced = %s,
-                    error_message = %s,
-                    completed_at = NOW()
-                WHERE id = %s::uuid
-                """,
-            (final_status, collection_count + wantlist_count, error_message, sync_id),
-        )
+    try:
+        async with pg_pool.connection() as conn, conn.cursor() as cur:
+            await cur.execute(
+                """
+                    UPDATE sync_history
+                    SET status = %s,
+                        items_synced = %s,
+                        error_message = %s,
+                        completed_at = NOW()
+                    WHERE id = %s::uuid
+                    """,
+                (final_status, collection_count + wantlist_count, error_message, sync_id),
+            )
+    except Exception as update_exc:
+        logger.error("❌ Failed to update sync_history", sync_id=sync_id, error=str(update_exc))
 
     return {
         "sync_id": sync_id,

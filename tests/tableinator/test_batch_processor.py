@@ -658,20 +658,20 @@ class TestPostgreSQLBatchProcessor:
         mock_connection_pool = MagicMock()
         processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
-        # Mock _flush_queue
-        processor._flush_queue = AsyncMock()  # type: ignore[method-assign]
+        # Mock flush_queue (flush_all delegates to flush_queue per data type)
+        processor.flush_queue = AsyncMock()  # type: ignore[method-assign]
 
         await processor.flush_all()
 
         # Should flush all data types
-        assert processor._flush_queue.call_count == 4
+        assert processor.flush_queue.call_count == 4
         expected_calls = [
             call("artists"),
             call("labels"),
             call("masters"),
             call("releases"),
         ]
-        processor._flush_queue.assert_has_calls(expected_calls, any_order=True)
+        processor.flush_queue.assert_has_calls(expected_calls, any_order=True)
 
     @pytest.mark.asyncio
     async def test_periodic_flush(self) -> None:
@@ -817,3 +817,562 @@ class TestPostgreSQLBatchProcessor:
 
         # Should have processed 2
         assert processor.processed_counts["artists"] == 2
+
+
+class TestBackoffPeriodSkip:
+    """Test that _flush_queue returns early during backoff."""
+
+    @pytest.mark.asyncio
+    async def test_flush_queue_skips_during_backoff(self) -> None:
+        """When backoff_until is in the future, _flush_queue should return without processing."""
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
+
+        # Add a message to the queue
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        # Set backoff to far in the future
+        processor._backoff_until["artists"] = time.time() + 9999
+
+        await processor._flush_queue("artists")
+
+        # Message should still be in queue (not processed)
+        assert len(processor.queues["artists"]) == 1
+        # Connection pool should not have been touched
+        mock_connection_pool.connection.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_flush_queue_proceeds_after_backoff_expires(self) -> None:
+        """When backoff_until is in the past, _flush_queue should process normally."""
+        mock_connection = MagicMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
+
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        # Set backoff to the past
+        processor._backoff_until["artists"] = time.time() - 1
+
+        with patch("tableinator.batch_processor.logger"):
+            await processor._flush_queue("artists")
+
+        # Message should have been processed
+        assert len(processor.queues["artists"]) == 0
+        assert processor.processed_counts["artists"] == 1
+
+
+class TestInterfaceAndOperationalErrorHandling:
+    """Test InterfaceError/OperationalError handling in _flush_queue."""
+
+    @pytest.mark.asyncio
+    async def test_messages_returned_to_queue_on_interface_error(self) -> None:
+        """Messages should be put back in queue on InterfaceError."""
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(side_effect=InterfaceError("Connection lost"))
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        with patch("tableinator.batch_processor.logger"):
+            await processor._flush_queue("artists")
+
+        assert len(processor.queues["artists"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_consecutive_failures_increments_on_operational_error(self) -> None:
+        """_consecutive_failures should increment on OperationalError."""
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(side_effect=OperationalError("DB down"))
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
+        assert processor._consecutive_failures["artists"] == 0
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        with patch("tableinator.batch_processor.logger"):
+            await processor._flush_queue("artists")
+
+        assert processor._consecutive_failures["artists"] == 1
+
+    @pytest.mark.asyncio
+    async def test_backoff_until_set_on_interface_error(self) -> None:
+        """_backoff_until should be set to a future time on InterfaceError."""
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(side_effect=InterfaceError("Connection lost"))
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
+        assert processor._backoff_until["artists"] == 0.0
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        before = time.time()
+        with patch("tableinator.batch_processor.logger"):
+            await processor._flush_queue("artists")
+
+        assert processor._backoff_until["artists"] > before
+
+    @pytest.mark.asyncio
+    async def test_effective_batch_size_halves_on_error(self) -> None:
+        """_effective_batch_size should halve on InterfaceError."""
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(side_effect=InterfaceError("Connection lost"))
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        config = BatchConfig(batch_size=100, min_batch_size=10)
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, config)
+        assert processor._effective_batch_size["artists"] == 100
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        with patch("tableinator.batch_processor.logger"):
+            await processor._flush_queue("artists")
+
+        assert processor._effective_batch_size["artists"] == 50
+
+    @pytest.mark.asyncio
+    async def test_effective_batch_size_floors_at_min(self) -> None:
+        """_effective_batch_size should not go below min_batch_size."""
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(side_effect=InterfaceError("Connection lost"))
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        config = BatchConfig(batch_size=100, min_batch_size=10)
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, config)
+
+        # Set effective batch size to min already
+        processor._effective_batch_size["artists"] = 10
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        with patch("tableinator.batch_processor.logger") as mock_logger:
+            await processor._flush_queue("artists")
+
+        # Should stay at min
+        assert processor._effective_batch_size["artists"] == 10
+
+        # Should log "Backing off" instead of "Reduced batch size"
+        warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
+        assert any("Backing off" in c for c in warning_calls)
+        assert not any("Reduced batch size" in c for c in warning_calls)
+
+
+class TestGeneralExceptionBackoff:
+    """Test non-transient error backoff in _flush_queue."""
+
+    @pytest.mark.asyncio
+    async def test_general_exception_increments_failures(self) -> None:
+        """Non-transient errors should increment _consecutive_failures."""
+        mock_connection = MagicMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.execute = AsyncMock(side_effect=Exception("Unexpected"))
+
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        with patch("tableinator.batch_processor.logger"):
+            await processor._flush_queue("artists")
+
+        assert processor._consecutive_failures["artists"] == 1
+
+    @pytest.mark.asyncio
+    async def test_general_exception_sets_backoff(self) -> None:
+        """Non-transient errors should set _backoff_until to a future time."""
+        mock_connection = MagicMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.execute = AsyncMock(side_effect=Exception("Unexpected"))
+
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        before = time.time()
+        with patch("tableinator.batch_processor.logger"):
+            await processor._flush_queue("artists")
+
+        assert processor._backoff_until["artists"] > before
+
+    @pytest.mark.asyncio
+    async def test_general_exception_nacks_messages(self) -> None:
+        """Non-transient errors should nack messages (not return them to queue)."""
+        mock_connection = MagicMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.execute = AsyncMock(side_effect=Exception("Unexpected"))
+
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        processor = PostgreSQLBatchProcessor(mock_connection_pool)
+
+        nack = AsyncMock()
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=nack,
+            )
+        )
+
+        with patch("tableinator.batch_processor.logger"):
+            await processor._flush_queue("artists")
+
+        nack.assert_called_once()
+
+
+class TestSuccessRecovery:
+    """Test adaptive batch size recovery after failures."""
+
+    @pytest.mark.asyncio
+    async def test_consecutive_failures_resets_on_success(self) -> None:
+        """After a successful flush, _consecutive_failures should reset to 0."""
+        mock_connection = MagicMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
+
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        config = BatchConfig(batch_size=100, min_batch_size=10)
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, config)
+
+        # Simulate prior failures
+        processor._consecutive_failures["artists"] = 3
+        processor._effective_batch_size["artists"] = 25
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        with patch("tableinator.batch_processor.logger"):
+            await processor._flush_queue("artists")
+
+        assert processor._consecutive_failures["artists"] == 0
+
+    @pytest.mark.asyncio
+    async def test_effective_batch_size_increases_on_success(self) -> None:
+        """After success, _effective_batch_size should gradually increase toward configured size."""
+        mock_connection = MagicMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
+
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        config = BatchConfig(batch_size=100, min_batch_size=10)
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, config)
+
+        # Simulate reduced batch size from prior failure
+        processor._effective_batch_size["artists"] = 25
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        with patch("tableinator.batch_processor.logger") as mock_logger:
+            await processor._flush_queue("artists")
+
+        # Should increase: min(100, 25 + max(10, 100 // 10)) = min(100, 35) = 35
+        assert processor._effective_batch_size["artists"] == 35
+
+        # Should log the increase
+        info_calls = [str(c) for c in mock_logger.info.call_args_list]
+        assert any("Increased batch size" in c for c in info_calls)
+
+    @pytest.mark.asyncio
+    async def test_effective_batch_size_caps_at_configured(self) -> None:
+        """_effective_batch_size should not exceed the configured batch_size."""
+        mock_connection = MagicMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
+
+        mock_cursor_cm = AsyncMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_connection_pool = MagicMock()
+        mock_connection_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        config = BatchConfig(batch_size=100, min_batch_size=10)
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, config)
+
+        # Set effective close to max
+        processor._effective_batch_size["artists"] = 95
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        with patch("tableinator.batch_processor.logger"):
+            await processor._flush_queue("artists")
+
+        # min(100, 95 + 10) = 100
+        assert processor._effective_batch_size["artists"] == 100
+
+
+class TestFlushQueuePublicMethod:
+    """Test the public flush_queue method that drains completely."""
+
+    @pytest.mark.asyncio
+    async def test_flush_queue_drains_completely(self) -> None:
+        """flush_queue should call _flush_queue repeatedly until queue is empty."""
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, BatchConfig(batch_size=1))
+
+        # Add 3 messages
+        for i in range(3):
+            processor.queues["artists"].append(
+                PendingMessage(
+                    data_type="artists",
+                    data_id=str(i),
+                    data={"id": str(i)},
+                    sha256=f"hash{i}",
+                    ack_callback=AsyncMock(),
+                    nack_callback=AsyncMock(),
+                )
+            )
+
+        call_count = 0
+        original_queue = processor.queues["artists"]
+
+        async def mock_flush(_data_type: str) -> None:
+            nonlocal call_count
+            call_count += 1
+            # Simulate processing one message per call
+            if original_queue:
+                original_queue.popleft()
+
+        processor._flush_queue = AsyncMock(side_effect=mock_flush)  # type: ignore[method-assign]
+
+        await processor.flush_queue("artists")
+
+        assert call_count == 3
+        assert len(processor.queues["artists"]) == 0
+
+    @pytest.mark.asyncio
+    async def test_flush_queue_waits_during_backoff(self) -> None:
+        """flush_queue should sleep during backoff periods."""
+        mock_connection_pool = MagicMock()
+        processor = PostgreSQLBatchProcessor(mock_connection_pool, BatchConfig(batch_size=1))
+
+        processor.queues["artists"].append(
+            PendingMessage(
+                data_type="artists",
+                data_id="1",
+                data={"id": "1"},
+                sha256="abc",
+                ack_callback=AsyncMock(),
+                nack_callback=AsyncMock(),
+            )
+        )
+
+        # Set a small backoff
+        processor._backoff_until["artists"] = time.time() + 0.05
+
+        async def mock_flush(_data_type: str) -> None:
+            # Clear queue and backoff on call
+            processor.queues["artists"].clear()
+            processor._backoff_until["artists"] = 0.0
+
+        processor._flush_queue = AsyncMock(side_effect=mock_flush)  # type: ignore[method-assign]
+
+        with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            await processor.flush_queue("artists")
+
+            # Should have called asyncio.sleep with a positive wait time
+            mock_sleep.assert_called_once()
+            wait_arg = mock_sleep.call_args[0][0]
+            assert wait_arg > 0

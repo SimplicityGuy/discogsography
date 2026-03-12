@@ -189,6 +189,35 @@ async fn test_get_latest_monthly_files_incomplete_set() {
 }
 
 #[tokio::test]
+async fn test_get_latest_monthly_files_deeply_nested_paths() {
+    let temp_dir = TempDir::new().unwrap();
+    let downloader = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap();
+
+    // Files with deeply nested S3 key prefixes containing multiple path separators.
+    // The basename extraction fix (lines 242-247) ensures these are grouped correctly
+    // by extracting the basename before splitting on '_' to determine the version ID.
+    let files = vec![
+        S3FileInfo { name: "data/2024/monthly/discogs_20241201_artists.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/2024/monthly/discogs_20241201_labels.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/2024/monthly/discogs_20241201_masters.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/2024/monthly/discogs_20241201_releases.xml.gz".to_string(), size: 1024 },
+        S3FileInfo { name: "data/2024/monthly/discogs_20241201_CHECKSUM.txt".to_string(), size: 100 },
+    ];
+
+    let result = downloader.get_latest_monthly_files(&files).unwrap();
+    // Without the basename fix, splitting "data/2024/monthly/discogs_20241201_artists.xml.gz"
+    // on '_' would produce id "data/2024/monthly/discogs" instead of "20241201",
+    // causing files to not group correctly. With the fix, they group by "20241201".
+    assert_eq!(result.len(), 4, "Should return 4 data files from deeply nested paths");
+
+    // Returned files have S3_PREFIX ("data/") stripped but may retain inner path segments
+    for file in &result {
+        assert!(file.name.contains("discogs_20241201_"), "File name '{}' should contain discogs prefix", file.name);
+        assert!(file.name.ends_with(".xml.gz"), "File name '{}' should be a data file", file.name);
+    }
+}
+
+#[tokio::test]
 async fn test_get_latest_monthly_files_complete_set() {
     let temp_dir = TempDir::new().unwrap();
     let downloader = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap();

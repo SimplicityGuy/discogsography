@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager, contextmanager
 import logging
 from queue import Empty, Full, Queue
 import threading
+import time
 from typing import Any
 
 import psycopg
@@ -104,8 +105,6 @@ class ResilientPostgreSQLPool:
 
     def _health_check_loop(self) -> None:
         """Background thread to check connection health periodically."""
-        import time
-
         while not self._closed:
             time.sleep(self.health_check_interval)
 
@@ -176,7 +175,13 @@ class ResilientPostgreSQLPool:
                     logger.warning("⚠️ Got unhealthy connection from pool, creating new one")
                     with contextlib.suppress(Exception):
                         conn.close()
-                    conn = self._create_connection()
+                    # Replace the unhealthy connection — no net change in active_connections
+                    try:
+                        conn = self._create_connection()
+                    except Exception:
+                        with self._lock:
+                            self.active_connections -= 1
+                        raise
 
                 if conn:
                     break
@@ -188,8 +193,6 @@ class ResilientPostgreSQLPool:
                 if retry_count < self.max_retries:
                     delay = self.backoff.get_delay(retry_count - 1)
                     logger.warning(f"⚠️ PostgreSQL connection attempt {retry_count} failed: {e}. Retrying in {delay:.1f} seconds...")
-                    import time
-
                     time.sleep(delay)
 
         if not conn:
@@ -407,7 +410,11 @@ class AsyncPostgreSQLPool:
                     try:
                         conn = await self._create_connection()
                         if conn:
-                            await self.connections.put(conn)
+                            try:
+                                self.connections.put_nowait(conn)
+                            except asyncio.QueueFull:
+                                await conn.close()
+                                break
                             async with self._lock:
                                 self.active_connections += 1
                     except Exception as e:

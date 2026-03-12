@@ -53,7 +53,9 @@ impl Downloader {
     /// Save state marker to disk if present
     async fn save_state_marker(&mut self) {
         if let (Some(marker), Some(path)) = (&mut self.state_marker, &self.marker_path) {
-            marker.save(path).await.ok();
+            if let Err(e) = marker.save(path).await {
+                warn!("⚠️ Failed to save state marker: {}", e);
+            }
         }
     }
 
@@ -109,6 +111,7 @@ impl Downloader {
                     }
                     Err(e) => {
                         error!("❌ Failed to download {}: {}", filename, e);
+                        return Err(e).context(format!("Failed to download {}", filename));
                     }
                 }
             } else {
@@ -236,8 +239,12 @@ impl Downloader {
         let mut ids: std::collections::HashMap<String, Vec<S3FileInfo>> = std::collections::HashMap::new();
 
         for file in files {
-            // Split the full S3 key exactly like Python does
-            let parts: Vec<&str> = file.name.split('_').collect();
+            // Extract basename before splitting — the full S3 key may contain path separators
+            let basename = std::path::Path::new(&file.name)
+                .file_name()
+                .and_then(|f| f.to_str())
+                .unwrap_or(&file.name);
+            let parts: Vec<&str> = basename.split('_').collect();
             if parts.len() >= 2 {
                 let id = parts[1].to_string();
                 ids.entry(id).or_default().push(file.clone());
@@ -255,6 +262,7 @@ impl Downloader {
             // Check if we have a complete set - exactly like Python logic
             // Python requires exactly 5 files total (1 CHECKSUM + 4 data files)
             if files_for_id.len() != 5 {
+                warn!("⚠️ Skipping version {} — expected 5 files, found {}", id, files_for_id.len());
                 continue;
             }
 
@@ -436,6 +444,13 @@ impl Downloader {
             );
 
             return Ok(downloaded);
+        }
+
+        // Clean up partial file left by the final failed attempt
+        if local_path.exists() {
+            if let Err(e) = fs::remove_file(&local_path).await {
+                warn!("⚠️ Failed to remove partial file after all retries: {}", e);
+            }
         }
 
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Download failed after {} attempts", MAX_DOWNLOAD_RETRIES)))
@@ -1197,5 +1212,28 @@ mod tests {
 
         // Verify all files are from the latest version
         assert!(result.iter().all(|f| f.name.contains("20241215")));
+    }
+
+    #[tokio::test]
+    async fn test_save_state_marker_failure_warns() {
+        // Exercises the warn! path in save_state_marker (line 57)
+        // by pointing the marker path to a non-existent parent directory.
+        use crate::state_marker::StateMarker;
+
+        let temp_dir = TempDir::new().unwrap();
+        let marker = StateMarker::new("20260101".to_string());
+        // Path with non-existent parent directory so save() fails
+        let bad_path = PathBuf::from("/nonexistent/dir/marker.json");
+
+        let mut downloader = Downloader::new(temp_dir.path().to_path_buf())
+            .await
+            .unwrap()
+            .with_state_marker(marker, bad_path.clone());
+
+        // Should not panic — just warns internally
+        downloader.save_state_marker().await;
+
+        // Marker file should NOT exist (save failed)
+        assert!(!bad_path.exists());
     }
 }

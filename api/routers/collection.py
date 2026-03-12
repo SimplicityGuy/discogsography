@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
+from psycopg.rows import dict_row
 import structlog
 
 import api.dependencies as _dependencies
@@ -72,7 +73,6 @@ async def collection_formats(
     if not _pg_pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     user_id: str = current_user.get("sub", "")
-    from psycopg.rows import dict_row
 
     async with _pg_pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await cur.execute(

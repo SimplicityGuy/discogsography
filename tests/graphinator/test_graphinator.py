@@ -854,7 +854,7 @@ class TestCheckFileCompletion:
         result = await check_file_completion(completion_data, "artists", mock_message)
 
         assert result is True
-        mock_batch.flush_all.assert_called_once()
+        mock_batch.flush_queue.assert_called_once_with("artists")
         # Reset
         graphinator.graphinator.batch_processor = None
 
@@ -3663,3 +3663,52 @@ class TestMainAmqpRetryExhausted:
             assert mock_rabbitmq_instance.connect.call_count == 5
         finally:
             gm.shutdown_requested = original_shutdown
+
+
+class TestCoverageGaps:
+    """Tests targeting specific uncovered lines from PR #111."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.CONSUMER_CANCEL_DELAY", 0)
+    async def test_file_complete_flushes_batch_processor(self) -> None:
+        """Test file_complete message flushes batch processor (lines 466-467)."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_batch = AsyncMock()
+        completion_data = {
+            "type": "file_complete",
+            "data_type": "labels",
+            "total_processed": 500,
+        }
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.completed_files = set()
+        graphinator.graphinator.batch_processor = mock_batch
+
+        from graphinator.graphinator import check_file_completion
+
+        try:
+            result = await check_file_completion(completion_data, "labels", mock_message)
+
+            assert result is True
+            mock_batch.flush_queue.assert_called_once_with("labels")
+            mock_message.ack.assert_called_once()
+        finally:
+            graphinator.graphinator.batch_processor = None
+
+    def test_health_timestamp_is_utc(self) -> None:
+        """Test get_health_data timestamp uses UTC (line 147)."""
+        with (
+            patch("graphinator.graphinator.graph", MagicMock()),
+            patch("graphinator.graphinator.consumer_tags", {}),
+            patch(
+                "graphinator.graphinator.message_counts",
+                {"artists": 0, "labels": 0, "masters": 0, "releases": 0},
+            ),
+        ):
+            from graphinator.graphinator import get_health_data
+
+            result = get_health_data()
+
+            # UTC timestamps end with +00:00
+            assert result["timestamp"].endswith("+00:00")

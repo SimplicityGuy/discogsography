@@ -56,6 +56,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
 
     # Shutdown
     logger.info("🛑 Shutting down Explore service")
+    if _http_client is not None:
+        await _http_client.aclose()
     health_server.stop()
     logger.info("✅ Explore service shutdown complete")
 

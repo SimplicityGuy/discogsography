@@ -124,6 +124,24 @@ pub async fn process_discogs_data(
         state_marker.complete_processing();
         state_marker.complete_extraction();
         state_marker.save(&marker_path).await?;
+
+        // Send extraction_complete so consumers know this run is done
+        let record_counts = HashMap::new();
+        match MessageQueue::new(&config.amqp_connection, 3).await {
+            Ok(mq) => {
+                if let Err(e) = mq
+                    .send_extraction_complete(&version, extraction_started_at, record_counts)
+                    .await
+                {
+                    error!("❌ Failed to send extraction_complete message: {}", e);
+                }
+                let _ = mq.close().await;
+            }
+            Err(e) => {
+                error!("❌ Failed to connect to AMQP for extraction_complete: {}", e);
+            }
+        }
+
         return Ok(true);
     }
 
@@ -184,16 +202,22 @@ pub async fn process_discogs_data(
 
     reporter.abort();
 
-    // Mark processing as complete
+    // Only mark processing as complete if all tasks succeeded
     let mut state_marker = state_marker_arc.lock().await;
-    state_marker.complete_processing();
-    state_marker.complete_extraction();
-    state_marker.save(&marker_path).await?;
-    info!("✅ Processing phase completed: version {}", state_marker.current_version);
+    if success {
+        state_marker.complete_processing();
+        state_marker.complete_extraction();
+        state_marker.save(&marker_path).await?;
+        info!("✅ Processing phase completed: version {}", state_marker.current_version);
+    } else {
+        // Save current progress without marking complete — allows restart to resume
+        state_marker.save(&marker_path).await?;
+        error!("❌ Processing phase finished with errors — not marking complete");
+    }
 
     // Log completion and send extraction_complete to all consumers
-    let s = state.read().await;
-    if !s.completed_files.is_empty() {
+    {
+        let s = state.read().await;
         info!("🎉 All processing complete! Finished files: {:?}", s.completed_files);
         info!("📊 Final statistics: {} total records extracted", s.extraction_progress.total());
 
@@ -213,11 +237,13 @@ pub async fn process_discogs_data(
                     .await
                 {
                     error!("❌ Failed to send extraction_complete message: {}", e);
+                    success = false;
                 }
                 let _ = mq.close().await;
             }
             Err(e) => {
                 error!("❌ Failed to connect to AMQP for extraction_complete: {}", e);
+                success = false;
             }
         }
     }
@@ -378,7 +404,7 @@ pub async fn message_batcher(mut receiver: mpsc::Receiver<DataMessage>, sender: 
                 // Channel closed, send remaining messages
                 if !batch.is_empty() {
                     sender.send(batch).await?;
-                    // Note: total_batches is not incremented here as it's not used after loop exit
+                    total_batches += 1;
                 }
                 break;
             }
@@ -391,6 +417,15 @@ pub async fn message_batcher(mut receiver: mpsc::Receiver<DataMessage>, sender: 
                     last_flush = Instant::now();
                 }
             }
+        }
+    }
+
+    // Save final state marker with accurate batch count
+    {
+        let mut marker = state_marker.lock().await;
+        marker.update_file_progress(&file_name, total_records, total_records, total_batches);
+        if let Err(e) = marker.save(&marker_path).await {
+            warn!("⚠️ Failed to save final state marker progress: {}", e);
         }
     }
 
@@ -413,6 +448,7 @@ async fn message_publisher(
                 error!("❌ Failed to publish batch: {}", e);
                 let mut s = state.write().await;
                 s.error_count += 1;
+                return Err(e).context("Failed to publish batch to AMQP");
             }
         }
     }

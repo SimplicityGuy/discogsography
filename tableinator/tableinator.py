@@ -4,7 +4,7 @@ import os
 import signal
 import time
 from asyncio import run
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -77,6 +77,9 @@ idle_mode = False
 connection_params: dict[str, Any] = {}
 
 # Connection state tracking
+# Create async connection pool for concurrent access
+connection_pool: AsyncPostgreSQLPool | None = None
+
 rabbitmq_manager: Any = None  # Will hold AsyncResilientRabbitMQ instance
 active_connection: Any = None  # Current active connection
 active_channel: Any = None  # Current active channel
@@ -136,12 +139,9 @@ def get_health_data() -> dict[str, Any]:
         "last_message_time": last_message_time.copy(),
         "active_consumers": list(consumer_tags.keys()),
         "completed_files": list(completed_files),
-        "timestamp": datetime.now().isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
-
-# Create async connection pool for concurrent access
-connection_pool: AsyncPostgreSQLPool | None = None
 
 # Batch processor (optional, enabled via BATCH_MODE env var)
 batch_processor: PostgreSQLBatchProcessor | None = None
@@ -374,8 +374,9 @@ async def _recover_consumers() -> None:
             active_connection = temp_connection
             active_channel = temp_channel
 
-            # Set QoS - must match batch_size for efficient batch processing
-            await active_channel.set_qos(prefetch_count=200)
+            # Set QoS - scale with batch_size for efficient batch processing
+            prefetch_count = max(200, BATCH_SIZE * 2) if BATCH_MODE else 200
+            await active_channel.set_qos(prefetch_count=prefetch_count)
 
             # Declare per-data-type fanout exchanges and consumer-owned queues
             queues = {}
@@ -510,6 +511,7 @@ async def purge_stale_rows(data_type: str, started_at: str) -> None:
             data_type=data_type,
             error=str(e),
         )
+        raise
 
 
 def make_data_handler(
@@ -541,6 +543,10 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 f"Total records processed: {total_processed}"
             )
 
+            # Flush remaining batches for this data type before cancellation
+            if batch_processor is not None:
+                await batch_processor.flush_queue(data_type)
+
             # Schedule consumer cancellation if enabled
             if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:
                 await schedule_consumer_cancellation(data_type, queues[data_type])
@@ -556,15 +562,27 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 version=data.get("version"),
             )
 
-            # Flush any remaining batches before cleanup
+            # Flush remaining batches for this data type before cleanup
             if batch_processor is not None:
-                await batch_processor.flush_all()
+                await batch_processor.flush_queue(data_type)
 
             # Purge stale rows from prior extractions
+            purge_ok = True
             if connection_pool is not None:
-                await purge_stale_rows(data_type, data.get("started_at", ""))
+                try:
+                    await purge_stale_rows(data_type, data.get("started_at", ""))
+                except Exception as purge_exc:
+                    logger.error(
+                        "❌ Purge failed, nacking extraction_complete for retry",
+                        data_type=data_type,
+                        error=str(purge_exc),
+                    )
+                    purge_ok = False
 
-            await message.ack()
+            if purge_ok:
+                await message.ack()
+            else:
+                await message.nack(requeue=True)
             return
 
         # Normal message processing - require 'id' field
@@ -657,7 +675,7 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                         "updated_at = NOW();"
                     ).format(table=sql.Identifier(data_type)),
                     (
-                        data["sha256"],
+                        data.get("sha256", ""),
                         data_id,
                         Jsonb(data),
                     ),
@@ -964,8 +982,13 @@ async def main() -> None:
 
         # Set QoS to allow concurrent batch processing for better throughput
         # prefetch_count must be >= batch_size to allow batches to fill before flushing
-        # With batch_size=100 (default), we use 200 to allow 2 batches in parallel
-        await channel.set_qos(prefetch_count=200)
+        prefetch_count = max(200, BATCH_SIZE * 2) if BATCH_MODE else 200
+        await channel.set_qos(prefetch_count=prefetch_count)
+        logger.info(
+            "🔧 QoS prefetch configured",
+            prefetch_count=prefetch_count,
+            batch_size=BATCH_SIZE if BATCH_MODE else "N/A",
+        )
 
         # Declare per-data-type fanout exchanges and consumer-owned queues
         queues = {}
@@ -1016,7 +1039,7 @@ async def main() -> None:
 
         logger.info(
             f"🚀 Tableinator started! Connected to AMQP broker ({len(DATA_TYPES)} fanout exchanges). "
-            f"Consuming from {len(DATA_TYPES)} queues with connection pool (max 20 connections). "
+            f"Consuming from {len(DATA_TYPES)} queues with connection pool (max 50 connections). "
             "Ready to process messages into PostgreSQL. Press CTRL+C to exit"
         )
 
