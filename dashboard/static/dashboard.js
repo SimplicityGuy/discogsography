@@ -289,7 +289,7 @@ class Dashboard {
             const el = document.getElementById(`tableinator-${type}-count`);
             if (!el) return;
             const q = activeTableMap[type];
-            el.textContent = q ? q.messages_ready.toLocaleString() : '—';
+            el.textContent = q ? q.messages.toLocaleString() : '—';
         });
 
         this._updateBarChart(activeGraphMap, activeTableMap, TYPES, isDlq);
@@ -323,7 +323,7 @@ class Dashboard {
             const tEl = document.getElementById(`tableinator-${type}-count`);
             if (tEl) {
                 const q = activeTableMap[type];
-                tEl.textContent = q ? q.messages_ready.toLocaleString() : '—';
+                tEl.textContent = q ? q.messages.toLocaleString() : '—';
             }
         });
 
