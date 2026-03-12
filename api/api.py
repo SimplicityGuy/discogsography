@@ -147,7 +147,7 @@ async def _get_current_user(
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     """Manage API service lifecycle."""
-    global _pool, _config, _redis
+    global _pool, _config, _redis, _neo4j
 
     logger.info("🚀 API service starting...")
     _config = ApiConfig.from_env()
@@ -341,7 +341,8 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: 
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    if not user["is_active"] or not _verify_password(body.password, user["hashed_password"]):
+    password_ok = _verify_password(body.password, user["hashed_password"])
+    if not user["is_active"] or not password_ok:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

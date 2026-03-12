@@ -209,7 +209,7 @@ def dashboard_mock_httpx_client() -> MagicMock:
                 "progress": 0.5,
                 "timestamp": "2024-01-01T00:00:00+00:00",
             }
-        elif "api/v1/queues" in url:
+        elif "api/queues" in url:
             # Mock RabbitMQ management API
             response.json = AsyncMock(
                 return_value=[

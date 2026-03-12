@@ -77,6 +77,9 @@ idle_mode = False
 connection_params: dict[str, Any] = {}
 
 # Connection state tracking
+# Create async connection pool for concurrent access
+connection_pool: AsyncPostgreSQLPool | None = None
+
 rabbitmq_manager: Any = None  # Will hold AsyncResilientRabbitMQ instance
 active_connection: Any = None  # Current active connection
 active_channel: Any = None  # Current active channel
@@ -139,9 +142,6 @@ def get_health_data() -> dict[str, Any]:
         "timestamp": datetime.now().isoformat(),
     }
 
-
-# Create async connection pool for concurrent access
-connection_pool: AsyncPostgreSQLPool | None = None
 
 # Batch processor (optional, enabled via BATCH_MODE env var)
 batch_processor: PostgreSQLBatchProcessor | None = None
@@ -511,6 +511,7 @@ async def purge_stale_rows(data_type: str, started_at: str) -> None:
             data_type=data_type,
             error=str(e),
         )
+        raise
 
 
 def make_data_handler(
@@ -566,10 +567,22 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
                 await batch_processor.flush_queue(data_type)
 
             # Purge stale rows from prior extractions
+            purge_ok = True
             if connection_pool is not None:
-                await purge_stale_rows(data_type, data.get("started_at", ""))
+                try:
+                    await purge_stale_rows(data_type, data.get("started_at", ""))
+                except Exception as purge_exc:
+                    logger.error(
+                        "❌ Purge failed, nacking extraction_complete for retry",
+                        data_type=data_type,
+                        error=str(purge_exc),
+                    )
+                    purge_ok = False
 
-            await message.ack()
+            if purge_ok:
+                await message.ack()
+            else:
+                await message.nack(requeue=True)
             return
 
         # Normal message processing - require 'id' field

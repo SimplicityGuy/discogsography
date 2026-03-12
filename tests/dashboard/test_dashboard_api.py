@@ -26,7 +26,6 @@ class TestDashboardAPI:
             patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=dashboard_mock_neo4j_driver),
             patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=dashboard_mock_psycopg_connect),
             patch("httpx.AsyncClient") as mock_httpx_class,
-            patch("psycopg.AsyncConnection.connect", return_value=dashboard_mock_psycopg_connect),
         ):
             # Configure httpx.AsyncClient to return our mock instance
             mock_httpx_class.return_value = dashboard_mock_httpx_client
@@ -51,14 +50,9 @@ class TestDashboardAPI:
         assert response.status_code == 200
         data = response.json()
 
-        # The endpoint might return empty data if dashboard is not initialized
-        # This is expected behavior in test mode
-        if data:
-            # Check structure if data is available
-            assert "services" in data
-            assert "queues" in data
-            assert "databases" in data
-            assert "timestamp" in data
+        # Verify response is valid JSON (structural assertions are covered
+        # by TestDashboardAPIIntegration.test_metrics_endpoint)
+        assert isinstance(data, dict)
 
     def test_prometheus_metrics(self, test_client: TestClient) -> None:
         """Test the Prometheus metrics endpoint."""

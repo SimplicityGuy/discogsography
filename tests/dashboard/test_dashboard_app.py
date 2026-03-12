@@ -685,12 +685,11 @@ class TestDashboardAppDataCollection:
             mock_pg_conn = AsyncMock()
             # cursor() should return the cursor object (not be async)
             mock_pg_conn.cursor = Mock(return_value=mock_pg_cursor)
-            mock_pg_conn.__aenter__ = AsyncMock(return_value=mock_pg_conn)
-            mock_pg_conn.__aexit__ = AsyncMock(return_value=None)
 
-            # Mock the connect function to return the connection
-            async def mock_connect(**_kwargs):
-                return mock_pg_conn
+            # Mock the resilient postgres connection
+            mock_postgres_conn = AsyncMock()
+            mock_postgres_conn.get_connection = AsyncMock(return_value=mock_pg_conn)
+            app.postgres_conn = mock_postgres_conn
 
             # Mock Neo4j session
             mock_neo4j_result1 = AsyncMock()
@@ -705,18 +704,17 @@ class TestDashboardAppDataCollection:
 
             app.neo4j_driver.session = AsyncMock(return_value=mock_neo4j_session)
 
-            with patch("psycopg.AsyncConnection.connect", side_effect=mock_connect):
-                databases = await app.get_database_info()
+            databases = await app.get_database_info()
 
-                # Should have both PostgreSQL and Neo4j
-                assert len(databases) == 2
-                assert databases[0].name == "PostgreSQL"
-                assert databases[0].status == "healthy"
-                assert databases[0].connection_count == 5
-                assert databases[0].size == "100 MB"  # 104857600 bytes → 100 MB
-                assert databases[1].name == "Neo4j"
-                assert databases[1].status == "healthy"
-                assert "1,000 nodes" in databases[1].size
+            # Should have both PostgreSQL and Neo4j
+            assert len(databases) == 2
+            assert databases[0].name == "PostgreSQL"
+            assert databases[0].status == "healthy"
+            assert databases[0].connection_count == 5
+            assert databases[0].size == "100 MB"  # 104857600 bytes → 100 MB
+            assert databases[1].name == "Neo4j"
+            assert databases[1].status == "healthy"
+            assert "1,000 nodes" in databases[1].size
 
     @pytest.mark.asyncio
     async def test_get_database_info_postgres_size_gb(self) -> None:
@@ -744,19 +742,17 @@ class TestDashboardAppDataCollection:
 
             mock_pg_conn = AsyncMock()
             mock_pg_conn.cursor = Mock(return_value=mock_pg_cursor)
-            mock_pg_conn.__aenter__ = AsyncMock(return_value=mock_pg_conn)
-            mock_pg_conn.__aexit__ = AsyncMock(return_value=None)
 
-            async def mock_connect(**_kwargs):
-                return mock_pg_conn
+            mock_postgres_conn = AsyncMock()
+            mock_postgres_conn.get_connection = AsyncMock(return_value=mock_pg_conn)
+            app.postgres_conn = mock_postgres_conn
 
-            with patch("psycopg.AsyncConnection.connect", side_effect=mock_connect):
-                databases = await app.get_database_info()
+            databases = await app.get_database_info()
 
-                assert len(databases) == 1
-                assert databases[0].name == "PostgreSQL"
-                assert databases[0].status == "healthy"
-                assert databases[0].size == "1.56 GB"  # 1674917632 bytes → 1.56 GB
+            assert len(databases) == 1
+            assert databases[0].name == "PostgreSQL"
+            assert databases[0].status == "healthy"
+            assert databases[0].size == "1.56 GB"  # 1674917632 bytes → 1.56 GB
 
     @pytest.mark.asyncio
     async def test_get_database_info_postgres_size_37gb(self) -> None:
@@ -784,19 +780,17 @@ class TestDashboardAppDataCollection:
 
             mock_pg_conn = AsyncMock()
             mock_pg_conn.cursor = Mock(return_value=mock_pg_cursor)
-            mock_pg_conn.__aenter__ = AsyncMock(return_value=mock_pg_conn)
-            mock_pg_conn.__aexit__ = AsyncMock(return_value=None)
 
-            async def mock_connect(**_kwargs):
-                return mock_pg_conn
+            mock_postgres_conn = AsyncMock()
+            mock_postgres_conn.get_connection = AsyncMock(return_value=mock_pg_conn)
+            app.postgres_conn = mock_postgres_conn
 
-            with patch("psycopg.AsyncConnection.connect", side_effect=mock_connect):
-                databases = await app.get_database_info()
+            databases = await app.get_database_info()
 
-                assert len(databases) == 1
-                assert databases[0].name == "PostgreSQL"
-                assert databases[0].status == "healthy"
-                assert databases[0].size == "37.00 GB"  # 39728447488 bytes → 37.00 GB
+            assert len(databases) == 1
+            assert databases[0].name == "PostgreSQL"
+            assert databases[0].status == "healthy"
+            assert databases[0].size == "37.00 GB"  # 39728447488 bytes → 37.00 GB
 
     @pytest.mark.asyncio
     async def test_get_database_info_postgres_size_376gb(self) -> None:
@@ -824,19 +818,17 @@ class TestDashboardAppDataCollection:
 
             mock_pg_conn = AsyncMock()
             mock_pg_conn.cursor = Mock(return_value=mock_pg_cursor)
-            mock_pg_conn.__aenter__ = AsyncMock(return_value=mock_pg_conn)
-            mock_pg_conn.__aexit__ = AsyncMock(return_value=None)
 
-            async def mock_connect(**_kwargs):
-                return mock_pg_conn
+            mock_postgres_conn = AsyncMock()
+            mock_postgres_conn.get_connection = AsyncMock(return_value=mock_pg_conn)
+            app.postgres_conn = mock_postgres_conn
 
-            with patch("psycopg.AsyncConnection.connect", side_effect=mock_connect):
-                databases = await app.get_database_info()
+            databases = await app.get_database_info()
 
-                assert len(databases) == 1
-                assert databases[0].name == "PostgreSQL"
-                assert databases[0].status == "healthy"
-                assert databases[0].size == "376.00 GB"  # 403726925824 bytes → 376.00 GB
+            assert len(databases) == 1
+            assert databases[0].name == "PostgreSQL"
+            assert databases[0].status == "healthy"
+            assert databases[0].size == "376.00 GB"  # 403726925824 bytes → 376.00 GB
 
     @pytest.mark.asyncio
     async def test_get_database_info_postgres_error(self) -> None:
@@ -857,14 +849,17 @@ class TestDashboardAppDataCollection:
             mock_neo4j_result2 = AsyncMock()
             mock_neo4j_result2.single = AsyncMock(return_value={"nodeCount": 100, "relCount": 50})
 
-            with patch("psycopg.AsyncConnection.connect", side_effect=Exception("Connection failed")):
-                databases = await app.get_database_info()
+            mock_postgres_conn = AsyncMock()
+            mock_postgres_conn.get_connection = AsyncMock(side_effect=Exception("Connection failed"))
+            app.postgres_conn = mock_postgres_conn
 
-                # Should have PostgreSQL as unhealthy
-                assert len(databases) == 1
-                assert databases[0].name == "PostgreSQL"
-                assert databases[0].status == "unhealthy"
-                assert "Connection failed" in databases[0].error
+            databases = await app.get_database_info()
+
+            # Should have PostgreSQL as unhealthy
+            assert len(databases) == 1
+            assert databases[0].name == "PostgreSQL"
+            assert databases[0].status == "unhealthy"
+            assert "Connection failed" in databases[0].error
 
     @pytest.mark.asyncio
     async def test_get_database_info_neo4j_error(self) -> None:
@@ -890,25 +885,23 @@ class TestDashboardAppDataCollection:
             mock_pg_conn = AsyncMock()
             # cursor() should return the cursor object (not be async)
             mock_pg_conn.cursor = Mock(return_value=mock_pg_cursor)
-            mock_pg_conn.__aenter__ = AsyncMock(return_value=mock_pg_conn)
-            mock_pg_conn.__aexit__ = AsyncMock(return_value=None)
 
-            async def mock_connect(**_kwargs):
-                return mock_pg_conn
+            mock_postgres_conn = AsyncMock()
+            mock_postgres_conn.get_connection = AsyncMock(return_value=mock_pg_conn)
+            app.postgres_conn = mock_postgres_conn
 
             # Mock Neo4j session failure
             app.neo4j_driver.session.side_effect = Exception("Neo4j connection failed")
 
-            with patch("psycopg.AsyncConnection.connect", side_effect=mock_connect):
-                databases = await app.get_database_info()
+            databases = await app.get_database_info()
 
-                # Should have both databases
-                assert len(databases) == 2
-                assert databases[0].name == "PostgreSQL"
-                assert databases[0].status == "healthy"
-                assert databases[1].name == "Neo4j"
-                assert databases[1].status == "unhealthy"
-                assert "Neo4j connection failed" in databases[1].error
+            # Should have both databases
+            assert len(databases) == 2
+            assert databases[0].name == "PostgreSQL"
+            assert databases[0].status == "healthy"
+            assert databases[1].name == "Neo4j"
+            assert databases[1].status == "unhealthy"
+            assert "Neo4j connection failed" in databases[1].error
 
 
 class TestFastAPIEndpoints:
@@ -1265,18 +1258,12 @@ class TestGetDatabaseInfoNoPort:
             app = DashboardApp()
             app.neo4j_driver = None
 
-            connect_kwargs: dict[str, Any] = {}
+            # postgres_conn is initialized during startup with parsed host/port
+            # Verify that get_database_info handles postgres_conn=None gracefully
+            app.postgres_conn = None
 
-            async def capture_connect(**kwargs: Any) -> Any:
-                connect_kwargs.update(kwargs)
-                raise Exception("Connection refused")
+            databases = await app.get_database_info()
 
-            with patch("psycopg.AsyncConnection.connect", side_effect=capture_connect):
-                databases = await app.get_database_info()
-
-            # Verify port defaulted to 5432 and host was used as-is
-            assert connect_kwargs.get("host") == "mydbhost"
-            assert connect_kwargs.get("port") == 5432
             assert databases[0].name == "PostgreSQL"
             assert databases[0].status == "unhealthy"
 

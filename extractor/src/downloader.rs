@@ -53,7 +53,9 @@ impl Downloader {
     /// Save state marker to disk if present
     async fn save_state_marker(&mut self) {
         if let (Some(marker), Some(path)) = (&mut self.state_marker, &self.marker_path) {
-            marker.save(path).await.ok();
+            if let Err(e) = marker.save(path).await {
+                warn!("⚠️ Failed to save state marker: {}", e);
+            }
         }
     }
 
@@ -256,6 +258,7 @@ impl Downloader {
             // Check if we have a complete set - exactly like Python logic
             // Python requires exactly 5 files total (1 CHECKSUM + 4 data files)
             if files_for_id.len() != 5 {
+                warn!("⚠️ Skipping version {} — expected 5 files, found {}", id, files_for_id.len());
                 continue;
             }
 
@@ -437,6 +440,13 @@ impl Downloader {
             );
 
             return Ok(downloaded);
+        }
+
+        // Clean up partial file left by the final failed attempt
+        if local_path.exists() {
+            if let Err(e) = fs::remove_file(&local_path).await {
+                warn!("⚠️ Failed to remove partial file after all retries: {}", e);
+            }
         }
 
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Download failed after {} attempts", MAX_DOWNLOAD_RETRIES)))

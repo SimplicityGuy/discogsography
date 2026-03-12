@@ -334,6 +334,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      - graphinator_logs:/logs
 
   # Tableinator service
   tableinator:
@@ -387,6 +389,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      - tableinator_logs:/logs
 
   # Dashboard service
   dashboard:
@@ -446,6 +450,8 @@ services:
     tmpfs:
       - /tmp
       - /.cache
+    volumes:
+      - dashboard_logs:/logs
 
   # Explore service
   explore:
@@ -485,6 +491,8 @@ services:
     read_only: true
     tmpfs:
       - /tmp
+    volumes:
+      - explore_logs:/logs
 
 volumes:
   rabbitmq_data:
@@ -498,3 +506,7 @@ volumes:
   extractor_logs:
   schema_init_logs:
   api_logs:
+  graphinator_logs:
+  tableinator_logs:
+  dashboard_logs:
+  explore_logs:

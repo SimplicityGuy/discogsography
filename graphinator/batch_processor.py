@@ -286,6 +286,10 @@ class Neo4jBatchProcessor:
                     batch_size=len(messages),
                     error=str(e),
                 )
+                # Track failures for non-transient errors too, to enable backoff
+                self._consecutive_failures[data_type] = (
+                    self._consecutive_failures.get(data_type, 0) + 1
+                )
 
         batch_duration = time.time() - batch_start
 

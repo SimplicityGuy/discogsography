@@ -4,7 +4,7 @@ import asyncio
 from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 import logging
 from threading import Lock
@@ -87,7 +87,7 @@ class CircuitBreaker:
 
     def _should_attempt_reset(self) -> bool:
         """Check if enough time has passed to try reset."""
-        return self.last_failure_time is not None and datetime.now() - self.last_failure_time > timedelta(seconds=self.config.recovery_timeout)
+        return self.last_failure_time is not None and datetime.now(UTC) - self.last_failure_time > timedelta(seconds=self.config.recovery_timeout)
 
     def _on_success(self) -> None:
         """Handle successful call."""
@@ -101,7 +101,7 @@ class CircuitBreaker:
         """Handle failed call."""
         with self._lock:
             self.failure_count += 1
-            self.last_failure_time = datetime.now()
+            self.last_failure_time = datetime.now(UTC)
 
             if self.failure_count >= self.config.failure_threshold and self.state != CircuitState.OPEN:
                 logger.error(f"🚨 {self.config.name}: Circuit breaker OPEN after {self.failure_count} failures")
@@ -119,7 +119,7 @@ class CircuitBreaker:
         """Handle failed async call."""
         async with self._async_lock:
             self.failure_count += 1
-            self.last_failure_time = datetime.now()
+            self.last_failure_time = datetime.now(UTC)
 
             if self.failure_count >= self.config.failure_threshold and self.state != CircuitState.OPEN:
                 logger.error(f"🚨 {self.config.name}: Circuit breaker OPEN after {self.failure_count} failures")
@@ -141,12 +141,10 @@ class ExponentialBackoff:
 
         if self.jitter:
             # Add random jitter (0-25% of delay)
-            # Using time-based jitter instead of random for non-cryptographic randomness
-            import time
+            import random
 
-            # Use microseconds from current time as a pseudo-random value
-            jitter_value = (time.time() * 1000000) % 100 / 100.0  # Value between 0 and 1
-            delay = delay * (1 + jitter_value * 0.25)
+            jitter_value = random.uniform(0, 0.25)  # noqa: S311  # nosec B311
+            delay = delay * (1 + jitter_value)
 
         return delay
 

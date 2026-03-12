@@ -139,10 +139,9 @@ class StateMarker:
 
     def save(self, path: Path) -> None:
         """Save state marker to file."""
-        self.last_updated = datetime.now(UTC)
-
         # Convert to dict and handle datetime serialization
         data = self._to_dict()
+        data["last_updated"] = datetime.now(UTC).isoformat()
 
         with path.open("w") as f:
             json.dump(data, f, indent=2, default=str)
