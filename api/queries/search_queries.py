@@ -23,7 +23,12 @@ import json
 from typing import Any
 
 from psycopg.rows import dict_row
+import structlog
 
+from common import AsyncPostgreSQLPool
+
+
+logger = structlog.get_logger(__name__)
 
 ALL_TYPES: list[str] = ["artist", "label", "master", "release"]
 
@@ -67,6 +72,8 @@ def _entity_select(entity_type: str, name_field: str, has_year: bool, has_genres
 
 def _build_union(types: list[str]) -> str:
     """Build UNION ALL of SELECT fragments for the requested entity types."""
+    if not types:  # would produce invalid SQL
+        raise ValueError("types must not be empty")
     parts = []
     for t in types:
         _table, name_field, has_year, has_genres = _ENTITY_CONFIG[t]
@@ -75,28 +82,36 @@ def _build_union(types: list[str]) -> str:
 
 
 def _year_filter_clause(year_min: int | None, year_max: int | None) -> tuple[str, list[Any]]:
-    """Return (SQL_clause, params) for optional year filtering."""
+    """Return (SQL_clause, params) for optional year filtering.
+
+    Rows with NULL year (artists, labels) are always included regardless of
+    year filter — only rows with a parseable year are filtered.
+    """
     clauses: list[str] = []
     params: list[Any] = []
     if year_min is not None:
-        clauses.append("year IS NOT NULL AND year::int >= %s")
+        clauses.append("(year IS NULL OR year::int >= %s)")
         params.append(year_min)
     if year_max is not None:
-        clauses.append("year IS NOT NULL AND year::int <= %s")
+        clauses.append("(year IS NULL OR year::int <= %s)")
         params.append(year_max)
     return (" AND ".join(clauses), params) if clauses else ("TRUE", [])
 
 
 def _genre_filter_clause(genres: list[str]) -> tuple[str, list[Any]]:
-    """Return (SQL_clause, params) for optional genre filtering."""
+    """Return (SQL_clause, params) for optional genre filtering.
+
+    Rows with NULL genres (artists, labels, masters) are always included
+    regardless of genre filter — only rows with genre data are filtered.
+    """
     if not genres:
         return ("TRUE", [])
     # ?| checks if JSONB array contains any of the given strings
-    return ("genres IS NOT NULL AND genres ?| %s::text[]", [genres])
+    return ("(genres IS NULL OR genres ?| %s::text[])", [genres])
 
 
 async def _run_results(
-    pool: Any,
+    pool: AsyncPostgreSQLPool,
     q: str,
     types: list[str],
     genres: list[str],
@@ -129,7 +144,7 @@ LIMIT %s OFFSET %s
 
 
 async def _run_total(
-    pool: Any,
+    pool: AsyncPostgreSQLPool,
     q: str,
     types: list[str],
     genres: list[str],
@@ -156,7 +171,7 @@ WHERE {year_clause} AND {genre_clause}
     return int(row["total"]) if row else 0
 
 
-async def _run_type_counts(pool: Any, q: str, types: list[str]) -> dict[str, int]:
+async def _run_type_counts(pool: AsyncPostgreSQLPool, q: str, types: list[str]) -> dict[str, int]:
     """Count matching records per entity type (for type facet)."""
     union_parts = []
     for t in types:
@@ -178,7 +193,7 @@ WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq)
     return {row["type"]: int(row["cnt"]) for row in rows}
 
 
-async def _run_genre_facets(pool: Any, q: str) -> dict[str, int]:
+async def _run_genre_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int]:
     """Count matching releases per genre (for genre facet)."""
     sql = """
 WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq)
@@ -196,7 +211,7 @@ LIMIT 20
     return {row["genre"]: int(row["cnt"]) for row in rows}
 
 
-async def _run_decade_facets(pool: Any, q: str) -> dict[str, int]:
+async def _run_decade_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int]:
     """Count matching masters+releases per decade (for decade facet)."""
     sql = """
 WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),
@@ -242,7 +257,7 @@ def _format_result(row: dict[str, Any]) -> dict[str, Any]:
 
 
 async def execute_search(
-    pool: Any,
+    pool: AsyncPostgreSQLPool,
     redis: Any | None,
     q: str,
     types: list[str],
@@ -257,12 +272,17 @@ async def execute_search(
     Checks Redis cache first (TTL=300s). On miss, runs 5 DB queries
     concurrently, formats response, stores in Redis, and returns.
     """
+    if not types:
+        raise ValueError("types must not be empty")
+
     key = cache_key(q, types, genres, year_min, year_max, limit, offset)
 
     if redis is not None:
         cached = await redis.get(key)
         if cached:
             return json.loads(cached)  # type: ignore[no-any-return]
+
+    logger.debug("Search cache miss, querying DB", q=q, types=types)
 
     results_rows, total, type_counts, genre_facets, decade_facets = await asyncio.gather(
         _run_results(pool, q, types, genres, year_min, year_max, limit, offset),
