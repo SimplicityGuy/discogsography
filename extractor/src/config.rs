@@ -296,7 +296,7 @@ mod tests {
         use std::io::Write;
 
         let mut tmp = tempfile::NamedTempFile::new().unwrap();
-        write!(tmp, "  trimmed_password  \n").unwrap();
+        writeln!(tmp, "  trimmed_password  ").unwrap();
 
         unsafe {
             env::set_var("RABBITMQ_PASSWORD_FILE", tmp.path().to_str().unwrap());

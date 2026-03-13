@@ -9,6 +9,8 @@ use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, warn};
 
+use async_trait::async_trait;
+
 use crate::state_marker::StateMarker;
 use crate::types::{LocalFileInfo, S3FileInfo};
 
@@ -30,6 +32,16 @@ pub struct Downloader {
     cached_files: Option<Vec<S3FileInfo>>,
 }
 
+#[cfg_attr(feature = "test-support", mockall::automock)]
+#[async_trait]
+pub trait DataSource: Send + Sync {
+    async fn list_s3_files(&mut self) -> Result<Vec<S3FileInfo>>;
+    fn get_latest_monthly_files(&self, files: &[S3FileInfo]) -> Result<Vec<S3FileInfo>>;
+    async fn download_discogs_data(&mut self) -> Result<Vec<String>>;
+    fn set_state_marker(&mut self, state_marker: StateMarker, marker_path: PathBuf);
+    fn take_state_marker(&mut self) -> Option<StateMarker>;
+}
+
 impl Downloader {
     pub async fn new(output_directory: PathBuf) -> Result<Self> {
         Self::new_with_base_url(output_directory, DISCOGS_DATA_URL.to_string()).await
@@ -43,7 +55,8 @@ impl Downloader {
         Ok(Self { output_directory, metadata, base_url, state_marker: None, marker_path: None, cached_files: None })
     }
 
-    /// Set the state marker for tracking download progress
+    /// Set the state marker for tracking download progress (builder pattern, used by integration tests)
+    #[allow(dead_code)]
     pub fn with_state_marker(mut self, state_marker: StateMarker, marker_path: PathBuf) -> Self {
         self.state_marker = Some(state_marker);
         self.marker_path = Some(marker_path);
@@ -52,10 +65,10 @@ impl Downloader {
 
     /// Save state marker to disk if present
     async fn save_state_marker(&mut self) {
-        if let (Some(marker), Some(path)) = (&mut self.state_marker, &self.marker_path) {
-            if let Err(e) = marker.save(path).await {
-                warn!("⚠️ Failed to save state marker: {}", e);
-            }
+        if let (Some(marker), Some(path)) = (&mut self.state_marker, &self.marker_path)
+            && let Err(e) = marker.save(path).await
+        {
+            warn!("⚠️ Failed to save state marker: {}", e);
         }
     }
 
@@ -339,10 +352,10 @@ impl Downloader {
         for attempt in 1..=MAX_DOWNLOAD_RETRIES {
             if attempt > 1 {
                 // Remove any partial file left by the previous attempt
-                if local_path.exists() {
-                    if let Err(e) = fs::remove_file(&local_path).await {
-                        warn!("⚠️ Failed to remove partial file before retry: {}", e);
-                    }
+                if local_path.exists()
+                    && let Err(e) = fs::remove_file(&local_path).await
+                {
+                    warn!("⚠️ Failed to remove partial file before retry: {}", e);
                 }
                 let delay_ms = RETRY_BASE_DELAY_MS * (1u64 << (attempt - 2));
                 warn!("🔄 Retry {}/{} for {} (waiting {}ms)...", attempt - 1, MAX_DOWNLOAD_RETRIES - 1, filename, delay_ms);
@@ -447,10 +460,10 @@ impl Downloader {
         }
 
         // Clean up partial file left by the final failed attempt
-        if local_path.exists() {
-            if let Err(e) = fs::remove_file(&local_path).await {
-                warn!("⚠️ Failed to remove partial file after all retries: {}", e);
-            }
+        if local_path.exists()
+            && let Err(e) = fs::remove_file(&local_path).await
+        {
+            warn!("⚠️ Failed to remove partial file after all retries: {}", e);
         }
 
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Download failed after {} attempts", MAX_DOWNLOAD_RETRIES)))
@@ -505,6 +518,30 @@ fn extract_month_from_filename(filename: &str) -> String {
         return date_part[0..6].to_string(); // YYYYMM
     }
     Utc::now().format("%Y%m").to_string()
+}
+
+#[async_trait]
+impl DataSource for Downloader {
+    async fn list_s3_files(&mut self) -> Result<Vec<S3FileInfo>> {
+        Downloader::list_s3_files(self).await
+    }
+
+    fn get_latest_monthly_files(&self, files: &[S3FileInfo]) -> Result<Vec<S3FileInfo>> {
+        Downloader::get_latest_monthly_files(self, files)
+    }
+
+    async fn download_discogs_data(&mut self) -> Result<Vec<String>> {
+        Downloader::download_discogs_data(self).await
+    }
+
+    fn set_state_marker(&mut self, state_marker: StateMarker, marker_path: PathBuf) {
+        self.state_marker = Some(state_marker);
+        self.marker_path = Some(marker_path);
+    }
+
+    fn take_state_marker(&mut self) -> Option<StateMarker> {
+        self.state_marker.take()
+    }
 }
 
 #[cfg(test)]
@@ -902,15 +939,13 @@ mod tests {
             .await;
 
         // Year page listing files (5 files = 4 data + 1 checksum for a complete set)
-        let year_page_html = format!(
-            r#"<html><body>
+        let year_page_html = r#"<html><body>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
-        </body></html>"#
-        );
+        </body></html>"#.to_string();
 
         let _year_mock = server
             .mock("GET", "/?prefix=data%2F2026%2F")

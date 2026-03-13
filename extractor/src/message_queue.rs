@@ -7,10 +7,33 @@ use tokio::time::sleep;
 use tracing::{debug, error, info, warn};
 use url::Url;
 
+use async_trait::async_trait;
+
 use crate::types::{DataMessage, DataType, ExtractionCompleteMessage, FileCompleteMessage, Message};
 
 const AMQP_EXCHANGE_PREFIX: &str = "discogsography";
 const AMQP_EXCHANGE_TYPE: ExchangeKind = ExchangeKind::Fanout;
+
+#[cfg_attr(feature = "test-support", mockall::automock)]
+#[async_trait]
+pub trait MessagePublisher: Send + Sync {
+    async fn setup_exchange(&self, data_type: DataType) -> Result<()>;
+    async fn publish(&self, message: Message, data_type: DataType) -> Result<()>;
+    async fn publish_batch(&self, messages: Vec<DataMessage>, data_type: DataType) -> Result<()>;
+    async fn send_file_complete(
+        &self,
+        data_type: DataType,
+        file_name: &str,
+        total_processed: u64,
+    ) -> Result<()>;
+    async fn send_extraction_complete(
+        &self,
+        version: &str,
+        started_at: chrono::DateTime<chrono::Utc>,
+        record_counts: std::collections::HashMap<String, u64>,
+    ) -> Result<()>;
+    async fn close(&self) -> Result<()>;
+}
 
 pub struct MessageQueue {
     connection: Arc<RwLock<Option<Connection>>>,
@@ -100,7 +123,36 @@ impl MessageQueue {
         Ok(())
     }
 
-    pub async fn setup_exchange(&self, data_type: DataType) -> Result<()> {
+    fn message_properties() -> BasicProperties {
+        BasicProperties::default()
+            .with_content_type("application/json".into())
+            .with_content_encoding("UTF-8".into())
+            .with_delivery_mode(2) // Persistent
+    }
+
+    async fn get_channel(&self) -> Result<Channel> {
+        let channel_guard = self.channel.read().await;
+
+        if let Some(channel) = &*channel_guard
+            && channel.status().connected()
+        {
+            return Ok(channel.clone());
+        }
+
+        drop(channel_guard);
+
+        // Channel is not connected, try to reconnect
+        warn!("⚠️ AMQP channel lost, attempting to reconnect...");
+        self.connect().await?;
+
+        self.channel.read().await.as_ref().cloned().ok_or_else(|| anyhow::anyhow!("Failed to get channel after reconnection"))
+    }
+
+}
+
+#[async_trait]
+impl MessagePublisher for MessageQueue {
+    async fn setup_exchange(&self, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
         let exchange_name = Self::exchange_name(data_type);
 
@@ -119,14 +171,7 @@ impl MessageQueue {
         Ok(())
     }
 
-    fn message_properties() -> BasicProperties {
-        BasicProperties::default()
-            .with_content_type("application/json".into())
-            .with_content_encoding("UTF-8".into())
-            .with_delivery_mode(2) // Persistent
-    }
-
-    pub async fn publish(&self, message: Message, data_type: DataType) -> Result<()> {
+    async fn publish(&self, message: Message, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
         let exchange_name = Self::exchange_name(data_type);
         let payload = serde_json::to_vec(&message).context("Failed to serialize message")?;
@@ -151,7 +196,7 @@ impl MessageQueue {
         Ok(())
     }
 
-    pub async fn publish_batch(&self, messages: Vec<DataMessage>, data_type: DataType) -> Result<()> {
+    async fn publish_batch(&self, messages: Vec<DataMessage>, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
         let exchange_name = Self::exchange_name(data_type);
 
@@ -179,7 +224,7 @@ impl MessageQueue {
         Ok(())
     }
 
-    pub async fn send_file_complete(&self, data_type: DataType, file_name: &str, total_processed: u64) -> Result<()> {
+    async fn send_file_complete(&self, data_type: DataType, file_name: &str, total_processed: u64) -> Result<()> {
         let message =
             FileCompleteMessage { data_type: data_type.to_string(), timestamp: chrono::Utc::now(), total_processed, file: file_name.to_string() };
 
@@ -190,7 +235,7 @@ impl MessageQueue {
         Ok(())
     }
 
-    pub async fn send_extraction_complete(
+    async fn send_extraction_complete(
         &self,
         version: &str,
         started_at: chrono::DateTime<chrono::Utc>,
@@ -238,25 +283,7 @@ impl MessageQueue {
         Ok(())
     }
 
-    async fn get_channel(&self) -> Result<Channel> {
-        let channel_guard = self.channel.read().await;
-
-        if let Some(channel) = &*channel_guard
-            && channel.status().connected()
-        {
-            return Ok(channel.clone());
-        }
-
-        drop(channel_guard);
-
-        // Channel is not connected, try to reconnect
-        warn!("⚠️ AMQP channel lost, attempting to reconnect...");
-        self.connect().await?;
-
-        self.channel.read().await.as_ref().cloned().ok_or_else(|| anyhow::anyhow!("Failed to get channel after reconnection"))
-    }
-
-    pub async fn close(&self) -> Result<()> {
+    async fn close(&self) -> Result<()> {
         if let Some(channel) = self.channel.write().await.take() {
             channel.close(200, "Normal shutdown".into()).await?;
         }

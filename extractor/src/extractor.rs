@@ -8,12 +8,31 @@ use tokio::sync::{RwLock, mpsc};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
+use async_trait::async_trait;
+
 use crate::config::ExtractorConfig;
-use crate::downloader::Downloader;
-use crate::message_queue::MessageQueue;
+use crate::downloader::{DataSource, Downloader};
+use crate::message_queue::{MessagePublisher, MessageQueue};
 use crate::parser::XmlParser;
 use crate::state_marker::{PhaseStatus, ProcessingDecision, StateMarker};
 use crate::types::{DataMessage, DataType, ExtractionProgress};
+
+/// Factory for creating MessagePublisher instances (enables DI for testing)
+#[cfg_attr(feature = "test-support", mockall::automock)]
+#[async_trait]
+pub trait MessageQueueFactory: Send + Sync {
+    async fn create(&self, url: &str) -> Result<Arc<dyn MessagePublisher>>;
+}
+
+/// Default factory that creates real MessageQueue connections
+pub struct DefaultMessageQueueFactory;
+
+#[async_trait]
+impl MessageQueueFactory for DefaultMessageQueueFactory {
+    async fn create(&self, url: &str) -> Result<Arc<dyn MessagePublisher>> {
+        Ok(Arc::new(MessageQueue::new(url, 3).await?))
+    }
+}
 
 /// State shared across the extractor
 #[derive(Debug, Default)]
@@ -31,6 +50,8 @@ pub async fn process_discogs_data(
     state: Arc<RwLock<ExtractorState>>,
     shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
+    downloader: &mut dyn DataSource,
+    mq_factory: Arc<dyn MessageQueueFactory>,
 ) -> Result<bool> {
     // Record extraction start time for consumer cleanup coordination
     let extraction_started_at = chrono::Utc::now();
@@ -44,9 +65,6 @@ pub async fn process_discogs_data(
         s.active_connections.clear();
         s.error_count = 0;
     }
-
-    // Create downloader
-    let mut downloader = Downloader::new(config.discogs_root.clone()).await?;
 
     // Get file list to determine version
     let available_files = downloader.list_s3_files().await.context("Failed to list S3 files")?;
@@ -93,13 +111,14 @@ pub async fn process_discogs_data(
     }
 
     // Pass state marker to downloader for tracking download progress
-    downloader = downloader.with_state_marker(state_marker, marker_path.clone());
+    downloader.set_state_marker(state_marker, marker_path.clone());
 
     // Download latest data (this will now track timestamps properly)
     let data_files = downloader.download_discogs_data().await.context("Failed to download Discogs data")?;
 
     // Get state marker back from downloader
-    let mut state_marker = downloader.state_marker.take().unwrap();
+    let mut state_marker = downloader.take_state_marker()
+        .ok_or_else(|| anyhow::anyhow!("State marker missing after download"))?;
 
     // Filter out checksum files
     let data_files: Vec<_> = data_files.into_iter().filter(|f| !f.contains("CHECKSUM")).collect();
@@ -127,7 +146,7 @@ pub async fn process_discogs_data(
 
         // Send extraction_complete so consumers know this run is done
         let record_counts = HashMap::new();
-        match MessageQueue::new(&config.amqp_connection, 3).await {
+        match mq_factory.create(&config.amqp_connection).await {
             Ok(mq) => {
                 if let Err(e) = mq
                     .send_extraction_complete(&version, extraction_started_at, record_counts)
@@ -162,11 +181,14 @@ pub async fn process_discogs_data(
         let semaphore = semaphore.clone();
         let marker_path = marker_path.clone();
         let state_marker_arc = state_marker_arc.clone();
+        let mq_factory = mq_factory.clone();
 
         let task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
+            let mq = mq_factory.create(&config.amqp_connection).await
+                .context("Failed to connect to message queue")?;
 
-            process_single_file(&file, config, state, state_marker_arc.clone(), marker_path.clone()).await?;
+            process_single_file(&file, config, state, state_marker_arc.clone(), marker_path.clone(), mq).await?;
 
             info!("✅ Completed processing: {}", file);
             Ok(())
@@ -230,7 +252,7 @@ pub async fn process_discogs_data(
 
         // Send extraction_complete to all consumer queues
         drop(s); // Release read lock before async MQ operations
-        match MessageQueue::new(&config.amqp_connection, 3).await {
+        match mq_factory.create(&config.amqp_connection).await {
             Ok(mq) => {
                 if let Err(e) = mq
                     .send_extraction_complete(&version, extraction_started_at, record_counts)
@@ -252,12 +274,13 @@ pub async fn process_discogs_data(
 }
 
 /// Process a single file
-async fn process_single_file(
+pub async fn process_single_file(
     file_name: &str,
     config: Arc<ExtractorConfig>,
     state: Arc<RwLock<ExtractorState>>,
     state_marker: Arc<tokio::sync::Mutex<StateMarker>>,
     marker_path: PathBuf,
+    mq: Arc<dyn MessagePublisher>,
 ) -> Result<()> {
     // Extract data type from filename
     let data_type = extract_data_type(file_name).ok_or_else(|| anyhow::anyhow!("Invalid file format: {}", file_name))?;
@@ -271,9 +294,6 @@ async fn process_single_file(
         marker.save(&marker_path).await?;
         info!("📋 Started file processing in state marker: {}", file_name);
     }
-
-    // Connect to message queue
-    let mq = Arc::new(MessageQueue::new(&config.amqp_connection, 3).await.context("Failed to connect to message queue")?);
 
     // Declare fanout exchange for this data type
     mq.setup_exchange(data_type).await?;
@@ -433,9 +453,9 @@ pub async fn message_batcher(mut receiver: mpsc::Receiver<DataMessage>, sender: 
 }
 
 /// Publish batched messages to AMQP
-async fn message_publisher(
+pub async fn message_publisher(
     mut receiver: mpsc::Receiver<Vec<DataMessage>>,
-    mq: Arc<MessageQueue>,
+    mq: Arc<dyn MessagePublisher>,
     data_type: DataType,
     state: Arc<RwLock<ExtractorState>>,
 ) -> Result<()> {
@@ -530,11 +550,13 @@ pub async fn run_extraction_loop(
     state: Arc<RwLock<ExtractorState>>,
     shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
+    mq_factory: Arc<dyn MessageQueueFactory>,
 ) -> Result<()> {
     info!("📥 Starting initial data processing...");
 
     // Process initial data
-    let success = process_discogs_data(config.clone(), state.clone(), shutdown.clone(), force_reprocess).await?;
+    let mut downloader = Downloader::new(config.discogs_root.clone()).await?;
+    let success = process_discogs_data(config.clone(), state.clone(), shutdown.clone(), force_reprocess, &mut downloader, mq_factory.clone()).await?;
 
     if !success {
         error!("❌ Initial data processing failed");
@@ -553,7 +575,14 @@ pub async fn run_extraction_loop(
                 info!("🔄 Starting periodic check for new or updated Discogs files...");
                 let start = Instant::now();
 
-                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), false).await {
+                let mut downloader = match Downloader::new(config.discogs_root.clone()).await {
+                    Ok(dl) => dl,
+                    Err(e) => {
+                        error!("❌ Failed to create downloader for periodic check: {}", e);
+                        continue;
+                    }
+                };
+                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), false, &mut downloader, mq_factory.clone()).await {
                     Ok(true) => {
                         info!("✅ Periodic check completed successfully in {:?}", start.elapsed());
                     }

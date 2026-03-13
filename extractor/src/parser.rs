@@ -239,10 +239,10 @@ impl XmlParser {
                 }
 
                 Ok(Event::Text(e)) => {
-                    if in_target_element && let Some(context) = element_stack.last_mut() {
-                        if let Ok(text) = e.decode() {
-                            context.text_content.push_str(&text);
-                        }
+                    if in_target_element && let Some(context) = element_stack.last_mut()
+                        && let Ok(text) = e.decode()
+                    {
+                        context.text_content.push_str(&text);
                     }
                 }
 
