@@ -93,8 +93,13 @@ class SnapshotRestoreResponse(BaseModel):
     created_at: str
 
 
+# ---------------------------------------------------------------------------
+# Taste Fingerprint models
+# ---------------------------------------------------------------------------
+
+
 class HeatmapCell(BaseModel):
-    """A single cell in the genre x decade heatmap."""
+    """Single cell in a genre x decade heatmap."""
 
     genre: str
     decade: int
@@ -102,46 +107,41 @@ class HeatmapCell(BaseModel):
 
 
 class HeatmapResponse(BaseModel):
-    """Genre x decade heatmap matrix."""
+    """Genre x decade heatmap for a user's collection."""
 
-    genres: list[str]
-    decades: list[int]
     cells: list[HeatmapCell]
     total: int
 
 
 class ObscurityScore(BaseModel):
-    """Collection obscurity scoring."""
+    """How obscure a user's collection is (0 = mainstream, 1 = maximally obscure)."""
 
-    overall: float = Field(ge=0.0, le=1.0)
-    most_obscure: list[dict[str, object]]
-    most_mainstream: list[dict[str, object]]
+    score: float = Field(ge=0.0, le=1.0)
+    median_collectors: float
+    total_releases: int
 
 
 class TasteDriftYear(BaseModel):
-    """Genre distribution for a single year of collecting."""
+    """Top genre for a single year of additions."""
 
-    year: int
-    genres: dict[str, int]
+    year: str
+    top_genre: str
+    count: int
 
 
 class BlindSpot(BaseModel):
-    """A recommended underexplored genre/decade area."""
+    """A genre the user's favourite artists release in but the user hasn't collected."""
 
     genre: str
-    decade: int | None = None
-    reason: str
-    score: float = Field(ge=0.0, le=1.0)
+    artist_overlap: int
+    example_release: str | None = None
 
 
 class FingerprintResponse(BaseModel):
-    """Full taste fingerprint analytics object."""
+    """Full taste fingerprint combining all sub-queries."""
 
-    total_items: int
-    heatmap_genres: list[str]
-    heatmap_decades: list[int]
-    heatmap_cells: list[HeatmapCell]
+    heatmap: list[HeatmapCell]
     obscurity: ObscurityScore
-    taste_drift: list[TasteDriftYear]
-    top_labels: list[dict[str, object]]
+    drift: list[TasteDriftYear]
+    blind_spots: list[BlindSpot]
     peak_decade: int | None = None
