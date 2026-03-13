@@ -11,6 +11,9 @@ repository = "https://github.com/SimplicityGuy/discogsography"
 name = "extractor"
 path = "src/main.rs"
 
+[features]
+test-support = ["mockall"]
+
 [dependencies]
 # Core async runtime
 tokio = { version = "1.49", features = ["full"] }
@@ -71,7 +74,11 @@ parking_lot = "0.12"
 num_cpus = "1.17"
 url = "2.5"  # URL parsing for AMQP connection normalization
 
+# Mock generation for trait-based testing (behind feature flag)
+mockall = { version = "0.13", optional = true }
+
 [dev-dependencies]
+extractor = { path = ".", features = ["test-support"] }
 tempfile = "3.25"
 tokio = { version = "1.49", features = ["test-util"] }
 mockito = "1.7"
