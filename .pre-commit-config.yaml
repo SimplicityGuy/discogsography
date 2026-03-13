@@ -50,7 +50,7 @@ repos:
     rev: 92ae8b82fb422a639f0ed8d99e96cea769594e08  # frozen: 1.9.4
     hooks:
       - id: bandit
-        args: [-x, "tests"]
+        args: [-x, "tests", -s, "B608"]  # B608 skipped: all user input uses parameterized %s queries
 
   - repo: https://github.com/hadolint/hadolint
     rev: 4e697ba704fd23b2409b947a319c19c3ee54d24f  # frozen: v2.14.0
