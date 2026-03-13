@@ -1,7 +1,7 @@
 """Tests for GET /api/search endpoint."""
 
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
 
@@ -55,7 +55,7 @@ class TestSearchEndpointBasic:
         assert response.status_code == 422  # FastAPI validation rejects min_length=3
 
     def test_search_400_with_invalid_type(self, test_client: TestClient) -> None:
-        with patch("api.routers.search.execute_search"):
+        with patch("api.routers.search.execute_search", new_callable=AsyncMock):
             response = test_client.get("/api/search?q=blue&types=invalid")
         assert response.status_code == 400
         assert "invalid" in response.json()["error"].lower()
