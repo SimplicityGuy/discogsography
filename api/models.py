@@ -91,3 +91,57 @@ class SnapshotRestoreResponse(BaseModel):
     nodes: list[SnapshotNode]
     center: SnapshotNode
     created_at: str
+
+
+class HeatmapCell(BaseModel):
+    """A single cell in the genre x decade heatmap."""
+
+    genre: str
+    decade: int
+    count: int
+
+
+class HeatmapResponse(BaseModel):
+    """Genre x decade heatmap matrix."""
+
+    genres: list[str]
+    decades: list[int]
+    cells: list[HeatmapCell]
+    total: int
+
+
+class ObscurityScore(BaseModel):
+    """Collection obscurity scoring."""
+
+    overall: float = Field(ge=0.0, le=1.0)
+    most_obscure: list[dict[str, object]]
+    most_mainstream: list[dict[str, object]]
+
+
+class TasteDriftYear(BaseModel):
+    """Genre distribution for a single year of collecting."""
+
+    year: int
+    genres: dict[str, int]
+
+
+class BlindSpot(BaseModel):
+    """A recommended underexplored genre/decade area."""
+
+    genre: str
+    decade: int | None = None
+    reason: str
+    score: float = Field(ge=0.0, le=1.0)
+
+
+class FingerprintResponse(BaseModel):
+    """Full taste fingerprint analytics object."""
+
+    total_items: int
+    heatmap_genres: list[str]
+    heatmap_decades: list[int]
+    heatmap_cells: list[HeatmapCell]
+    obscurity: ObscurityScore
+    taste_drift: list[TasteDriftYear]
+    top_labels: list[dict[str, object]]
+    peak_decade: int | None = None

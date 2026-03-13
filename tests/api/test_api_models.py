@@ -70,3 +70,69 @@ class TestLoginResponse:
         """Test that token_type defaults to 'bearer'."""
         resp = LoginResponse(access_token="t", expires_in=1800)  # noqa: S106
         assert resp.token_type == "bearer"
+
+
+class TestTasteModels:
+    """Tests for taste fingerprint Pydantic models."""
+
+    def test_heatmap_cell_valid(self) -> None:
+        from api.models import HeatmapCell
+
+        cell = HeatmapCell(genre="Rock", decade=1990, count=42)
+        assert cell.genre == "Rock"
+        assert cell.decade == 1990
+        assert cell.count == 42
+
+    def test_heatmap_response_valid(self) -> None:
+        from api.models import HeatmapCell, HeatmapResponse
+
+        resp = HeatmapResponse(
+            genres=["Rock", "Jazz"],
+            decades=[1990, 2000],
+            cells=[HeatmapCell(genre="Rock", decade=1990, count=5)],
+            total=5,
+        )
+        assert len(resp.genres) == 2
+        assert len(resp.cells) == 1
+
+    def test_obscurity_score_valid(self) -> None:
+        from api.models import ObscurityScore
+
+        score = ObscurityScore(
+            overall=0.73,
+            most_obscure=[{"release_id": "r1", "title": "Rare LP", "score": 0.99}],
+            most_mainstream=[{"release_id": "r2", "title": "Best Of", "score": 0.05}],
+        )
+        assert 0.0 <= score.overall <= 1.0
+
+    def test_taste_drift_year_valid(self) -> None:
+        from api.models import TasteDriftYear
+
+        year = TasteDriftYear(year=2023, genres={"Rock": 5, "Jazz": 3})
+        assert year.genres["Rock"] == 5
+
+    def test_blind_spot_valid(self) -> None:
+        from api.models import BlindSpot
+
+        spot = BlindSpot(
+            genre="Reggae",
+            decade=1970,
+            reason="You collect 12 Dub releases but zero Reggae from the 1970s",
+            score=0.85,
+        )
+        assert spot.score == 0.85
+
+    def test_fingerprint_response_valid(self) -> None:
+        from api.models import FingerprintResponse, HeatmapCell, ObscurityScore, TasteDriftYear
+
+        fp = FingerprintResponse(
+            total_items=50,
+            heatmap_genres=["Rock"],
+            heatmap_decades=[1990],
+            heatmap_cells=[HeatmapCell(genre="Rock", decade=1990, count=50)],
+            obscurity=ObscurityScore(overall=0.5, most_obscure=[], most_mainstream=[]),
+            taste_drift=[TasteDriftYear(year=2023, genres={"Rock": 50})],
+            top_labels=[{"name": "Warp", "count": 10}],
+            peak_decade=1990,
+        )
+        assert fp.total_items == 50
