@@ -180,12 +180,14 @@ def test_client(
     import api.routers.explore as _explore_router
     import api.routers.snapshot as _snapshot_router
     import api.routers.sync as _sync_router
+    import api.routers.taste as _taste_router
     import api.routers.user as _user_router
 
     fake_redis = aioredis_fake.FakeRedis(server=fake_redis_server)
     _sync_router.configure(mock_pool, mock_neo4j, test_api_config, api_module._running_syncs, mock_redis)
     _explore_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
     _user_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
+    _taste_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
     _collection_router.configure(mock_neo4j, mock_pool, test_api_config.jwt_secret_key)
     _snapshot_router.configure(jwt_secret=TEST_JWT_SECRET, redis_client=fake_redis)
 
