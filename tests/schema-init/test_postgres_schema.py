@@ -65,6 +65,24 @@ class TestSpecificIndexes:
         release_gin = [n for n, s in _SPECIFIC_INDEXES if "releases" in s and "GIN" in s]
         assert len(release_gin) >= 2
 
+    def test_fts_gin_indexes_defined(self) -> None:
+        """All four entity tables must have a GIN FTS index."""
+        fts_names = {name for name, _ in _SPECIFIC_INDEXES if name.startswith("idx_") and "_fts" in name}
+        assert fts_names == {
+            "idx_artists_fts",
+            "idx_labels_fts",
+            "idx_masters_fts",
+            "idx_releases_fts",
+        }
+
+    def test_fts_indexes_use_gin(self) -> None:
+        """FTS indexes must use USING GIN with to_tsvector."""
+        fts = {name: stmt for name, stmt in _SPECIFIC_INDEXES if "_fts" in name}
+        for name, stmt in fts.items():
+            assert "USING GIN" in stmt, f"{name} missing USING GIN"
+            assert "to_tsvector" in stmt, f"{name} missing to_tsvector"
+            assert "english" in stmt, f"{name} missing language 'english'"
+
 
 class TestCreatePostgresSchema:
     """Test create_postgres_schema with a mock pool."""
