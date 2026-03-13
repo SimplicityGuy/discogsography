@@ -74,6 +74,9 @@ parking_lot = "0.12"
 num_cpus = "1.17"
 url = "2.5"  # URL parsing for AMQP connection normalization
 
+# Trait object support for async traits (needed for dyn-compatible async trait methods)
+async-trait = "0.1"
+
 # Mock generation for trait-based testing (behind feature flag)
 mockall = { version = "0.13", optional = true }
 
