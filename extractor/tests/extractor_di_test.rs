@@ -8,6 +8,7 @@ use extractor::message_queue::MockMessagePublisher;
 use extractor::downloader::MockDataSource;
 use extractor::types::S3FileInfo;
 use extractor::types::{DataType, DataMessage};
+use extractor::extractor::DefaultMessageQueueFactory;
 
 mod mock_helpers;
 use mock_helpers::MockMqFactory;
@@ -232,4 +233,15 @@ async fn test_process_discogs_data_force_reprocess_bypasses_skip() {
 
     // Result may be Ok or Err — key assertion is download_discogs_data was called (verified by mock times(1))
     let _ = result;
+}
+
+#[tokio::test]
+async fn test_default_mq_factory_create_fails_without_broker() {
+    use extractor::extractor::MessageQueueFactory;
+
+    let factory = DefaultMessageQueueFactory;
+    // Invalid port so connection fails fast
+    let result: anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> =
+        factory.create("amqp://localhost:59999").await;
+    assert!(result.is_err());
 }

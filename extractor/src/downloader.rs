@@ -1221,6 +1221,94 @@ mod tests {
         assert!(marker_path.exists());
     }
 
+    // ──── DataSource trait impl tests ────
+
+    #[tokio::test]
+    async fn test_datasource_set_and_take_state_marker() {
+        use crate::state_marker::StateMarker;
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut downloader: Box<dyn DataSource> = Box::new(
+            Downloader::new_with_base_url(temp_dir.path().to_path_buf(), "http://unused".to_string())
+                .await
+                .unwrap(),
+        );
+
+        // Initially no state marker
+        assert!(downloader.take_state_marker().is_none());
+
+        // Set a state marker via the trait
+        let marker = StateMarker::new("20260101".to_string());
+        let marker_path = temp_dir.path().join("marker.json");
+        downloader.set_state_marker(marker, marker_path);
+
+        // Take it back
+        let taken = downloader.take_state_marker();
+        assert!(taken.is_some());
+        assert_eq!(taken.unwrap().current_version, "20260101");
+
+        // Should be None after take
+        assert!(downloader.take_state_marker().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_datasource_list_s3_files_via_trait() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base_url = format!("{}/", server.url());
+
+        let main_page_html = r#"<html><body>
+            <a href="?prefix=data%2F2026%2F">2026/</a>
+        </body></html>"#;
+        let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
+
+        let year_page_html = r#"<html><body>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+        </body></html>"#;
+        let _year_mock = server
+            .mock("GET", "/?prefix=data%2F2026%2F")
+            .with_status(200)
+            .with_body(year_page_html)
+            .create_async()
+            .await;
+
+        let mut downloader: Box<dyn DataSource> = Box::new(
+            Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
+                .await
+                .unwrap(),
+        );
+
+        // Call through the DataSource trait
+        let files = downloader.list_s3_files().await.unwrap();
+        assert_eq!(files.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_datasource_get_latest_monthly_files_via_trait() {
+        let temp_dir = TempDir::new().unwrap();
+        let downloader: Box<dyn DataSource> = Box::new(
+            Downloader::new_with_base_url(temp_dir.path().to_path_buf(), "http://unused".to_string())
+                .await
+                .unwrap(),
+        );
+
+        let files = vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_CHECKSUM.txt".to_string(), size: 100 },
+        ];
+
+        let result = downloader.get_latest_monthly_files(&files).unwrap();
+        assert_eq!(result.len(), 4);
+        assert!(result.iter().all(|f| !f.name.contains("CHECKSUM")));
+    }
+
     #[test]
     fn test_get_latest_monthly_files_multiple_versions() {
         let temp_dir = TempDir::new().unwrap();
