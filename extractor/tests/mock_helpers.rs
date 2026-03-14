@@ -68,6 +68,23 @@ impl MockDownloader {
     }
 }
 
+use async_trait::async_trait;
+use extractor::message_queue::MessagePublisher;
+use extractor::extractor::MessageQueueFactory;
+
+/// Mock factory that returns a pre-configured mock publisher.
+/// Each call to `create()` returns a clone of the same Arc<dyn MessagePublisher>.
+pub struct MockMqFactory {
+    pub publisher: Arc<dyn MessagePublisher>,
+}
+
+#[async_trait]
+impl MessageQueueFactory for MockMqFactory {
+    async fn create(&self, _url: &str) -> anyhow::Result<Arc<dyn MessagePublisher>> {
+        Ok(self.publisher.clone())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

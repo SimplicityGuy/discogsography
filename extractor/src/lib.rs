@@ -11,4 +11,5 @@ pub mod types;
 
 // Additional test modules
 #[cfg(test)]
-mod message_queue_tests;
+#[path = "tests/message_queue_unit_tests.rs"]
+mod message_queue_unit_tests;
