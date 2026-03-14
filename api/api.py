@@ -41,6 +41,7 @@ import api.routers.explore as _explore_router
 import api.routers.search as _search_router
 import api.routers.snapshot as _snapshot_router
 import api.routers.sync as _sync_router
+import api.routers.taste as _taste_router
 import api.routers.user as _user_router
 from api.services.discogs import (
     DISCOGS_AUTHORIZE_URL,
@@ -192,6 +193,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _sync_router.configure(_pool, _neo4j, _config, _running_syncs, _redis)
     _explore_router.configure(_neo4j, jwt_secret_for_neo4j)
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
+    _taste_router.configure(_neo4j, jwt_secret_for_neo4j)
     _collection_router.configure(_neo4j, _pool, jwt_secret_for_neo4j)
     _search_router.configure(_pool, _redis)
     _snapshot_router.configure(
@@ -258,6 +260,7 @@ app.include_router(_explore_router.router)
 app.include_router(_search_router.router)
 app.include_router(_snapshot_router.router)
 app.include_router(_user_router.router)
+app.include_router(_taste_router.router)
 app.include_router(_collection_router.router)
 
 
