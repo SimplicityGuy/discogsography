@@ -11,6 +11,76 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js" integrity="sha384-LXWjKwDZz29o7TduNe+r/UxaolHh5FsSvy2W7bDHSZ8jJeGgDeuNnsDNHoxpSgDi" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="css/styles.css">
     <style>[x-cloak] { display: none !important; }</style>
+    <style>
+/* Timeline Scrubber */
+.timeline-scrubber {
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+}
+.timeline-scrubber.hidden { display: none; }
+.timeline-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+.timeline-btn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+.timeline-btn:hover { background: var(--bg-hover); }
+.timeline-year {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 1.1rem;
+    min-width: 48px;
+    text-align: center;
+    color: var(--text-primary);
+}
+.timeline-slider {
+    flex: 1;
+    accent-color: var(--accent-purple);
+    cursor: pointer;
+}
+.timeline-speed {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    user-select: none;
+}
+.timeline-speed:hover { background: var(--bg-hover); }
+
+/* Genre emergence glow */
+@keyframes emergence-glow {
+    0% { filter: drop-shadow(0 0 6px #facc15); }
+    100% { filter: none; }
+}
+.node-emergence {
+    animation: emergence-glow 2s ease-out forwards;
+}
+.emergence-badge {
+    font-size: 8px;
+    font-weight: 700;
+    fill: #facc15;
+    text-anchor: middle;
+}
+    </style>
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.store('modals', {
@@ -359,6 +429,22 @@
                 </div>
                 <div class="info-panel-body" id="infoPanelBody">
                     <p class="text-text-secondary">Click a node to see details</p>
+                </div>
+            </div>
+            <!-- Timeline Scrubber -->
+            <div class="timeline-scrubber hidden" id="timelineScrubber">
+                <div class="timeline-controls">
+                    <button class="timeline-btn" id="timelinePlayBtn" title="Play/Pause">
+                        <i class="fas fa-play" id="timelinePlayIcon"></i>
+                    </button>
+                    <span class="timeline-year" id="timelineYearLabel">—</span>
+                    <input type="range" class="timeline-slider" id="timelineSlider" min="1900" max="2025" value="2025" />
+                    <div class="timeline-speed" id="timelineSpeedToggle" title="Toggle speed">
+                        <span id="timelineSpeedLabel">1yr/s</span>
+                    </div>
+                    <button class="timeline-btn" id="timelineResetBtn" title="Reset (show all years)">
+                        <i class="fas fa-undo"></i>
+                    </button>
                 </div>
             </div>
         </div>
