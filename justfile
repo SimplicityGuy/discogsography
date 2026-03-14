@@ -184,6 +184,9 @@ test-parallel:
     uv run pytest tests/graphinator/ -v > /tmp/test-graphinator.log 2>&1 &
     pid_graphinator=$!
 
+    uv run pytest tests/mcp-server/ -v > /tmp/test-mcp-server.log 2>&1 &
+    pid_mcp_server=$!
+
     uv run pytest tests/schema-init/ -v > /tmp/test-schema-init.log 2>&1 &
     pid_schema_init=$!
 
@@ -207,6 +210,7 @@ test-parallel:
     wait $pid_explore || { echo "❌ Explore tests failed"; cat /tmp/test-explore.log; failed=1; }
     wait $pid_insights || { echo "❌ Insights tests failed"; cat /tmp/test-insights.log; failed=1; }
     wait $pid_graphinator || { echo "❌ Graphinator tests failed"; cat /tmp/test-graphinator.log; failed=1; }
+    wait $pid_mcp_server || { echo "❌ MCP server tests failed"; cat /tmp/test-mcp-server.log; failed=1; }
     wait $pid_schema_init || { echo "❌ Schema-init tests failed"; cat /tmp/test-schema-init.log; failed=1; }
     wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
     wait $pid_js || { echo "❌ JS tests failed"; cat /tmp/test-js.log; failed=1; }
@@ -276,6 +280,12 @@ test-insights:
 test-graphinator:
     uv run pytest tests/graphinator/ -v \
         --cov --cov-config=.coveragerc.graphinator --cov-report=xml --cov-report=json --cov-report=term
+
+# Run mcp-server tests with coverage
+[group('test')]
+test-mcp-server:
+    uv run pytest tests/mcp-server/ -v \
+        --cov --cov-config=.coveragerc.mcp-server --cov-report=xml --cov-report=json --cov-report=term
 
 # Run schema-init service tests with coverage
 [group('test')]
