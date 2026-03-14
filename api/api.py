@@ -120,6 +120,12 @@ async def _get_current_user(
         )
     try:
         payload = decode_token(credentials.credentials, _config.jwt_secret_key)
+        # Reject admin tokens — they must not be used as regular user tokens
+        if payload.get("type") == "admin":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise HTTPException(
@@ -188,7 +194,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         )
         logger.info("🔗 Neo4j driver initialized")
     jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_host else None
-    _dependencies.configure(jwt_secret_for_neo4j)
+    _dependencies.configure(jwt_secret_for_neo4j, _redis)
     _sync_router.configure(_pool, _neo4j, _config, _running_syncs, _redis)
     _explore_router.configure(_neo4j, jwt_secret_for_neo4j)
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)

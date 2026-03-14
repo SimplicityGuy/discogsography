@@ -10,11 +10,13 @@ from api.auth import decode_token
 
 _security = HTTPBearer(auto_error=False)
 _jwt_secret: str | None = None
+_redis: Any = None
 
 
-def configure(jwt_secret: str | None) -> None:
-    global _jwt_secret
+def configure(jwt_secret: str | None, redis: Any = None) -> None:
+    global _jwt_secret, _redis
     _jwt_secret = jwt_secret
+    _redis = redis
 
 
 async def get_optional_user(
@@ -41,3 +43,26 @@ async def require_user(
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token", headers={"WWW-Authenticate": "Bearer"}
         ) from exc
+
+
+async def require_admin(
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_security)],
+) -> dict[str, Any]:
+    """Require a valid admin JWT token. Rejects non-admin tokens with 403."""
+    if _jwt_secret is None:
+        raise HTTPException(status_code=503, detail="Admin endpoints not configured")
+    if credentials is None:
+        raise HTTPException(status_code=401, detail="Authentication required")
+    try:
+        payload = decode_token(credentials.credentials, _jwt_secret)
+    except ValueError as exc:
+        raise HTTPException(status_code=401, detail="Invalid or expired token") from exc
+    if payload.get("type") != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    # Check token revocation in Redis
+    jti: str | None = payload.get("jti")
+    if jti and _redis:
+        revoked = await _redis.get(f"revoked:jti:{jti}")
+        if revoked:
+            raise HTTPException(status_code=401, detail="Token has been revoked")
+    return payload
