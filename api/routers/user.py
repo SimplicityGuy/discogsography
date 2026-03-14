@@ -1,5 +1,7 @@
 """User endpoints — migrated from explore service."""
 
+from collections import OrderedDict
+import time
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
@@ -11,7 +13,9 @@ from api.dependencies import get_optional_user, require_user
 from api.queries.user_queries import (
     check_releases_user_status,
     get_user_collection,
+    get_user_collection_evolution,
     get_user_collection_stats,
+    get_user_collection_timeline,
     get_user_recommendations,
     get_user_wantlist,
 )
@@ -23,11 +27,35 @@ router = APIRouter()
 
 _neo4j_driver: Any = None
 
+# In-memory cache for timeline/evolution queries (keyed by user_id + params)
+_timeline_cache: OrderedDict[str, tuple[float, dict[str, Any]]] = OrderedDict()
+_TIMELINE_CACHE_MAX = 128
+_TIMELINE_CACHE_TTL = 300  # 5 minutes
+
 
 def configure(neo4j: Any, jwt_secret: str | None) -> None:
     global _neo4j_driver
     _neo4j_driver = neo4j
     _dependencies.configure(jwt_secret)
+
+
+def _get_cached(key: str) -> dict[str, Any] | None:
+    entry = _timeline_cache.get(key)
+    if entry is None:
+        return None
+    ts, data = entry
+    if time.monotonic() - ts > _TIMELINE_CACHE_TTL:
+        _timeline_cache.pop(key, None)
+        return None
+    _timeline_cache.move_to_end(key)
+    return data
+
+
+def _set_cached(key: str, data: dict[str, Any]) -> None:
+    _timeline_cache[key] = (time.monotonic(), data)
+    _timeline_cache.move_to_end(key)
+    while len(_timeline_cache) > _TIMELINE_CACHE_MAX:
+        _timeline_cache.popitem(last=False)
 
 
 @router.get("/api/user/collection")
@@ -77,6 +105,40 @@ async def user_collection_stats(
     user_id: str = current_user.get("sub", "")
     stats = await get_user_collection_stats(_neo4j_driver, user_id)
     return JSONResponse(content=stats)
+
+
+@router.get("/api/user/collection/timeline")
+async def user_collection_timeline(
+    current_user: Annotated[dict[str, Any], Depends(require_user)],
+    bucket: str = Query("year", pattern="^(year|decade)$"),
+) -> JSONResponse:
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+    user_id: str = current_user.get("sub", "")
+    cache_key = f"timeline:{user_id}:{bucket}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return JSONResponse(content=cached)
+    result = await get_user_collection_timeline(_neo4j_driver, user_id, bucket)
+    _set_cached(cache_key, result)
+    return JSONResponse(content=result)
+
+
+@router.get("/api/user/collection/evolution")
+async def user_collection_evolution(
+    current_user: Annotated[dict[str, Any], Depends(require_user)],
+    metric: str = Query("genre", pattern="^(genre|style|label)$"),
+) -> JSONResponse:
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+    user_id: str = current_user.get("sub", "")
+    cache_key = f"evolution:{user_id}:{metric}"
+    cached = _get_cached(cache_key)
+    if cached is not None:
+        return JSONResponse(content=cached)
+    result = await get_user_collection_evolution(_neo4j_driver, user_id, metric)
+    _set_cached(cache_key, result)
+    return JSONResponse(content=result)
 
 
 @router.get("/api/user/status")
