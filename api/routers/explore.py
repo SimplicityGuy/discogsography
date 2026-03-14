@@ -126,6 +126,7 @@ async def expand(
     category: str = Query(...),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    before_year: int | None = Query(default=None, ge=1900, le=2030),
 ) -> JSONResponse:
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
@@ -140,8 +141,8 @@ async def expand(
     query_func = type_categories[category_lower]
     count_func = COUNT_DISPATCH[entity_type][category_lower]
     results, total = await asyncio.gather(
-        query_func(_neo4j_driver, node_id, limit, offset),
-        count_func(_neo4j_driver, node_id),
+        query_func(_neo4j_driver, node_id, limit, offset, before_year=before_year),
+        count_func(_neo4j_driver, node_id, before_year=before_year),
     )
     return JSONResponse(content={"children": results, "total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total})
 

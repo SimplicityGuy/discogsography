@@ -1,7 +1,7 @@
 """Tests for explore endpoints in the API service (api/routers/explore.py)."""
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 from fastapi.testclient import TestClient
 import pytest
@@ -584,3 +584,39 @@ class TestPathEndpoint:
         assert data["found"] is True
         assert data["length"] == 0
         assert len(data["path"]) == 1
+
+
+class TestExpandBeforeYearEndpoint:
+    """Tests for before_year parameter on /api/expand."""
+
+    def test_expand_with_before_year(self, test_client: TestClient) -> None:
+        mock_query = AsyncMock(return_value=[{"id": "r1", "name": "The Bends", "type": "release", "year": 1995}])
+        mock_count = AsyncMock(return_value=1)
+        with (
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_query}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+        ):
+            response = test_client.get("/api/expand?node_id=Radiohead&type=artist&category=releases&before_year=1997")
+        assert response.status_code == 200
+        mock_query.assert_called_once_with(ANY, "Radiohead", 50, 0, before_year=1997)
+        mock_count.assert_called_once_with(ANY, "Radiohead", before_year=1997)
+
+    def test_expand_without_before_year(self, test_client: TestClient) -> None:
+        mock_query = AsyncMock(return_value=[])
+        mock_count = AsyncMock(return_value=0)
+        with (
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_query}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+        ):
+            response = test_client.get("/api/expand?node_id=Radiohead&type=artist&category=releases")
+        assert response.status_code == 200
+        mock_query.assert_called_once_with(ANY, "Radiohead", 50, 0, before_year=None)
+        mock_count.assert_called_once_with(ANY, "Radiohead", before_year=None)
+
+    def test_expand_before_year_validation_too_low(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/expand?node_id=x&type=artist&category=releases&before_year=1899")
+        assert response.status_code == 422
+
+    def test_expand_before_year_validation_too_high(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/expand?node_id=x&type=artist&category=releases&before_year=2031")
+        assert response.status_code == 422
