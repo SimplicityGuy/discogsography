@@ -106,7 +106,7 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     MATCH (r3:Release)-[:ON]->(l2), (r3)-[:IS]->(g3:Genre)
     WITH l2, g3.name AS genre, count(DISTINCT r3) AS genre_count
     WITH l2,
-         collect({genre: genre, count: genre_count}) AS genres,
+         collect({name: genre, count: genre_count}) AS genres,
          sum(genre_count) AS total_genre_refs
     MATCH (r4:Release)-[:ON]->(l2)
     WITH l2, genres, total_genre_refs, count(DISTINCT r4) AS release_count
@@ -123,7 +123,7 @@ def _to_genre_vector(genres: list[dict[str, Any]]) -> dict[str, float]:
     total = sum(g["count"] for g in genres)
     if total == 0:
         return {}
-    return {g["genre"] if "genre" in g else g["name"]: g["count"] / total for g in genres}
+    return {g["name"]: g["count"] / total for g in genres}
 
 
 def cosine_similarity(vec_a: dict[str, float], vec_b: dict[str, float]) -> float:

@@ -79,19 +79,22 @@ class TestLabelDnaEndpoint:
     def test_label_dna_success(self, mock_build_dna: AsyncMock, test_client: TestClient) -> None:
         from api.models import DecadeCount, FormatWeight, GenreWeight, LabelDNA, StyleWeight
 
-        mock_build_dna.return_value = LabelDNA(
-            label_id="123",
-            label_name="Blue Note",
-            release_count=100,
-            artist_count=50,
-            artist_diversity=0.5,
-            active_years=[1960, 1965, 1970],
-            peak_decade=1960,
-            prolificacy=33.33,
-            genres=[GenreWeight(name="Jazz", count=80, percentage=80.0)],
-            styles=[StyleWeight(name="Hard Bop", count=40, percentage=50.0)],
-            formats=[FormatWeight(name="Vinyl", count=60, percentage=60.0)],
-            decades=[DecadeCount(decade=1960, count=50, percentage=50.0)],
+        mock_build_dna.return_value = (
+            LabelDNA(
+                label_id="123",
+                label_name="Blue Note",
+                release_count=100,
+                artist_count=50,
+                artist_diversity=0.5,
+                active_years=[1960, 1965, 1970],
+                peak_decade=1960,
+                prolificacy=33.33,
+                genres=[GenreWeight(name="Jazz", count=80, percentage=80.0)],
+                styles=[StyleWeight(name="Hard Bop", count=40, percentage=50.0)],
+                formats=[FormatWeight(name="Vinyl", count=60, percentage=60.0)],
+                decades=[DecadeCount(decade=1960, count=50, percentage=50.0)],
+            ),
+            "ok",
         )
         response = test_client.get("/api/label/123/dna")
         assert response.status_code == 200
@@ -145,7 +148,7 @@ class TestSimilarLabelsEndpoint:
                 "label_id": "2",
                 "label_name": "Prestige",
                 "release_count": 80,
-                "genres": [{"genre": "Jazz", "count": 70}, {"genre": "Blues", "count": 10}],
+                "genres": [{"name": "Jazz", "count": 70}, {"name": "Blues", "count": 10}],
             },
         ]
         response = test_client.get("/api/label/1/similar?limit=5")
@@ -208,7 +211,7 @@ class TestCompareLabelsEndpoint:
             formats=[FormatWeight(name="CD", count=20, percentage=66.7)],
             decades=[DecadeCount(decade=2000, count=20, percentage=66.7)],
         )
-        mock_build_dna.side_effect = [dna1, dna2]
+        mock_build_dna.side_effect = [(dna1, "ok"), (dna2, "ok")]
         response = test_client.get("/api/label/dna/compare?ids=1,2")
         assert response.status_code == 200
         data = response.json()
@@ -217,10 +220,8 @@ class TestCompareLabelsEndpoint:
         assert data["labels"][1]["dna"]["label_id"] == "2"
 
     @patch("api.routers.label_dna._build_dna")
-    @patch("api.routers.label_dna.get_label_identity")
-    def test_compare_label_not_found(self, mock_identity: AsyncMock, mock_build_dna: AsyncMock, test_client: TestClient) -> None:
-        mock_build_dna.side_effect = [None, None]
-        mock_identity.return_value = None
+    def test_compare_label_not_found(self, mock_build_dna: AsyncMock, test_client: TestClient) -> None:
+        mock_build_dna.side_effect = [(None, "not_found"), (None, "not_found")]
         response = test_client.get("/api/label/dna/compare?ids=1,2")
         assert response.status_code == 404
 

@@ -9,7 +9,7 @@ from api.queries.label_dna_queries import (
 )
 
 
-class TestCosimSimilarity:
+class TestCosineSimilarity:
     """Tests for the cosine similarity function."""
 
     def test_identical_vectors(self) -> None:
@@ -54,8 +54,8 @@ class TestToGenreVector:
     def test_empty_list(self) -> None:
         assert _to_genre_vector([]) == {}
 
-    def test_uses_genre_key(self) -> None:
-        genres = [{"genre": "Rock", "count": 10}]
+    def test_uses_name_key(self) -> None:
+        genres = [{"name": "Rock", "count": 10}]
         vec = _to_genre_vector(genres)
         assert "Rock" in vec
 
@@ -74,13 +74,13 @@ class TestComputeSimilarLabels:
                 "label_id": "1",
                 "label_name": "Label A",
                 "release_count": 50,
-                "genres": [{"genre": "Rock", "count": 70}, {"genre": "Jazz", "count": 30}],
+                "genres": [{"name": "Rock", "count": 70}, {"name": "Jazz", "count": 30}],
             },
             {
                 "label_id": "2",
                 "label_name": "Label B",
                 "release_count": 30,
-                "genres": [{"genre": "Electronic", "count": 90}, {"genre": "Rock", "count": 10}],
+                "genres": [{"name": "Electronic", "count": 90}, {"name": "Rock", "count": 10}],
             },
         ]
         results = compute_similar_labels(target, candidates, limit=10)
@@ -95,7 +95,7 @@ class TestComputeSimilarLabels:
                 "label_id": str(i),
                 "label_name": f"Label {i}",
                 "release_count": 10,
-                "genres": [{"genre": "Rock", "count": 10}],
+                "genres": [{"name": "Rock", "count": 10}],
             }
             for i in range(20)
         ]
@@ -117,7 +117,7 @@ class TestComputeSimilarLabels:
                 "label_id": "1",
                 "label_name": "Label A",
                 "release_count": 10,
-                "genres": [{"genre": "Rock", "count": 10}, {"genre": "Classical", "count": 5}],
+                "genres": [{"name": "Rock", "count": 10}, {"name": "Classical", "count": 5}],
             },
         ]
         results = compute_similar_labels(target, candidates, limit=10)

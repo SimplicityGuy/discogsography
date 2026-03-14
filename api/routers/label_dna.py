@@ -49,14 +49,17 @@ def _add_percentages(items: list[dict[str, Any]], total: int) -> list[dict[str, 
     return [{**item, "percentage": round(item["count"] / total * 100, 1) if total else 0.0} for item in items]
 
 
-async def _build_dna(label_id: str) -> LabelDNA | None:
-    """Build a full LabelDNA fingerprint for a label."""
+async def _build_dna(label_id: str) -> tuple[LabelDNA | None, str]:
+    """Build a full LabelDNA fingerprint for a label.
+
+    Returns (dna, reason) — reason is "ok", "not_found", or "too_few".
+    """
     identity = await get_label_identity(_neo4j_driver, label_id)
     if not identity:
-        return None
+        return None, "not_found"
 
     if identity["release_count"] < MIN_RELEASES:
-        return None
+        return None, "too_few"
 
     genres, styles, decades, active_years, formats = await asyncio.gather(
         get_label_genre_profile(_neo4j_driver, label_id),
@@ -98,24 +101,22 @@ async def _build_dna(label_id: str) -> LabelDNA | None:
         styles=[StyleWeight(**s) for s in _add_percentages(styles, style_total)],
         formats=[FormatWeight(**f) for f in _add_percentages(formats, format_total)],
         decades=[DecadeCount(**d) for d in _add_percentages(decades, decade_total)],
-    )
+    ), "ok"
 
 
 @router.get("/api/label/{label_id}/dna")
 @limiter.limit("30/minute")
 async def label_dna(
-    request: Request,  # noqa: ARG001
+    request: Request,  # noqa: ARG001 -- required by slowapi
     label_id: str,
 ) -> JSONResponse:
     """Get the full DNA fingerprint for a label."""
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
-    dna = await _build_dna(label_id)
+    dna, reason = await _build_dna(label_id)
     if dna is None:
-        # Check if label exists at all
-        identity = await get_label_identity(_neo4j_driver, label_id)
-        if not identity:
+        if reason == "not_found":
             return JSONResponse(content={"error": f"Label '{label_id}' not found"}, status_code=404)
         return JSONResponse(
             content={"error": f"Label '{label_id}' has fewer than {MIN_RELEASES} releases"},
@@ -128,7 +129,7 @@ async def label_dna(
 @router.get("/api/label/{label_id}/similar")
 @limiter.limit("30/minute")
 async def similar_labels(
-    request: Request,  # noqa: ARG001
+    request: Request,  # noqa: ARG001 -- required by slowapi
     label_id: str,
     limit: int = Query(10, ge=1, le=50),
 ) -> JSONResponse:
@@ -164,7 +165,7 @@ async def similar_labels(
 @router.get("/api/label/dna/compare")
 @limiter.limit("30/minute")
 async def compare_labels(
-    request: Request,  # noqa: ARG001
+    request: Request,  # noqa: ARG001 -- required by slowapi
     ids: str = Query(..., description="Comma-separated label IDs (2-5)"),
 ) -> JSONResponse:
     """Side-by-side DNA comparison of multiple labels."""
@@ -180,10 +181,9 @@ async def compare_labels(
     dna_results = await asyncio.gather(*[_build_dna(lid) for lid in label_ids])
 
     entries = []
-    for lid, dna in zip(label_ids, dna_results, strict=True):
+    for lid, (dna, reason) in zip(label_ids, dna_results, strict=True):
         if dna is None:
-            identity = await get_label_identity(_neo4j_driver, lid)
-            if not identity:
+            if reason == "not_found":
                 return JSONResponse(content={"error": f"Label '{lid}' not found"}, status_code=404)
             return JSONResponse(
                 content={"error": f"Label '{lid}' has fewer than {MIN_RELEASES} releases"},

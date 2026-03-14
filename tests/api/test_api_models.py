@@ -99,3 +99,73 @@ class TestPathModels:
         assert resp.found is False
         assert resp.length is None
         assert resp.path == []
+
+
+class TestTasteModels:
+    """Tests for taste fingerprint Pydantic models."""
+
+    def test_heatmap_cell_valid(self) -> None:
+        from api.models import HeatmapCell
+
+        cell = HeatmapCell(genre="Rock", decade=1990, count=42)
+        assert cell.genre == "Rock"
+        assert cell.decade == 1990
+        assert cell.count == 42
+
+    def test_heatmap_response_valid(self) -> None:
+        from api.models import HeatmapCell, HeatmapResponse
+
+        resp = HeatmapResponse(
+            cells=[
+                HeatmapCell(genre="Rock", decade=1990, count=5),
+                HeatmapCell(genre="Jazz", decade=2000, count=3),
+            ],
+            total=8,
+        )
+        assert len(resp.cells) == 2
+        assert resp.total == 8
+
+    def test_obscurity_score_valid(self) -> None:
+        from api.models import ObscurityScore
+
+        score = ObscurityScore(
+            score=0.73,
+            median_collectors=150.0,
+            total_releases=42,
+        )
+        assert 0.0 <= score.score <= 1.0
+        assert score.median_collectors == 150.0
+        assert score.total_releases == 42
+
+    def test_taste_drift_year_valid(self) -> None:
+        from api.models import TasteDriftYear
+
+        drift = TasteDriftYear(year="2023", top_genre="Rock", count=5)
+        assert drift.top_genre == "Rock"
+        assert drift.count == 5
+
+    def test_blind_spot_valid(self) -> None:
+        from api.models import BlindSpot
+
+        spot = BlindSpot(
+            genre="Reggae",
+            artist_overlap=12,
+            example_release="King Tubby Meets Rockers Uptown",
+        )
+        assert spot.genre == "Reggae"
+        assert spot.artist_overlap == 12
+        assert spot.example_release == "King Tubby Meets Rockers Uptown"
+
+    def test_fingerprint_response_valid(self) -> None:
+        from api.models import FingerprintResponse, HeatmapCell, ObscurityScore, TasteDriftYear
+
+        fp = FingerprintResponse(
+            heatmap=[HeatmapCell(genre="Rock", decade=1990, count=50)],
+            obscurity=ObscurityScore(score=0.5, median_collectors=200.0, total_releases=50),
+            drift=[TasteDriftYear(year="2023", top_genre="Rock", count=50)],
+            blind_spots=[],
+            peak_decade=1990,
+        )
+        assert fp.peak_decade == 1990
+        assert len(fp.heatmap) == 1
+        assert fp.obscurity.score == 0.5
