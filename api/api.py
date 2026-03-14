@@ -36,6 +36,7 @@ from api.auth import (
 import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.models import LoginRequest, RegisterRequest
+import api.routers.admin as _admin_router
 import api.routers.collection as _collection_router
 import api.routers.explore as _explore_router
 import api.routers.search as _search_router
@@ -200,6 +201,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
     _collection_router.configure(_neo4j, _pool, jwt_secret_for_neo4j)
     _search_router.configure(_pool, _redis)
+    _admin_router.configure(_pool, _redis, _config)
     _snapshot_router.configure(
         jwt_secret=_config.jwt_secret_key,
         redis_client=_redis,
@@ -265,6 +267,7 @@ app.include_router(_search_router.router)
 app.include_router(_snapshot_router.router)
 app.include_router(_user_router.router)
 app.include_router(_collection_router.router)
+app.include_router(_admin_router.router)
 
 
 @app.get("/health")
