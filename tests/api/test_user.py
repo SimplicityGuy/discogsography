@@ -92,6 +92,92 @@ class TestUserCollectionStatsEndpoint:
         assert response.status_code == 200
 
 
+class TestUserCollectionTimelineEndpoint:
+    """Tests for GET /api/user/collection/timeline."""
+
+    def test_timeline_no_auth(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/user/collection/timeline")
+        assert response.status_code in (401, 403)
+
+    def test_timeline_success(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        mock_result = {
+            "timeline": [{"year": 1985, "count": 3, "genres": {"Rock": 3}, "top_labels": ["4AD"], "top_styles": ["Post-Punk"]}],
+            "insights": {"peak_year": 1985, "dominant_genre": "Rock", "genre_diversity_score": 0.0, "style_drift_rate": 0.0},
+        }
+        with patch("api.routers.user.get_user_collection_timeline", new=AsyncMock(return_value=mock_result)):
+            response = test_client.get("/api/user/collection/timeline", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert "timeline" in data
+        assert "insights" in data
+        assert data["timeline"][0]["year"] == 1985
+
+    def test_timeline_decade_bucket(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        mock_result = {"timeline": [], "insights": {"peak_year": None, "dominant_genre": None, "genre_diversity_score": 0.0, "style_drift_rate": 0.0}}
+        with patch("api.routers.user.get_user_collection_timeline", new=AsyncMock(return_value=mock_result)):
+            response = test_client.get("/api/user/collection/timeline?bucket=decade", headers=auth_headers)
+        assert response.status_code == 200
+
+    def test_timeline_invalid_bucket(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        response = test_client.get("/api/user/collection/timeline?bucket=month", headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_timeline_no_driver_503(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        import api.routers.user as user_module
+
+        original = user_module._neo4j_driver
+        user_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/user/collection/timeline", headers=auth_headers)
+            assert response.status_code == 503
+        finally:
+            user_module._neo4j_driver = original
+
+
+class TestUserCollectionEvolutionEndpoint:
+    """Tests for GET /api/user/collection/evolution."""
+
+    def test_evolution_no_auth(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/user/collection/evolution")
+        assert response.status_code in (401, 403)
+
+    def test_evolution_success(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        mock_result = {
+            "metric": "genre",
+            "data": [{"year": 1985, "values": {"Electronic": 5, "Rock": 3}}],
+            "summary": {"total_years": 1, "unique_values": 2},
+        }
+        with patch("api.routers.user.get_user_collection_evolution", new=AsyncMock(return_value=mock_result)):
+            response = test_client.get("/api/user/collection/evolution", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["metric"] == "genre"
+        assert "data" in data
+        assert "summary" in data
+
+    def test_evolution_style_metric(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        mock_result = {"metric": "style", "data": [], "summary": {"total_years": 0, "unique_values": 0}}
+        with patch("api.routers.user.get_user_collection_evolution", new=AsyncMock(return_value=mock_result)):
+            response = test_client.get("/api/user/collection/evolution?metric=style", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["metric"] == "style"
+
+    def test_evolution_invalid_metric(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        response = test_client.get("/api/user/collection/evolution?metric=artist", headers=auth_headers)
+        assert response.status_code == 422
+
+    def test_evolution_no_driver_503(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        import api.routers.user as user_module
+
+        original = user_module._neo4j_driver
+        user_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/user/collection/evolution", headers=auth_headers)
+            assert response.status_code == 503
+        finally:
+            user_module._neo4j_driver = original
+
+
 class TestUserStatusEndpoint:
     """Tests for GET /api/user/status."""
 
