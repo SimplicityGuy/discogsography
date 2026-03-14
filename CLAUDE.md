@@ -352,6 +352,7 @@ http://localhost:8000/api/health
 - PostgreSQL: 5433 (mapped from 5432)
 - RabbitMQ: 5672 (AMQP), 15672 (management)
 - Explore: 8006 (service), 8007 (health)
+- Insights: 8008 (service), 8009 (health)
 - Extractor: 8000 (health)
 - Graphinator: 8001 (health)
 - Tableinator: 8002 (health)

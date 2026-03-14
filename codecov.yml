@@ -59,6 +59,10 @@ flags:
     paths:
       - "tableinator/**"
     carryforward: true
+  insights:
+    paths:
+      - "insights/**"
+    carryforward: true
   extractor:
     paths:
       - "extractor/**"
@@ -129,6 +133,10 @@ component_management:
       name: Tableinator
       paths:
         - "tableinator/**"
+    - component_id: insights
+      name: Insights
+      paths:
+        - "insights/**"
     - component_id: common
       name: Common
       paths:

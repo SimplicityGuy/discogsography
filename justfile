@@ -133,6 +133,9 @@ test-parallel:
     uv run pytest tests/explore/ -m 'not e2e' -v > /tmp/test-explore.log 2>&1 &
     pid_explore=$!
 
+    uv run pytest tests/insights/ -v > /tmp/test-insights.log 2>&1 &
+    pid_insights=$!
+
     uv run pytest tests/graphinator/ -v > /tmp/test-graphinator.log 2>&1 &
     pid_graphinator=$!
 
@@ -154,6 +157,7 @@ test-parallel:
     wait $pid_common || { echo "❌ Common tests failed"; cat /tmp/test-common.log; failed=1; }
     wait $pid_dashboard || { echo "❌ Dashboard tests failed"; cat /tmp/test-dashboard.log; failed=1; }
     wait $pid_explore || { echo "❌ Explore tests failed"; cat /tmp/test-explore.log; failed=1; }
+    wait $pid_insights || { echo "❌ Insights tests failed"; cat /tmp/test-insights.log; failed=1; }
     wait $pid_graphinator || { echo "❌ Graphinator tests failed"; cat /tmp/test-graphinator.log; failed=1; }
     wait $pid_schema_init || { echo "❌ Schema-init tests failed"; cat /tmp/test-schema-init.log; failed=1; }
     wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
@@ -167,7 +171,7 @@ test-parallel:
         # Show summary
         echo ""
         echo "📊 Test Summary:"
-        grep -h "passed" /tmp/test-*.log | tail -9
+        grep -h "passed" /tmp/test-*.log | tail -10
     else
         echo "❌ Some tests failed. Check logs above for details."
         exit 1
@@ -211,6 +215,12 @@ test-extractor:
 test-extractor-cov:
     cd extractor && \
     cargo llvm-cov test --verbose --lcov --output-path lcov.info
+
+# Run insights service tests with coverage
+[group('test')]
+test-insights:
+    uv run pytest tests/insights/ -v \
+        --cov --cov-config=.coveragerc.insights --cov-report=xml --cov-report=json --cov-report=term
 
 # Run graphinator service tests with coverage
 [group('test')]
@@ -296,6 +306,11 @@ dashboard:
 [group('services')]
 explore:
     uv run python -m explore.explore
+
+# Run insights service locally
+[group('services')]
+insights:
+    uv run python insights/insights.py
 
 # Run the graphinator service (Neo4j graph builder)
 [group('services')]
@@ -402,6 +417,7 @@ build:
         explore \
         extractor \
         graphinator \
+        insights \
         schema-init \
         tableinator
 
