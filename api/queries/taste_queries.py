@@ -4,6 +4,7 @@ Analyses a user's COLLECTED relationships to build genre x decade heatmaps,
 obscurity scores, taste drift timelines, blind spots, and top labels.
 """
 
+import asyncio
 from typing import Any
 
 from common import AsyncResilientNeo4jDriver
@@ -52,9 +53,9 @@ async def get_taste_heatmap(
     MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)
     RETURN count(r) AS total
     """
-    cells, total = (
-        await _run_query(driver, cypher, user_id=user_id),
-        await _run_count(driver, count_cypher, user_id=user_id),
+    cells, total = await asyncio.gather(
+        _run_query(driver, cypher, user_id=user_id),
+        _run_count(driver, count_cypher, user_id=user_id),
     )
     return cells, total
 
@@ -81,9 +82,9 @@ async def get_obscurity_score(
     MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)
     RETURN count(r) AS total
     """
-    rows, total = (
-        await _run_query(driver, cypher, user_id=user_id),
-        await _run_count(driver, count_cypher, user_id=user_id),
+    rows, total = await asyncio.gather(
+        _run_query(driver, cypher, user_id=user_id),
+        _run_count(driver, count_cypher, user_id=user_id),
     )
 
     if not rows:

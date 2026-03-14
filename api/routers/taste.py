@@ -3,7 +3,7 @@
 import asyncio
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response
 import structlog
 
@@ -65,7 +65,7 @@ async def _check_minimum(driver: Any, user_id: str) -> JSONResponse | None:
     return None
 
 
-@router.get("/api/taste/heatmap")
+@router.get("/api/user/taste/heatmap")
 async def taste_heatmap(
     current_user: Annotated[dict[str, Any], Depends(require_user)],
 ) -> JSONResponse:
@@ -84,7 +84,7 @@ async def taste_heatmap(
     return JSONResponse(content=resp.model_dump())
 
 
-@router.get("/api/taste/fingerprint")
+@router.get("/api/user/taste/fingerprint")
 async def taste_fingerprint(
     current_user: Annotated[dict[str, Any], Depends(require_user)],
 ) -> JSONResponse:
@@ -114,9 +114,10 @@ async def taste_fingerprint(
     return JSONResponse(content=resp.model_dump())
 
 
-@router.get("/api/taste/blindspots")
+@router.get("/api/user/taste/blindspots")
 async def taste_blindspots(
     current_user: Annotated[dict[str, Any], Depends(require_user)],
+    limit: int = Query(5, ge=1, le=20),
 ) -> JSONResponse:
     """Return genres the user's favourite artists release in but the user hasn't collected."""
     if not _neo4j_driver:
@@ -125,11 +126,11 @@ async def taste_blindspots(
     err = await _check_minimum(_neo4j_driver, user_id)
     if err:
         return err
-    spots = await get_blind_spots(_neo4j_driver, user_id)
+    spots = await get_blind_spots(_neo4j_driver, user_id, limit=limit)
     return JSONResponse(content={"blind_spots": [BlindSpot(**b).model_dump() for b in spots]})
 
 
-@router.get("/api/taste/card")
+@router.get("/api/user/taste/card")
 async def taste_card(
     current_user: Annotated[dict[str, Any], Depends(require_user)],
 ) -> Response:
@@ -156,4 +157,4 @@ async def taste_card(
         top_labels=[lb["label"] for lb in labels_result],
         drift=[TasteDriftYear(**d) for d in drift_result],
     )
-    return Response(content=svg, media_type="image/svg+xml")
+    return Response(content=svg, media_type="image/svg+xml", headers={"Cache-Control": "no-store"})
