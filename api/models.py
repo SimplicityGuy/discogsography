@@ -108,3 +108,57 @@ class PathResponse(BaseModel):
     found: bool
     length: int | None
     path: list[PathNode]
+
+
+# ---------------------------------------------------------------------------
+# Taste Fingerprint models
+# ---------------------------------------------------------------------------
+
+
+class HeatmapCell(BaseModel):
+    """Single cell in a genre x decade heatmap."""
+
+    genre: str
+    decade: int
+    count: int
+
+
+class HeatmapResponse(BaseModel):
+    """Genre x decade heatmap for a user's collection."""
+
+    cells: list[HeatmapCell]
+    total: int
+
+
+class ObscurityScore(BaseModel):
+    """How obscure a user's collection is (0 = mainstream, 1 = maximally obscure)."""
+
+    score: float = Field(ge=0.0, le=1.0)
+    median_collectors: float
+    total_releases: int
+
+
+class TasteDriftYear(BaseModel):
+    """Top genre for a single year of additions."""
+
+    year: str
+    top_genre: str
+    count: int
+
+
+class BlindSpot(BaseModel):
+    """A genre the user's favourite artists release in but the user hasn't collected."""
+
+    genre: str
+    artist_overlap: int
+    example_release: str | None = None
+
+
+class FingerprintResponse(BaseModel):
+    """Full taste fingerprint combining all sub-queries."""
+
+    heatmap: list[HeatmapCell]
+    obscurity: ObscurityScore
+    drift: list[TasteDriftYear]
+    blind_spots: list[BlindSpot]
+    peak_decade: int | None = None
