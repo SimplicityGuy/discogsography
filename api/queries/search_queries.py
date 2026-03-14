@@ -138,7 +138,9 @@ LIMIT %s OFFSET %s
 """
     params = [q, *year_params, *genre_params, limit, offset]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(sql, params)
+        await cur.execute(
+            sql, params
+        )  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # psycopg (not SQLAlchemy); all interpolated identifiers come from hardcoded _ENTITY_CONFIG
         rows = await cur.fetchall()
     return [dict(r) for r in rows]
 
@@ -166,7 +168,9 @@ WHERE {year_clause} AND {genre_clause}
 """
     params = [q, *year_params, *genre_params]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(sql, params)
+        await cur.execute(
+            sql, params
+        )  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # psycopg (not SQLAlchemy); all interpolated identifiers come from hardcoded _ENTITY_CONFIG
         row = await cur.fetchone()
     return int(row["total"]) if row else 0
 
@@ -188,7 +192,9 @@ WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq)
 {union_sql}
 """
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(sql, [q])
+        await cur.execute(
+            sql, [q]
+        )  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # psycopg (not SQLAlchemy); all interpolated identifiers come from hardcoded _ENTITY_CONFIG
         rows = await cur.fetchall()
     return {row["type"]: int(row["cnt"]) for row in rows}
 
