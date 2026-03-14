@@ -811,3 +811,60 @@ async fn test_save_state_marker_failure_warns() {
     // Marker file should NOT exist (save failed)
     assert!(!bad_path.exists());
 }
+
+#[tokio::test]
+async fn test_datasource_download_discogs_data_via_trait() {
+    use crate::state_marker::StateMarker;
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    // Main page listing year directories
+    let main_page_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
+
+    let year_page_html = r#"<html><body>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+    </body></html>"#;
+    let _year_mock = server
+        .mock("GET", "/?prefix=data%2F2026%2F")
+        .with_status(200)
+        .with_body(year_page_html)
+        .create_async()
+        .await;
+
+    // Mock download endpoints
+    let file_types = ["artists", "labels", "masters", "releases"];
+    let mut _download_mocks = Vec::new();
+    for file_type in &file_types {
+        let download_path = format!("/?download=data%2F2026%2Fdiscogs_20260101_{}.xml.gz", file_type);
+        let mock = server
+            .mock("GET", download_path.as_str())
+            .with_status(200)
+            .with_body(format!("fake {} data", file_type))
+            .create_async()
+            .await;
+        _download_mocks.push(mock);
+    }
+
+    let marker = StateMarker::new("20260101".to_string());
+    let marker_path = temp_dir.path().join(".extraction_status_20260101.json");
+
+    let mut downloader: Box<dyn DataSource> = Box::new(
+        Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
+            .await
+            .unwrap(),
+    );
+    downloader.set_state_marker(marker, marker_path);
+
+    // Call download_discogs_data through the DataSource trait
+    let result = downloader.download_discogs_data().await.unwrap();
+    assert_eq!(result.len(), 4);
+}

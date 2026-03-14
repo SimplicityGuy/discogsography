@@ -245,3 +245,210 @@ async fn test_default_mq_factory_create_fails_without_broker() {
         factory.create("amqp://localhost:59999").await;
     assert!(result.is_err());
 }
+
+#[tokio::test]
+async fn test_process_discogs_data_take_state_marker_none() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files()
+        .returning(|| Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_CHECKSUM.txt".to_string(), size: 100 },
+        ]));
+    mock_dl.expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+        ]));
+    mock_dl.expect_set_state_marker()
+        .times(1)
+        .returning(|_, _| ());
+    mock_dl.expect_download_discogs_data()
+        .times(1)
+        .returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
+    // Return None to trigger the "State marker missing after download" error
+    mock_dl.expect_take_state_marker()
+        .times(1)
+        .returning(|| None);
+
+    let mock_mq = MockMessagePublisher::new();
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = extractor::extractor::process_discogs_data(
+        config, state, shutdown, true,
+        &mut mock_dl, factory,
+    ).await;
+
+    assert!(result.is_err());
+    let err_msg = format!("{}", result.err().unwrap());
+    assert!(err_msg.contains("State marker missing after download"), "Unexpected error: {}", err_msg);
+}
+
+#[tokio::test]
+async fn test_process_discogs_data_no_data_files() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files()
+        .returning(|| Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_CHECKSUM.txt".to_string(), size: 100 },
+        ]));
+    mock_dl.expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+        ]));
+    mock_dl.expect_set_state_marker()
+        .times(1)
+        .returning(|_, _| ());
+    // Return only CHECKSUM — all get filtered out
+    mock_dl.expect_download_discogs_data()
+        .times(1)
+        .returning(|| Ok(vec!["discogs_20260101_CHECKSUM.txt".to_string()]));
+    mock_dl.expect_take_state_marker()
+        .times(1)
+        .returning(|| Some(StateMarker::new("20260101".to_string())));
+
+    let mock_mq = MockMessagePublisher::new();
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = extractor::extractor::process_discogs_data(
+        config, state, shutdown, true,
+        &mut mock_dl, factory,
+    ).await;
+
+    // Should return Ok(true) — "No data files to process"
+    assert!(result.is_ok());
+    assert!(result.unwrap());
+}
+
+#[tokio::test]
+async fn test_process_discogs_data_all_files_already_processed() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // Create a state marker where processing is started but all files are complete
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(1);
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1000);
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files()
+        .returning(|| Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_CHECKSUM.txt".to_string(), size: 100 },
+        ]));
+    mock_dl.expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+        ]));
+    mock_dl.expect_set_state_marker()
+        .times(1)
+        .returning(|_, _| ());
+    mock_dl.expect_download_discogs_data()
+        .times(1)
+        .returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
+    mock_dl.expect_take_state_marker()
+        .times(1)
+        .returning(move || Some(marker.clone()));
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = extractor::extractor::process_discogs_data(
+        config, state, shutdown, true,
+        &mut mock_dl, factory,
+    ).await;
+
+    assert!(result.is_ok());
+    assert!(result.unwrap());
+}
+
+#[tokio::test]
+async fn test_process_discogs_data_mq_factory_create_fails_on_all_processed() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(1);
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1000);
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files()
+        .returning(|| Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_CHECKSUM.txt".to_string(), size: 100 },
+        ]));
+    mock_dl.expect_get_latest_monthly_files()
+        .returning(|_| Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+        ]));
+    mock_dl.expect_set_state_marker()
+        .times(1)
+        .returning(|_, _| ());
+    mock_dl.expect_download_discogs_data()
+        .times(1)
+        .returning(|| Ok(vec!["discogs_20260101_artists.xml.gz".to_string()]));
+    mock_dl.expect_take_state_marker()
+        .times(1)
+        .returning(move || Some(marker.clone()));
+
+    // Factory that fails to create MQ connection — exercises the error path
+    use extractor::extractor::MessageQueueFactory;
+    struct FailingMqFactory;
+    #[async_trait::async_trait]
+    impl MessageQueueFactory for FailingMqFactory {
+        async fn create(&self, _url: &str) -> anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> {
+            Err(anyhow::anyhow!("AMQP connection refused"))
+        }
+    }
+    let factory = Arc::new(FailingMqFactory);
+
+    let result = extractor::extractor::process_discogs_data(
+        config, state, shutdown, true,
+        &mut mock_dl, factory,
+    ).await;
+
+    // Should still succeed (extraction_complete failure is logged, not fatal)
+    assert!(result.is_ok());
+    assert!(result.unwrap());
+}
