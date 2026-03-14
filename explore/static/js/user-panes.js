@@ -12,6 +12,7 @@ class UserPanes {
         this._collectionTotal = 0;
         this._wantlistTotal = 0;
         this._discogsOAuthState = null;
+        this._tasteCache = null;
     }
 
     // ------------------------------------------------------------------ //
@@ -315,6 +316,7 @@ class UserPanes {
 
         await window.apiClient.revokeDiscogs(token);
         window.authManager.setDiscogsStatus({ connected: false });
+        this.clearTasteCache();
         window.authManager.notify();
     }
 
@@ -336,6 +338,8 @@ class UserPanes {
                 setTimeout(() => {
                     this.loadCollection(true);
                     this.loadWantlist(true);
+                    this.clearTasteCache();
+                    this.loadTasteFingerprint();
                 }, 2000);
             } else {
                 alert('Sync could not be started. Please try again later.');
@@ -343,6 +347,257 @@ class UserPanes {
         } finally {
             if (btn) { btn.classList.remove('syncing'); btn.disabled = false; }
         }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Taste fingerprint strip
+    // ------------------------------------------------------------------ //
+
+    async loadTasteFingerprint() {
+        const token = window.authManager.getToken();
+        if (!token) return;
+        const discogsStatus = window.authManager.getDiscogsStatus();
+        if (!discogsStatus?.connected) return;
+
+        const strip = document.getElementById('tasteStrip');
+        if (!strip) return;
+
+        // Use cache if available
+        if (this._tasteCache) {
+            this._renderTasteStrip(this._tasteCache);
+            return;
+        }
+
+        // Show loading placeholder
+        strip.replaceChildren();
+        const loader = document.createElement('div');
+        loader.className = 'taste-strip-loading';
+        strip.appendChild(loader);
+
+        try {
+            const data = await window.apiClient.getTasteFingerprint(token);
+            if (!data) {
+                // 422 (< 10 items), 503, or error — hide strip
+                strip.replaceChildren();
+                return;
+            }
+            this._tasteCache = data;
+            this._renderTasteStrip(data);
+        } catch {
+            strip.replaceChildren();
+        }
+    }
+
+    clearTasteCache() {
+        this._tasteCache = null;
+    }
+
+    _renderTasteStrip(data) {
+        const strip = document.getElementById('tasteStrip');
+        if (!strip) return;
+        strip.replaceChildren();
+
+        const container = document.createElement('div');
+        container.className = 'taste-strip';
+
+        // Column 1: Fingerprint stats
+        const col1 = document.createElement('div');
+        col1.className = 'taste-col';
+        const h1 = document.createElement('div');
+        h1.className = 'taste-col-header';
+        h1.textContent = 'Fingerprint';
+        col1.appendChild(h1);
+
+        // Obscurity
+        col1.appendChild(this._tasteStat(
+            'Obscurity',
+            data.obscurity?.score != null ? data.obscurity.score.toFixed(2) : '—',
+            'purple',
+        ));
+
+        // Peak decade
+        const peakText = data.peak_decade != null ? `${data.peak_decade}s` : '—';
+        col1.appendChild(this._tasteStat('Peak', peakText, 'blue'));
+
+        // Taste drift
+        const driftText = this._formatDrift(data.drift);
+        col1.appendChild(this._tasteStat('Drift', driftText, 'green'));
+
+        container.appendChild(col1);
+
+        // Column 2: Heatmap
+        const col2 = document.createElement('div');
+        col2.className = 'taste-col';
+        const h2 = document.createElement('div');
+        h2.className = 'taste-col-header';
+        h2.textContent = 'Heatmap';
+        col2.appendChild(h2);
+
+        if (data.heatmap && data.heatmap.length > 0) {
+            col2.appendChild(this._renderHeatmapGrid(data.heatmap));
+        } else {
+            const empty = document.createElement('div');
+            empty.className = 'taste-empty';
+            empty.textContent = '—';
+            col2.appendChild(empty);
+        }
+
+        container.appendChild(col2);
+
+        // Column 3: Blind spots + download
+        const col3 = document.createElement('div');
+        col3.className = 'taste-col';
+        const h3 = document.createElement('div');
+        h3.className = 'taste-col-header';
+        h3.textContent = 'Blind Spots';
+        col3.appendChild(h3);
+
+        if (data.blind_spots && data.blind_spots.length > 0) {
+            data.blind_spots.forEach(spot => {
+                const item = document.createElement('div');
+                item.className = 'taste-blindspot-item';
+                const name = document.createElement('span');
+                name.className = 'taste-blindspot-name';
+                name.textContent = spot.genre;
+                const count = document.createElement('span');
+                count.className = 'taste-blindspot-count';
+                count.textContent = `${spot.artist_overlap} artists`;
+                item.append(name, count);
+                col3.appendChild(item);
+            });
+        } else {
+            const empty = document.createElement('div');
+            empty.className = 'taste-empty';
+            empty.textContent = 'No blind spots found';
+            col3.appendChild(empty);
+        }
+
+        // Download button
+        const dlBtn = document.createElement('button');
+        dlBtn.className = 'taste-download-btn';
+        const dlIcon = document.createElement('i');
+        dlIcon.className = 'fas fa-download mr-1';
+        dlBtn.append(dlIcon, 'Download Taste Card');
+        dlBtn.addEventListener('click', () => this._downloadTasteCard(dlBtn));
+        col3.appendChild(dlBtn);
+
+        container.appendChild(col3);
+        strip.appendChild(container);
+    }
+
+    _tasteStat(label, value, colorClass) {
+        const row = document.createElement('div');
+        row.className = 'taste-stat';
+        const labelEl = document.createElement('span');
+        labelEl.className = 'taste-stat-label';
+        labelEl.textContent = label;
+        const valueEl = document.createElement('span');
+        valueEl.className = `taste-stat-value ${colorClass}`;
+        valueEl.textContent = value;
+        row.append(labelEl, valueEl);
+        return row;
+    }
+
+    _formatDrift(drift) {
+        if (!drift || drift.length === 0) return '—';
+        const first = drift[0].top_genre;
+        const last = drift[drift.length - 1].top_genre;
+        if (first === last) return `${first} (consistent)`;
+        return `${first} → ${last}`;
+    }
+
+    _renderHeatmapGrid(cells) {
+        // Group by genre, sort by total count desc, take top 5
+        const genreTotals = {};
+        let maxCount = 0;
+        cells.forEach(c => {
+            genreTotals[c.genre] = (genreTotals[c.genre] || 0) + c.count;
+            if (c.count > maxCount) maxCount = c.count;
+        });
+        const topGenres = Object.entries(genreTotals)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 5)
+            .map(e => e[0]);
+
+        // Collect unique decades, sorted
+        const decades = [...new Set(cells.map(c => c.decade))].sort((a, b) => a - b);
+
+        // Build lookup: genre+decade -> count
+        const lookup = {};
+        cells.forEach(c => { lookup[`${c.genre}-${c.decade}`] = c.count; });
+
+        // CSS grid: first col = genre label, rest = decade columns
+        const grid = document.createElement('div');
+        grid.className = 'taste-heatmap-grid';
+        grid.style.gridTemplateColumns = `60px repeat(${decades.length}, 1fr)`;
+
+        // Header row
+        const corner = document.createElement('div');
+        grid.appendChild(corner);
+        decades.forEach(d => {
+            const hdr = document.createElement('div');
+            hdr.className = 'taste-heatmap-header';
+            hdr.textContent = `${d}s`;
+            grid.appendChild(hdr);
+        });
+
+        // Data rows
+        topGenres.forEach(genre => {
+            const label = document.createElement('div');
+            label.className = 'taste-heatmap-label';
+            label.textContent = genre;
+            label.title = genre;
+            grid.appendChild(label);
+
+            decades.forEach(decade => {
+                const count = lookup[`${genre}-${decade}`] || 0;
+                const cell = document.createElement('div');
+                cell.className = 'taste-heatmap-cell';
+                const opacity = maxCount > 0 ? count / maxCount : 0;
+                if (count === 0) {
+                    cell.style.background = 'var(--bg-tertiary)';
+                } else {
+                    cell.style.background = `rgba(107, 70, 193, ${Math.max(0.15, opacity)})`;
+                }
+                cell.title = `${genre} ${decade}s: ${count}`;
+                grid.appendChild(cell);
+            });
+        });
+
+        return grid;
+    }
+
+    async _downloadTasteCard(btn) {
+        const token = window.authManager.getToken();
+        if (!token) return;
+
+        const resetBtn = () => {
+            btn.disabled = false;
+            btn.replaceChildren();
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-download mr-1';
+            btn.append(icon, 'Download Taste Card');
+        };
+
+        btn.disabled = true;
+        btn.textContent = 'Downloading...';
+
+        const blob = await window.apiClient.getTasteCard(token);
+        if (!blob) {
+            btn.textContent = 'Download failed';
+            setTimeout(resetBtn, 2000);
+            return;
+        }
+
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'taste-card.svg';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        resetBtn();
     }
 
     // ------------------------------------------------------------------ //
