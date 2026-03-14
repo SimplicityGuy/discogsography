@@ -178,6 +178,7 @@ def test_client(
 
     import api.routers.collection as _collection_router
     import api.routers.explore as _explore_router
+    import api.routers.search as _search_router
     import api.routers.snapshot as _snapshot_router
     import api.routers.sync as _sync_router
     import api.routers.taste as _taste_router
@@ -190,6 +191,7 @@ def test_client(
     _taste_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
     _collection_router.configure(mock_neo4j, mock_pool, test_api_config.jwt_secret_key)
     _snapshot_router.configure(jwt_secret=TEST_JWT_SECRET, redis_client=fake_redis)
+    _search_router.configure(mock_pool, mock_redis)
 
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client

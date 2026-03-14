@@ -38,6 +38,7 @@ from api.limiter import limiter
 from api.models import LoginRequest, RegisterRequest
 import api.routers.collection as _collection_router
 import api.routers.explore as _explore_router
+import api.routers.search as _search_router
 import api.routers.snapshot as _snapshot_router
 import api.routers.sync as _sync_router
 import api.routers.taste as _taste_router
@@ -194,6 +195,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
     _taste_router.configure(_neo4j, jwt_secret_for_neo4j)
     _collection_router.configure(_neo4j, _pool, jwt_secret_for_neo4j)
+    _search_router.configure(_pool, _redis)
     _snapshot_router.configure(
         jwt_secret=_config.jwt_secret_key,
         redis_client=_redis,
@@ -255,6 +257,7 @@ async def security_headers(request: Request, call_next: Any) -> Any:
 
 app.include_router(_sync_router.router)
 app.include_router(_explore_router.router)
+app.include_router(_search_router.router)
 app.include_router(_snapshot_router.router)
 app.include_router(_user_router.router)
 app.include_router(_taste_router.router)

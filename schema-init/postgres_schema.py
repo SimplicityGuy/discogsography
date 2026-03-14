@@ -64,6 +64,23 @@ _SPECIFIC_INDEXES: list[tuple[str, str]] = [
         "idx_releases_labels",
         "CREATE INDEX IF NOT EXISTS idx_releases_labels ON releases USING GIN ((data->'labels'))",
     ),
+    # Full-text search GIN indexes — used by /api/search
+    (
+        "idx_artists_fts",
+        "CREATE INDEX IF NOT EXISTS idx_artists_fts ON artists USING GIN (to_tsvector('english', COALESCE(data->>'name', '')))",
+    ),
+    (
+        "idx_labels_fts",
+        "CREATE INDEX IF NOT EXISTS idx_labels_fts ON labels USING GIN (to_tsvector('english', COALESCE(data->>'name', '')))",
+    ),
+    (
+        "idx_masters_fts",
+        "CREATE INDEX IF NOT EXISTS idx_masters_fts ON masters USING GIN (to_tsvector('english', COALESCE(data->>'title', '')))",
+    ),
+    (
+        "idx_releases_fts",
+        "CREATE INDEX IF NOT EXISTS idx_releases_fts ON releases USING GIN (to_tsvector('english', COALESCE(data->>'title', '')))",
+    ),
 ]
 
 
