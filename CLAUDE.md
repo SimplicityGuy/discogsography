@@ -27,7 +27,7 @@
 ## 🤖 AI Development Memories
 
 - ✅ **ALWAYS use `uv` for Python package management and running Python tools** - Never use pip, pipenv, or poetry.
-- ✅ **Use git worktrees for all feature work** - Create an isolated worktree per branch; never work directly on `main`. Use the `superpowers:using-git-worktrees` skill.
+- ✅ **Use git worktrees for all feature work** - Create an isolated worktree per branch; never work directly on `main`. Use the `superpowers:using-git-worktrees` skill. Each worktree must branch from `origin/main` and contain only commits unique to that feature — worktrees must never share commits with each other. Each worktree maps to exactly one PR.
 - ✅ **Open a PR for every change** - All work merges via pull request; never push directly to `main`.
 - ✅ **State Marker System** - The extractor uses version-specific state markers (`.extraction_status_<version>.json`) to track progress and enable safe restarts. See `docs/state-marker-system.md`.
 - ✅ **Extractor Architecture** - The Rust-based extractor declares 4 per-data-type fanout exchanges and publishes messages. It has zero knowledge of consumers — each consumer independently declares its own queues, DLQs, and DLXs.
