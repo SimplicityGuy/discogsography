@@ -22,6 +22,7 @@ import hashlib
 import json
 from typing import Any
 
+from psycopg import sql
 from psycopg.rows import dict_row
 import structlog
 
@@ -56,21 +57,29 @@ def cache_key(q: str, types: list[str], genres: list[str], year_min: int | None,
     return f"search:{digest}"
 
 
-def _entity_select(entity_type: str, name_field: str, has_year: bool, has_genres: bool) -> str:
+def _entity_select(entity_type: str, name_field: str, has_year: bool, has_genres: bool) -> sql.Composable:
     """Return a SELECT fragment for one entity type in the UNION ALL."""
-    year_col = "(data->>'year')" if has_year else "NULL::text"
-    genres_col = "(data->'genres')" if has_genres else "NULL::jsonb"
-    return (
-        f"SELECT '{entity_type}'::text AS type, data_id AS id, data->>'{name_field}' AS name,\n"
-        f"       ts_rank(to_tsvector('english', COALESCE(data->>'{name_field}', '')), q.tsq) AS rank,\n"
-        f"       ts_headline('english', COALESCE(data->>'{name_field}', ''), q.tsq) AS highlight,\n"
-        f"       {year_col} AS year, {genres_col} AS genres\n"
-        f"FROM {_ENTITY_CONFIG[entity_type][0]}, q\n"
-        f"WHERE to_tsvector('english', COALESCE(data->>'{name_field}', '')) @@ q.tsq"
+    year_col = sql.SQL("(data->>'year')") if has_year else sql.SQL("NULL::text")
+    genres_col = sql.SQL("(data->'genres')") if has_genres else sql.SQL("NULL::jsonb")
+    table = sql.Identifier(_ENTITY_CONFIG[entity_type][0])
+    name_lit = sql.Literal(name_field)
+    return sql.SQL(
+        "SELECT {entity_type}::text AS type, data_id AS id, data->>{name} AS name,"
+        " ts_rank(to_tsvector('english', COALESCE(data->>{name}, '')), q.tsq) AS rank,"
+        " ts_headline('english', COALESCE(data->>{name}, ''), q.tsq) AS highlight,"
+        " {year_col} AS year, {genres_col} AS genres"
+        " FROM {table}, q"
+        " WHERE to_tsvector('english', COALESCE(data->>{name}, '')) @@ q.tsq"
+    ).format(
+        entity_type=sql.Literal(entity_type),
+        name=name_lit,
+        year_col=year_col,
+        genres_col=genres_col,
+        table=table,
     )
 
 
-def _build_union(types: list[str]) -> str:
+def _build_union(types: list[str]) -> sql.Composable:
     """Build UNION ALL of SELECT fragments for the requested entity types."""
     if not types:  # would produce invalid SQL
         raise ValueError("types must not be empty")
@@ -78,36 +87,36 @@ def _build_union(types: list[str]) -> str:
     for t in types:
         _table, name_field, has_year, has_genres = _ENTITY_CONFIG[t]
         parts.append(_entity_select(t, name_field, has_year, has_genres))
-    return "\nUNION ALL\n".join(parts)
+    return sql.SQL(" UNION ALL ").join(parts)
 
 
-def _year_filter_clause(year_min: int | None, year_max: int | None) -> tuple[str, list[Any]]:
+def _year_filter_clause(year_min: int | None, year_max: int | None) -> tuple[sql.Composable, list[Any]]:
     """Return (SQL_clause, params) for optional year filtering.
 
     Rows with NULL year (artists, labels) are always included regardless of
     year filter — only rows with a parseable year are filtered.
     """
-    clauses: list[str] = []
+    clauses: list[sql.Composable] = []
     params: list[Any] = []
     if year_min is not None:
-        clauses.append("(year IS NULL OR year::int >= %s)")
+        clauses.append(sql.SQL("(year IS NULL OR year::int >= %s)"))
         params.append(year_min)
     if year_max is not None:
-        clauses.append("(year IS NULL OR year::int <= %s)")
+        clauses.append(sql.SQL("(year IS NULL OR year::int <= %s)"))
         params.append(year_max)
-    return (" AND ".join(clauses), params) if clauses else ("TRUE", [])
+    return (sql.SQL(" AND ").join(clauses), params) if clauses else (sql.SQL("TRUE"), [])
 
 
-def _genre_filter_clause(genres: list[str]) -> tuple[str, list[Any]]:
+def _genre_filter_clause(genres: list[str]) -> tuple[sql.Composable, list[Any]]:
     """Return (SQL_clause, params) for optional genre filtering.
 
     Rows with NULL genres (artists, labels, masters) are always included
     regardless of genre filter — only rows with genre data are filtered.
     """
     if not genres:
-        return ("TRUE", [])
+        return (sql.SQL("TRUE"), [])
     # ?| checks if JSONB array contains any of the given strings
-    return ("(genres IS NULL OR genres ?| %s::text[])", [genres])
+    return (sql.SQL("(genres IS NULL OR genres ?| %s::text[])"), [genres])
 
 
 async def _run_results(
@@ -125,22 +134,22 @@ async def _run_results(
     year_clause, year_params = _year_filter_clause(year_min, year_max)
     genre_clause, genre_params = _genre_filter_clause(genres)
 
-    sql = f"""
-WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),
-results AS (
-{union_sql}
-)
-SELECT type, id, name, rank, highlight, year, genres
-FROM results
-WHERE {year_clause} AND {genre_clause}
-ORDER BY rank DESC
-LIMIT %s OFFSET %s
-"""
+    query = sql.SQL(
+        "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),"
+        " results AS ({union_sql})"
+        " SELECT type, id, name, rank, highlight, year, genres"
+        " FROM results"
+        " WHERE {year_clause} AND {genre_clause}"
+        " ORDER BY rank DESC"
+        " LIMIT %s OFFSET %s"
+    ).format(
+        union_sql=union_sql,
+        year_clause=year_clause,
+        genre_clause=genre_clause,
+    )
     params = [q, *year_params, *genre_params, limit, offset]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(
-            sql, params
-        )  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # psycopg (not SQLAlchemy); all interpolated identifiers come from hardcoded _ENTITY_CONFIG
+        await cur.execute(query, params)  # nosemgrep
         rows = await cur.fetchall()
     return [dict(r) for r in rows]
 
@@ -158,19 +167,19 @@ async def _run_total(
     year_clause, year_params = _year_filter_clause(year_min, year_max)
     genre_clause, genre_params = _genre_filter_clause(genres)
 
-    sql = f"""
-WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),
-results AS (
-{union_sql}
-)
-SELECT COUNT(*) AS total FROM results
-WHERE {year_clause} AND {genre_clause}
-"""
+    query = sql.SQL(
+        "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),"
+        " results AS ({union_sql})"
+        " SELECT COUNT(*) AS total FROM results"
+        " WHERE {year_clause} AND {genre_clause}"
+    ).format(
+        union_sql=union_sql,
+        year_clause=year_clause,
+        genre_clause=genre_clause,
+    )
     params = [q, *year_params, *genre_params]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(
-            sql, params
-        )  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # psycopg (not SQLAlchemy); all interpolated identifiers come from hardcoded _ENTITY_CONFIG
+        await cur.execute(query, params)  # nosemgrep
         row = await cur.fetchone()
     return int(row["total"]) if row else 0
 
@@ -181,63 +190,64 @@ async def _run_type_counts(pool: AsyncPostgreSQLPool, q: str, types: list[str]) 
     for t in types:
         table, name_field, _, _ = _ENTITY_CONFIG[t]
         union_parts.append(
-            f"SELECT '{t}'::text AS type, COUNT(*) AS cnt\n"
-            f"FROM {table}, q\n"
-            f"WHERE to_tsvector('english', COALESCE(data->>'{name_field}', '')) @@ q.tsq\n"
-            f"GROUP BY type"
+            sql.SQL(
+                "SELECT {type}::text AS type, COUNT(*) AS cnt"
+                " FROM {table}, q"
+                " WHERE to_tsvector('english', COALESCE(data->>{name}, '')) @@ q.tsq"
+                " GROUP BY type"
+            ).format(
+                type=sql.Literal(t),
+                table=sql.Identifier(table),
+                name=sql.Literal(name_field),
+            )
         )
-    union_sql = "\nUNION ALL\n".join(union_parts)
-    sql = f"""
-WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq)
-{union_sql}
-"""
+    union_sql = sql.SQL(" UNION ALL ").join(union_parts)
+    query = sql.SQL("WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq) {union_sql}").format(union_sql=union_sql)
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(
-            sql, [q]
-        )  # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query.sqlalchemy-execute-raw-query  # psycopg (not SQLAlchemy); all interpolated identifiers come from hardcoded _ENTITY_CONFIG
+        await cur.execute(query, [q])  # nosemgrep
         rows = await cur.fetchall()
     return {row["type"]: int(row["cnt"]) for row in rows}
 
 
 async def _run_genre_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int]:
     """Count matching releases per genre (for genre facet)."""
-    sql = """
-WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq)
-SELECT genre, COUNT(*) AS cnt
-FROM releases, q,
-     jsonb_array_elements_text(data->'genres') AS genre
-WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq
-GROUP BY genre
-ORDER BY cnt DESC
-LIMIT 20
-"""
+    query = sql.SQL(
+        "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq)"
+        " SELECT genre, COUNT(*) AS cnt"
+        " FROM releases, q,"
+        " jsonb_array_elements_text(data->'genres') AS genre"
+        " WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq"
+        " GROUP BY genre"
+        " ORDER BY cnt DESC"
+        " LIMIT 20"
+    )
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(sql, [q])
+        await cur.execute(query, [q])
         rows = await cur.fetchall()
     return {row["genre"]: int(row["cnt"]) for row in rows}
 
 
 async def _run_decade_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int]:
     """Count matching masters+releases per decade (for decade facet)."""
-    sql = """
-WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),
-matches AS (
-    SELECT data->>'year' AS year FROM masters, q
-    WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq
-      AND data->>'year' IS NOT NULL
-    UNION ALL
-    SELECT data->>'year' FROM releases, q
-    WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq
-      AND data->>'year' IS NOT NULL
-)
-SELECT (year::int / 10 * 10)::text || 's' AS decade, COUNT(*) AS cnt
-FROM matches
-WHERE year ~ '^[0-9]{4}$'
-GROUP BY decade
-ORDER BY decade
-"""
+    query = sql.SQL(
+        "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),"
+        " matches AS ("
+        " SELECT data->>'year' AS year FROM masters, q"
+        " WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq"
+        " AND data->>'year' IS NOT NULL"
+        " UNION ALL"
+        " SELECT data->>'year' FROM releases, q"
+        " WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq"
+        " AND data->>'year' IS NOT NULL"
+        ")"
+        " SELECT (year::int / 10 * 10)::text || 's' AS decade, COUNT(*) AS cnt"
+        " FROM matches"
+        " WHERE year ~ '^[0-9]{{4}}$'"
+        " GROUP BY decade"
+        " ORDER BY decade"
+    )
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(sql, [q])
+        await cur.execute(query, [q])
         rows = await cur.fetchall()
     return {row["decade"]: int(row["cnt"]) for row in rows}
 
