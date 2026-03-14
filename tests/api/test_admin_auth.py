@@ -8,8 +8,13 @@ import hmac
 import json
 import secrets
 
+from fastapi import HTTPException
+from fastapi.security import HTTPAuthorizationCredentials
+import pytest
+
 from api.admin_auth import create_admin_token, verify_admin_password
 from api.auth import _hash_password
+from api.dependencies import require_admin
 
 
 TEST_JWT_SECRET = "test-admin-secret-key-for-testing"
@@ -89,3 +94,68 @@ class TestVerifyAdminPassword:
     def test_empty_password(self) -> None:
         hashed = _hash_password("securepassword123")
         assert verify_admin_password("", hashed) is False
+
+
+class TestRequireAdmin:
+    @pytest.mark.asyncio
+    async def test_valid_admin_token(self) -> None:
+        import api.dependencies as deps
+
+        deps.configure(TEST_JWT_SECRET)
+
+        token = _make_admin_jwt()
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        result = await require_admin(creds)
+        assert result["sub"] == TEST_ADMIN_ID
+        assert result["type"] == "admin"
+
+    @pytest.mark.asyncio
+    async def test_rejects_user_token(self) -> None:
+        import api.dependencies as deps
+
+        deps.configure(TEST_JWT_SECRET)
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body = b64url(
+            json.dumps(
+                {
+                    "sub": "user-id",
+                    "email": "user@test.com",
+                    "exp": 9_999_999_999,
+                },
+                separators=(",", ":"),
+            ).encode()
+        )
+        signing_input = f"{header}.{body}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        user_token = f"{header}.{body}.{sig}"
+
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=user_token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(creds)
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_rejects_no_credentials(self) -> None:
+        import api.dependencies as deps
+
+        deps.configure(TEST_JWT_SECRET)
+
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(None)
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_rejects_expired_token(self) -> None:
+        import api.dependencies as deps
+
+        deps.configure(TEST_JWT_SECRET)
+
+        token = _make_admin_jwt(exp=1000000000)
+        creds = HTTPAuthorizationCredentials(scheme="Bearer", credentials=token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(creds)
+        assert exc_info.value.status_code == 401
