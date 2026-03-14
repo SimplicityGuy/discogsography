@@ -493,8 +493,12 @@ class TestPathEndpoint:
         finally:
             explore_module._neo4j_driver = original
 
-    def test_path_invalid_type_400(self, test_client: TestClient) -> None:
+    def test_path_invalid_from_type_400(self, test_client: TestClient) -> None:
         response = test_client.get("/api/path?from_name=Miles+Davis&from_type=banana&to_name=Daft+Punk&to_type=artist")
+        assert response.status_code == 400
+
+    def test_path_invalid_to_type_400(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/path?from_name=Miles+Davis&from_type=artist&to_name=Daft+Punk&to_type=banana")
         assert response.status_code == 400
 
     def test_path_same_entity_length_zero(self, test_client: TestClient) -> None:
