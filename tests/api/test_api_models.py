@@ -3,7 +3,7 @@
 from pydantic import ValidationError
 import pytest
 
-from api.models import LoginRequest, LoginResponse, RegisterRequest
+from api.models import LoginRequest, LoginResponse, PathNode, PathResponse, RegisterRequest
 
 
 class TestRegisterRequest:
@@ -70,3 +70,32 @@ class TestLoginResponse:
         """Test that token_type defaults to 'bearer'."""
         resp = LoginResponse(access_token="t", expires_in=1800)  # noqa: S106
         assert resp.token_type == "bearer"
+
+
+class TestPathModels:
+    def test_path_node_required_fields(self) -> None:
+        node = PathNode(id="1", name="Miles Davis", type="artist")
+        assert node.id == "1"
+        assert node.name == "Miles Davis"
+        assert node.type == "artist"
+        assert node.rel is None
+
+    def test_path_node_with_rel(self) -> None:
+        node = PathNode(id="201", name="Kind of Blue", type="release", rel="BY")
+        assert node.rel == "BY"
+
+    def test_path_response_found(self) -> None:
+        nodes = [
+            PathNode(id="1", name="Miles Davis", type="artist"),
+            PathNode(id="2", name="Daft Punk", type="artist", rel="BY"),
+        ]
+        resp = PathResponse(found=True, length=1, path=nodes)
+        assert resp.found is True
+        assert resp.length == 1
+        assert len(resp.path) == 2
+
+    def test_path_response_not_found(self) -> None:
+        resp = PathResponse(found=False, length=None, path=[])
+        assert resp.found is False
+        assert resp.length is None
+        assert resp.path == []

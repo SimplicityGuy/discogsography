@@ -683,3 +683,71 @@ class TestTrendsQueries:
         driver = _make_driver(records=[])
         result = await trends_artist(driver, "UnknownArtist")
         assert result == []
+
+
+class TestFindShortestPath:
+    """Tests for find_shortest_path()."""
+
+    @pytest.mark.asyncio
+    async def test_path_found(self) -> None:
+        """Returns populated path when nodes are connected."""
+        from api.queries.neo4j_queries import find_shortest_path
+
+        mock_record = {
+            "nodes": [
+                {"id": "1", "name": "Miles Davis", "labels": ["Artist"]},
+                {"id": "201", "name": "Kind of Blue", "labels": ["Release"]},
+                {"id": "2", "name": "Daft Punk", "labels": ["Artist"]},
+            ],
+            "rels": ["BY", "BY"],
+        }
+        mock_driver = AsyncMock()
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=mock_record)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+
+        result = await find_shortest_path(mock_driver, "1", "2", max_depth=10)
+
+        assert result is not None
+        assert len(result["nodes"]) == 3
+        assert result["rels"] == ["BY", "BY"]
+
+    @pytest.mark.asyncio
+    async def test_no_path_returns_none(self) -> None:
+        """Returns None when no path exists."""
+        from api.queries.neo4j_queries import find_shortest_path
+
+        mock_driver = AsyncMock()
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+
+        result = await find_shortest_path(mock_driver, "1", "999", max_depth=10)
+
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_same_node_path(self) -> None:
+        """Same from/to node returns trivial path (single node, no rels)."""
+        from api.queries.neo4j_queries import find_shortest_path
+
+        mock_record = {
+            "nodes": [{"id": "1", "name": "Miles Davis", "labels": ["Artist"]}],
+            "rels": [],
+        }
+        mock_driver = AsyncMock()
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=mock_record)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+
+        result = await find_shortest_path(mock_driver, "1", "1", max_depth=10)
+
+        assert result is not None
+        assert len(result["nodes"]) == 1
+        assert result["rels"] == []

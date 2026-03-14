@@ -107,6 +107,32 @@ class ApiClient {
         return response.json();
     }
 
+    /**
+     * Find shortest path between two named entities.
+     * @param {string} fromName - Source entity name
+     * @param {string} fromType - Source entity type (artist, genre, label, style)
+     * @param {string} toName - Target entity name
+     * @param {string} toType - Target entity type
+     * @param {number} maxDepth - Max traversal depth (1-15, default 10)
+     * @returns {Promise<{found: boolean, length: number|null, path: Array}|{notFound: boolean, error: string}|null>}
+     */
+    async findPath(fromName, fromType, toName, toType, maxDepth = 10) {
+        const params = new URLSearchParams({
+            from_name: fromName,
+            from_type: fromType,
+            to_name: toName,
+            to_type: toType,
+            max_depth: String(maxDepth),
+        });
+        const response = await fetch(`/api/path?${params}`);
+        if (response.status === 404) {
+            const data = await response.json();
+            return { notFound: true, error: data.error || 'Entity not found' };
+        }
+        if (!response.ok) return null;
+        return response.json();
+    }
+
     // --- Auth ---
 
     async register(email, password) {

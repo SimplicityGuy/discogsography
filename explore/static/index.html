@@ -203,6 +203,11 @@
                     <i class="fas fa-chart-line mr-1"></i>Trends
                 </a>
             </li>
+            <li>
+                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-pane="path">
+                    <i class="fas fa-route mr-1"></i>Find Path
+                </a>
+            </li>
             <!-- Auth-required panes — hidden until logged in -->
             <li class="hidden" id="navCollection">
                 <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-pane="collection">
@@ -382,6 +387,80 @@
                     <i class="fas fa-chart-line fa-3x mb-3 text-text-secondary"></i>
                     <p class="text-text-secondary">Search for an entity to see release trends over time</p>
                 </div>
+            </div>
+        </div>
+
+        <!-- Path finder pane -->
+        <div class="pane" id="pathPane">
+            <div class="path-container">
+                <div class="path-toolbar">
+                    <div class="path-inputs">
+                        <div class="path-input-group">
+                            <label class="path-label" for="pathFromInput">From</label>
+                            <div class="flex">
+                                <div x-data="{ open: false }" class="relative">
+                                    <button class="btn-outline-secondary rounded-r-none border-r-0 path-type-btn"
+                                            @click="open = !open" @click.outside="open = false"
+                                            id="pathFromTypeBtn">Artist</button>
+                                    <div x-show="open" x-cloak
+                                         class="absolute left-0 top-full z-50 mt-1 w-32 rounded border border-border-color bg-bg-card py-1 shadow-lg">
+                                        <a class="block px-3 py-1.5 text-sm text-text-primary hover:bg-bg-secondary active" href="#" data-path-from-type="artist" @click="open = false">Artist</a>
+                                        <a class="block px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-path-from-type="genre" @click="open = false">Genre</a>
+                                        <a class="block px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-path-from-type="label" @click="open = false">Label</a>
+                                        <a class="block px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-path-from-type="style" @click="open = false">Style</a>
+                                    </div>
+                                </div>
+                                <input type="text" class="form-input-dark rounded-l-none path-input" id="pathFromInput"
+                                       placeholder="e.g. Miles Davis" autocomplete="off">
+                            </div>
+                            <div class="autocomplete-dropdown" id="pathFromDropdown"></div>
+                        </div>
+
+                        <div class="path-arrow"><i class="fas fa-arrow-right"></i></div>
+
+                        <div class="path-input-group">
+                            <label class="path-label" for="pathToInput">To</label>
+                            <div class="flex">
+                                <div x-data="{ open: false }" class="relative">
+                                    <button class="btn-outline-secondary rounded-r-none border-r-0 path-type-btn"
+                                            @click="open = !open" @click.outside="open = false"
+                                            id="pathToTypeBtn">Artist</button>
+                                    <div x-show="open" x-cloak
+                                         class="absolute left-0 top-full z-50 mt-1 w-32 rounded border border-border-color bg-bg-card py-1 shadow-lg">
+                                        <a class="block px-3 py-1.5 text-sm text-text-primary hover:bg-bg-secondary active" href="#" data-path-to-type="artist" @click="open = false">Artist</a>
+                                        <a class="block px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-path-to-type="genre" @click="open = false">Genre</a>
+                                        <a class="block px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-path-to-type="label" @click="open = false">Label</a>
+                                        <a class="block px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-path-to-type="style" @click="open = false">Style</a>
+                                    </div>
+                                </div>
+                                <input type="text" class="form-input-dark rounded-l-none path-input" id="pathToInput"
+                                       placeholder="e.g. Daft Punk" autocomplete="off">
+                            </div>
+                            <div class="autocomplete-dropdown" id="pathToDropdown"></div>
+                        </div>
+
+                        <button class="btn-primary path-connect-btn" id="pathConnectBtn">
+                            <i class="fas fa-project-diagram mr-1"></i>Connect
+                        </button>
+                    </div>
+                </div>
+
+                <div class="loading-overlay" id="pathLoading">
+                    <div class="spinner" role="status"></div>
+                    <p class="mt-2 text-text-secondary">Finding path...</p>
+                </div>
+
+                <div class="path-placeholder" id="pathPlaceholder">
+                    <i class="fas fa-route fa-3x mb-3 text-text-secondary"></i>
+                    <p class="text-text-secondary">Enter two entities above and click Connect to find the shortest path between them</p>
+                </div>
+
+                <div class="path-result hidden" id="pathResult">
+                    <p class="path-result-summary" id="pathResultSummary"></p>
+                    <div class="path-chain" id="pathChain"></div>
+                </div>
+
+                <div class="path-error hidden" id="pathError"></div>
             </div>
         </div>
 
