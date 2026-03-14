@@ -9,6 +9,8 @@ use tokio::fs::{self, File};
 use tokio::io::AsyncWriteExt;
 use tracing::{debug, error, info, warn};
 
+use async_trait::async_trait;
+
 use crate::state_marker::StateMarker;
 use crate::types::{LocalFileInfo, S3FileInfo};
 
@@ -30,6 +32,16 @@ pub struct Downloader {
     cached_files: Option<Vec<S3FileInfo>>,
 }
 
+#[cfg_attr(feature = "test-support", mockall::automock)]
+#[async_trait]
+pub trait DataSource: Send + Sync {
+    async fn list_s3_files(&mut self) -> Result<Vec<S3FileInfo>>;
+    fn get_latest_monthly_files(&self, files: &[S3FileInfo]) -> Result<Vec<S3FileInfo>>;
+    async fn download_discogs_data(&mut self) -> Result<Vec<String>>;
+    fn set_state_marker(&mut self, state_marker: StateMarker, marker_path: PathBuf);
+    fn take_state_marker(&mut self) -> Option<StateMarker>;
+}
+
 impl Downloader {
     pub async fn new(output_directory: PathBuf) -> Result<Self> {
         Self::new_with_base_url(output_directory, DISCOGS_DATA_URL.to_string()).await
@@ -43,7 +55,8 @@ impl Downloader {
         Ok(Self { output_directory, metadata, base_url, state_marker: None, marker_path: None, cached_files: None })
     }
 
-    /// Set the state marker for tracking download progress
+    /// Set the state marker for tracking download progress (builder pattern, used by integration tests)
+    #[allow(dead_code)]
     pub fn with_state_marker(mut self, state_marker: StateMarker, marker_path: PathBuf) -> Self {
         self.state_marker = Some(state_marker);
         self.marker_path = Some(marker_path);
@@ -52,10 +65,10 @@ impl Downloader {
 
     /// Save state marker to disk if present
     async fn save_state_marker(&mut self) {
-        if let (Some(marker), Some(path)) = (&mut self.state_marker, &self.marker_path) {
-            if let Err(e) = marker.save(path).await {
-                warn!("⚠️ Failed to save state marker: {}", e);
-            }
+        if let (Some(marker), Some(path)) = (&mut self.state_marker, &self.marker_path)
+            && let Err(e) = marker.save(path).await
+        {
+            warn!("⚠️ Failed to save state marker: {}", e);
         }
     }
 
@@ -339,10 +352,10 @@ impl Downloader {
         for attempt in 1..=MAX_DOWNLOAD_RETRIES {
             if attempt > 1 {
                 // Remove any partial file left by the previous attempt
-                if local_path.exists() {
-                    if let Err(e) = fs::remove_file(&local_path).await {
-                        warn!("⚠️ Failed to remove partial file before retry: {}", e);
-                    }
+                if local_path.exists()
+                    && let Err(e) = fs::remove_file(&local_path).await
+                {
+                    warn!("⚠️ Failed to remove partial file before retry: {}", e);
                 }
                 let delay_ms = RETRY_BASE_DELAY_MS * (1u64 << (attempt - 2));
                 warn!("🔄 Retry {}/{} for {} (waiting {}ms)...", attempt - 1, MAX_DOWNLOAD_RETRIES - 1, filename, delay_ms);
@@ -447,10 +460,10 @@ impl Downloader {
         }
 
         // Clean up partial file left by the final failed attempt
-        if local_path.exists() {
-            if let Err(e) = fs::remove_file(&local_path).await {
-                warn!("⚠️ Failed to remove partial file after all retries: {}", e);
-            }
+        if local_path.exists()
+            && let Err(e) = fs::remove_file(&local_path).await
+        {
+            warn!("⚠️ Failed to remove partial file after all retries: {}", e);
         }
 
         Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Download failed after {} attempts", MAX_DOWNLOAD_RETRIES)))
@@ -507,8 +520,37 @@ fn extract_month_from_filename(filename: &str) -> String {
     Utc::now().format("%Y%m").to_string()
 }
 
+#[async_trait]
+impl DataSource for Downloader {
+    async fn list_s3_files(&mut self) -> Result<Vec<S3FileInfo>> {
+        Downloader::list_s3_files(self).await
+    }
+
+    fn get_latest_monthly_files(&self, files: &[S3FileInfo]) -> Result<Vec<S3FileInfo>> {
+        Downloader::get_latest_monthly_files(self, files)
+    }
+
+    async fn download_discogs_data(&mut self) -> Result<Vec<String>> {
+        Downloader::download_discogs_data(self).await
+    }
+
+    fn set_state_marker(&mut self, state_marker: StateMarker, marker_path: PathBuf) {
+        self.state_marker = Some(state_marker);
+        self.marker_path = Some(marker_path);
+    }
+
+    fn take_state_marker(&mut self) -> Option<StateMarker> {
+        self.state_marker.take()
+    }
+}
+
 #[cfg(test)]
-mod tests {
+#[path = "tests/downloader_tests.rs"]
+mod tests;
+
+// Keep remainder as a placeholder to handle removal of test block body
+#[cfg(any())]
+mod _remove_old_tests {
     use super::*;
     use std::collections::HashMap;
     use tempfile::TempDir;
@@ -902,15 +944,13 @@ mod tests {
             .await;
 
         // Year page listing files (5 files = 4 data + 1 checksum for a complete set)
-        let year_page_html = format!(
-            r#"<html><body>
+        let year_page_html = r#"<html><body>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
-        </body></html>"#
-        );
+        </body></html>"#.to_string();
 
         let _year_mock = server
             .mock("GET", "/?prefix=data%2F2026%2F")
@@ -1184,6 +1224,94 @@ mod tests {
 
         // Verify marker was persisted to disk
         assert!(marker_path.exists());
+    }
+
+    // ──── DataSource trait impl tests ────
+
+    #[tokio::test]
+    async fn test_datasource_set_and_take_state_marker() {
+        use crate::state_marker::StateMarker;
+
+        let temp_dir = TempDir::new().unwrap();
+        let mut downloader: Box<dyn DataSource> = Box::new(
+            Downloader::new_with_base_url(temp_dir.path().to_path_buf(), "http://unused".to_string())
+                .await
+                .unwrap(),
+        );
+
+        // Initially no state marker
+        assert!(downloader.take_state_marker().is_none());
+
+        // Set a state marker via the trait
+        let marker = StateMarker::new("20260101".to_string());
+        let marker_path = temp_dir.path().join("marker.json");
+        downloader.set_state_marker(marker, marker_path);
+
+        // Take it back
+        let taken = downloader.take_state_marker();
+        assert!(taken.is_some());
+        assert_eq!(taken.unwrap().current_version, "20260101");
+
+        // Should be None after take
+        assert!(downloader.take_state_marker().is_none());
+    }
+
+    #[tokio::test]
+    async fn test_datasource_list_s3_files_via_trait() {
+        let temp_dir = TempDir::new().unwrap();
+        let mut server = mockito::Server::new_async().await;
+        let base_url = format!("{}/", server.url());
+
+        let main_page_html = r#"<html><body>
+            <a href="?prefix=data%2F2026%2F">2026/</a>
+        </body></html>"#;
+        let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
+
+        let year_page_html = r#"<html><body>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+            <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
+        </body></html>"#;
+        let _year_mock = server
+            .mock("GET", "/?prefix=data%2F2026%2F")
+            .with_status(200)
+            .with_body(year_page_html)
+            .create_async()
+            .await;
+
+        let mut downloader: Box<dyn DataSource> = Box::new(
+            Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
+                .await
+                .unwrap(),
+        );
+
+        // Call through the DataSource trait
+        let files = downloader.list_s3_files().await.unwrap();
+        assert_eq!(files.len(), 5);
+    }
+
+    #[tokio::test]
+    async fn test_datasource_get_latest_monthly_files_via_trait() {
+        let temp_dir = TempDir::new().unwrap();
+        let downloader: Box<dyn DataSource> = Box::new(
+            Downloader::new_with_base_url(temp_dir.path().to_path_buf(), "http://unused".to_string())
+                .await
+                .unwrap(),
+        );
+
+        let files = vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_masters.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_releases.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_CHECKSUM.txt".to_string(), size: 100 },
+        ];
+
+        let result = downloader.get_latest_monthly_files(&files).unwrap();
+        assert_eq!(result.len(), 4);
+        assert!(result.iter().all(|f| !f.name.contains("CHECKSUM")));
     }
 
     #[test]
