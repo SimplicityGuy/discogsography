@@ -152,12 +152,13 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"*/api.py" = ["T201"]           # Allow print statements for ASCII art
-"*/explore.py" = ["T201"]       # Allow print statements for ASCII art
-"*/graphinator.py" = ["T201"]   # Allow print statements for ASCII art
-"*/schema_init.py" = ["T201"]   # Allow print statements for ASCII art
-"*/tableinator.py" = ["T201"]   # Allow print statements for ASCII art
-"tests/**/*.py" = ["PLC", "S105"]  # Test files can have pylint convention violations and hardcoded passwords
+"*/api.py" = ["T201"]                       # Allow print statements for ASCII art
+"*/explore.py" = ["T201"]                   # Allow print statements for ASCII art
+"*/graphinator.py" = ["T201"]               # Allow print statements for ASCII art
+"*/schema_init.py" = ["T201"]               # Allow print statements for ASCII art
+"*/tableinator.py" = ["T201"]               # Allow print statements for ASCII art
+"tests/**/*.py" = ["PLC", "S105"]           # Test files can have pylint convention violations and hardcoded passwords
+"*/queries/search_queries.py" = ["S608"]    # SQL uses parameterized %s for all user input; interpolated values are internal constants
 
 [tool.mypy]
 python_version = "3.13"
@@ -280,7 +281,7 @@ end_of_line = "lf"  # Use Unix line endings
 
 [tool.bandit]
 exclude_dirs = [".venv", "tests", "venv", "*/.venv/*", "*/venv/*"]
-skips = ["B101", "B108"]  # Skip assert_used test and hardcoded temp directory
+skips = ["B101", "B108", "B608"]  # Skip assert_used, hardcoded temp directory, and SQL construction (parameterized queries used for all user input)
 
 [tool.black]
 line-length = 150
