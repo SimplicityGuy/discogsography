@@ -420,6 +420,16 @@ class ApiConfig:
     snapshot_max_nodes: int = 100
     oauth_encryption_key: str | None = None
 
+    # Admin dashboard — extractor connection
+    extractor_host: str = "extractor"
+    extractor_health_port: int = 8000
+
+    # Admin dashboard — RabbitMQ management API
+    rabbitmq_management_host: str = "rabbitmq"
+    rabbitmq_management_port: int = 15672
+    rabbitmq_username: str = "guest"
+    rabbitmq_password: str = "guest"  # noqa: S105
+
     @classmethod
     def from_env(cls) -> "ApiConfig":
         """Create configuration from environment variables."""
@@ -500,6 +510,12 @@ class ApiConfig:
             snapshot_ttl_days=snapshot_ttl_days,
             snapshot_max_nodes=snapshot_max_nodes,
             oauth_encryption_key=oauth_encryption_key,
+            extractor_host=getenv("EXTRACTOR_HOST", "extractor"),
+            extractor_health_port=int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),
+            rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
+            rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
+            rabbitmq_username=getenv("RABBITMQ_USERNAME", "guest"),
+            rabbitmq_password=get_secret("RABBITMQ_PASSWORD") or "guest",
         )
 
 
