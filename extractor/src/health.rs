@@ -1,23 +1,31 @@
-use axum::{Router, extract::State, http::StatusCode, response::Json, routing::get};
+use axum::{
+    Router,
+    extract::State,
+    http::StatusCode,
+    response::Json,
+    routing::{get, post},
+};
 use chrono::Utc;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 
-use crate::extractor::ExtractorState;
+use crate::extractor::{ExtractionStatus, ExtractorState};
 
 pub struct HealthServer {
     port: u16,
     state: Arc<RwLock<ExtractorState>>,
+    trigger: Arc<AtomicBool>,
 }
 
 impl HealthServer {
-    pub fn new(port: u16, state: Arc<RwLock<ExtractorState>>) -> Self {
-        Self { port, state }
+    pub fn new(port: u16, state: Arc<RwLock<ExtractorState>>, trigger: Arc<AtomicBool>) -> Self {
+        Self { port, state, trigger }
     }
 
     pub async fn run(self) -> anyhow::Result<()> {
@@ -25,9 +33,10 @@ impl HealthServer {
             .route("/health", get(health_handler))
             .route("/metrics", get(metrics_handler))
             .route("/ready", get(ready_handler))
+            .route("/trigger", post(trigger_handler))
             .layer(CorsLayer::permissive())
             .layer(TraceLayer::new_for_http())
-            .with_state(self.state);
+            .with_state((self.state, self.trigger));
 
         let addr = SocketAddr::from(([0, 0, 0, 0], self.port));
         info!("🏥 Health server listening on {}", addr);
@@ -40,12 +49,13 @@ impl HealthServer {
     }
 }
 
-async fn health_handler(State(state): State<Arc<RwLock<ExtractorState>>>) -> (StatusCode, Json<serde_json::Value>) {
+async fn health_handler(State((state, _)): State<(Arc<RwLock<ExtractorState>>, Arc<AtomicBool>)>) -> (StatusCode, Json<serde_json::Value>) {
     let state = state.read().await;
 
     let health = json!({
         "status": "healthy",
         "service": "rust-extractor",
+        "extraction_status": state.extraction_status.as_str(),
         "extraction_progress": {
             "artists": state.extraction_progress.artists,
             "labels": state.extraction_progress.labels,
@@ -65,7 +75,7 @@ async fn health_handler(State(state): State<Arc<RwLock<ExtractorState>>>) -> (St
     (StatusCode::OK, Json(health))
 }
 
-async fn metrics_handler(State(state): State<Arc<RwLock<ExtractorState>>>) -> (StatusCode, Json<serde_json::Value>) {
+async fn metrics_handler(State((state, _)): State<(Arc<RwLock<ExtractorState>>, Arc<AtomicBool>)>) -> (StatusCode, Json<serde_json::Value>) {
     let state = state.read().await;
 
     let metrics = json!({
@@ -82,7 +92,7 @@ async fn metrics_handler(State(state): State<Arc<RwLock<ExtractorState>>>) -> (S
     (StatusCode::OK, Json(metrics))
 }
 
-async fn ready_handler(State(state): State<Arc<RwLock<ExtractorState>>>) -> StatusCode {
+async fn ready_handler(State((state, _)): State<(Arc<RwLock<ExtractorState>>, Arc<AtomicBool>)>) -> StatusCode {
     let state = state.read().await;
 
     // Service is ready if it has initialized (has connections or has completed files)
@@ -91,6 +101,19 @@ async fn ready_handler(State(state): State<Arc<RwLock<ExtractorState>>>) -> Stat
     } else {
         StatusCode::SERVICE_UNAVAILABLE
     }
+}
+
+async fn trigger_handler(State((state, trigger)): State<(Arc<RwLock<ExtractorState>>, Arc<AtomicBool>)>) -> (StatusCode, Json<serde_json::Value>) {
+    let state = state.read().await;
+    if state.extraction_status == ExtractionStatus::Running {
+        return (StatusCode::CONFLICT, Json(json!({"status": "already_running"})));
+    }
+    drop(state);
+
+    trigger.store(true, Ordering::SeqCst);
+    info!("🔄 Extraction triggered via API");
+
+    (StatusCode::ACCEPTED, Json(json!({"status": "started"})))
 }
 
 #[cfg(test)]
