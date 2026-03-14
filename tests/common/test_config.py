@@ -862,3 +862,52 @@ class TestGetSecretViaFromEnv:
         config = DashboardConfig.from_env()
         assert config.rabbitmq_username == "dash_rmq_user"
         assert config.rabbitmq_password == "dash_rmq_pass"
+
+
+class TestInsightsConfig:
+    """Tests for InsightsConfig."""
+
+    def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "password")
+        monkeypatch.setenv("POSTGRES_HOST", "postgres")
+        monkeypatch.setenv("POSTGRES_USERNAME", "user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "db")
+        monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "12")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.neo4j_host == "bolt://neo4j:7687"
+        assert config.postgres_database == "db"
+        assert config.schedule_hours == 12
+
+    def test_from_env_default_schedule(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "password")
+        monkeypatch.setenv("POSTGRES_HOST", "postgres")
+        monkeypatch.setenv("POSTGRES_USERNAME", "user")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "db")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.schedule_hours == 24
+
+    def test_from_env_missing_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("NEO4J_HOST", raising=False)
+        monkeypatch.delenv("NEO4J_USERNAME", raising=False)
+        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
+        monkeypatch.delenv("POSTGRES_HOST", raising=False)
+        monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
+        monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
+        monkeypatch.delenv("POSTGRES_DATABASE", raising=False)
+
+        from common.config import InsightsConfig
+
+        with pytest.raises(ValueError, match="Missing required environment variables"):
+            InsightsConfig.from_env()
