@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
 use tokio::signal;
 use tokio::sync::RwLock;
 use tracing::{error, info};
@@ -59,9 +60,10 @@ async fn main() -> Result<()> {
 
     // Initialize shared state
     let state = Arc::new(RwLock::new(extractor::ExtractorState::default()));
+    let trigger = Arc::new(AtomicBool::new(false));
 
     // Start health server
-    let health_server = HealthServer::new(config.health_port, state.clone());
+    let health_server = HealthServer::new(config.health_port, state.clone(), trigger.clone());
     let health_handle = tokio::spawn(async move {
         if let Err(e) = health_server.run().await {
             error!("❌ Health server error: {}", e);
@@ -72,11 +74,11 @@ async fn main() -> Result<()> {
     let shutdown = setup_shutdown_handler();
 
     // Create factory for message queue connections
-    let mq_factory: Arc<dyn extractor::MessageQueueFactory> =
-        Arc::new(extractor::DefaultMessageQueueFactory);
+    let mq_factory: Arc<dyn extractor::MessageQueueFactory> = Arc::new(extractor::DefaultMessageQueueFactory);
 
     // Run the main extraction loop
-    let extraction_result = extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory).await;
+    let extraction_result =
+        extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, trigger.clone()).await;
 
     // Cleanup
     info!("🛑 Shutting down rust-extractor...");
