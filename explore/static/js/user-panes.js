@@ -13,6 +13,7 @@ class UserPanes {
         this._wantlistTotal = 0;
         this._discogsOAuthState = null;
         this._tasteCache = null;
+        this._tasteLoading = false;
     }
 
     // ------------------------------------------------------------------ //
@@ -368,6 +369,10 @@ class UserPanes {
             return;
         }
 
+        // Guard against concurrent fetches
+        if (this._tasteLoading) return;
+        this._tasteLoading = true;
+
         // Show loading placeholder
         strip.replaceChildren();
         const loader = document.createElement('div');
@@ -385,6 +390,8 @@ class UserPanes {
             this._renderTasteStrip(data);
         } catch {
             strip.replaceChildren();
+        } finally {
+            this._tasteLoading = false;
         }
     }
 
@@ -500,8 +507,8 @@ class UserPanes {
 
     _formatDrift(drift) {
         if (!drift || drift.length === 0) return '—';
-        const first = drift[0].top_genre;
-        const last = drift[drift.length - 1].top_genre;
+        const first = drift[0]?.top_genre || '—';
+        const last = drift[drift.length - 1]?.top_genre || '—';
         if (first === last) return `${first} (consistent)`;
         return `${first} → ${last}`;
     }
@@ -509,15 +516,20 @@ class UserPanes {
     _renderHeatmapGrid(cells) {
         // Group by genre, sort by total count desc, take top 5
         const genreTotals = {};
-        let maxCount = 0;
         cells.forEach(c => {
             genreTotals[c.genre] = (genreTotals[c.genre] || 0) + c.count;
-            if (c.count > maxCount) maxCount = c.count;
         });
         const topGenres = Object.entries(genreTotals)
             .sort((a, b) => b[1] - a[1])
             .slice(0, 5)
             .map(e => e[0]);
+
+        // Compute max count only from displayed genres for accurate color scaling
+        const topGenreSet = new Set(topGenres);
+        let maxCount = 0;
+        cells.forEach(c => {
+            if (topGenreSet.has(c.genre) && c.count > maxCount) maxCount = c.count;
+        });
 
         // Collect unique decades, sorted
         const decades = [...new Set(cells.map(c => c.decade))].sort((a, b) => a - b);
@@ -596,7 +608,7 @@ class UserPanes {
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        setTimeout(() => URL.revokeObjectURL(url), 100);
         resetBtn();
     }
 
