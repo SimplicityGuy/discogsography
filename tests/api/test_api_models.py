@@ -87,52 +87,56 @@ class TestTasteModels:
         from api.models import HeatmapCell, HeatmapResponse
 
         resp = HeatmapResponse(
-            genres=["Rock", "Jazz"],
-            decades=[1990, 2000],
-            cells=[HeatmapCell(genre="Rock", decade=1990, count=5)],
-            total=5,
+            cells=[
+                HeatmapCell(genre="Rock", decade=1990, count=5),
+                HeatmapCell(genre="Jazz", decade=2000, count=3),
+            ],
+            total=8,
         )
-        assert len(resp.genres) == 2
-        assert len(resp.cells) == 1
+        assert len(resp.cells) == 2
+        assert resp.total == 8
 
     def test_obscurity_score_valid(self) -> None:
         from api.models import ObscurityScore
 
         score = ObscurityScore(
-            overall=0.73,
-            most_obscure=[{"release_id": "r1", "title": "Rare LP", "score": 0.99}],
-            most_mainstream=[{"release_id": "r2", "title": "Best Of", "score": 0.05}],
+            score=0.73,
+            median_collectors=150.0,
+            total_releases=42,
         )
-        assert 0.0 <= score.overall <= 1.0
+        assert 0.0 <= score.score <= 1.0
+        assert score.median_collectors == 150.0
+        assert score.total_releases == 42
 
     def test_taste_drift_year_valid(self) -> None:
         from api.models import TasteDriftYear
 
-        year = TasteDriftYear(year=2023, genres={"Rock": 5, "Jazz": 3})
-        assert year.genres["Rock"] == 5
+        drift = TasteDriftYear(year="2023", top_genre="Rock", count=5)
+        assert drift.top_genre == "Rock"
+        assert drift.count == 5
 
     def test_blind_spot_valid(self) -> None:
         from api.models import BlindSpot
 
         spot = BlindSpot(
             genre="Reggae",
-            decade=1970,
-            reason="You collect 12 Dub releases but zero Reggae from the 1970s",
-            score=0.85,
+            artist_overlap=12,
+            example_release="King Tubby Meets Rockers Uptown",
         )
-        assert spot.score == 0.85
+        assert spot.genre == "Reggae"
+        assert spot.artist_overlap == 12
+        assert spot.example_release == "King Tubby Meets Rockers Uptown"
 
     def test_fingerprint_response_valid(self) -> None:
         from api.models import FingerprintResponse, HeatmapCell, ObscurityScore, TasteDriftYear
 
         fp = FingerprintResponse(
-            total_items=50,
-            heatmap_genres=["Rock"],
-            heatmap_decades=[1990],
-            heatmap_cells=[HeatmapCell(genre="Rock", decade=1990, count=50)],
-            obscurity=ObscurityScore(overall=0.5, most_obscure=[], most_mainstream=[]),
-            taste_drift=[TasteDriftYear(year=2023, genres={"Rock": 50})],
-            top_labels=[{"name": "Warp", "count": 10}],
+            heatmap=[HeatmapCell(genre="Rock", decade=1990, count=50)],
+            obscurity=ObscurityScore(score=0.5, median_collectors=200.0, total_releases=50),
+            drift=[TasteDriftYear(year="2023", top_genre="Rock", count=50)],
+            blind_spots=[],
             peak_decade=1990,
         )
-        assert fp.total_items == 50
+        assert fp.peak_decade == 1990
+        assert len(fp.heatmap) == 1
+        assert fp.obscurity.score == 0.5
