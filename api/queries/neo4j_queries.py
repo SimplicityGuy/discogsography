@@ -63,6 +63,35 @@ async def _run_count(driver: AsyncResilientNeo4jDriver, cypher: str, **params: A
         return int(record["total"]) if record else 0
 
 
+async def find_shortest_path(
+    driver: AsyncResilientNeo4jDriver,
+    from_id: str,
+    to_id: str,
+    max_depth: int = 10,
+) -> dict[str, Any] | None:
+    """Find the shortest path between two nodes by their string IDs.
+
+    Returns a dict with keys ``nodes`` (list of node property dicts) and
+    ``rels`` (list of relationship type strings), or None if no path exists.
+    Each node dict has: id, name, labels.
+
+    ``max_depth`` is interpolated as an integer literal in Cypher (it cannot
+    be a query parameter). The caller is responsible for validating the range.
+    """
+    depth = int(max_depth)
+    cypher = f"""
+    MATCH (a {{id: $from_id}}), (b {{id: $to_id}})
+    MATCH p = shortestPath((a)-[*..{depth}]-(b))
+    RETURN [node IN nodes(p) | {{
+               id: node.id,
+               name: coalesce(node.name, node.title, ''),
+               labels: labels(node)
+           }}] AS nodes,
+           [rel IN relationships(p) | type(rel)] AS rels
+    """
+    return await _run_single(driver, cypher, from_id=from_id, to_id=to_id)
+
+
 # --- Autocomplete ---
 
 

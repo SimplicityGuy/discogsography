@@ -93,6 +93,23 @@ class SnapshotRestoreResponse(BaseModel):
     created_at: str
 
 
+class PathNode(BaseModel):
+    """A single node in a shortest-path result."""
+
+    id: str
+    name: str
+    type: str
+    rel: str | None = None  # relationship type leading TO this node (None for start node)
+
+
+class PathResponse(BaseModel):
+    """Response for GET /api/path."""
+
+    found: bool
+    length: int | None
+    path: list[PathNode]
+
+
 # ---------------------------------------------------------------------------
 # Taste Fingerprint models
 # ---------------------------------------------------------------------------

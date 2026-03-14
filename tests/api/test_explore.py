@@ -415,3 +415,107 @@ class TestGetOptionalUserInvalidToken:
             assert result is None
         finally:
             dependencies_module._jwt_secret = original
+
+
+class TestPathEndpoint:
+    """Tests for GET /api/path."""
+
+    def test_path_found(self, test_client: TestClient) -> None:
+        from_result = {"id": 1, "name": "Miles Davis"}
+        to_result = {"id": 2, "name": "Daft Punk"}
+        path_data = {
+            "nodes": [
+                {"id": "1", "name": "Miles Davis", "labels": ["Artist"]},
+                {"id": "201", "name": "Kind of Blue", "labels": ["Release"]},
+                {"id": "2", "name": "Daft Punk", "labels": ["Artist"]},
+            ],
+            "rels": ["BY", "BY"],
+        }
+
+        with (
+            patch("api.routers.explore.EXPLORE_DISPATCH", {"artist": AsyncMock(side_effect=[from_result, to_result])}),
+            patch("api.routers.explore.find_shortest_path", AsyncMock(return_value=path_data)),
+        ):
+            response = test_client.get("/api/path?from_name=Miles+Davis&from_type=artist&to_name=Daft+Punk&to_type=artist")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["found"] is True
+        assert data["length"] == 2
+        assert len(data["path"]) == 3
+        assert data["path"][0]["rel"] is None
+        assert data["path"][1]["rel"] == "BY"
+
+    def test_path_not_found(self, test_client: TestClient) -> None:
+        from_result = {"id": 1, "name": "Miles Davis"}
+        to_result = {"id": 2, "name": "Daft Punk"}
+
+        with (
+            patch("api.routers.explore.EXPLORE_DISPATCH", {"artist": AsyncMock(side_effect=[from_result, to_result])}),
+            patch("api.routers.explore.find_shortest_path", AsyncMock(return_value=None)),
+        ):
+            response = test_client.get("/api/path?from_name=Miles+Davis&from_type=artist&to_name=Daft+Punk&to_type=artist")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["found"] is False
+        assert data["length"] is None
+        assert data["path"] == []
+
+    def test_path_from_entity_not_found_404(self, test_client: TestClient) -> None:
+        with patch("api.routers.explore.EXPLORE_DISPATCH", {"artist": AsyncMock(return_value=None)}):
+            response = test_client.get("/api/path?from_name=Nobody&from_type=artist&to_name=Daft+Punk&to_type=artist")
+
+        assert response.status_code == 404
+        assert "error" in response.json()
+
+    def test_path_to_entity_not_found_404(self, test_client: TestClient) -> None:
+        from_result = {"id": 1, "name": "Miles Davis"}
+
+        with patch("api.routers.explore.EXPLORE_DISPATCH", {"artist": AsyncMock(side_effect=[from_result, None])}):
+            response = test_client.get("/api/path?from_name=Miles+Davis&from_type=artist&to_name=Nobody&to_type=artist")
+
+        assert response.status_code == 404
+
+    def test_path_max_depth_capped_at_15(self, test_client: TestClient) -> None:
+        """FastAPI rejects max_depth > 15 with 422 (Query le=15 constraint)."""
+        response = test_client.get("/api/path?from_name=Miles+Davis&from_type=artist&to_name=Daft+Punk&to_type=artist&max_depth=99")
+        assert response.status_code == 422
+
+    def test_path_no_driver_503(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        original = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/path?from_name=Miles+Davis&from_type=artist&to_name=Daft+Punk&to_type=artist")
+            assert response.status_code == 503
+        finally:
+            explore_module._neo4j_driver = original
+
+    def test_path_invalid_from_type_400(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/path?from_name=Miles+Davis&from_type=banana&to_name=Daft+Punk&to_type=artist")
+        assert response.status_code == 400
+
+    def test_path_invalid_to_type_400(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/path?from_name=Miles+Davis&from_type=artist&to_name=Daft+Punk&to_type=banana")
+        assert response.status_code == 400
+
+    def test_path_same_entity_length_zero(self, test_client: TestClient) -> None:
+        entity = {"id": 1, "name": "Miles Davis"}
+        path_data = {
+            "nodes": [{"id": "1", "name": "Miles Davis", "labels": ["Artist"]}],
+            "rels": [],
+        }
+
+        with (
+            patch("api.routers.explore.EXPLORE_DISPATCH", {"artist": AsyncMock(side_effect=[entity, entity])}),
+            patch("api.routers.explore.find_shortest_path", AsyncMock(return_value=path_data)),
+        ):
+            response = test_client.get("/api/path?from_name=Miles+Davis&from_type=artist&to_name=Miles+Davis&to_type=artist")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["found"] is True
+        assert data["length"] == 0
+        assert len(data["path"]) == 1

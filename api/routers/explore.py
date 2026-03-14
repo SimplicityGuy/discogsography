@@ -10,6 +10,7 @@ import structlog
 
 import api.dependencies as _dependencies
 from api.limiter import limiter
+from api.models import PathNode, PathResponse
 from api.queries.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
     COUNT_DISPATCH,
@@ -17,6 +18,7 @@ from api.queries.neo4j_queries import (
     EXPAND_DISPATCH,
     EXPLORE_DISPATCH,
     TRENDS_DISPATCH,
+    find_shortest_path,
 )
 
 
@@ -172,3 +174,93 @@ async def get_trends(
     query_func = TRENDS_DISPATCH[entity_type]
     results = await query_func(_neo4j_driver, name)
     return JSONResponse(content={"name": name, "type": entity_type, "data": results})
+
+
+_VALID_PATH_TYPES = frozenset(EXPLORE_DISPATCH.keys())
+_MAX_PATH_DEPTH = 15
+_DEFAULT_PATH_DEPTH = 10
+
+
+def _node_label_to_type(labels: list[str]) -> str:
+    """Convert a Neo4j label list to a lowercase entity type string."""
+    for label in labels:
+        lower = label.lower()
+        if lower in _VALID_PATH_TYPES:
+            return lower
+    return labels[0].lower() if labels else "unknown"
+
+
+@router.get("/api/path")
+async def find_path(
+    from_name: str = Query(...),
+    from_type: str = Query("artist"),
+    to_name: str = Query(...),
+    to_type: str = Query("artist"),
+    max_depth: int = Query(_DEFAULT_PATH_DEPTH, ge=1, le=_MAX_PATH_DEPTH),
+) -> JSONResponse:
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    from_type_lower = from_type.lower()
+    to_type_lower = to_type.lower()
+
+    if from_type_lower not in _VALID_PATH_TYPES:
+        return JSONResponse(
+            content={"error": f"Invalid from_type: {from_type}. Must be one of: {', '.join(sorted(_VALID_PATH_TYPES))}"},
+            status_code=400,
+        )
+    if to_type_lower not in _VALID_PATH_TYPES:
+        return JSONResponse(
+            content={"error": f"Invalid to_type: {to_type}. Must be one of: {', '.join(sorted(_VALID_PATH_TYPES))}"},
+            status_code=400,
+        )
+
+    from_explore = EXPLORE_DISPATCH[from_type_lower]
+    to_explore = EXPLORE_DISPATCH[to_type_lower]
+
+    from_node, to_node = await asyncio.gather(
+        from_explore(_neo4j_driver, from_name),
+        to_explore(_neo4j_driver, to_name),
+    )
+
+    if not from_node:
+        return JSONResponse(
+            content={"error": f"{from_type.capitalize()} '{from_name}' not found"},
+            status_code=404,
+        )
+    if not to_node:
+        return JSONResponse(
+            content={"error": f"{to_type.capitalize()} '{to_name}' not found"},
+            status_code=404,
+        )
+
+    raw = await find_shortest_path(
+        _neo4j_driver,
+        str(from_node["id"]),
+        str(to_node["id"]),
+        max_depth=max_depth,
+    )
+
+    if raw is None:
+        return JSONResponse(content=PathResponse(found=False, length=None, path=[]).model_dump())
+
+    raw_nodes: list[dict[str, Any]] = raw["nodes"]
+    raw_rels: list[str] = raw["rels"]
+
+    path_nodes = [
+        PathNode(
+            id=str(n["id"]),
+            name=str(n["name"]),
+            type=_node_label_to_type(n["labels"]),
+            rel=raw_rels[i - 1] if i > 0 else None,
+        )
+        for i, n in enumerate(raw_nodes)
+    ]
+
+    return JSONResponse(
+        content=PathResponse(
+            found=True,
+            length=len(raw_rels),
+            path=path_nodes,
+        ).model_dump()
+    )

@@ -670,3 +670,210 @@ class ExploreApp {
 document.addEventListener('DOMContentLoaded', () => {
     window.exploreApp = new ExploreApp();
 });
+
+// ============================================================
+// Find Path
+// ============================================================
+
+(function initPathFinder() {
+    'use strict';
+
+    // DOM refs
+    const fromInput    = document.getElementById('pathFromInput');
+    const toInput      = document.getElementById('pathToInput');
+    const fromTypeBtn  = document.getElementById('pathFromTypeBtn');
+    const toTypeBtn    = document.getElementById('pathToTypeBtn');
+    const fromDropdown = document.getElementById('pathFromDropdown');
+    const toDropdown   = document.getElementById('pathToDropdown');
+    const connectBtn   = document.getElementById('pathConnectBtn');
+    const loadingEl    = document.getElementById('pathLoading');
+    const placeholder  = document.getElementById('pathPlaceholder');
+    const resultEl     = document.getElementById('pathResult');
+    const summaryEl    = document.getElementById('pathResultSummary');
+    const chainEl      = document.getElementById('pathChain');
+    const errorEl      = document.getElementById('pathError');
+
+    if (!fromInput) return;  // pane not in DOM
+
+    let fromType = 'artist';
+    let toType   = 'artist';
+
+    // Type selectors
+    document.querySelectorAll('[data-path-from-type]').forEach(link => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            fromType = e.currentTarget.dataset.pathFromType;
+            fromTypeBtn.textContent = fromType.charAt(0).toUpperCase() + fromType.slice(1);
+        });
+    });
+    document.querySelectorAll('[data-path-to-type]').forEach(link => {
+        link.addEventListener('click', e => {
+            e.preventDefault();
+            toType = e.currentTarget.dataset.pathToType;
+            toTypeBtn.textContent = toType.charAt(0).toUpperCase() + toType.slice(1);
+        });
+    });
+
+    // ----------------------------------------------------------------
+    // Autocomplete wiring
+    // ----------------------------------------------------------------
+
+    function wireAutocomplete(input, dropdown, getType) {
+        let debounceTimer;
+        input.addEventListener('input', () => {
+            clearTimeout(debounceTimer);
+            const q = input.value.trim();
+            dropdown.textContent = '';
+            dropdown.classList.remove('show');
+            if (q.length < 3) return;
+            debounceTimer = setTimeout(async () => {
+                const results = await window.apiClient.autocomplete(q, getType(), 8);
+                if (!results.length) return;
+                dropdown.textContent = '';
+                results.forEach(r => {
+                    const item = document.createElement('div');
+                    item.className = 'autocomplete-item';
+                    item.textContent = r.name;       // textContent — safe
+                    item.addEventListener('mousedown', e => {
+                        e.preventDefault();
+                        input.value = r.name;
+                        dropdown.textContent = '';
+                        dropdown.classList.remove('show');
+                    });
+                    dropdown.appendChild(item);
+                });
+                dropdown.classList.add('show');
+            }, 220);
+        });
+        input.addEventListener('blur', () => {
+            setTimeout(() => { dropdown.classList.remove('show'); }, 150);
+        });
+    }
+
+    wireAutocomplete(fromInput, fromDropdown, () => fromType);
+    wireAutocomplete(toInput,   toDropdown,   () => toType);
+
+    // ----------------------------------------------------------------
+    // Render helpers
+    // ----------------------------------------------------------------
+
+    function setVisible(el, visible) {
+        el.classList.toggle('hidden', !visible);
+    }
+
+    function showError(msg) {
+        setVisible(loadingEl, false);
+        setVisible(placeholder, false);
+        setVisible(resultEl, false);
+        errorEl.textContent = msg;          // textContent — safe
+        setVisible(errorEl, true);
+    }
+
+    function buildNodeCard(node) {
+        const card = document.createElement('div');
+        card.className = 'path-node';
+
+        const typeSpan = document.createElement('span');
+        typeSpan.className = 'path-node-type';
+        typeSpan.textContent = node.type;   // textContent — safe
+
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'path-node-name';
+        nameSpan.title = node.name;
+        nameSpan.textContent = node.name;   // textContent — safe
+
+        card.appendChild(typeSpan);
+        card.appendChild(nameSpan);
+        return card;
+    }
+
+    function buildEdge(relType) {
+        const edge = document.createElement('div');
+        edge.className = 'path-edge';
+
+        const arrowWrap = document.createElement('span');
+        arrowWrap.className = 'path-edge-arrow';
+        const arrowIcon = document.createElement('i');
+        arrowIcon.className = 'fas fa-arrow-right';
+        arrowWrap.appendChild(arrowIcon);
+
+        const label = document.createElement('span');
+        label.className = 'path-edge-label';
+        label.textContent = relType || '';  // textContent — safe
+
+        edge.appendChild(arrowWrap);
+        edge.appendChild(label);
+        return edge;
+    }
+
+    function renderPath(data) {
+        chainEl.textContent = '';
+        summaryEl.textContent = `Path length: ${data.length} hop${data.length === 1 ? '' : 's'}`;
+
+        data.path.forEach((node, i) => {
+            if (i > 0) {
+                chainEl.appendChild(buildEdge(node.rel));
+            }
+            chainEl.appendChild(buildNodeCard(node));
+        });
+
+        setVisible(loadingEl, false);
+        setVisible(placeholder, false);
+        setVisible(errorEl, false);
+        setVisible(resultEl, true);
+    }
+
+    // ----------------------------------------------------------------
+    // Connect button
+    // ----------------------------------------------------------------
+
+    async function handleConnect() {
+        const fromName = fromInput.value.trim();
+        const toName   = toInput.value.trim();
+
+        if (!fromName || !toName) {
+            showError('Please enter both a "From" and "To" entity.');
+            return;
+        }
+
+        setVisible(placeholder, false);
+        setVisible(resultEl, false);
+        setVisible(errorEl, false);
+        setVisible(loadingEl, true);
+        connectBtn.disabled = true;
+
+        try {
+            const data = await window.apiClient.findPath(fromName, fromType, toName, toType);
+
+            if (!data) {
+                showError('An error occurred. Please try again.');
+                return;
+            }
+            if (data.notFound) {
+                showError(data.error || 'One or both entities not found.');
+                return;
+            }
+            if (!data.found) {
+                summaryEl.textContent =
+                    `No path found between "${fromName}" and "${toName}" within the search depth.`;
+                chainEl.textContent = '';
+                setVisible(loadingEl, false);
+                setVisible(placeholder, false);
+                setVisible(errorEl, false);
+                setVisible(resultEl, true);
+                return;
+            }
+
+            renderPath(data);
+        } finally {
+            connectBtn.disabled = false;
+        }
+    }
+
+    connectBtn.addEventListener('click', handleConnect);
+    [fromInput, toInput].forEach(el => {
+        el.addEventListener('keydown', e => {
+            if (e.key === 'Enter') handleConnect();
+        });
+    });
+})();
