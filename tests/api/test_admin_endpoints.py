@@ -182,8 +182,7 @@ class TestExtractionTrigger:
             headers=_admin_auth_headers(),
         )
         assert resp.status_code == 409
-        data = resp.json()
-        assert data["status"] == "already_running"
+        assert resp.json()["detail"] == "Extraction already in progress"
 
     def test_unauthorized(self, test_client: TestClient) -> None:
         resp = test_client.post("/api/admin/extractions/trigger")

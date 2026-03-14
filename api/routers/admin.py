@@ -79,10 +79,7 @@ async def admin_login(request: Request, body: AdminLoginRequest) -> JSONResponse
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
     password_ok = verify_admin_password(body.password, admin["hashed_password"])
-    if not password_ok:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
-
-    if not admin["is_active"]:
+    if not admin["is_active"] or not password_ok:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
 
     access_token, expires_in = create_admin_token(str(admin["id"]), admin["email"], _config.jwt_secret_key)
@@ -154,12 +151,12 @@ async def list_extractions(
                 error_message=row.get("error_message"),
                 extractor_version=row.get("extractor_version"),
                 created_at=row["created_at"],
-            ).model_dump(mode="json")
+            )
         )
 
     return JSONResponse(
         content=ExtractionListResponse(
-            extractions=[ExtractionHistoryResponse(**e) for e in extractions],
+            extractions=extractions,
             total=total,
             offset=offset,
             limit=limit,
@@ -214,6 +211,9 @@ async def _track_extraction(extraction_id: str) -> None:
         return
 
     url = f"http://{_config.extractor_host}:{_config.extractor_health_port}/health"
+    consecutive_failures = 0
+    max_failures = 5
+
     try:
         while True:
             await asyncio.sleep(10)
@@ -221,45 +221,59 @@ async def _track_extraction(extraction_id: str) -> None:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.get(url)
                 if resp.status_code == 200:
+                    consecutive_failures = 0
                     data = resp.json()
-                    health_status = data.get("status", "")
-                    record_counts = data.get("record_counts")
+                    extraction_status = data.get("extraction_status", "")
+                    progress = data.get("extraction_progress", {})
+                    record_counts = {
+                        "artists": progress.get("artists", 0),
+                        "labels": progress.get("labels", 0),
+                        "masters": progress.get("masters", 0),
+                        "releases": progress.get("releases", 0),
+                    }
 
-                    if record_counts:
+                    # Update progress
+                    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+                        await cur.execute(
+                            "UPDATE extraction_history SET record_counts = %s WHERE id = %s",
+                            (json.dumps(record_counts), extraction_id),
+                        )
+
+                    if extraction_status in ("idle", "completed"):
                         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
                             await cur.execute(
-                                "UPDATE extraction_history SET record_counts = %s WHERE id = %s",
+                                "UPDATE extraction_history SET status = 'completed', completed_at = NOW(), record_counts = %s WHERE id = %s",
                                 (json.dumps(record_counts), extraction_id),
                             )
-
-                    if health_status in ("idle", "completed"):
-                        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-                            await cur.execute(
-                                "UPDATE extraction_history SET status = 'completed', completed_at = NOW() WHERE id = %s",
-                                (extraction_id,),
-                            )
-                        logger.info("✅ Extraction completed", extraction_id=extraction_id)
+                        logger.info("✅ Extraction completed", extraction_id=extraction_id, record_counts=record_counts)
                         return
 
-                    if health_status == "failed":
-                        error_msg = data.get("error", "Extraction failed")
+                    if extraction_status == "failed":
+                        error_msg = data.get("error_message", "Extraction failed")
                         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
                             await cur.execute(
-                                "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s WHERE id = %s",
-                                (error_msg, extraction_id),
+                                "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s, record_counts = %s WHERE id = %s",
+                                (error_msg, json.dumps(record_counts), extraction_id),
                             )
                         logger.error("❌ Extraction failed", extraction_id=extraction_id, error=error_msg)
                         return
                 else:
+                    consecutive_failures += 1
                     logger.warning("⚠️ Extractor health check returned non-200", status_code=resp.status_code)
-            except httpx.ConnectError:
+            except (httpx.ConnectError, httpx.RequestError):
+                consecutive_failures += 1
+                logger.warning("⚠️ Extractor unreachable", extraction_id=extraction_id, attempt=consecutive_failures)
+
+            if consecutive_failures >= max_failures:
                 async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
                     await cur.execute(
                         "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s WHERE id = %s",
-                        ("Extractor unreachable", extraction_id),
+                        ("Extractor became unreachable", extraction_id),
                     )
-                logger.error("❌ Extractor unreachable", extraction_id=extraction_id)
+                logger.error("❌ Extraction tracking failed — extractor unreachable after %d attempts", max_failures, extraction_id=extraction_id)
                 return
+    except asyncio.CancelledError:
+        logger.info("🛑 Extraction tracking cancelled", extraction_id=extraction_id)
     finally:
         _tracking_tasks.pop(extraction_id, None)
 
@@ -311,15 +325,15 @@ async def trigger_extraction(
             )
 
         if resp.status_code == 409:
-            # Already running — update record
+            # Already running — delete the orphan pending record
             async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
                 await cur.execute(
-                    "UPDATE extraction_history SET status = 'already_running' WHERE id = %s",
+                    "DELETE FROM extraction_history WHERE id = %s",
                     (extraction_id,),
                 )
-            return JSONResponse(
-                content=ExtractionTriggerResponse(id=UUID(extraction_id), status="already_running").model_dump(mode="json"),
+            raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
+                detail="Extraction already in progress",
             )
 
         # Unexpected status
@@ -332,15 +346,15 @@ async def trigger_extraction(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Extractor returned unexpected status {resp.status_code}",
         )
-    except httpx.ConnectError as exc:
+    except (httpx.ConnectError, httpx.RequestError) as exc:
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
                 "UPDATE extraction_history SET status = 'failed', error_message = 'Extractor unreachable' WHERE id = %s",
                 (extraction_id,),
             )
         raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Extractor service unreachable",
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Extractor service unavailable",
         ) from exc
 
 

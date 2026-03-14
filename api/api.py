@@ -226,6 +226,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         task.cancel()
     if _running_syncs:
         await asyncio.gather(*_running_syncs.values(), return_exceptions=True)
+    for task in _admin_router._tracking_tasks.values():
+        task.cancel()
+    if _admin_router._tracking_tasks:
+        await asyncio.gather(*_admin_router._tracking_tasks.values(), return_exceptions=True)
     if _neo4j:
         await _neo4j.close()
     if _pool:
