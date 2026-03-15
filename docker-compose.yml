@@ -522,13 +522,17 @@ services:
       POSTGRES_PASSWORD: discogsography
       POSTGRES_USERNAME: discogsography
       PYTHONUNBUFFERED: "1"
+      REDIS_HOST: redis
       STARTUP_DELAY: "10"
+      # INSIGHTS_MILESTONE_YEARS: "25,30,40,50,75,100"
     depends_on:
       schema-init:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
       neo4j:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     networks:
       - discogsography

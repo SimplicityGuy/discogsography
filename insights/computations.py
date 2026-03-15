@@ -149,20 +149,32 @@ async def compute_and_store_label_longevity(driver: Any, pool: Any, limit: int =
         raise
 
 
-async def compute_and_store_anniversaries(driver: Any, pool: Any, current_year: int | None = None, current_month: int | None = None) -> int:
+async def compute_and_store_anniversaries(
+    driver: Any,
+    pool: Any,
+    current_year: int | None = None,
+    current_month: int | None = None,
+    milestone_years: list[int] | None = None,
+) -> int:
     """Compute monthly anniversaries and store results."""
     started_at = datetime.now(UTC)
     now = datetime.now(UTC)
     year = current_year or now.year
     month = current_month or now.month
 
+    if milestone_years is None:
+        milestone_years = [25, 30, 40, 50, 75, 100]
+
     try:
-        results = await query_monthly_anniversaries(driver, current_year=year, current_month=month)
+        results = await query_monthly_anniversaries(
+            driver,
+            current_year=year,
+            current_month=month,
+            milestone_years=milestone_years,
+        )
         if not results:
             await _log_computation(pool, "anniversaries", "completed", started_at, 0)
             return 0
-
-        milestone_years = [25, 30, 40, 50, 75, 100]
         rows_written = 0
         async with pool.connection() as conn, conn.cursor() as cursor:
             cursor = cast("Any", cursor)
@@ -234,7 +246,12 @@ async def compute_and_store_data_completeness(pool: Any) -> int:
         raise
 
 
-async def run_all_computations(driver: Any, pool: Any) -> dict[str, int]:
+async def run_all_computations(
+    driver: Any,
+    pool: Any,
+    *,
+    milestone_years: list[int] | None = None,
+) -> dict[str, int]:
     """Run all insight computations and return row counts per type."""
     logger.info("Starting all insight computations...")
     results: dict[str, int] = {}
@@ -242,7 +259,11 @@ async def run_all_computations(driver: Any, pool: Any) -> dict[str, int]:
     results["artist_centrality"] = await compute_and_store_artist_centrality(driver, pool)
     results["genre_trends"] = await compute_and_store_genre_trends(driver, pool)
     results["label_longevity"] = await compute_and_store_label_longevity(driver, pool)
-    results["anniversaries"] = await compute_and_store_anniversaries(driver, pool)
+    results["anniversaries"] = await compute_and_store_anniversaries(
+        driver,
+        pool,
+        milestone_years=milestone_years,
+    )
     results["data_completeness"] = await compute_and_store_data_completeness(pool)
 
     total = sum(results.values())

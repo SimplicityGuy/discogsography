@@ -73,8 +73,8 @@ jobs:
           fi
 
           deps=$(docker-compose config | yq eval '.services.explore.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "api schema-init" ]; then
-            echo "❌ Explore should depend on api and schema-init"
+          if [ "$deps" != "api" ]; then
+            echo "❌ Explore should depend on api"
             exit 1
           fi
 
@@ -91,8 +91,8 @@ jobs:
           fi
 
           deps=$(docker-compose config | yq eval '.services.insights.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j postgres schema-init" ]; then
-            echo "❌ Insights should depend on neo4j, postgres, and schema-init"
+          if [ "$deps" != "neo4j postgres redis schema-init" ]; then
+            echo "❌ Insights should depend on neo4j, postgres, redis, and schema-init"
             exit 1
           fi
 

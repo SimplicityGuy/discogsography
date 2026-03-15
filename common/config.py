@@ -555,7 +555,9 @@ class InsightsConfig:
     postgres_username: str
     postgres_password: str
     postgres_database: str
+    redis_host: str = "redis://localhost:6379/0"
     schedule_hours: int = 24
+    milestone_years: tuple[int, ...] = (25, 30, 40, 50, 75, 100)
 
     @classmethod
     def from_env(cls) -> "InsightsConfig":
@@ -593,6 +595,15 @@ class InsightsConfig:
         except ValueError:
             schedule_hours = 24
 
+        milestone_years_str = getenv("INSIGHTS_MILESTONE_YEARS", "25,30,40,50,75,100")
+        try:
+            parsed = sorted({int(y.strip()) for y in milestone_years_str.split(",") if y.strip()})
+            milestone_years = tuple(parsed) if parsed else (25, 30, 40, 50, 75, 100)
+        except ValueError:
+            milestone_years = (25, 30, 40, 50, 75, 100)
+
+        redis_host = _build_redis_url()
+
         return cls(
             neo4j_host=_build_neo4j_uri(),
             neo4j_username=cast("str", neo4j_username),
@@ -601,7 +612,9 @@ class InsightsConfig:
             postgres_username=cast("str", postgres_username),
             postgres_password=cast("str", postgres_password),
             postgres_database=cast("str", postgres_database),
+            redis_host=redis_host,
             schedule_hours=schedule_hours,
+            milestone_years=milestone_years,
         )
 
 

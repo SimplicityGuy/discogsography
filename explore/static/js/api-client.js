@@ -387,6 +387,39 @@ class ApiClient {
         if (!response.ok) return null;
         return response.blob();
     }
+    // --- Insights ---
+
+    async getInsightsTopArtists(limit = 10) {
+        const params = new URLSearchParams({ limit: String(limit) });
+        const response = await fetch(`/api/insights/top-artists?${params}`);
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getInsightsGenreTrends(genre) {
+        const params = new URLSearchParams({ genre });
+        const response = await fetch(`/api/insights/genre-trends?${params}`);
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getInsightsThisMonth() {
+        const response = await fetch('/api/insights/this-month');
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getInsightsDataCompleteness() {
+        const response = await fetch('/api/insights/data-completeness');
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    async getInsightsStatus() {
+        const response = await fetch('/api/insights/status');
+        if (!response.ok) return null;
+        return response.json();
+    }
 }
 
 // Global instance

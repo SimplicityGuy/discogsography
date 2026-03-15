@@ -864,17 +864,22 @@ class TestGetSecretViaFromEnv:
         assert config.rabbitmq_password == "dash_rmq_pass"
 
 
+def _set_insights_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set base environment variables required by InsightsConfig."""
+    monkeypatch.setenv("NEO4J_HOST", "neo4j")
+    monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+    monkeypatch.setenv("NEO4J_PASSWORD", "password")
+    monkeypatch.setenv("POSTGRES_HOST", "postgres")
+    monkeypatch.setenv("POSTGRES_USERNAME", "user")
+    monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
+    monkeypatch.setenv("POSTGRES_DATABASE", "db")
+
+
 class TestInsightsConfig:
     """Tests for InsightsConfig."""
 
     def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("NEO4J_HOST", "neo4j")
-        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
-        monkeypatch.setenv("NEO4J_PASSWORD", "password")
-        monkeypatch.setenv("POSTGRES_HOST", "postgres")
-        monkeypatch.setenv("POSTGRES_USERNAME", "user")
-        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
-        monkeypatch.setenv("POSTGRES_DATABASE", "db")
+        _set_insights_env(monkeypatch)
         monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "12")
 
         from common.config import InsightsConfig
@@ -885,13 +890,7 @@ class TestInsightsConfig:
         assert config.schedule_hours == 12
 
     def test_from_env_default_schedule(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("NEO4J_HOST", "neo4j")
-        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
-        monkeypatch.setenv("NEO4J_PASSWORD", "password")
-        monkeypatch.setenv("POSTGRES_HOST", "postgres")
-        monkeypatch.setenv("POSTGRES_USERNAME", "user")
-        monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
-        monkeypatch.setenv("POSTGRES_DATABASE", "db")
+        _set_insights_env(monkeypatch)
 
         from common.config import InsightsConfig
 
@@ -911,3 +910,65 @@ class TestInsightsConfig:
 
         with pytest.raises(ValueError, match="Missing required environment variables"):
             InsightsConfig.from_env()
+
+    def test_default_milestone_years(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.milestone_years == (25, 30, 40, 50, 75, 100)
+
+    def test_custom_milestone_years(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_MILESTONE_YEARS", "10,20,50")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.milestone_years == (10, 20, 50)
+
+    def test_milestone_years_deduplicates_and_sorts(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_MILESTONE_YEARS", "50,25,50,10")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.milestone_years == (10, 25, 50)
+
+    def test_milestone_years_invalid_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_MILESTONE_YEARS", "abc,def")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.milestone_years == (25, 30, 40, 50, 75, 100)
+
+    def test_milestone_years_empty_falls_back(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_MILESTONE_YEARS", "")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.milestone_years == (25, 30, 40, 50, 75, 100)
+
+    def test_redis_host_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.delenv("REDIS_HOST", raising=False)
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.redis_host == "redis://localhost:6379/0"
+
+    def test_redis_host_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("REDIS_HOST", "my-redis")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.redis_host == "redis://my-redis:6379/0"

@@ -113,6 +113,58 @@ class TestComputeAndStoreAnniversaries:
         # 2022-1997=25, which IS in milestone_years, so 1 row written
         assert rows == 1
 
+    @pytest.mark.asyncio
+    async def test_custom_milestone_years_passed_to_query(self) -> None:
+        from insights.computations import compute_and_store_anniversaries
+
+        mock_driver = AsyncMock()
+        mock_pool = _make_mock_pool()
+        custom_milestones = [10, 20]
+
+        with patch("insights.computations.query_monthly_anniversaries") as mock_query:
+            mock_query.return_value = [
+                {"master_id": "m1", "title": "Album", "artist_name": "Artist", "release_year": 2006},
+            ]
+            rows = await compute_and_store_anniversaries(
+                mock_driver,
+                mock_pool,
+                current_year=2026,
+                current_month=3,
+                milestone_years=custom_milestones,
+            )
+
+        # Verify custom milestones were passed to the Neo4j query
+        mock_query.assert_called_once_with(
+            mock_driver,
+            current_year=2026,
+            current_month=3,
+            milestone_years=custom_milestones,
+        )
+        # 2026-2006=20, which IS in custom_milestones
+        assert rows == 1
+
+    @pytest.mark.asyncio
+    async def test_custom_milestone_years_filters_results(self) -> None:
+        from insights.computations import compute_and_store_anniversaries
+
+        mock_driver = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations.query_monthly_anniversaries") as mock_query:
+            mock_query.return_value = [
+                {"master_id": "m1", "title": "Album", "artist_name": "Artist", "release_year": 2016},
+            ]
+            # 2026-2016=10, but milestone_years=[20] so should NOT be stored
+            rows = await compute_and_store_anniversaries(
+                mock_driver,
+                mock_pool,
+                current_year=2026,
+                current_month=3,
+                milestone_years=[20],
+            )
+
+        assert rows == 0
+
 
 class TestComputeAndStoreDataCompleteness:
     @pytest.mark.asyncio
@@ -160,3 +212,22 @@ class TestRunAllComputations:
         assert results["label_longevity"] == 5
         assert results["anniversaries"] == 3
         assert results["data_completeness"] == 4
+
+    @pytest.mark.asyncio
+    async def test_passes_milestone_years_to_anniversaries(self) -> None:
+        from insights.computations import run_all_computations
+
+        mock_driver = AsyncMock()
+        mock_pool = _make_mock_pool()
+        custom_milestones = [10, 50]
+
+        with (
+            patch("insights.computations.compute_and_store_artist_centrality", return_value=0),
+            patch("insights.computations.compute_and_store_genre_trends", return_value=0),
+            patch("insights.computations.compute_and_store_label_longevity", return_value=0),
+            patch("insights.computations.compute_and_store_anniversaries", return_value=0) as mock_anniv,
+            patch("insights.computations.compute_and_store_data_completeness", return_value=0),
+        ):
+            await run_all_computations(mock_driver, mock_pool, milestone_years=custom_milestones)
+
+        mock_anniv.assert_called_once_with(mock_driver, mock_pool, milestone_years=custom_milestones)
