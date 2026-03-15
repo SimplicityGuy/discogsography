@@ -476,6 +476,11 @@ class ExploreApp {
         const target = document.getElementById(pane + 'Pane');
         if (target) target.classList.add('active');
 
+        // Focus search input when switching to search pane
+        if (pane === 'search' && window.searchPane) {
+            window.searchPane.focus();
+        }
+
         // Lazy-load user panes on first visit
         if (pane === 'trends' && this.currentQuery) {
             this._loadTrends(this.currentQuery, this.searchType);
