@@ -40,6 +40,7 @@ import api.routers.collection as _collection_router
 import api.routers.explore as _explore_router
 import api.routers.insights as _insights_router
 import api.routers.label_dna as _label_dna_router
+import api.routers.recommend as _recommend_router
 import api.routers.search as _search_router
 import api.routers.snapshot as _snapshot_router
 import api.routers.sync as _sync_router
@@ -198,6 +199,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _taste_router.configure(_neo4j, jwt_secret_for_neo4j)
     _collection_router.configure(_neo4j, _pool, jwt_secret_for_neo4j)
     _label_dna_router.configure(_neo4j)
+    _recommend_router.configure(_neo4j, jwt_secret_for_neo4j, _redis)
     _search_router.configure(_pool, _redis)
     _snapshot_router.configure(
         jwt_secret=_config.jwt_secret_key,
@@ -267,6 +269,7 @@ app.include_router(_snapshot_router.router)
 app.include_router(_user_router.router)
 app.include_router(_taste_router.router)
 app.include_router(_collection_router.router)
+app.include_router(_recommend_router.router)
 
 
 @app.get("/health")
