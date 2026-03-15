@@ -4,3 +4,11 @@ relative_files = true
 omit =
     */tests/*
     */__init__.py
+
+[report]
+exclude_lines =
+    def __repr__
+    if __name__ == .__main__.:
+    pragma: no cover
+    raise AssertionError
+    raise NotImplementedError

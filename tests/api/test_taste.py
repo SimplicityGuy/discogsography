@@ -183,6 +183,58 @@ class TestTasteCard:
 # ---------------------------------------------------------------------------
 
 
+class TestTasteServiceNotReady:
+    """Tests for 503 responses when _neo4j_driver is None (lines 74, 93, 124, 139)."""
+
+    def test_heatmap_503_when_no_driver(self, test_client: TestClient) -> None:
+        """Line 74: taste_heatmap returns 503 when _neo4j_driver is None."""
+        import api.routers.taste as mod
+
+        original = mod._neo4j_driver
+        mod._neo4j_driver = None
+        try:
+            resp = test_client.get("/api/user/taste/heatmap", headers=_auth_headers())
+            assert resp.status_code == 503
+        finally:
+            mod._neo4j_driver = original
+
+    def test_fingerprint_503_when_no_driver(self, test_client: TestClient) -> None:
+        """Line 93: taste_fingerprint returns 503 when _neo4j_driver is None."""
+        import api.routers.taste as mod
+
+        original = mod._neo4j_driver
+        mod._neo4j_driver = None
+        try:
+            resp = test_client.get("/api/user/taste/fingerprint", headers=_auth_headers())
+            assert resp.status_code == 503
+        finally:
+            mod._neo4j_driver = original
+
+    def test_blindspots_503_when_no_driver(self, test_client: TestClient) -> None:
+        """Line 124: taste_blindspots returns 503 when _neo4j_driver is None."""
+        import api.routers.taste as mod
+
+        original = mod._neo4j_driver
+        mod._neo4j_driver = None
+        try:
+            resp = test_client.get("/api/user/taste/blindspots", headers=_auth_headers())
+            assert resp.status_code == 503
+        finally:
+            mod._neo4j_driver = original
+
+    def test_card_503_when_no_driver(self, test_client: TestClient) -> None:
+        """Line 139: taste_card returns 503 when _neo4j_driver is None."""
+        import api.routers.taste as mod
+
+        original = mod._neo4j_driver
+        mod._neo4j_driver = None
+        try:
+            resp = test_client.get("/api/user/taste/card", headers=_auth_headers())
+            assert resp.status_code == 503
+        finally:
+            mod._neo4j_driver = original
+
+
 class TestTasteNoAuth:
     def test_heatmap_requires_auth(self, test_client: TestClient) -> None:
         resp = test_client.get("/api/user/taste/heatmap")

@@ -6,6 +6,146 @@ from fastapi.testclient import TestClient
 import pytest
 
 
+class TestInsightsConfigure:
+    """Tests for the configure() function."""
+
+    def test_configure_updates_base_url(self) -> None:
+        """Lines 26-27: configure sets _INSIGHTS_BASE_URL when url provided."""
+        import api.routers.insights as mod
+
+        original = mod._INSIGHTS_BASE_URL
+        try:
+            mod.configure("http://custom-insights:9000")
+            assert mod._INSIGHTS_BASE_URL == "http://custom-insights:9000"
+        finally:
+            mod._INSIGHTS_BASE_URL = original
+            mod.configure()  # restore default (no-op, but sets _INSIGHTS_BASE_URL to whatever it already is)
+            mod._INSIGHTS_BASE_URL = original
+
+    def test_configure_no_url_keeps_default(self) -> None:
+        """configure() with no argument leaves _INSIGHTS_BASE_URL unchanged."""
+        import api.routers.insights as mod
+
+        original = mod._INSIGHTS_BASE_URL
+        mod.configure()
+        assert original == mod._INSIGHTS_BASE_URL
+
+
+class TestInsightsProxySuccess:
+    """Tests for successful proxy responses (success paths)."""
+
+    def test_proxy_top_artists_success(self, test_client: TestClient) -> None:
+        """Line 49: proxy_top_artists returns 200 with data on success."""
+        mock_data = {"items": [{"artist": "Miles Davis", "count": 100}]}
+        with patch("api.routers.insights._forward", new=AsyncMock(return_value=mock_data)):
+            response = test_client.get("/api/insights/top-artists")
+        assert response.status_code == 200
+        assert response.json() == mock_data
+
+    def test_proxy_genre_trends_success(self, test_client: TestClient) -> None:
+        """Line 60: proxy_genre_trends returns 200 with data on success."""
+        mock_data = {"trends": [{"genre": "Jazz", "year": 1960, "count": 50}]}
+        with patch("api.routers.insights._forward", new=AsyncMock(return_value=mock_data)):
+            response = test_client.get("/api/insights/genre-trends")
+        assert response.status_code == 200
+        assert response.json() == mock_data
+
+    def test_proxy_label_longevity_success(self, test_client: TestClient) -> None:
+        """Line 71: proxy_label_longevity returns 200 with data on success."""
+        mock_data = {"labels": [{"name": "Blue Note", "years": 80}]}
+        with patch("api.routers.insights._forward", new=AsyncMock(return_value=mock_data)):
+            response = test_client.get("/api/insights/label-longevity")
+        assert response.status_code == 200
+        assert response.json() == mock_data
+
+    def test_proxy_this_month_success(self, test_client: TestClient) -> None:
+        """Line 82: proxy_this_month returns 200 with data on success."""
+        mock_data = {"releases": [], "count": 0}
+        with patch("api.routers.insights._forward", new=AsyncMock(return_value=mock_data)):
+            response = test_client.get("/api/insights/this-month")
+        assert response.status_code == 200
+        assert response.json() == mock_data
+
+    def test_proxy_data_completeness_success(self, test_client: TestClient) -> None:
+        """Line 93: proxy_data_completeness returns 200 with data on success."""
+        mock_data = {"completeness": 0.95}
+        with patch("api.routers.insights._forward", new=AsyncMock(return_value=mock_data)):
+            response = test_client.get("/api/insights/data-completeness")
+        assert response.status_code == 200
+        assert response.json() == mock_data
+
+    def test_proxy_status_success(self, test_client: TestClient) -> None:
+        """Line 104: proxy_status returns 200 with data on success."""
+        mock_data = {"status": "ok", "last_run": "2026-03-15T00:00:00Z"}
+        with patch("api.routers.insights._forward", new=AsyncMock(return_value=mock_data)):
+            response = test_client.get("/api/insights/status")
+        assert response.status_code == 200
+        assert response.json() == mock_data
+
+
+class TestForwardWithQueryString:
+    """Tests for _forward appending query strings."""
+
+    @pytest.mark.asyncio
+    async def test_forward_appends_query_string(self) -> None:
+        """Line 38: _forward appends ?query when request has a query string."""
+        import api.routers.insights as mod
+        from api.routers.insights import _forward
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"items": []}
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        original_client = mod._client
+        mod._client = mock_client
+
+        try:
+            from starlette.datastructures import URL
+            from starlette.requests import Request
+
+            mock_request = AsyncMock(spec=Request)
+            mock_request.url = URL("http://test/api/insights/genre-trends?genre=Jazz")
+
+            result = await _forward(mock_request, "/api/insights/genre-trends")
+            assert result == {"items": []}
+            mock_client.get.assert_awaited_once_with("http://insights:8008/api/insights/genre-trends?genre=Jazz")
+        finally:
+            mod._client = original_client
+
+    @pytest.mark.asyncio
+    async def test_forward_creates_client_when_none(self) -> None:
+        """Line 34: _forward creates an httpx.AsyncClient when _client is None."""
+        import api.routers.insights as mod
+        from api.routers.insights import _forward
+
+        original_client = mod._client
+        mod._client = None
+
+        try:
+            mock_response = MagicMock()
+            mock_response.json.return_value = {"ok": True}
+
+            from starlette.datastructures import URL
+            from starlette.requests import Request
+
+            mock_request = AsyncMock(spec=Request)
+            mock_request.url = URL("http://test/api/insights/status")
+
+            with patch("api.routers.insights.httpx.AsyncClient") as mock_cls:
+                mock_instance = AsyncMock()
+                mock_instance.get = AsyncMock(return_value=mock_response)
+                mock_cls.return_value = mock_instance
+
+                result = await _forward(mock_request, "/api/insights/status")
+
+            assert result == {"ok": True}
+            mock_cls.assert_called_once_with(timeout=30.0)
+        finally:
+            mod._client = original_client
+
+
 class TestInsightsProxy:
     def test_proxy_top_artists_503_when_unavailable(self, test_client: TestClient) -> None:
         """Verify /api/insights/top-artists returns 503 when insights service is down."""

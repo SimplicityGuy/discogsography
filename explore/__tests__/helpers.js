@@ -24,6 +24,20 @@ export function loadScript(filename) {
 }
 
 /**
+ * Load a vanilla JS file directly into the global scope (no IIFE wrapping).
+ * Use this for class-based files where the class needs to be accessible as a
+ * global (e.g. `new TrendsChart()`). Only call once per test suite since
+ * re-running in the same context will throw "already declared" for class/let/const.
+ *
+ * @param {string} filename - JS filename relative to explore/static/js/
+ */
+export function loadScriptDirect(filename) {
+    const filepath = resolve(STATIC_DIR, filename);
+    const code = readFileSync(filepath, 'utf-8');
+    vm.runInThisContext(code, { filename: filepath });
+}
+
+/**
  * Create a mock fetch that returns predefined responses.
  * @param {Object} responses - Map of URL patterns to response data
  * @returns {Function} Mock fetch function

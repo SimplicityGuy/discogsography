@@ -177,6 +177,87 @@ class TestExploreFromHereEndpoint:
         assert response.json()["discoveries"] == []
 
 
+class TestSimilarArtistsCacheHit:
+    """Tests for cache hit on similar_artists endpoint (lines 72-73)."""
+
+    def test_returns_cached_result_sliced_by_limit(self, test_client: TestClient) -> None:
+        """Lines 72-73: cached result is returned with similar list sliced by limit."""
+        import api.routers.recommend as mod
+
+        # Build a fake cache with 5 similar artists
+        cached = {
+            "artist_id": "a1",
+            "artist_name": "Cached Artist",
+            "similar": [
+                {
+                    "artist_id": f"b{i}",
+                    "artist_name": f"Artist {i}",
+                    "similarity": 0.9 - i * 0.05,
+                    "breakdown": {},
+                    "release_count": 10,
+                    "shared_genres": [],
+                    "shared_labels": [],
+                }
+                for i in range(5)
+            ],
+        }
+
+        original_cache = mod._cache
+        mock_cache = AsyncMock()
+        mock_cache.get = AsyncMock(return_value=cached)
+        mod._cache = mock_cache
+        try:
+            response = test_client.get("/api/recommend/similar/artist/a1?limit=2")
+            assert response.status_code == 200
+            data = response.json()
+            assert data["artist_id"] == "a1"
+            # limit=2 so only 2 results returned
+            assert len(data["similar"]) == 2
+        finally:
+            mod._cache = original_cache
+
+
+class TestExploreFromHereCacheHit:
+    """Tests for cache hit on explore_from_here endpoint (lines 133-134)."""
+
+    def test_service_not_ready(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """Line 118: explore_from_here returns 503 when _neo4j_driver is None."""
+        import api.routers.recommend as mod
+
+        original = mod._neo4j_driver
+        mod._neo4j_driver = None
+        try:
+            response = test_client.get("/api/recommend/explore/artist/a1", headers=auth_headers)
+            assert response.status_code == 503
+        finally:
+            mod._neo4j_driver = original
+
+    def test_returns_cached_result_sliced_by_limit(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """Lines 133-134: explore cache hit returns discoveries sliced by limit."""
+        import api.routers.recommend as mod
+
+        cached = {
+            "from": {"id": "a1", "name": "Artist A", "type": "artist"},
+            "discoveries": [
+                {"id": f"d{i}", "name": f"Discovery {i}", "type": "label", "score": 0.9, "path": [], "reason": "graph_proximity"} for i in range(10)
+            ],
+        }
+
+        original_cache = mod._cache
+        mock_cache = AsyncMock()
+        mock_cache.get = AsyncMock(return_value=cached)
+        mod._cache = mock_cache
+        try:
+            response = test_client.get("/api/recommend/explore/artist/a1?limit=3", headers=auth_headers)
+            assert response.status_code == 200
+            data = response.json()
+            assert data["from"]["id"] == "a1"
+            # limit=3 so only 3 discoveries returned
+            assert len(data["discoveries"]) == 3
+        finally:
+            mod._cache = original_cache
+
+
 class TestRecommenderModels:
     """Tests for recommender Pydantic models."""
 

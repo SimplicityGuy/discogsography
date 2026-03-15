@@ -1,5 +1,6 @@
 """Tests for user endpoints in the API service (api/routers/user.py)."""
 
+import time
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
@@ -386,6 +387,157 @@ class TestReleaseStatusIdsLimit:
         ids = ",".join(str(i) for i in range(101))
         data = test_client.get(f"/api/user/status?ids={ids}", headers=auth_headers).json()
         assert data["error"] == "Too many IDs: maximum is 100"
+
+
+class TestTimelineCache:
+    """Tests for in-memory cache helpers (_get_cached / _set_cached) in user.py."""
+
+    def test_get_cached_returns_none_for_missing_key(self) -> None:
+        """_get_cached returns None when key is absent."""
+        from api.routers.user import _get_cached, _timeline_cache
+
+        _timeline_cache.clear()
+        assert _get_cached("no-such-key") is None
+
+    def test_get_cached_returns_none_for_expired_entry(self) -> None:
+        """Lines 53-55: _get_cached evicts and returns None for TTL-expired entries."""
+        from api.routers import user as user_module
+
+        user_module._timeline_cache.clear()
+        # Insert an entry with a timestamp in the distant past (far beyond TTL)
+        expired_ts = time.monotonic() - user_module._TIMELINE_CACHE_TTL - 1
+        user_module._timeline_cache["stale"] = (expired_ts, {"data": "old"})
+
+        result = user_module._get_cached("stale")
+        assert result is None
+        assert "stale" not in user_module._timeline_cache
+
+    def test_get_cached_moves_to_end_on_hit(self) -> None:
+        """Lines 57-58: cache hit moves the key to the end (LRU order)."""
+        from api.routers import user as user_module
+
+        user_module._timeline_cache.clear()
+        user_module._timeline_cache["first"] = (time.monotonic(), {"a": 1})
+        user_module._timeline_cache["second"] = (time.monotonic(), {"b": 2})
+
+        result = user_module._get_cached("first")
+        assert result == {"a": 1}
+        # "first" should now be last (most-recently used)
+        assert list(user_module._timeline_cache.keys())[-1] == "first"
+
+    def test_set_cached_evicts_oldest_when_full(self) -> None:
+        """Line 65: _set_cached evicts the oldest entry when at capacity."""
+        from api.routers import user as user_module
+
+        user_module._timeline_cache.clear()
+        original_max = user_module._TIMELINE_CACHE_MAX
+        user_module._TIMELINE_CACHE_MAX = 2
+        try:
+            user_module._set_cached("key1", {"v": 1})
+            user_module._set_cached("key2", {"v": 2})
+            # Adding a third entry should evict "key1" (the oldest)
+            user_module._set_cached("key3", {"v": 3})
+            assert "key1" not in user_module._timeline_cache
+            assert "key2" in user_module._timeline_cache
+            assert "key3" in user_module._timeline_cache
+        finally:
+            user_module._TIMELINE_CACHE_MAX = original_max
+            user_module._timeline_cache.clear()
+
+
+class TestUserRecommendationsMultiStrategy:
+    """Tests for GET /api/user/recommendations?strategy=multi (lines 109-148)."""
+
+    def test_multi_strategy_success(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """Lines 109-142: multi-signal recommendation strategy."""
+        artist_results = [
+            {"id": "r1", "title": "Album A", "artist": "Artist X", "label": "Label Z", "year": 2000, "genres": ["Rock"], "score": 3},
+        ]
+        label_results = [
+            {
+                "id": "r2",
+                "title": "Album B",
+                "artist": "Artist Y",
+                "label": "Label Z",
+                "year": 2001,
+                "genres": ["Pop"],
+                "score": 0.5,
+                "source": "label: Label Z",
+            },
+        ]
+        blindspot_results: list[dict] = []
+        collector_counts: dict[str, int] = {"r1": 100, "r2": 50}
+
+        with (
+            patch("api.routers.user.get_user_recommendations", new=AsyncMock(return_value=artist_results)),
+            patch("api.routers.user.get_label_affinity_candidates", new=AsyncMock(return_value=label_results)),
+            patch("api.routers.user.get_blindspot_candidates", new=AsyncMock(return_value=blindspot_results)),
+            patch("api.routers.user.get_collector_counts", new=AsyncMock(return_value=collector_counts)),
+            patch("api.routers.user.merge_recommendation_candidates", return_value=[{"id": "r1"}, {"id": "r2"}]),
+        ):
+            response = test_client.get("/api/user/recommendations?strategy=multi", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert data["strategy"] == "multi"
+        assert data["total"] == 2
+
+    def test_multi_strategy_empty_candidates_skips_collector_counts(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """When all candidates have no id, collector_counts call is skipped."""
+        with (
+            patch("api.routers.user.get_user_recommendations", new=AsyncMock(return_value=[])),
+            patch("api.routers.user.get_label_affinity_candidates", new=AsyncMock(return_value=[])),
+            patch("api.routers.user.get_blindspot_candidates", new=AsyncMock(return_value=[])),
+            patch("api.routers.user.get_collector_counts", new=AsyncMock(return_value={})) as mock_cc,
+            patch("api.routers.user.merge_recommendation_candidates", return_value=[]),
+        ):
+            response = test_client.get("/api/user/recommendations?strategy=multi", headers=auth_headers)
+        assert response.status_code == 200
+        # get_collector_counts should NOT have been called (all_ids is empty)
+        mock_cc.assert_not_awaited()
+
+
+class TestTimelineCacheHit:
+    """Tests for cached timeline/evolution responses."""
+
+    def test_timeline_returns_cached_result(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """Line 173: timeline endpoint returns cached value without querying Neo4j."""
+        from api.routers import user as user_module
+
+        cache_key = f"timeline:{0x00000000_00000000_00000000_00000001!r}:year"
+        # Use the real TEST_USER_ID from conftest
+        from tests.api.conftest import TEST_USER_ID
+
+        cache_key = f"timeline:{TEST_USER_ID}:year"
+        cached_data = {
+            "timeline": [{"year": 2000, "count": 5, "genres": {}, "top_labels": [], "top_styles": []}],
+            "insights": {"peak_year": 2000, "dominant_genre": None, "genre_diversity_score": 0.0, "style_drift_rate": 0.0},
+        }
+        user_module._set_cached(cache_key, cached_data)
+        try:
+            with patch("api.routers.user.get_user_collection_timeline", new=AsyncMock()) as mock_timeline:
+                response = test_client.get("/api/user/collection/timeline", headers=auth_headers)
+            assert response.status_code == 200
+            # Should NOT have called the DB query
+            mock_timeline.assert_not_awaited()
+        finally:
+            user_module._timeline_cache.pop(cache_key, None)
+
+    def test_evolution_returns_cached_result(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """Line 190: evolution endpoint returns cached value without querying Neo4j."""
+        from api.routers import user as user_module
+        from tests.api.conftest import TEST_USER_ID
+
+        cache_key = f"evolution:{TEST_USER_ID}:genre"
+        cached_data = {"metric": "genre", "data": [], "summary": {"total_years": 0, "unique_values": 0}}
+        user_module._set_cached(cache_key, cached_data)
+        try:
+            with patch("api.routers.user.get_user_collection_evolution", new=AsyncMock()) as mock_evo:
+                response = test_client.get("/api/user/collection/evolution", headers=auth_headers)
+            assert response.status_code == 200
+            assert response.json()["metric"] == "genre"
+            mock_evo.assert_not_awaited()
+        finally:
+            user_module._timeline_cache.pop(cache_key, None)
 
 
 class TestGetOptionalUserInvalidToken:

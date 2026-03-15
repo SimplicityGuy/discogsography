@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
+import pytest
 
 
 class TestHealthEndpoint:
@@ -56,6 +57,40 @@ class TestComputationStatusEndpoint:
     def test_returns_200(self, test_client: TestClient) -> None:
         response = test_client.get("/api/insights/status")
         assert response.status_code == 200
+
+    def test_never_run_status_when_no_log_rows(self, test_client: TestClient) -> None:
+        """When fetchone returns None for an insight type, status should be 'never_run'."""
+        response = test_client.get("/api/insights/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert "statuses" in data
+        # All 5 insight types should show 'never_run' since fetchone returns None
+        assert len(data["statuses"]) == 5
+        for status in data["statuses"]:
+            assert status["status"] == "never_run"
+
+    def test_status_with_log_rows(self, mock_neo4j_driver: AsyncMock, mock_pg_pool: AsyncMock) -> None:
+        """When fetchone returns a row, status should reflect actual log data."""
+        import insights.insights as _module
+
+        # Return a row with None for completed_at to avoid JSON serialization issues
+        mock_cursor = mock_pg_pool.connection.return_value.__aenter__.return_value.cursor.return_value.__aenter__.return_value
+        mock_cursor.fetchone = AsyncMock(return_value=("artist_centrality", "completed", None, 1500))
+
+        _module._neo4j = mock_neo4j_driver
+        _module._pool = mock_pg_pool
+        _module._cache = None
+
+        from insights.insights import app
+
+        client = TestClient(app)
+        response = client.get("/api/insights/status")
+        assert response.status_code == 200
+        data = response.json()
+        assert "statuses" in data
+        # Each status should have "completed"
+        for status in data["statuses"]:
+            assert status["status"] == "completed"
 
 
 # ============================================================
@@ -202,3 +237,55 @@ class TestStatusEndpointNeverCached:
         assert response.status_code == 200
         mock_cache.get.assert_not_called()
         mock_cache.set.assert_not_called()
+
+
+# ============================================================
+# 503 "not ready" responses when _pool is None
+# ============================================================
+
+
+@pytest.fixture
+def test_client_no_pool() -> TestClient:
+    """Create a test client with _pool set to None (service not ready)."""
+    import insights.insights as _module
+
+    _module._pool = None
+    _module._cache = None
+
+    from insights.insights import app
+
+    return TestClient(app)
+
+
+class TestServiceNotReadyResponses:
+    """All data endpoints must return 503 when the pool is not initialized."""
+
+    def test_top_artists_503_when_no_pool(self, test_client_no_pool: TestClient) -> None:
+        response = test_client_no_pool.get("/api/insights/top-artists")
+        assert response.status_code == 503
+        assert "error" in response.json()
+
+    def test_genre_trends_503_when_no_pool(self, test_client_no_pool: TestClient) -> None:
+        response = test_client_no_pool.get("/api/insights/genre-trends?genre=Rock")
+        assert response.status_code == 503
+        assert "error" in response.json()
+
+    def test_label_longevity_503_when_no_pool(self, test_client_no_pool: TestClient) -> None:
+        response = test_client_no_pool.get("/api/insights/label-longevity")
+        assert response.status_code == 503
+        assert "error" in response.json()
+
+    def test_this_month_503_when_no_pool(self, test_client_no_pool: TestClient) -> None:
+        response = test_client_no_pool.get("/api/insights/this-month")
+        assert response.status_code == 503
+        assert "error" in response.json()
+
+    def test_data_completeness_503_when_no_pool(self, test_client_no_pool: TestClient) -> None:
+        response = test_client_no_pool.get("/api/insights/data-completeness")
+        assert response.status_code == 503
+        assert "error" in response.json()
+
+    def test_status_503_when_no_pool(self, test_client_no_pool: TestClient) -> None:
+        response = test_client_no_pool.get("/api/insights/status")
+        assert response.status_code == 503
+        assert "error" in response.json()

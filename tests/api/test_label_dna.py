@@ -226,6 +226,149 @@ class TestCompareLabelsEndpoint:
         assert response.status_code == 404
 
 
+class TestAddPercentages:
+    """Tests for _add_percentages helper."""
+
+    def test_zero_total_returns_zero_percentage(self) -> None:
+        """Line 49: total=0 branch returns 0.0 percentage."""
+        from api.routers.label_dna import _add_percentages
+
+        items = [{"name": "Rock", "count": 10}]
+        result = _add_percentages(items, 0)
+        assert result[0]["percentage"] == 0.0
+
+    def test_nonzero_total_computes_percentage(self) -> None:
+        from api.routers.label_dna import _add_percentages
+
+        items = [{"name": "Rock", "count": 50}, {"name": "Jazz", "count": 50}]
+        result = _add_percentages(items, 100)
+        assert result[0]["percentage"] == 50.0
+        assert result[1]["percentage"] == 50.0
+
+
+class TestBuildDnaInternal:
+    """Tests for _build_dna internal helper (lines 64-91)."""
+
+    @patch("api.routers.label_dna.get_label_format_profile")
+    @patch("api.routers.label_dna.get_label_active_years")
+    @patch("api.routers.label_dna.get_label_decade_profile")
+    @patch("api.routers.label_dna.get_label_style_profile")
+    @patch("api.routers.label_dna.get_label_genre_profile")
+    @patch("api.routers.label_dna.get_label_identity")
+    def test_build_dna_success(
+        self,
+        mock_identity: AsyncMock,
+        mock_genres: AsyncMock,
+        mock_styles: AsyncMock,
+        mock_decades: AsyncMock,
+        mock_active_years: AsyncMock,
+        mock_formats: AsyncMock,
+        test_client: TestClient,
+    ) -> None:
+        """Lines 64-91: _build_dna full success path via /api/label/{id}/dna."""
+        mock_identity.return_value = {
+            "label_id": "42",
+            "label_name": "ECM Records",
+            "release_count": 200,
+            "artist_count": 80,
+        }
+        mock_genres.return_value = [{"name": "Jazz", "count": 150}, {"name": "Classical", "count": 50}]
+        mock_styles.return_value = [{"name": "Avant-garde", "count": 100}]
+        mock_decades.return_value = [{"decade": 1970, "count": 80}, {"decade": 1980, "count": 120}]
+        mock_active_years.return_value = [1970, 1975, 1980, 1985, 1990]
+        mock_formats.return_value = [{"name": "Vinyl", "count": 100}, {"name": "CD", "count": 100}]
+
+        response = test_client.get("/api/label/42/dna")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["label_id"] == "42"
+        assert data["label_name"] == "ECM Records"
+        assert data["release_count"] == 200
+        assert data["peak_decade"] == 1980
+        assert len(data["genres"]) == 2
+        assert data["genres"][0]["name"] == "Jazz"
+        assert data["genres"][0]["percentage"] == 75.0
+        assert data["prolificacy"] == round(200 / 5, 2)
+        # artist_diversity = min(80/200, 1.0) = 0.4
+        assert data["artist_diversity"] == 0.4
+
+    @patch("api.routers.label_dna.get_label_format_profile")
+    @patch("api.routers.label_dna.get_label_active_years")
+    @patch("api.routers.label_dna.get_label_decade_profile")
+    @patch("api.routers.label_dna.get_label_style_profile")
+    @patch("api.routers.label_dna.get_label_genre_profile")
+    @patch("api.routers.label_dna.get_label_identity")
+    def test_build_dna_no_decades_peak_none(
+        self,
+        mock_identity: AsyncMock,
+        mock_genres: AsyncMock,
+        mock_styles: AsyncMock,
+        mock_decades: AsyncMock,
+        mock_active_years: AsyncMock,
+        mock_formats: AsyncMock,
+        test_client: TestClient,
+    ) -> None:
+        """Line 79: peak_decade is None when decades list is empty."""
+        mock_identity.return_value = {
+            "label_id": "99",
+            "label_name": "Empty Label",
+            "release_count": 10,
+            "artist_count": 5,
+        }
+        mock_genres.return_value = []
+        mock_styles.return_value = []
+        mock_decades.return_value = []
+        mock_active_years.return_value = []
+        mock_formats.return_value = []
+
+        response = test_client.get("/api/label/99/dna")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["peak_decade"] is None
+        # prolificacy: num_active_years=0 → 0.0
+        assert data["prolificacy"] == 0.0
+
+
+class TestSimilarLabelsEndpointNotReady:
+    """Tests for GET /api/label/{label_id}/similar — 503 when not ready."""
+
+    def test_service_not_ready(self, test_client: TestClient) -> None:
+        """Line 138: similar_labels returns 503 when _neo4j_driver is None."""
+        import api.routers.label_dna as mod
+
+        original = mod._neo4j_driver
+        mod._neo4j_driver = None
+        try:
+            response = test_client.get("/api/label/1/similar")
+            assert response.status_code == 503
+        finally:
+            mod._neo4j_driver = original
+
+
+class TestCompareLabelsEndpointExtras:
+    """Additional tests for GET /api/label/dna/compare."""
+
+    def test_service_not_ready(self, test_client: TestClient) -> None:
+        """Line 173: compare_labels returns 503 when _neo4j_driver is None."""
+        import api.routers.label_dna as mod
+
+        original = mod._neo4j_driver
+        mod._neo4j_driver = None
+        try:
+            response = test_client.get("/api/label/dna/compare?ids=1,2")
+            assert response.status_code == 503
+        finally:
+            mod._neo4j_driver = original
+
+    @patch("api.routers.label_dna._build_dna")
+    def test_compare_label_too_few_releases(self, mock_build_dna: AsyncMock, test_client: TestClient) -> None:
+        """Line 188: compare_labels returns 422 when a label has too few releases."""
+        mock_build_dna.side_effect = [(None, "too_few"), (None, "too_few")]
+        response = test_client.get("/api/label/dna/compare?ids=1,2")
+        assert response.status_code == 422
+        assert "fewer than" in response.json()["error"]
+
+
 class TestLabelDnaModels:
     """Tests for Label DNA Pydantic models."""
 

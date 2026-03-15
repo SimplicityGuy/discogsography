@@ -5,6 +5,23 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+def _make_failing_pool() -> AsyncMock:
+    """Create a mock pool whose cursor.execute raises on the first call."""
+    mock_cursor = AsyncMock()
+    mock_cursor.execute = AsyncMock(side_effect=RuntimeError("DB error"))
+    mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+    mock_cursor.__aexit__ = AsyncMock(return_value=False)
+
+    mock_conn = AsyncMock()
+    mock_conn.cursor = MagicMock(return_value=mock_cursor)
+    mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+    mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+    mock_pool = AsyncMock()
+    mock_pool.connection = MagicMock(return_value=mock_conn)
+    return mock_pool
+
+
 def _make_mock_pool() -> AsyncMock:
     """Create a mock pool for storing results."""
     mock_cursor = AsyncMock()
@@ -53,6 +70,18 @@ class TestComputeAndStoreArtistCentrality:
 
         assert rows == 0
 
+    @pytest.mark.asyncio
+    async def test_raises_on_query_error(self) -> None:
+        from insights.computations import compute_and_store_artist_centrality
+
+        mock_driver = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations.query_artist_centrality") as mock_query:
+            mock_query.side_effect = RuntimeError("Neo4j down")
+            with pytest.raises(RuntimeError, match="Neo4j down"):
+                await compute_and_store_artist_centrality(mock_driver, mock_pool)
+
 
 class TestComputeAndStoreGenreTrends:
     @pytest.mark.asyncio
@@ -69,6 +98,31 @@ class TestComputeAndStoreGenreTrends:
             rows = await compute_and_store_genre_trends(mock_driver, mock_pool)
 
         assert rows == 1
+
+    @pytest.mark.asyncio
+    async def test_handles_empty_results(self) -> None:
+        from insights.computations import compute_and_store_genre_trends
+
+        mock_driver = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations.query_genre_trends") as mock_query:
+            mock_query.return_value = []
+            rows = await compute_and_store_genre_trends(mock_driver, mock_pool)
+
+        assert rows == 0
+
+    @pytest.mark.asyncio
+    async def test_raises_on_query_error(self) -> None:
+        from insights.computations import compute_and_store_genre_trends
+
+        mock_driver = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations.query_genre_trends") as mock_query:
+            mock_query.side_effect = RuntimeError("Neo4j down")
+            with pytest.raises(RuntimeError, match="Neo4j down"):
+                await compute_and_store_genre_trends(mock_driver, mock_pool)
 
 
 class TestComputeAndStoreLabelLongevity:
@@ -95,8 +149,58 @@ class TestComputeAndStoreLabelLongevity:
 
         assert rows == 1
 
+    @pytest.mark.asyncio
+    async def test_handles_empty_results(self) -> None:
+        from insights.computations import compute_and_store_label_longevity
+
+        mock_driver = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations.query_label_longevity") as mock_query:
+            mock_query.return_value = []
+            rows = await compute_and_store_label_longevity(mock_driver, mock_pool)
+
+        assert rows == 0
+
+    @pytest.mark.asyncio
+    async def test_raises_on_query_error(self) -> None:
+        from insights.computations import compute_and_store_label_longevity
+
+        mock_driver = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations.query_label_longevity") as mock_query:
+            mock_query.side_effect = RuntimeError("Neo4j down")
+            with pytest.raises(RuntimeError, match="Neo4j down"):
+                await compute_and_store_label_longevity(mock_driver, mock_pool)
+
 
 class TestComputeAndStoreAnniversaries:
+    @pytest.mark.asyncio
+    async def test_handles_empty_results(self) -> None:
+        from insights.computations import compute_and_store_anniversaries
+
+        mock_driver = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations.query_monthly_anniversaries") as mock_query:
+            mock_query.return_value = []
+            rows = await compute_and_store_anniversaries(mock_driver, mock_pool, current_year=2026, current_month=3)
+
+        assert rows == 0
+
+    @pytest.mark.asyncio
+    async def test_raises_on_query_error(self) -> None:
+        from insights.computations import compute_and_store_anniversaries
+
+        mock_driver = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations.query_monthly_anniversaries") as mock_query:
+            mock_query.side_effect = RuntimeError("Neo4j down")
+            with pytest.raises(RuntimeError, match="Neo4j down"):
+                await compute_and_store_anniversaries(mock_driver, mock_pool, current_year=2026, current_month=3)
+
     @pytest.mark.asyncio
     async def test_queries_and_stores(self) -> None:
         from insights.computations import compute_and_store_anniversaries
@@ -188,6 +292,29 @@ class TestComputeAndStoreDataCompleteness:
             rows = await compute_and_store_data_completeness(mock_pool)
 
         assert rows == 1
+
+    @pytest.mark.asyncio
+    async def test_handles_empty_results(self) -> None:
+        from insights.computations import compute_and_store_data_completeness
+
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations.query_data_completeness") as mock_query:
+            mock_query.return_value = []
+            rows = await compute_and_store_data_completeness(mock_pool)
+
+        assert rows == 0
+
+    @pytest.mark.asyncio
+    async def test_raises_on_query_error(self) -> None:
+        from insights.computations import compute_and_store_data_completeness
+
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations.query_data_completeness") as mock_query:
+            mock_query.side_effect = RuntimeError("DB error")
+            with pytest.raises(RuntimeError, match="DB error"):
+                await compute_and_store_data_completeness(mock_pool)
 
 
 class TestRunAllComputations:
