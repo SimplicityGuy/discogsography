@@ -314,6 +314,137 @@ class TestGetUserCollectionStats:
 
 
 # ---------------------------------------------------------------------------
+# get_user_collection_timeline
+# ---------------------------------------------------------------------------
+
+
+class TestGetUserCollectionTimeline:
+    @pytest.mark.asyncio
+    async def test_returns_timeline_with_insights(self) -> None:
+        from api.queries.user_queries import get_user_collection_timeline
+
+        rows = [
+            {"year": 1985, "count": 3, "genres": ["Electronic", "Rock"], "styles": ["Synth-pop"], "labels": ["Factory Records", "4AD"]},
+            {"year": 1990, "count": 5, "genres": ["Rock", "Rock", "Jazz"], "styles": ["Post-Punk", "Shoegaze"], "labels": ["4AD"]},
+        ]
+        driver = _simple_driver(records=rows)
+        result = await get_user_collection_timeline(driver, "user-1", bucket="year")
+
+        assert len(result["timeline"]) == 2
+        assert result["timeline"][0]["year"] == 1985
+        assert result["timeline"][0]["count"] == 3
+        assert result["timeline"][1]["year"] == 1990
+        assert result["timeline"][1]["count"] == 5
+
+        insights = result["insights"]
+        assert insights["peak_year"] == 1990
+        assert insights["dominant_genre"] is not None
+        assert 0 <= insights["genre_diversity_score"] <= 1
+        assert 0 <= insights["style_drift_rate"] <= 1
+
+    @pytest.mark.asyncio
+    async def test_empty_collection_timeline(self) -> None:
+        from api.queries.user_queries import get_user_collection_timeline
+
+        driver = _simple_driver(records=[])
+        result = await get_user_collection_timeline(driver, "user-empty")
+
+        assert result["timeline"] == []
+        assert result["insights"]["peak_year"] is None
+        assert result["insights"]["dominant_genre"] is None
+        assert result["insights"]["genre_diversity_score"] == 0.0
+        assert result["insights"]["style_drift_rate"] == 0.0
+
+    @pytest.mark.asyncio
+    async def test_single_genre_has_zero_diversity(self) -> None:
+        from api.queries.user_queries import get_user_collection_timeline
+
+        rows = [
+            {"year": 2000, "count": 10, "genres": ["Electronic"], "styles": ["Ambient"], "labels": ["Warp"]},
+        ]
+        driver = _simple_driver(records=rows)
+        result = await get_user_collection_timeline(driver, "user-1")
+
+        # Single genre = zero entropy (normalized)
+        assert result["insights"]["genre_diversity_score"] == 0.0
+        assert result["insights"]["dominant_genre"] == "Electronic"
+
+    @pytest.mark.asyncio
+    async def test_decade_bucket(self) -> None:
+        from api.queries.user_queries import get_user_collection_timeline
+
+        rows = [
+            {"year": 1980, "count": 8, "genres": ["Rock"], "styles": ["New Wave"], "labels": ["Island"]},
+        ]
+        driver = _simple_driver(records=rows)
+        result = await get_user_collection_timeline(driver, "user-1", bucket="decade")
+
+        assert result["timeline"][0]["year"] == 1980
+
+
+# ---------------------------------------------------------------------------
+# get_user_collection_evolution
+# ---------------------------------------------------------------------------
+
+
+class TestGetUserCollectionEvolution:
+    @pytest.mark.asyncio
+    async def test_returns_genre_evolution(self) -> None:
+        from api.queries.user_queries import get_user_collection_evolution
+
+        rows = [
+            {"year": 1985, "value": "Electronic", "count": 5},
+            {"year": 1985, "value": "Rock", "count": 3},
+            {"year": 1990, "value": "Jazz", "count": 7},
+        ]
+        driver = _simple_driver(records=rows)
+        result = await get_user_collection_evolution(driver, "user-1", metric="genre")
+
+        assert result["metric"] == "genre"
+        assert len(result["data"]) == 2
+        assert result["data"][0]["year"] == 1985
+        assert result["data"][0]["values"] == {"Electronic": 5, "Rock": 3}
+        assert result["data"][1]["year"] == 1990
+        assert result["data"][1]["values"] == {"Jazz": 7}
+        assert result["summary"]["total_years"] == 2
+        assert result["summary"]["unique_values"] == 3
+
+    @pytest.mark.asyncio
+    async def test_empty_evolution(self) -> None:
+        from api.queries.user_queries import get_user_collection_evolution
+
+        driver = _simple_driver(records=[])
+        result = await get_user_collection_evolution(driver, "user-empty")
+
+        assert result["metric"] == "genre"
+        assert result["data"] == []
+        assert result["summary"]["total_years"] == 0
+        assert result["summary"]["unique_values"] == 0
+
+    @pytest.mark.asyncio
+    async def test_style_metric(self) -> None:
+        from api.queries.user_queries import get_user_collection_evolution
+
+        rows = [{"year": 2000, "value": "Ambient", "count": 4}]
+        driver = _simple_driver(records=rows)
+        result = await get_user_collection_evolution(driver, "user-1", metric="style")
+
+        assert result["metric"] == "style"
+        assert result["data"][0]["values"] == {"Ambient": 4}
+
+    @pytest.mark.asyncio
+    async def test_label_metric(self) -> None:
+        from api.queries.user_queries import get_user_collection_evolution
+
+        rows = [{"year": 1995, "value": "Warp Records", "count": 6}]
+        driver = _simple_driver(records=rows)
+        result = await get_user_collection_evolution(driver, "user-1", metric="label")
+
+        assert result["metric"] == "label"
+        assert result["data"][0]["values"] == {"Warp Records": 6}
+
+
+# ---------------------------------------------------------------------------
 # check_releases_user_status
 # ---------------------------------------------------------------------------
 
