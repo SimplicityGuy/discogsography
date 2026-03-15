@@ -67,6 +67,27 @@ updates:
     assignees:
       - "SimplicityGuy"
 
+  # Node.js dependencies for Explore frontend tests
+  - package-ecosystem: "npm"
+    directory: "/explore"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "javascript"
+    assignees:
+      - "SimplicityGuy"
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+
   # Python dependencies for all services
   # Using pip ecosystem as uv is not directly supported yet
   - package-ecosystem: "pip"

@@ -13,6 +13,7 @@ on:
 env:
   CI: true
   PYTHON_VERSION: "3.13"
+  NODE_VERSION: "24"
 
 permissions:
   contents: read
@@ -340,6 +341,48 @@ jobs:
           files: ./coverage.xml
           flags: tableinator
           name: tableinator-tests
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
+
+  # ============================================================================
+  # EXPLORE JAVASCRIPT TESTS - Runs in parallel with all other test jobs
+  # ============================================================================
+  test-js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "🔀 Checkout repository"
+        uses: actions/checkout@v6
+
+      - name: "🔧 Setup Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: explore/package-lock.json
+
+      - name: "🔧 Setup Just"
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "📦 Install dependencies"
+        run: just install-js
+
+      - name: "🧪 Run JavaScript tests with coverage"
+        run: just test-js-cov
+
+      - name: "📊 Upload coverage (explore-js)"
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./explore/coverage/lcov.info
+          flags: explore-js
+          name: explore-js-tests
           fail_ci_if_error: false
           disable_search: true
           verbose: false

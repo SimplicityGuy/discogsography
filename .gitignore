@@ -196,6 +196,7 @@ secrets/
 # Dashboard/Frontend (if applicable)
 node_modules/
 static/build/
+explore/coverage/
 # Generated at Docker build time by the Tailwind CLI; not committed
 dashboard/static/tailwind.css
 
