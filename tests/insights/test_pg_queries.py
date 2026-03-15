@@ -27,7 +27,7 @@ def _make_mock_pool(rows: list[tuple[Any, ...]]) -> AsyncMock:
 class TestQueryDataCompleteness:
     @pytest.mark.asyncio
     async def test_returns_completeness_for_all_entity_types(self) -> None:
-        from insights.queries.pg_queries import query_data_completeness
+        from api.queries.insights_pg_queries import query_data_completeness
 
         mock_pool = _make_mock_pool([(1000,)])
         result = await query_data_completeness(mock_pool)
@@ -37,7 +37,7 @@ class TestQueryDataCompleteness:
 
     @pytest.mark.asyncio
     async def test_handles_empty_tables(self) -> None:
-        from insights.queries.pg_queries import query_data_completeness
+        from api.queries.insights_pg_queries import query_data_completeness
 
         mock_pool = _make_mock_pool([(0,)])
         result = await query_data_completeness(mock_pool)
@@ -47,7 +47,7 @@ class TestQueryDataCompleteness:
 
     @pytest.mark.asyncio
     async def test_calculates_completeness_percentage(self) -> None:
-        from insights.queries.pg_queries import query_data_completeness
+        from api.queries.insights_pg_queries import query_data_completeness
 
         # artists has only 1 field (with_image), so if count=1000 and image count=500, pct=50%
         call_count = 0

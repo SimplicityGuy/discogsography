@@ -12,13 +12,13 @@ from typing import Any, cast
 
 import structlog
 
-from insights.queries.neo4j_queries import (
+from api.queries.insights_neo4j_queries import (
     query_artist_centrality,
     query_genre_trends,
     query_label_longevity,
     query_monthly_anniversaries,
 )
-from insights.queries.pg_queries import query_data_completeness
+from api.queries.insights_pg_queries import query_data_completeness
 
 
 logger = structlog.get_logger(__name__)

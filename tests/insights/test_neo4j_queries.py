@@ -41,7 +41,7 @@ def _make_mock_driver(records: list[dict[str, Any]]) -> AsyncMock:
 class TestQueryArtistCentrality:
     @pytest.mark.asyncio
     async def test_returns_ranked_artists(self) -> None:
-        from insights.queries.neo4j_queries import query_artist_centrality
+        from api.queries.insights_neo4j_queries import query_artist_centrality
 
         records = [
             {"artist_id": "a1", "artist_name": "Artist One", "edge_count": 100},
@@ -55,7 +55,7 @@ class TestQueryArtistCentrality:
 
     @pytest.mark.asyncio
     async def test_empty_results(self) -> None:
-        from insights.queries.neo4j_queries import query_artist_centrality
+        from api.queries.insights_neo4j_queries import query_artist_centrality
 
         driver = _make_mock_driver([])
         result = await query_artist_centrality(driver, limit=100)
@@ -65,7 +65,7 @@ class TestQueryArtistCentrality:
 class TestQueryGenreTrends:
     @pytest.mark.asyncio
     async def test_returns_genre_decade_counts(self) -> None:
-        from insights.queries.neo4j_queries import query_genre_trends
+        from api.queries.insights_neo4j_queries import query_genre_trends
 
         records = [
             {"genre": "Rock", "decade": 1970, "release_count": 50000},
@@ -79,7 +79,7 @@ class TestQueryGenreTrends:
 
     @pytest.mark.asyncio
     async def test_filters_by_genre(self) -> None:
-        from insights.queries.neo4j_queries import query_genre_trends
+        from api.queries.insights_neo4j_queries import query_genre_trends
 
         driver = _make_mock_driver([{"genre": "Jazz", "decade": 1960, "release_count": 30000}])
         result = await query_genre_trends(driver, genre="Jazz")
@@ -90,7 +90,7 @@ class TestQueryGenreTrends:
 class TestQueryLabelLongevity:
     @pytest.mark.asyncio
     async def test_returns_ranked_labels(self) -> None:
-        from insights.queries.neo4j_queries import query_label_longevity
+        from api.queries.insights_neo4j_queries import query_label_longevity
 
         records = [
             {
@@ -112,7 +112,7 @@ class TestQueryLabelLongevity:
 class TestQueryAnniversaries:
     @pytest.mark.asyncio
     async def test_returns_anniversary_releases(self) -> None:
-        from insights.queries.neo4j_queries import query_monthly_anniversaries
+        from api.queries.insights_neo4j_queries import query_monthly_anniversaries
 
         records = [
             {"master_id": "m1", "title": "OK Computer", "artist_name": "Radiohead", "release_year": 1997},
@@ -124,7 +124,7 @@ class TestQueryAnniversaries:
 
     @pytest.mark.asyncio
     async def test_custom_milestones(self) -> None:
-        from insights.queries.neo4j_queries import query_monthly_anniversaries
+        from api.queries.insights_neo4j_queries import query_monthly_anniversaries
 
         driver = _make_mock_driver([])
         await query_monthly_anniversaries(driver, current_year=2025, current_month=1, milestone_years=[10, 20])
