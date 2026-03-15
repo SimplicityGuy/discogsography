@@ -1,11 +1,13 @@
 use super::*;
-use crate::extractor::ExtractorState;
+use crate::extractor::{ExtractionStatus, ExtractorState};
 use crate::types::DataType;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[tokio::test]
 async fn test_ready_handler_not_ready() {
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let status = ready_handler(State(state)).await;
+    let trigger = Arc::new(AtomicBool::new(false));
+    let status = ready_handler(State((state, trigger))).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 }
 
@@ -16,7 +18,8 @@ async fn test_ready_handler_ready() {
         let mut s = state.write().await;
         s.completed_files.insert("test.xml".to_string());
     }
-    let status = ready_handler(State(state)).await;
+    let trigger = Arc::new(AtomicBool::new(false));
+    let status = ready_handler(State((state, trigger))).await;
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -27,14 +30,16 @@ async fn test_ready_handler_with_active_connections() {
         let mut s = state.write().await;
         s.active_connections.insert(DataType::Artists, "test.xml".to_string());
     }
-    let status = ready_handler(State(state)).await;
+    let trigger = Arc::new(AtomicBool::new(false));
+    let status = ready_handler(State((state, trigger))).await;
     assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
 async fn test_health_handler_default_state() {
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let (status, json) = health_handler(State(state)).await;
+    let trigger = Arc::new(AtomicBool::new(false));
+    let (status, json) = health_handler(State((state, trigger))).await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -56,7 +61,8 @@ async fn test_health_handler_with_progress() {
         s.last_extraction_time.insert(DataType::Artists, std::time::Instant::now());
     }
 
-    let (status, json) = health_handler(State(state)).await;
+    let trigger = Arc::new(AtomicBool::new(false));
+    let (status, json) = health_handler(State((state, trigger))).await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -73,7 +79,8 @@ async fn test_health_handler_with_progress() {
 #[tokio::test]
 async fn test_metrics_handler_default_state() {
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let (status, json) = metrics_handler(State(state)).await;
+    let trigger = Arc::new(AtomicBool::new(false));
+    let (status, json) = metrics_handler(State((state, trigger))).await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -99,7 +106,8 @@ async fn test_metrics_handler_with_data() {
         s.error_count = 5;
     }
 
-    let (status, json) = metrics_handler(State(state)).await;
+    let trigger = Arc::new(AtomicBool::new(false));
+    let (status, json) = metrics_handler(State((state, trigger))).await;
 
     assert_eq!(status, StatusCode::OK);
 
@@ -117,7 +125,8 @@ async fn test_metrics_handler_with_data() {
 #[tokio::test]
 async fn test_health_server_new() {
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let server = HealthServer::new(8000, state.clone());
+    let trigger = Arc::new(AtomicBool::new(false));
+    let server = HealthServer::new(8000, state.clone(), trigger);
 
     assert_eq!(server.port, 8000);
 }
@@ -130,12 +139,14 @@ async fn test_health_json_format() {
         s.extraction_progress.artists = 10;
     }
 
-    let (_, json) = health_handler(State(state)).await;
+    let trigger = Arc::new(AtomicBool::new(false));
+    let (_, json) = health_handler(State((state, trigger))).await;
     let value = json.0;
 
     // Verify JSON structure
     assert!(value.get("status").is_some());
     assert!(value.get("service").is_some());
+    assert!(value.get("extraction_status").is_some());
     assert!(value.get("extraction_progress").is_some());
     assert!(value.get("last_extraction_time").is_some());
     assert!(value.get("timestamp").is_some());
@@ -159,7 +170,8 @@ async fn test_health_server_run_and_endpoints() {
 
     // Use a high port unlikely to conflict
     let port = 19876u16;
-    let server = HealthServer::new(port, state.clone());
+    let trigger = Arc::new(AtomicBool::new(false));
+    let server = HealthServer::new(port, state.clone(), trigger);
 
     // Spawn the actual server.run() method
     let handle = tokio::spawn(async move {
@@ -178,6 +190,7 @@ async fn test_health_server_run_and_endpoints() {
     let body: serde_json::Value = serde_json::from_str(&text).unwrap();
     assert_eq!(body["status"], "healthy");
     assert_eq!(body["service"], "rust-extractor");
+    assert_eq!(body["extraction_status"], "idle");
 
     // Test /metrics endpoint
     let resp = reqwest::get(format!("{}/metrics", base_url)).await.unwrap();
@@ -198,7 +211,8 @@ async fn test_health_server_run_and_endpoints() {
 async fn test_ready_handler_transitions() {
     // Start with empty state — should be unavailable
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let status = ready_handler(State(state.clone())).await;
+    let trigger = Arc::new(AtomicBool::new(false));
+    let status = ready_handler(State((state.clone(), trigger.clone()))).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
 
     // Add a completed file — should become ready
@@ -206,14 +220,15 @@ async fn test_ready_handler_transitions() {
         let mut s = state.write().await;
         s.completed_files.insert("discogs_20260101_artists.xml.gz".to_string());
     }
-    let status = ready_handler(State(state.clone())).await;
+    let status = ready_handler(State((state.clone(), trigger))).await;
     assert_eq!(status, StatusCode::OK);
 }
 
 #[tokio::test]
 async fn test_metrics_json_format() {
     let state = Arc::new(RwLock::new(ExtractorState::default()));
-    let (_, json) = metrics_handler(State(state)).await;
+    let trigger = Arc::new(AtomicBool::new(false));
+    let (_, json) = metrics_handler(State((state, trigger))).await;
     let value = json.0;
 
     // Verify all required metrics are present
@@ -225,4 +240,48 @@ async fn test_metrics_json_format() {
     assert!(value.get("completed_files").is_some());
     assert!(value.get("active_connections").is_some());
     assert!(value.get("error_count").is_some());
+}
+
+#[tokio::test]
+async fn test_trigger_handler_success() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let trigger = Arc::new(AtomicBool::new(false));
+    let (status, json) = trigger_handler(State((state, trigger.clone()))).await;
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert_eq!(json.0["status"], "started");
+    assert!(trigger.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn test_trigger_handler_already_running() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    {
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Running;
+    }
+    let trigger = Arc::new(AtomicBool::new(false));
+    let (status, json) = trigger_handler(State((state, trigger.clone()))).await;
+    assert_eq!(status, StatusCode::CONFLICT);
+    assert_eq!(json.0["status"], "already_running");
+    assert!(!trigger.load(Ordering::SeqCst));
+}
+
+#[tokio::test]
+async fn test_health_includes_extraction_status() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let trigger = Arc::new(AtomicBool::new(false));
+    let (_, json) = health_handler(State((state, trigger))).await;
+    assert_eq!(json.0["extraction_status"], "idle");
+}
+
+#[tokio::test]
+async fn test_health_extraction_status_running() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    {
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Running;
+    }
+    let trigger = Arc::new(AtomicBool::new(false));
+    let (_, json) = health_handler(State((state, trigger))).await;
+    assert_eq!(json.0["extraction_status"], "running");
 }

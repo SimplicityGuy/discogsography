@@ -176,6 +176,7 @@ def test_client(
     api_module._redis = mock_redis
     api_module._neo4j = mock_neo4j
 
+    import api.routers.admin as _admin_router
     import api.routers.collection as _collection_router
     import api.routers.explore as _explore_router
     import api.routers.label_dna as _label_dna_router
@@ -194,6 +195,7 @@ def test_client(
     _collection_router.configure(mock_neo4j, mock_pool, test_api_config.jwt_secret_key)
     _snapshot_router.configure(jwt_secret=TEST_JWT_SECRET, redis_client=fake_redis)
     _search_router.configure(mock_pool, mock_redis)
+    _admin_router.configure(mock_pool, mock_redis, test_api_config)
 
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client

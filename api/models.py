@@ -110,6 +110,55 @@ class PathResponse(BaseModel):
     path: list[PathNode]
 
 
+# --- Admin Models ---
+
+
+class AdminLoginRequest(BaseModel):
+    email: str
+    password: str
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class AdminLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"  # noqa: S105  # nosec B105
+    expires_in: int
+
+
+class ExtractionHistoryResponse(BaseModel):
+    id: UUID
+    triggered_by: UUID
+    status: str
+    started_at: datetime | None
+    completed_at: datetime | None
+    duration_seconds: float | None = None
+    record_counts: dict[str, int] | None
+    error_message: str | None
+    extractor_version: str | None
+    created_at: datetime
+
+
+class ExtractionListResponse(BaseModel):
+    extractions: list[ExtractionHistoryResponse]
+    total: int
+    offset: int
+    limit: int
+
+
+class ExtractionTriggerResponse(BaseModel):
+    id: UUID
+    status: str
+
+
+class DlqPurgeResponse(BaseModel):
+    queue: str
+    messages_purged: int
+
+
 # --- Label DNA models ---
 
 

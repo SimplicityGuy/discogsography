@@ -212,6 +212,43 @@ _USER_TABLES: list[tuple[str, str]] = [
         "idx_sync_history_running",
         "CREATE INDEX IF NOT EXISTS idx_sync_history_running ON sync_history (user_id) WHERE status = 'running'",
     ),
+    (
+        "dashboard_admins",
+        """
+        CREATE TABLE IF NOT EXISTS dashboard_admins (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email VARCHAR(255) UNIQUE NOT NULL,
+            hashed_password VARCHAR(255) NOT NULL,
+            is_active BOOLEAN DEFAULT TRUE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+        """,
+    ),
+    (
+        "extraction_history",
+        """
+        CREATE TABLE IF NOT EXISTS extraction_history (
+            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            triggered_by UUID NOT NULL REFERENCES dashboard_admins(id),
+            status VARCHAR(20) NOT NULL DEFAULT 'pending',
+            started_at TIMESTAMP WITH TIME ZONE,
+            completed_at TIMESTAMP WITH TIME ZONE,
+            record_counts JSONB,
+            error_message TEXT,
+            extractor_version VARCHAR(50),
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+        """,
+    ),
+    (
+        "idx_extraction_history_status",
+        "CREATE INDEX IF NOT EXISTS idx_extraction_history_status ON extraction_history(status)",
+    ),
+    (
+        "idx_extraction_history_created_at",
+        "CREATE INDEX IF NOT EXISTS idx_extraction_history_created_at ON extraction_history(created_at DESC)",
+    ),
 ]
 
 
