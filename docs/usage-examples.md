@@ -60,28 +60,29 @@ ORDER BY band_name;
 
 ### Collaboration Queries
 
-#### Find artist collaborations
+#### Find artists who share releases (implicit collaborations)
 
 ```cypher
-MATCH (a1:Artist {name: "David Bowie"})-[:COLLABORATED_WITH]-(a2:Artist)
-RETURN DISTINCT a2.name as collaborator
-ORDER BY collaborator;
+MATCH (a1:Artist {name: "David Bowie"})<-[:BY]-(r:Release)-[:BY]->(a2:Artist)
+WHERE a1 <> a2
+RETURN DISTINCT a2.name as collaborator, count(r) as shared_releases
+ORDER BY shared_releases DESC;
 ```
 
 #### Find collaboration network (2 degrees of separation)
 
 ```cypher
-MATCH path = (a1:Artist {name: "Miles Davis"})-[:COLLABORATED_WITH*1..2]-(a2:Artist)
-WHERE a1 <> a2
-RETURN DISTINCT a2.name as artist, length(path) as degrees_of_separation
-ORDER BY degrees_of_separation, artist
+MATCH path = (a1:Artist {name: "Miles Davis"})<-[:BY]-(r1:Release)-[:BY]->(a2:Artist)<-[:BY]-(r2:Release)-[:BY]->(a3:Artist)
+WHERE a1 <> a2 AND a1 <> a3 AND a2 <> a3
+RETURN DISTINCT a3.name as artist, 2 as degrees_of_separation
+ORDER BY artist
 LIMIT 20;
 ```
 
-#### Find artists who worked together on specific release
+#### Find artists who worked together on a specific release
 
 ```cypher
-MATCH (a:Artist)-[:PERFORMED_ON]->(r:Release {title: "Kind of Blue"})
+MATCH (a:Artist)<-[:BY]-(r:Release {title: "Kind of Blue"})
 RETURN a.name as artist, r.title as release
 ORDER BY artist;
 ```
@@ -238,8 +239,8 @@ LIMIT 20;
 CALL gds.pageRank.stream({
   nodeProjection: 'Artist',
   relationshipProjection: {
-    COLLABORATED_WITH: {
-      orientation: 'UNDIRECTED'
+    BY: {
+      orientation: 'REVERSE'
     }
   }
 })
@@ -732,10 +733,10 @@ WHERE data @> '{"genres": ["Jazz"]}'
 AND (data->>'year')::int = 1959;
 ```
 
-2. **Neo4j**: Explore collaborations on those releases
+2. **Neo4j**: Explore artists on those releases
 
 ```cypher
-MATCH (a:Artist)-[:PERFORMED_ON]->(r:Release {title: "Kind of Blue"})
+MATCH (a:Artist)<-[:BY]-(r:Release {title: "Kind of Blue"})
 RETURN a.name, r.title;
 ```
 
