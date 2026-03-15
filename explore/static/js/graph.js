@@ -27,6 +27,9 @@ class GraphVisualization {
         this.centerName = null;
         this.centerType = null;
 
+        // Time-travel filter
+        this.beforeYear = null;
+
         // Callbacks
         this.onNodeClick = null;
         this.onNodeExpand = null;
@@ -207,7 +210,7 @@ class GraphVisualization {
         this.expandedCategories.add(categoryId);
 
         try {
-            const data = await window.apiClient.expand(parentName, parentType, category, 30, 0);
+            const data = await window.apiClient.expand(parentName, parentType, category, 30, 0, this.beforeYear);
             const { children, total, limit, has_more } = data;
 
             // Store pagination state for this category
@@ -271,7 +274,7 @@ class GraphVisualization {
         if (!meta) return;
 
         const { parentName, parentType, category, offset, limit, total } = meta;
-        const data = await window.apiClient.expand(parentName, parentType, category, limit, offset);
+        const data = await window.apiClient.expand(parentName, parentType, category, limit, offset, this.beforeYear);
         const { children, has_more } = data;
 
         // Remove the load-more node and its link
@@ -564,5 +567,85 @@ class GraphVisualization {
         });
 
         this._render();
+    }
+
+    /**
+     * Set the before_year filter and re-fetch all expanded categories.
+     * @param {number|null} year - Year to filter to, or null to clear
+     */
+    async setBeforeYear(year) {
+        this.beforeYear = year;
+
+        // Re-expand all categories with the new year filter
+        if (!this.centerName || !this.centerType) return;
+
+        // Store current category metadata before clearing
+        const categories = [];
+        for (const [catId, meta] of this._categoryMeta.entries()) {
+            categories.push({ catId, ...meta });
+        }
+
+        if (categories.length === 0) return;
+
+        // Clear child nodes and load-more nodes, keep center and category nodes
+        this.nodes = this.nodes.filter(n => n.isCenter || n.isCategory);
+        this.links = this.links.filter(l => {
+            const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+            const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+            // Keep links between center and category nodes
+            const srcNode = this.nodes.find(n => n.id === srcId);
+            const tgtNode = this.nodes.find(n => n.id === tgtId);
+            return srcNode && tgtNode;
+        });
+
+        // Reset expand state
+        this.expandedCategories.clear();
+        this._pendingExpands = categories.length;
+
+        for (const cat of categories) {
+            this._expandCategoryFiltered(cat.catId, cat.parentName, cat.parentType, cat.category);
+        }
+    }
+
+    async _expandCategoryFiltered(categoryId, parentName, parentType, category) {
+        this.expandedCategories.add(categoryId);
+        try {
+            const data = await window.apiClient.expand(parentName, parentType, category, 30, 0, this.beforeYear);
+            const { children, total, limit, has_more } = data;
+
+            this._categoryMeta.set(categoryId, {
+                parentName, parentType, category,
+                offset: children.length, limit, total,
+            });
+
+            // Update category label with filtered count
+            const catNode = this.nodes.find(n => n.id === categoryId);
+            if (catNode) {
+                catNode.name = `${catNode.displayName} (${total})`;
+                catNode.count = total;
+            }
+
+            children.forEach(child => {
+                const childId = `child-${child.type}-${child.id}`;
+                if (this.nodes.find(n => n.id === childId)) return;
+
+                this.nodes.push({
+                    id: childId,
+                    name: child.name,
+                    type: child.type,
+                    isCenter: false,
+                    isCategory: false,
+                    nodeId: String(child.id),
+                });
+                this.links.push({ source: categoryId, target: childId });
+            });
+
+            if (has_more) {
+                this._addLoadMoreNode(categoryId, total - children.length);
+            }
+        } finally {
+            this._pendingExpands--;
+            this._checkExpandsDone();
+        }
     }
 }
