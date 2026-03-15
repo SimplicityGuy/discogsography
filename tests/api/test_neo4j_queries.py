@@ -567,6 +567,77 @@ class TestCountQueries:
 
 
 # ---------------------------------------------------------------------------
+# Count before_year filtering
+# ---------------------------------------------------------------------------
+
+
+def _make_capturing_driver(total: int = 10) -> tuple[MagicMock, list[str], list[dict[str, Any]]]:
+    """Build a driver that captures the Cypher and params passed to run()."""
+    captured_cypher: list[str] = []
+    captured_params: list[dict[str, Any]] = []
+
+    class CapturingMockResult:
+        async def single(self) -> dict[str, Any]:
+            return {"total": total}
+
+    mock_session = AsyncMock()
+    mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+    mock_session.__aexit__ = AsyncMock(return_value=False)
+
+    async def capturing_run(cypher: str, params: dict[str, Any] | None = None, **kwargs: Any) -> CapturingMockResult:
+        captured_cypher.append(cypher)
+        captured_params.append(params or kwargs)
+        return CapturingMockResult()
+
+    mock_session.run = AsyncMock(side_effect=capturing_run)
+
+    driver: MagicMock = MagicMock()
+
+    async def session_factory(*_args: Any, **_kwargs: Any) -> Any:
+        return mock_session
+
+    driver.session = MagicMock(side_effect=session_factory)
+    return driver, captured_cypher, captured_params
+
+
+class TestCountBeforeYear:
+    @pytest.mark.asyncio
+    async def test_count_artist_releases_without_before_year(self) -> None:
+        """Without before_year, Cypher must NOT contain 'before_year'."""
+        from api.queries.neo4j_queries import count_artist_releases
+
+        driver, captured_cypher, _ = _make_capturing_driver(total=10)
+        result = await count_artist_releases(driver, "Radiohead")
+        assert result == 10
+        assert len(captured_cypher) == 1
+        assert "before_year" not in captured_cypher[0]
+
+    @pytest.mark.asyncio
+    async def test_count_artist_releases_with_before_year(self) -> None:
+        """With before_year=1997, Cypher must include 'before_year' filter and return count."""
+        from api.queries.neo4j_queries import count_artist_releases
+
+        driver, captured_cypher, captured_params = _make_capturing_driver(total=5)
+        result = await count_artist_releases(driver, "Radiohead", before_year=1997)
+        assert result == 5
+        assert len(captured_cypher) == 1
+        assert "before_year" in captured_cypher[0]
+        assert captured_params[0].get("before_year") == 1997
+
+    @pytest.mark.asyncio
+    async def test_count_artist_aliases_ignores_before_year(self) -> None:
+        """count_artist_aliases accepts before_year but does NOT include it in Cypher."""
+        from api.queries.neo4j_queries import count_artist_aliases
+
+        driver, captured_cypher, captured_params = _make_capturing_driver(total=2)
+        result = await count_artist_aliases(driver, "Aphex Twin", before_year=1997)
+        assert result == 2
+        assert len(captured_cypher) == 1
+        assert "before_year" not in captured_cypher[0]
+        assert "before_year" not in captured_params[0]
+
+
+# ---------------------------------------------------------------------------
 # Node details
 # ---------------------------------------------------------------------------
 
@@ -685,6 +756,216 @@ class TestTrendsQueries:
         assert result == []
 
 
+# ---------------------------------------------------------------------------
+# before_year filtering on expand_* functions
+# ---------------------------------------------------------------------------
+
+
+class TestExpandBeforeYear:
+    """Verify that expand_* functions respect the before_year keyword argument."""
+
+    def _capture_driver(self) -> tuple[MagicMock, list[tuple[str, Any]]]:
+        """Build a driver that captures (cypher, params) from each session.run() call."""
+        calls: list[tuple[str, Any]] = []
+
+        mock_result = _MockResult(records=[])
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+
+        async def _run_side_effect(cypher: str, params: Any) -> _MockResult:
+            calls.append((cypher, params))
+            return mock_result
+
+        mock_session.run = AsyncMock(side_effect=_run_side_effect)
+
+        driver = MagicMock()
+
+        async def _session_factory(*_args: Any, **_kwargs: Any) -> Any:
+            return mock_session
+
+        driver.session = MagicMock(side_effect=_session_factory)
+        return driver, calls
+
+    @pytest.mark.asyncio
+    async def test_expand_artist_releases_no_year_filter(self) -> None:
+        """When before_year is None, Cypher must NOT contain 'before_year'."""
+        from api.queries.neo4j_queries import expand_artist_releases
+
+        driver, calls = self._capture_driver()
+        await expand_artist_releases(driver, "Radiohead", limit=10, offset=0)
+        assert calls, "Expected session.run to be called"
+        cypher, params = calls[0]
+        assert "before_year" not in cypher
+        assert "before_year" not in params
+
+    @pytest.mark.asyncio
+    async def test_expand_artist_releases_with_year_filter(self) -> None:
+        """When before_year=1997, Cypher must contain 'before_year' and params too."""
+        from api.queries.neo4j_queries import expand_artist_releases
+
+        driver, calls = self._capture_driver()
+        await expand_artist_releases(driver, "Radiohead", limit=10, offset=0, before_year=1997)
+        assert calls, "Expected session.run to be called"
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 1997
+
+    @pytest.mark.asyncio
+    async def test_expand_genre_releases_with_year_filter(self) -> None:
+        """expand_genre_releases passes before_year through _expand_releases."""
+        from api.queries.neo4j_queries import expand_genre_releases
+
+        driver, calls = self._capture_driver()
+        await expand_genre_releases(driver, "Rock", limit=10, offset=0, before_year=2000)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 2000
+
+    @pytest.mark.asyncio
+    async def test_expand_label_releases_with_year_filter(self) -> None:
+        """expand_label_releases passes before_year through _expand_releases."""
+        from api.queries.neo4j_queries import expand_label_releases
+
+        driver, calls = self._capture_driver()
+        await expand_label_releases(driver, "Warp Records", limit=10, offset=0, before_year=1995)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 1995
+
+    @pytest.mark.asyncio
+    async def test_expand_style_releases_with_year_filter(self) -> None:
+        """expand_style_releases passes before_year through _expand_releases."""
+        from api.queries.neo4j_queries import expand_style_releases
+
+        driver, calls = self._capture_driver()
+        await expand_style_releases(driver, "Art Rock", limit=10, offset=0, before_year=1990)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 1990
+
+    @pytest.mark.asyncio
+    async def test_expand_artist_aliases_ignores_before_year(self) -> None:
+        """expand_artist_aliases accepts before_year but must NOT use it in Cypher."""
+        from api.queries.neo4j_queries import expand_artist_aliases
+
+        driver, calls = self._capture_driver()
+        await expand_artist_aliases(driver, "Radiohead", limit=10, offset=0, before_year=1997)
+        cypher, params = calls[0]
+        assert "before_year" not in cypher
+        assert "before_year" not in params
+
+    @pytest.mark.asyncio
+    async def test_expand_artist_labels_with_year_filter(self) -> None:
+        """expand_artist_labels applies year filter in the transitive query."""
+        from api.queries.neo4j_queries import expand_artist_labels
+
+        driver, calls = self._capture_driver()
+        await expand_artist_labels(driver, "Radiohead", limit=10, offset=0, before_year=1997)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 1997
+
+    @pytest.mark.asyncio
+    async def test_expand_artist_labels_no_year_filter(self) -> None:
+        """When before_year is None, transitive queries must NOT add the clause."""
+        from api.queries.neo4j_queries import expand_artist_labels
+
+        driver, calls = self._capture_driver()
+        await expand_artist_labels(driver, "Radiohead", limit=10, offset=0)
+        cypher, params = calls[0]
+        assert "before_year" not in cypher
+        assert "before_year" not in params
+
+    @pytest.mark.asyncio
+    async def test_expand_genre_artists_with_year_filter(self) -> None:
+        """expand_genre_artists applies year filter."""
+        from api.queries.neo4j_queries import expand_genre_artists
+
+        driver, calls = self._capture_driver()
+        await expand_genre_artists(driver, "Rock", limit=10, offset=0, before_year=1980)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 1980
+
+    @pytest.mark.asyncio
+    async def test_expand_genre_labels_with_year_filter(self) -> None:
+        """expand_genre_labels applies year filter."""
+        from api.queries.neo4j_queries import expand_genre_labels
+
+        driver, calls = self._capture_driver()
+        await expand_genre_labels(driver, "Electronic", limit=10, offset=0, before_year=2005)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 2005
+
+    @pytest.mark.asyncio
+    async def test_expand_genre_styles_with_year_filter(self) -> None:
+        """expand_genre_styles applies year filter."""
+        from api.queries.neo4j_queries import expand_genre_styles
+
+        driver, calls = self._capture_driver()
+        await expand_genre_styles(driver, "Rock", limit=10, offset=0, before_year=1999)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 1999
+
+    @pytest.mark.asyncio
+    async def test_expand_label_artists_with_year_filter(self) -> None:
+        """expand_label_artists applies year filter."""
+        from api.queries.neo4j_queries import expand_label_artists
+
+        driver, calls = self._capture_driver()
+        await expand_label_artists(driver, "Warp Records", limit=10, offset=0, before_year=2000)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 2000
+
+    @pytest.mark.asyncio
+    async def test_expand_label_genres_with_year_filter(self) -> None:
+        """expand_label_genres applies year filter."""
+        from api.queries.neo4j_queries import expand_label_genres
+
+        driver, calls = self._capture_driver()
+        await expand_label_genres(driver, "Warp Records", limit=10, offset=0, before_year=2010)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 2010
+
+    @pytest.mark.asyncio
+    async def test_expand_style_artists_with_year_filter(self) -> None:
+        """expand_style_artists applies year filter."""
+        from api.queries.neo4j_queries import expand_style_artists
+
+        driver, calls = self._capture_driver()
+        await expand_style_artists(driver, "Art Rock", limit=10, offset=0, before_year=1985)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 1985
+
+    @pytest.mark.asyncio
+    async def test_expand_style_labels_with_year_filter(self) -> None:
+        """expand_style_labels applies year filter."""
+        from api.queries.neo4j_queries import expand_style_labels
+
+        driver, calls = self._capture_driver()
+        await expand_style_labels(driver, "Art Rock", limit=10, offset=0, before_year=1992)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 1992
+
+    @pytest.mark.asyncio
+    async def test_expand_style_genres_with_year_filter(self) -> None:
+        """expand_style_genres applies year filter."""
+        from api.queries.neo4j_queries import expand_style_genres
+
+        driver, calls = self._capture_driver()
+        await expand_style_genres(driver, "Art Rock", limit=10, offset=0, before_year=2003)
+        cypher, params = calls[0]
+        assert "before_year" in cypher
+        assert params.get("before_year") == 2003
+
+
 class TestFindShortestPath:
     """Tests for find_shortest_path()."""
 
@@ -751,3 +1032,76 @@ class TestFindShortestPath:
         assert result is not None
         assert len(result["nodes"]) == 1
         assert result["rels"] == []
+
+
+# ---------------------------------------------------------------------------
+# get_year_range
+# ---------------------------------------------------------------------------
+
+
+class TestYearRangeQuery:
+    @pytest.mark.asyncio
+    async def test_year_range_returns_min_max(self) -> None:
+        from api.queries.neo4j_queries import get_year_range
+
+        mock_driver = AsyncMock()
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"min_year": 1950, "max_year": 2025})
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+
+        result = await get_year_range(mock_driver)
+        assert result == {"min_year": 1950, "max_year": 2025}
+
+    @pytest.mark.asyncio
+    async def test_year_range_empty_graph(self) -> None:
+        from api.queries.neo4j_queries import get_year_range
+
+        mock_driver = AsyncMock()
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=mock_result)
+        mock_driver.session = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+
+        result = await get_year_range(mock_driver)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# get_genre_emergence
+# ---------------------------------------------------------------------------
+
+
+class TestGenreEmergenceQuery:
+    @pytest.mark.asyncio
+    async def test_genre_emergence_returns_genres_and_styles(self) -> None:
+        from api.queries.neo4j_queries import get_genre_emergence
+
+        genre_records = [
+            {"name": "Punk", "first_year": 1976},
+            {"name": "Rock", "first_year": 1955},
+        ]
+        style_records = [
+            {"name": "Post-Punk", "first_year": 1978},
+        ]
+
+        genre_result = _MockResult(records=genre_records)
+        style_result = _MockResult(records=style_records)
+
+        mock_driver = _make_driver_with_side_effects([genre_result, style_result])
+
+        result = await get_genre_emergence(mock_driver, 1980)
+        assert len(result["genres"]) == 2
+        assert len(result["styles"]) == 1
+        assert result["genres"][0]["name"] == "Punk"
+
+    @pytest.mark.asyncio
+    async def test_genre_emergence_empty_results(self) -> None:
+        from api.queries.neo4j_queries import get_genre_emergence
+
+        mock_driver = _make_driver_with_side_effects([_MockResult(), _MockResult()])
+
+        result = await get_genre_emergence(mock_driver, 2000)
+        assert result == {"genres": [], "styles": []}

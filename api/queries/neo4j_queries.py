@@ -201,38 +201,63 @@ async def explore_style(driver: AsyncResilientNeo4jDriver, name: str) -> dict[st
 # --- Expand (populate category children) ---
 
 
-async def _expand_releases(driver: AsyncResilientNeo4jDriver, match_clause: str, name: str, limit: int, offset: int) -> list[dict[str, Any]]:
+async def _expand_releases(
+    driver: AsyncResilientNeo4jDriver, match_clause: str, name: str, limit: int, offset: int, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get paginated releases matching a MATCH clause (shared by artist/genre/label/style)."""
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
     cypher = f"""
-    MATCH {match_clause}
+    MATCH {match_clause}{year_filter}
     RETURN r.id AS id, r.title AS name, 'release' AS type,
            CASE WHEN r.year > 0 THEN r.year ELSE null END AS year
     ORDER BY year DESC
     SKIP $offset
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, name=name, limit=limit, offset=offset)
+    params: dict[str, Any] = {"name": name, "limit": limit, "offset": offset}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_query(driver, cypher, **params)
 
 
-async def expand_artist_releases(driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_artist_releases(
+    driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get releases by an artist."""
-    return await _expand_releases(driver, "(r:Release)-[:BY]->(a:Artist {name: $name})", artist_name, limit, offset)
+    return await _expand_releases(driver, "(r:Release)-[:BY]->(a:Artist {name: $name})", artist_name, limit, offset, before_year=before_year)
 
 
-async def expand_artist_labels(driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_artist_labels(
+    driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get labels associated with an artist via their releases."""
-    cypher = """
-    MATCH (r:Release)-[:BY]->(a:Artist {name: $name}), (r)-[:ON]->(l:Label)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:BY]->(a:Artist {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
     ORDER BY release_count DESC
     SKIP $offset
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, name=artist_name, limit=limit, offset=offset)
+    params: dict[str, Any] = {"name": artist_name, "limit": limit, "offset": offset}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_query(driver, cypher, **params)
 
 
-async def expand_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
-    """Get aliases, group memberships, and members for an artist."""
+async def expand_artist_aliases(
+    driver: AsyncResilientNeo4jDriver,
+    artist_name: str,
+    limit: int = 50,
+    offset: int = 0,
+    *,
+    before_year: int | None = None,  # noqa: ARG001
+) -> list[dict[str, Any]]:
+    """Get aliases, group memberships, and members for an artist.
+
+    Note: before_year is accepted for API consistency but intentionally ignored —
+    aliases are timeless relationships, not bound to release years.
+    """
     cypher = """
     MATCH (a:Artist {name: $name})
     OPTIONAL MATCH (a)-[:ALIAS_OF]->(alias:Artist)
@@ -251,136 +276,198 @@ async def expand_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: 
     return await _run_query(driver, cypher, name=artist_name, limit=limit, offset=offset)
 
 
-async def expand_genre_releases(driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_genre_releases(
+    driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get releases in a genre."""
-    return await _expand_releases(driver, "(r:Release)-[:IS]->(g:Genre {name: $name})", genre_name, limit, offset)
+    return await _expand_releases(driver, "(r:Release)-[:IS]->(g:Genre {name: $name})", genre_name, limit, offset, before_year=before_year)
 
 
-async def expand_genre_artists(driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_genre_artists(
+    driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get artists in a genre (via releases), ordered by release count."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}), (r)-[:BY]->(a:Artist)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN a.id AS id, a.name AS name, 'artist' AS type, count(r) AS release_count
     ORDER BY release_count DESC
     SKIP $offset
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, name=genre_name, limit=limit, offset=offset)
+    params: dict[str, Any] = {"name": genre_name, "limit": limit, "offset": offset}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_query(driver, cypher, **params)
 
 
-async def expand_genre_labels(driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_genre_labels(
+    driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get labels associated with a genre via releases."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}), (r)-[:ON]->(l:Label)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
     ORDER BY release_count DESC
     SKIP $offset
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, name=genre_name, limit=limit, offset=offset)
+    params: dict[str, Any] = {"name": genre_name, "limit": limit, "offset": offset}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_query(driver, cypher, **params)
 
 
-async def expand_genre_styles(driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_genre_styles(
+    driver: AsyncResilientNeo4jDriver, genre_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get styles (subgenres) associated with a genre via releases."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}), (r)-[:IS]->(s:Style)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:IS]->(s:Style){year_filter}
     RETURN s.name AS id, s.name AS name, 'style' AS type, count(DISTINCT r) AS release_count
     ORDER BY release_count DESC
     SKIP $offset
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, name=genre_name, limit=limit, offset=offset)
+    params: dict[str, Any] = {"name": genre_name, "limit": limit, "offset": offset}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_query(driver, cypher, **params)
 
 
-async def expand_label_releases(driver: AsyncResilientNeo4jDriver, label_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_label_releases(
+    driver: AsyncResilientNeo4jDriver, label_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get releases on a label."""
-    return await _expand_releases(driver, "(r:Release)-[:ON]->(l:Label {name: $name})", label_name, limit, offset)
+    return await _expand_releases(driver, "(r:Release)-[:ON]->(l:Label {name: $name})", label_name, limit, offset, before_year=before_year)
 
 
-async def expand_label_artists(driver: AsyncResilientNeo4jDriver, label_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_label_artists(
+    driver: AsyncResilientNeo4jDriver, label_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get artists on a label."""
-    cypher = """
-    MATCH (r:Release)-[:ON]->(l:Label {name: $name}), (r)-[:BY]->(a:Artist)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:ON]->(l:Label {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN a.id AS id, a.name AS name, 'artist' AS type, count(DISTINCT r) AS release_count
     ORDER BY release_count DESC
     SKIP $offset
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, name=label_name, limit=limit, offset=offset)
+    params: dict[str, Any] = {"name": label_name, "limit": limit, "offset": offset}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_query(driver, cypher, **params)
 
 
-async def expand_label_genres(driver: AsyncResilientNeo4jDriver, label_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_label_genres(
+    driver: AsyncResilientNeo4jDriver, label_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get genres associated with a label via releases."""
-    cypher = """
-    MATCH (r:Release)-[:ON]->(l:Label {name: $name}), (r)-[:IS]->(g:Genre)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:ON]->(l:Label {{name: $name}}), (r)-[:IS]->(g:Genre){year_filter}
     RETURN g.name AS id, g.name AS name, 'genre' AS type, count(DISTINCT r) AS release_count
     ORDER BY release_count DESC
     SKIP $offset
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, name=label_name, limit=limit, offset=offset)
+    params: dict[str, Any] = {"name": label_name, "limit": limit, "offset": offset}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_query(driver, cypher, **params)
 
 
-async def expand_style_releases(driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_style_releases(
+    driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get releases in a style."""
-    return await _expand_releases(driver, "(r:Release)-[:IS]->(s:Style {name: $name})", style_name, limit, offset)
+    return await _expand_releases(driver, "(r:Release)-[:IS]->(s:Style {name: $name})", style_name, limit, offset, before_year=before_year)
 
 
-async def expand_style_artists(driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_style_artists(
+    driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get artists in a style (via releases), ordered by release count."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(s:Style {name: $name}), (r)-[:BY]->(a:Artist)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN a.id AS id, a.name AS name, 'artist' AS type, count(r) AS release_count
     ORDER BY release_count DESC
     SKIP $offset
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, name=style_name, limit=limit, offset=offset)
+    params: dict[str, Any] = {"name": style_name, "limit": limit, "offset": offset}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_query(driver, cypher, **params)
 
 
-async def expand_style_labels(driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_style_labels(
+    driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get labels associated with a style via releases."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(s:Style {name: $name}), (r)-[:ON]->(l:Label)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN l.id AS id, l.name AS name, 'label' AS type, count(DISTINCT r) AS release_count
     ORDER BY release_count DESC
     SKIP $offset
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, name=style_name, limit=limit, offset=offset)
+    params: dict[str, Any] = {"name": style_name, "limit": limit, "offset": offset}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_query(driver, cypher, **params)
 
 
-async def expand_style_genres(driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50, offset: int = 0) -> list[dict[str, Any]]:
+async def expand_style_genres(
+    driver: AsyncResilientNeo4jDriver, style_name: str, limit: int = 50, offset: int = 0, *, before_year: int | None = None
+) -> list[dict[str, Any]]:
     """Get genres associated with a style via releases."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(s:Style {name: $name}), (r)-[:IS]->(g:Genre)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:IS]->(g:Genre){year_filter}
     RETURN g.name AS id, g.name AS name, 'genre' AS type, count(DISTINCT r) AS release_count
     ORDER BY release_count DESC
     SKIP $offset
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, name=style_name, limit=limit, offset=offset)
+    params: dict[str, Any] = {"name": style_name, "limit": limit, "offset": offset}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_query(driver, cypher, **params)
 
 
 # --- Expand counts (for pagination totals) ---
 
 
-async def count_artist_releases(driver: AsyncResilientNeo4jDriver, artist_name: str) -> int:
+async def count_artist_releases(driver: AsyncResilientNeo4jDriver, artist_name: str, *, before_year: int | None = None) -> int:
     """Count total releases by an artist."""
-    cypher = "MATCH (r:Release)-[:BY]->(a:Artist {name: $name}) RETURN count(DISTINCT r) AS total"
-    return await _run_count(driver, cypher, name=artist_name)
+    year_filter = " WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"MATCH (r:Release)-[:BY]->(a:Artist {{name: $name}}){year_filter} RETURN count(DISTINCT r) AS total"
+    params: dict[str, Any] = {"name": artist_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_artist_labels(driver: AsyncResilientNeo4jDriver, artist_name: str) -> int:
+async def count_artist_labels(driver: AsyncResilientNeo4jDriver, artist_name: str, *, before_year: int | None = None) -> int:
     """Count total distinct labels associated with an artist."""
-    cypher = """
-    MATCH (r:Release)-[:BY]->(a:Artist {name: $name}), (r)-[:ON]->(l:Label)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:BY]->(a:Artist {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN count(DISTINCT l) AS total
     """
-    return await _run_count(driver, cypher, name=artist_name)
+    params: dict[str, Any] = {"name": artist_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: str) -> int:
+async def count_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: str, *, before_year: int | None = None) -> int:  # noqa: ARG001
     """Count total aliases, group memberships, and members for an artist."""
     cypher = """
     MATCH (a:Artist {name: $name})
@@ -395,94 +482,138 @@ async def count_artist_aliases(driver: AsyncResilientNeo4jDriver, artist_name: s
     return await _run_count(driver, cypher, name=artist_name)
 
 
-async def count_genre_releases(driver: AsyncResilientNeo4jDriver, genre_name: str) -> int:
+async def count_genre_releases(driver: AsyncResilientNeo4jDriver, genre_name: str, *, before_year: int | None = None) -> int:
     """Count total releases in a genre."""
-    cypher = "MATCH (r:Release)-[:IS]->(g:Genre {name: $name}) RETURN count(DISTINCT r) AS total"
-    return await _run_count(driver, cypher, name=genre_name)
+    year_filter = " WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}){year_filter} RETURN count(DISTINCT r) AS total"
+    params: dict[str, Any] = {"name": genre_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_genre_artists(driver: AsyncResilientNeo4jDriver, genre_name: str) -> int:
+async def count_genre_artists(driver: AsyncResilientNeo4jDriver, genre_name: str, *, before_year: int | None = None) -> int:
     """Count total distinct artists in a genre."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}), (r)-[:BY]->(a:Artist)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN count(DISTINCT a) AS total
     """
-    return await _run_count(driver, cypher, name=genre_name)
+    params: dict[str, Any] = {"name": genre_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_genre_labels(driver: AsyncResilientNeo4jDriver, genre_name: str) -> int:
+async def count_genre_labels(driver: AsyncResilientNeo4jDriver, genre_name: str, *, before_year: int | None = None) -> int:
     """Count total distinct labels associated with a genre."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}), (r)-[:ON]->(l:Label)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN count(DISTINCT l) AS total
     """
-    return await _run_count(driver, cypher, name=genre_name)
+    params: dict[str, Any] = {"name": genre_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_genre_styles(driver: AsyncResilientNeo4jDriver, genre_name: str) -> int:
+async def count_genre_styles(driver: AsyncResilientNeo4jDriver, genre_name: str, *, before_year: int | None = None) -> int:
     """Count total distinct styles associated with a genre."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(g:Genre {name: $name}), (r)-[:IS]->(s:Style)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(g:Genre {{name: $name}}), (r)-[:IS]->(s:Style){year_filter}
     RETURN count(DISTINCT s) AS total
     """
-    return await _run_count(driver, cypher, name=genre_name)
+    params: dict[str, Any] = {"name": genre_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_label_releases(driver: AsyncResilientNeo4jDriver, label_name: str) -> int:
+async def count_label_releases(driver: AsyncResilientNeo4jDriver, label_name: str, *, before_year: int | None = None) -> int:
     """Count total releases on a label."""
-    cypher = "MATCH (r:Release)-[:ON]->(l:Label {name: $name}) RETURN count(DISTINCT r) AS total"
-    return await _run_count(driver, cypher, name=label_name)
+    year_filter = " WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"MATCH (r:Release)-[:ON]->(l:Label {{name: $name}}){year_filter} RETURN count(DISTINCT r) AS total"
+    params: dict[str, Any] = {"name": label_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_label_artists(driver: AsyncResilientNeo4jDriver, label_name: str) -> int:
+async def count_label_artists(driver: AsyncResilientNeo4jDriver, label_name: str, *, before_year: int | None = None) -> int:
     """Count total distinct artists on a label."""
-    cypher = """
-    MATCH (r:Release)-[:ON]->(l:Label {name: $name}), (r)-[:BY]->(a:Artist)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:ON]->(l:Label {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN count(DISTINCT a) AS total
     """
-    return await _run_count(driver, cypher, name=label_name)
+    params: dict[str, Any] = {"name": label_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_label_genres(driver: AsyncResilientNeo4jDriver, label_name: str) -> int:
+async def count_label_genres(driver: AsyncResilientNeo4jDriver, label_name: str, *, before_year: int | None = None) -> int:
     """Count total distinct genres associated with a label."""
-    cypher = """
-    MATCH (r:Release)-[:ON]->(l:Label {name: $name}), (r)-[:IS]->(g:Genre)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:ON]->(l:Label {{name: $name}}), (r)-[:IS]->(g:Genre){year_filter}
     RETURN count(DISTINCT g) AS total
     """
-    return await _run_count(driver, cypher, name=label_name)
+    params: dict[str, Any] = {"name": label_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_style_releases(driver: AsyncResilientNeo4jDriver, style_name: str) -> int:
+async def count_style_releases(driver: AsyncResilientNeo4jDriver, style_name: str, *, before_year: int | None = None) -> int:
     """Count total releases in a style."""
-    cypher = "MATCH (r:Release)-[:IS]->(s:Style {name: $name}) RETURN count(DISTINCT r) AS total"
-    return await _run_count(driver, cypher, name=style_name)
+    year_filter = " WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}){year_filter} RETURN count(DISTINCT r) AS total"
+    params: dict[str, Any] = {"name": style_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_style_artists(driver: AsyncResilientNeo4jDriver, style_name: str) -> int:
+async def count_style_artists(driver: AsyncResilientNeo4jDriver, style_name: str, *, before_year: int | None = None) -> int:
     """Count total distinct artists in a style."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(s:Style {name: $name}), (r)-[:BY]->(a:Artist)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:BY]->(a:Artist){year_filter}
     RETURN count(DISTINCT a) AS total
     """
-    return await _run_count(driver, cypher, name=style_name)
+    params: dict[str, Any] = {"name": style_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_style_labels(driver: AsyncResilientNeo4jDriver, style_name: str) -> int:
+async def count_style_labels(driver: AsyncResilientNeo4jDriver, style_name: str, *, before_year: int | None = None) -> int:
     """Count total distinct labels associated with a style."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(s:Style {name: $name}), (r)-[:ON]->(l:Label)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:ON]->(l:Label){year_filter}
     RETURN count(DISTINCT l) AS total
     """
-    return await _run_count(driver, cypher, name=style_name)
+    params: dict[str, Any] = {"name": style_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
-async def count_style_genres(driver: AsyncResilientNeo4jDriver, style_name: str) -> int:
+async def count_style_genres(driver: AsyncResilientNeo4jDriver, style_name: str, *, before_year: int | None = None) -> int:
     """Count total distinct genres associated with a style."""
-    cypher = """
-    MATCH (r:Release)-[:IS]->(s:Style {name: $name}), (r)-[:IS]->(g:Genre)
+    year_filter = "\n    WHERE r.year <= $before_year AND r.year > 0" if before_year else ""
+    cypher = f"""
+    MATCH (r:Release)-[:IS]->(s:Style {{name: $name}}), (r)-[:IS]->(g:Genre){year_filter}
     RETURN count(DISTINCT g) AS total
     """
-    return await _run_count(driver, cypher, name=style_name)
+    params: dict[str, Any] = {"name": style_name}
+    if before_year:
+        params["before_year"] = before_year
+    return await _run_count(driver, cypher, **params)
 
 
 # --- Node Details ---
@@ -606,6 +737,39 @@ async def trends_style(driver: AsyncResilientNeo4jDriver, name: str) -> list[dic
     ORDER BY year
     """
     return await _run_query(driver, cypher, name=name)
+
+
+# --- Year range and genre emergence ---
+
+
+async def get_year_range(driver: AsyncResilientNeo4jDriver) -> dict[str, int] | None:
+    """Get min/max release year across all Release nodes."""
+    cypher = """
+    MATCH (r:Release) WHERE r.year > 0
+    RETURN min(r.year) AS min_year, max(r.year) AS max_year
+    """
+    return await _run_single(driver, cypher)
+
+
+async def get_genre_emergence(driver: AsyncResilientNeo4jDriver, before_year: int) -> dict[str, list[dict[str, Any]]]:
+    """Get genres and styles with their first appearance year, up to before_year."""
+    genre_cypher = """
+    MATCH (r:Release)-[:IS]->(g:Genre)
+    WHERE r.year > 0 AND r.year <= $before_year
+    WITH g.name AS name, min(r.year) AS first_year
+    RETURN name, first_year
+    ORDER BY first_year
+    """
+    style_cypher = """
+    MATCH (r:Release)-[:IS]->(s:Style)
+    WHERE r.year > 0 AND r.year <= $before_year
+    WITH s.name AS name, min(r.year) AS first_year
+    RETURN name, first_year
+    ORDER BY first_year
+    """
+    genres = await _run_query(driver, genre_cypher, before_year=before_year)
+    styles = await _run_query(driver, style_cypher, before_year=before_year)
+    return {"genres": genres, "styles": styles}
 
 
 # --- Dispatch helpers ---

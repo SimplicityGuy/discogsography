@@ -1,4 +1,170 @@
 /**
+ * Timeline scrubber controller for time-travel filtering.
+ */
+class TimelineScrubber {
+    constructor() {
+        this.container = document.getElementById('timelineScrubber');
+        this.slider = document.getElementById('timelineSlider');
+        this.yearLabel = document.getElementById('timelineYearLabel');
+        this.playBtn = document.getElementById('timelinePlayBtn');
+        this.playIcon = document.getElementById('timelinePlayIcon');
+        this.speedToggle = document.getElementById('timelineSpeedToggle');
+        this.speedLabel = document.getElementById('timelineSpeedLabel');
+        this.resetBtn = document.getElementById('timelineResetBtn');
+
+        this.playing = false;
+        this.playInterval = null;
+        this.speed = 'year'; // 'year' = 1yr/sec, 'decade' = 1decade/500ms
+        this.minYear = 1900;
+        this.maxYear = 2025;
+        this.currentYear = null;
+
+        // Debounce timer for manual slider drag
+        this._debounceTimer = null;
+
+        // Genre emergence state: cached responses and previous genre set
+        this._emergenceCache = new Map();
+        this._previousGenres = new Set();
+
+        // Callback: called with (year) when year changes
+        this.onYearChange = null;
+        // Callback: called with (newGenres) for emergence highlighting
+        this.onGenreEmergence = null;
+
+        this._bindEvents();
+    }
+
+    _bindEvents() {
+        this.slider.addEventListener('input', () => {
+            // Dragging during play pauses playback
+            if (this.playing) this.pause();
+            this._onSliderInput();
+        });
+
+        this.playBtn.addEventListener('click', () => {
+            if (this.playing) this.pause();
+            else this.play();
+        });
+
+        this.speedToggle.addEventListener('click', () => {
+            this.speed = this.speed === 'year' ? 'decade' : 'year';
+            this.speedLabel.textContent = this.speed === 'year' ? '1yr/s' : '10yr/s';
+        });
+
+        this.resetBtn.addEventListener('click', () => {
+            this.pause();
+            this.slider.value = this.maxYear;
+            this.currentYear = null;
+            this.yearLabel.textContent = 'All';
+            this._previousGenres.clear();
+            if (this.onYearChange) this.onYearChange(null);
+        });
+    }
+
+    async init() {
+        const range = await window.apiClient.getYearRange();
+        if (!range || range.min_year === null) return;
+        this.minYear = range.min_year;
+        this.maxYear = range.max_year;
+        this.slider.min = this.minYear;
+        this.slider.max = this.maxYear;
+        this.slider.value = this.maxYear;
+        this.yearLabel.textContent = 'All';
+        this.currentYear = null;
+        this._previousGenres.clear();
+        this._emergenceCache.clear();
+        this.container.classList.remove('hidden');
+    }
+
+    hide() {
+        this.pause();
+        this.container.classList.add('hidden');
+    }
+
+    _onSliderInput() {
+        const year = parseInt(this.slider.value, 10);
+        this.currentYear = year;
+        this.yearLabel.textContent = String(year);
+
+        // Debounced fetch
+        clearTimeout(this._debounceTimer);
+        this._debounceTimer = setTimeout(() => {
+            this._emitYearChange(year);
+        }, 300);
+    }
+
+    play() {
+        if (this.currentYear === null) {
+            this.currentYear = this.minYear;
+            this.slider.value = this.minYear;
+        }
+        this.playing = true;
+        this.playIcon.className = 'fas fa-pause';
+
+        const tick = () => {
+            const step = this.speed === 'year' ? 1 : 10;
+            let next = this.currentYear + step;
+            if (next > this.maxYear) {
+                next = this.maxYear;
+                this.pause();
+            }
+            this.currentYear = next;
+            this.slider.value = next;
+            this.yearLabel.textContent = String(next);
+            this._emitYearChange(next);
+        };
+
+        const interval = this.speed === 'year' ? 1000 : 500;
+        this.playInterval = setInterval(tick, interval);
+    }
+
+    pause() {
+        this.playing = false;
+        this.playIcon.className = 'fas fa-play';
+        if (this.playInterval) {
+            clearInterval(this.playInterval);
+            this.playInterval = null;
+        }
+    }
+
+    async _emitYearChange(year) {
+        if (this.onYearChange) this.onYearChange(year);
+
+        // Check genre emergence
+        await this._checkEmergence(year);
+    }
+
+    async _checkEmergence(year) {
+        let data = this._emergenceCache.get(year);
+        if (!data) {
+            data = await window.apiClient.getGenreEmergence(year);
+            this._emergenceCache.set(year, data);
+        }
+
+        const currentGenres = new Set([
+            ...data.genres.map(g => g.name),
+            ...data.styles.map(s => s.name),
+        ]);
+
+        const newGenres = [];
+        for (const name of currentGenres) {
+            if (!this._previousGenres.has(name)) {
+                newGenres.push(name);
+            }
+        }
+
+        // Limit highlights on large jumps
+        const highlighted = newGenres.slice(-5);
+
+        if (highlighted.length > 0 && this.onGenreEmergence) {
+            this.onGenreEmergence(highlighted);
+        }
+
+        this._previousGenres = currentGenres;
+    }
+}
+
+/**
  * Main application controller.
  * Coordinates pane switching, search, graph, trends, auth, and user panes.
  */
@@ -18,6 +184,9 @@ class ExploreApp {
         this.trends = new TrendsChart('trendsChart');
         this.userPanes = new window.UserPanes();
         window.userPanes = this.userPanes;
+        this.timeline = new TimelineScrubber();
+        this.timeline.onYearChange = (year) => this._onTimelineYearChange(year);
+        this.timeline.onGenreEmergence = (newGenres) => this._onGenreEmergence(newGenres);
 
         // Wire up callbacks
         this.autocomplete.onSelect = (name) => this._onSearch(name);
@@ -375,6 +544,8 @@ class ExploreApp {
                 });
                 // Decorate release nodes with ownership badges if logged in
                 await this._decorateOwnership();
+                // Initialize timeline scrubber
+                await this.timeline.init();
             }
         } finally {
             loading.classList.remove('active');
@@ -399,6 +570,21 @@ class ExploreApp {
                 this._addOwnershipBadges(matchId, result.status[matchId]);
             }
         }
+    }
+
+    _onTimelineYearChange(year) {
+        this.graph.setBeforeYear(year);
+    }
+
+    _onGenreEmergence(newGenres) {
+        // Highlight genre/style nodes that just appeared
+        const genreSet = new Set(newGenres.map(n => n.toLowerCase()));
+        this.graph.g.selectAll('g').each(function(d) {
+            if ((d.type === 'genre' || d.type === 'style') && genreSet.has(d.name.toLowerCase())) {
+                d3.select(this).classed('node-emergence', true);
+                setTimeout(() => d3.select(this).classed('node-emergence', false), 2000);
+            }
+        });
     }
 
     _addOwnershipBadges(releaseId, statusObj) {
