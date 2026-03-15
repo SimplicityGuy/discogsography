@@ -2,11 +2,8 @@
 
 import pytest
 
-from api.queries.label_dna_queries import (
-    _to_genre_vector,
-    compute_similar_labels,
-    cosine_similarity,
-)
+from api.queries.label_dna_queries import compute_similar_labels
+from api.queries.similarity import cosine_similarity, to_genre_vector
 
 
 class TestCosineSimilarity:
@@ -47,21 +44,21 @@ class TestToGenreVector:
 
     def test_normalizes_counts_to_percentages(self) -> None:
         genres = [{"name": "Rock", "count": 60}, {"name": "Jazz", "count": 40}]
-        vec = _to_genre_vector(genres)
+        vec = to_genre_vector(genres)
         assert vec["Rock"] == pytest.approx(0.6)
         assert vec["Jazz"] == pytest.approx(0.4)
 
     def test_empty_list(self) -> None:
-        assert _to_genre_vector([]) == {}
+        assert to_genre_vector([]) == {}
 
     def test_uses_name_key(self) -> None:
         genres = [{"name": "Rock", "count": 10}]
-        vec = _to_genre_vector(genres)
+        vec = to_genre_vector(genres)
         assert "Rock" in vec
 
     def test_zero_total(self) -> None:
         genres = [{"name": "Rock", "count": 0}]
-        assert _to_genre_vector(genres) == {}
+        assert to_genre_vector(genres) == {}
 
 
 class TestComputeSimilarLabels:

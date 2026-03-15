@@ -1,5 +1,6 @@
 """User endpoints — migrated from explore service."""
 
+import asyncio
 from collections import OrderedDict
 import time
 from typing import Annotated, Any
@@ -10,6 +11,12 @@ import structlog
 
 import api.dependencies as _dependencies
 from api.dependencies import get_optional_user, require_user
+from api.queries.recommend_queries import (
+    get_blindspot_candidates,
+    get_collector_counts,
+    get_label_affinity_candidates,
+    merge_recommendation_candidates,
+)
 from api.queries.user_queries import (
     check_releases_user_status,
     get_user_collection,
@@ -88,12 +95,57 @@ async def user_wantlist(
 async def user_recommendations(
     current_user: Annotated[dict[str, Any], Depends(require_user)],
     limit: int = Query(20, ge=1, le=100),
+    strategy: str = Query("artist", pattern="^(artist|multi)$"),
 ) -> JSONResponse:
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     user_id: str = current_user.get("sub", "")
-    results = await get_user_recommendations(_neo4j_driver, user_id, limit)
-    return JSONResponse(content={"recommendations": results, "total": len(results)})
+
+    if strategy == "artist":
+        results = await get_user_recommendations(_neo4j_driver, user_id, limit)
+        return JSONResponse(content={"recommendations": results, "total": len(results)})
+
+    # Multi-signal strategy
+    artist_results, label_results, blindspot_results = await asyncio.gather(
+        get_user_recommendations(_neo4j_driver, user_id, limit=50),
+        get_label_affinity_candidates(_neo4j_driver, user_id, limit=50),
+        get_blindspot_candidates(_neo4j_driver, user_id, limit=50),
+    )
+
+    # Normalize artist results to candidate format
+    artist_candidates = [
+        {
+            "id": r["id"],
+            "title": r.get("title"),
+            "artist": r.get("artist"),
+            "label": r.get("label"),
+            "year": r.get("year"),
+            "genres": r.get("genres", []),
+            "score": r.get("score", 0),
+            "source": f"artist: collected {r.get('score', 0)} releases",
+        }
+        for r in artist_results
+    ]
+
+    # Collect all unique release IDs for obscurity scoring
+    all_ids = list({c["id"] for candidates in [artist_candidates, label_results, blindspot_results] for c in candidates if c.get("id")})
+    collector_counts = await get_collector_counts(_neo4j_driver, all_ids) if all_ids else {}
+
+    merged = merge_recommendation_candidates(
+        artist_candidates,
+        label_results,
+        blindspot_results,
+        collector_counts=collector_counts,
+        limit=limit,
+    )
+
+    return JSONResponse(
+        content={
+            "recommendations": merged,
+            "total": len(merged),
+            "strategy": "multi",
+        }
+    )
 
 
 @router.get("/api/user/collection/stats")
