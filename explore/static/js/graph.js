@@ -30,6 +30,11 @@ class GraphVisualization {
         // Time-travel filter
         this.beforeYear = null;
 
+        // Comparison mode state
+        this.compareMode = false;
+        this.compareYearA = null;
+        this.compareYearB = null;
+
         // Callbacks
         this.onNodeClick = null;
         this.onNodeExpand = null;
@@ -365,7 +370,12 @@ class GraphVisualization {
             .selectAll('line')
             .data(this.links)
             .join('line')
-            .attr('class', 'link')
+            .attr('class', d => {
+                let cls = 'link';
+                if (d.compareStatus === 'only_a') cls += ' link-only-a';
+                else if (d.compareStatus === 'only_b') cls += ' link-only-b';
+                return cls;
+            })
             .attr('stroke-width', 1);
 
         // Node groups
@@ -411,7 +421,7 @@ class GraphVisualization {
                     .attr('stroke-width', 1.5)
                     .attr('stroke-dasharray', '4 2');
             } else {
-                el.append('circle')
+                const circle = el.append('circle')
                     .attr('r', radius)
                     .attr('fill', d.isCenter ? 'var(--node-' + d.type + ')' :
                         d.type === 'artist' ? 'var(--node-artist)' :
@@ -420,6 +430,20 @@ class GraphVisualization {
                         d.type === 'genre' || d.type === 'style' ? 'var(--node-genre)' : '#888')
                     .attr('stroke', d.isCenter ? '#fff' : 'rgba(255,255,255,0.3)')
                     .attr('stroke-width', d.isCenter ? 3 : 1);
+
+                // Comparison mode styling
+                if (d.compareStatus === 'only_a') {
+                    circle
+                        .attr('opacity', 0.4)
+                        .attr('stroke', '#818cf8')
+                        .attr('stroke-width', 2)
+                        .attr('stroke-dasharray', '4 2');
+                } else if (d.compareStatus === 'only_b') {
+                    circle
+                        .attr('stroke', '#34d399')
+                        .attr('stroke-width', 2.5)
+                        .attr('filter', 'drop-shadow(0 0 4px #059669)');
+                }
             }
         });
 
@@ -431,7 +455,10 @@ class GraphVisualization {
             const explorableTypes = ['artist', 'genre', 'label', 'style'];
             const hints = ['Click for details'];
             if (explorableTypes.includes(d.type)) hints.push('double-click to explore');
-            return `${d.name} [${d.type}]\n${hints.join(', ')}`;
+            let suffix = '';
+            if (d.compareStatus === 'only_a') suffix = '\n(Year A only)';
+            else if (d.compareStatus === 'only_b') suffix = '\n(Year B only)';
+            return `${d.name} [${d.type}]\n${hints.join(', ')}${suffix}`;
         });
 
         // Labels
@@ -483,7 +510,9 @@ class GraphVisualization {
         if (d.isCategory) return;
 
         if (d.isLoadMore) {
-            this._loadMoreCategory(d);
+            if (!this.compareMode) {
+                this._loadMoreCategory(d);
+            }
             return;
         }
 
@@ -646,6 +675,147 @@ class GraphVisualization {
         } finally {
             this._pendingExpands--;
             this._checkExpandsDone();
+        }
+    }
+
+    /**
+     * Enter comparison mode: fetch data for two years and render overlay diff.
+     * @param {number} yearA - Earlier year
+     * @param {number} yearB - Later year
+     */
+    async setCompareYears(yearA, yearB) {
+        this.compareMode = true;
+        this.compareYearA = yearA;
+        this.compareYearB = yearB;
+        this.beforeYear = null; // Compare mode uses its own state
+
+        if (!this.centerName || !this.centerType) return;
+
+        // Collect categories to compare
+        const categories = [];
+        for (const [catId, meta] of this._categoryMeta.entries()) {
+            categories.push({ catId, ...meta });
+        }
+
+        if (categories.length === 0) return;
+
+        // Clear child nodes, keep center and category nodes
+        this.nodes = this.nodes.filter(n => n.isCenter || n.isCategory);
+        this.links = this.links.filter(l => {
+            const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+            const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+            const srcNode = this.nodes.find(n => n.id === srcId);
+            const tgtNode = this.nodes.find(n => n.id === tgtId);
+            return srcNode && tgtNode;
+        });
+
+        this.expandedCategories.clear();
+
+        // Fetch and diff each category
+        this._pendingExpands = categories.length;
+        for (const cat of categories) {
+            this._fetchComparisonData(cat.catId, cat.parentName, cat.parentType, cat.category);
+        }
+    }
+
+    /**
+     * Fetch data for both years and diff, then insert merged nodes.
+     */
+    async _fetchComparisonData(categoryId, parentName, parentType, category) {
+        this.expandedCategories.add(categoryId);
+        try {
+            // Parallel fetch for both years
+            let dataA, dataB;
+            try {
+                [dataA, dataB] = await Promise.all([
+                    window.apiClient.expand(parentName, parentType, category, 30, 0, this.compareYearA),
+                    window.apiClient.expand(parentName, parentType, category, 30, 0, this.compareYearB),
+                ]);
+            } catch {
+                // Show toast and abort
+                const toast = document.getElementById('shareToast');
+                const msg = document.getElementById('shareToastMsg');
+                if (toast && msg) {
+                    msg.textContent = 'Comparison failed — falling back to single year';
+                    toast.classList.add('show');
+                    setTimeout(() => toast.classList.remove('show'), 3000);
+                }
+                return;
+            }
+
+            // Build lookup maps keyed by composite type:id
+            const mapA = new Map();
+            for (const child of dataA.children) {
+                mapA.set(`${child.type}:${child.id}`, child);
+            }
+            const mapB = new Map();
+            for (const child of dataB.children) {
+                mapB.set(`${child.type}:${child.id}`, child);
+            }
+
+            // Compute diff sets
+            const allKeys = new Set([...mapA.keys(), ...mapB.keys()]);
+
+            // Update category label with diff counts
+            const catNode = this.nodes.find(n => n.id === categoryId);
+            if (catNode) {
+                catNode.name = `${catNode.displayName} (${dataA.total} → ${dataB.total})`;
+                catNode.count = dataB.total;
+            }
+
+            // Store pagination metadata (use yearB totals for display)
+            this._categoryMeta.set(categoryId, {
+                parentName, parentType, category,
+                offset: allKeys.size, limit: 30, total: dataB.total,
+            });
+
+            for (const key of allKeys) {
+                const inA = mapA.has(key);
+                const inB = mapB.has(key);
+                const child = inB ? mapB.get(key) : mapA.get(key);
+                const childId = `child-${child.type}-${child.id}`;
+
+                if (this.nodes.find(n => n.id === childId)) continue;
+
+                const compareStatus = (inA && inB) ? 'both' : inA ? 'only_a' : 'only_b';
+
+                this.nodes.push({
+                    id: childId,
+                    name: child.name,
+                    type: child.type,
+                    isCenter: false,
+                    isCategory: false,
+                    nodeId: String(child.id),
+                    compareStatus,
+                });
+                this.links.push({
+                    source: categoryId,
+                    target: childId,
+                    compareStatus,
+                });
+            }
+
+            // No load-more in comparison mode
+        } finally {
+            this._pendingExpands--;
+            this._checkExpandsDone();
+        }
+    }
+
+    /**
+     * Exit comparison mode and restore single-year view.
+     */
+    clearComparison() {
+        this.compareMode = false;
+        this.compareYearA = null;
+        this.compareYearB = null;
+
+        // Strip compareStatus from nodes/links
+        for (const node of this.nodes) {
+            delete node.compareStatus;
+        }
+        for (const link of this.links) {
+            delete link.compareStatus;
         }
     }
 }
