@@ -133,6 +133,28 @@ class ApiClient {
         return response.json();
     }
 
+    /**
+     * Full-text search across all entity types.
+     * @param {string} q - Search query (min 3 chars)
+     * @param {string[]} types - Entity types to search (artist, label, master, release)
+     * @param {string[]} genres - Genre filter
+     * @param {number|null} yearMin - Minimum release year
+     * @param {number|null} yearMax - Maximum release year
+     * @param {number} limit - Results per page
+     * @param {number} offset - Pagination offset
+     * @returns {Promise<Object|null>} Search results with facets and pagination
+     */
+    async search(q, types = [], genres = [], yearMin = null, yearMax = null, limit = 20, offset = 0) {
+        const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) });
+        if (types.length) params.set('types', types.join(','));
+        if (genres.length) params.set('genres', genres.join(','));
+        if (yearMin != null) params.set('year_min', String(yearMin));
+        if (yearMax != null) params.set('year_max', String(yearMax));
+        const response = await fetch(`/api/search?${params}`);
+        if (!response.ok) return null;
+        return response.json();
+    }
+
     // --- Auth ---
 
     async register(email, password) {

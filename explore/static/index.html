@@ -208,6 +208,11 @@
                     <i class="fas fa-route mr-1"></i>Find Path
                 </a>
             </li>
+            <li>
+                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-pane="search">
+                    <i class="fas fa-search mr-1"></i>Search
+                </a>
+            </li>
             <!-- Auth-required panes — hidden until logged in -->
             <li class="hidden" id="navCollection">
                 <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-pane="collection">
@@ -464,6 +469,54 @@
             </div>
         </div>
 
+        <!-- Search pane -->
+        <div class="pane" id="searchPane">
+            <div class="search-pane-container">
+                <div class="search-pane-toolbar">
+                    <div class="search-pane-input-row">
+                        <div class="search-pane-input-wrap">
+                            <i class="fas fa-search search-pane-icon"></i>
+                            <input type="text" class="form-input-dark search-pane-input" id="searchPaneInput"
+                                   placeholder="Search artists, labels, masters, releases..." autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="search-pane-filters">
+                        <div class="search-type-chips" id="searchTypeChips">
+                            <button class="search-chip active" data-search-type="artist">Artist</button>
+                            <button class="search-chip active" data-search-type="label">Label</button>
+                            <button class="search-chip active" data-search-type="master">Master</button>
+                            <button class="search-chip active" data-search-type="release">Release</button>
+                        </div>
+                        <div class="search-year-range">
+                            <label class="search-filter-label">Year</label>
+                            <input type="number" class="form-input-dark search-year-input" id="searchYearMin"
+                                   placeholder="Min" min="1000" max="9999">
+                            <span class="search-year-dash">&ndash;</span>
+                            <input type="number" class="form-input-dark search-year-input" id="searchYearMax"
+                                   placeholder="Max" min="1000" max="9999">
+                        </div>
+                        <div class="search-genre-filter" id="searchGenreFilter"></div>
+                    </div>
+                </div>
+
+                <div class="search-pane-facets" id="searchFacets"></div>
+
+                <div class="loading-overlay" id="searchLoading">
+                    <div class="spinner" role="status"></div>
+                    <p class="mt-2 text-text-secondary">Searching...</p>
+                </div>
+
+                <div class="search-pane-placeholder" id="searchPlaceholder">
+                    <i class="fas fa-search fa-3x mb-3 text-text-secondary"></i>
+                    <p class="text-text-secondary">Enter a search term to find artists, labels, masters, and releases</p>
+                </div>
+
+                <div class="search-pane-results" id="searchResults"></div>
+
+                <div class="search-pane-pagination" id="searchPagination"></div>
+            </div>
+        </div>
+
         <!-- Collection pane -->
         <div class="pane" id="collectionPane">
             <div class="user-pane-body">
@@ -546,6 +599,7 @@
     <script src="js/graph.js"></script>
     <script src="js/trends.js"></script>
     <script src="js/user-panes.js"></script>
+    <script src="js/search.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
