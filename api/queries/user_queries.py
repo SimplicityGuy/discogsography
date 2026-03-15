@@ -10,6 +10,7 @@ Graph model additions (curator):
   (User)-[:COLLECTED]->(Release)-[:IS]->(Genre)
 """
 
+import math
 from typing import Any
 
 from common import AsyncResilientNeo4jDriver
@@ -206,6 +207,161 @@ async def get_user_collection_stats(
         "by_genre": [{"name": r["name"], "count": r["count"]} for r in genres],
         "by_decade": [{"decade": r["decade"], "count": r["count"]} for r in decades],
         "by_label": [{"name": r["name"], "count": r["count"]} for r in labels],
+    }
+
+
+async def get_user_collection_timeline(
+    driver: AsyncResilientNeo4jDriver,
+    user_id: str,
+    bucket: str = "year",
+) -> dict[str, Any]:
+    """Get collection timeline grouped by release year with genre/style/label breakdowns.
+
+    Returns timeline data and computed insights (peak year, dominant genre,
+    genre diversity via Shannon entropy, style drift rate).
+    """
+    multiplier = 10 if bucket == "decade" else 1
+
+    # Main query: per-bucket counts with genre, style, and label breakdowns
+    timeline_cypher = """
+    MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)
+    WHERE r.year IS NOT NULL AND r.year > 0
+    OPTIONAL MATCH (r)-[:IS]->(g:Genre)
+    OPTIONAL MATCH (r)-[:IS]->(s:Style)
+    OPTIONAL MATCH (r)-[:ON]->(l:Label)
+    WITH r, (r.year / $multiplier) * $multiplier AS bucket,
+         collect(DISTINCT g.name) AS genres,
+         collect(DISTINCT s.name) AS styles,
+         collect(DISTINCT l.name) AS labels
+    RETURN bucket AS year, count(r) AS count,
+           genres, styles, labels
+    ORDER BY bucket
+    """
+    rows = await _run_query(driver, timeline_cypher, user_id=user_id, multiplier=multiplier)
+
+    # Aggregate per-bucket data
+    timeline: list[dict[str, Any]] = []
+    genre_totals: dict[str, int] = {}
+    all_styles_per_bucket: list[set[str]] = []
+
+    for row in rows:
+        # Count genre/style/label occurrences across releases in this bucket
+        genre_counts: dict[str, int] = {}
+        for g in row["genres"]:
+            if g:
+                genre_counts[g] = genre_counts.get(g, 0) + 1
+                genre_totals[g] = genre_totals.get(g, 0) + 1
+
+        style_set: set[str] = set()
+        for s in row["styles"]:
+            if s:
+                style_set.add(s)
+
+        label_counts: dict[str, int] = {}
+        for lb in row["labels"]:
+            if lb:
+                label_counts[lb] = label_counts.get(lb, 0) + 1
+
+        # Sort labels by count, take top 5
+        top_labels = sorted(label_counts, key=label_counts.get, reverse=True)[:5]  # type: ignore[arg-type]
+        top_styles = sorted(style_set)[:10]
+
+        all_styles_per_bucket.append(style_set)
+
+        timeline.append(
+            {
+                "year": row["year"],
+                "count": row["count"],
+                "genres": genre_counts,
+                "top_labels": top_labels,
+                "top_styles": top_styles,
+            }
+        )
+
+    # Compute insights
+    peak_year = max(timeline, key=lambda t: t["count"])["year"] if timeline else None
+    dominant_genre = max(genre_totals, key=genre_totals.get) if genre_totals else None  # type: ignore[arg-type]
+
+    # Shannon entropy for genre diversity (0 = one genre, higher = more diverse)
+    total_genre_count = sum(genre_totals.values())
+    genre_diversity_score = 0.0
+    if total_genre_count > 0:
+        for count in genre_totals.values():
+            p = count / total_genre_count
+            if p > 0:
+                genre_diversity_score -= p * math.log2(p)
+        # Normalize to 0-1 range (divide by max possible entropy)
+        max_entropy = math.log2(len(genre_totals)) if len(genre_totals) > 1 else 1.0
+        genre_diversity_score = round(genre_diversity_score / max_entropy, 2) if max_entropy > 0 else 0.0
+
+    # Style drift rate: average Jaccard distance between consecutive buckets
+    style_drift_rate = 0.0
+    if len(all_styles_per_bucket) > 1:
+        distances = []
+        for i in range(1, len(all_styles_per_bucket)):
+            prev, curr = all_styles_per_bucket[i - 1], all_styles_per_bucket[i]
+            union = prev | curr
+            if union:
+                distances.append(1.0 - len(prev & curr) / len(union))
+        style_drift_rate = round(sum(distances) / len(distances), 2) if distances else 0.0
+
+    return {
+        "timeline": timeline,
+        "insights": {
+            "peak_year": peak_year,
+            "dominant_genre": dominant_genre,
+            "genre_diversity_score": genre_diversity_score,
+            "style_drift_rate": style_drift_rate,
+        },
+    }
+
+
+async def get_user_collection_evolution(
+    driver: AsyncResilientNeo4jDriver,
+    user_id: str,
+    metric: str = "genre",
+) -> dict[str, Any]:
+    """Get how a specific metric (genre/style/label) distribution shifts across release years.
+
+    Returns per-year value counts and a summary.
+    """
+    if metric == "style":
+        rel_type = "IS"
+        node_label = "Style"
+    elif metric == "label":
+        rel_type = "ON"
+        node_label = "Label"
+    else:
+        rel_type = "IS"
+        node_label = "Genre"
+
+    cypher = f"""
+    MATCH (u:User {{id: $user_id}})-[:COLLECTED]->(r:Release)-[:{rel_type}]->(v:{node_label})
+    WHERE r.year IS NOT NULL AND r.year > 0
+    RETURN r.year AS year, v.name AS value, count(r) AS count
+    ORDER BY year, count DESC
+    """
+    rows = await _run_query(driver, cypher, user_id=user_id)
+
+    # Group by year
+    year_data: dict[int, dict[str, int]] = {}
+    unique_values: set[str] = set()
+    for row in rows:
+        year = row["year"]
+        if year not in year_data:
+            year_data[year] = {}
+        year_data[year][row["value"]] = row["count"]
+        unique_values.add(row["value"])
+
+    data = [{"year": y, "values": v} for y, v in sorted(year_data.items())]
+
+    return {
+        "metric": metric,
+        "data": data,
+        "summary": {
+            "total_years": len(year_data),
+            "unique_values": len(unique_values),
+        },
     }
 
 
