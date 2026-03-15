@@ -86,6 +86,100 @@ body {
     fill: #facc15;
     text-anchor: middle;
 }
+
+/* Comparison mode */
+.timeline-compare-arrow {
+    font-size: 1.2rem;
+    color: var(--text-mid);
+    user-select: none;
+}
+.timeline-year-a { color: #818cf8; }
+.timeline-year-b { color: #a78bfa; }
+.timeline-slider-a { accent-color: #4f46e5; }
+.timeline-slider-b { accent-color: #7c3aed; }
+.timeline-btn.active {
+    background: var(--purple-accent);
+    color: #fff;
+    border-color: var(--purple-accent);
+}
+
+/* Comparison legend */
+.compare-legend {
+    position: absolute;
+    bottom: 56px;
+    left: 12px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 0.75rem;
+    color: var(--text-mid);
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.compare-legend.hidden { display: none; }
+.compare-legend-close {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: none;
+    border: none;
+    color: var(--text-mid);
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+}
+.compare-legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.compare-legend-swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+.compare-swatch-both {
+    background: #6366f1;
+    border: 2px solid rgba(255,255,255,0.3);
+}
+.compare-swatch-only-a {
+    background: rgba(79,70,229,0.4);
+    border: 2px dashed #818cf8;
+}
+.compare-swatch-only-b {
+    background: #059669;
+    border: 2px solid #34d399;
+}
+
+/* Comparison node/link styles */
+.link-only-a {
+    stroke-dasharray: 4 2;
+    opacity: 0.4;
+}
+.link-only-b {
+    stroke: #34d399;
+}
+
+/* Same-year hint */
+.compare-same-year-hint {
+    position: absolute;
+    bottom: 56px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 6px 14px;
+    font-size: 0.8rem;
+    color: var(--text-mid);
+    z-index: 10;
+    white-space: nowrap;
+}
+.compare-same-year-hint.hidden { display: none; }
     </style>
     <script>
         // Apply theme before first paint to prevent flash
@@ -464,7 +558,7 @@ body {
             </div>
             <!-- Timeline Scrubber -->
             <div class="timeline-scrubber hidden" id="timelineScrubber">
-                <div class="timeline-controls">
+                <div class="timeline-controls" id="timelineExploreControls">
                     <button class="timeline-btn" id="timelinePlayBtn" title="Play/Pause">
                         <span class="material-symbols-outlined" id="timelinePlayIcon">play_arrow</span>
                     </button>
@@ -476,7 +570,40 @@ body {
                     <button class="timeline-btn" id="timelineResetBtn" title="Reset (show all years)">
                         <span class="material-symbols-outlined">undo</span>
                     </button>
+                    <button class="timeline-btn" id="timelineCompareBtn" title="Compare two years">
+                        <span class="material-symbols-outlined">compare_arrows</span>
+                    </button>
                 </div>
+                <div class="timeline-controls hidden" id="timelineCompareControls">
+                    <span class="timeline-year timeline-year-a" id="compareYearALabel">1975</span>
+                    <input type="range" class="timeline-slider timeline-slider-a" id="compareSliderA" min="1900" max="2025" value="1975" />
+                    <span class="timeline-compare-arrow">↔</span>
+                    <input type="range" class="timeline-slider timeline-slider-b" id="compareSliderB" min="1900" max="2025" value="1995" />
+                    <span class="timeline-year timeline-year-b" id="compareYearBLabel">1995</span>
+                    <button class="timeline-btn" id="timelineExitCompareBtn" title="Exit comparison">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+            </div>
+            <div class="compare-legend hidden" id="compareLegend">
+                <button class="compare-legend-close" id="compareLegendClose" title="Hide legend">
+                    <span class="material-symbols-outlined" style="font-size:14px">close</span>
+                </button>
+                <div class="compare-legend-item">
+                    <span class="compare-legend-swatch compare-swatch-both"></span>
+                    <span>Both years</span>
+                </div>
+                <div class="compare-legend-item">
+                    <span class="compare-legend-swatch compare-swatch-only-a"></span>
+                    <span>Year A only</span>
+                </div>
+                <div class="compare-legend-item">
+                    <span class="compare-legend-swatch compare-swatch-only-b"></span>
+                    <span>Year B only</span>
+                </div>
+            </div>
+            <div class="compare-same-year-hint hidden" id="compareSameYearHint">
+                Select different years to compare
             </div>
         </div>
 
