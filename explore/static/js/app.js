@@ -99,7 +99,7 @@ class TimelineScrubber {
             this.slider.value = this.minYear;
         }
         this.playing = true;
-        this.playIcon.className = 'fas fa-pause';
+        this.playIcon.className = 'material-symbols-outlined'; this.playIcon.textContent = 'pause';
 
         const tick = () => {
             const step = this.speed === 'year' ? 1 : 10;
@@ -120,7 +120,7 @@ class TimelineScrubber {
 
     pause() {
         this.playing = false;
-        this.playIcon.className = 'fas fa-play';
+        this.playIcon.className = 'material-symbols-outlined'; this.playIcon.textContent = 'play_arrow';
         if (this.playInterval) {
             clearInterval(this.playInterval);
             this.playInterval = null;
@@ -244,7 +244,7 @@ class ExploreApp {
                 const badge = document.createElement('span');
                 badge.className = 'badge bg-accent-green text-white discogs-badge';
                 const icon = document.createElement('i');
-                icon.className = 'fas fa-check mr-1';
+                icon.className = 'material-symbols-outlined mr-1'; icon.textContent = 'check'; icon.style.fontSize = '18px';
                 badge.append(icon, discogsStatus.discogs_username || 'Connected');
                 statusDisplay.replaceChildren(badge);
             }
@@ -253,14 +253,14 @@ class ExploreApp {
             syncBtn?.classList.remove('hidden');
         } else if (loggedIn) {
             if (statusDisplay) {
-                statusDisplay.innerHTML = '<span class="badge bg-gray-600 text-text-secondary discogs-badge">Not connected</span>';
+                statusDisplay.innerHTML = '<span class="badge bg-gray-600 text-text-mid discogs-badge">Not connected</span>';
             }
             connectBtn?.classList.remove('hidden');
             disconnectBtn?.classList.add('hidden');
             syncBtn?.classList.add('hidden');
         } else {
             if (statusDisplay) {
-                statusDisplay.innerHTML = '<span class="badge bg-gray-600 text-text-secondary discogs-badge">Not connected</span>';
+                statusDisplay.innerHTML = '<span class="badge bg-gray-600 text-text-mid discogs-badge">Not connected</span>';
             }
             connectBtn?.classList.add('hidden');
             disconnectBtn?.classList.add('hidden');
@@ -395,7 +395,7 @@ class ExploreApp {
         }
 
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Logging in...';
+        submitBtn.innerHTML = '<span class="material-symbols-outlined spin mr-1" style="font-size:18px">progress_activity</span>Logging in...';
         if (errorEl) errorEl.textContent = '';
 
         try {
@@ -418,7 +418,7 @@ class ExploreApp {
             document.getElementById('loginPassword').value = '';
         } finally {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-sign-in-alt mr-1"></i>Login';
+            submitBtn.innerHTML = '<span class="material-symbols-outlined mr-1" style="font-size:18px">login</span>Login';
         }
     }
 
@@ -439,7 +439,7 @@ class ExploreApp {
         }
 
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Creating account...';
+        submitBtn.innerHTML = '<span class="material-symbols-outlined spin mr-1" style="font-size:18px">progress_activity</span>Creating account...';
         if (errorEl) errorEl.textContent = '';
         if (successEl) successEl.classList.add('hidden');
 
@@ -456,7 +456,7 @@ class ExploreApp {
             }
         } finally {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<i class="fas fa-user-plus mr-1"></i>Create Account';
+            submitBtn.innerHTML = '<span class="material-symbols-outlined mr-1" style="font-size:18px">person_add</span>Create Account';
         }
     }
 
@@ -617,13 +617,13 @@ class ExploreApp {
         if (statusObj.in_collection) {
             const badge = document.createElement('span');
             badge.className = 'ownership-badge in-collection';
-            badge.innerHTML = '<i class="fas fa-check mr-1"></i>In Collection';
+            badge.innerHTML = '<span class="material-symbols-outlined mr-1" style="font-size:18px">check</span>In Collection';
             container.appendChild(badge);
         }
         if (statusObj.in_wantlist) {
             const badge = document.createElement('span');
             badge.className = 'ownership-badge in-wantlist';
-            badge.innerHTML = '<i class="fas fa-heart mr-1"></i>In Wantlist';
+            badge.innerHTML = '<span class="material-symbols-outlined mr-1" style="font-size:18px">favorite</span>In Wantlist';
             container.appendChild(badge);
         }
 
@@ -742,12 +742,12 @@ class ExploreApp {
         const body = document.getElementById('infoPanelBody');
         const title = document.getElementById('infoPanelTitle');
 
-        body.innerHTML = '<p class="text-text-secondary">Loading...</p>';
+        body.innerHTML = '<p class="text-text-mid">Loading...</p>';
         panel.classList.add('open');
 
         const details = await window.apiClient.getNodeDetails(nodeId, type);
         if (!details) {
-            body.innerHTML = '<p class="text-text-secondary">No details available</p>';
+            body.innerHTML = '<p class="text-text-mid">No details available</p>';
             return;
         }
 
@@ -792,7 +792,7 @@ class ExploreApp {
             btn.dataset.name = details.name;
             btn.dataset.type = type;
             const icon = document.createElement('i');
-            icon.className = 'fas fa-project-diagram mr-1';
+            icon.className = 'material-symbols-outlined mr-1'; icon.textContent = 'hub'; icon.style.fontSize = '18px';
             btn.append(icon, `Explore ${details.name}`);
             nodes.push(btn);
         }
@@ -822,7 +822,7 @@ class ExploreApp {
 
         if (nodes.length === 0) {
             const p = document.createElement('p');
-            p.className = 'text-text-secondary';
+            p.className = 'text-text-mid';
             p.textContent = 'No additional details';
             nodes.push(p);
         }
@@ -847,7 +847,7 @@ class ExploreApp {
         const btn = document.createElement('button');
         btn.className = 'btn-outline-warning btn-sm w-full mt-3 gap-analysis-btn';
         const icon = document.createElement('i');
-        icon.className = 'fas fa-search-minus mr-1';
+        icon.className = 'material-symbols-outlined mr-1'; icon.textContent = 'search_off'; icon.style.fontSize = '18px';
         btn.append(icon, 'What am I missing?');
         btn.addEventListener('click', () => {
             const panel = document.getElementById('infoPanel');
@@ -1003,7 +1003,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const arrowWrap = document.createElement('span');
         arrowWrap.className = 'path-edge-arrow';
         const arrowIcon = document.createElement('i');
-        arrowIcon.className = 'fas fa-arrow-right';
+        arrowIcon.className = 'material-symbols-outlined'; arrowIcon.textContent = 'arrow_forward';
         arrowWrap.appendChild(arrowIcon);
 
         const label = document.createElement('span');

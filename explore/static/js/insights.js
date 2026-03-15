@@ -72,7 +72,7 @@ class InsightsPanel {
         if (!data?.items?.length) {
             el.textContent = '';
             const msg = document.createElement('p');
-            msg.className = 'text-text-secondary text-sm';
+            msg.className = 'text-text-mid text-sm';
             msg.textContent = 'No data available yet';
             el.appendChild(msg);
             return;
@@ -81,13 +81,13 @@ class InsightsPanel {
         const rows = data.items.map(a => {
             const tr = document.createElement('tr');
             const tdRank = document.createElement('td');
-            tdRank.className = 'insights-table-cell text-text-secondary';
+            tdRank.className = 'insights-table-cell text-text-mid';
             tdRank.textContent = String(a.rank);
             const tdName = document.createElement('td');
             tdName.className = 'insights-table-cell';
             tdName.textContent = a.artist_name;
             const tdCount = document.createElement('td');
-            tdCount.className = 'insights-table-cell text-right text-text-secondary';
+            tdCount.className = 'insights-table-cell text-right text-text-mid';
             tdCount.textContent = a.edge_count.toLocaleString();
             tr.append(tdRank, tdName, tdCount);
             return tr;
@@ -136,7 +136,7 @@ class InsightsPanel {
         if (!data?.trends?.length) {
             el.textContent = '';
             const msg = document.createElement('p');
-            msg.className = 'text-text-secondary text-sm';
+            msg.className = 'text-text-mid text-sm';
             msg.textContent = 'No trend data for this genre';
             el.appendChild(msg);
             return;
@@ -191,7 +191,7 @@ class InsightsPanel {
         if (!data?.items?.length) {
             el.textContent = '';
             const msg = document.createElement('p');
-            msg.className = 'text-text-secondary text-sm';
+            msg.className = 'text-text-mid text-sm';
             msg.textContent = 'No anniversaries this month';
             el.appendChild(msg);
             return;
@@ -252,7 +252,7 @@ class InsightsPanel {
         if (!data?.items?.length) {
             el.textContent = '';
             const msg = document.createElement('p');
-            msg.className = 'text-text-secondary text-sm';
+            msg.className = 'text-text-mid text-sm';
             msg.textContent = 'No completeness data available';
             el.appendChild(msg);
             return;
@@ -315,7 +315,7 @@ class InsightsPanel {
         if (latest) {
             const timeAgo = this._timeAgo(latest);
             const timeSpan = document.createElement('span');
-            timeSpan.className = 'text-text-secondary text-xs';
+            timeSpan.className = 'text-text-mid text-xs';
             timeSpan.textContent = `Last computed ${timeAgo}`;
             wrapper.appendChild(timeSpan);
         }

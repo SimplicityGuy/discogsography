@@ -130,7 +130,7 @@
         if (!data || !data.results) {
             resultsEl.textContent = '';
             const msg = document.createElement('p');
-            msg.className = 'text-text-secondary text-center py-8';
+            msg.className = 'text-text-mid text-center py-8';
             msg.textContent = 'An error occurred. Please try again.';
             resultsEl.appendChild(msg);
             setVisible(resultsEl, true);
@@ -226,8 +226,9 @@
         if (results.length === 0) {
             const msg = document.createElement('div');
             msg.className = 'search-no-results';
-            const icon = document.createElement('i');
-            icon.className = 'fas fa-search fa-2x mb-2';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined icon-2x mb-2';
+            icon.textContent = 'search';
             msg.appendChild(icon);
             const txt = document.createElement('p');
             txt.textContent = `No results found for "${lastQuery}"`;
@@ -311,8 +312,9 @@
         // Previous
         const prevBtn = document.createElement('button');
         prevBtn.className = 'page-btn';
-        const prevIcon = document.createElement('i');
-        prevIcon.className = 'fas fa-chevron-left';
+        const prevIcon = document.createElement('span');
+        prevIcon.className = 'material-symbols-outlined';
+        prevIcon.textContent = 'chevron_left';
         prevBtn.appendChild(prevIcon);
         prevBtn.disabled = currentPage === 1;
         prevBtn.addEventListener('click', () => {
@@ -345,8 +347,9 @@
         // Next
         const nextBtn = document.createElement('button');
         nextBtn.className = 'page-btn';
-        const nextIcon = document.createElement('i');
-        nextIcon.className = 'fas fa-chevron-right';
+        const nextIcon = document.createElement('span');
+        nextIcon.className = 'material-symbols-outlined';
+        nextIcon.textContent = 'chevron_right';
         nextBtn.appendChild(nextIcon);
         nextBtn.disabled = currentPage >= totalPages;
         nextBtn.addEventListener('click', () => {
