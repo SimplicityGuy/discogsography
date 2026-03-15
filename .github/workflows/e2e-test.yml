@@ -14,6 +14,7 @@ env:
   CI: true
   PLAYWRIGHT_BROWSERS_PATH: "0"  # Use default location
   PYTHON_VERSION: "3.13"
+  NODE_VERSION: "24"
 
 permissions:
   contents: read
@@ -76,6 +77,13 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: "🔧 Setup Node.js"
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: explore/package-lock.json
+
       # Browser cache (Playwright)
       - name: 🌐 Cache Playwright browsers
         uses: actions/cache@v5
@@ -95,6 +103,12 @@ jobs:
           uv pip install -e dashboard
           uv pip install -e explore
           uv pip install -e common
+
+      - name: "🔬 Instrument JS for coverage"
+        run: |
+          cd explore && npm ci
+          npx nyc instrument static/js static/js
+          echo "✅ Istanbul instrumentation applied to explore JS files"
 
       - name: 🎭 Install Playwright browsers
         run: |
@@ -146,6 +160,19 @@ jobs:
             echo "coverage-exists=false" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: "📊 Generate E2E JS coverage report"
+        if: always()
+        run: |
+          if [ -d .nyc_output ] && ls .nyc_output/*.json 1>/dev/null 2>&1; then
+            cd explore && npx nyc report \
+              --reporter=lcov \
+              --report-dir=coverage-e2e \
+              --temp-dir=../.nyc_output
+            echo "✅ JS coverage report generated at explore/coverage-e2e/lcov.info"
+          else
+            echo "⚠️ No JS coverage data found — skipping nyc report"
+          fi
+
       - name: 📤 Upload test results
         if: always()
         uses: actions/upload-artifact@v7
@@ -181,6 +208,19 @@ jobs:
         env:
           CODECOV_GCOV_DISABLE: 1
           CODECOV_XCODE_DISABLE: 1
+
+      - name: "📊 Upload E2E JS coverage to Codecov"
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./explore/coverage-e2e/lcov.info
+          flags: explore-e2e-js,explore
+          name: e2e-js-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
 
       - name: 📊 E2E Coverage Report
         if: github.event_name == 'pull_request' && steps.coverage-setup.outputs.coverage-exists == 'true'
