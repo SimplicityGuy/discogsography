@@ -104,8 +104,8 @@ class GraphVisualization {
 
     toggleFullscreen() {
         const isFullscreen = this.container.classList.toggle('fullscreen');
-        const icon = document.querySelector('#fullscreenBtn i');
-        icon.className = isFullscreen ? 'fas fa-compress' : 'fas fa-expand';
+        const icon = document.querySelector('#fullscreenBtn .material-symbols-outlined');
+        icon.textContent = isFullscreen ? 'fullscreen_exit' : 'fullscreen';
         setTimeout(() => this._onResize(), 50);
     }
 

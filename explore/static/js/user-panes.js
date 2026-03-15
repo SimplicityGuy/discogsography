@@ -53,7 +53,7 @@ class UserPanes {
 
         const wrap = this._buildReleaseTable(
             'My Collection',
-            'fa-record-vinyl',
+            'album',
             data.releases,
             data.total,
             this._collectionOffset,
@@ -71,8 +71,9 @@ class UserPanes {
         if (!container) return;
         const div = document.createElement('div');
         div.className = 'user-pane-empty';
-        const icon = document.createElement('i');
-        icon.className = 'fas fa-record-vinyl fa-3x mb-3';
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined icon-3x mb-3';
+        icon.textContent = 'album';
         const p = document.createElement('p');
         p.textContent = msg;
         div.append(icon, p);
@@ -116,7 +117,7 @@ class UserPanes {
 
         const wrap = this._buildReleaseTable(
             'My Wantlist',
-            'fa-heart',
+            'favorite',
             data.releases,
             data.total,
             this._wantlistOffset,
@@ -134,8 +135,9 @@ class UserPanes {
         if (!container) return;
         const div = document.createElement('div');
         div.className = 'user-pane-empty';
-        const icon = document.createElement('i');
-        icon.className = 'fas fa-heart fa-3x mb-3';
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined icon-3x mb-3';
+        icon.textContent = 'favorite';
         const p = document.createElement('p');
         p.textContent = msg;
         div.append(icon, p);
@@ -167,12 +169,12 @@ class UserPanes {
         container.innerHTML = '';
 
         if (!data || !data.recommendations || data.recommendations.length === 0) {
-            container.innerHTML = `<div class="user-pane-empty"><i class="fas fa-lightbulb fa-3x mb-3"></i><p>No recommendations yet. Sync your collection to get personalised suggestions.</p></div>`;
+            container.innerHTML = `<div class="user-pane-empty"><span class="material-symbols-outlined icon-3x mb-3">lightbulb</span><p>No recommendations yet. Sync your collection to get personalised suggestions.</p></div>`;
             return;
         }
 
         const intro = document.createElement('p');
-        intro.className = 'text-text-secondary text-sm mb-2';
+        intro.className = 'text-text-mid text-sm mb-2';
         intro.textContent = `${data.recommendations.length} releases you might like`;
         container.appendChild(intro);
 
@@ -482,8 +484,9 @@ class UserPanes {
         // Download button
         const dlBtn = document.createElement('button');
         dlBtn.className = 'taste-download-btn';
-        const dlIcon = document.createElement('i');
-        dlIcon.className = 'fas fa-download mr-1';
+        const dlIcon = document.createElement('span');
+        dlIcon.className = 'material-symbols-outlined mr-1';
+        dlIcon.textContent = 'download';
         dlBtn.append(dlIcon, 'Download Taste Card');
         dlBtn.addEventListener('click', () => this._downloadTasteCard(dlBtn));
         col3.appendChild(dlBtn);
@@ -586,8 +589,9 @@ class UserPanes {
         const resetBtn = () => {
             btn.disabled = false;
             btn.replaceChildren();
-            const icon = document.createElement('i');
-            icon.className = 'fas fa-download mr-1';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined mr-1';
+            icon.textContent = 'download';
             btn.append(icon, 'Download Taste Card');
         };
 
@@ -683,11 +687,12 @@ class UserPanes {
 
         const entityInfo = document.createElement('div');
         entityInfo.className = 'gap-entity-info';
-        const entityIcon = data.entity?.type === 'artist' ? 'fa-user' : data.entity?.type === 'label' ? 'fa-tag' : 'fa-compact-disc';
+        const entityIconName = data.entity?.type === 'artist' ? 'person' : data.entity?.type === 'label' ? 'sell' : 'album';
         const entityTitle = document.createElement('h4');
         entityTitle.className = 'gap-entity-title';
-        const titleIcon = document.createElement('i');
-        titleIcon.className = `fas ${entityIcon} mr-2`;
+        const titleIcon = document.createElement('span');
+        titleIcon.className = 'material-symbols-outlined mr-2';
+        titleIcon.textContent = entityIconName;
         entityTitle.append(titleIcon, data.entity?.name || 'Unknown');
         entityInfo.appendChild(entityTitle);
 
@@ -857,8 +862,9 @@ class UserPanes {
             if (r.on_wantlist) {
                 const badge = document.createElement('span');
                 badge.className = 'ownership-badge in-wantlist';
-                const icon = document.createElement('i');
-                icon.className = 'fas fa-heart mr-1';
+                const icon = document.createElement('span');
+                icon.className = 'material-symbols-outlined mr-1';
+                icon.textContent = 'favorite';
                 badge.append(icon, 'Wanted');
                 tdStatus.appendChild(badge);
             }
@@ -883,8 +889,9 @@ class UserPanes {
         if (!container) return;
         const div = document.createElement('div');
         div.className = 'user-pane-empty';
-        const icon = document.createElement('i');
-        icon.className = 'fas fa-check-circle fa-3x mb-3';
+        const icon = document.createElement('span');
+        icon.className = 'material-symbols-outlined icon-3x mb-3';
+        icon.textContent = 'check_circle';
         const p = document.createElement('p');
         p.textContent = msg;
         div.append(icon, p);
@@ -917,8 +924,9 @@ class UserPanes {
 
         const titleIcon = document.createElement('span');
         titleIcon.className = 'title-icon';
-        const titleIconI = document.createElement('i');
-        titleIconI.className = `fas ${iconClass}`;
+        const titleIconI = document.createElement('span');
+        titleIconI.className = 'material-symbols-outlined';
+        titleIconI.textContent = iconClass;
         titleIcon.appendChild(titleIconI);
 
         const titleH5 = document.createElement('h5');
@@ -936,7 +944,7 @@ class UserPanes {
         const refreshBtn = document.createElement('button');
         refreshBtn.className = 'btn-refresh btn-sync';
         refreshBtn.id = refreshBtnId;
-        refreshBtn.innerHTML = '<i class="fas fa-redo"></i> Refresh';
+        refreshBtn.innerHTML = '<span class="material-symbols-outlined">refresh</span> Refresh';
 
         actions.appendChild(refreshBtn);
         header.append(titleArea, actions);
@@ -952,8 +960,8 @@ class UserPanes {
         // thead
         const thead = document.createElement('thead');
         thead.innerHTML = `<tr>
-            <th class="col-artist sortable">Artist <i class="fas fa-sort-down" style="font-size:0.6rem;opacity:0.5"></i></th>
-            <th class="col-title sortable">Release Title <i class="fas fa-sort-down" style="font-size:0.6rem;opacity:0.5"></i></th>
+            <th class="col-artist sortable">Artist <span class="material-symbols-outlined" style="font-size:0.6rem;opacity:0.5">arrow_drop_down</span></th>
+            <th class="col-title sortable">Release Title <span class="material-symbols-outlined" style="font-size:0.6rem;opacity:0.5">arrow_drop_down</span></th>
             <th class="col-label">Label</th>
             <th class="col-year">Year</th>
             <th class="col-genre">Genre / Style</th>
@@ -1035,7 +1043,7 @@ class UserPanes {
         // Previous arrow
         const prevBtn = document.createElement('button');
         prevBtn.className = 'page-btn';
-        prevBtn.innerHTML = '<i class="fas fa-chevron-left"></i>';
+        prevBtn.innerHTML = '<span class="material-symbols-outlined">chevron_left</span>';
         prevBtn.disabled = currentPage === 0;
         prevBtn.addEventListener('click', () => onPageChange(currentPage - 1));
         buttons.appendChild(prevBtn);
@@ -1060,7 +1068,7 @@ class UserPanes {
         // Next arrow
         const nextBtn = document.createElement('button');
         nextBtn.className = 'page-btn';
-        nextBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+        nextBtn.innerHTML = '<span class="material-symbols-outlined">chevron_right</span>';
         nextBtn.disabled = currentPage >= totalPages - 1;
         nextBtn.addEventListener('click', () => onPageChange(currentPage + 1));
         buttons.appendChild(nextBtn);
@@ -1086,8 +1094,9 @@ class UserPanes {
         const frag = document.createDocumentFragment();
         const rounded = Math.round(rating);
         for (let i = 1; i <= 5; i++) {
-            const star = document.createElement('i');
-            star.className = i <= rounded ? 'fas fa-star' : 'fas fa-star star-empty';
+            const star = document.createElement('span');
+            star.className = i <= rounded ? 'material-symbols-outlined' : 'material-symbols-outlined star-empty';
+            star.textContent = 'star';
             frag.appendChild(star);
         }
         return frag;
