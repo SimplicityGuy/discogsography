@@ -381,7 +381,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
           files: ./explore/coverage/lcov.info
-          flags: explore-js
+          flags: explore-js,explore
           name: explore-js-tests
           fail_ci_if_error: false
           disable_search: true

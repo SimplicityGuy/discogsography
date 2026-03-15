@@ -173,7 +173,7 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
           files: ./coverage.xml
-          flags: ${{ matrix.flag }}
+          flags: ${{ matrix.flag }},explore,dashboard
           name: e2e-${{ matrix.browser }}-${{ matrix.device || 'desktop' }}
           fail_ci_if_error: false
           disable_search: true
