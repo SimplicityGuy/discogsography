@@ -131,6 +131,7 @@ async def trigger_sync(
             neo4j_driver=_neo4j,
             discogs_user_agent=_config.discogs_user_agent,
             oauth_encryption_key=getattr(_config, "oauth_encryption_key", None),
+            redis_client=_redis,
         )
     )
     _running_syncs[user_id] = task

@@ -23,6 +23,7 @@ from psycopg.rows import dict_row
 import structlog
 
 from api.auth import decrypt_oauth_token
+from api.cache import RecommendCache
 from api.services.discogs import _build_oauth_header, _hmac_sha1_signature as _hmac_sha1
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
 
@@ -396,6 +397,7 @@ async def run_full_sync(
     neo4j_driver: AsyncResilientNeo4jDriver,
     discogs_user_agent: str,
     oauth_encryption_key: str | None = None,
+    redis_client: Any | None = None,
 ) -> dict[str, Any]:
     """Run a full collection + wantlist sync for a user.
 
@@ -467,6 +469,12 @@ async def run_full_sync(
             pg_pool=pg_pool,
             neo4j_driver=neo4j_driver,
         )
+
+        # Invalidate user-scoped recommendation cache
+        if redis_client is not None:
+            rec_cache = RecommendCache(redis=redis_client)
+            await rec_cache.invalidate_user(str(user_uuid))
+            logger.info("🗑️ Recommendation cache invalidated", user_id=str(user_uuid))
 
     except Exception as exc:
         error_message = str(exc)
