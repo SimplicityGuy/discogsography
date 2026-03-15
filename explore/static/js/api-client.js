@@ -310,6 +310,36 @@ class ApiClient {
         if (!response.ok) return null;
         return response.json();
     }
+
+    // --- Taste fingerprint ---
+
+    /**
+     * Get full taste fingerprint (heatmap, obscurity, drift, blind spots).
+     * @param {string} token - JWT auth token
+     * @returns {Promise<Object|null>} Fingerprint data or null on error/422
+     */
+    async getTasteFingerprint(token) {
+        if (!token) return null;
+        const response = await fetch('/api/user/taste/fingerprint', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    /**
+     * Download SVG taste card.
+     * @param {string} token - JWT auth token
+     * @returns {Promise<Blob|null>} SVG blob or null on error
+     */
+    async getTasteCard(token) {
+        if (!token) return null;
+        const response = await fetch('/api/user/taste/card', {
+            headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!response.ok) return null;
+        return response.blob();
+    }
 }
 
 // Global instance
