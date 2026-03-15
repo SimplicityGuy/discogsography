@@ -11,6 +11,76 @@
     <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.15.8/dist/cdn.min.js" integrity="sha384-LXWjKwDZz29o7TduNe+r/UxaolHh5FsSvy2W7bDHSZ8jJeGgDeuNnsDNHoxpSgDi" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="css/styles.css">
     <style>[x-cloak] { display: none !important; }</style>
+    <style>
+/* Timeline Scrubber */
+.timeline-scrubber {
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+}
+.timeline-scrubber.hidden { display: none; }
+.timeline-controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+}
+.timeline-btn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    border-radius: 6px;
+    width: 32px;
+    height: 32px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
+}
+.timeline-btn:hover { background: var(--bg-hover); }
+.timeline-year {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+    font-size: 1.1rem;
+    min-width: 48px;
+    text-align: center;
+    color: var(--text-primary);
+}
+.timeline-slider {
+    flex: 1;
+    accent-color: var(--accent-purple);
+    cursor: pointer;
+}
+.timeline-speed {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 2px 8px;
+    border-radius: 4px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    user-select: none;
+}
+.timeline-speed:hover { background: var(--bg-hover); }
+
+/* Genre emergence glow */
+@keyframes emergence-glow {
+    0% { filter: drop-shadow(0 0 6px #facc15); }
+    100% { filter: none; }
+}
+.node-emergence {
+    animation: emergence-glow 2s ease-out forwards;
+}
+.emergence-badge {
+    font-size: 8px;
+    font-weight: 700;
+    fill: #facc15;
+    text-anchor: middle;
+}
+    </style>
     <script>
         document.addEventListener('alpine:init', () => {
             Alpine.store('modals', {
@@ -208,6 +278,11 @@
                     <i class="fas fa-route mr-1"></i>Find Path
                 </a>
             </li>
+            <li>
+                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-pane="search">
+                    <i class="fas fa-search mr-1"></i>Search
+                </a>
+            </li>
             <!-- Auth-required panes — hidden until logged in -->
             <li class="hidden" id="navCollection">
                 <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-pane="collection">
@@ -361,6 +436,22 @@
                     <p class="text-text-secondary">Click a node to see details</p>
                 </div>
             </div>
+            <!-- Timeline Scrubber -->
+            <div class="timeline-scrubber hidden" id="timelineScrubber">
+                <div class="timeline-controls">
+                    <button class="timeline-btn" id="timelinePlayBtn" title="Play/Pause">
+                        <i class="fas fa-play" id="timelinePlayIcon"></i>
+                    </button>
+                    <span class="timeline-year" id="timelineYearLabel">—</span>
+                    <input type="range" class="timeline-slider" id="timelineSlider" min="1900" max="2025" value="2025" />
+                    <div class="timeline-speed" id="timelineSpeedToggle" title="Toggle speed">
+                        <span id="timelineSpeedLabel">1yr/s</span>
+                    </div>
+                    <button class="timeline-btn" id="timelineResetBtn" title="Reset (show all years)">
+                        <i class="fas fa-undo"></i>
+                    </button>
+                </div>
+            </div>
         </div>
 
         <!-- Trends pane -->
@@ -464,6 +555,54 @@
             </div>
         </div>
 
+        <!-- Search pane -->
+        <div class="pane" id="searchPane">
+            <div class="search-pane-container">
+                <div class="search-pane-toolbar">
+                    <div class="search-pane-input-row">
+                        <div class="search-pane-input-wrap">
+                            <i class="fas fa-search search-pane-icon"></i>
+                            <input type="text" class="form-input-dark search-pane-input" id="searchPaneInput"
+                                   placeholder="Search artists, labels, masters, releases..." autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="search-pane-filters">
+                        <div class="search-type-chips" id="searchTypeChips">
+                            <button class="search-chip active" data-search-type="artist">Artist</button>
+                            <button class="search-chip active" data-search-type="label">Label</button>
+                            <button class="search-chip active" data-search-type="master">Master</button>
+                            <button class="search-chip active" data-search-type="release">Release</button>
+                        </div>
+                        <div class="search-year-range">
+                            <label class="search-filter-label">Year</label>
+                            <input type="number" class="form-input-dark search-year-input" id="searchYearMin"
+                                   placeholder="Min" min="1000" max="9999">
+                            <span class="search-year-dash">&ndash;</span>
+                            <input type="number" class="form-input-dark search-year-input" id="searchYearMax"
+                                   placeholder="Max" min="1000" max="9999">
+                        </div>
+                        <div class="search-genre-filter" id="searchGenreFilter"></div>
+                    </div>
+                </div>
+
+                <div class="search-pane-facets" id="searchFacets"></div>
+
+                <div class="loading-overlay" id="searchLoading">
+                    <div class="spinner" role="status"></div>
+                    <p class="mt-2 text-text-secondary">Searching...</p>
+                </div>
+
+                <div class="search-pane-placeholder" id="searchPlaceholder">
+                    <i class="fas fa-search fa-3x mb-3 text-text-secondary"></i>
+                    <p class="text-text-secondary">Enter a search term to find artists, labels, masters, and releases</p>
+                </div>
+
+                <div class="search-pane-results" id="searchResults"></div>
+
+                <div class="search-pane-pagination" id="searchPagination"></div>
+            </div>
+        </div>
+
         <!-- Collection pane -->
         <div class="pane" id="collectionPane">
             <div class="user-pane-body">
@@ -546,6 +685,7 @@
     <script src="js/graph.js"></script>
     <script src="js/trends.js"></script>
     <script src="js/user-panes.js"></script>
+    <script src="js/search.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>

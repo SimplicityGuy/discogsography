@@ -39,7 +39,7 @@ class ApiClient {
      * @param {number} offset - Number of results to skip
      * @returns {Promise<{children: Array, total: number, offset: number, limit: number, has_more: boolean}>}
      */
-    async expand(nodeId, type, category, limit = 50, offset = 0) {
+    async expand(nodeId, type, category, limit = 50, offset = 0, beforeYear = null) {
         const params = new URLSearchParams({
             node_id: nodeId,
             type,
@@ -47,6 +47,9 @@ class ApiClient {
             limit: String(limit),
             offset: String(offset),
         });
+        if (beforeYear !== null) {
+            params.set('before_year', String(beforeYear));
+        }
         const response = await fetch(`/api/expand?${params}`);
         if (!response.ok) return { children: [], total: 0, offset, limit, has_more: false };
         return response.json();
@@ -75,6 +78,28 @@ class ApiClient {
         const params = new URLSearchParams({ name, type });
         const response = await fetch(`/api/trends?${params}`);
         if (!response.ok) return null;
+        return response.json();
+    }
+
+    /**
+     * Get min/max release year for the slider bounds.
+     * @returns {Promise<{min_year: number|null, max_year: number|null}>}
+     */
+    async getYearRange() {
+        const response = await fetch('/api/explore/year-range');
+        if (!response.ok) return { min_year: null, max_year: null };
+        return response.json();
+    }
+
+    /**
+     * Get genre/style first-appearance years up to a given year.
+     * @param {number} beforeYear - Upper year bound
+     * @returns {Promise<{genres: Array, styles: Array}>}
+     */
+    async getGenreEmergence(beforeYear) {
+        const params = new URLSearchParams({ before_year: String(beforeYear) });
+        const response = await fetch(`/api/explore/genre-emergence?${params}`);
+        if (!response.ok) return { genres: [], styles: [] };
         return response.json();
     }
 
@@ -129,6 +154,28 @@ class ApiClient {
             const data = await response.json();
             return { notFound: true, error: data.error || 'Entity not found' };
         }
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    /**
+     * Full-text search across all entity types.
+     * @param {string} q - Search query (min 3 chars)
+     * @param {string[]} types - Entity types to search (artist, label, master, release)
+     * @param {string[]} genres - Genre filter
+     * @param {number|null} yearMin - Minimum release year
+     * @param {number|null} yearMax - Maximum release year
+     * @param {number} limit - Results per page
+     * @param {number} offset - Pagination offset
+     * @returns {Promise<Object|null>} Search results with facets and pagination
+     */
+    async search(q, types = [], genres = [], yearMin = null, yearMax = null, limit = 20, offset = 0) {
+        const params = new URLSearchParams({ q, limit: String(limit), offset: String(offset) });
+        if (types.length) params.set('types', types.join(','));
+        if (genres.length) params.set('genres', genres.join(','));
+        if (yearMin != null) params.set('year_min', String(yearMin));
+        if (yearMax != null) params.set('year_max', String(yearMax));
+        const response = await fetch(`/api/search?${params}`);
         if (!response.ok) return null;
         return response.json();
     }

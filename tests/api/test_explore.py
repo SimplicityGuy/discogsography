@@ -1,7 +1,7 @@
 """Tests for explore endpoints in the API service (api/routers/explore.py)."""
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, patch
 
 from fastapi.testclient import TestClient
 import pytest
@@ -417,6 +417,71 @@ class TestGetOptionalUserInvalidToken:
             dependencies_module._jwt_secret = original
 
 
+class TestYearRangeEndpoint:
+    """Tests for GET /api/explore/year-range."""
+
+    def test_year_range_success(self, test_client: TestClient) -> None:
+        with patch("api.routers.explore.get_year_range", AsyncMock(return_value={"min_year": 1950, "max_year": 2025})):
+            response = test_client.get("/api/explore/year-range")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["min_year"] == 1950
+        assert data["max_year"] == 2025
+
+    def test_year_range_empty_graph(self, test_client: TestClient) -> None:
+        with patch("api.routers.explore.get_year_range", AsyncMock(return_value=None)):
+            response = test_client.get("/api/explore/year-range")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["min_year"] is None
+
+    def test_year_range_no_driver_503(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        original = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/explore/year-range")
+            assert response.status_code == 503
+        finally:
+            explore_module._neo4j_driver = original
+
+
+class TestGenreEmergenceEndpoint:
+    """Tests for GET /api/explore/genre-emergence."""
+
+    def test_genre_emergence_success(self, test_client: TestClient) -> None:
+        mock_result = {
+            "genres": [{"name": "Punk", "first_year": 1976}],
+            "styles": [{"name": "Post-Punk", "first_year": 1978}],
+        }
+        with patch("api.routers.explore.get_genre_emergence", AsyncMock(return_value=mock_result)):
+            response = test_client.get("/api/explore/genre-emergence?before_year=1980")
+        assert response.status_code == 200
+        data = response.json()
+        assert len(data["genres"]) == 1
+        assert len(data["styles"]) == 1
+
+    def test_genre_emergence_requires_before_year(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/explore/genre-emergence")
+        assert response.status_code == 422
+
+    def test_genre_emergence_validation(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/explore/genre-emergence?before_year=1899")
+        assert response.status_code == 422
+
+    def test_genre_emergence_no_driver_503(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        original = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/explore/genre-emergence?before_year=1980")
+            assert response.status_code == 503
+        finally:
+            explore_module._neo4j_driver = original
+
+
 class TestPathEndpoint:
     """Tests for GET /api/path."""
 
@@ -519,3 +584,39 @@ class TestPathEndpoint:
         assert data["found"] is True
         assert data["length"] == 0
         assert len(data["path"]) == 1
+
+
+class TestExpandBeforeYearEndpoint:
+    """Tests for before_year parameter on /api/expand."""
+
+    def test_expand_with_before_year(self, test_client: TestClient) -> None:
+        mock_query = AsyncMock(return_value=[{"id": "r1", "name": "The Bends", "type": "release", "year": 1995}])
+        mock_count = AsyncMock(return_value=1)
+        with (
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_query}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+        ):
+            response = test_client.get("/api/expand?node_id=Radiohead&type=artist&category=releases&before_year=1997")
+        assert response.status_code == 200
+        mock_query.assert_called_once_with(ANY, "Radiohead", 50, 0, before_year=1997)
+        mock_count.assert_called_once_with(ANY, "Radiohead", before_year=1997)
+
+    def test_expand_without_before_year(self, test_client: TestClient) -> None:
+        mock_query = AsyncMock(return_value=[])
+        mock_count = AsyncMock(return_value=0)
+        with (
+            patch.dict("api.routers.explore.EXPAND_DISPATCH", {"artist": {"releases": mock_query}}),
+            patch.dict("api.routers.explore.COUNT_DISPATCH", {"artist": {"releases": mock_count}}),
+        ):
+            response = test_client.get("/api/expand?node_id=Radiohead&type=artist&category=releases")
+        assert response.status_code == 200
+        mock_query.assert_called_once_with(ANY, "Radiohead", 50, 0, before_year=None)
+        mock_count.assert_called_once_with(ANY, "Radiohead", before_year=None)
+
+    def test_expand_before_year_validation_too_low(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/expand?node_id=x&type=artist&category=releases&before_year=1899")
+        assert response.status_code == 422
+
+    def test_expand_before_year_validation_too_high(self, test_client: TestClient) -> None:
+        response = test_client.get("/api/expand?node_id=x&type=artist&category=releases&before_year=2031")
+        assert response.status_code == 422
