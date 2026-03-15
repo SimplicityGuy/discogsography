@@ -600,7 +600,7 @@ update_python_packages() {
         backup_file "pyproject.toml"
 
         # Backup all pyproject.toml files including nested ones
-        for service in api common dashboard explore graphinator schema-init tableinator; do
+        for service in api common dashboard explore graphinator insights schema-init tableinator; do
             if [[ -f "$service/pyproject.toml" ]]; then
                 backup_file "$service/pyproject.toml"
             fi
