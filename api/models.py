@@ -4,7 +4,7 @@ from datetime import datetime
 import re
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -244,3 +244,77 @@ class FingerprintResponse(BaseModel):
     drift: list[TasteDriftYear]
     blind_spots: list[BlindSpot]
     peak_decade: int | None = None
+
+
+# ---------------------------------------------------------------------------
+# Recommender models
+# ---------------------------------------------------------------------------
+
+
+class SimilarArtist(BaseModel):
+    """An artist with its similarity score to a target artist."""
+
+    artist_id: str
+    artist_name: str
+    similarity: float  # weighted cosine similarity 0-1
+    breakdown: dict[str, float]  # per-dimension scores: genre, style, label, collaborator
+    release_count: int
+    shared_genres: list[str]
+    shared_labels: list[str]
+
+
+class SimilarArtistsResponse(BaseModel):
+    """Response for GET /api/recommend/similar/artist/{artist_id}."""
+
+    artist_id: str
+    artist_name: str
+    similar: list[SimilarArtist]
+
+
+class EntityRef(BaseModel):
+    """Reference to a graph entity (artist, label, genre, style)."""
+
+    id: str
+    name: str
+    type: str
+
+
+class DiscoveryNode(BaseModel):
+    """A discovered node from personalized graph traversal."""
+
+    id: str
+    name: str
+    type: str
+    score: float
+    path: list[str]
+    reason: str
+
+
+class ExploreFromHereResponse(BaseModel):
+    """Response for GET /api/recommend/explore/{entity_type}/{entity_id}."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    from_entity: EntityRef = Field(alias="from")
+    discoveries: list[DiscoveryNode]
+
+
+class EnhancedRecommendation(BaseModel):
+    """A release recommendation with multi-signal scoring."""
+
+    id: str
+    title: str | None = None
+    artist: str | None = None
+    label: str | None = None
+    year: int | None = None
+    genres: list[str] = Field(default_factory=list)
+    score: float
+    reasons: list[str] = Field(default_factory=list)
+
+
+class EnhancedRecommendationsResponse(BaseModel):
+    """Response for GET /api/user/recommendations?strategy=multi."""
+
+    recommendations: list[EnhancedRecommendation]
+    total: int
+    strategy: str = "multi"
