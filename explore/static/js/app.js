@@ -362,6 +362,14 @@ class ExploreApp {
             this.userPanes.loadRecommendations();
         });
 
+        // Insights genre chip clicks
+        document.getElementById('insightsGenreChips')?.addEventListener('click', (e) => {
+            const chip = e.target.closest('.insights-genre-chip');
+            if (chip && chip.dataset.genre) {
+                window.insightsPanel._loadGenreTrends(chip.dataset.genre);
+            }
+        });
+
         // Login button opens modal and clears errors
         document.getElementById('navLoginBtn')?.addEventListener('click', () => {
             if (window.Alpine) Alpine.store('modals').authOpen = true;
@@ -481,8 +489,17 @@ class ExploreApp {
             window.searchPane.focus();
         }
 
-        // Lazy-load user panes on first visit
-        if (pane === 'trends' && this.currentQuery) {
+        // Stop insights polling when leaving that pane
+        if (this._prevPane === 'insights' && pane !== 'insights' && window.insightsPanel) {
+            window.insightsPanel.stopPolling();
+        }
+        this._prevPane = pane;
+
+        // Lazy-load panes on first visit
+        if (pane === 'insights') {
+            window.insightsPanel.load();
+            window.insightsPanel.startPolling();
+        } else if (pane === 'trends' && this.currentQuery) {
             this._loadTrends(this.currentQuery, this.searchType);
         } else if (pane === 'collection' && window.authManager.isLoggedIn()) {
             this.userPanes.loadCollection(true);

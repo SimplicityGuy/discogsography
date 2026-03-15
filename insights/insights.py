@@ -15,11 +15,13 @@ from typing import Any, cast
 
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
+import redis.asyncio as aioredis
 import structlog
 import uvicorn
 
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, setup_logging
 from common.config import InsightsConfig
+from insights.cache import InsightsCache
 from insights.computations import run_all_computations
 from insights.models import (
     AnniversaryItem,
@@ -41,6 +43,8 @@ INSIGHTS_HEALTH_PORT = 8009
 _config: InsightsConfig | None = None
 _neo4j: AsyncResilientNeo4jDriver | None = None
 _pool: AsyncPostgreSQLPool | None = None
+_redis: aioredis.Redis | None = None
+_cache: InsightsCache | None = None
 _scheduler_task: asyncio.Task[None] | None = None
 _last_computation: datetime | None = None
 
@@ -55,7 +59,13 @@ def get_health_data() -> dict[str, Any]:
     }
 
 
-async def _scheduler_loop(driver: Any, pool: Any, interval_hours: int = 24) -> None:
+async def _scheduler_loop(
+    driver: Any,
+    pool: Any,
+    interval_hours: int = 24,
+    milestone_years: list[int] | None = None,
+    cache: Any | None = None,
+) -> None:
     """Run insight computations on a recurring schedule."""
     global _last_computation
     interval_seconds = interval_hours * 3600
@@ -63,8 +73,11 @@ async def _scheduler_loop(driver: Any, pool: Any, interval_hours: int = 24) -> N
     while True:
         try:
             logger.info("Scheduler: starting insight computations...")
-            await run_all_computations(driver, pool)
+            await run_all_computations(driver, pool, milestone_years=milestone_years)
             _last_computation = datetime.now(UTC)
+            if cache:
+                await cache.invalidate_all()
+                logger.info("Scheduler: cache invalidated after computation")
             logger.info("Scheduler: computations complete", next_run_hours=interval_hours)
         except asyncio.CancelledError:
             raise
@@ -77,7 +90,7 @@ async def _scheduler_loop(driver: Any, pool: Any, interval_hours: int = 24) -> N
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage service lifecycle — connect to databases and start scheduler."""
-    global _config, _neo4j, _pool, _scheduler_task
+    global _config, _neo4j, _pool, _redis, _cache, _scheduler_task
 
     setup_logging("insights", log_file=Path("/logs/insights.log"))
     logger.info("Insights service starting...")
@@ -114,8 +127,28 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     )
     logger.info("Neo4j driver initialized")
 
+    # Initialize Redis cache
+    try:
+        _redis = await aioredis.from_url(_config.redis_host, decode_responses=True)
+        await _redis.ping()  # type: ignore[misc]
+        ttl_seconds = _config.schedule_hours * 3600
+        _cache = InsightsCache(_redis, ttl_seconds=ttl_seconds)
+        logger.info("Redis cache initialized", ttl_hours=_config.schedule_hours)
+    except Exception:
+        logger.warning("Redis unavailable — caching disabled, falling back to PostgreSQL")
+        _redis = None
+        _cache = None
+
     # Start scheduler
-    _scheduler_task = asyncio.create_task(_scheduler_loop(_neo4j, _pool, interval_hours=_config.schedule_hours))
+    _scheduler_task = asyncio.create_task(
+        _scheduler_loop(
+            _neo4j,
+            _pool,
+            interval_hours=_config.schedule_hours,
+            milestone_years=list(_config.milestone_years),
+            cache=_cache,
+        )
+    )
     logger.info("Scheduler started", interval_hours=_config.schedule_hours)
 
     logger.info("Insights service ready", port=INSIGHTS_PORT)
@@ -127,6 +160,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         _scheduler_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await _scheduler_task
+    if _redis:
+        await _redis.aclose()
     if _neo4j:
         await _neo4j.close()
     if _pool:
@@ -159,6 +194,12 @@ async def top_artists(
     if not _pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
+    cache_key = f"insights:top-artists:{limit}"
+    if _cache:
+        cached = await _cache.get(cache_key)
+        if cached is not None:
+            return JSONResponse(content=cached)
+
     async with _pool.connection() as conn, conn.cursor() as cursor:
         cursor = cast("Any", cursor)
         await cursor.execute(
@@ -168,7 +209,10 @@ async def top_artists(
         rows = await cursor.fetchall()
 
     items = [ArtistCentralityItem(rank=r[0], artist_id=r[1], artist_name=r[2], edge_count=r[3]).model_dump() for r in rows]
-    return JSONResponse(content={"metric": metric, "items": items, "count": len(items)})
+    result = {"metric": metric, "items": items, "count": len(items)}
+    if _cache:
+        await _cache.set(cache_key, result)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/insights/genre-trends")
@@ -176,6 +220,12 @@ async def genre_trends(genre: str = Query(...)) -> JSONResponse:
     """Return release count per decade for a specific genre (precomputed)."""
     if not _pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    cache_key = f"insights:genre-trends:{genre}"
+    if _cache:
+        cached = await _cache.get(cache_key)
+        if cached is not None:
+            return JSONResponse(content=cached)
 
     async with _pool.connection() as conn, conn.cursor() as cursor:
         cursor = cast("Any", cursor)
@@ -188,7 +238,10 @@ async def genre_trends(genre: str = Query(...)) -> JSONResponse:
     trends = [GenreTrendItem(decade=r[1], release_count=r[2]).model_dump() for r in rows]
     peak = max(trends, key=lambda t: t["release_count"])["decade"] if trends else None
     resp = GenreTrendsResponse(genre=genre, trends=[GenreTrendItem(**t) for t in trends], peak_decade=peak)
-    return JSONResponse(content=resp.model_dump())
+    result = resp.model_dump()
+    if _cache:
+        await _cache.set(cache_key, result)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/insights/label-longevity")
@@ -196,6 +249,12 @@ async def label_longevity(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
     """Return labels ranked by years of active operation (precomputed)."""
     if not _pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    cache_key = f"insights:label-longevity:{limit}"
+    if _cache:
+        cached = await _cache.get(cache_key)
+        if cached is not None:
+            return JSONResponse(content=cached)
 
     async with _pool.connection() as conn, conn.cursor() as cursor:
         cursor = cast("Any", cursor)
@@ -221,7 +280,10 @@ async def label_longevity(limit: int = Query(50, ge=1, le=200)) -> JSONResponse:
         ).model_dump()
         for r in rows
     ]
-    return JSONResponse(content={"items": items, "count": len(items)})
+    result = {"items": items, "count": len(items)}
+    if _cache:
+        await _cache.set(cache_key, result)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/insights/this-month")
@@ -231,6 +293,12 @@ async def this_month() -> JSONResponse:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
     now = datetime.now(UTC)
+    cache_key = f"insights:this-month:{now.year}-{now.month}"
+    if _cache:
+        cached = await _cache.get(cache_key)
+        if cached is not None:
+            return JSONResponse(content=cached)
+
     async with _pool.connection() as conn, conn.cursor() as cursor:
         cursor = cast("Any", cursor)
         await cursor.execute(
@@ -252,7 +320,10 @@ async def this_month() -> JSONResponse:
         ).model_dump()
         for r in rows
     ]
-    return JSONResponse(content={"month": now.month, "year": now.year, "items": items, "count": len(items)})
+    result = {"month": now.month, "year": now.year, "items": items, "count": len(items)}
+    if _cache:
+        await _cache.set(cache_key, result)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/insights/data-completeness")
@@ -260,6 +331,12 @@ async def data_completeness() -> JSONResponse:
     """Return data completeness scores per entity type (precomputed)."""
     if not _pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    cache_key = "insights:data-completeness"
+    if _cache:
+        cached = await _cache.get(cache_key)
+        if cached is not None:
+            return JSONResponse(content=cached)
 
     async with _pool.connection() as conn, conn.cursor() as cursor:
         cursor = cast("Any", cursor)
@@ -282,7 +359,10 @@ async def data_completeness() -> JSONResponse:
         ).model_dump()
         for r in rows
     ]
-    return JSONResponse(content={"items": items, "count": len(items)})
+    result = {"items": items, "count": len(items)}
+    if _cache:
+        await _cache.set(cache_key, result)
+    return JSONResponse(content=result)
 
 
 @app.get("/api/insights/status")

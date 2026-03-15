@@ -1574,3 +1574,239 @@
         grid-column: auto;
     }
 }
+
+/* ============================================================
+   Insights Panel
+   ============================================================ */
+
+.insights-container {
+    padding: 24px;
+    height: 100%;
+    overflow-y: auto;
+    position: relative;
+}
+
+.insights-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 60%;
+    text-align: center;
+}
+
+.insights-content {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.insights-top-row {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 24px;
+}
+
+.insights-section {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.insights-section-title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 12px;
+}
+
+/* Top Artists Table */
+.insights-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.insights-table-header {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border-color);
+    text-align: left;
+}
+
+.insights-table-cell {
+    font-size: 0.8125rem;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--border-color);
+    color: var(--text-primary);
+}
+
+.insights-table tbody tr:hover {
+    background: var(--bg-secondary);
+}
+
+/* Genre Chips */
+.insights-genre-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+
+.insights-genre-chip {
+    font-size: 0.75rem;
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.insights-genre-chip:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.insights-genre-chip.active {
+    background: var(--accent-purple);
+    color: white;
+    border-color: var(--accent-purple);
+}
+
+/* Anniversary cards */
+.insights-anniversary-group {
+    margin-bottom: 16px;
+}
+
+.insights-anniversary-heading {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--accent-yellow);
+    margin-bottom: 8px;
+}
+
+.insights-anniversary-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 8px;
+}
+
+.insights-anniversary-card {
+    display: flex;
+    flex-direction: column;
+    padding: 10px;
+    background: var(--bg-tertiary);
+    border-radius: 6px;
+    border: 1px solid var(--border-color);
+}
+
+.insights-anniversary-title {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.insights-anniversary-artist {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.insights-anniversary-year {
+    font-size: 0.6875rem;
+    color: var(--accent-purple);
+    font-weight: 600;
+    margin-top: 2px;
+}
+
+/* Data Completeness */
+.insights-completeness-row {
+    display: grid;
+    grid-template-columns: 80px 1fr 50px 80px;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 0;
+}
+
+.insights-completeness-label {
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.insights-completeness-bar-container {
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.insights-completeness-bar {
+    height: 100%;
+    background: var(--accent-green);
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+
+.insights-completeness-pct {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-align: right;
+}
+
+.insights-completeness-count {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-align: right;
+}
+
+/* Status Bar */
+.insights-status-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+
+.insights-status-dot {
+    font-size: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.insights-status-dot::before {
+    content: '';
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.insights-status-dot.healthy::before {
+    background: var(--accent-green);
+}
+
+.insights-status-dot.warning::before {
+    background: var(--accent-yellow);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .insights-top-row {
+        grid-template-columns: 1fr;
+    }
+}

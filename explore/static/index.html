@@ -283,6 +283,11 @@
                     <i class="fas fa-search mr-1"></i>Search
                 </a>
             </li>
+            <li>
+                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-pane="insights">
+                    <i class="fas fa-chart-pie mr-1"></i>Insights
+                </a>
+            </li>
             <!-- Auth-required panes — hidden until logged in -->
             <li class="hidden" id="navCollection">
                 <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-secondary hover:bg-bg-secondary" href="#" data-pane="collection">
@@ -603,6 +608,66 @@
             </div>
         </div>
 
+        <!-- Insights pane -->
+        <div class="pane" id="insightsPane">
+            <div class="insights-container">
+                <div class="loading-overlay" id="insightsLoading">
+                    <div class="spinner" role="status"></div>
+                    <p class="mt-2 text-text-secondary">Loading insights...</p>
+                </div>
+
+                <div class="insights-placeholder" id="insightsPlaceholder">
+                    <i class="fas fa-chart-pie fa-3x mb-3 text-text-secondary"></i>
+                    <p class="text-text-secondary">No insights data available yet. Data will appear after the first computation cycle.</p>
+                </div>
+
+                <div class="insights-content hidden" id="insightsContent">
+                    <!-- Top row: Artists + Genre Trends -->
+                    <div class="insights-top-row">
+                        <div class="insights-section insights-artists-section">
+                            <h3 class="insights-section-title">Top Artists</h3>
+                            <div id="insightsTopArtists"></div>
+                        </div>
+                        <div class="insights-section insights-trends-section">
+                            <h3 class="insights-section-title">Genre Trends</h3>
+                            <div class="insights-genre-chips" id="insightsGenreChips">
+                                <button class="insights-genre-chip active" data-genre="Rock">Rock</button>
+                                <button class="insights-genre-chip" data-genre="Jazz">Jazz</button>
+                                <button class="insights-genre-chip" data-genre="Electronic">Electronic</button>
+                                <button class="insights-genre-chip" data-genre="Hip Hop">Hip Hop</button>
+                                <button class="insights-genre-chip" data-genre="Pop">Pop</button>
+                                <button class="insights-genre-chip" data-genre="Classical">Classical</button>
+                                <button class="insights-genre-chip" data-genre="Soul">Soul</button>
+                                <button class="insights-genre-chip" data-genre="Funk">Funk</button>
+                                <button class="insights-genre-chip" data-genre="Reggae">Reggae</button>
+                                <button class="insights-genre-chip" data-genre="Country">Country</button>
+                            </div>
+                            <div id="insightsGenreChart"></div>
+                        </div>
+                    </div>
+
+                    <!-- This Month in Music History -->
+                    <div class="insights-section">
+                        <h3 class="insights-section-title">
+                            <i class="fas fa-calendar-alt mr-2"></i>This Month in Music History
+                        </h3>
+                        <div id="insightsThisMonth"></div>
+                    </div>
+
+                    <!-- Data Completeness -->
+                    <div class="insights-section">
+                        <h3 class="insights-section-title">
+                            <i class="fas fa-tasks mr-2"></i>Data Completeness
+                        </h3>
+                        <div id="insightsCompleteness"></div>
+                    </div>
+
+                    <!-- Status Footer -->
+                    <div id="insightsStatus"></div>
+                </div>
+            </div>
+        </div>
+
         <!-- Collection pane -->
         <div class="pane" id="collectionPane">
             <div class="user-pane-body">
@@ -686,6 +751,7 @@
     <script src="js/trends.js"></script>
     <script src="js/user-panes.js"></script>
     <script src="js/search.js"></script>
+    <script src="js/insights.js"></script>
     <script src="js/app.js"></script>
 </body>
 </html>
