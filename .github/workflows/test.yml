@@ -185,6 +185,46 @@ jobs:
           verbose: false
 
   # ============================================================================
+  # INSIGHTS SERVICE TESTS - Runs in parallel with all other test jobs
+  # ============================================================================
+  test-insights:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "🔀 Checkout repository"
+        uses: actions/checkout@v6
+
+      - name: "🔧 Setup Python and UV"
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: "🔧 Setup Just"
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "📦 Install dependencies"
+        run: just install
+
+      - name: "🧪 Run insights tests"
+        run: just test-insights
+
+      - name: "📊 Upload coverage (insights)"
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./coverage.xml
+          flags: insights
+          name: insights-tests
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
+
+  # ============================================================================
   # GRAPHINATOR SERVICE TESTS - Runs in parallel with all other test jobs
   # ============================================================================
   test-graphinator:

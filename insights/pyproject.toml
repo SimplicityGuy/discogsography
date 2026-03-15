@@ -1,0 +1,14 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "insights"
+version = "0.1.0"
+description = "Precomputed analytics and music trends for Discogsography"
+requires-python = ">=3.13"
+
+[tool.hatch.build.targets.wheel]
+packages = ["insights"]
+
+# Tool configurations inherit from root pyproject.toml

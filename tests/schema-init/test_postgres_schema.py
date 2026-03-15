@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from postgres_schema import _ENTITY_TABLES, _SPECIFIC_INDEXES, _USER_TABLES, create_postgres_schema
+from postgres_schema import _ENTITY_TABLES, _INSIGHTS_TABLES, _SPECIFIC_INDEXES, _USER_TABLES, create_postgres_schema
 
 
 @pytest.fixture
@@ -84,6 +84,21 @@ class TestSpecificIndexes:
             assert "english" in stmt, f"{name} missing language 'english'"
 
 
+class TestInsightsSchema:
+    """Tests for insights schema tables."""
+
+    def test_insights_tables_are_defined(self) -> None:
+        """Verify the _INSIGHTS_TABLES list contains all insight tables."""
+        table_names = [name for name, _stmt in _INSIGHTS_TABLES]
+        assert "insights schema" in table_names
+        assert "insights.artist_centrality table" in table_names
+        assert "insights.genre_trends table" in table_names
+        assert "insights.label_longevity table" in table_names
+        assert "insights.monthly_anniversaries table" in table_names
+        assert "insights.data_completeness table" in table_names
+        assert "insights.computation_log table" in table_names
+
+
 class TestCreatePostgresSchema:
     """Test create_postgres_schema with a mock pool."""
 
@@ -94,7 +109,7 @@ class TestCreatePostgresSchema:
         cursor = mock_pool.connection.return_value.__aenter__.return_value.cursor.return_value
         # 3 statements per entity table (CREATE TABLE + hash index + updated_at index)
         # + specific indexes + user tables
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
+        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES) + len(_INSIGHTS_TABLES)
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio
@@ -114,7 +129,7 @@ class TestCreatePostgresSchema:
         # Must not raise
         await create_postgres_schema(mock_pool)
 
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
+        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES) + len(_INSIGHTS_TABLES)
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio
@@ -142,7 +157,7 @@ class TestCreatePostgresSchema:
         # Must not raise
         await create_postgres_schema(mock_pool)
 
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
+        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES) + len(_INSIGHTS_TABLES)
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio

@@ -231,6 +231,8 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
+      insights:
+        condition: service_healthy
     networks:
       - discogsography
     healthcheck:
@@ -502,6 +504,57 @@ services:
     volumes:
       - explore_logs:/logs
 
+  # Insights service — precomputed analytics and music trends
+  insights:
+    build:
+      context: .
+      dockerfile: insights/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: discogsography/insights:latest
+    container_name: discogsography-insights
+    hostname: insights
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      INSIGHTS_SCHEDULE_HOURS: "24"
+      NEO4J_HOST: neo4j
+      NEO4J_PASSWORD: discogsography
+      NEO4J_USERNAME: neo4j
+      POSTGRES_DATABASE: discogsography
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: discogsography
+      POSTGRES_USERNAME: discogsography
+      PYTHONUNBUFFERED: "1"
+      STARTUP_DELAY: "10"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8009/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+    restart: unless-stopped
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - insights_logs:/logs
+
 volumes:
   rabbitmq_data:
   postgres_data:
@@ -518,3 +571,4 @@ volumes:
   tableinator_logs:
   dashboard_logs:
   explore_logs:
+  insights_logs:

@@ -38,6 +38,7 @@ from api.limiter import limiter
 from api.models import LoginRequest, RegisterRequest
 import api.routers.collection as _collection_router
 import api.routers.explore as _explore_router
+import api.routers.insights as _insights_router
 import api.routers.label_dna as _label_dna_router
 import api.routers.search as _search_router
 import api.routers.snapshot as _snapshot_router
@@ -259,6 +260,7 @@ async def security_headers(request: Request, call_next: Any) -> Any:
 
 app.include_router(_sync_router.router)
 app.include_router(_explore_router.router)
+app.include_router(_insights_router.router)
 app.include_router(_label_dna_router.router)
 app.include_router(_search_router.router)
 app.include_router(_snapshot_router.router)

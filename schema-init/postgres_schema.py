@@ -215,6 +215,118 @@ _USER_TABLES: list[tuple[str, str]] = [
 ]
 
 
+# Insights tables — precomputed analytics stored in a dedicated schema.
+# All tables include computed_at for cache freshness checks.
+_INSIGHTS_TABLES: list[tuple[str, str]] = [
+    (
+        "insights schema",
+        "CREATE SCHEMA IF NOT EXISTS insights",
+    ),
+    (
+        "insights.artist_centrality table",
+        """
+        CREATE TABLE IF NOT EXISTS insights.artist_centrality (
+            rank            INT NOT NULL,
+            artist_id       TEXT NOT NULL,
+            artist_name     TEXT NOT NULL,
+            edge_count      BIGINT NOT NULL,
+            computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (rank)
+        )
+        """,
+    ),
+    (
+        "insights.genre_trends table",
+        """
+        CREATE TABLE IF NOT EXISTS insights.genre_trends (
+            genre           TEXT NOT NULL,
+            decade          INT NOT NULL,
+            release_count   BIGINT NOT NULL,
+            computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (genre, decade)
+        )
+        """,
+    ),
+    (
+        "insights.label_longevity table",
+        """
+        CREATE TABLE IF NOT EXISTS insights.label_longevity (
+            rank            INT NOT NULL,
+            label_id        TEXT NOT NULL,
+            label_name      TEXT NOT NULL,
+            first_year      INT NOT NULL,
+            last_year       INT NOT NULL,
+            years_active    INT NOT NULL,
+            total_releases  BIGINT NOT NULL,
+            peak_decade     INT,
+            still_active    BOOLEAN NOT NULL DEFAULT FALSE,
+            computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (rank)
+        )
+        """,
+    ),
+    (
+        "insights.monthly_anniversaries table",
+        """
+        CREATE TABLE IF NOT EXISTS insights.monthly_anniversaries (
+            master_id       TEXT NOT NULL,
+            title           TEXT NOT NULL,
+            artist_name     TEXT,
+            release_year    INT NOT NULL,
+            anniversary     INT NOT NULL,
+            computed_month  INT NOT NULL,
+            computed_year   INT NOT NULL,
+            computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (master_id, computed_year, computed_month)
+        )
+        """,
+    ),
+    (
+        "insights.data_completeness table",
+        """
+        CREATE TABLE IF NOT EXISTS insights.data_completeness (
+            entity_type     TEXT NOT NULL,
+            total_count     BIGINT NOT NULL,
+            with_image      BIGINT NOT NULL DEFAULT 0,
+            with_year       BIGINT NOT NULL DEFAULT 0,
+            with_country    BIGINT NOT NULL DEFAULT 0,
+            with_genre      BIGINT NOT NULL DEFAULT 0,
+            completeness_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+            computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            PRIMARY KEY (entity_type)
+        )
+        """,
+    ),
+    (
+        "insights.computation_log table",
+        """
+        CREATE TABLE IF NOT EXISTS insights.computation_log (
+            id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            insight_type    TEXT NOT NULL,
+            status          TEXT NOT NULL DEFAULT 'running',
+            started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            completed_at    TIMESTAMPTZ,
+            rows_affected   BIGINT,
+            error_message   TEXT,
+            duration_ms     BIGINT
+        )
+        """,
+    ),
+    (
+        "idx_computation_log_type_started",
+        "CREATE INDEX IF NOT EXISTS idx_computation_log_type_started ON insights.computation_log (insight_type, started_at DESC)",
+    ),
+    (
+        "idx_anniversaries_month_year",
+        "CREATE INDEX IF NOT EXISTS idx_anniversaries_month_year ON insights.monthly_anniversaries (computed_year, computed_month)",
+    ),
+    (
+        "idx_genre_trends_genre",
+        "CREATE INDEX IF NOT EXISTS idx_genre_trends_genre ON insights.genre_trends (genre)",
+    ),
+]
+
+
 async def create_postgres_schema(pool: Any) -> int:
     """Create all PostgreSQL tables and indexes.
 
@@ -301,7 +413,22 @@ async def create_postgres_schema(pool: Any) -> int:
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 
-    total = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES)
+            # ── Insights tables ───────────────────────────────────────────
+            for name, stmt in _INSIGHTS_TABLES:
+                try:
+                    await cursor.execute(stmt)
+                    logger.info(f"✅ Schema: {name}")
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"❌ Failed to create schema object '{name}': {e}")
+                    failure_count += 1
+
+    total = (
+        len(_ENTITY_TABLES) * 3
+        + len(_SPECIFIC_INDEXES)
+        + len(_USER_TABLES)
+        + len(_INSIGHTS_TABLES)
+    )
     logger.info(
         f"✅ PostgreSQL schema creation complete: "
         f"{success_count} succeeded, {failure_count} failed (total: {total})"

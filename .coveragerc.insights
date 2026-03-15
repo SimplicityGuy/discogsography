@@ -1,0 +1,6 @@
+[run]
+include = insights/**
+relative_files = true
+omit =
+    */tests/*
+    */__init__.py
