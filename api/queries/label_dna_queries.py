@@ -1,0 +1,170 @@
+"""Neo4j Cypher queries for Label DNA fingerprinting.
+
+Computes multi-dimensional fingerprints for record labels from graph data:
+genre/style profiles, era distribution, artist diversity, format preference,
+and label-to-label similarity via cosine similarity on genre vectors.
+"""
+
+import math
+from typing import Any
+
+from api.queries.neo4j_queries import _run_query, _run_single
+from common import AsyncResilientNeo4jDriver
+
+
+# Minimum releases for a label to have a meaningful fingerprint
+MIN_RELEASES = 5
+
+
+async def get_label_identity(driver: AsyncResilientNeo4jDriver, label_id: str) -> dict[str, Any] | None:
+    """Get basic label info and release/artist counts."""
+    cypher = """
+    MATCH (l:Label {id: $label_id})
+    OPTIONAL MATCH (r:Release)-[:ON]->(l)
+    WITH l, collect(DISTINCT r) AS releases
+    OPTIONAL MATCH (r2:Release)-[:ON]->(l), (r2)-[:BY]->(a:Artist)
+    RETURN l.id AS label_id, l.name AS label_name,
+           size(releases) AS release_count,
+           count(DISTINCT a) AS artist_count
+    """
+    return await _run_single(driver, cypher, label_id=label_id)
+
+
+async def get_label_genre_profile(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
+    """Get genre distribution for a label's releases."""
+    cypher = """
+    MATCH (r:Release)-[:ON]->(l:Label {id: $label_id}), (r)-[:IS]->(g:Genre)
+    WITH g.name AS name, count(DISTINCT r) AS count
+    RETURN name, count
+    ORDER BY count DESC
+    """
+    return await _run_query(driver, cypher, label_id=label_id)
+
+
+async def get_label_style_profile(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
+    """Get style distribution for a label's releases."""
+    cypher = """
+    MATCH (r:Release)-[:ON]->(l:Label {id: $label_id}), (r)-[:IS]->(s:Style)
+    WITH s.name AS name, count(DISTINCT r) AS count
+    RETURN name, count
+    ORDER BY count DESC
+    """
+    return await _run_query(driver, cypher, label_id=label_id)
+
+
+async def get_label_decade_profile(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
+    """Get release count by decade for a label."""
+    cypher = """
+    MATCH (r:Release)-[:ON]->(l:Label {id: $label_id})
+    WHERE r.year > 0
+    WITH (r.year / 10) * 10 AS decade, count(DISTINCT r) AS count
+    RETURN decade, count
+    ORDER BY decade
+    """
+    return await _run_query(driver, cypher, label_id=label_id)
+
+
+async def get_label_active_years(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[int]:
+    """Get sorted list of years in which a label had releases."""
+    cypher = """
+    MATCH (r:Release)-[:ON]->(l:Label {id: $label_id})
+    WHERE r.year > 0
+    RETURN DISTINCT r.year AS year
+    ORDER BY year
+    """
+    rows = await _run_query(driver, cypher, label_id=label_id)
+    return [row["year"] for row in rows]
+
+
+async def get_label_format_profile(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
+    """Get format distribution for a label's releases."""
+    cypher = """
+    MATCH (r:Release)-[:ON]->(l:Label {id: $label_id})
+    WHERE r.formats IS NOT NULL
+    UNWIND r.formats AS fmt
+    WITH fmt AS name, count(DISTINCT r) AS count
+    RETURN name, count
+    ORDER BY count DESC
+    """
+    return await _run_query(driver, cypher, label_id=label_id)
+
+
+async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
+    """Get genre vectors for labels sharing genres with the target label.
+
+    Returns each candidate label with its genre distribution,
+    filtered to labels with at least MIN_RELEASES releases.
+    """
+    cypher = """
+    MATCH (r:Release)-[:ON]->(l:Label {id: $label_id}), (r)-[:IS]->(g:Genre)
+    WITH l, collect(DISTINCT g.name) AS target_genres
+    UNWIND target_genres AS genre_name
+    MATCH (r2:Release)-[:IS]->(g2:Genre {name: genre_name}), (r2)-[:ON]->(l2:Label)
+    WHERE l2.id <> l.id
+    WITH l2, count(DISTINCT r2) AS total_shared
+    WHERE total_shared >= $min_releases
+    MATCH (r3:Release)-[:ON]->(l2), (r3)-[:IS]->(g3:Genre)
+    WITH l2, g3.name AS genre, count(DISTINCT r3) AS genre_count
+    WITH l2,
+         collect({name: genre, count: genre_count}) AS genres,
+         sum(genre_count) AS total_genre_refs
+    MATCH (r4:Release)-[:ON]->(l2)
+    WITH l2, genres, total_genre_refs, count(DISTINCT r4) AS release_count
+    RETURN l2.id AS label_id, l2.name AS label_name,
+           release_count, genres
+    ORDER BY release_count DESC
+    LIMIT 200
+    """
+    return await _run_query(driver, cypher, label_id=label_id, min_releases=MIN_RELEASES)
+
+
+def _to_genre_vector(genres: list[dict[str, Any]]) -> dict[str, float]:
+    """Convert genre list with counts to a normalized percentage vector."""
+    total = sum(g["count"] for g in genres)
+    if total == 0:
+        return {}
+    return {g["name"]: g["count"] / total for g in genres}
+
+
+def cosine_similarity(vec_a: dict[str, float], vec_b: dict[str, float]) -> float:
+    """Compute cosine similarity between two sparse vectors (dict-based)."""
+    if not vec_a or not vec_b:
+        return 0.0
+    all_keys = set(vec_a) | set(vec_b)
+    dot = sum(vec_a.get(k, 0.0) * vec_b.get(k, 0.0) for k in all_keys)
+    mag_a = math.sqrt(sum(v * v for v in vec_a.values()))
+    mag_b = math.sqrt(sum(v * v for v in vec_b.values()))
+    if mag_a == 0.0 or mag_b == 0.0:
+        return 0.0
+    return dot / (mag_a * mag_b)
+
+
+def compute_similar_labels(
+    target_genres: list[dict[str, Any]],
+    candidates: list[dict[str, Any]],
+    limit: int = 10,
+) -> list[dict[str, Any]]:
+    """Rank candidate labels by cosine similarity to the target's genre vector."""
+    target_vec = _to_genre_vector(target_genres)
+    if not target_vec:
+        return []
+
+    target_genre_names = set(target_vec)
+    results = []
+    for candidate in candidates:
+        cand_vec = _to_genre_vector(candidate["genres"])
+        sim = cosine_similarity(target_vec, cand_vec)
+        if sim > 0.0:
+            shared = sorted(set(cand_vec) & target_genre_names)
+            results.append(
+                {
+                    "label_id": candidate["label_id"],
+                    "label_name": candidate["label_name"],
+                    "similarity": round(sim, 4),
+                    "release_count": candidate["release_count"],
+                    "shared_genres": shared,
+                }
+            )
+
+    results.sort(key=lambda x: x["similarity"], reverse=True)
+    return results[:limit]
