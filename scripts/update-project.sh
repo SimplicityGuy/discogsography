@@ -6,6 +6,7 @@
 # - Python version across all project files
 # - Python package dependencies via uv (all version types)
 # - Rust crate dependencies in Rust extractor (main, dev, build)
+# - Node.js dependencies in Explore frontend tests (npm)
 # - UV package manager version in Dockerfiles and GitHub workflows
 # - Pre-commit hooks to latest versions
 # - Docker base images to latest versions
@@ -494,6 +495,11 @@ verify_dependency_updates() {
         fi
     fi
 
+    # Node.js dependencies
+    if [[ -f "explore/package.json" ]]; then
+        print_success "✓ Node.js dependencies (explore/package.json + package-lock.json)"
+    fi
+
     # Pre-commit hooks
     print_success "✓ Pre-commit hooks and their dependencies"
 
@@ -507,6 +513,39 @@ verify_dependency_updates() {
         if [[ -f "extractor/Cargo.toml" ]]; then
             print_info "Run 'cd extractor && cargo update --dry-run' to verify Rust crates"
         fi
+    fi
+}
+
+# Update Node.js dependencies (Explore frontend tests)
+update_node_packages() {
+    if [[ ! -f "explore/package.json" ]]; then
+        print_info "No explore/package.json found, skipping Node.js updates"
+        return
+    fi
+
+    print_section "📦" "Updating Node.js Dependencies"
+
+    if [[ "$BACKUP" == true ]] && [[ "$DRY_RUN" == false ]]; then
+        backup_file "explore/package.json"
+        backup_file "explore/package-lock.json"
+    fi
+
+    if [[ "$DRY_RUN" == false ]]; then
+        print_info "Updating npm packages in explore/..."
+        pushd explore > /dev/null
+
+        if npm update --save; then
+            print_success "npm packages updated successfully"
+            FILE_CHANGES+=("explore/package.json: Updated npm dependencies")
+            FILE_CHANGES+=("explore/package-lock.json: Updated npm lockfile")
+            CHANGES_MADE=true
+        else
+            print_warning "Failed to update npm packages"
+        fi
+
+        popd > /dev/null
+    else
+        print_info "[DRY RUN] Would run: cd explore && npm update --save"
     fi
 }
 
@@ -705,6 +744,16 @@ run_tests() {
         print_success "Python tests passed"
     else
         print_warning "Python tests failed - review the changes"
+    fi
+
+    # Run JavaScript tests if explore package.json exists
+    if [[ -f "explore/package.json" ]]; then
+        print_info "Running JavaScript tests..."
+        if just test-js; then
+            print_success "JavaScript tests passed"
+        else
+            print_warning "JavaScript tests failed - review the changes"
+        fi
     fi
 
     # Run Rust tests if Rust extractor exists
@@ -911,6 +960,14 @@ show_file_report() {
         echo ""
     fi
 
+    # Node.js files
+    if [[ -f "explore/package.json" ]]; then
+        echo "📦 Node.js Configuration:"
+        echo "  ✓ explore/package.json"
+        echo "  ✓ explore/package-lock.json"
+        echo ""
+    fi
+
     # GitHub files
     echo "🔄 GitHub Workflows:"
     echo "  ✓ .github/workflows/*.yml (setup-uv action)"
@@ -1041,6 +1098,9 @@ main() {
 
     # Update Rust crates (minor/patch via cargo update; major via cargo upgrade with --major)
     update_rust_crates
+
+    # Update Node.js dependencies (Explore frontend tests)
+    update_node_packages
 
     # Verify all dependencies were updated
     verify_dependency_updates
