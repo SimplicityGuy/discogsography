@@ -668,9 +668,46 @@ uv run pytest --pdb
 }
 ```
 
+## 🟨 JavaScript Testing
+
+### Vitest for Explore Frontend
+
+The Explore frontend's modular JavaScript codebase is tested using [Vitest](https://vitest.dev/), a fast, modern test runner with native ES module support.
+
+### Running JavaScript Tests
+
+```bash
+# Run all JS tests
+just test-js
+
+# Run JS tests with coverage
+just test-js-cov
+
+# Or run directly
+cd explore && npx vitest run
+
+# Run in watch mode (development)
+cd explore && npx vitest
+```
+
+### CI Integration
+
+JavaScript tests run as part of the `test.yml` GitHub Actions workflow alongside Python and Rust tests. They are also included in the `just test-parallel` task, which runs all service tests (Python, Rust, and JS) concurrently for maximum speed.
+
+### Installing JS Dependencies
+
+```bash
+# Install npm dependencies for Explore frontend
+just install-js
+
+# Or directly
+cd explore && npm ci
+```
+
 ## 📚 Additional Resources
 
 - [pytest Documentation](https://docs.pytest.org/)
 - [pytest-asyncio](https://github.com/pytest-dev/pytest-asyncio)
 - [Playwright Python](https://playwright.dev/python/)
 - [Coverage.py](https://coverage.readthedocs.io/)
+- [Vitest Documentation](https://vitest.dev/)

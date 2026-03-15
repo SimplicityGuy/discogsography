@@ -11,6 +11,9 @@
 # - Pre-commit hooks to latest versions
 # - Docker base images to latest versions
 #
+# Tool invocations delegate to `just` commands wherever possible, keeping the
+# justfile as the single source of truth for command definitions.
+#
 # Ecosystem behavior:
 #   Python (uv):  uv lock --upgrade respects >=X.Y constraints (includes majors)
 #   Rust (cargo): minor/patch = cargo update (lock file only)
@@ -428,8 +431,8 @@ update_precommit_hooks() {
             backup_file ".pre-commit-config.yaml"
         fi
 
-        # Update all hooks to latest versions
-        if pre-commit autoupdate --freeze; then
+        # Update all hooks to latest versions (via just for single-source-of-truth)
+        if just update-hooks; then
             print_success "Pre-commit hooks updated successfully"
             FILE_CHANGES+=(".pre-commit-config.yaml: Updated pre-commit hooks to latest versions")
             CHANGES_MADE=true
@@ -440,12 +443,12 @@ update_precommit_hooks() {
 
             # Run pre-commit install to ensure hooks are installed
             # Use || true to prevent script exit if hooks are already installed
-            pre-commit install || true
+            just init || true
         else
             print_warning "Failed to update pre-commit hooks"
         fi
     else
-        print_info "[DRY RUN] Would run: pre-commit autoupdate --freeze"
+        print_info "[DRY RUN] Would run: just update-hooks"
         print_info "[DRY RUN] Would update mdformat plugin versions"
     fi
 }
@@ -459,8 +462,8 @@ sync_dependencies_after_precommit() {
     if [[ "$DRY_RUN" == false ]]; then
         # uv sync --upgrade will upgrade all dependencies including those pinned in pre-commit
         # This handles mdformat plugins and any other dependencies automatically
-        print_info "Running uv sync --upgrade to update all dependencies..."
-        if uv sync --all-extras --dev --upgrade; then
+        print_info "Running just sync-upgrade to update all dependencies..."
+        if just sync-upgrade; then
             print_success "Dependencies synced successfully"
             FILE_CHANGES+=("pyproject.toml and uv.lock: Synced with latest dependency versions")
             CHANGES_MADE=true
@@ -468,7 +471,7 @@ sync_dependencies_after_precommit() {
             print_warning "Failed to sync dependencies after pre-commit updates"
         fi
     else
-        print_info "[DRY RUN] Would run: uv sync --all-extras --dev --upgrade"
+        print_info "[DRY RUN] Would run: just sync-upgrade"
     fi
 
     echo ""  # Add blank line for visual separation
@@ -531,10 +534,9 @@ update_node_packages() {
     fi
 
     if [[ "$DRY_RUN" == false ]]; then
-        print_info "Updating npm packages in explore/..."
-        pushd explore > /dev/null
+        print_info "Updating npm packages in explore/ (via just for single-source-of-truth)..."
 
-        if npm update --save; then
+        if just update-npm; then
             print_success "npm packages updated successfully"
             FILE_CHANGES+=("explore/package.json: Updated npm dependencies")
             FILE_CHANGES+=("explore/package-lock.json: Updated npm lockfile")
@@ -542,10 +544,8 @@ update_node_packages() {
         else
             print_warning "Failed to update npm packages"
         fi
-
-        popd > /dev/null
     else
-        print_info "[DRY RUN] Would run: cd explore && npm update --save"
+        print_info "[DRY RUN] Would run: just update-npm"
     fi
 }
 
@@ -609,9 +609,11 @@ update_rust_crates() {
             print_info "  Run with --major to also update Cargo.toml version requirements"
         fi
 
-        # Always update Cargo.lock to pick up latest compatible versions
+        popd > /dev/null
+
+        # Always update Cargo.lock to pick up latest compatible versions (via just)
         print_info "Updating Cargo.lock..."
-        if cargo update 2>&1; then
+        if just update-cargo 2>&1; then
             print_success "Cargo.lock updated with latest compatible versions"
             FILE_CHANGES+=("Cargo.lock: Updated to latest compatible versions")
             CHANGES_MADE=true
@@ -619,13 +621,12 @@ update_rust_crates() {
             print_warning "Failed to update Cargo.lock"
         fi
 
-        popd > /dev/null
         print_success "Completed Rust dependency updates"
     else
         if [[ "$MAJOR_UPGRADES" == true ]]; then
             print_info "[DRY RUN] Would run: cargo upgrade --incompatible allow (updates Cargo.toml)"
         fi
-        print_info "[DRY RUN] Would run: cargo update (updates Cargo.lock within constraints)"
+        print_info "[DRY RUN] Would run: just update-cargo (updates Cargo.lock within constraints)"
     fi
 }
 
@@ -648,16 +649,16 @@ update_python_packages() {
         # Note: extractor is a Rust project, skip Python backups
     fi
 
-    # Update uv itself
+    # Update uv itself (via just for single-source-of-truth)
     print_info "Checking for uv updates..."
     if [[ "$DRY_RUN" == false ]]; then
-        if uv self update; then
+        if just update-uv; then
             print_success "uv updated successfully"
         else
             print_warning "Could not update uv (may already be latest)"
         fi
     else
-        print_info "[DRY RUN] Would check for uv updates"
+        print_info "[DRY RUN] Would run: just update-uv"
     fi
 
     # Compile dependencies with upgrades
@@ -667,7 +668,7 @@ update_python_packages() {
     print_info "  • Dev dependencies ([dependency-groups])"
     print_info "  • Build dependencies ([build-system])"
 
-    local uv_cmd="uv lock --upgrade"
+    local uv_cmd="just lock-upgrade"
     if [[ "$MAJOR_UPGRADES" == true ]]; then
         print_info "Including major version upgrades for ALL dependencies"
         print_info "Note: uv respects version constraints in pyproject.toml (>=x.y.z allows major upgrades)"
@@ -706,7 +707,7 @@ update_python_packages() {
     # Sync to install upgraded packages with ALL extras and dev dependencies
     if [[ "$DRY_RUN" == false ]]; then
         print_info "Syncing ALL upgraded dependencies (including optional and dev)..."
-        if uv sync --all-extras --dev; then
+        if just sync; then
             print_success "ALL dependencies synced successfully"
         else
             print_error "Failed to sync dependencies"
@@ -718,7 +719,7 @@ update_python_packages() {
 
         print_success "Completed Python dependency updates"
     else
-        print_info "[DRY RUN] Would run: uv sync --all-extras --dev"
+        print_info "[DRY RUN] Would run: just sync"
     fi
 }
 
@@ -896,7 +897,9 @@ show_verification_steps() {
     echo "   # Check dashboard"
     echo "   curl -f http://localhost:8003/health"
     echo "   # Check explore service"
-    echo "   curl -f http://localhost:8006/health"
+    echo "   curl -f http://localhost:8007/health"
+    echo "   # Check insights service"
+    echo "   curl -f http://localhost:8009/health"
     echo ""
     echo "4. 📊 Review dependency changes:"
     echo "   # Check for security advisories"
@@ -928,6 +931,7 @@ show_file_report() {
     echo "  ✓ dashboard/pyproject.toml"
     echo "  ✓ explore/pyproject.toml"
     echo "  ✓ graphinator/pyproject.toml"
+    echo "  ✓ insights/pyproject.toml"
     echo "  ✓ schema-init/pyproject.toml"
     echo "  ✓ tableinator/pyproject.toml"
     echo "  ✓ uv.lock (root)"
@@ -941,6 +945,7 @@ show_file_report() {
     echo "  ✓ explore/Dockerfile"
     echo "  ✓ extractor/Dockerfile"
     echo "  ✓ graphinator/Dockerfile"
+    echo "  ✓ insights/Dockerfile"
     echo "  ✓ schema-init/Dockerfile"
     echo "  ✓ tableinator/Dockerfile"
     echo "  ✓ docs/dockerfile-standards.md"
@@ -1004,6 +1009,7 @@ verify_components() {
         "dashboard/pyproject.toml"
         "explore/pyproject.toml"
         "graphinator/pyproject.toml"
+        "insights/pyproject.toml"
         "schema-init/pyproject.toml"
         "tableinator/pyproject.toml"
     )
@@ -1025,6 +1031,7 @@ verify_components() {
         "explore/Dockerfile"
         "extractor/Dockerfile"
         "graphinator/Dockerfile"
+        "insights/Dockerfile"
         "schema-init/Dockerfile"
         "tableinator/Dockerfile"
     )

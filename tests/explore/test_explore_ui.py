@@ -6,6 +6,17 @@ from playwright.sync_api import Page, expect
 import pytest
 
 
+def _goto_ready(page: Page, url: str) -> None:
+    """Navigate to the explore page and wait for the JS app to initialise.
+
+    Firefox can resolve ``domcontentloaded`` before all DOMContentLoaded
+    listeners have finished, so we additionally wait for the ExploreApp
+    instance (which binds all click handlers) to exist on ``window``.
+    """
+    page.goto(url, wait_until="domcontentloaded", timeout=30000)
+    page.wait_for_function("() => !!window.exploreApp", timeout=10000)
+
+
 @pytest.mark.e2e
 @pytest.mark.usefixtures("test_server")
 class TestExploreUI:
@@ -32,7 +43,7 @@ class TestExploreUI:
 
     def test_search_type_dropdown(self, page: Page, test_server: str) -> None:
         """Test the search type dropdown works."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
+        _goto_ready(page, test_server)
 
         # Find the search type button
         type_btn = page.locator("#searchTypeBtn")
@@ -41,7 +52,7 @@ class TestExploreUI:
 
     def test_pane_switching(self, page: Page, test_server: str) -> None:
         """Test switching between Explore and Trends panes."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
+        _goto_ready(page, test_server)
 
         # Explore pane should be active by default
         explore_pane = page.locator("#explorePane")
@@ -190,7 +201,7 @@ class TestExploreSearchInteraction:
 
     def test_search_type_switching(self, page: Page, test_server: str) -> None:
         """Test switching between search types via dropdown."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
+        _goto_ready(page, test_server)
 
         type_btn = page.locator("#searchTypeBtn")
         expect(type_btn).to_have_text("Artist", timeout=5000)
@@ -218,7 +229,7 @@ class TestExploreSearchInteraction:
 
     def test_autocomplete_shows_results(self, page: Page, test_server: str) -> None:
         """Test that typing in search shows autocomplete results."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
+        _goto_ready(page, test_server)
 
         search_input = page.locator("#searchInput")
         search_input.fill("Radio")
@@ -233,7 +244,7 @@ class TestExploreSearchInteraction:
 
     def test_autocomplete_item_click_triggers_search(self, page: Page, test_server: str) -> None:
         """Test that clicking an autocomplete item triggers a search."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
+        _goto_ready(page, test_server)
 
         search_input = page.locator("#searchInput")
         search_input.fill("Radio")
@@ -255,7 +266,7 @@ class TestExploreSearchInteraction:
 
     def test_graph_appears_after_search(self, page: Page, test_server: str) -> None:
         """Test that the graph appears after performing a search."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
+        _goto_ready(page, test_server)
 
         search_input = page.locator("#searchInput")
         search_input.fill("Radio")
@@ -277,7 +288,7 @@ class TestExploreSearchInteraction:
 
     def test_trends_pane_search(self, page: Page, test_server: str) -> None:
         """Test searching on the Trends pane loads chart data."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
+        _goto_ready(page, test_server)
 
         # Switch to trends pane
         trends_link = page.locator("[data-pane='trends']")
@@ -312,7 +323,7 @@ class TestExploreSearchInteraction:
 
     def test_trends_placeholder_visible(self, page: Page, test_server: str) -> None:
         """Test that the trends placeholder is visible before search."""
-        page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
+        _goto_ready(page, test_server)
 
         # Switch to trends pane
         trends_link = page.locator("[data-pane='trends']")

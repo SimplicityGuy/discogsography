@@ -43,6 +43,7 @@ open http://localhost:8003
 - Dashboard (http://localhost:8003/health)
 - API (http://localhost:8004/health, http://localhost:8005/health)
 - Explore (http://localhost:8007/health — internal only in Docker Compose)
+- Insights (http://localhost:8009/health)
 
 #### Queue Metrics Panel
 
@@ -340,6 +341,43 @@ curl -u discogsography:discogsography \
   http://localhost:15672/api/queues/%2F/artists_queue
 ```
 
+### Insights Service Metrics
+
+The Insights service runs scheduled batch analytics and exposes results via the API proxy. Monitor its operation through:
+
+**Health Check**:
+
+```bash
+curl http://localhost:8009/health
+# Response: {"status": "healthy"}
+```
+
+**Computation Status**:
+
+```bash
+# Check latest computation run via API proxy
+curl http://localhost:8004/api/insights/status
+```
+
+**Key Metrics**:
+
+- Computation run timestamps and duration
+- Result counts per insight type (top-artists, genre-trends, label-longevity, this-month, data-completeness)
+- Redis cache hit/miss rates (when `REDIS_HOST` is configured)
+- Schedule interval (`INSIGHTS_SCHEDULE_HOURS`, default: 24h)
+
+**Log Monitoring**:
+
+```bash
+# Watch Insights service logs
+docker-compose logs -f insights
+
+# Check for computation completions
+docker-compose logs insights | grep "Computation"
+```
+
+______________________________________________________________________
+
 ### Redis Metrics
 
 ```bash
@@ -408,6 +446,7 @@ services=(
   "Dashboard:8003"
   "API:8005"
   "Explore:8007"
+  "Insights:8009"
 )
 
 for service in "${services[@]}"; do
@@ -694,4 +733,4 @@ LIMIT 10;
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-07
+**Last Updated**: 2026-03-15

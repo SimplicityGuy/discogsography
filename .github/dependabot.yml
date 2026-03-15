@@ -30,6 +30,7 @@ updates:
       - "/explore"
       - "/extractor"
       - "/graphinator"
+      - "/insights"
       - "/schema-init"
       - "/tableinator"
     schedule:
@@ -98,6 +99,7 @@ updates:
       - "/dashboard"
       - "/explore"
       - "/graphinator"
+      - "/insights"
       - "/schema-init"
       - "/tableinator"
     schedule:

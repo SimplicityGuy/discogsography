@@ -355,6 +355,7 @@ See [Dashboard README](../dashboard/README.md) for details.
 - FastAPI backend with async PostgreSQL and Neo4j drivers
 - Configurable scheduler interval (default: 24 hours)
 - 5 computation types running sequentially
+- Redis caching with cache-aside pattern (TTL matches schedule interval, invalidated after computation)
 - Separate health server on port 8009
 - Results proxied through the API service at `/api/insights/*`
 
@@ -363,6 +364,8 @@ See [Dashboard README](../dashboard/README.md) for details.
 - `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
 - `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`: PostgreSQL connection
 - `INSIGHTS_SCHEDULE_HOURS`: Computation interval in hours (default: 24)
+- `REDIS_HOST`: Redis hostname for result caching
+- `INSIGHTS_MILESTONE_YEARS`: Configurable anniversary years to highlight
 
 See [Insights README](../insights/README.md) for details.
 
@@ -548,6 +551,7 @@ See [Database Schema](database-schema.md) for details.
 - OAuth state tokens (API — short TTL, used during Discogs OAuth flow)
 - Graph snapshots (API — native Redis TTL, default 28 days, survives service restarts)
 - JWT revocation blacklist (API — JTI claims with TTL matching token expiry)
+- Insights computation results (Insights — TTL matches schedule interval, invalidated after each run)
 - Query result caching (Dashboard)
 - Dashboard metrics
 
@@ -715,4 +719,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-14
+**Last Updated**: 2026-03-15
