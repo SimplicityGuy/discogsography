@@ -169,7 +169,9 @@ jobs:
               --report-dir=coverage-e2e \
               --temp-dir=../.nyc_output
             # Fix SF: paths to be repo-relative for Codecov
-            sed -i 's|^SF:static/|SF:explore/static/|' coverage-e2e/lcov.info
+            # Use perl instead of sed for cross-platform compatibility (BSD sed on macOS
+            # requires different -i syntax than GNU sed on Linux)
+            perl -pi -e 's|^SF:static/|SF:explore/static/|' coverage-e2e/lcov.info
             echo "✅ JS coverage report generated at explore/coverage-e2e/lcov.info"
           else
             echo "⚠️ No JS coverage data found — skipping nyc report"
