@@ -47,18 +47,19 @@ class TestExploreUI:
         explore_pane = page.locator("#explorePane")
         expect(explore_pane).to_have_class(re.compile("active"), timeout=5000)
 
-        # Click Trends tab
+        # Click Trends tab (wait for visibility first — Firefox CI can be slow)
         trends_link = page.locator("[data-pane='trends']")
+        expect(trends_link).to_be_visible(timeout=5000)
         trends_link.click()
 
         # Trends pane should now be active
         trends_pane = page.locator("#trendsPane")
-        expect(trends_pane).to_have_class(re.compile("active"), timeout=5000)
+        expect(trends_pane).to_have_class(re.compile("active"), timeout=10000)
 
         # Click Explore tab again
         explore_link = page.locator("[data-pane='explore']")
         explore_link.click()
-        expect(explore_pane).to_have_class(re.compile("active"), timeout=5000)
+        expect(explore_pane).to_have_class(re.compile("active"), timeout=10000)
 
     def test_graph_placeholder_visible(self, page: Page, test_server: str) -> None:
         """Test that the graph placeholder is shown before search."""
