@@ -9,6 +9,8 @@ os.environ.setdefault("REDIS_HOST", "redis://localhost:6379/0")
 
 from collections.abc import AsyncGenerator, Generator
 from contextlib import asynccontextmanager
+import json
+from pathlib import Path
 import subprocess
 import sys
 import time
@@ -307,3 +309,29 @@ def browser_type_launch_args() -> dict[str, Any]:
         "headless": True,
         "args": ["--no-sandbox", "--disable-gpu"],
     }
+
+
+@pytest.fixture(autouse=True)
+def collect_js_coverage(request: pytest.FixtureRequest) -> Generator[None]:
+    """Collect Istanbul JS coverage from browser after E2E tests.
+
+    Instrumented JS files (via nyc instrument in CI) populate window.__coverage__
+    as code executes. This fixture extracts that data after each E2E test and
+    writes it to .nyc_output/ for later merging with nyc report.
+
+    Uses request.getfixturevalue("page") lazily so this fixture does not
+    force a browser launch for non-E2E unit tests.
+    """
+    yield
+    if not request.node.get_closest_marker("e2e"):
+        return
+    try:
+        page = request.getfixturevalue("page")
+        coverage = page.evaluate("() => window.__coverage__")
+    except Exception:
+        return
+    if coverage:
+        out_dir = Path(".nyc_output")
+        out_dir.mkdir(exist_ok=True)
+        safe_name = request.node.name.replace("/", "_").replace("::", "_")
+        (out_dir / f"{safe_name}.json").write_text(json.dumps(coverage))
