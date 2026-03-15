@@ -326,6 +326,23 @@ uv run pytest tests/dashboard/test_dashboard_ui.py -m e2e --browser firefox
 uv run pytest tests/dashboard/test_dashboard_ui.py -m e2e --headed
 ```
 
+### JavaScript Testing with Vitest
+
+The Explore frontend's modular JavaScript files are tested using [Vitest](https://vitest.dev/):
+
+```bash
+# Install JS dependencies (one-time)
+just install-js
+
+# Run JS tests
+just test-js
+
+# Run JS tests with coverage
+just test-js-cov
+```
+
+JavaScript tests are also included in the CI pipeline (`test.yml`) and in `just test-parallel`.
+
 See [Testing Guide](testing-guide.md) for comprehensive testing documentation.
 
 ## 📝 Coding Standards
@@ -692,4 +709,4 @@ uv run pytest --pdb
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-07
+**Last Updated**: 2026-03-15

@@ -69,6 +69,36 @@ update-deps:
     @echo '✅ All dependencies updated!'
     @echo '💡 Run "just test-all" to verify everything still works'
 
+# Update uv itself to the latest version
+[group('setup')]
+update-uv:
+    uv self update
+
+# Lock Python dependencies with upgrades (respects >= constraints)
+[group('setup')]
+lock-upgrade:
+    uv lock --upgrade
+
+# Sync all Python dependencies including dev and optional extras
+[group('setup')]
+sync:
+    uv sync --all-extras --dev
+
+# Sync all Python dependencies with upgrades
+[group('setup')]
+sync-upgrade:
+    uv sync --all-extras --dev --upgrade
+
+# Update npm dependencies in Explore frontend
+[group('setup')]
+update-npm:
+    cd explore && npm update --save
+
+# Update Rust dependencies (lock file only, within Cargo.toml constraints)
+[group('setup')]
+update-cargo:
+    cd extractor && cargo update
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Code Quality & Linting
 # ──────────────────────────────────────────────────────────────────────────────

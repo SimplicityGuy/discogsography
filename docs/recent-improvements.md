@@ -10,6 +10,70 @@ Last Updated: March 2026
 
 ## 🆕 Latest Improvements (March 2026)
 
+### 🧪 JavaScript Testing Framework with Vitest (#147)
+
+**Overview**: Added a JavaScript testing framework using Vitest for the Explore frontend, enabling unit testing of the modular JS codebase (app.js, graph.js, api-client.js, etc.).
+
+#### Features
+
+- **Vitest framework**: Fast, modern JS test runner with native ES module support
+- **Task runner integration**: `just test-js` and `just test-js-cov` commands for running JS tests
+- **CI integration**: JavaScript tests run as part of the `test.yml` GitHub Actions workflow
+- **Parallel execution**: JS tests run alongside Python and Rust tests in `just test-parallel`
+
+______________________________________________________________________
+
+### 🔗 Graph-Powered Music Discovery (#82, #148)
+
+**Overview**: Added graph-powered music discovery features including artist similarity scoring, "Explore from Here" navigation, and multi-signal recommendation engine.
+
+#### Features
+
+- **Artist similarity**: Graph-based similarity scoring using shared labels, genres, styles, and collaborations
+- **Explore from Here**: Navigate the knowledge graph starting from any artist, label, or release node
+- **Multi-signal recommendations**: Combines graph proximity, genre overlap, and collaboration patterns to surface related artists and releases
+- **Explore UI integration**: Discovery features accessible from the Explore frontend
+
+______________________________________________________________________
+
+### 🏺 Vinyl Archaeology Snapshot Comparison (#126, #146)
+
+**Overview**: Extended the Vinyl Archaeology time-travel feature with snapshot comparison capabilities, allowing users to compare the state of the knowledge graph at different points in music history.
+
+#### Features
+
+- **Snapshot comparison**: Compare graph state between two points in time
+- **Visual diff**: See what changed in the graph between selected time periods
+- **Explore UI integration**: Comparison controls integrated into the timeline scrubber
+
+______________________________________________________________________
+
+### 🎨 Unified Explore Styling (#141, #144)
+
+**Overview**: Unified the Explore frontend styling with the Dashboard design system, ensuring visual consistency across the platform.
+
+#### Features
+
+- **Shared design system**: Explore now uses the same Tailwind CSS theme, color palette, and component styles as the Dashboard
+- **Consistent typography**: Unified font usage (Inter + JetBrains Mono) across both frontends
+- **Dark theme alignment**: Explore dark theme matches Dashboard for a cohesive user experience
+
+______________________________________________________________________
+
+### 📈 Insights Enhancements — Redis Caching, Explore UI, Auto-Refresh (#130-133, #143)
+
+**Overview**: Enhanced the Insights service with Redis caching for computed results, an Insights panel in the Explore UI, auto-refresh polling, and configurable milestone years.
+
+#### Features
+
+- **Redis caching**: Cache-aside pattern with TTL matching the schedule interval; cache invalidated after each computation run
+- **Explore UI panel**: New "Insights" tab in the Explore frontend displaying precomputed analytics
+- **Auto-refresh polling**: Explore UI polls for updated insights every 60 seconds
+- **Configurable milestones**: `INSIGHTS_MILESTONE_YEARS` environment variable controls which anniversary years are highlighted (e.g., 25, 50, 75, 100)
+- **`REDIS_HOST` for Insights**: Insights service now connects to Redis for caching
+
+______________________________________________________________________
+
 ### 📈 Insights Service — Precomputed Analytics and Music Trends (#85)
 
 **Overview**: Added a new Insights microservice that runs scheduled batch analytics against Neo4j and PostgreSQL, stores precomputed results, and exposes them via read-only HTTP endpoints proxied through the API service.

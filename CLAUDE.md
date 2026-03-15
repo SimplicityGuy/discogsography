@@ -107,9 +107,11 @@ For convenience, the project includes a `justfile` with pre-configured tasks tha
 # These all use uv internally
 just install      # uv sync --all-extras
 just test         # uv run pytest
-just lint         # uv run ruff check .
+just test-js      # cd explore && npx vitest run
+just lint         # uv run pre-commit run --all-files
 just format       # uv run ruff format .
-just typecheck    # uv run mypy .
+just typecheck    # uv run mypy (via lint-python)
+just update-deps  # Run comprehensive dependency update script
 ```
 
 ### Package Installation Pattern
@@ -139,15 +141,15 @@ When adding new dependencies:
 
 ```bash
 # 1. Initial setup
-uv sync --all-extras
+just install
 
 # 2. Install pre-commit hooks
-uv run pre-commit install
+just init
 
 # 3. Make changes and test
-uv run pytest
-uv run mypy .
-uv run ruff check .
+just test
+just test-js
+just lint
 
 # 4. Run the service
 uv run python dashboard/dashboard.py
@@ -272,38 +274,33 @@ All `pyproject.toml` files in the project follow a consistent structure and orde
 
 ## 🛠️ Development Commands
 
-### Local Development (Always use uv)
+### Local Development (prefer just commands)
 
 ```bash
 # Install dependencies
-uv sync --all-extras
+just install                     # Python dependencies
+just install-js                  # JavaScript dependencies (Explore frontend)
+just init                        # Pre-commit hooks
 
 # Run tests
-uv run pytest
-uv run pytest -v                 # Verbose
-uv run pytest tests/dashboard/   # Specific directory
+just test                        # Python tests (excluding E2E)
+just test-js                     # JavaScript tests (Vitest)
+just test-parallel               # All service tests in parallel
+just test-all                    # Everything including E2E
 
-# Run type checking
-uv run mypy .
-
-# Run linting
-uv run ruff check .
-
-# Format code
-uv run ruff format .
+# Code quality
+just lint                        # All pre-commit hooks
+just lint-python                 # Ruff + mypy
+just format                      # Auto-format Python code
 
 # Run a service locally
-uv run python dashboard/dashboard.py
-
-# Run pre-commit hooks
-uv run pre-commit run --all-files
-
-# Or use just commands (which use uv internally)
-just test
-just typecheck
-just lint
-just format
 just dashboard
+just api
+just explore
+just insights
+
+# Update dependencies
+just update-deps                 # Comprehensive update (all ecosystems)
 ```
 
 ### Service Management (Docker)
@@ -329,7 +326,7 @@ docker-compose ps
 http://localhost:7474
 
 # PostgreSQL
-docker-compose exec postgres psql -U postgres discogsography
+docker-compose exec postgres psql -U discogsography discogsography
 ```
 
 ### Debugging
@@ -338,8 +335,11 @@ docker-compose exec postgres psql -U postgres discogsography
 # View RabbitMQ management
 http://localhost:15672
 
-# Check service metrics
-http://localhost:8000/api/health
+# Check service health
+http://localhost:8005/health       # API
+http://localhost:8003/health       # Dashboard
+http://localhost:8007/health       # Explore
+http://localhost:8009/health       # Insights
 ```
 
 ## 📚 Quick Reference
@@ -387,25 +387,25 @@ See main [README.md](README.md) for detailed architecture information.
 1. **Validate data** at service boundaries
 1. **Handle errors gracefully** with proper logging
 
-### Running Python Tools - ALWAYS Use uv
+### Running Tools - Prefer just Commands
 
-**Correct way to run tools:**
+**Use the just task runner** (single source of truth for all commands):
+
+```bash
+just test              # Python tests (excluding E2E)
+just test-js           # JavaScript tests (Vitest)
+just test-parallel     # All service tests in parallel
+just lint              # Pre-commit hooks (ruff, mypy, etc.)
+just lint-python       # Ruff + mypy only
+just format            # Auto-format Python code
+just update-deps       # Update all dependencies
+```
+
+**Or run tools directly with uv:**
 
 ```bash
 uv run pytest                    # Run tests
-uv run pytest -v                 # Run tests with verbose output
 uv run mypy .                   # Type checking
 uv run ruff check .             # Linting
-uv run ruff format .            # Formatting
 uv run python script.py         # Run any Python script
-uv run pre-commit run --all-files  # Run pre-commit hooks
-```
-
-**Or use the just task runner:**
-
-```bash
-just test         # Runs: uv run pytest
-just typecheck    # Runs: uv run mypy .
-just lint         # Runs: uv run ruff check .
-just format       # Runs: uv run ruff format .
 ```

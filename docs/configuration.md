@@ -244,9 +244,9 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 | Variable     | Description    | Default     | Required             |
 | ------------ | -------------- | ----------- | -------------------- |
-| `REDIS_HOST` | Redis hostname | `localhost` | Yes (Dashboard, API) |
+| `REDIS_HOST` | Redis hostname | `localhost` | Yes (Dashboard, API, Insights) |
 
-**Used By**: Dashboard, API
+**Used By**: Dashboard, API, Insights
 
 **Connection Details**:
 
@@ -705,17 +705,25 @@ POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
 
+# Optional - Redis Caching
+REDIS_HOST="localhost"                        # Redis hostname for result caching (default: localhost)
+
 # Optional - Scheduler
-INSIGHTS_SCHEDULE_HOURS=24    # Computation interval in hours (default: 24)
+INSIGHTS_SCHEDULE_HOURS=24                    # Computation interval in hours (default: 24)
+
+# Optional - Milestones
+INSIGHTS_MILESTONE_YEARS="25,30,40,50,75,100" # Anniversary years to highlight (default: 25,30,40,50,75,100)
 
 # Optional - Startup
-STARTUP_DELAY=10              # Seconds to wait before starting (default: 10)
+STARTUP_DELAY=10                              # Seconds to wait before starting (default: 10)
 
 # Optional - Logging
 LOG_LEVEL=INFO
 ```
 
 Health check: http://localhost:8009/health
+
+**Notes**: The Insights service uses Redis for caching computed results (cache-aside pattern). The cache TTL matches the `INSIGHTS_SCHEDULE_HOURS` interval and is invalidated after each computation run. If Redis is unavailable, the service operates without caching.
 
 ## Environment Templates
 
@@ -950,4 +958,4 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-14
+**Last Updated**: 2026-03-15
