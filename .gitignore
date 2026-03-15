@@ -321,3 +321,9 @@ Temporary Items
 # Built Visual Studio Code Extensions
 *.vsix
 .superpowers/
+
+###
+# Istanbul / nyc coverage
+###
+.nyc_output/
+explore/coverage-e2e/
