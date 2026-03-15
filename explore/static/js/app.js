@@ -482,6 +482,7 @@ class ExploreApp {
         } else if (pane === 'collection' && window.authManager.isLoggedIn()) {
             this.userPanes.loadCollection(true);
             this.userPanes.loadCollectionStats();
+            this.userPanes.loadTasteFingerprint();
         } else if (pane === 'wantlist' && window.authManager.isLoggedIn()) {
             this.userPanes.loadWantlist(true);
         } else if (pane === 'recommendations' && window.authManager.isLoggedIn()) {
