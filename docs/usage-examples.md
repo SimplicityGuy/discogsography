@@ -595,6 +595,125 @@ curl -X POST "http://localhost:8004/api/snapshot" \
 curl "http://localhost:8004/api/snapshot/<token>"
 ```
 
+### Unified Search
+
+```bash
+# Full-text search across all entity types
+curl "http://localhost:8004/api/search?q=kraftwerk&types=artist&limit=10"
+
+# Search releases with genre and year filters
+curl "http://localhost:8004/api/search?q=blue&types=release&genres=Jazz&year_min=1955&year_max=1965&limit=20"
+
+# Search across multiple entity types with pagination
+curl "http://localhost:8004/api/search?q=warp&types=artist,label&limit=10&offset=0"
+```
+
+### Path Finder
+
+```bash
+# Find the shortest path between two artists
+curl "http://localhost:8004/api/path?from_name=Miles%20Davis&from_type=artist&to_name=John%20Coltrane&to_type=artist"
+
+# Find the shortest path between an artist and a label
+curl "http://localhost:8004/api/path?from_name=Kraftwerk&from_type=artist&to_name=Mute&to_type=label&max_depth=8"
+
+# Cross-type path between a genre and a label
+curl "http://localhost:8004/api/path?from_name=Techno&from_type=genre&to_name=Warp%20Records&to_type=label"
+```
+
+### Vinyl Archaeology (Time Travel)
+
+```bash
+# Get the year range of all releases in the database
+curl "http://localhost:8004/api/explore/year-range"
+
+# Discover which genres had emerged before a given year
+curl "http://localhost:8004/api/explore/genre-emergence?before_year=1980"
+
+# Browse releases for a genre filtered to before a specific year
+curl "http://localhost:8004/api/expand?node_id=Electronic&type=genre&category=releases&before_year=1985&limit=50&offset=0"
+```
+
+### Insights (Precomputed Analytics)
+
+```bash
+# Top artists by release count
+curl "http://localhost:8004/api/insights/top-artists"
+
+# Genre trends over time (filter by genre)
+curl "http://localhost:8004/api/insights/genre-trends?genre=Electronic"
+
+# Label longevity — longest-running labels
+curl "http://localhost:8004/api/insights/label-longevity"
+
+# Releases and milestones from this month in history
+curl "http://localhost:8004/api/insights/this-month"
+
+# Data completeness report across all entity types
+curl "http://localhost:8004/api/insights/data-completeness"
+
+# Computation status of precomputed insights
+curl "http://localhost:8004/api/insights/status"
+```
+
+### Label DNA (Fingerprint and Compare)
+
+```bash
+# Get the full DNA fingerprint for a label (genres, styles, decades, formats)
+curl "http://localhost:8004/api/label/12345/dna"
+
+# Find labels with a similar DNA fingerprint
+curl "http://localhost:8004/api/label/12345/similar?limit=10"
+
+# Side-by-side DNA comparison of multiple labels (2-5 IDs)
+curl "http://localhost:8004/api/label/dna/compare?ids=12345,67890,11111"
+```
+
+### Taste Fingerprint (requires JWT authentication)
+
+```bash
+# Genre x decade heatmap of your collection
+curl "http://localhost:8004/api/user/taste/heatmap" \
+  -H "Authorization: Bearer <your-jwt-token>"
+
+# Full taste fingerprint (heatmap, obscurity score, drift, blind spots)
+curl "http://localhost:8004/api/user/taste/fingerprint" \
+  -H "Authorization: Bearer <your-jwt-token>"
+
+# Genres your favourite artists release in but you haven't collected
+curl "http://localhost:8004/api/user/taste/blindspots?limit=10" \
+  -H "Authorization: Bearer <your-jwt-token>"
+
+# Shareable SVG taste card
+curl "http://localhost:8004/api/user/taste/card" \
+  -H "Authorization: Bearer <your-jwt-token>" \
+  -o taste-card.svg
+```
+
+### Collection Timeline and Evolution (requires JWT authentication)
+
+```bash
+# Collection timeline bucketed by year
+curl "http://localhost:8004/api/user/collection/timeline?bucket=year" \
+  -H "Authorization: Bearer <your-jwt-token>"
+
+# Collection timeline bucketed by decade
+curl "http://localhost:8004/api/user/collection/timeline?bucket=decade" \
+  -H "Authorization: Bearer <your-jwt-token>"
+
+# Collection evolution by genre over time
+curl "http://localhost:8004/api/user/collection/evolution?metric=genre" \
+  -H "Authorization: Bearer <your-jwt-token>"
+
+# Collection evolution by style over time
+curl "http://localhost:8004/api/user/collection/evolution?metric=style" \
+  -H "Authorization: Bearer <your-jwt-token>"
+
+# Collection evolution by label over time
+curl "http://localhost:8004/api/user/collection/evolution?metric=label" \
+  -H "Authorization: Bearer <your-jwt-token>"
+```
+
 ## 📊 Combining Neo4j and PostgreSQL
 
 For best results, use both databases together:
@@ -656,4 +775,4 @@ AND (data->>'year')::int = 1959;
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-07
+**Last Updated**: 2026-03-14

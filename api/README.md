@@ -193,6 +193,116 @@ Save and restore graph exploration states as shareable URLs.
 | POST   | `/api/snapshot`         | Yes           | Save current graph snapshot |
 | GET    | `/api/snapshot/{token}` | No            | Restore a saved snapshot    |
 
+### Unified Search
+
+Full-text search across all entity types using PostgreSQL, with facet counts and result highlighting. Results are cached in Redis for 5 minutes.
+
+| Method | Path          | Auth Required | Rate Limit | Description                                        |
+| ------ | ------------- | ------------- | ---------- | -------------------------------------------------- |
+| GET    | `/api/search` | No            | 30/min     | Search artists, labels, masters, and releases      |
+
+**Query parameters:**
+
+- `q` (required) — Search query (minimum 3 characters)
+- `types` — Comma-separated entity types to search (default: `artist,label,master,release`)
+- `genres` — Comma-separated genre filter
+- `year_min` — Minimum release year (1000–9999)
+- `year_max` — Maximum release year (1000–9999)
+- `limit` — Results per page (1–100, default: 20)
+- `offset` — Pagination offset (default: 0)
+
+### Path Finder
+
+Find the shortest path between any two entities in the knowledge graph.
+
+| Method | Path       | Auth Required | Description                              |
+| ------ | ---------- | ------------- | ---------------------------------------- |
+| GET    | `/api/path` | No           | Shortest path between two named entities |
+
+**Query parameters:**
+
+- `from_name` (required) — Source entity name
+- `from_type` — Source entity type (default: `artist`)
+- `to_name` (required) — Target entity name
+- `to_type` — Target entity type (default: `artist`)
+- `max_depth` — Maximum path depth (1–15, default: 10)
+
+### Vinyl Archaeology
+
+Time-travel through the knowledge graph with year-range and genre-emergence queries.
+
+| Method | Path                          | Auth Required | Description                                      |
+| ------ | ----------------------------- | ------------- | ------------------------------------------------ |
+| GET    | `/api/explore/year-range`     | No            | Get min/max release years in the graph           |
+| GET    | `/api/explore/genre-emergence`| No            | Get genres that emerged before a given year      |
+
+**Query parameters for `/api/explore/genre-emergence`:**
+
+- `before_year` (required) — Year cutoff (1900–2030)
+
+### Insights
+
+Proxied endpoints forwarding to the insights microservice for precomputed analytics and music trends. Returns 503 if the insights service is unavailable.
+
+| Method | Path                              | Auth Required | Description                         |
+| ------ | --------------------------------- | ------------- | ----------------------------------- |
+| GET    | `/api/insights/top-artists`       | No            | Top artists by release count        |
+| GET    | `/api/insights/genre-trends`      | No            | Genre popularity trends over time   |
+| GET    | `/api/insights/label-longevity`   | No            | Label longevity rankings            |
+| GET    | `/api/insights/this-month`        | No            | Releases and trends for this month  |
+| GET    | `/api/insights/data-completeness` | No            | Data quality and completeness stats |
+| GET    | `/api/insights/status`            | No            | Computation status of insights data |
+
+### Label DNA
+
+Fingerprint and compare record labels based on their genre, style, format, and decade profiles. Rate limited to 30 requests/minute.
+
+| Method | Path                           | Auth Required | Rate Limit | Description                                    |
+| ------ | ------------------------------ | ------------- | ---------- | ---------------------------------------------- |
+| GET    | `/api/label/{label_id}/dna`    | No            | 30/min     | Full DNA fingerprint for a label               |
+| GET    | `/api/label/{label_id}/similar`| No            | 30/min     | Find labels with closest DNA fingerprint       |
+| GET    | `/api/label/dna/compare`       | No            | 30/min     | Side-by-side DNA comparison of multiple labels |
+
+**Query parameters for `/api/label/{label_id}/similar`:**
+
+- `limit` — Number of similar labels to return (1–50, default: 10)
+
+**Query parameters for `/api/label/dna/compare`:**
+
+- `ids` (required) — Comma-separated label IDs (2–5 labels)
+
+### Taste Fingerprint
+
+Personalized taste analysis endpoints based on the authenticated user's synced collection. Requires a minimum of 10 collection items.
+
+| Method | Path                           | Auth Required | Description                                          |
+| ------ | ------------------------------ | ------------- | ---------------------------------------------------- |
+| GET    | `/api/user/taste/heatmap`      | Yes           | Genre x decade heatmap of user's collection          |
+| GET    | `/api/user/taste/fingerprint`  | Yes           | Full taste fingerprint (heatmap, obscurity, drift, blind spots) |
+| GET    | `/api/user/taste/blindspots`   | Yes           | Genres the user's favourite artists release in but they haven't collected |
+| GET    | `/api/user/taste/card`         | Yes           | SVG taste card image (returns `image/svg+xml`)       |
+
+**Query parameters for `/api/user/taste/blindspots`:**
+
+- `limit` — Number of blind spots to return (1–20, default: 5)
+
+### Collection Timeline
+
+Temporal analysis of the authenticated user's collection, showing how their taste has evolved over time.
+
+| Method | Path                                | Auth Required | Description                                        |
+| ------ | ----------------------------------- | ------------- | -------------------------------------------------- |
+| GET    | `/api/user/collection/timeline`     | Yes           | Release count distribution by year or decade       |
+| GET    | `/api/user/collection/evolution`    | Yes           | How genre, style, or label mix shifts over time    |
+
+**Query parameters for `/api/user/collection/timeline`:**
+
+- `bucket` — Grouping bucket: `year` or `decade` (default: `year`)
+
+**Query parameters for `/api/user/collection/evolution`:**
+
+- `metric` — Evolution metric: `genre`, `style`, or `label` (default: `genre`)
+
 ### Health
 
 | Method | Path      | Port | Description          |

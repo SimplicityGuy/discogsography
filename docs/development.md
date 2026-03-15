@@ -200,6 +200,9 @@ just extractor-run
 # Graphinator (Neo4j builder)
 just graphinator
 
+# Insights (precomputed analytics & trends)
+just insights
+
 # Tableinator (PostgreSQL builder)
 just tableinator
 ```

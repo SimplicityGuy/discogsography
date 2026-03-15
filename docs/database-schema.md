@@ -890,6 +890,110 @@ CREATE INDEX IF NOT EXISTS idx_sync_history_user_started ON sync_history (user_i
 CREATE INDEX IF NOT EXISTS idx_sync_history_running ON sync_history (user_id) WHERE status = 'running';
 ```
 
+#### Insights Tables
+
+Precomputed analytics stored in a dedicated `insights` schema. All tables include a `computed_at` timestamp for cache freshness checks. The schema is created by `schema-init` alongside the public tables.
+
+```sql
+CREATE SCHEMA IF NOT EXISTS insights;
+```
+
+**insights.artist_centrality** — Top artists ranked by graph connectivity (edge count in Neo4j).
+
+```sql
+CREATE TABLE IF NOT EXISTS insights.artist_centrality (
+    rank            INT NOT NULL,
+    artist_id       TEXT NOT NULL,
+    artist_name     TEXT NOT NULL,
+    edge_count      BIGINT NOT NULL,
+    computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (rank)
+);
+```
+
+**insights.genre_trends** — Release counts per genre aggregated by decade.
+
+```sql
+CREATE TABLE IF NOT EXISTS insights.genre_trends (
+    genre           TEXT NOT NULL,
+    decade          INT NOT NULL,
+    release_count   BIGINT NOT NULL,
+    computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (genre, decade)
+);
+
+CREATE INDEX IF NOT EXISTS idx_genre_trends_genre ON insights.genre_trends (genre);
+```
+
+**insights.label_longevity** — Record labels ranked by years of active releasing.
+
+```sql
+CREATE TABLE IF NOT EXISTS insights.label_longevity (
+    rank            INT NOT NULL,
+    label_id        TEXT NOT NULL,
+    label_name      TEXT NOT NULL,
+    first_year      INT NOT NULL,
+    last_year       INT NOT NULL,
+    years_active    INT NOT NULL,
+    total_releases  BIGINT NOT NULL,
+    peak_decade     INT,
+    still_active    BOOLEAN NOT NULL DEFAULT FALSE,
+    computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (rank)
+);
+```
+
+**insights.monthly_anniversaries** — Notable album anniversaries for a given month/year.
+
+```sql
+CREATE TABLE IF NOT EXISTS insights.monthly_anniversaries (
+    master_id       TEXT NOT NULL,
+    title           TEXT NOT NULL,
+    artist_name     TEXT,
+    release_year    INT NOT NULL,
+    anniversary     INT NOT NULL,
+    computed_month  INT NOT NULL,
+    computed_year   INT NOT NULL,
+    computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (master_id, computed_year, computed_month)
+);
+
+CREATE INDEX IF NOT EXISTS idx_anniversaries_month_year ON insights.monthly_anniversaries (computed_year, computed_month);
+```
+
+**insights.data_completeness** — Per-entity-type data quality metrics.
+
+```sql
+CREATE TABLE IF NOT EXISTS insights.data_completeness (
+    entity_type      TEXT NOT NULL,
+    total_count      BIGINT NOT NULL,
+    with_image       BIGINT NOT NULL DEFAULT 0,
+    with_year        BIGINT NOT NULL DEFAULT 0,
+    with_country     BIGINT NOT NULL DEFAULT 0,
+    with_genre       BIGINT NOT NULL DEFAULT 0,
+    completeness_pct NUMERIC(5,2) NOT NULL DEFAULT 0,
+    computed_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (entity_type)
+);
+```
+
+**insights.computation_log** — Audit trail for insight computation runs.
+
+```sql
+CREATE TABLE IF NOT EXISTS insights.computation_log (
+    id              BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    insight_type    TEXT NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'running',
+    started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at    TIMESTAMPTZ,
+    rows_affected   BIGINT,
+    error_message   TEXT,
+    duration_ms     BIGINT
+);
+
+CREATE INDEX IF NOT EXISTS idx_computation_log_type_started ON insights.computation_log (insight_type, started_at DESC);
+```
+
 ### Common Queries
 
 #### Full-text search releases
