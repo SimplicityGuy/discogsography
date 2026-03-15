@@ -366,8 +366,21 @@ jobs:
       - name: "📦 Install dependencies"
         run: cd explore && npm ci
 
-      - name: "🧪 Run JavaScript tests"
-        run: cd explore && npx vitest run
+      - name: "🧪 Run JavaScript tests with coverage"
+        run: cd explore && npx vitest run --coverage
+
+      - name: "📊 Upload coverage (explore-js)"
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./explore/coverage/lcov.info
+          flags: explore-js
+          name: explore-js-tests
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
 
   # ============================================================================
   # RUST EXTRACTOR TESTS - Runs in parallel with all other test jobs

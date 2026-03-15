@@ -47,6 +47,10 @@ flags:
     paths:
       - "explore/**"
     carryforward: true
+  explore-js:
+    paths:
+      - "explore/static/js/**"
+    carryforward: true
   graphinator:
     paths:
       - "graphinator/**"
