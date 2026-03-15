@@ -26,10 +26,36 @@ class TimelineScrubber {
         this._emergenceCache = new Map();
         this._previousGenres = new Set();
 
+        // Compare mode state
+        this.comparing = false;
+        this._savedBeforeYear = null;
+        this.compareYearA = null;
+        this.compareYearB = null;
+
+        // Compare mode DOM references
+        this.exploreControls = document.getElementById('timelineExploreControls');
+        this.compareControls = document.getElementById('timelineCompareControls');
+        this.compareBtn = document.getElementById('timelineCompareBtn');
+        this.exitCompareBtn = document.getElementById('timelineExitCompareBtn');
+        this.sliderA = document.getElementById('compareSliderA');
+        this.sliderB = document.getElementById('compareSliderB');
+        this.yearALabel = document.getElementById('compareYearALabel');
+        this.yearBLabel = document.getElementById('compareYearBLabel');
+        this.compareLegend = document.getElementById('compareLegend');
+        this.legendCloseBtn = document.getElementById('compareLegendClose');
+        this.sameYearHint = document.getElementById('compareSameYearHint');
+
         // Callback: called with (year) when year changes
         this.onYearChange = null;
         // Callback: called with (newGenres) for emergence highlighting
         this.onGenreEmergence = null;
+        // Callback: called with (yearA, yearB) when comparison years change
+        this.onCompareChange = null;
+        // Callback: called with no args when comparison mode exits
+        this.onCompareExit = null;
+
+        // Debounce timer for compare slider drags
+        this._compareDebounceTimer = null;
 
         this._bindEvents();
     }
@@ -59,6 +85,16 @@ class TimelineScrubber {
             this._previousGenres.clear();
             if (this.onYearChange) this.onYearChange(null);
         });
+
+        this.compareBtn.addEventListener('click', () => this.enterCompare());
+        this.exitCompareBtn.addEventListener('click', () => this.exitCompare());
+
+        this.sliderA.addEventListener('input', () => this._onCompareSliderInput());
+        this.sliderB.addEventListener('input', () => this._onCompareSliderInput());
+
+        this.legendCloseBtn.addEventListener('click', () => {
+            this.compareLegend.classList.add('hidden');
+        });
     }
 
     async init() {
@@ -69,6 +105,10 @@ class TimelineScrubber {
         this.slider.min = this.minYear;
         this.slider.max = this.maxYear;
         this.slider.value = this.maxYear;
+        this.sliderA.min = this.minYear;
+        this.sliderA.max = this.maxYear;
+        this.sliderB.min = this.minYear;
+        this.sliderB.max = this.maxYear;
         this.yearLabel.textContent = 'All';
         this.currentYear = null;
         this._previousGenres.clear();
@@ -77,6 +117,7 @@ class TimelineScrubber {
     }
 
     hide() {
+        if (this.comparing) this.exitCompare();
         this.pause();
         this.container.classList.add('hidden');
     }
@@ -162,6 +203,110 @@ class TimelineScrubber {
 
         this._previousGenres = currentGenres;
     }
+
+    enterCompare() {
+        if (this.comparing) return;
+        this.pause();
+        this.comparing = true;
+
+        // Save current single-slider state
+        this._savedBeforeYear = this.currentYear;
+
+        // Initialize compare sliders to sensible defaults
+        const midYear = Math.floor((this.minYear + this.maxYear) / 2);
+        this.compareYearA = this.currentYear ? Math.max(this.minYear, this.currentYear - 10) : midYear - 10;
+        this.compareYearB = this.currentYear || midYear + 10;
+
+        // Clamp to bounds
+        this.compareYearA = Math.max(this.minYear, Math.min(this.maxYear, this.compareYearA));
+        this.compareYearB = Math.max(this.minYear, Math.min(this.maxYear, this.compareYearB));
+
+        this.sliderA.min = this.minYear;
+        this.sliderA.max = this.maxYear;
+        this.sliderA.value = this.compareYearA;
+        this.sliderB.min = this.minYear;
+        this.sliderB.max = this.maxYear;
+        this.sliderB.value = this.compareYearB;
+        this.yearALabel.textContent = String(this.compareYearA);
+        this.yearBLabel.textContent = String(this.compareYearB);
+
+        // Disable explore-only controls
+        this.playBtn.disabled = true;
+        this.playBtn.style.opacity = '0.4';
+        this.speedToggle.style.opacity = '0.4';
+        this.speedToggle.style.pointerEvents = 'none';
+
+        // Toggle UI
+        this.exploreControls.classList.add('hidden');
+        this.compareControls.classList.remove('hidden');
+        this.compareBtn.classList.add('active');
+        this.compareLegend.classList.remove('hidden');
+        this.sameYearHint.classList.add('hidden');
+
+        this._emitCompareChange();
+    }
+
+    exitCompare() {
+        if (!this.comparing) return;
+        this.comparing = false;
+
+        // Re-enable explore controls
+        this.playBtn.disabled = false;
+        this.playBtn.style.opacity = '';
+        this.speedToggle.style.opacity = '';
+        this.speedToggle.style.pointerEvents = '';
+
+        // Toggle UI back
+        this.compareControls.classList.add('hidden');
+        this.exploreControls.classList.remove('hidden');
+        this.compareBtn.classList.remove('active');
+        this.compareLegend.classList.add('hidden');
+        this.sameYearHint.classList.add('hidden');
+
+        clearTimeout(this._compareDebounceTimer);
+
+        // Restore previous single-slider state
+        if (this._savedBeforeYear !== null) {
+            this.currentYear = this._savedBeforeYear;
+            this.slider.value = this._savedBeforeYear;
+            this.yearLabel.textContent = String(this._savedBeforeYear);
+        } else {
+            this.currentYear = null;
+            this.slider.value = this.maxYear;
+            this.yearLabel.textContent = 'All';
+        }
+        this._savedBeforeYear = null;
+
+        if (this.onCompareExit) this.onCompareExit();
+    }
+
+    _onCompareSliderInput() {
+        this.compareYearA = parseInt(this.sliderA.value, 10);
+        this.compareYearB = parseInt(this.sliderB.value, 10);
+        this.yearALabel.textContent = String(this.compareYearA);
+        this.yearBLabel.textContent = String(this.compareYearB);
+
+        clearTimeout(this._compareDebounceTimer);
+        this._compareDebounceTimer = setTimeout(() => {
+            this._emitCompareChange();
+        }, 300);
+    }
+
+    _emitCompareChange() {
+        // Normalize: yearA = min, yearB = max
+        const a = Math.min(this.compareYearA, this.compareYearB);
+        const b = Math.max(this.compareYearA, this.compareYearB);
+
+        if (a === b) {
+            this.sameYearHint.classList.remove('hidden');
+            this.compareLegend.classList.add('hidden');
+        } else {
+            this.sameYearHint.classList.add('hidden');
+            this.compareLegend.classList.remove('hidden');
+        }
+
+        if (this.onCompareChange) this.onCompareChange(a, b);
+    }
 }
 
 /**
@@ -187,6 +332,8 @@ class ExploreApp {
         this.timeline = new TimelineScrubber();
         this.timeline.onYearChange = (year) => this._onTimelineYearChange(year);
         this.timeline.onGenreEmergence = (newGenres) => this._onGenreEmergence(newGenres);
+        this.timeline.onCompareChange = (yearA, yearB) => this._onCompareChange(yearA, yearB);
+        this.timeline.onCompareExit = () => this._onCompareExit();
 
         // Wire up callbacks
         this.autocomplete.onSelect = (name) => this._onSearch(name);
@@ -602,6 +749,22 @@ class ExploreApp {
                 setTimeout(() => d3.select(this).classed('node-emergence', false), 2000);
             }
         });
+    }
+
+    _onCompareChange(yearA, yearB) {
+        if (yearA === yearB) {
+            // Same year — clear comparison styling, show as single year
+            this.graph.clearComparison();
+            this.graph.setBeforeYear(yearA);
+            return;
+        }
+        this.graph.setCompareYears(yearA, yearB);
+    }
+
+    _onCompareExit() {
+        this.graph.clearComparison();
+        // Re-fetch with the restored single-year filter
+        this.graph.setBeforeYear(this.timeline.currentYear);
     }
 
     _addOwnershipBadges(releaseId, statusObj) {
