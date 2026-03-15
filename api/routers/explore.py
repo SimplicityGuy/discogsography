@@ -19,6 +19,8 @@ from api.queries.neo4j_queries import (
     EXPLORE_DISPATCH,
     TRENDS_DISPATCH,
     find_shortest_path,
+    get_genre_emergence,
+    get_year_range,
 )
 
 
@@ -124,6 +126,7 @@ async def expand(
     category: str = Query(...),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
+    before_year: int | None = Query(default=None, ge=1900, le=2030),
 ) -> JSONResponse:
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
@@ -138,10 +141,30 @@ async def expand(
     query_func = type_categories[category_lower]
     count_func = COUNT_DISPATCH[entity_type][category_lower]
     results, total = await asyncio.gather(
-        query_func(_neo4j_driver, node_id, limit, offset),
-        count_func(_neo4j_driver, node_id),
+        query_func(_neo4j_driver, node_id, limit, offset, before_year=before_year),
+        count_func(_neo4j_driver, node_id, before_year=before_year),
     )
     return JSONResponse(content={"children": results, "total": total, "offset": offset, "limit": limit, "has_more": offset + len(results) < total})
+
+
+@router.get("/api/explore/year-range")
+async def year_range() -> JSONResponse:
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+    result = await get_year_range(_neo4j_driver)
+    if result is None:
+        return JSONResponse(content={"min_year": None, "max_year": None})
+    return JSONResponse(content=result)
+
+
+@router.get("/api/explore/genre-emergence")
+async def genre_emergence(
+    before_year: int = Query(..., ge=1900, le=2030),
+) -> JSONResponse:
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+    result = await get_genre_emergence(_neo4j_driver, before_year)
+    return JSONResponse(content=result)
 
 
 @router.get("/api/node/{node_id}")
