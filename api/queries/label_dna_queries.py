@@ -5,10 +5,10 @@ genre/style profiles, era distribution, artist diversity, format preference,
 and label-to-label similarity via cosine similarity on genre vectors.
 """
 
-import math
 from typing import Any
 
 from api.queries.neo4j_queries import _run_query, _run_single
+from api.queries.similarity import cosine_similarity, to_genre_vector
 from common import AsyncResilientNeo4jDriver
 
 
@@ -118,41 +118,20 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     return await _run_query(driver, cypher, label_id=label_id, min_releases=MIN_RELEASES)
 
 
-def _to_genre_vector(genres: list[dict[str, Any]]) -> dict[str, float]:
-    """Convert genre list with counts to a normalized percentage vector."""
-    total = sum(g["count"] for g in genres)
-    if total == 0:
-        return {}
-    return {g["name"]: g["count"] / total for g in genres}
-
-
-def cosine_similarity(vec_a: dict[str, float], vec_b: dict[str, float]) -> float:
-    """Compute cosine similarity between two sparse vectors (dict-based)."""
-    if not vec_a or not vec_b:
-        return 0.0
-    all_keys = set(vec_a) | set(vec_b)
-    dot = sum(vec_a.get(k, 0.0) * vec_b.get(k, 0.0) for k in all_keys)
-    mag_a = math.sqrt(sum(v * v for v in vec_a.values()))
-    mag_b = math.sqrt(sum(v * v for v in vec_b.values()))
-    if mag_a == 0.0 or mag_b == 0.0:
-        return 0.0
-    return dot / (mag_a * mag_b)
-
-
 def compute_similar_labels(
     target_genres: list[dict[str, Any]],
     candidates: list[dict[str, Any]],
     limit: int = 10,
 ) -> list[dict[str, Any]]:
     """Rank candidate labels by cosine similarity to the target's genre vector."""
-    target_vec = _to_genre_vector(target_genres)
+    target_vec = to_genre_vector(target_genres)
     if not target_vec:
         return []
 
     target_genre_names = set(target_vec)
     results = []
     for candidate in candidates:
-        cand_vec = _to_genre_vector(candidate["genres"])
+        cand_vec = to_genre_vector(candidate["genres"])
         sim = cosine_similarity(target_vec, cand_vec)
         if sim > 0.0:
             shared = sorted(set(cand_vec) & target_genre_names)
