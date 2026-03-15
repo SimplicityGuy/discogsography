@@ -10,6 +10,92 @@ Last Updated: March 2026
 
 ## 🆕 Latest Improvements (March 2026)
 
+### 📈 Insights Service — Precomputed Analytics and Music Trends (#85)
+
+**Overview**: Added a new Insights microservice that runs scheduled batch analytics against Neo4j and PostgreSQL, stores precomputed results, and exposes them via read-only HTTP endpoints proxied through the API service.
+
+#### Features
+
+- **5 computation types**: Artist centrality (graph edge count), genre trends (release count by decade), label longevity (years active), monthly anniversaries (25/30/40/50/75/100-year milestones), and data completeness scores
+- **Scheduled execution**: Configurable interval via `INSIGHTS_SCHEDULE_HOURS` (default: 24 hours)
+- **API proxy endpoints**: All results accessible via `/api/insights/*` (top-artists, genre-trends, label-longevity, this-month, data-completeness, status)
+- **PostgreSQL storage**: Results stored in `insights.*` schema tables with computation audit log
+
+#### Changes
+
+- `insights/insights.py` — Main service with scheduler loop and health server (port 8008/8009)
+- `insights/computations.py` — Computation orchestration for all 5 insight types
+- `insights/models.py` — Pydantic response models
+- `api/routers/insights.py` — API proxy router forwarding to insights service
+- `schema-init/postgres_schema.py` — `insights.*` table definitions
+- `docker-compose.yml` — New insights service container
+- `docker-compose.prod.yml` — Production overrides with secrets
+
+______________________________________________________________________
+
+### 🔍 Unified Search UI — Full-Text Search with Filters (#134)
+
+**Overview**: Added a search pane to the Explore frontend with full-text search across all entity types, powered by the existing `GET /api/search` endpoint.
+
+#### Features
+
+- **Search pane**: Dedicated tab in the Explore UI for full-text search
+- **Entity type filters**: Filter results by artists, labels, releases, or masters
+- **Paginated results**: Browse through large result sets
+- **Graph integration**: Click search results to navigate to nodes in the graph
+
+______________________________________________________________________
+
+### 🏺 Vinyl Archaeology — Time-Travel Through the Knowledge Graph (#113)
+
+**Overview**: Added time-travel filtering capabilities that let users explore the knowledge graph as it existed at any point in music history.
+
+#### Features
+
+- **Year-range endpoint**: `GET /api/explore/year-range` returns min/max release years in the dataset
+- **Genre emergence**: `GET /api/explore/genre-emergence?before_year=N` returns genres that existed before a given year
+- **Time-filtered expansion**: `before_year` parameter on `/api/expand` filters graph expansion by release year
+- **Timeline scrubber UI**: Interactive slider in Explore frontend for setting the time-travel year
+
+______________________________________________________________________
+
+### 🧬 Label DNA — Fingerprint and Compare Record Labels (#101)
+
+**Overview**: Added Label DNA endpoints that create unique fingerprints for record labels based on their genre, style, and format profiles, and allow comparing labels for similarity.
+
+#### Features
+
+- **Label identity**: `/api/label-dna/{id}` returns a label's identity profile (genres, styles, formats, decades active)
+- **Label comparison**: `/api/label-dna/compare` compares two labels and returns a similarity score
+- **Genre/style profiles**: Percentage breakdown of a label's releases by genre and style
+
+______________________________________________________________________
+
+### 🎨 Taste Fingerprint — Personal Collection Analytics (#114)
+
+**Overview**: Added taste fingerprint analytics that analyze a user's personal collection to generate insights about their musical preferences.
+
+#### Features
+
+- **Taste heatmap**: `GET /api/user/taste/heatmap` — genre x decade heatmap of the user's collection
+- **Full fingerprint**: `GET /api/user/taste/fingerprint` — combined heatmap, obscurity score, drift analysis, and blind spots
+- **Blind spots**: `GET /api/user/taste/blindspots` — genres where favorite artists release but user hasn't collected
+- **Taste card**: `GET /api/user/taste/card` — shareable SVG visualization of taste profile
+- **Dashboard strip**: Taste fingerprint summary displayed in the Explore Collection pane
+
+______________________________________________________________________
+
+### 📅 Collection Timeline and Evolution (#100)
+
+**Overview**: Added collection timeline endpoints that show how a user's collection has evolved over time.
+
+#### Features
+
+- **Collection timeline**: `GET /api/user/collection/timeline` — chronological view of collection additions
+- **Collection evolution**: `GET /api/user/collection/evolution` — statistical evolution of collection over time
+
+______________________________________________________________________
+
 ### 📊 Database Count Parity — Post-Extraction Cleanup
 
 **Overview**: After extraction, database record counts could drift from the extractor's counts due to stub nodes in Neo4j (created by cross-type MERGE operations) and stale rows in PostgreSQL (left over from prior extractions). A new `extraction_complete` message and per-consumer cleanup phase ensures count parity after every run.

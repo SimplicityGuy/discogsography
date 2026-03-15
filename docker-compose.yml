@@ -475,15 +475,10 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       API_BASE_URL: "http://api:8004"
-      NEO4J_HOST: neo4j
-      NEO4J_PASSWORD: discogsography
-      NEO4J_USERNAME: neo4j
       PYTHONUNBUFFERED: "1"
     depends_on:
       api:
         condition: service_healthy
-      schema-init:
-        condition: service_completed_successfully
     networks:
       - discogsography
     healthcheck:

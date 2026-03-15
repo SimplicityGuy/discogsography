@@ -146,10 +146,22 @@ services:
 
   explore:
     restart: always
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+
+  insights:
+    restart: always
     environment:
       NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
     secrets:
       - neo4j_password
+      - postgres_username
+      - postgres_password
     deploy:
       restart_policy:
         condition: any

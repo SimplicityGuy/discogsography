@@ -50,6 +50,7 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 | **[🔗](docs/emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs                    | `neo4j-driver`, graph algorithms                             |
 | **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initializer             | `neo4j-driver`, `psycopg3`                                   |
 | **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables              | `psycopg3`, JSONB, full-text search                          |
+| **[📈](docs/emoji-guide.md#service-identifiers) Insights** | Precomputed analytics and music trends | `FastAPI`, `psycopg3`, `neo4j-driver` |
 
 ### 📐 System Architecture
 
@@ -67,6 +68,7 @@ graph TD
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
     API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
+    INSIGHTS[["📈 Insights<br/>Precomputed Analytics<br/>Music Trends"]]
 
     SCHEMA -->|0. Create Indexes & Constraints| NEO4J
     SCHEMA -->|0. Create Tables & Indexes| PG
@@ -78,6 +80,9 @@ graph TD
     TABLE -->|4b. Store Data| PG
 
     EXPLORE -.->|Proxy /api/*| API
+    API -.->|Proxy /api/insights/*| INSIGHTS
+    INSIGHTS -.->|Analytics| PG
+    INSIGHTS -.->|Graph Queries| NEO4J
 
     API -.->|User Accounts| PG
     API -.->|Graph Queries & Sync| NEO4J
@@ -104,6 +109,7 @@ graph TD
     style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
     style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style INSIGHTS fill:#fff9c4,stroke:#f57f17,stroke-width:2px
 ```
 
 ## 🌟 Key Features

@@ -154,7 +154,7 @@ RABBITMQ_PASSWORD=mypassword
 | `NEO4J_USERNAME` | Neo4j username | `neo4j`     | Yes      |
 | `NEO4J_PASSWORD` | Neo4j password | (none)      | Yes      |
 
-**Used By**: Graphinator, API, Schema-Init, Dashboard
+**Used By**: Graphinator, API, Schema-Init, Dashboard, Insights
 
 **Connection Details**:
 
@@ -199,7 +199,7 @@ NEO4J_PASSWORD="your-secure-password"
 | `POSTGRES_PASSWORD` | PostgreSQL password | (none)           | Yes      |
 | `POSTGRES_DATABASE` | Database name       | `discogsography` | Yes      |
 
-**Used By**: Tableinator, Dashboard, API
+**Used By**: Tableinator, Dashboard, API, Insights
 
 **Connection Details**:
 
@@ -693,6 +693,30 @@ LOG_LEVEL=INFO
 
 Health check: http://localhost:8003/health
 
+### Insights
+
+```bash
+# Required
+NEO4J_HOST="localhost"
+NEO4J_USERNAME="neo4j"
+NEO4J_PASSWORD="discogsography"
+POSTGRES_HOST="localhost"
+POSTGRES_USERNAME="discogsography"
+POSTGRES_PASSWORD="discogsography"
+POSTGRES_DATABASE="discogsography"
+
+# Optional - Scheduler
+INSIGHTS_SCHEDULE_HOURS=24    # Computation interval in hours (default: 24)
+
+# Optional - Startup
+STARTUP_DELAY=10              # Seconds to wait before starting (default: 10)
+
+# Optional - Logging
+LOG_LEVEL=INFO
+```
+
+Health check: http://localhost:8009/health
+
 ## Environment Templates
 
 ### Development (.env.development)
@@ -874,6 +898,7 @@ curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
 curl http://localhost:8005/health  # API (health check port)
 curl http://localhost:8007/health  # Explore
+curl http://localhost:8009/health  # Insights
 ```
 
 Expected response for all:
@@ -925,4 +950,4 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-07
+**Last Updated**: 2026-03-14

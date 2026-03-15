@@ -25,6 +25,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables         | `psycopg3`, JSONB, full-text search                          | 8002 (health)         |
 | **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check      | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (internal) |
 | **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring                 | `FastAPI`, WebSocket, reactive UI                            | 8003 (ext)            |
+| **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends      | `FastAPI`, `psycopg3`, `neo4j-driver`                        | 8008 (ext), 8009      |
 
 ### Infrastructure Components
 
@@ -51,6 +52,7 @@ graph TD
     DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
     EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
     API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
+    INSIGHTS[["📈 Insights<br/>Precomputed Analytics<br/>Music Trends"]]
 
     SCHEMA -->|0. Create schemas| NEO4J
     SCHEMA -->|0. Create schemas| PG
@@ -76,6 +78,10 @@ graph TD
     DASH -.->|Stats| NEO4J
     DASH -.->|Stats| PG
 
+    API -.->|Proxy /api/insights/*| INSIGHTS
+    INSIGHTS -.->|Analytics| PG
+    INSIGHTS -.->|Graph Queries| NEO4J
+
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style SCHEMA fill:#f9fbe7,stroke:#827717,stroke-width:2px
@@ -88,6 +94,7 @@ graph TD
     style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style INSIGHTS fill:#fff9c4,stroke:#f57f17,stroke-width:2px
 ```
 
 ## Data Flow
@@ -157,6 +164,25 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 - User collection and wantlist queries (`/api/user/collection`, `/api/user/wantlist`)
 - Collection gap analysis (`/api/collection/gaps/label/{id}`, `/api/collection/gaps/artist/{id}`, `/api/collection/gaps/master/{id}`)
 - Graph snapshot save/restore (`/api/snapshot`)
+
+**API Service** (new feature endpoints):
+
+- Path finder (`/api/explore/path`)
+- Unified full-text search (`/api/search`)
+- Label DNA fingerprinting and comparison (`/api/label-dna/*`)
+- Taste fingerprint analytics (`/api/user/taste/*`)
+- Vinyl Archaeology time-travel filtering (`/api/explore/year-range`, `/api/explore/genre-emergence`, `before_year` parameter on `/api/expand`)
+- Collection timeline evolution (`/api/user/collection/timeline`, `/api/user/collection/evolution`)
+
+**Insights Service** (precomputed analytics):
+
+- Scheduled batch analytics against Neo4j and PostgreSQL (configurable interval, default: 24h)
+- Top artists by graph centrality (`/api/insights/top-artists`)
+- Genre trends by decade (`/api/insights/genre-trends`)
+- Label longevity rankings (`/api/insights/label-longevity`)
+- Monthly release anniversaries (`/api/insights/this-month`)
+- Data completeness scores (`/api/insights/data-completeness`)
+- Computation status monitoring (`/api/insights/status`)
 
 **Explore Service** (static frontend):
 
@@ -314,6 +340,31 @@ See [Explore README](../explore/README.md) for details.
 - RabbitMQ management API access
 
 See [Dashboard README](../dashboard/README.md) for details.
+
+### Insights
+
+**Responsibilities**:
+
+- Run scheduled batch analytics against Neo4j and PostgreSQL
+- Compute artist centrality, genre trends, label longevity, anniversaries, and data completeness
+- Store precomputed results in PostgreSQL `insights.*` tables
+- Serve analytics via read-only HTTP endpoints
+
+**Key Features**:
+
+- FastAPI backend with async PostgreSQL and Neo4j drivers
+- Configurable scheduler interval (default: 24 hours)
+- 5 computation types running sequentially
+- Separate health server on port 8009
+- Results proxied through the API service at `/api/insights/*`
+
+**Configuration**:
+
+- `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
+- `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`: PostgreSQL connection
+- `INSIGHTS_SCHEDULE_HOURS`: Computation interval in hours (default: 24)
+
+See [Insights README](../insights/README.md) for details.
 
 ### API
 
@@ -473,6 +524,12 @@ See [Database Schema](database-schema.md) for details.
 - `labels`: Label data in JSONB format
 - `masters`: Master recording data
 - `releases`: Release data with full-text indexes
+- `insights.artist_centrality`: Top artists by graph centrality
+- `insights.genre_trends`: Genre release counts by decade
+- `insights.label_longevity`: Labels ranked by years active
+- `insights.monthly_anniversaries`: Notable release anniversaries
+- `insights.data_completeness`: Data quality metrics per entity type
+- `insights.computation_log`: Audit log of computation runs
 
 **Indexes**:
 
@@ -542,6 +599,7 @@ curl http://localhost:8000/health  # Extractor
 curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8007/health  # Explore
+curl http://localhost:8009/health  # Insights
 ```
 
 ### Logging
@@ -592,6 +650,7 @@ See [Monitoring](monitoring.md) for details.
 - Tableinator (multiple consumers per queue)
 - Explore (load balanced)
 - Dashboard (load balanced)
+- Insights (load balanced)
 
 **Stateful Services** (scale vertically):
 
@@ -656,4 +715,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-07
+**Last Updated**: 2026-03-14
