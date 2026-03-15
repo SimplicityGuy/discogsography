@@ -78,7 +78,7 @@ url = "2.5"  # URL parsing for AMQP connection normalization
 async-trait = "0.1"
 
 # Mock generation for trait-based testing (behind feature flag)
-mockall = { version = "0.13", optional = true }
+mockall = { version = "0.14", optional = true }
 
 [dev-dependencies]
 extractor = { path = ".", features = ["test-support"] }
