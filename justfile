@@ -98,6 +98,16 @@ security:
 test:
     uv run pytest -m 'not e2e'
 
+# Run JavaScript unit tests for Explore frontend
+[group('test')]
+test-js:
+    cd explore && npx vitest run
+
+# Run JavaScript tests with coverage
+[group('test')]
+test-js-cov:
+    cd explore && npx vitest run --coverage
+
 # Run tests with coverage report
 [group('test')]
 test-cov:
@@ -145,6 +155,9 @@ test-parallel:
     uv run pytest tests/tableinator/ -v > /tmp/test-tableinator.log 2>&1 &
     pid_tableinator=$!
 
+    (cd explore && npx vitest run) > /tmp/test-js.log 2>&1 &
+    pid_js=$!
+
     if [ -d "extractor" ]; then
         (cd extractor && cargo test) > /tmp/test-extractor.log 2>&1 &
         pid_extractor=$!
@@ -161,6 +174,7 @@ test-parallel:
     wait $pid_graphinator || { echo "❌ Graphinator tests failed"; cat /tmp/test-graphinator.log; failed=1; }
     wait $pid_schema_init || { echo "❌ Schema-init tests failed"; cat /tmp/test-schema-init.log; failed=1; }
     wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
+    wait $pid_js || { echo "❌ JS tests failed"; cat /tmp/test-js.log; failed=1; }
 
     if [ -n "$pid_extractor" ]; then
         wait $pid_extractor || { echo "❌ Extractor tests failed"; cat /tmp/test-extractor.log; failed=1; }

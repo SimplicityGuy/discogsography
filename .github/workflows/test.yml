@@ -13,6 +13,7 @@ on:
 env:
   CI: true
   PYTHON_VERSION: "3.13"
+  NODE_VERSION: "22"
 
 permissions:
   contents: read
@@ -343,6 +344,30 @@ jobs:
           fail_ci_if_error: false
           disable_search: true
           verbose: false
+
+  # ============================================================================
+  # EXPLORE JAVASCRIPT TESTS - Runs in parallel with all other test jobs
+  # ============================================================================
+  test-js:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "🔀 Checkout repository"
+        uses: actions/checkout@v6
+
+      - name: "🔧 Setup Node.js"
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: explore/package-lock.json
+
+      - name: "📦 Install dependencies"
+        run: cd explore && npm ci
+
+      - name: "🧪 Run JavaScript tests"
+        run: cd explore && npx vitest run
 
   # ============================================================================
   # RUST EXTRACTOR TESTS - Runs in parallel with all other test jobs
