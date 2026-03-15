@@ -20,6 +20,11 @@ default:
 install:
     uv sync --all-extras
 
+# Install JavaScript dependencies for Explore frontend tests
+[group('setup')]
+install-js:
+    cd explore && npm ci
+
 # Initialize pre-commit hooks for development
 [group('setup')]
 init:

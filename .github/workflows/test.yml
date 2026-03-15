@@ -363,11 +363,16 @@ jobs:
           cache: npm
           cache-dependency-path: explore/package-lock.json
 
+      - name: "🔧 Setup Just"
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: "📦 Install dependencies"
-        run: cd explore && npm ci
+        run: just install-js
 
       - name: "🧪 Run JavaScript tests with coverage"
-        run: cd explore && npx vitest run --coverage
+        run: just test-js-cov
 
       - name: "📊 Upload coverage (explore-js)"
         if: always()
