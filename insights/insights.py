@@ -10,6 +10,7 @@ from collections.abc import AsyncGenerator
 import contextlib
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+import os
 from pathlib import Path
 from typing import Any, cast
 
@@ -400,4 +401,4 @@ async def computation_status() -> JSONResponse:
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=INSIGHTS_PORT)  # noqa: S104  # nosec B104
+    uvicorn.run(app, host="0.0.0.0", port=INSIGHTS_PORT, log_level=os.getenv("LOG_LEVEL", "INFO").lower())  # noqa: S104  # nosec B104

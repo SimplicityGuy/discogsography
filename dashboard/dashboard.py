@@ -589,5 +589,5 @@ if __name__ == "__main__":
         host="0.0.0.0",  # noqa: S104  # nosec B104
         port=8003,
         reload=False,
-        log_level="info",
+        log_level=os.getenv("LOG_LEVEL", "INFO").lower(),
     )

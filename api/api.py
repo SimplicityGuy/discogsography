@@ -702,7 +702,7 @@ def main() -> None:  # pragma: no cover
     print("╚═╝  ╚═╝╚═╝     ╚═╝")
     print()
     # fmt: on
-    uvicorn.run(app, host="0.0.0.0", port=API_PORT)  # noqa: S104  # nosec B104
+    uvicorn.run(app, host="0.0.0.0", port=API_PORT, log_level=os.getenv("LOG_LEVEL", "INFO").lower())  # noqa: S104  # nosec B104
 
 
 if __name__ == "__main__":
