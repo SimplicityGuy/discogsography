@@ -19,6 +19,10 @@ services:
     image: rabbitmq:4-management
     container_name: discogsography-rabbitmq
     hostname: rabbitmq
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     environment:
       RABBITMQ_DEFAULT_PASS: discogsography
       # Set default queue type to quorum for RabbitMQ 4.2+
@@ -40,10 +44,10 @@ services:
           - amqp
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 15s
+      interval: 30s
       timeout: 10s
-      retries: 8
-      start_period: 45s
+      retries: 5
+      start_period: 90s
     restart: unless-stopped
     logging: *default-logging
 
@@ -52,6 +56,12 @@ services:
     image: postgres:18-alpine
     container_name: discogsography-postgres
     hostname: postgres
+    command:
+      - "postgres"
+      - "-c"
+      - "max_wal_size=4GB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
     environment:
       PGDATA: /var/lib/postgresql/data/pgdata
       POSTGRES_DB: discogsography
@@ -83,12 +93,20 @@ services:
     image: neo4j:2026-community
     container_name: discogsography-neo4j
     hostname: neo4j
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
     environment:
       NEO4J_ACCEPT_LICENSE_AGREEMENT: 'yes'
       NEO4J_apoc_export_file_enabled: 'true'
       NEO4J_apoc_import_file_enabled: 'true'
       NEO4J_apoc_import_file_use__neo4j__config: 'true'
       NEO4J_AUTH: neo4j/discogsography
+      NEO4J_db_checkpoint_iops_limit: '2000'
+      NEO4J_db_logs_query_enabled: 'INFO'
+      NEO4J_db_logs_query_threshold: '10s'
+      NEO4J_db_transaction_timeout: '120s'
       NEO4J_dbms_logs_debug_level: WARN
       NEO4J_dbms_memory_transaction_total_max: 6G
       NEO4J_dbms_security_procedures_unrestricted: 'apoc.*'
@@ -113,7 +131,7 @@ services:
       test: ["CMD", "cypher-shell", "-u", "neo4j", "-p", "discogsography", "RETURN 1 as health"]
       interval: 15s
       timeout: 10s
-      retries: 20
+      retries: 10
       start_period: 60s
     restart: unless-stopped
     logging: *default-logging
@@ -162,6 +180,7 @@ services:
     hostname: schema-init
     user: "${UID:-1000}:${GID:-1000}"
     environment:
+      LOG_LEVEL: INFO
       NEO4J_HOST: neo4j
       NEO4J_PASSWORD: discogsography
       NEO4J_USERNAME: neo4j
@@ -207,6 +226,7 @@ services:
       JWT_EXPIRE_MINUTES: "60"
       # IMPORTANT: Override JWT_SECRET_KEY with a random 256-bit key in production!
       JWT_SECRET_KEY: "dev-secret-change-in-production-use-a-256-bit-random-key"
+      LOG_LEVEL: INFO
       NEO4J_HOST: neo4j
       NEO4J_PASSWORD: discogsography
       NEO4J_USERNAME: neo4j
@@ -263,7 +283,7 @@ services:
     environment:
       DISCOGS_ROOT: /discogs-data
       FORCE_REPROCESS: "false"
-      LOG_LEVEL: INFO
+      LOG_LEVEL: info
       PERIODIC_CHECK_DAYS: "5"
       RABBITMQ_HOST: rabbitmq
       RABBITMQ_PASSWORD: discogsography
@@ -305,6 +325,7 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
+      LOG_LEVEL: INFO
       NEO4J_BATCH_FLUSH_INTERVAL: "2.0"  # Reduced from 5.0 for faster flushing
       NEO4J_BATCH_MODE: "true"
       NEO4J_BATCH_SIZE: "500"          # Increased from 100 to 500
@@ -327,7 +348,7 @@ services:
     networks:
       - discogsography
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8001/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -359,6 +380,7 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
+      LOG_LEVEL: INFO
       POSTGRES_BATCH_FLUSH_INTERVAL: "2.0"  # Reduced from 5.0 for faster flushing
       POSTGRES_BATCH_MODE: "true"
       POSTGRES_BATCH_SIZE: "500"          # Increased from 100 to 500
@@ -382,7 +404,7 @@ services:
     networks:
       - discogsography
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
+      test: ["CMD", "curl", "-sf", "http://localhost:8002/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -413,6 +435,7 @@ services:
     hostname: dashboard
     user: "${UID:-1000}:${GID:-1000}"
     environment:
+      LOG_LEVEL: INFO
       NEO4J_HOST: neo4j
       NEO4J_PASSWORD: discogsography
       NEO4J_USERNAME: neo4j
@@ -475,8 +498,14 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       API_BASE_URL: "http://api:8004"
+      LOG_LEVEL: INFO
+      NEO4J_HOST: neo4j
+      NEO4J_PASSWORD: discogsography
+      NEO4J_USERNAME: neo4j
       PYTHONUNBUFFERED: "1"
     depends_on:
+      schema-init:
+        condition: service_completed_successfully
       api:
         condition: service_healthy
     networks:
@@ -514,6 +543,7 @@ services:
     user: "${UID:-1000}:${GID:-1000}"
     environment:
       INSIGHTS_SCHEDULE_HOURS: "24"
+      LOG_LEVEL: INFO
       NEO4J_HOST: neo4j
       NEO4J_PASSWORD: discogsography
       NEO4J_USERNAME: neo4j

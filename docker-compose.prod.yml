@@ -43,7 +43,22 @@ services:
     restart: always
     environment:
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
+      NEO4J_dbms_memory_transaction_total_max: 3G
+      NEO4J_server_jvm_additional: >-
+        -XX:+UseG1GC
+        -XX:+AlwaysPreTouch
+        -XX:+DisableExplicitGC
+        -XX:+ExitOnOutOfMemoryError
+        -XX:+UseCompressedOops
+        -XX:FlightRecorderOptions=stackdepth=256
+        --add-modules jdk.incubator.vector
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_SIZE:-2G}
       NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-2G}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE_SIZE:-1G}
+    deploy:
+      resources:
+        limits:
+          memory: ${NEO4J_MEMORY_LIMIT:-20G}
 
   schema-init:
     environment:
@@ -146,6 +161,10 @@ services:
 
   explore:
     restart: always
+    environment:
+      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
+    secrets:
+      - neo4j_password
     deploy:
       restart_policy:
         condition: any
