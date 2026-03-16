@@ -142,9 +142,9 @@ ENV HOME=/home/discogsography \
     UV_SYSTEM_PYTHON=1 \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
-    NEO4J_ADDRESS="" \
+    NEO4J_HOST="" \
     NEO4J_USERNAME="" \
-    POSTGRES_ADDRESS="" \
+    POSTGRES_HOST="" \
     POSTGRES_USERNAME="" \
     POSTGRES_DATABASE=""
 

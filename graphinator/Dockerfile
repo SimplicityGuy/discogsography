@@ -114,7 +114,7 @@ ENV HOME=/home/discogsography \
     UV_SYSTEM_PYTHON=1 \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
-    NEO4J_ADDRESS="" \
+    NEO4J_HOST="" \
     NEO4J_USERNAME=""
 
 # Declare volume for logs
