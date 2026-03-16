@@ -841,4 +841,318 @@ describe('UserPanes', () => {
             document.createElement.mockRestore();
         });
     });
+
+    describe('_renderCollectionList', () => {
+        it('should return early when container is null', () => {
+            expect(() => userPanes._renderCollectionList(null, {})).not.toThrow();
+        });
+
+        it('should render empty state when releases array is empty', () => {
+            const container = document.createElement('div');
+            userPanes._renderCollectionList(container, { releases: [], total: 0, has_more: false });
+
+            expect(container.querySelector('.user-pane-empty')).not.toBeNull();
+        });
+
+        it('should render table when data has releases', () => {
+            const container = document.createElement('div');
+            userPanes._renderCollectionList(container, {
+                releases: [{ title: 'OK Computer', artist: 'Radiohead', year: 1997, genres: ['Rock'] }],
+                total: 1,
+                has_more: false,
+            });
+
+            expect(container.querySelector('table')).not.toBeNull();
+        });
+
+        it('should render empty state when releases is undefined', () => {
+            const container = document.createElement('div');
+            userPanes._renderCollectionList(container, { total: 0, has_more: false });
+
+            expect(container.querySelector('.user-pane-empty')).not.toBeNull();
+        });
+    });
+
+    describe('_renderWantlistList', () => {
+        it('should return early when container is null', () => {
+            expect(() => userPanes._renderWantlistList(null, {})).not.toThrow();
+        });
+
+        it('should render empty state when releases array is empty', () => {
+            const container = document.createElement('div');
+            userPanes._renderWantlistList(container, { releases: [], total: 0, has_more: false });
+
+            expect(container.querySelector('.user-pane-empty')).not.toBeNull();
+        });
+
+        it('should render table when data has releases', () => {
+            const container = document.createElement('div');
+            userPanes._renderWantlistList(container, {
+                releases: [{ title: 'Loveless', artist: 'My Bloody Valentine', year: 1991 }],
+                total: 1,
+                has_more: false,
+            });
+
+            expect(container.querySelector('table')).not.toBeNull();
+        });
+    });
+
+    describe('_renderTasteStrip', () => {
+        beforeEach(() => {
+            setupUserPanesDOM();
+        });
+
+        it('should render all three columns', () => {
+            const strip = document.getElementById('tasteStrip');
+            userPanes._renderTasteStrip({
+                obscurity: { score: 0.75 },
+                peak_decade: 1990,
+                drift: [{ top_genre: 'Rock' }, { top_genre: 'Electronic' }],
+                heatmap: [{ genre: 'Rock', decade: 1990, count: 10 }],
+                blind_spots: [{ genre: 'Jazz', artist_overlap: 5 }],
+            });
+
+            expect(strip.querySelector('.taste-strip')).not.toBeNull();
+            const cols = strip.querySelectorAll('.taste-col');
+            expect(cols).toHaveLength(3);
+        });
+
+        it('should render obscurity score', () => {
+            const strip = document.getElementById('tasteStrip');
+            userPanes._renderTasteStrip({
+                obscurity: { score: 0.42 },
+                peak_decade: null,
+                drift: [],
+                heatmap: [],
+                blind_spots: [],
+            });
+
+            expect(strip.textContent).toContain('0.42');
+        });
+
+        it('should render dash for null obscurity', () => {
+            const strip = document.getElementById('tasteStrip');
+            userPanes._renderTasteStrip({
+                obscurity: {},
+                peak_decade: null,
+                drift: [],
+                heatmap: [],
+                blind_spots: [],
+            });
+
+            expect(strip.textContent).toContain('\u2014');
+        });
+
+        it('should render peak decade', () => {
+            const strip = document.getElementById('tasteStrip');
+            userPanes._renderTasteStrip({
+                obscurity: { score: 0.5 },
+                peak_decade: 1970,
+                drift: [],
+                heatmap: [],
+                blind_spots: [],
+            });
+
+            expect(strip.textContent).toContain('1970s');
+        });
+
+        it('should render empty heatmap placeholder', () => {
+            const strip = document.getElementById('tasteStrip');
+            userPanes._renderTasteStrip({
+                obscurity: { score: 0.5 },
+                peak_decade: 1990,
+                drift: [],
+                heatmap: [],
+                blind_spots: [],
+            });
+
+            expect(strip.querySelector('.taste-empty')).not.toBeNull();
+        });
+
+        it('should render heatmap grid when data provided', () => {
+            const strip = document.getElementById('tasteStrip');
+            userPanes._renderTasteStrip({
+                obscurity: { score: 0.5 },
+                peak_decade: 1990,
+                drift: [],
+                heatmap: [
+                    { genre: 'Rock', decade: 1990, count: 10 },
+                    { genre: 'Rock', decade: 2000, count: 5 },
+                ],
+                blind_spots: [],
+            });
+
+            expect(strip.querySelector('.taste-heatmap-grid')).not.toBeNull();
+        });
+
+        it('should render blind spots', () => {
+            const strip = document.getElementById('tasteStrip');
+            userPanes._renderTasteStrip({
+                obscurity: { score: 0.5 },
+                peak_decade: 1990,
+                drift: [],
+                heatmap: [],
+                blind_spots: [
+                    { genre: 'Jazz', artist_overlap: 5 },
+                    { genre: 'Classical', artist_overlap: 3 },
+                ],
+            });
+
+            const items = strip.querySelectorAll('.taste-blindspot-item');
+            expect(items).toHaveLength(2);
+            expect(items[0].querySelector('.taste-blindspot-name').textContent).toBe('Jazz');
+            expect(items[0].querySelector('.taste-blindspot-count').textContent).toBe('5 artists');
+        });
+
+        it('should render no blind spots message', () => {
+            const strip = document.getElementById('tasteStrip');
+            userPanes._renderTasteStrip({
+                obscurity: { score: 0.5 },
+                peak_decade: 1990,
+                drift: [],
+                heatmap: [],
+                blind_spots: [],
+            });
+
+            expect(strip.textContent).toContain('No blind spots found');
+        });
+
+        it('should render download button', () => {
+            const strip = document.getElementById('tasteStrip');
+            userPanes._renderTasteStrip({
+                obscurity: { score: 0.5 },
+                peak_decade: 1990,
+                drift: [],
+                heatmap: [],
+                blind_spots: [],
+            });
+
+            expect(strip.querySelector('.taste-download-btn')).not.toBeNull();
+        });
+
+        it('should return early when strip element is missing', () => {
+            document.getElementById('tasteStrip').remove();
+            expect(() => userPanes._renderTasteStrip({})).not.toThrow();
+        });
+    });
+
+    describe('_renderGaps', () => {
+        it('should render summary header with entity info', () => {
+            const container = document.createElement('div');
+            userPanes._renderGaps(container, {
+                entity: { name: 'Radiohead', type: 'artist' },
+                summary: { total: 50, owned: 30, missing: 20 },
+                results: [
+                    { title: 'Pablo Honey', artist: 'Radiohead', year: 1993, genres: ['Rock'] },
+                ],
+                pagination: { total: 20, offset: 0, limit: 50, has_more: false },
+            });
+
+            expect(container.querySelector('.gap-summary')).not.toBeNull();
+            expect(container.querySelector('.gap-entity-title').textContent).toContain('Radiohead');
+        });
+
+        it('should render stat cards', () => {
+            const container = document.createElement('div');
+            userPanes._renderGaps(container, {
+                entity: { name: 'Radiohead', type: 'artist' },
+                summary: { total: 50, owned: 30, missing: 20 },
+                results: [{ title: 'Pablo Honey', artist: 'Radiohead', year: 1993 }],
+                pagination: { total: 1, offset: 0, limit: 50 },
+            });
+
+            const cards = container.querySelectorAll('.stat-card');
+            expect(cards).toHaveLength(3);
+        });
+
+        it('should render empty state when no results', () => {
+            const container = document.createElement('div');
+            userPanes._renderGaps(container, {
+                entity: { name: 'Radiohead', type: 'artist' },
+                summary: { total: 10, owned: 10, missing: 0 },
+                results: [],
+                pagination: { total: 0, offset: 0, limit: 50 },
+            });
+
+            expect(container.querySelector('.user-pane-empty')).not.toBeNull();
+        });
+
+        it('should return early when container is null', () => {
+            expect(() => userPanes._renderGaps(null, {})).not.toThrow();
+        });
+
+        it('should render label entity icon', () => {
+            const container = document.createElement('div');
+            userPanes._renderGaps(container, {
+                entity: { name: 'Warp', type: 'label' },
+                summary: { total: 100, owned: 50, missing: 50 },
+                results: [{ title: 'Test', artist: 'Test', year: 2000 }],
+                pagination: { total: 1, offset: 0, limit: 50 },
+            });
+
+            const icon = container.querySelector('.gap-entity-title .material-symbols-outlined');
+            expect(icon.textContent).toBe('sell');
+        });
+    });
+
+    describe('_buildGapTable', () => {
+        it('should render a table with 7 columns', () => {
+            const releases = [
+                { title: 'Pablo Honey', artist: 'Radiohead', label: 'Parlophone', year: 1993, formats: ['CD'], genres: ['Rock'], on_wantlist: false },
+            ];
+
+            const wrap = userPanes._buildGapTable(releases, 1, 0, vi.fn(), false);
+
+            expect(wrap.querySelector('table')).not.toBeNull();
+            const headers = wrap.querySelectorAll('th');
+            expect(headers).toHaveLength(7);
+            expect(headers[0].textContent).toBe('Title');
+            expect(headers[6].textContent).toBe('Status');
+        });
+
+        it('should render wantlist badge when on_wantlist is true', () => {
+            const releases = [
+                { title: 'Pablo Honey', artist: 'Radiohead', year: 1993, on_wantlist: true },
+            ];
+
+            const wrap = userPanes._buildGapTable(releases, 1, 0, vi.fn(), false);
+
+            expect(wrap.querySelector('.in-wantlist')).not.toBeNull();
+            expect(wrap.textContent).toContain('Wanted');
+        });
+
+        it('should render format badges', () => {
+            const releases = [
+                { title: 'Test', artist: 'Test', year: 2000, formats: ['Vinyl', 'CD'] },
+            ];
+
+            const wrap = userPanes._buildGapTable(releases, 1, 0, vi.fn(), false);
+            const badges = wrap.querySelectorAll('.genre-badge');
+            expect(badges.length).toBeGreaterThanOrEqual(2);
+        });
+
+        it('should show showing count', () => {
+            const releases = [{ title: 'Test', artist: 'Test', year: 2000 }];
+
+            const wrap = userPanes._buildGapTable(releases, 5, 0, vi.fn(), false);
+            expect(wrap.querySelector('.title-count').textContent).toContain('1');
+            expect(wrap.querySelector('.title-count').textContent).toContain('5');
+        });
+
+        it('should render pagination when total > pageSize', () => {
+            const releases = Array.from({ length: 50 }, (_, i) => ({
+                title: `Album ${i}`, artist: 'Test', year: 2000,
+            }));
+
+            const wrap = userPanes._buildGapTable(releases, 100, 0, vi.fn(), true);
+            expect(wrap.querySelector('.pane-pagination')).not.toBeNull();
+        });
+
+        it('should not render pagination when total <= pageSize', () => {
+            const releases = [{ title: 'Test', artist: 'Test', year: 2000 }];
+
+            const wrap = userPanes._buildGapTable(releases, 1, 0, vi.fn(), false);
+            expect(wrap.querySelector('.pane-pagination')).toBeNull();
+        });
+    });
 });

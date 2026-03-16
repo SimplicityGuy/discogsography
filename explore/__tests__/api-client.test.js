@@ -318,5 +318,677 @@ describe('ApiClient', () => {
             await window.apiClient.saveSnapshot([], {}, null);
             expect(capturedOptions.headers['Authorization']).toBeUndefined();
         });
+
+        it('saveSnapshot should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/snapshot': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.saveSnapshot([], {}, null);
+            expect(result).toBeNull();
+        });
+
+        it('restoreSnapshot should return data on success', async () => {
+            const snapshotData = { nodes: [{ id: 'A', type: 'artist' }], center: { id: 'A', type: 'artist' } };
+            const mockFetch = createMockFetch({
+                '/api/snapshot/': { data: snapshotData },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.restoreSnapshot('snap-123');
+            expect(result).toEqual(snapshotData);
+        });
+
+        it('restoreSnapshot should URL-encode the token', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            await window.apiClient.restoreSnapshot('token/with/slashes');
+            expect(capturedUrl).toContain('/api/snapshot/token%2Fwith%2Fslashes');
+        });
+
+        it('restoreSnapshot should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/snapshot/': { status: 404 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.restoreSnapshot('bad-token');
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('getTrends', () => {
+        it('should return trends data on success', async () => {
+            const trendsData = { name: 'Radiohead', years: [1993, 1995], counts: [1, 3] };
+            const mockFetch = createMockFetch({
+                '/api/trends': { data: trendsData },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getTrends('Radiohead', 'artist');
+            expect(result).toEqual(trendsData);
+        });
+
+        it('should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/trends': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getTrends('Radiohead', 'artist');
+            expect(result).toBeNull();
+        });
+
+        it('should include name and type params', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            await window.apiClient.getTrends('Radiohead', 'artist');
+            expect(capturedUrl).toContain('name=Radiohead');
+            expect(capturedUrl).toContain('type=artist');
+        });
+    });
+
+    describe('getYearRange', () => {
+        it('should return year range on success', async () => {
+            const mockFetch = createMockFetch({
+                '/api/explore/year-range': { data: { min_year: 1950, max_year: 2023 } },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getYearRange();
+            expect(result).toEqual({ min_year: 1950, max_year: 2023 });
+        });
+
+        it('should return fallback on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/explore/year-range': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getYearRange();
+            expect(result).toEqual({ min_year: null, max_year: null });
+        });
+    });
+
+    describe('getGenreEmergence', () => {
+        it('should return genre data on success', async () => {
+            const data = { genres: [{ name: 'Rock' }], styles: [{ name: 'Punk' }] };
+            const mockFetch = createMockFetch({
+                '/api/explore/genre-emergence': { data },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getGenreEmergence(1990);
+            expect(result).toEqual(data);
+        });
+
+        it('should include before_year param', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, json: async () => ({ genres: [], styles: [] }) };
+            });
+
+            await window.apiClient.getGenreEmergence(1985);
+            expect(capturedUrl).toContain('before_year=1985');
+        });
+
+        it('should return fallback on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/explore/genre-emergence': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getGenreEmergence(1990);
+            expect(result).toEqual({ genres: [], styles: [] });
+        });
+    });
+
+    describe('getNodeDetails', () => {
+        it('should return details on success', async () => {
+            const details = { name: 'Radiohead', release_count: 42 };
+            const mockFetch = createMockFetch({
+                '/api/node/': { data: details },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getNodeDetails('Radiohead', 'artist');
+            expect(result).toEqual(details);
+        });
+
+        it('should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/node/': { status: 404 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getNodeDetails('Unknown', 'artist');
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('Discogs OAuth methods', () => {
+        it('authorizeDiscogs should return null without token', async () => {
+            const result = await window.apiClient.authorizeDiscogs(null);
+            expect(result).toBeNull();
+        });
+
+        it('authorizeDiscogs should return auth data on success', async () => {
+            const authData = { authorize_url: 'https://discogs.com/oauth', state: 'abc' };
+            const mockFetch = createMockFetch({
+                '/api/oauth/authorize/discogs': { data: authData },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.authorizeDiscogs('my-token');
+            expect(result).toEqual(authData);
+        });
+
+        it('authorizeDiscogs should send Authorization header', async () => {
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (_url, options) => {
+                capturedOptions = options;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            await window.apiClient.authorizeDiscogs('my-token');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+        });
+
+        it('authorizeDiscogs should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/oauth/authorize/discogs': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.authorizeDiscogs('my-token');
+            expect(result).toBeNull();
+        });
+
+        it('verifyDiscogs should return null without token', async () => {
+            const result = await window.apiClient.verifyDiscogs(null, 'state', 'verifier');
+            expect(result).toBeNull();
+        });
+
+        it('verifyDiscogs should send state and verifier in body', async () => {
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (_url, options) => {
+                capturedOptions = options;
+                return { ok: true, json: async () => ({ connected: true }) };
+            });
+
+            await window.apiClient.verifyDiscogs('token', 'my-state', 'my-verifier');
+            const body = JSON.parse(capturedOptions.body);
+            expect(body.state).toBe('my-state');
+            expect(body.oauth_verifier).toBe('my-verifier');
+            expect(capturedOptions.method).toBe('POST');
+        });
+
+        it('verifyDiscogs should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/oauth/verify/discogs': { status: 400 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.verifyDiscogs('token', 'state', 'verifier');
+            expect(result).toBeNull();
+        });
+
+        it('getDiscogsStatus should return null without token', async () => {
+            const result = await window.apiClient.getDiscogsStatus(null);
+            expect(result).toBeNull();
+        });
+
+        it('getDiscogsStatus should return status on success', async () => {
+            const mockFetch = createMockFetch({
+                '/api/oauth/status/discogs': { data: { connected: true, discogs_username: 'dj_test' } },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getDiscogsStatus('token');
+            expect(result).toEqual({ connected: true, discogs_username: 'dj_test' });
+        });
+
+        it('revokeDiscogs should return null without token', async () => {
+            const result = await window.apiClient.revokeDiscogs(null);
+            expect(result).toBeNull();
+        });
+
+        it('revokeDiscogs should use DELETE method', async () => {
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (_url, options) => {
+                capturedOptions = options;
+                return { ok: true, json: async () => ({ revoked: true }) };
+            });
+
+            await window.apiClient.revokeDiscogs('token');
+            expect(capturedOptions.method).toBe('DELETE');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer token');
+        });
+
+        it('revokeDiscogs should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/oauth/revoke/discogs': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.revokeDiscogs('token');
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('user data methods - extended', () => {
+        it('getUserCollection should include pagination params', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, json: async () => ({ releases: [], total: 0 }) };
+            });
+
+            await window.apiClient.getUserCollection('token', 25, 50);
+            expect(capturedUrl).toContain('limit=25');
+            expect(capturedUrl).toContain('offset=50');
+        });
+
+        it('getUserCollection should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/user/collection': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getUserCollection('token');
+            expect(result).toBeNull();
+        });
+
+        it('getUserWantlist should return null without token', async () => {
+            const result = await window.apiClient.getUserWantlist(null);
+            expect(result).toBeNull();
+        });
+
+        it('getUserWantlist should return data on success', async () => {
+            const wantlistData = { releases: [{ title: 'Loveless' }], total: 1 };
+            const mockFetch = createMockFetch({
+                '/api/user/wantlist': { data: wantlistData },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getUserWantlist('token');
+            expect(result).toEqual(wantlistData);
+        });
+
+        it('getUserWantlist should include pagination params', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            await window.apiClient.getUserWantlist('token', 10, 20);
+            expect(capturedUrl).toContain('limit=10');
+            expect(capturedUrl).toContain('offset=20');
+        });
+
+        it('getUserRecommendations should return null without token', async () => {
+            const result = await window.apiClient.getUserRecommendations(null);
+            expect(result).toBeNull();
+        });
+
+        it('getUserRecommendations should include limit param', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, json: async () => ({ recommendations: [] }) };
+            });
+
+            await window.apiClient.getUserRecommendations('token', 30);
+            expect(capturedUrl).toContain('limit=30');
+        });
+
+        it('getUserCollectionStats should return null without token', async () => {
+            const result = await window.apiClient.getUserCollectionStats(null);
+            expect(result).toBeNull();
+        });
+
+        it('getUserCollectionStats should return stats on success', async () => {
+            const stats = { total_releases: 100, unique_artists: 50 };
+            const mockFetch = createMockFetch({
+                '/api/user/collection/stats': { data: stats },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getUserCollectionStats('token');
+            expect(result).toEqual(stats);
+        });
+
+        it('getUserStatus should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/user/status': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getUserStatus([1], 'token');
+            expect(result).toBeNull();
+        });
+
+        it('getUserStatus should work without token', async () => {
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (_url, options) => {
+                capturedOptions = options;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            await window.apiClient.getUserStatus([1]);
+            expect(capturedOptions.headers['Authorization']).toBeUndefined();
+        });
+    });
+
+    describe('collection formats and gaps', () => {
+        it('getCollectionFormats should return null without token', async () => {
+            const result = await window.apiClient.getCollectionFormats(null);
+            expect(result).toBeNull();
+        });
+
+        it('getCollectionFormats should return formats on success', async () => {
+            const mockFetch = createMockFetch({
+                '/api/collection/formats': { data: { formats: ['Vinyl', 'CD'] } },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getCollectionFormats('token');
+            expect(result).toEqual({ formats: ['Vinyl', 'CD'] });
+        });
+
+        it('getCollectionGaps should return null without token', async () => {
+            const result = await window.apiClient.getCollectionGaps(null, 'artist', 'id');
+            expect(result).toBeNull();
+        });
+
+        it('getCollectionGaps should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/collection/gaps/': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getCollectionGaps('token', 'artist', 'Radiohead');
+            expect(result).toBeNull();
+        });
+
+        it('getCollectionGaps should use default options', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            await window.apiClient.getCollectionGaps('token', 'artist', 'Radiohead');
+            expect(capturedUrl).toContain('limit=50');
+            expect(capturedUrl).toContain('offset=0');
+        });
+    });
+
+    describe('sync methods', () => {
+        it('triggerSync should return null without token', async () => {
+            const result = await window.apiClient.triggerSync(null);
+            expect(result).toBeNull();
+        });
+
+        it('triggerSync should use POST method', async () => {
+            let capturedOptions;
+            vi.stubGlobal('fetch', async (_url, options) => {
+                capturedOptions = options;
+                return { ok: true, json: async () => ({ syncing: true }) };
+            });
+
+            await window.apiClient.triggerSync('token');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer token');
+        });
+
+        it('triggerSync should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/sync': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.triggerSync('token');
+            expect(result).toBeNull();
+        });
+
+        it('getSyncStatus should return null without token', async () => {
+            const result = await window.apiClient.getSyncStatus(null);
+            expect(result).toBeNull();
+        });
+
+        it('getSyncStatus should return status on success', async () => {
+            const mockFetch = createMockFetch({
+                '/api/sync/status': { data: { status: 'idle', last_sync: '2024-01-01' } },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getSyncStatus('token');
+            expect(result).toEqual({ status: 'idle', last_sync: '2024-01-01' });
+        });
+    });
+
+    describe('taste fingerprint methods', () => {
+        it('getTasteFingerprint should return null without token', async () => {
+            const result = await window.apiClient.getTasteFingerprint(null);
+            expect(result).toBeNull();
+        });
+
+        it('getTasteFingerprint should return data on success', async () => {
+            const fpData = { obscurity: { score: 0.75 }, peak_decade: 1990 };
+            const mockFetch = createMockFetch({
+                '/api/user/taste/fingerprint': { data: fpData },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getTasteFingerprint('token');
+            expect(result).toEqual(fpData);
+        });
+
+        it('getTasteFingerprint should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/user/taste/fingerprint': { status: 422 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getTasteFingerprint('token');
+            expect(result).toBeNull();
+        });
+
+        it('getTasteCard should return null without token', async () => {
+            const result = await window.apiClient.getTasteCard(null);
+            expect(result).toBeNull();
+        });
+
+        it('getTasteCard should return blob on success', async () => {
+            const svgBlob = new Blob(['<svg></svg>'], { type: 'image/svg+xml' });
+            vi.stubGlobal('fetch', async () => ({
+                ok: true,
+                blob: async () => svgBlob,
+            }));
+
+            const result = await window.apiClient.getTasteCard('token');
+            expect(result).toBeInstanceOf(Blob);
+        });
+
+        it('getTasteCard should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/user/taste/card': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getTasteCard('token');
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('insights methods - extended', () => {
+        it('getInsightsThisMonth should return data on success', async () => {
+            const data = { highlights: ['New release'] };
+            const mockFetch = createMockFetch({
+                '/api/insights/this-month': { data },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getInsightsThisMonth();
+            expect(result).toEqual(data);
+        });
+
+        it('getInsightsThisMonth should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/insights/this-month': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getInsightsThisMonth();
+            expect(result).toBeNull();
+        });
+
+        it('getInsightsDataCompleteness should return data on success', async () => {
+            const data = { completeness: 0.95 };
+            const mockFetch = createMockFetch({
+                '/api/insights/data-completeness': { data },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getInsightsDataCompleteness();
+            expect(result).toEqual(data);
+        });
+
+        it('getInsightsDataCompleteness should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/insights/data-completeness': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getInsightsDataCompleteness();
+            expect(result).toBeNull();
+        });
+
+        it('getInsightsStatus should return data on success', async () => {
+            const data = { status: 'ready', last_computed: '2024-01-01' };
+            const mockFetch = createMockFetch({
+                '/api/insights/status': { data },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getInsightsStatus();
+            expect(result).toEqual(data);
+        });
+
+        it('getInsightsStatus should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/insights/status': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getInsightsStatus();
+            expect(result).toBeNull();
+        });
+
+        it('getInsightsTopArtists should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/insights/top-artists': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getInsightsTopArtists();
+            expect(result).toBeNull();
+        });
+
+        it('getInsightsGenreTrends should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/insights/genre-trends': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getInsightsGenreTrends('Rock');
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('findPath - extended', () => {
+        it('should return path data on success', async () => {
+            const pathData = { found: true, length: 3, path: ['A', 'B', 'C'] };
+            const mockFetch = createMockFetch({
+                '/api/path': { data: pathData },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.findPath('A', 'artist', 'C', 'artist');
+            expect(result).toEqual(pathData);
+        });
+
+        it('should include max_depth param', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            await window.apiClient.findPath('A', 'artist', 'B', 'label', 5);
+            expect(capturedUrl).toContain('max_depth=5');
+        });
+
+        it('should use default error message when 404 has no error field', async () => {
+            vi.stubGlobal('fetch', async () => ({
+                ok: false,
+                status: 404,
+                json: async () => ({}),
+            }));
+
+            const result = await window.apiClient.findPath('A', 'artist', 'B', 'artist');
+            expect(result).toEqual({ notFound: true, error: 'Entity not found' });
+        });
+    });
+
+    describe('search - extended', () => {
+        it('should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/search': { status: 500 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.search('test');
+            expect(result).toBeNull();
+        });
+
+        it('should return search results on success', async () => {
+            const searchData = { results: [{ name: 'Radiohead', type: 'artist' }], total: 1 };
+            const mockFetch = createMockFetch({
+                '/api/search': { data: searchData },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.search('Radiohead');
+            expect(result).toEqual(searchData);
+        });
+    });
+
+    describe('logout - extended', () => {
+        it('should send POST with Authorization header', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true };
+            });
+
+            await window.apiClient.logout('my-token');
+            expect(capturedUrl).toContain('/api/auth/logout');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
+        });
     });
 });
