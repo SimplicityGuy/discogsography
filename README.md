@@ -29,7 +29,7 @@
 
 ## 🎯 What is Discogsography?
 
-Discogsography transforms monthly Discogs data dumps (~11GB compressed XML) into:
+Discogsography transforms monthly Discogs data dumps (~11.3GB compressed XML) into:
 
 - **🔗 Neo4j Graph Database**: Navigate complex music industry relationships
 - **🐘 PostgreSQL Database**: High-performance queries and full-text search
@@ -57,7 +57,7 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 ```mermaid
 graph TD
-    S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~11GB XML")]
+    S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~11.3GB XML")]
     SCHEMA[["🔧 Schema-Init<br/>One-shot DDL<br/>Initialiser"]]
     EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>4 Fanout Exchanges"}}
@@ -115,9 +115,9 @@ graph TD
 
 ## 🌟 Key Features
 
-- **⚡ High-Speed Processing**: 20,000–400,000+ records/second XML parsing with Rust-based extractor
+- **⚡ High-Speed Processing**: ~130–480 records/second end-to-end throughput per data type with Rust-based extractor
 - **🔄 Smart Deduplication**: SHA256 hash-based change detection prevents reprocessing
-- **📈 Handles Big Data**: Processes 19M+ releases, 10M+ artists across ~11GB compressed XML
+- **📈 Handles Big Data**: Processes 19M+ releases, 10M+ artists across ~11.3GB compressed XML
 - **🔁 Auto-Recovery**: Automatic retries with exponential backoff and dead letter queues
 - **🐋 Container Security**: Non-root users, read-only filesystems, dropped capabilities
 - **📝 Type Safety**: Full type hints with strict mypy validation and Bandit security scanning

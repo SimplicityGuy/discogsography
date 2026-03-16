@@ -43,8 +43,8 @@ flowchart TD
 
 | Metric                | Observed              | Optimization        |
 | --------------------- | --------------------- | ------------------- |
-| **XML Parsing**       | 20,000-400,000+ rec/s | I/O, Memory         |
-| **Initial Load**      | ~6 days (parallel)    | Batch processing ✅ |
+| **XML Parsing**       | ~130-480 rec/s (e2e)  | RabbitMQ backpressure |
+| **Initial Load**      | ~2 days (parallel)    | Batch processing ✅ |
 | **Update Run**        | ~26 hours (parallel)  | SHA256 dedup ✅     |
 | **API Response Time** | \<200ms               | Query complexity    |
 

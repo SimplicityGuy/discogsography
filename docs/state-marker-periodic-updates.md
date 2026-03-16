@@ -125,8 +125,8 @@ Key tests for periodic saves:
 - **Save Frequency**: Every 5,000 records
 - **Save Operation**: ~1-2ms per save (async, non-blocking)
 - **Typical Files**:
-  - Masters: ~2.9M records → ~580 saves
-  - Releases: ~20M records → ~4,000 saves
+  - Masters: ~2.5M records → ~506 saves
+  - Releases: ~19M records → ~3,790 saves
 - **Total Overhead**: \<10 seconds per large file (negligible)
 
 ## Configuration

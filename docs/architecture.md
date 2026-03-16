@@ -40,7 +40,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ```mermaid
 graph TD
-    S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~11GB XML")]
+    S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~11.3GB XML")]
     EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     SCHEMA[["🔧 Schema-Init<br/>One-Shot DB<br/>Schema Initialiser"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>4 Fanout Exchanges"}}
@@ -631,14 +631,44 @@ See [Monitoring](monitoring.md) for details.
 
 |                   Data Type                    | Record Count | XML Size | Initial Load | Update Run |
 | :--------------------------------------------: | :----------: | :------: | :----------: | :--------: |
-| [📀](emoji-guide.md#music-domain) **Releases** | ~19 million  |  ~10GB   |   ~6 days    | ~26 hours  |
-| [🎤](emoji-guide.md#music-domain) **Artists**  | ~10 million  |  ~460MB  |   ~3 days    | ~14 hours  |
-| [🎵](emoji-guide.md#music-domain) **Masters**  | ~2.5 million |  ~570MB  |  ~18 hours   |  ~4 hours  |
-|                 🏢 **Labels**                  | ~2.3 million |  ~83MB   |  ~19 hours   |  ~3 hours  |
+| [📀](emoji-guide.md#music-domain) **Releases** | ~19 million  |  ~11GB   |  ~40 hours   | ~26 hours  |
+| [🎤](emoji-guide.md#music-domain) **Artists**  | ~10 million  |  ~461MB  |  ~21 hours   | ~14 hours  |
+| [🎵](emoji-guide.md#music-domain) **Masters**  | ~2.5 million |  ~575MB  |  ~4.5 hours  |  ~4 hours  |
+|                 🏢 **Labels**                  | ~2.3 million |  ~84MB   |   ~4 hours   |  ~3 hours  |
 
-**📊 Total: ~34 million records • ~11GB compressed • ~100GB on disk (25GB Neo4j + 72GB PostgreSQL)**
+**📊 Total: ~34 million records • ~11.3GB compressed • ~76GB on disk (28GB Neo4j + 48GB PostgreSQL)**
 
-**⏱️ Initial load: ~6 days (parallel, limited by releases) • Update run: ~26 hours (~5x faster)**
+**⏱️ Initial load: ~2 days (parallel, limited by releases) • Update run: ~26 hours (~5x faster)**
+
+</div>
+
+### 🔗 Neo4j Graph Scale
+
+<div align="center">
+
+**Nodes: ~33.8 million**
+
+| Node Label  |    Count    |
+| :---------: | :---------: |
+| **Release** | ~19 million |
+| **Artist**  | ~10 million |
+| **Master**  | ~2.5 million |
+| **Label**   | ~2.4 million |
+| **Style**   |     757     |
+| **Genre**   |      16     |
+
+**Relationships: ~134.3 million**
+
+| Relationship Type |    Count     | Description                        |
+| :---------------: | :----------: | :--------------------------------- |
+| **IS**            | ~61.2 million | Release/Master → Style/Genre       |
+| **BY**            | ~26 million   | Release/Master → Artist            |
+| **ON**            | ~20.6 million | Release → Label                    |
+| **DERIVED_FROM**  | ~19 million   | Release → Master                   |
+| **ALIAS_OF**      | ~4.9 million  | Artist → Artist (aliases)          |
+| **MEMBER_OF**     | ~2.3 million  | Artist → Artist (group membership) |
+| **SUBLABEL_OF**   | ~278K         | Label → Label (parent/child)       |
+| **PART_OF**       | ~10K          | Series relationships               |
 
 </div>
 

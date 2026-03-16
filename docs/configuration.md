@@ -117,7 +117,7 @@ RABBITMQ_PASSWORD=mypassword
 **DISCOGS_ROOT Details**:
 
 - Must be writable by service user (UID 1000 in Docker)
-- Requires ~100GB free space for full dataset
+- Requires ~76GB free space for full dataset
 - Contains downloaded XML files and metadata cache
 
 **Directory Structure**:

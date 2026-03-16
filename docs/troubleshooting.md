@@ -29,7 +29,7 @@ This guide covers common issues you might encounter while using Discogsography a
 # Check connectivity to Discogs S3
 curl -I https://discogs-data-dumps.s3.us-west-2.amazonaws.com
 
-# Verify disk space (need 100GB+)
+# Verify disk space (need 76GB+)
 df -h /discogs-data
 
 # Check permissions
@@ -48,7 +48,7 @@ docker-compose logs -f extractor
    ping discogs-data-dumps.s3.us-west-2.amazonaws.com
    ```
 
-1. **✅ Verify 100GB+ free space**
+1. **✅ Verify 76GB+ free space**
 
    ```bash
    # Check available space

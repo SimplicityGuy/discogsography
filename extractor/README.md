@@ -26,14 +26,16 @@ Discogs data.
 
 ## Performance Benchmarks
 
-Based on disco-quick reference implementation:
+Observed end-to-end throughput (XML parsing + RabbitMQ publishing, March 2026 dataset):
 
-| Data Type | Records/Second | Memory Usage |
-| --------- | -------------- | ------------ |
-| Artists   | ~430,000       | ~5MB         |
-| Labels    | ~640,000       | ~5MB         |
-| Masters   | ~95,000        | ~8MB         |
-| Releases  | ~22,000        | ~10MB        |
+| Data Type | Avg Records/Second | Peak Records/Second | Memory Usage |
+| --------- | ------------------ | ------------------- | ------------ |
+| Artists   | ~132               | ~437                | ~5MB         |
+| Labels    | ~162               | ~437                | ~5MB         |
+| Masters   | ~156               | ~437                | ~8MB         |
+| Releases  | ~130               | ~477                | ~10MB        |
+
+> **Note**: Throughput is limited by RabbitMQ publishing and consumer backpressure, not XML parsing speed.
 
 ## Configuration
 
