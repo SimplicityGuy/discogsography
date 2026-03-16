@@ -611,4 +611,234 @@ describe('UserPanes', () => {
             expect(wrap.querySelector('.pane-pagination')).not.toBeNull();
         });
     });
+
+    describe('loadCollectionStats', () => {
+        it('should return early when no token', async () => {
+            window.authManager.getToken.mockReturnValue(null);
+            await userPanes.loadCollectionStats();
+            expect(window.apiClient.getUserCollectionStats).not.toHaveBeenCalled();
+        });
+
+        it('should call getUserCollectionStats with token', async () => {
+            window.apiClient.getUserCollectionStats.mockResolvedValue({
+                total_releases: 100, unique_artists: 50, unique_labels: 20, average_rating: 3.5,
+            });
+            await userPanes.loadCollectionStats();
+            expect(window.apiClient.getUserCollectionStats).toHaveBeenCalledWith('test-token');
+        });
+
+        it('should render stats when data returned', async () => {
+            window.apiClient.getUserCollectionStats.mockResolvedValue({
+                total_releases: 100, unique_artists: 50, unique_labels: 20, average_rating: 3.5,
+            });
+            await userPanes.loadCollectionStats();
+            const el = document.getElementById('collectionStats');
+            expect(el.querySelectorAll('.stat-card').length).toBe(4);
+        });
+    });
+
+    describe('startDiscogsOAuth', () => {
+        beforeEach(() => {
+            globalThis.Alpine = { store: vi.fn().mockReturnValue({ discogsOpen: false }) };
+        });
+
+        it('should return early when no token', async () => {
+            window.authManager.getToken.mockReturnValue(null);
+            await userPanes.startDiscogsOAuth();
+            expect(window.apiClient.authorizeDiscogs).not.toHaveBeenCalled();
+        });
+
+        it('should call authorizeDiscogs with token', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 'abc',
+            });
+            const origOpen = window.open;
+            window.open = vi.fn();
+            await userPanes.startDiscogsOAuth();
+            expect(window.apiClient.authorizeDiscogs).toHaveBeenCalledWith('test-token');
+            window.open = origOpen;
+        });
+
+        it('should store OAuth state', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue({
+                authorize_url: 'https://discogs.com/oauth', state: 'test-state',
+            });
+            window.open = vi.fn();
+            await userPanes.startDiscogsOAuth();
+            expect(userPanes._discogsOAuthState).toBe('test-state');
+        });
+
+        it('should alert when API returns null', async () => {
+            window.apiClient.authorizeDiscogs.mockResolvedValue(null);
+            window.alert = vi.fn();
+            await userPanes.startDiscogsOAuth();
+            expect(window.alert).toHaveBeenCalled();
+            expect(userPanes._discogsOAuthState).toBeNull();
+        });
+    });
+
+    describe('submitDiscogsVerifier', () => {
+        beforeEach(() => {
+            globalThis.Alpine = { store: vi.fn().mockReturnValue({ discogsOpen: false }) };
+        });
+
+        it('should show error when verifier is empty', async () => {
+            const input = document.getElementById('discogsVerifierInput');
+            input.value = '';
+            await userPanes.submitDiscogsVerifier();
+            const errorEl = document.getElementById('discogsVerifierError');
+            expect(errorEl.textContent).toContain('Please enter');
+        });
+
+        it('should show error when no OAuth state', async () => {
+            const input = document.getElementById('discogsVerifierInput');
+            input.value = 'verifier-code';
+            userPanes._discogsOAuthState = null;
+            await userPanes.submitDiscogsVerifier();
+            const errorEl = document.getElementById('discogsVerifierError');
+            expect(errorEl.textContent).toContain('Session expired');
+        });
+
+        it('should call verifyDiscogs and update status on success', async () => {
+            const input = document.getElementById('discogsVerifierInput');
+            input.value = 'verifier-code';
+            userPanes._discogsOAuthState = 'test-state';
+            window.apiClient.verifyDiscogs.mockResolvedValue({ connected: true });
+            window.apiClient.getDiscogsStatus.mockResolvedValue({ connected: true });
+            await userPanes.submitDiscogsVerifier();
+            expect(window.apiClient.verifyDiscogs).toHaveBeenCalledWith('test-token', 'test-state', 'verifier-code');
+            expect(window.authManager.setDiscogsStatus).toHaveBeenCalledWith({ connected: true });
+        });
+
+        it('should show error on verification failure', async () => {
+            const input = document.getElementById('discogsVerifierInput');
+            input.value = 'bad-code';
+            userPanes._discogsOAuthState = 'test-state';
+            window.apiClient.verifyDiscogs.mockResolvedValue({ connected: false });
+            await userPanes.submitDiscogsVerifier();
+            const errorEl = document.getElementById('discogsVerifierError');
+            expect(errorEl.textContent).toContain('Verification failed');
+        });
+    });
+
+    describe('disconnectDiscogs', () => {
+        it('should return early when no token', async () => {
+            window.authManager.getToken.mockReturnValue(null);
+            await userPanes.disconnectDiscogs();
+            expect(window.apiClient.revokeDiscogs).not.toHaveBeenCalled();
+        });
+
+        it('should call revokeDiscogs when confirmed', async () => {
+            window.confirm = vi.fn().mockReturnValue(true);
+            await userPanes.disconnectDiscogs();
+            expect(window.apiClient.revokeDiscogs).toHaveBeenCalledWith('test-token');
+            expect(window.authManager.setDiscogsStatus).toHaveBeenCalledWith({ connected: false });
+        });
+
+        it('should not call revokeDiscogs when cancelled', async () => {
+            window.confirm = vi.fn().mockReturnValue(false);
+            await userPanes.disconnectDiscogs();
+            expect(window.apiClient.revokeDiscogs).not.toHaveBeenCalled();
+        });
+
+        it('should clear taste cache after disconnect', async () => {
+            window.confirm = vi.fn().mockReturnValue(true);
+            userPanes._tasteCache = { some: 'data' };
+            await userPanes.disconnectDiscogs();
+            expect(userPanes._tasteCache).toBeNull();
+        });
+    });
+
+    describe('loadGapAnalysis', () => {
+        it('should return early when no token', async () => {
+            window.authManager.getToken.mockReturnValue(null);
+            await userPanes.loadGapAnalysis('artist', '123');
+            expect(window.apiClient.getCollectionGaps).not.toHaveBeenCalled();
+        });
+
+        it('should call getCollectionGaps with params', async () => {
+            window.apiClient.getCollectionGaps.mockResolvedValue({
+                entity: { name: 'Test', type: 'artist' },
+                owned_count: 5, total_count: 10, missing: [],
+                pagination: { total: 5, offset: 0, limit: 50 },
+            });
+            await userPanes.loadGapAnalysis('artist', '123');
+            expect(window.apiClient.getCollectionGaps).toHaveBeenCalled();
+        });
+
+        it('should render empty state when API returns null', async () => {
+            window.apiClient.getCollectionGaps.mockResolvedValue(null);
+            await userPanes.loadGapAnalysis('artist', '123');
+            const body = document.getElementById('gapsBody');
+            expect(body.querySelector('.user-pane-empty')).not.toBeNull();
+        });
+
+        it('should reset offset when reset=true', async () => {
+            userPanes._gapOffset = 50;
+            window.apiClient.getCollectionGaps.mockResolvedValue(null);
+            await userPanes.loadGapAnalysis('artist', '123', true);
+            expect(userPanes._gapOffset).toBe(0);
+        });
+
+        it('should show gaps pane', async () => {
+            window.apiClient.getCollectionGaps.mockResolvedValue(null);
+            await userPanes.loadGapAnalysis('artist', '123');
+            const gapsPane = document.getElementById('gapsPane');
+            expect(gapsPane.classList.contains('active')).toBe(true);
+        });
+    });
+
+    describe('_downloadTasteCard', () => {
+        it('should return early when no token', async () => {
+            window.authManager.getToken.mockReturnValue(null);
+            const btn = document.createElement('button');
+            await userPanes._downloadTasteCard(btn);
+            expect(window.apiClient.getTasteCard).not.toHaveBeenCalled();
+        });
+
+        it('should show downloading state on button', async () => {
+            window.apiClient.getTasteCard.mockResolvedValue(null);
+            const btn = document.createElement('button');
+            btn.textContent = 'Download Taste Card';
+
+            // Use a flag to check state during execution
+            let textDuringCall = null;
+            window.apiClient.getTasteCard.mockImplementation(async () => {
+                textDuringCall = btn.textContent;
+                return null;
+            });
+
+            await userPanes._downloadTasteCard(btn);
+            expect(textDuringCall).toBe('Downloading...');
+        });
+
+        it('should show failure message when blob is null', async () => {
+            vi.useFakeTimers();
+            window.apiClient.getTasteCard.mockResolvedValue(null);
+            const btn = document.createElement('button');
+            await userPanes._downloadTasteCard(btn);
+            expect(btn.textContent).toBe('Download failed');
+            vi.useRealTimers();
+        });
+
+        it('should trigger download when blob is returned', async () => {
+            const blob = new Blob(['<svg></svg>'], { type: 'image/svg+xml' });
+            window.apiClient.getTasteCard.mockResolvedValue(blob);
+            globalThis.URL.createObjectURL = vi.fn().mockReturnValue('blob:test');
+            globalThis.URL.revokeObjectURL = vi.fn();
+
+            const btn = document.createElement('button');
+            const clickSpy = vi.fn();
+            const origCreateElement = document.createElement.bind(document);
+            vi.spyOn(document, 'createElement').mockImplementation((tag) => {
+                const el = origCreateElement(tag);
+                if (tag === 'a') el.click = clickSpy;
+                return el;
+            });
+
+            await userPanes._downloadTasteCard(btn);
+            expect(clickSpy).toHaveBeenCalled();
+            document.createElement.mockRestore();
+        });
+    });
 });
