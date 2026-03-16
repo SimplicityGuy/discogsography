@@ -151,17 +151,19 @@ ignore = [
     "C901",  # too complex
     "E501",  # line too long, handled by ruff format
     "S101",  # use of assert detected (allow assert statements)
-    "T201",  # print found (allow print statements for ASCII art)
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
 "*/api.py" = ["T201"]                       # Allow print statements for ASCII art
+"*/dashboard.py" = ["T201"]                 # Allow print statements for ASCII art
 "*/explore.py" = ["T201"]                   # Allow print statements for ASCII art
 "*/graphinator.py" = ["T201"]               # Allow print statements for ASCII art
 "*/schema_init.py" = ["T201"]               # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]               # Allow print statements for ASCII art
-"tests/**/*.py" = ["PLC", "S105"]           # Test files can have pylint convention violations and hardcoded passwords
+"api/setup.py" = ["T201"]                   # CLI tool uses print for user output
+"utilities/*.py" = ["T201"]                 # Utility scripts use print for output
+"tests/**/*.py" = ["PLC", "S105", "T201"]   # Test files: pylint conventions, hardcoded passwords, print statements
 "*/queries/search_queries.py" = ["S608"]    # SQL uses parameterized %s for all user input; interpolated values are internal constants
 
 [tool.mypy]
@@ -185,29 +187,7 @@ exclude = "^tests/"
 # Ignore missing imports for third-party libraries without stubs
 [[tool.mypy.overrides]]
 module = [
-    "aio_pika.*",
-    "bcrypt.*",
-    "boto3.*",
-    "botocore.*",
-    "celery.*",
-    "dict_hash",
-    "neo4j.*",
-    "onnxruntime",
-    "optimum.*",
     "pika.*",
-    "psycopg.*",
-    "redis.*",
-    "scipy.*",
-    "tqdm",
-    "xmltodict",
-    "pandas.*",
-    "plotly.*",
-    "sklearn.*",
-    "networkx.*",
-    "sentence_transformers.*",
-    "fastapi.*",
-    "uvicorn.*",
-    "pydantic.*",
 ]
 ignore_missing_imports = true
 
@@ -215,11 +195,6 @@ ignore_missing_imports = true
 module = "tests.*"
 disallow_untyped_decorators = false
 
-[[tool.mypy.overrides]]
-module = [
-    "explore.explore",
-]
-disallow_untyped_decorators = false
 
 [tool.coverage.run]
 source = ["api", "common", "dashboard", "explore", "graphinator", "insights", "schema-init", "tableinator"]
