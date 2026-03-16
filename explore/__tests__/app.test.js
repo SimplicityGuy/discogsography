@@ -1398,4 +1398,606 @@ describe('ExploreApp helper methods', () => {
             expect(result).toBe(true);
         });
     });
+
+    describe('ExploreApp._loadExplore', () => {
+        it('should call apiClient.explore and initialize timeline', async () => {
+            const exploreData = { center: { id: 'Radiohead', type: 'artist' }, categories: [] };
+            window.apiClient.explore.mockResolvedValue(exploreData);
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.apiClient.getYearRange.mockResolvedValue({ min_year: 1950, max_year: 2023 });
+            window.apiClient.getGenreEmergence.mockResolvedValue({ genres: [], styles: [] });
+
+            const app = new ExploreApp();
+            app.graph.setExploreData = vi.fn();
+            app.graph._pendingExpands = 0;
+            app.graph.onExpandsComplete = null;
+            app.graph.nodes = [];
+
+            await app._loadExplore('Radiohead', 'artist');
+
+            expect(window.apiClient.explore).toHaveBeenCalledWith('Radiohead', 'artist');
+            expect(app.graph.setExploreData).toHaveBeenCalledWith(exploreData);
+        });
+
+        it('should not call graph.setExploreData when API returns null', async () => {
+            window.apiClient.explore.mockResolvedValue(null);
+
+            const app = new ExploreApp();
+            app.graph.setExploreData = vi.fn();
+
+            await app._loadExplore('Unknown', 'artist');
+
+            expect(app.graph.setExploreData).not.toHaveBeenCalled();
+        });
+
+        it('should show loading class during API call', async () => {
+            let classDuringCall = null;
+            window.apiClient.explore.mockImplementation(async () => {
+                classDuringCall = document.getElementById('graphLoading').classList.contains('active');
+                return null;
+            });
+
+            const app = new ExploreApp();
+            await app._loadExplore('Test', 'artist');
+
+            expect(classDuringCall).toBe(true);
+        });
+
+        it('should decorate ownership when logged in', async () => {
+            const exploreData = { center: { id: 'Radiohead', type: 'artist' }, categories: [] };
+            window.apiClient.explore.mockResolvedValue(exploreData);
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getToken.mockReturnValue('token');
+            window.apiClient.getUserStatus.mockResolvedValue(null);
+            window.apiClient.getYearRange.mockResolvedValue({ min_year: null, max_year: null });
+
+            const app = new ExploreApp();
+            app.graph.setExploreData = vi.fn();
+            app.graph._pendingExpands = 0;
+            app.graph.onExpandsComplete = null;
+            app.graph.nodes = [{ type: 'release', name: 'OK Computer', nodeId: '123' }];
+
+            await app._loadExplore('Radiohead', 'artist');
+
+            expect(window.apiClient.getUserStatus).toHaveBeenCalled();
+        });
+    });
+
+    describe('ExploreApp._shareSnapshot - full flow', () => {
+        it('should save snapshot and copy URL to clipboard', async () => {
+            window.authManager.getToken.mockReturnValue('jwt');
+            window.apiClient.saveSnapshot.mockResolvedValue({ token: 'snap-123' });
+            navigator.clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+
+            const app = new ExploreApp();
+            app.graph.nodes = [{ name: 'Radiohead', type: 'artist', nodeId: 'radiohead' }];
+            app.graph.centerName = 'Radiohead';
+            app.graph.centerType = 'artist';
+
+            await app._shareSnapshot();
+
+            expect(window.apiClient.saveSnapshot).toHaveBeenCalled();
+            expect(navigator.clipboard.writeText).toHaveBeenCalledWith(expect.stringContaining('snapshot=snap-123'));
+        });
+
+        it('should filter out category nodes', async () => {
+            window.authManager.getToken.mockReturnValue('jwt');
+            window.apiClient.saveSnapshot.mockResolvedValue({ token: 'snap-123' });
+            navigator.clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+
+            const app = new ExploreApp();
+            app.graph.nodes = [
+                { name: 'Radiohead', type: 'artist', nodeId: 'radiohead' },
+                { name: 'Releases', type: 'category', isCategory: true },
+            ];
+            app.graph.centerName = 'Radiohead';
+            app.graph.centerType = 'artist';
+
+            await app._shareSnapshot();
+
+            const callArgs = window.apiClient.saveSnapshot.mock.calls[0];
+            expect(callArgs[0]).toHaveLength(1);
+            expect(callArgs[0][0].id).toBe('radiohead');
+        });
+
+        it('should return early when no center name', async () => {
+            window.authManager.getToken.mockReturnValue('jwt');
+
+            const app = new ExploreApp();
+            app.graph.nodes = [{ name: 'A', type: 'artist' }];
+            app.graph.centerName = null;
+
+            await app._shareSnapshot();
+
+            expect(window.apiClient.saveSnapshot).not.toHaveBeenCalled();
+        });
+
+        it('should return early when no non-category nodes', async () => {
+            window.authManager.getToken.mockReturnValue('jwt');
+
+            const app = new ExploreApp();
+            app.graph.nodes = [{ name: 'Cat', type: 'category', isCategory: true }];
+            app.graph.centerName = 'Radiohead';
+            app.graph.centerType = 'artist';
+
+            await app._shareSnapshot();
+
+            expect(window.apiClient.saveSnapshot).not.toHaveBeenCalled();
+        });
+
+        it('should return early when saveSnapshot returns null', async () => {
+            window.authManager.getToken.mockReturnValue('jwt');
+            window.apiClient.saveSnapshot.mockResolvedValue(null);
+
+            const app = new ExploreApp();
+            app.graph.nodes = [{ name: 'A', type: 'artist', nodeId: 'a' }];
+            app.graph.centerName = 'A';
+            app.graph.centerType = 'artist';
+
+            await app._shareSnapshot();
+
+            // Should not throw
+        });
+
+        it('should use prompt fallback when clipboard fails', async () => {
+            window.authManager.getToken.mockReturnValue('jwt');
+            window.apiClient.saveSnapshot.mockResolvedValue({ token: 'snap-123' });
+            navigator.clipboard = { writeText: vi.fn().mockRejectedValue(new Error('denied')) };
+            window.prompt = vi.fn();
+
+            const app = new ExploreApp();
+            app.graph.nodes = [{ name: 'A', type: 'artist', nodeId: 'a' }];
+            app.graph.centerName = 'A';
+            app.graph.centerType = 'artist';
+
+            await app._shareSnapshot();
+
+            expect(window.prompt).toHaveBeenCalledWith('Copy this link:', expect.stringContaining('snapshot=snap-123'));
+        });
+
+        it('should show toast on successful clipboard write', async () => {
+            window.authManager.getToken.mockReturnValue('jwt');
+            window.apiClient.saveSnapshot.mockResolvedValue({ token: 'snap-123' });
+            navigator.clipboard = { writeText: vi.fn().mockResolvedValue(undefined) };
+
+            const app = new ExploreApp();
+            app.graph.nodes = [{ name: 'A', type: 'artist', nodeId: 'a' }];
+            app.graph.centerName = 'A';
+            app.graph.centerType = 'artist';
+
+            await app._shareSnapshot();
+
+            const toast = document.getElementById('shareToast');
+            expect(toast.classList.contains('show')).toBe(true);
+        });
+    });
+
+    describe('ExploreApp._onGenreEmergence', () => {
+        it('should call d3 selectAll and classed on genre nodes', () => {
+            const app = new ExploreApp();
+            app._onGenreEmergence(['Electronic', 'Rock']);
+
+            // d3 mock's selectAll and each should be called
+            expect(app.graph.g.selectAll).toHaveBeenCalledWith('g');
+        });
+    });
+
+    describe('ExploreApp._loadTrends - compare mode', () => {
+        it('should add comparison when in compare mode with primary data', async () => {
+            const trendsData = { name: 'Radiohead', data: [{ year: 1993, count: 1 }] };
+            window.apiClient.getTrends.mockResolvedValue(trendsData);
+
+            const app = new ExploreApp();
+            app.compareMode = true;
+            app.primaryTrendsData = { name: 'Aphex Twin', data: [] };
+            app.trends.addComparison = vi.fn();
+
+            await app._loadTrends('Radiohead', 'artist');
+
+            expect(app.trends.addComparison).toHaveBeenCalledWith(trendsData);
+            expect(app.compareMode).toBe(false);
+        });
+
+        it('should update compare badge text', async () => {
+            window.apiClient.getTrends.mockResolvedValue({ name: 'Radiohead', data: [] });
+
+            const app = new ExploreApp();
+            app.compareMode = true;
+            app.primaryTrendsData = { name: 'Aphex Twin', data: [] };
+            app.trends.addComparison = vi.fn();
+
+            await app._loadTrends('Radiohead', 'artist');
+
+            expect(document.getElementById('compareBadge').textContent).toBe('vs Radiohead');
+            expect(document.getElementById('compareInfo').classList.contains('hidden')).toBe(false);
+        });
+
+        it('should show compare button for primary trends', async () => {
+            window.apiClient.getTrends.mockResolvedValue({ name: 'Radiohead', data: [] });
+
+            const app = new ExploreApp();
+            app.compareMode = false;
+            app.primaryTrendsData = null;
+            app.trends.render = vi.fn();
+
+            await app._loadTrends('Radiohead', 'artist');
+
+            expect(document.getElementById('compareBtn').classList.contains('hidden')).toBe(false);
+        });
+
+        it('should remove loading class after trends load', async () => {
+            window.apiClient.getTrends.mockResolvedValue(null);
+            const loading = document.getElementById('trendsLoading');
+
+            const app = new ExploreApp();
+            loading.classList.add('active');
+            await app._loadTrends('Test', 'artist');
+
+            expect(loading.classList.contains('active')).toBe(false);
+        });
+    });
+
+    describe('ExploreApp._restoreFromUrl', () => {
+        it('should load snapshot when URL has snapshot param', async () => {
+            window.apiClient.restoreSnapshot.mockResolvedValue(null);
+            // Set URL with snapshot param
+            const origLocation = window.location;
+            delete window.location;
+            window.location = { search: '?snapshot=snap-123', origin: 'http://localhost' };
+
+            const app = new ExploreApp();
+            await app._restoreFromUrl();
+
+            expect(window.apiClient.restoreSnapshot).toHaveBeenCalledWith('snap-123');
+            window.location = origLocation;
+        });
+
+        it('should restore search from URL params', async () => {
+            window.apiClient.explore.mockResolvedValue(null);
+            const origLocation = window.location;
+            delete window.location;
+            window.location = { search: '?name=Radiohead&type=artist', origin: 'http://localhost' };
+
+            const app = new ExploreApp();
+            await app._restoreFromUrl();
+
+            expect(app.searchType).toBe('artist');
+            expect(document.getElementById('searchInput').value).toBe('Radiohead');
+            window.location = origLocation;
+        });
+
+        it('should do nothing when URL has no params', async () => {
+            const origLocation = window.location;
+            delete window.location;
+            window.location = { search: '', origin: 'http://localhost' };
+
+            const app = new ExploreApp();
+            await app._restoreFromUrl();
+
+            // Should not throw
+            window.location = origLocation;
+        });
+    });
+
+    describe('ExploreApp._onNodeExpand - full flow', () => {
+        it('should load explore for artist type', async () => {
+            window.apiClient.explore.mockResolvedValue(null);
+            const app = new ExploreApp();
+
+            await app._onNodeExpand('Radiohead', 'artist');
+
+            expect(app.searchType).toBe('artist');
+            expect(app.currentQuery).toBe('Radiohead');
+            expect(document.getElementById('searchInput').value).toBe('Radiohead');
+            expect(window.apiClient.explore).toHaveBeenCalledWith('Radiohead', 'artist');
+        });
+    });
+
+    describe('ExploreApp._onNodeClick - explore button binding', () => {
+        it('should wire up explore button click handler', async () => {
+            window.apiClient.getNodeDetails.mockResolvedValue({
+                name: 'Radiohead', release_count: 42,
+            });
+            window.authManager.isLoggedIn.mockReturnValue(false);
+
+            const app = new ExploreApp();
+            await app._onNodeClick('Radiohead', 'artist');
+
+            const body = document.getElementById('infoPanelBody');
+            const exploreBtn = body.querySelector('.explore-node-btn');
+            expect(exploreBtn).not.toBeNull();
+            expect(exploreBtn.dataset.name).toBe('Radiohead');
+            expect(exploreBtn.dataset.type).toBe('artist');
+        });
+    });
+
+    describe('ExploreApp._decorateOwnership - with nodes', () => {
+        it('should call getUserStatus with release node IDs', async () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getToken.mockReturnValue('token');
+            window.apiClient.getUserStatus.mockResolvedValue({ status: {} });
+
+            const app = new ExploreApp();
+            app.graph.nodes = [
+                { type: 'release', name: 'OK Computer', nodeId: '123' },
+                { type: 'artist', name: 'Radiohead' },
+                { type: 'release', name: 'Kid A', nodeId: '456', isCategory: false },
+            ];
+
+            await app._decorateOwnership();
+
+            expect(window.apiClient.getUserStatus).toHaveBeenCalledWith(['123', '456'], 'token');
+        });
+
+        it('should return early when no release nodes', async () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getToken.mockReturnValue('token');
+
+            const app = new ExploreApp();
+            app.graph.nodes = [
+                { type: 'artist', name: 'Radiohead' },
+            ];
+
+            await app._decorateOwnership();
+
+            expect(window.apiClient.getUserStatus).not.toHaveBeenCalled();
+        });
+
+        it('should handle null result from getUserStatus', async () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getToken.mockReturnValue('token');
+            window.apiClient.getUserStatus.mockResolvedValue(null);
+
+            const app = new ExploreApp();
+            app.graph.nodes = [{ type: 'release', name: 'OK Computer', nodeId: '123' }];
+
+            await app._decorateOwnership();
+
+            // Should not throw
+        });
+    });
+
+    describe('ExploreApp._switchPane - trends with query', () => {
+        it('should load trends when switching to trends with existing query', async () => {
+            window.apiClient.getTrends.mockResolvedValue(null);
+
+            const app = new ExploreApp();
+            app.currentQuery = 'Radiohead';
+            app.searchType = 'artist';
+            app._switchPane('trends');
+
+            expect(window.apiClient.getTrends).toHaveBeenCalledWith('Radiohead', 'artist');
+        });
+
+        it('should not load trends when switching to trends without query', () => {
+            const app = new ExploreApp();
+            app.currentQuery = '';
+            app._switchPane('trends');
+
+            expect(window.apiClient.getTrends).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('ExploreApp._clearComparison - extended', () => {
+        it('should clear comparison and update UI', () => {
+            const app = new ExploreApp();
+            app.compareMode = true;
+            app.trends.clearComparison = vi.fn();
+
+            app._clearComparison();
+
+            expect(app.trends.clearComparison).toHaveBeenCalled();
+            expect(document.getElementById('compareBtn').classList.contains('hidden')).toBe(false);
+            expect(document.getElementById('compareHint').classList.contains('hidden')).toBe(true);
+            expect(document.getElementById('compareInfo').classList.contains('hidden')).toBe(true);
+        });
+    });
+
+    describe('ExploreApp._enableCompareMode - extended', () => {
+        it('should show compare hint and hide button', () => {
+            const app = new ExploreApp();
+            app.primaryTrendsData = { name: 'Radiohead', data: [] };
+
+            app._enableCompareMode();
+
+            expect(document.getElementById('compareBtn').classList.contains('hidden')).toBe(true);
+            expect(document.getElementById('compareHint').classList.contains('hidden')).toBe(false);
+        });
+    });
+
+    describe('ExploreApp._gapAnalysisButton - click handler', () => {
+        it('should close info panel and call loadGapAnalysis on click', () => {
+            window.userPanes = { loadGapAnalysis: vi.fn() };
+
+            const app = new ExploreApp();
+            const btn = app._gapAnalysisButton('artist', '123', 'Radiohead');
+
+            // Simulate click
+            btn.click();
+
+            expect(window.userPanes.loadGapAnalysis).toHaveBeenCalledWith('artist', '123', true);
+        });
+    });
+});
+
+describe('TimelineScrubber event handlers', () => {
+    beforeEach(() => {
+        setupTimelineDOM();
+        window.apiClient = {
+            getYearRange: vi.fn().mockResolvedValue({ min_year: 1950, max_year: 2023 }),
+            getGenreEmergence: vi.fn().mockResolvedValue({ genres: [], styles: [] }),
+        };
+    });
+
+    describe('_onSliderInput', () => {
+        it('should update currentYear and yearLabel on slider input', () => {
+            const ts = new TimelineScrubber();
+            ts.slider.value = '1990';
+
+            ts._onSliderInput();
+
+            expect(ts.currentYear).toBe(1990);
+            expect(ts.yearLabel.textContent).toBe('1990');
+        });
+
+        it('should debounce and emit year change', () => {
+            vi.useFakeTimers();
+            const onYearChange = vi.fn();
+            const ts = new TimelineScrubber();
+            ts.onYearChange = onYearChange;
+            ts.slider.value = '1990';
+
+            ts._onSliderInput();
+
+            // Not called immediately
+            expect(onYearChange).not.toHaveBeenCalled();
+
+            // Called after debounce
+            vi.advanceTimersByTime(300);
+            expect(onYearChange).toHaveBeenCalledWith(1990);
+
+            vi.useRealTimers();
+        });
+    });
+
+    describe('slider input event', () => {
+        it('should pause playback when slider dragged during play', () => {
+            vi.useFakeTimers();
+            const ts = new TimelineScrubber();
+            ts.currentYear = 1990;
+            ts.play();
+            expect(ts.playing).toBe(true);
+
+            // Simulate slider input event
+            ts.slider.dispatchEvent(new Event('input'));
+
+            expect(ts.playing).toBe(false);
+            vi.useRealTimers();
+        });
+    });
+
+    describe('play button click', () => {
+        it('should toggle play/pause via click', () => {
+            vi.useFakeTimers();
+            const ts = new TimelineScrubber();
+            ts.currentYear = 1990;
+
+            // Click to play
+            ts.playBtn.click();
+            expect(ts.playing).toBe(true);
+
+            // Click to pause
+            ts.playBtn.click();
+            expect(ts.playing).toBe(false);
+
+            vi.useRealTimers();
+        });
+    });
+
+    describe('speed toggle click', () => {
+        it('should toggle speed between year and decade', () => {
+            const ts = new TimelineScrubber();
+            expect(ts.speed).toBe('year');
+
+            ts.speedToggle.click();
+            expect(ts.speed).toBe('decade');
+            expect(ts.speedLabel.textContent).toBe('10yr/s');
+
+            ts.speedToggle.click();
+            expect(ts.speed).toBe('year');
+            expect(ts.speedLabel.textContent).toBe('1yr/s');
+        });
+    });
+
+    describe('compare button clicks', () => {
+        it('should enter compare mode via compare button', () => {
+            const ts = new TimelineScrubber();
+            ts.minYear = 1950;
+            ts.maxYear = 2023;
+
+            ts.compareBtn.click();
+
+            expect(ts.comparing).toBe(true);
+        });
+
+        it('should exit compare mode via exit button', () => {
+            const ts = new TimelineScrubber();
+            ts.minYear = 1950;
+            ts.maxYear = 2023;
+            ts.enterCompare();
+
+            ts.exitCompareBtn.click();
+
+            expect(ts.comparing).toBe(false);
+        });
+    });
+
+    describe('compare slider input', () => {
+        it('should update compare years on slider input', () => {
+            vi.useFakeTimers();
+            const ts = new TimelineScrubber();
+            ts.minYear = 1950;
+            ts.maxYear = 2023;
+            ts.enterCompare();
+
+            ts.sliderA.value = '1970';
+            ts.sliderA.dispatchEvent(new Event('input'));
+
+            expect(ts.compareYearA).toBe(1970);
+            expect(ts.yearALabel.textContent).toBe('1970');
+
+            vi.useRealTimers();
+        });
+
+        it('should debounce compare change emission', () => {
+            vi.useFakeTimers();
+            const onCompareChange = vi.fn();
+            const ts = new TimelineScrubber();
+            ts.minYear = 1950;
+            ts.maxYear = 2023;
+            ts.onCompareChange = onCompareChange;
+            ts.enterCompare();
+
+            // Reset call count from enterCompare
+            onCompareChange.mockClear();
+
+            ts.sliderB.value = '2010';
+            ts.sliderB.dispatchEvent(new Event('input'));
+
+            expect(onCompareChange).not.toHaveBeenCalled();
+
+            vi.advanceTimersByTime(300);
+            expect(onCompareChange).toHaveBeenCalled();
+
+            vi.useRealTimers();
+        });
+    });
+
+    describe('legend close button', () => {
+        it('should hide legend on close button click', () => {
+            const ts = new TimelineScrubber();
+            ts.minYear = 1950;
+            ts.maxYear = 2023;
+            ts.enterCompare();
+
+            ts.legendCloseBtn.click();
+
+            expect(ts.compareLegend.classList.contains('hidden')).toBe(true);
+        });
+    });
+
+    describe('hide with compare mode', () => {
+        it('should exit compare when hiding while comparing', () => {
+            setupTimelineDOM();
+            const ts = new TimelineScrubber();
+            ts.minYear = 1950;
+            ts.maxYear = 2023;
+            ts.enterCompare();
+
+            ts.hide();
+
+            expect(ts.comparing).toBe(false);
+            expect(ts.container.classList.contains('hidden')).toBe(true);
+        });
+    });
 });
