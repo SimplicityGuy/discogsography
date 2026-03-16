@@ -935,5 +935,467 @@ describe('ExploreApp helper methods', () => {
 
             expect(nodes.length).toBeGreaterThan(0);
         });
+
+        it('should render label details with release count', () => {
+            const app = new ExploreApp();
+            const nodes = app._renderDetails({ name: 'Warp Records', release_count: 500 }, 'label', 'warp');
+
+            const exploreBtn = nodes.find(n => n.classList && n.classList.contains('explore-node-btn'));
+            expect(exploreBtn).toBeDefined();
+            const statEl = nodes.find(n => n.classList && n.classList.contains('detail-stat'));
+            expect(statEl).toBeDefined();
+            expect(statEl.querySelector('.value').textContent).toBe('500');
+        });
+
+        it('should render genre details with artist count', () => {
+            const app = new ExploreApp();
+            const nodes = app._renderDetails({ name: 'Electronic', artist_count: 1000 }, 'genre', 'electronic');
+
+            const statEl = nodes.find(n => n.classList && n.classList.contains('detail-stat'));
+            expect(statEl).toBeDefined();
+            expect(statEl.querySelector('.value').textContent).toContain('1');
+        });
+
+        it('should render style details with artist count', () => {
+            const app = new ExploreApp();
+            const nodes = app._renderDetails({ name: 'IDM', artist_count: 200 }, 'style', 'idm');
+
+            const statEl = nodes.find(n => n.classList && n.classList.contains('detail-stat'));
+            expect(statEl).toBeDefined();
+        });
+
+        it('should render year stat for release', () => {
+            const app = new ExploreApp();
+            const nodes = app._renderDetails(
+                { name: 'OK Computer', year: 1997 },
+                'release', 'ok-computer'
+            );
+
+            const statEl = nodes.find(n => {
+                if (!n.classList?.contains('detail-stat')) return false;
+                return n.querySelector('.label')?.textContent === 'Year';
+            });
+            expect(statEl).toBeDefined();
+            expect(statEl.querySelector('.value').textContent).toBe('1997');
+        });
+
+        it('should render artists tags for release', () => {
+            const app = new ExploreApp();
+            const nodes = app._renderDetails(
+                { name: 'OK Computer', artists: ['Radiohead'] },
+                'release', 'ok-computer'
+            );
+
+            const section = nodes.find(n => {
+                if (!n.classList?.contains('detail-section')) return false;
+                return n.querySelector('h6')?.textContent === 'Artists';
+            });
+            expect(section).toBeDefined();
+        });
+
+        it('should render labels tags for release', () => {
+            const app = new ExploreApp();
+            const nodes = app._renderDetails(
+                { name: 'OK Computer', labels: ['Parlophone'] },
+                'release', 'ok-computer'
+            );
+
+            const section = nodes.find(n => {
+                if (!n.classList?.contains('detail-section')) return false;
+                return n.querySelector('h6')?.textContent === 'Labels';
+            });
+            expect(section).toBeDefined();
+        });
+
+        it('should render styles tags for artist', () => {
+            const app = new ExploreApp();
+            const nodes = app._renderDetails(
+                { name: 'Radiohead', release_count: 10, styles: ['Art Rock', 'Experimental'] },
+                'artist', 'radiohead'
+            );
+
+            const section = nodes.find(n => {
+                if (!n.classList?.contains('detail-section')) return false;
+                return n.querySelector('h6')?.textContent === 'Styles';
+            });
+            expect(section).toBeDefined();
+        });
+
+        it('should render groups tags for artist', () => {
+            const app = new ExploreApp();
+            const nodes = app._renderDetails(
+                { name: 'Thom Yorke', release_count: 5, groups: ['Radiohead', 'Atoms for Peace'] },
+                'artist', 'thom-yorke'
+            );
+
+            const section = nodes.find(n => {
+                if (!n.classList?.contains('detail-section')) return false;
+                return n.querySelector('h6')?.textContent === 'Groups';
+            });
+            expect(section).toBeDefined();
+        });
+
+        it('should render gap analysis button for artist when logged in', () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            const app = new ExploreApp();
+            const nodes = app._renderDetails(
+                { name: 'Radiohead', release_count: 10, id: '123' },
+                'artist', 'radiohead'
+            );
+
+            const gapBtn = nodes.find(n => n.classList && n.classList.contains('gap-analysis-btn'));
+            expect(gapBtn).toBeDefined();
+            expect(gapBtn.textContent).toContain('What am I missing?');
+        });
+
+        it('should render gap analysis button for label when logged in', () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            const app = new ExploreApp();
+            const nodes = app._renderDetails(
+                { name: 'Warp Records', release_count: 500, id: '456' },
+                'label', 'warp'
+            );
+
+            const gapBtn = nodes.find(n => n.classList && n.classList.contains('gap-analysis-btn'));
+            expect(gapBtn).toBeDefined();
+        });
+
+        it('should not render gap analysis button when logged out', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            const app = new ExploreApp();
+            const nodes = app._renderDetails(
+                { name: 'Radiohead', release_count: 10, id: '123' },
+                'artist', 'radiohead'
+            );
+
+            const gapBtn = nodes.find(n => n.classList && n.classList.contains('gap-analysis-btn'));
+            expect(gapBtn).toBeUndefined();
+        });
+    });
+
+    describe('ExploreApp._onSearch', () => {
+        it('should set currentQuery and push state', async () => {
+            const pushStateSpy = vi.spyOn(history, 'pushState');
+            const app = new ExploreApp();
+            app.activePane = 'explore';
+
+            await app._onSearch('Radiohead');
+
+            expect(app.currentQuery).toBe('Radiohead');
+            expect(pushStateSpy).toHaveBeenCalled();
+        });
+    });
+
+    describe('ExploreApp._loadTrends', () => {
+        it('should set primaryTrendsData when not in compare mode', async () => {
+            window.apiClient.getTrends.mockResolvedValue({ name: 'Radiohead', years: [] });
+            const app = new ExploreApp();
+            app.compareMode = false;
+            app.primaryTrendsData = null;
+
+            await app._loadTrends('Radiohead', 'artist');
+
+            expect(app.primaryTrendsData).toEqual({ name: 'Radiohead', years: [] });
+        });
+
+        it('should handle null trends data gracefully', async () => {
+            window.apiClient.getTrends.mockResolvedValue(null);
+            const app = new ExploreApp();
+            app.primaryTrendsData = null;
+
+            await app._loadTrends('Unknown', 'artist');
+
+            expect(app.primaryTrendsData).toBeNull();
+        });
+    });
+
+    describe('ExploreApp._onTimelineYearChange', () => {
+        it('should call graph.setBeforeYear', () => {
+            const app = new ExploreApp();
+            app.graph.setBeforeYear = vi.fn();
+
+            app._onTimelineYearChange(1995);
+
+            expect(app.graph.setBeforeYear).toHaveBeenCalledWith(1995);
+        });
+
+        it('should pass null to graph.setBeforeYear', () => {
+            const app = new ExploreApp();
+            app.graph.setBeforeYear = vi.fn();
+
+            app._onTimelineYearChange(null);
+
+            expect(app.graph.setBeforeYear).toHaveBeenCalledWith(null);
+        });
+    });
+
+    describe('ExploreApp._onCompareChange', () => {
+        it('should clear comparison when years are equal', () => {
+            const app = new ExploreApp();
+            app.graph.clearComparison = vi.fn();
+            app.graph.setBeforeYear = vi.fn();
+            app.graph.setCompareYears = vi.fn();
+
+            app._onCompareChange(1990, 1990);
+
+            expect(app.graph.clearComparison).toHaveBeenCalled();
+            expect(app.graph.setBeforeYear).toHaveBeenCalledWith(1990);
+            expect(app.graph.setCompareYears).not.toHaveBeenCalled();
+        });
+
+        it('should set compare years when different', () => {
+            const app = new ExploreApp();
+            app.graph.clearComparison = vi.fn();
+            app.graph.setCompareYears = vi.fn();
+
+            app._onCompareChange(1990, 2000);
+
+            expect(app.graph.setCompareYears).toHaveBeenCalledWith(1990, 2000);
+        });
+    });
+
+    describe('ExploreApp._onCompareExit', () => {
+        it('should clear comparison and restore year', () => {
+            const app = new ExploreApp();
+            app.graph.clearComparison = vi.fn();
+            app.graph.setBeforeYear = vi.fn();
+            app.timeline.currentYear = 1995;
+
+            app._onCompareExit();
+
+            expect(app.graph.clearComparison).toHaveBeenCalled();
+            expect(app.graph.setBeforeYear).toHaveBeenCalledWith(1995);
+        });
+    });
+
+    describe('ExploreApp._loadSnapshot', () => {
+        it('should call restoreSnapshot on graph when data is returned', async () => {
+            window.apiClient.restoreSnapshot.mockResolvedValue({
+                nodes: [{ id: 'A', type: 'artist' }],
+                center: { id: 'A', type: 'artist' },
+            });
+            const app = new ExploreApp();
+            app.graph.restoreSnapshot = vi.fn();
+
+            await app._loadSnapshot('snap-123');
+
+            expect(app.graph.restoreSnapshot).toHaveBeenCalled();
+        });
+
+        it('should not call restoreSnapshot when API returns null', async () => {
+            window.apiClient.restoreSnapshot.mockResolvedValue(null);
+            const app = new ExploreApp();
+            app.graph.restoreSnapshot = vi.fn();
+
+            await app._loadSnapshot('bad-token');
+
+            expect(app.graph.restoreSnapshot).not.toHaveBeenCalled();
+        });
+
+        it('should add and remove loading class', async () => {
+            let classDuringCall = null;
+            window.apiClient.restoreSnapshot.mockImplementation(async () => {
+                classDuringCall = document.getElementById('graphLoading').classList.contains('active');
+                return null;
+            });
+            const app = new ExploreApp();
+
+            await app._loadSnapshot('snap-123');
+
+            expect(classDuringCall).toBe(true);
+        });
+    });
+
+    describe('ExploreApp._onNodeClick', () => {
+        it('should open panel and show details', async () => {
+            const details = { name: 'Radiohead', release_count: 42 };
+            window.apiClient.getNodeDetails.mockResolvedValue(details);
+            window.authManager.isLoggedIn.mockReturnValue(false);
+
+            const app = new ExploreApp();
+            await app._onNodeClick('Radiohead', 'artist');
+
+            const panel = document.getElementById('infoPanel');
+            expect(panel.classList.contains('open')).toBe(true);
+            const title = document.getElementById('infoPanelTitle');
+            expect(title.textContent).toBe('Radiohead');
+        });
+
+        it('should show no details message when API returns null', async () => {
+            window.apiClient.getNodeDetails.mockResolvedValue(null);
+
+            const app = new ExploreApp();
+            await app._onNodeClick('Unknown', 'artist');
+
+            const body = document.getElementById('infoPanelBody');
+            expect(body.textContent).toContain('No details available');
+        });
+
+        it('should fetch ownership status for release nodes when logged in', async () => {
+            window.apiClient.getNodeDetails.mockResolvedValue({ name: 'OK Computer' });
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getToken.mockReturnValue('token');
+            window.apiClient.getUserStatus.mockResolvedValue({ status: { 'ok-computer': { in_collection: true, in_wantlist: false } } });
+
+            const app = new ExploreApp();
+            await app._onNodeClick('ok-computer', 'release');
+
+            expect(window.apiClient.getUserStatus).toHaveBeenCalledWith(['ok-computer'], 'token');
+        });
+    });
+
+    describe('ExploreApp._handleLogin - full flow', () => {
+        it('should set auth state on successful login', async () => {
+            document.getElementById('loginEmail').value = 'test@test.com';
+            document.getElementById('loginPassword').value = 'password123';
+            window.apiClient.login.mockResolvedValue({ access_token: 'jwt-123' });
+            window.apiClient.getMe.mockResolvedValue({ email: 'test@test.com' });
+            window.apiClient.getDiscogsStatus.mockResolvedValue({ connected: false });
+            globalThis.Alpine = { store: vi.fn().mockReturnValue({ authOpen: false }) };
+
+            const app = new ExploreApp();
+            await app._handleLogin();
+
+            expect(window.authManager.setToken).toHaveBeenCalledWith('jwt-123');
+            expect(window.authManager.setUser).toHaveBeenCalled();
+            expect(window.authManager.notify).toHaveBeenCalled();
+        });
+
+        it('should show error on invalid credentials', async () => {
+            document.getElementById('loginEmail').value = 'test@test.com';
+            document.getElementById('loginPassword').value = 'wrong';
+            window.apiClient.login.mockResolvedValue(null);
+
+            const app = new ExploreApp();
+            await app._handleLogin();
+
+            expect(document.getElementById('loginError').textContent).toContain('Invalid');
+        });
+
+        it('should re-enable submit button after login attempt', async () => {
+            document.getElementById('loginEmail').value = 'test@test.com';
+            document.getElementById('loginPassword').value = 'password123';
+            window.apiClient.login.mockResolvedValue(null);
+
+            const app = new ExploreApp();
+            await app._handleLogin();
+
+            expect(document.getElementById('loginSubmitBtn').disabled).toBe(false);
+        });
+    });
+
+    describe('ExploreApp._handleRegister - full flow', () => {
+        it('should show success on successful registration', async () => {
+            document.getElementById('registerEmail').value = 'new@test.com';
+            document.getElementById('registerPassword').value = 'password123';
+            window.apiClient.register.mockResolvedValue(true);
+
+            const app = new ExploreApp();
+            await app._handleRegister();
+
+            const successEl = document.getElementById('registerSuccess');
+            expect(successEl.classList.contains('hidden')).toBe(false);
+        });
+
+        it('should show error on failed registration', async () => {
+            document.getElementById('registerEmail').value = 'existing@test.com';
+            document.getElementById('registerPassword').value = 'password123';
+            window.apiClient.register.mockResolvedValue(false);
+
+            const app = new ExploreApp();
+            await app._handleRegister();
+
+            expect(document.getElementById('registerError').textContent).toContain('failed');
+        });
+
+        it('should re-enable submit button after attempt', async () => {
+            document.getElementById('registerEmail').value = 'new@test.com';
+            document.getElementById('registerPassword').value = 'password123';
+            window.apiClient.register.mockResolvedValue(true);
+
+            const app = new ExploreApp();
+            await app._handleRegister();
+
+            expect(document.getElementById('registerSubmitBtn').disabled).toBe(false);
+        });
+    });
+
+    describe('ExploreApp._switchPane - lazy loading', () => {
+        it('should load insights when switching to insights', () => {
+            const app = new ExploreApp();
+            app._switchPane('insights');
+
+            expect(window.insightsPanel.load).toHaveBeenCalled();
+            expect(window.insightsPanel.startPolling).toHaveBeenCalled();
+        });
+
+        it('should load collection when switching to collection while logged in', () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            const app = new ExploreApp();
+            app._switchPane('collection');
+
+            expect(app.userPanes.loadCollection).toHaveBeenCalled();
+            expect(app.userPanes.loadCollectionStats).toHaveBeenCalled();
+            expect(app.userPanes.loadTasteFingerprint).toHaveBeenCalled();
+        });
+
+        it('should load wantlist when switching to wantlist while logged in', () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            const app = new ExploreApp();
+            app._switchPane('wantlist');
+
+            expect(app.userPanes.loadWantlist).toHaveBeenCalled();
+        });
+
+        it('should load recommendations when switching to recommendations while logged in', () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            const app = new ExploreApp();
+            app._switchPane('recommendations');
+
+            expect(app.userPanes.loadRecommendations).toHaveBeenCalled();
+        });
+    });
+
+    describe('ExploreApp._gapAnalysisButton', () => {
+        it('should create a button with correct text', () => {
+            const app = new ExploreApp();
+            const btn = app._gapAnalysisButton('artist', '123', 'Radiohead');
+
+            expect(btn.textContent).toContain('What am I missing?');
+            expect(btn.classList.contains('gap-analysis-btn')).toBe(true);
+        });
+    });
+
+    describe('ExploreApp._shareSnapshot', () => {
+        it('should not proceed when not logged in', async () => {
+            window.authManager.getToken.mockReturnValue(null);
+            const app = new ExploreApp();
+
+            await app._shareSnapshot();
+
+            expect(window.apiClient.saveSnapshot).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('ExploreApp._decorateOwnership', () => {
+        it('should return early when not logged in', async () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            const app = new ExploreApp();
+
+            await app._decorateOwnership();
+
+            expect(window.apiClient.getUserStatus).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('ExploreApp._initAuth', () => {
+        it('should call authManager.init and updateAuthUI', async () => {
+            window.authManager.init.mockResolvedValue(true);
+            const app = new ExploreApp();
+            const result = await app._initAuth();
+
+            expect(window.authManager.init).toHaveBeenCalled();
+            expect(result).toBe(true);
+        });
     });
 });
