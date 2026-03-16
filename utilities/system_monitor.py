@@ -96,7 +96,7 @@ def check_postgres_status() -> str:
                 "discogsography",
                 "-t",
                 "-c",
-                "SELECT table_name, pg_size_pretty(pg_relation_size(schemaname||'.'||tablename)) as size, n_live_tup as rows FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 10;",
+                "SELECT relname, pg_size_pretty(pg_relation_size(schemaname||'.'||relname)) as size, n_live_tup as rows FROM pg_stat_user_tables ORDER BY n_live_tup DESC LIMIT 10;",
             ],
             capture_output=True,
             text=True,

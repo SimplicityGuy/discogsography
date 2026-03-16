@@ -272,7 +272,7 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 -- Check for dead tuples
 SELECT
     schemaname,
-    tablename,
+    relname,
     n_live_tup as live_tuples,
     n_dead_tup as dead_tuples,
     round(n_dead_tup * 100.0 / NULLIF(n_live_tup + n_dead_tup, 0), 2) as dead_pct

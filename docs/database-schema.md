@@ -1160,7 +1160,7 @@ SHOW CONSTRAINTS;
 
 ```sql
 -- Database statistics
-SELECT schemaname, tablename, n_live_tup, n_dead_tup
+SELECT schemaname, relname, n_live_tup, n_dead_tup
 FROM pg_stat_user_tables
 ORDER BY n_live_tup DESC;
 
