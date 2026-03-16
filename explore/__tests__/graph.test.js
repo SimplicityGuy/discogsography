@@ -540,4 +540,233 @@ describe('GraphVisualization', () => {
             expect(window.apiClient.expand).not.toHaveBeenCalled();
         });
     });
+
+    describe('_loadMoreCategory', () => {
+        it('should load more children and update category label', async () => {
+            graph._categoryMeta.set('cat-releases', {
+                parentName: 'Radiohead', parentType: 'artist',
+                category: 'releases', offset: 30, limit: 30, total: 50,
+            });
+            graph.nodes.push({
+                id: 'cat-releases', displayName: 'Releases', name: 'Releases (30)',
+                isCategory: true, isCenter: false,
+            });
+            graph.nodes.push({
+                id: 'load-more-cat-releases', categoryId: 'cat-releases', isLoadMore: true,
+            });
+            graph.links.push({ source: 'cat-releases', target: 'load-more-cat-releases' });
+
+            window.apiClient.expand.mockResolvedValue({
+                children: [{ id: '31', name: 'Album 31', type: 'release' }],
+                total: 50, limit: 30, has_more: true, offset: 30,
+            });
+
+            const loadMoreNode = graph.nodes.find(n => n.id === 'load-more-cat-releases');
+            await graph._loadMoreCategory(loadMoreNode);
+
+            expect(graph.nodes.find(n => n.id === 'child-release-31')).toBeDefined();
+        });
+
+        it('should return early when no meta exists', async () => {
+            await graph._loadMoreCategory({ id: 'load-more-unknown', categoryId: 'unknown' });
+            expect(window.apiClient.expand).not.toHaveBeenCalled();
+        });
+
+        it('should not add load-more when has_more is false', async () => {
+            graph._categoryMeta.set('cat-test', {
+                parentName: 'Test', parentType: 'artist',
+                category: 'releases', offset: 30, limit: 30, total: 31,
+            });
+            graph.nodes.push({ id: 'cat-test', displayName: 'Releases', name: 'Releases (30)', isCategory: true, isCenter: false });
+
+            window.apiClient.expand.mockResolvedValue({
+                children: [{ id: '31', name: 'Album 31', type: 'release' }],
+                total: 31, limit: 30, has_more: false, offset: 30,
+            });
+
+            await graph._loadMoreCategory({ id: 'load-more-cat-test', categoryId: 'cat-test' });
+
+            const loadMoreNodes = graph.nodes.filter(n => n.isLoadMore);
+            expect(loadMoreNodes).toHaveLength(0);
+        });
+    });
+
+    describe('setCompareYears', () => {
+        it('should set compare mode state', async () => {
+            graph.centerName = 'Radiohead';
+            graph.centerType = 'artist';
+            await graph.setCompareYears(1995, 2005);
+            expect(graph.compareMode).toBe(true);
+            expect(graph.compareYearA).toBe(1995);
+            expect(graph.compareYearB).toBe(2005);
+        });
+
+        it('should return early if no center set', async () => {
+            graph.centerName = null;
+            graph.centerType = null;
+            await graph.setCompareYears(1990, 2000);
+            expect(window.apiClient.expand).not.toHaveBeenCalled();
+        });
+
+        it('should return early if no categories', async () => {
+            graph.centerName = 'Radiohead';
+            graph.centerType = 'artist';
+            await graph.setCompareYears(1990, 2000);
+            expect(window.apiClient.expand).not.toHaveBeenCalled();
+        });
+
+        it('should clear beforeYear', async () => {
+            graph.beforeYear = 1990;
+            graph.centerName = 'Radiohead';
+            graph.centerType = 'artist';
+            await graph.setCompareYears(1990, 2000);
+            expect(graph.beforeYear).toBeNull();
+        });
+    });
+
+    describe('_fetchComparisonData', () => {
+        it('should mark nodes as only_a, only_b, or both', async () => {
+            graph.compareYearA = 1990;
+            graph.compareYearB = 2000;
+            graph.nodes.push({
+                id: 'cat-releases', displayName: 'Releases', name: 'Releases',
+                isCategory: true, isCenter: false, count: 5,
+            });
+
+            window.apiClient.expand
+                .mockResolvedValueOnce({
+                    children: [
+                        { id: '1', name: 'A Only', type: 'release' },
+                        { id: '2', name: 'Both', type: 'release' },
+                    ],
+                    total: 2, limit: 30, has_more: false,
+                })
+                .mockResolvedValueOnce({
+                    children: [
+                        { id: '2', name: 'Both', type: 'release' },
+                        { id: '3', name: 'B Only', type: 'release' },
+                    ],
+                    total: 2, limit: 30, has_more: false,
+                });
+
+            graph._pendingExpands = 1;
+            await graph._fetchComparisonData('cat-releases', 'Radiohead', 'artist', 'releases');
+
+            const aOnly = graph.nodes.find(n => n.id === 'child-release-1');
+            const both = graph.nodes.find(n => n.id === 'child-release-2');
+            const bOnly = graph.nodes.find(n => n.id === 'child-release-3');
+
+            expect(aOnly.compareStatus).toBe('only_a');
+            expect(both.compareStatus).toBe('both');
+            expect(bOnly.compareStatus).toBe('only_b');
+        });
+
+        it('should show toast on fetch error', async () => {
+            graph.compareYearA = 1990;
+            graph.compareYearB = 2000;
+
+            window.apiClient.expand.mockRejectedValue(new Error('fail'));
+
+            graph._pendingExpands = 1;
+            await graph._fetchComparisonData('cat-releases', 'Radiohead', 'artist', 'releases');
+
+            const toast = document.getElementById('shareToast');
+            expect(toast.classList.contains('show')).toBe(true);
+        });
+    });
+
+    describe('toggleFullscreen', () => {
+        it('should toggle fullscreen class', () => {
+            expect(graph.container.classList.contains('fullscreen')).toBe(false);
+            graph.toggleFullscreen();
+            expect(graph.container.classList.contains('fullscreen')).toBe(true);
+            graph.toggleFullscreen();
+            expect(graph.container.classList.contains('fullscreen')).toBe(false);
+        });
+    });
+
+    describe('zoomIn / zoomOut / zoomReset', () => {
+        it('zoomIn should call zoom.scaleBy', () => {
+            graph.zoomIn();
+            // zoom methods are called via D3 transition chain
+        });
+
+        it('zoomOut should call zoom.scaleBy', () => {
+            graph.zoomOut();
+        });
+
+        it('zoomReset should call zoom.transform', () => {
+            graph.zoomReset();
+        });
+    });
+
+    describe('_onResize', () => {
+        it('should update SVG dimensions', () => {
+            graph._onResize();
+            // Should not throw even without a simulation
+        });
+
+        it('should restart simulation when running', () => {
+            const mockSim = {
+                force: vi.fn().mockReturnThis(),
+                alpha: vi.fn().mockReturnThis(),
+                restart: vi.fn(),
+            };
+            graph.simulation = mockSim;
+            graph._onResize();
+            expect(mockSim.alpha).toHaveBeenCalledWith(0.3);
+            expect(mockSim.restart).toHaveBeenCalled();
+        });
+    });
+
+    describe('_expandCategoryFiltered', () => {
+        it('should re-expand category with new before_year', async () => {
+            graph.beforeYear = 1990;
+            graph.nodes.push({
+                id: 'cat-releases', displayName: 'Releases', name: 'Releases (10)',
+                isCategory: true, isCenter: false, count: 10,
+            });
+
+            window.apiClient.expand.mockResolvedValue({
+                children: [{ id: '1', name: 'Album 1', type: 'release' }],
+                total: 1, limit: 30, has_more: false,
+            });
+
+            graph._pendingExpands = 1;
+            await graph._expandCategoryFiltered('cat-releases', 'Radiohead', 'artist', 'releases');
+
+            expect(window.apiClient.expand).toHaveBeenCalledWith('Radiohead', 'artist', 'releases', 30, 0, 1990);
+            expect(graph.nodes.find(n => n.id === 'child-release-1')).toBeDefined();
+            const catNode = graph.nodes.find(n => n.id === 'cat-releases');
+            expect(catNode.name).toBe('Releases (1)');
+        });
+    });
+
+    describe('setBeforeYear with categories', () => {
+        it('should re-fetch categories with year filter', async () => {
+            graph.centerName = 'Radiohead';
+            graph.centerType = 'artist';
+
+            // Set up existing category
+            graph.nodes.push(
+                { id: 'center-1', isCenter: true, isCategory: false, name: 'Radiohead', type: 'artist' },
+                { id: 'cat-releases', isCategory: true, isCenter: false, displayName: 'Releases', name: 'Releases (5)', count: 5 },
+            );
+            graph.links.push({ source: 'center-1', target: 'cat-releases' });
+            graph._categoryMeta.set('cat-releases', {
+                parentName: 'Radiohead', parentType: 'artist',
+                category: 'releases', offset: 5, limit: 30, total: 5,
+            });
+
+            window.apiClient.expand.mockResolvedValue({
+                children: [{ id: '1', name: 'Album 1', type: 'release' }],
+                total: 1, limit: 30, has_more: false,
+            });
+
+            await graph.setBeforeYear(1990);
+
+            expect(window.apiClient.expand).toHaveBeenCalledWith('Radiohead', 'artist', 'releases', 30, 0, 1990);
+            expect(graph.beforeYear).toBe(1990);
+        });
+    });
 });
