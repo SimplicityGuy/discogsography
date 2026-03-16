@@ -12,9 +12,15 @@ def _goto_ready(page: Page, url: str) -> None:
     Firefox can resolve ``domcontentloaded`` before all DOMContentLoaded
     listeners have finished, so we additionally wait for the ExploreApp
     instance (which binds all click handlers) to exist on ``window``.
+    We also wait for Alpine.js to finish initialising ``x-data`` components
+    since the search-type dropdown relies on Alpine reactivity.
     """
     page.goto(url, wait_until="domcontentloaded", timeout=30000)
     page.wait_for_function("() => !!window.exploreApp", timeout=10000)
+    page.wait_for_function(
+        "() => typeof Alpine !== 'undefined' && Alpine.version !== undefined",
+        timeout=10000,
+    )
 
 
 @pytest.mark.e2e
@@ -199,6 +205,26 @@ class TestExploreAPIEndpoints:
 class TestExploreSearchInteraction:
     """E2E tests for search interaction and autocomplete UI."""
 
+    @staticmethod
+    def _open_dropdown_and_select(page: Page, data_type: str) -> None:
+        """Click the search-type button and select an item from the dropdown.
+
+        Firefox occasionally fires ``@click.outside`` on the same tick as the
+        button click, which closes the Alpine.js dropdown before Playwright
+        can observe it.  We retry the click once if the item isn't visible.
+        """
+        btn = page.locator("#searchTypeBtn")
+        item = page.locator(f"[data-type='{data_type}']")
+
+        btn.click()
+        try:
+            expect(item).to_be_visible(timeout=2000)
+        except AssertionError:
+            # Dropdown closed immediately — retry
+            btn.click()
+            expect(item).to_be_visible(timeout=5000)
+        item.click()
+
     def test_search_type_switching(self, page: Page, test_server: str) -> None:
         """Test switching between search types via dropdown."""
         _goto_ready(page, test_server)
@@ -207,24 +233,15 @@ class TestExploreSearchInteraction:
         expect(type_btn).to_have_text("Artist", timeout=5000)
 
         # Open dropdown and click Genre
-        type_btn.click()
-        genre_item = page.locator("[data-type='genre']")
-        expect(genre_item).to_be_visible(timeout=5000)
-        genre_item.click()
+        self._open_dropdown_and_select(page, "genre")
         expect(type_btn).to_have_text("Genre", timeout=5000)
 
         # Switch to Label
-        type_btn.click()
-        label_item = page.locator("[data-type='label']")
-        expect(label_item).to_be_visible(timeout=5000)
-        label_item.click()
+        self._open_dropdown_and_select(page, "label")
         expect(type_btn).to_have_text("Label", timeout=5000)
 
         # Switch back to Artist
-        type_btn.click()
-        artist_item = page.locator("[data-type='artist']")
-        expect(artist_item).to_be_visible(timeout=5000)
-        artist_item.click()
+        self._open_dropdown_and_select(page, "artist")
         expect(type_btn).to_have_text("Artist", timeout=5000)
 
     def test_autocomplete_shows_results(self, page: Page, test_server: str) -> None:
