@@ -30,21 +30,21 @@ Tasks are organized into logical groups for easier navigation:
 
 ### 🛠️ Setup Group
 
-| Task               | Description                                                        |
-| ------------------ | ------------------------------------------------------------------ |
-| `install`          | Install all Python dependencies including dev extras               |
-| `install-js`       | Install JavaScript dependencies for Explore frontend tests         |
-| `init`             | Initialize pre-commit hooks for development                        |
-| `configure-discogs`| Configure Discogs app credentials (run against API container)      |
-| `update-hooks`     | Update pre-commit hooks to latest versions                         |
-| `check-updates`    | Check for outdated dependencies (Python, Rust, Docker)             |
-| `update-deps`      | Update all dependencies to latest versions (Python, Rust, hooks)   |
-| `update-uv`        | Update uv itself to the latest version                             |
-| `lock-upgrade`     | Lock Python dependencies with upgrades (respects >= constraints)   |
-| `sync`             | Sync all Python dependencies including dev and optional extras     |
-| `sync-upgrade`     | Sync all Python dependencies with upgrades                         |
-| `update-npm`       | Update npm dependencies in Explore frontend                        |
-| `update-cargo`     | Update Rust dependencies (lock file only, within Cargo.toml)       |
+| Task                | Description                                                      |
+| ------------------- | ---------------------------------------------------------------- |
+| `install`           | Install all Python dependencies including dev extras             |
+| `install-js`        | Install JavaScript dependencies for Explore frontend tests       |
+| `init`              | Initialize pre-commit hooks for development                      |
+| `configure-discogs` | Configure Discogs app credentials (run against API container)    |
+| `update-hooks`      | Update pre-commit hooks to latest versions                       |
+| `check-updates`     | Check for outdated dependencies (Python, Rust, Docker)           |
+| `update-deps`       | Update all dependencies to latest versions (Python, Rust, hooks) |
+| `update-uv`         | Update uv itself to the latest version                           |
+| `lock-upgrade`      | Lock Python dependencies with upgrades (respects >= constraints) |
+| `sync`              | Sync all Python dependencies including dev and optional extras   |
+| `sync-upgrade`      | Sync all Python dependencies with upgrades                       |
+| `update-npm`        | Update npm dependencies in Explore frontend                      |
+| `update-cargo`      | Update Rust dependencies (lock file only, within Cargo.toml)     |
 
 ### ✨ Quality Group
 
@@ -57,21 +57,21 @@ Tasks are organized into logical groups for easier navigation:
 
 ### 🧪 Test Group
 
-| Task           | Description                                       |
-| -------------- | ------------------------------------------------- |
-| `test`         | Run unit and integration tests (excluding E2E)    |
-| `test-js`      | Run JavaScript unit tests for Explore frontend    |
-| `test-js-cov`  | Run JavaScript tests with coverage                |
-| `test-cov`     | Run tests with coverage report                    |
-| `test-e2e`     | Run end-to-end browser tests                      |
-| `test-all`     | Run all tests including E2E                       |
-| `test-parallel`| Run all service tests in parallel (Python, Rust, JS) |
-| `test-api`     | Run API service tests with coverage               |
+| Task            | Description                                          |
+| --------------- | ---------------------------------------------------- |
+| `test`          | Run unit and integration tests (excluding E2E)       |
+| `test-js`       | Run JavaScript unit tests for Explore frontend       |
+| `test-js-cov`   | Run JavaScript tests with coverage                   |
+| `test-cov`      | Run tests with coverage report                       |
+| `test-e2e`      | Run end-to-end browser tests                         |
+| `test-all`      | Run all tests including E2E                          |
+| `test-parallel` | Run all service tests in parallel (Python, Rust, JS) |
+| `test-api`      | Run API service tests with coverage                  |
 
 ### 🚀 Services Group
 
-| Task          | Description                                              | Port |
-| ------------- | -------------------------------------------------------- | ---- |
+| Task          | Description                                                | Port |
+| ------------- | ---------------------------------------------------------- | ---- |
 | `api`         | Run the API service (user accounts & JWT authentication)   | 8004 |
 | `dashboard`   | Run the dashboard service (monitoring UI)                  | 8003 |
 | `explore`     | Run the explore service (static file serving for graph UI) | 8006 |

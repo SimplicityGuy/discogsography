@@ -41,12 +41,12 @@ flowchart TD
 
 ## 🎯 Performance Goals
 
-| Metric                | Observed              | Optimization        |
-| --------------------- | --------------------- | ------------------- |
-| **XML Parsing**       | ~130-480 rec/s (e2e)  | RabbitMQ backpressure |
-| **Initial Load**      | ~2 days (parallel)    | Batch processing ✅ |
-| **Update Run**        | ~26 hours (parallel)  | SHA256 dedup ✅     |
-| **API Response Time** | \<200ms               | Query complexity    |
+| Metric                | Observed             | Optimization          |
+| --------------------- | -------------------- | --------------------- |
+| **XML Parsing**       | ~130-480 rec/s (e2e) | RabbitMQ backpressure |
+| **Initial Load**      | ~2 days (parallel)   | Batch processing ✅   |
+| **Update Run**        | ~26 hours (parallel) | SHA256 dedup ✅       |
+| **API Response Time** | \<200ms              | Query complexity      |
 
 > **Note**: ✅ indicates optimizations that are implemented and enabled by default.
 

@@ -648,27 +648,27 @@ See [Monitoring](monitoring.md) for details.
 
 **Nodes: ~33.8 million**
 
-| Node Label  |    Count    |
-| :---------: | :---------: |
-| **Release** | ~19 million |
-| **Artist**  | ~10 million |
+| Node Label  |    Count     |
+| :---------: | :----------: |
+| **Release** | ~19 million  |
+| **Artist**  | ~10 million  |
 | **Master**  | ~2.5 million |
-| **Label**   | ~2.4 million |
-| **Style**   |     757     |
-| **Genre**   |      16     |
+|  **Label**  | ~2.4 million |
+|  **Style**  |     757      |
+|  **Genre**  |      16      |
 
 **Relationships: ~134.3 million**
 
-| Relationship Type |    Count     | Description                        |
-| :---------------: | :----------: | :--------------------------------- |
-| **IS**            | ~61.2 million | Release/Master → Style/Genre       |
-| **BY**            | ~26 million   | Release/Master → Artist            |
-| **ON**            | ~20.6 million | Release → Label                    |
-| **DERIVED_FROM**  | ~19 million   | Release → Master                   |
-| **ALIAS_OF**      | ~4.9 million  | Artist → Artist (aliases)          |
-| **MEMBER_OF**     | ~2.3 million  | Artist → Artist (group membership) |
-| **SUBLABEL_OF**   | ~278K         | Label → Label (parent/child)       |
-| **PART_OF**       | ~10K          | Series relationships               |
+| Relationship Type |     Count     | Description                        |
+| :---------------: | :-----------: | :--------------------------------- |
+|      **IS**       | ~61.2 million | Release/Master → Style/Genre       |
+|      **BY**       |  ~26 million  | Release/Master → Artist            |
+|      **ON**       | ~20.6 million | Release → Label                    |
+| **DERIVED_FROM**  |  ~19 million  | Release → Master                   |
+|   **ALIAS_OF**    | ~4.9 million  | Artist → Artist (aliases)          |
+|   **MEMBER_OF**   | ~2.3 million  | Artist → Artist (group membership) |
+|  **SUBLABEL_OF**  |     ~278K     | Label → Label (parent/child)       |
+|    **PART_OF**    |     ~10K      | Series relationships               |
 
 </div>
 

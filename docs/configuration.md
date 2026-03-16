@@ -242,8 +242,8 @@ POSTGRES_COMMAND_TIMEOUT=30
 
 ### Redis Configuration
 
-| Variable     | Description    | Default     | Required             |
-| ------------ | -------------- | ----------- | -------------------- |
+| Variable     | Description    | Default     | Required                       |
+| ------------ | -------------- | ----------- | ------------------------------ |
 | `REDIS_HOST` | Redis hostname | `localhost` | Yes (Dashboard, API, Insights) |
 
 **Used By**: Dashboard, API, Insights

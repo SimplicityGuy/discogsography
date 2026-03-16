@@ -16,26 +16,26 @@ The Insights service runs scheduled batch analytics against Neo4j and PostgreSQL
 
 ## Computation Types
 
-| Type | Description | Source |
-| ---- | ----------- | ------ |
-| **Artist Centrality** | Top artists ranked by graph edge count | Neo4j |
-| **Genre Trends** | Release count per decade for each genre | PostgreSQL |
-| **Label Longevity** | Labels ranked by years active | PostgreSQL |
-| **Monthly Anniversaries** | Releases with 25/30/40/50/75/100-year milestones | PostgreSQL |
-| **Data Completeness** | Quality scores per entity type (image, year, country, genre coverage) | PostgreSQL |
+| Type                      | Description                                                           | Source     |
+| ------------------------- | --------------------------------------------------------------------- | ---------- |
+| **Artist Centrality**     | Top artists ranked by graph edge count                                | Neo4j      |
+| **Genre Trends**          | Release count per decade for each genre                               | PostgreSQL |
+| **Label Longevity**       | Labels ranked by years active                                         | PostgreSQL |
+| **Monthly Anniversaries** | Releases with 25/30/40/50/75/100-year milestones                      | PostgreSQL |
+| **Data Completeness**     | Quality scores per entity type (image, year, country, genre coverage) | PostgreSQL |
 
 ## API Endpoints
 
 All endpoints are accessed via the API service proxy at `/api/insights/*`:
 
-| Endpoint | Method | Description |
-| -------- | ------ | ----------- |
-| `/api/insights/top-artists` | GET | Top artists by graph centrality |
-| `/api/insights/genre-trends` | GET | Release count per decade for a genre |
-| `/api/insights/label-longevity` | GET | Labels ranked by years active |
-| `/api/insights/this-month` | GET | Notable release anniversaries this month |
-| `/api/insights/data-completeness` | GET | Data quality scores per entity type |
-| `/api/insights/status` | GET | Latest computation status for each type |
+| Endpoint                          | Method | Description                              |
+| --------------------------------- | ------ | ---------------------------------------- |
+| `/api/insights/top-artists`       | GET    | Top artists by graph centrality          |
+| `/api/insights/genre-trends`      | GET    | Release count per decade for a genre     |
+| `/api/insights/label-longevity`   | GET    | Labels ranked by years active            |
+| `/api/insights/this-month`        | GET    | Notable release anniversaries this month |
+| `/api/insights/data-completeness` | GET    | Data quality scores per entity type      |
+| `/api/insights/status`            | GET    | Latest computation status for each type  |
 
 ## Configuration
 

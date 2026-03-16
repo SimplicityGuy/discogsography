@@ -197,9 +197,9 @@ Save and restore graph exploration states as shareable URLs.
 
 Full-text search across all entity types using PostgreSQL, with facet counts and result highlighting. Results are cached in Redis for 5 minutes.
 
-| Method | Path          | Auth Required | Rate Limit | Description                                        |
-| ------ | ------------- | ------------- | ---------- | -------------------------------------------------- |
-| GET    | `/api/search` | No            | 30/min     | Search artists, labels, masters, and releases      |
+| Method | Path          | Auth Required | Rate Limit | Description                                   |
+| ------ | ------------- | ------------- | ---------- | --------------------------------------------- |
+| GET    | `/api/search` | No            | 30/min     | Search artists, labels, masters, and releases |
 
 **Query parameters:**
 
@@ -215,9 +215,9 @@ Full-text search across all entity types using PostgreSQL, with facet counts and
 
 Find the shortest path between any two entities in the knowledge graph.
 
-| Method | Path       | Auth Required | Description                              |
-| ------ | ---------- | ------------- | ---------------------------------------- |
-| GET    | `/api/path` | No           | Shortest path between two named entities |
+| Method | Path        | Auth Required | Description                              |
+| ------ | ----------- | ------------- | ---------------------------------------- |
+| GET    | `/api/path` | No            | Shortest path between two named entities |
 
 **Query parameters:**
 
@@ -231,10 +231,10 @@ Find the shortest path between any two entities in the knowledge graph.
 
 Time-travel through the knowledge graph with year-range and genre-emergence queries.
 
-| Method | Path                          | Auth Required | Description                                      |
-| ------ | ----------------------------- | ------------- | ------------------------------------------------ |
-| GET    | `/api/explore/year-range`     | No            | Get min/max release years in the graph           |
-| GET    | `/api/explore/genre-emergence`| No            | Get genres that emerged before a given year      |
+| Method | Path                           | Auth Required | Description                                 |
+| ------ | ------------------------------ | ------------- | ------------------------------------------- |
+| GET    | `/api/explore/year-range`      | No            | Get min/max release years in the graph      |
+| GET    | `/api/explore/genre-emergence` | No            | Get genres that emerged before a given year |
 
 **Query parameters for `/api/explore/genre-emergence`:**
 
@@ -257,11 +257,11 @@ Proxied endpoints forwarding to the insights microservice for precomputed analyt
 
 Fingerprint and compare record labels based on their genre, style, format, and decade profiles. Rate limited to 30 requests/minute.
 
-| Method | Path                           | Auth Required | Rate Limit | Description                                    |
-| ------ | ------------------------------ | ------------- | ---------- | ---------------------------------------------- |
-| GET    | `/api/label/{label_id}/dna`    | No            | 30/min     | Full DNA fingerprint for a label               |
-| GET    | `/api/label/{label_id}/similar`| No            | 30/min     | Find labels with closest DNA fingerprint       |
-| GET    | `/api/label/dna/compare`       | No            | 30/min     | Side-by-side DNA comparison of multiple labels |
+| Method | Path                            | Auth Required | Rate Limit | Description                                    |
+| ------ | ------------------------------- | ------------- | ---------- | ---------------------------------------------- |
+| GET    | `/api/label/{label_id}/dna`     | No            | 30/min     | Full DNA fingerprint for a label               |
+| GET    | `/api/label/{label_id}/similar` | No            | 30/min     | Find labels with closest DNA fingerprint       |
+| GET    | `/api/label/dna/compare`        | No            | 30/min     | Side-by-side DNA comparison of multiple labels |
 
 **Query parameters for `/api/label/{label_id}/similar`:**
 
@@ -275,12 +275,12 @@ Fingerprint and compare record labels based on their genre, style, format, and d
 
 Personalized taste analysis endpoints based on the authenticated user's synced collection. Requires a minimum of 10 collection items.
 
-| Method | Path                           | Auth Required | Description                                          |
-| ------ | ------------------------------ | ------------- | ---------------------------------------------------- |
-| GET    | `/api/user/taste/heatmap`      | Yes           | Genre x decade heatmap of user's collection          |
-| GET    | `/api/user/taste/fingerprint`  | Yes           | Full taste fingerprint (heatmap, obscurity, drift, blind spots) |
-| GET    | `/api/user/taste/blindspots`   | Yes           | Genres the user's favourite artists release in but they haven't collected |
-| GET    | `/api/user/taste/card`         | Yes           | SVG taste card image (returns `image/svg+xml`)       |
+| Method | Path                          | Auth Required | Description                                                               |
+| ------ | ----------------------------- | ------------- | ------------------------------------------------------------------------- |
+| GET    | `/api/user/taste/heatmap`     | Yes           | Genre x decade heatmap of user's collection                               |
+| GET    | `/api/user/taste/fingerprint` | Yes           | Full taste fingerprint (heatmap, obscurity, drift, blind spots)           |
+| GET    | `/api/user/taste/blindspots`  | Yes           | Genres the user's favourite artists release in but they haven't collected |
+| GET    | `/api/user/taste/card`        | Yes           | SVG taste card image (returns `image/svg+xml`)                            |
 
 **Query parameters for `/api/user/taste/blindspots`:**
 
@@ -290,10 +290,10 @@ Personalized taste analysis endpoints based on the authenticated user's synced c
 
 Temporal analysis of the authenticated user's collection, showing how their taste has evolved over time.
 
-| Method | Path                                | Auth Required | Description                                        |
-| ------ | ----------------------------------- | ------------- | -------------------------------------------------- |
-| GET    | `/api/user/collection/timeline`     | Yes           | Release count distribution by year or decade       |
-| GET    | `/api/user/collection/evolution`    | Yes           | How genre, style, or label mix shifts over time    |
+| Method | Path                             | Auth Required | Description                                     |
+| ------ | -------------------------------- | ------------- | ----------------------------------------------- |
+| GET    | `/api/user/collection/timeline`  | Yes           | Release count distribution by year or decade    |
+| GET    | `/api/user/collection/evolution` | Yes           | How genre, style, or label mix shifts over time |
 
 **Query parameters for `/api/user/collection/timeline`:**
 
