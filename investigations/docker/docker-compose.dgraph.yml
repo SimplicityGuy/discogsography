@@ -1,0 +1,42 @@
+---
+services:
+  dgraph-zero:
+    image: dgraph/dgraph:latest
+    container_name: bench-dgraph-zero
+    command: dgraph zero --my=dgraph-zero:5080
+    ports:
+      - "5080:5080"
+      - "6080:6080"
+    volumes:
+      - dgraph_bench_zero_data:/dgraph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+  dgraph-alpha:
+    image: dgraph/dgraph:latest
+    container_name: bench-dgraph-alpha
+    command: dgraph alpha --my=dgraph-alpha:7080 --zero=dgraph-zero:5080 --security whitelist=0.0.0.0/0
+    depends_on:
+      dgraph-zero:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+      - "9080:9080"
+    volumes:
+      - dgraph_bench_alpha_data:/dgraph
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  dgraph_bench_zero_data:
+  dgraph_bench_alpha_data:

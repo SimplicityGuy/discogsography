@@ -37,6 +37,7 @@
       age: {name: bench-age, role: age, private_ip: "10.0.1.12"}
       falkordb: {name: bench-falkordb, role: falkordb, private_ip: "10.0.1.13"}
       arangodb: {name: bench-arangodb, role: arangodb, private_ip: "10.0.1.14"}
+      dgraph: {name: bench-dgraph, role: dgraph, private_ip: "10.0.1.15"}
 
     # Baseline calibration server — same CX53 type as DB hosts for representative calibration.
     # Set provision_baseline: true to create it (torn down after calibration completes).
@@ -104,7 +105,7 @@
           - description: Database ports from private network
             direction: in
             protocol: tcp
-            port: "5432-8529"
+            port: "5080-9080"
             source_ips: ["10.0.0.0/16"]
         state: present
 

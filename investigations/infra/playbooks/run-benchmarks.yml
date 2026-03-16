@@ -107,6 +107,12 @@
         uri_prefix: "http://"
         user: root
         password: discogsography
+      - name: dgraph
+        host: "{{ hostvars['bench-dgraph']['ansible_host'] }}"
+        port: 9080
+        uri_prefix: ""
+        user: ""
+        password: ""
 
   tasks:
     - name: Create results directory

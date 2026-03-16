@@ -15,6 +15,7 @@ dependencies = [
     "psycopg[binary]>=3.0.0",  # Apache AGE (PostgreSQL extension)
     "falkordb>=1.0.0",      # FalkorDB (Redis module)
     "python-arango>=8.0.0", # ArangoDB
+    "pydgraph>=25.0.0",    # Dgraph
     # Infrastructure
     "hcloud>=2.0.0",        # Hetzner Cloud API
     # Analysis and charting

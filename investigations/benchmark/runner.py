@@ -52,8 +52,12 @@ def get_backend(name: str) -> GraphBackend:
         from investigations.backends.arangodb_backend import ArangoDBBackend
 
         return ArangoDBBackend()
+    elif name == "dgraph":
+        from investigations.backends.dgraph_backend import DgraphBackend
+
+        return DgraphBackend()
     else:
-        msg = f"Unknown backend: {name}. Choose from: neo4j, memgraph, age, falkordb, arangodb"
+        msg = f"Unknown backend: {name}. Choose from: neo4j, memgraph, age, falkordb, arangodb, dgraph"
         raise ValueError(msg)
 
 
@@ -527,7 +531,7 @@ Examples:
     --backend neo4j --uri bolt://localhost:7687 --load-only
         """,
     )
-    parser.add_argument("--backend", required=True, choices=["neo4j", "memgraph", "age", "falkordb", "arangodb"])
+    parser.add_argument("--backend", required=True, choices=["neo4j", "memgraph", "age", "falkordb", "arangodb", "dgraph"])
     parser.add_argument("--uri", required=True, help="Database connection URI")
     parser.add_argument("--user", default=None, help="Database username")
     parser.add_argument("--password", default=None, help="Database password")

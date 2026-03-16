@@ -199,6 +199,7 @@ module = [
     "optimum.*",
     "pika.*",
     "psycopg.*",
+    "pydgraph.*",
     "redis.*",
     "scipy.*",
     "tqdm",
