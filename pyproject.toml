@@ -61,6 +61,7 @@ graphinator = [
 ]
 insights = [
     "fastapi>=0.115.0",
+    "httpx>=0.27.0",
     "uvicorn[standard]>=0.32.0",
 ]
 tableinator = [

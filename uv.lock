@@ -454,6 +454,7 @@ graphinator = [
 ]
 insights = [
     { name = "fastapi", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "httpx", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "uvicorn", extra = ["standard"], marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
 schema-init = [
@@ -506,6 +507,7 @@ requires-dist = [
     { name = "httpx", marker = "extra == 'api'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'dashboard'", specifier = ">=0.27.0" },
     { name = "httpx", marker = "extra == 'explore'", specifier = ">=0.27.0" },
+    { name = "httpx", marker = "extra == 'insights'", specifier = ">=0.27.0" },
     { name = "isort", marker = "extra == 'dev'", specifier = ">=5.13.0" },
     { name = "multidict", specifier = ">=6.5.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.8.0" },
