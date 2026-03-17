@@ -3,7 +3,7 @@
 import asyncio
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 
 from fastapi.testclient import TestClient
 import httpx
@@ -702,7 +702,7 @@ class TestDashboardAppDataCollection:
             mock_neo4j_session.__aenter__ = AsyncMock(return_value=mock_neo4j_session)
             mock_neo4j_session.__aexit__ = AsyncMock(return_value=None)
 
-            app.neo4j_driver.session = AsyncMock(return_value=mock_neo4j_session)
+            app.neo4j_driver.session = MagicMock(return_value=mock_neo4j_session)
 
             databases = await app.get_database_info()
 
@@ -891,7 +891,7 @@ class TestDashboardAppDataCollection:
             app.postgres_conn = mock_postgres_conn
 
             # Mock Neo4j session failure
-            app.neo4j_driver.session.side_effect = Exception("Neo4j connection failed")
+            app.neo4j_driver.session = MagicMock(side_effect=Exception("Neo4j connection failed"))
 
             databases = await app.get_database_info()
 

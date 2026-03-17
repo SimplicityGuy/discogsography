@@ -208,7 +208,7 @@ class TestInitNeo4j:
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value={"health": 1})
         mock_session.run = AsyncMock(return_value=mock_result)
-        driver.session = AsyncMock(return_value=mock_session)
+        driver.session = MagicMock(return_value=mock_session)
         driver.close = AsyncMock()
         return driver
 

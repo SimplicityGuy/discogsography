@@ -365,7 +365,7 @@ class Neo4jBatchProcessor:
         existing_hashes: dict[str, str] = {}
 
         # First, check which artists need updates (by hash)
-        async with await self.driver.session(database="neo4j") as session:
+        async with self.driver.session(database="neo4j") as session:
             # Get all IDs and their hashes
             ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
             if ids:
@@ -391,7 +391,7 @@ class Neo4jBatchProcessor:
             return
 
         # Process artists in a single transaction
-        async with await self.driver.session(database="neo4j") as session:
+        async with self.driver.session(database="neo4j") as session:
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all artist nodes
@@ -483,7 +483,7 @@ class Neo4jBatchProcessor:
         labels_to_process = []
         existing_hashes: dict[str, str] = {}
 
-        async with await self.driver.session(database="neo4j") as session:
+        async with self.driver.session(database="neo4j") as session:
             ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
             if ids:
                 result = await session.run(
@@ -506,7 +506,7 @@ class Neo4jBatchProcessor:
             logger.debug("🔄 All labels in batch already up to date")
             return
 
-        async with await self.driver.session(database="neo4j") as session:
+        async with self.driver.session(database="neo4j") as session:
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all label nodes
@@ -572,7 +572,7 @@ class Neo4jBatchProcessor:
         masters_to_process = []
         existing_hashes: dict[str, str] = {}
 
-        async with await self.driver.session(database="neo4j") as session:
+        async with self.driver.session(database="neo4j") as session:
             ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
             if ids:
                 result = await session.run(
@@ -595,7 +595,7 @@ class Neo4jBatchProcessor:
             logger.debug("🔄 All masters in batch already up to date")
             return
 
-        async with await self.driver.session(database="neo4j") as session:
+        async with self.driver.session(database="neo4j") as session:
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all master nodes
@@ -711,7 +711,7 @@ class Neo4jBatchProcessor:
         releases_to_process = []
         existing_hashes: dict[str, str] = {}
 
-        async with await self.driver.session(database="neo4j") as session:
+        async with self.driver.session(database="neo4j") as session:
             ids = [msg.data.get("id") for msg in messages if msg.data.get("id")]
             if ids:
                 result = await session.run(
@@ -736,7 +736,7 @@ class Neo4jBatchProcessor:
             logger.debug("🔄 All releases in batch already up to date")
             return
 
-        async with await self.driver.session(database="neo4j") as session:
+        async with self.driver.session(database="neo4j") as session:
 
             async def batch_write(tx: Any) -> None:
                 # Create/update all release nodes

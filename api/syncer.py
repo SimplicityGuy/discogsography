@@ -207,7 +207,7 @@ async def sync_collection(
             ]
 
             if neo4j_releases:
-                async with await neo4j_driver.session() as session:
+                async with neo4j_driver.session() as session:
                     await session.run(
                         cypher,
                         {
@@ -368,7 +368,7 @@ async def sync_wantlist(
             ]
 
             if neo4j_wants:
-                async with await neo4j_driver.session() as session:
+                async with neo4j_driver.session() as session:
                     await session.run(
                         cypher,
                         {

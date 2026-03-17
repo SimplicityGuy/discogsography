@@ -42,14 +42,14 @@ def _build_autocomplete_query(query: str) -> str:
 
 async def _run_query(driver: AsyncResilientNeo4jDriver, cypher: str, **params: Any) -> list[dict[str, Any]]:
     """Execute a Cypher query and return all results as a list of dicts."""
-    async with await driver.session() as session:
+    async with driver.session() as session:
         result = await session.run(cypher, params)
         return [dict(record) async for record in result]
 
 
 async def _run_single(driver: AsyncResilientNeo4jDriver, cypher: str, **params: Any) -> dict[str, Any] | None:
     """Execute a Cypher query and return a single result, or None if not found."""
-    async with await driver.session() as session:
+    async with driver.session() as session:
         result = await session.run(cypher, params)
         record = await result.single()
         return dict(record) if record else None
@@ -57,7 +57,7 @@ async def _run_single(driver: AsyncResilientNeo4jDriver, cypher: str, **params: 
 
 async def _run_count(driver: AsyncResilientNeo4jDriver, cypher: str, **params: Any) -> int:
     """Execute a count Cypher query and return the integer result."""
-    async with await driver.session() as session:
+    async with driver.session() as session:
         result = await session.run(cypher, params)
         record = await result.single()
         return int(record["total"]) if record else 0

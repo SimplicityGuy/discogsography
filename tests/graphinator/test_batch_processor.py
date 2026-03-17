@@ -26,8 +26,8 @@ def create_async_session_mock() -> tuple[MagicMock, AsyncMock]:
     mock_session_context.__aexit__.return_value = None
 
     mock_driver = MagicMock()
-    # driver.session() is an async method that returns an async context manager
-    mock_driver.session = AsyncMock(return_value=mock_session_context)
+    # driver.session() is an @asynccontextmanager, returns context manager directly
+    mock_driver.session = MagicMock(return_value=mock_session_context)
 
     return mock_driver, mock_session
 
