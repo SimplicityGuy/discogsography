@@ -30,7 +30,7 @@ class InsightsCache:
             result: dict[str, Any] = json.loads(raw)
             return result
         except Exception:
-            logger.debug("Cache get failed, falling through to database", key=key)
+            logger.debug("⚠️ Cache get failed, falling through to database", key=key)
             return None
 
     async def set(self, key: str, value: dict[str, Any]) -> None:
@@ -38,7 +38,7 @@ class InsightsCache:
         try:
             await self._redis.set(key, json.dumps(value, default=str), ex=self._ttl)
         except Exception:
-            logger.debug("Cache set failed", key=key)
+            logger.debug("⚠️ Cache set failed", key=key)
 
     async def invalidate_all(self) -> None:
         """Delete all insights:* keys using SCAN + DELETE (never KEYS *)."""
@@ -53,6 +53,6 @@ class InsightsCache:
                 if cursor == 0:
                     break
             if deleted:
-                logger.info("Cache invalidated", keys_deleted=deleted)
+                logger.info("🔄 Cache invalidated", keys_deleted=deleted)
         except Exception:
-            logger.debug("Cache invalidation failed")
+            logger.debug("⚠️ Cache invalidation failed")

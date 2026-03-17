@@ -66,7 +66,7 @@ class ResilientPostgreSQLPool:
 
     def _initialize_pool(self) -> None:
         """Initialize the connection pool with minimum connections."""
-        logger.info(f"🔗 Initializing PostgreSQL connection pool (min: {self.min_connections}, max: {self.max_connections})")
+        logger.info(f"🐘 Initializing PostgreSQL connection pool (min: {self.min_connections}, max: {self.max_connections})")
 
         for _ in range(self.min_connections):
             try:
@@ -225,7 +225,7 @@ class ResilientPostgreSQLPool:
 
     def close(self) -> None:
         """Close all connections in the pool."""
-        logger.info("🔌 Closing PostgreSQL connection pool")
+        logger.info("🔧 Closing PostgreSQL connection pool")
         self._closed = True
 
         # Close all connections
@@ -264,7 +264,7 @@ class AsyncResilientPostgreSQL(AsyncResilientConnection[Any]):
 
     async def _create_connection(self) -> Any:
         """Create a new async PostgreSQL connection."""
-        logger.info("🔗 Creating new async PostgreSQL connection")
+        logger.info("🐘 Creating new async PostgreSQL connection")
         conn = await psycopg.AsyncConnection.connect(**self.connection_params)
         await conn.set_autocommit(True)
         return conn
@@ -330,7 +330,7 @@ class AsyncPostgreSQLPool:
         if self._initialized:
             return
 
-        logger.info(f"🔗 Initializing async PostgreSQL connection pool (min: {self.min_connections}, max: {self.max_connections})")
+        logger.info(f"🐘 Initializing async PostgreSQL connection pool (min: {self.min_connections}, max: {self.max_connections})")
 
         # Create initial connections
         for _ in range(self.min_connections):
@@ -350,7 +350,7 @@ class AsyncPostgreSQLPool:
 
     async def _create_connection(self) -> psycopg.AsyncConnection[Any]:
         """Create a new async PostgreSQL connection with retry logic."""
-        logger.info("🔗 Creating new async PostgreSQL connection")
+        logger.info("🐘 Creating new async PostgreSQL connection")
         conn = await psycopg.AsyncConnection.connect(**self.connection_params)
         await conn.set_autocommit(True)
         # Test the connection
@@ -533,7 +533,7 @@ class AsyncPostgreSQLPool:
 
     async def close(self) -> None:
         """Close all connections in the pool."""
-        logger.info("🔌 Closing async PostgreSQL connection pool")
+        logger.info("🔧 Closing async PostgreSQL connection pool")
         self._closed = True
 
         # Cancel health check task

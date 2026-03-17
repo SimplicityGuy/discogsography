@@ -178,7 +178,7 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
             if data_type in consumer_tags:
                 consumer_tag = consumer_tags[data_type]
                 logger.info(
-                    f"🔌 Canceling consumer for {data_type} after {CONSUMER_CANCEL_DELAY}s grace period",
+                    f"🔧 Canceling consumer for {data_type} after {CONSUMER_CANCEL_DELAY}s grace period",
                     data_type=data_type,
                     CONSUMER_CANCEL_DELAY=CONSUMER_CANCEL_DELAY,
                 )
@@ -196,7 +196,7 @@ async def schedule_consumer_cancellation(data_type: str, queue: Any) -> None:
 
                 # Check if all consumers are now idle
                 if await check_all_consumers_idle():
-                    logger.info("🔌 All consumers idle, closing RabbitMQ connection")
+                    logger.info("🔧 All consumers idle, closing RabbitMQ connection")
                     await close_rabbitmq_connection()
         except Exception as e:
             logger.error(
@@ -223,7 +223,7 @@ async def close_rabbitmq_connection() -> None:
         if active_channel:
             try:
                 await active_channel.close()
-                logger.info("🔌 Closed RabbitMQ channel - all consumers idle")
+                logger.info("🔧 Closed RabbitMQ channel - all consumers idle")
             except Exception as e:
                 logger.warning("⚠️ Error closing channel", error=str(e))
             active_channel = None
@@ -231,7 +231,7 @@ async def close_rabbitmq_connection() -> None:
         if active_connection:
             try:
                 await active_connection.close()
-                logger.info("🔌 Closed RabbitMQ connection - all consumers idle")
+                logger.info("🔧 Closed RabbitMQ connection - all consumers idle")
             except Exception as e:
                 logger.warning("⚠️ Error closing connection", error=str(e))
             active_connection = None
@@ -449,7 +449,7 @@ async def _recover_consumers() -> None:
             idle_mode = False
             # Don't close temp_connection since we're using it as active_connection
         else:
-            logger.info("📭 No messages in any queue, connection remains closed")
+            logger.info("⏳ No messages in any queue, connection remains closed")
             # Close the temporary connection
             await temp_channel.close()
             await temp_connection.close()
@@ -539,7 +539,7 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             completed_files.add(data_type)
             total_processed = data.get("total_processed", 0)
             logger.info(
-                f"🎉 File processing complete for {data_type}! "
+                f"✅ File processing complete for {data_type}! "
                 f"Total records processed: {total_processed}"
             )
 
@@ -772,7 +772,7 @@ async def progress_reporter() -> None:
         # Build progress string with completion emojis
         progress_parts = []
         for data_type in ["artists", "labels", "masters", "releases"]:
-            emoji = "🎉 " if data_type in completed_files else ""
+            emoji = "✅ " if data_type in completed_files else ""
             progress_parts.append(
                 f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}"
             )
@@ -813,7 +813,7 @@ async def progress_reporter() -> None:
 
         if canceled_consumers:
             logger.info(
-                f"🔌 Canceled consumers: {canceled_consumers}",
+                f"🔧 Canceled consumers: {canceled_consumers}",
                 canceled_consumers=canceled_consumers,
             )
         if active_consumers:
@@ -1121,7 +1121,7 @@ if __name__ == "__main__":
     try:
         run(main())
     except KeyboardInterrupt:
-        logger.info("⚠️ Application interrupted")
+        logger.warning("⚠️ Application interrupted")
     except Exception as e:
         logger.error("❌ Application error", error=str(e))
     finally:

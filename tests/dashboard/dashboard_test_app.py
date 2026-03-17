@@ -238,12 +238,12 @@ def create_test_app() -> FastAPI:
             while True:
                 try:
                     data = await asyncio.wait_for(websocket.receive_text(), timeout=30.0)
-                    logger.debug(f"📥 Received WebSocket data: {data}")
+                    logger.debug(f"🔄 Received WebSocket data: {data}")
                 except TimeoutError:
                     # Send ping to keep connection alive
                     await websocket.send_json({"type": "ping"})
         except Exception as e:
-            logger.debug(f"🔌 WebSocket disconnected: {e}")
+            logger.debug(f"🔧 WebSocket disconnected: {e}")
         finally:
             if mock_dashboard_app:
                 mock_dashboard_app.websocket_connections.discard(websocket)

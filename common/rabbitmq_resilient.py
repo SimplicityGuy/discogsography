@@ -81,7 +81,7 @@ class ResilientRabbitMQConnection(ResilientConnection[BlockingConnection]):
             return self._channel
 
         # Create new channel
-        logger.info("📺 Creating new RabbitMQ channel")
+        logger.info("🐰 Creating new RabbitMQ channel")
         self._channel = connection.channel()
         return self._channel
 
@@ -207,7 +207,7 @@ class AsyncResilientRabbitMQ:
             if self._channel and not self._channel.is_closed:
                 return self._channel
 
-            logger.info("📺 Creating robust RabbitMQ channel")
+            logger.info("🐰 Creating robust RabbitMQ channel")
             self._channel = await connection.channel()
             return self._channel
 

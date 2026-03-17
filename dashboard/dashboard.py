@@ -309,7 +309,7 @@ class DashboardApp:
                     logger.warning(f"⚠️ RabbitMQ management API returned status {response.status_code}")
 
         except httpx.ConnectError:
-            logger.debug("🔌 RabbitMQ management API unreachable. This is normal if RabbitMQ is not running.")
+            logger.debug("🐰 RabbitMQ management API unreachable. This is normal if RabbitMQ is not running.")
         except Exception as e:
             logger.error(f"❌ Error getting queue info: {e}")
 

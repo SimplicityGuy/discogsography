@@ -346,7 +346,7 @@ class StateMarker:
             duration = self.processing_phase.completed_at - self.download_phase.started_at
             self.summary.total_duration_seconds = duration.total_seconds()
 
-        logger.info("🎉 Extraction completed for version", version=self.current_version)
+        logger.info("✅ Extraction completed for version", version=self.current_version)
 
     def pending_files(self, all_files: list[str]) -> list[str]:
         """Get list of files that still need processing."""

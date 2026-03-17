@@ -1694,14 +1694,14 @@ class TestProgressReporter:
         # Build progress string like the progress reporter does
         progress_parts = []
         for data_type in ["artists", "labels", "masters", "releases"]:
-            emoji = "🎉 " if data_type in graphinator_module.completed_files else ""
+            emoji = "✅ " if data_type in graphinator_module.completed_files else ""
             progress_parts.append(f"{emoji}{data_type.capitalize()}: {graphinator_module.message_counts[data_type]}")
 
         # Should include emoji for completed files
         progress_str = ", ".join(progress_parts)
-        assert "🎉 Artists" in progress_str
-        assert "🎉 Labels" in progress_str
-        assert "🎉 Masters" not in progress_str
+        assert "✅ Artists" in progress_str
+        assert "✅ Labels" in progress_str
+        assert "✅ Masters" not in progress_str
 
 
 class TestQueueRestartLogic:

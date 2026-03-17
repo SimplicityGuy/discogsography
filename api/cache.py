@@ -29,7 +29,7 @@ class RecommendCache:
             result: dict[str, Any] = json.loads(raw)
             return result
         except Exception:
-            logger.debug("Cache get failed", key=key)
+            logger.debug("⚠️ Cache get failed", key=key)
             return None
 
     async def set(self, key: str, value: dict[str, Any], ttl: int | None = None) -> None:
@@ -37,7 +37,7 @@ class RecommendCache:
         try:
             await self._redis.set(key, json.dumps(value, default=str), ex=ttl or self._default_ttl)
         except Exception:
-            logger.debug("Cache set failed", key=key)
+            logger.debug("⚠️ Cache set failed", key=key)
 
     async def invalidate_user(self, user_id: str) -> None:
         """Delete user-scoped recommendation cache keys via SCAN."""
@@ -55,4 +55,4 @@ class RecommendCache:
                     if cursor == 0:
                         break
         except Exception:
-            logger.debug("Cache invalidation failed", user_id=user_id)
+            logger.debug("⚠️ Cache invalidation failed", user_id=user_id)

@@ -394,7 +394,7 @@ class PostgreSQLBatchProcessor:
 
                 if unchanged_ids:
                     logger.debug(
-                        "⏩ Skipped unchanged records",
+                        "🔄 Skipped unchanged records",
                         data_type=data_type,
                         skipped=len(unchanged_ids),
                     )

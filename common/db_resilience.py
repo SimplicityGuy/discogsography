@@ -105,7 +105,7 @@ class CircuitBreaker:
             self.last_failure_time = datetime.now(UTC)
 
             if self.failure_count >= self.config.failure_threshold and self.state != CircuitState.OPEN:
-                logger.error(f"🚨 {self.config.name}: Circuit breaker OPEN after {self.failure_count} failures")
+                logger.error(f"❌ {self.config.name}: Circuit breaker OPEN after {self.failure_count} failures")
                 self.state = CircuitState.OPEN
 
     async def _on_success_async(self) -> None:
@@ -123,7 +123,7 @@ class CircuitBreaker:
             self.last_failure_time = datetime.now(UTC)
 
             if self.failure_count >= self.config.failure_threshold and self.state != CircuitState.OPEN:
-                logger.error(f"🚨 {self.config.name}: Circuit breaker OPEN after {self.failure_count} failures")
+                logger.error(f"❌ {self.config.name}: Circuit breaker OPEN after {self.failure_count} failures")
                 self.state = CircuitState.OPEN
 
 

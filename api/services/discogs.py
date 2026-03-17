@@ -74,7 +74,7 @@ async def request_oauth_token(
         response = await client.get(url, headers=headers)
 
     if response.status_code != 200:
-        logger.debug("Discogs API error body", status=response.status_code, body=response.text)
+        logger.debug("🔐 Discogs API error body", status=response.status_code, body=response.text)
         raise DiscogsOAuthError(f"Failed to get request token: HTTP {response.status_code}")
 
     params = dict(urllib.parse.parse_qsl(response.text))
@@ -139,7 +139,7 @@ async def exchange_oauth_verifier(
         response = await client.post(url, headers=headers)
 
     if response.status_code != 200:
-        logger.debug("Discogs API error body", status=response.status_code, body=response.text)
+        logger.debug("🔐 Discogs API error body", status=response.status_code, body=response.text)
         raise DiscogsOAuthError(f"Failed to exchange verifier: HTTP {response.status_code}")
 
     params = dict(urllib.parse.parse_qsl(response.text))
@@ -194,7 +194,7 @@ async def fetch_discogs_identity(
         response = await client.get(url, headers=headers)
 
     if response.status_code != 200:
-        logger.debug("Discogs API error body", status=response.status_code, body=response.text)
+        logger.debug("🔐 Discogs API error body", status=response.status_code, body=response.text)
         raise DiscogsOAuthError(f"Failed to fetch Discogs identity: HTTP {response.status_code}")
 
     identity: dict[str, Any] = response.json()

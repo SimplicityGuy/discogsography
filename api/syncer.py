@@ -474,7 +474,7 @@ async def run_full_sync(
         if redis_client is not None:
             rec_cache = RecommendCache(redis=redis_client)
             await rec_cache.invalidate_user(str(user_uuid))
-            logger.info("🗑️ Recommendation cache invalidated", user_id=str(user_uuid))
+            logger.info("🔄 Recommendation cache invalidated", user_id=str(user_uuid))
 
     except Exception as exc:
         error_message = str(exc)

@@ -55,7 +55,7 @@ async def compute_and_store_artist_centrality(client: httpx.AsyncClient, pool: A
     try:
         results = await _fetch_from_api(client, "/api/internal/insights/artist-centrality", {"limit": limit})
         if not results:
-            logger.info("No artist centrality results to store")
+            logger.info("📊 No artist centrality results to store")
             await _log_computation(pool, "artist_centrality", "completed", started_at, 0)
             return 0
 
@@ -70,11 +70,11 @@ async def compute_and_store_artist_centrality(client: httpx.AsyncClient, pool: A
                     """,
                     (rank, row["artist_id"], row["artist_name"], row["edge_count"]),
                 )
-        logger.info("Artist centrality stored", count=len(results))
+        logger.info("💾 Artist centrality stored", count=len(results))
         await _log_computation(pool, "artist_centrality", "completed", started_at, len(results))
         return len(results)
     except Exception as e:
-        logger.error("Artist centrality computation failed", error=str(e))
+        logger.error("❌ Artist centrality computation failed", error=str(e))
         await _log_computation(pool, "artist_centrality", "failed", started_at, error_message=str(e))
         raise
 
@@ -99,11 +99,11 @@ async def compute_and_store_genre_trends(client: httpx.AsyncClient, pool: Any) -
                     """,
                     (row["genre"], row["decade"], row["release_count"]),
                 )
-        logger.info("Genre trends stored", count=len(results))
+        logger.info("💾 Genre trends stored", count=len(results))
         await _log_computation(pool, "genre_trends", "completed", started_at, len(results))
         return len(results)
     except Exception as e:
-        logger.error("Genre trends computation failed", error=str(e))
+        logger.error("❌ Genre trends computation failed", error=str(e))
         await _log_computation(pool, "genre_trends", "failed", started_at, error_message=str(e))
         raise
 
@@ -142,11 +142,11 @@ async def compute_and_store_label_longevity(client: httpx.AsyncClient, pool: Any
                         still_active,
                     ),
                 )
-        logger.info("Label longevity stored", count=len(results))
+        logger.info("💾 Label longevity stored", count=len(results))
         await _log_computation(pool, "label_longevity", "completed", started_at, len(results))
         return len(results)
     except Exception as e:
-        logger.error("Label longevity computation failed", error=str(e))
+        logger.error("❌ Label longevity computation failed", error=str(e))
         await _log_computation(pool, "label_longevity", "failed", started_at, error_message=str(e))
         raise
 
@@ -200,11 +200,11 @@ async def compute_and_store_anniversaries(
                         (row["master_id"], row["title"], row.get("artist_name"), row["release_year"], anniversary, month, year),
                     )
                     rows_written += 1
-        logger.info("Monthly anniversaries stored", count=rows_written, year=year, month=month)
+        logger.info("💾 Monthly anniversaries stored", count=rows_written, year=year, month=month)
         await _log_computation(pool, "anniversaries", "completed", started_at, rows_written)
         return rows_written
     except Exception as e:
-        logger.error("Anniversaries computation failed", error=str(e))
+        logger.error("❌ Anniversaries computation failed", error=str(e))
         await _log_computation(pool, "anniversaries", "failed", started_at, error_message=str(e))
         raise
 
@@ -239,11 +239,11 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
                         row["completeness_pct"],
                     ),
                 )
-        logger.info("Data completeness stored", count=len(results))
+        logger.info("💾 Data completeness stored", count=len(results))
         await _log_computation(pool, "data_completeness", "completed", started_at, len(results))
         return len(results)
     except Exception as e:
-        logger.error("Data completeness computation failed", error=str(e))
+        logger.error("❌ Data completeness computation failed", error=str(e))
         await _log_computation(pool, "data_completeness", "failed", started_at, error_message=str(e))
         raise
 
@@ -255,7 +255,7 @@ async def run_all_computations(
     milestone_years: list[int] | None = None,
 ) -> dict[str, int]:
     """Run all insight computations and return row counts per type."""
-    logger.info("Starting all insight computations...")
+    logger.info("🔄 Starting all insight computations...")
     results: dict[str, int] = {}
 
     results["artist_centrality"] = await compute_and_store_artist_centrality(client, pool)
@@ -269,5 +269,5 @@ async def run_all_computations(
     results["data_completeness"] = await compute_and_store_data_completeness(client, pool)
 
     total = sum(results.values())
-    logger.info("All insight computations complete", total_rows=total, breakdown=results)
+    logger.info("✅ All insight computations complete", total_rows=total, breakdown=results)
     return results

@@ -182,7 +182,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     # Initialize Redis for OAuth state storage and token blacklist
     _redis = await aioredis.from_url(_config.redis_host, decode_responses=True)
     redis_host = _config.redis_host.split("@")[-1] if "@" in _config.redis_host else _config.redis_host.split("://")[-1]
-    logger.info("🔴 Redis connected", host=redis_host)
+    logger.info("✅ Redis connected", host=redis_host)
 
     if _config.neo4j_host and _config.neo4j_username and _config.neo4j_password:
         _neo4j = AsyncResilientNeo4jDriver(
@@ -308,7 +308,7 @@ async def register(request: Request, body: RegisterRequest) -> JSONResponse:  # 
         exc_str = str(exc).lower()
         if "unique" in exc_str or "duplicate" in exc_str:
             # L1: Return same response for duplicate email to prevent user enumeration
-            logger.info("i Registration attempt for existing email (blind)")
+            logger.info("📋 Registration attempt for existing email (blind)")
             return JSONResponse(
                 content={"message": "Registration processed"},
                 status_code=status.HTTP_201_CREATED,

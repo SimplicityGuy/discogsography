@@ -387,7 +387,7 @@ class Neo4jBatchProcessor:
                 artists_to_process.append(msg.data)
 
         if not artists_to_process:
-            logger.debug("⏩ All artists in batch already up to date")
+            logger.debug("🔄 All artists in batch already up to date")
             return
 
         # Process artists in a single transaction
@@ -503,7 +503,7 @@ class Neo4jBatchProcessor:
                 labels_to_process.append(msg.data)
 
         if not labels_to_process:
-            logger.debug("⏩ All labels in batch already up to date")
+            logger.debug("🔄 All labels in batch already up to date")
             return
 
         async with await self.driver.session(database="neo4j") as session:
@@ -592,7 +592,7 @@ class Neo4jBatchProcessor:
                 masters_to_process.append(msg.data)
 
         if not masters_to_process:
-            logger.debug("⏩ All masters in batch already up to date")
+            logger.debug("🔄 All masters in batch already up to date")
             return
 
         async with await self.driver.session(database="neo4j") as session:
@@ -733,7 +733,7 @@ class Neo4jBatchProcessor:
                 releases_to_process.append(msg.data)
 
         if not releases_to_process:
-            logger.debug("⏩ All releases in batch already up to date")
+            logger.debug("🔄 All releases in batch already up to date")
             return
 
         async with await self.driver.session(database="neo4j") as session:

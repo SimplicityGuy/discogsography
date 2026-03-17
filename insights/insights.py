@@ -75,17 +75,17 @@ async def _scheduler_loop(
 
     while True:
         try:
-            logger.info("Scheduler: starting insight computations...")
+            logger.info("🔄 Scheduler: starting insight computations...")
             await run_all_computations(client, pool, milestone_years=milestone_years)
             _last_computation = datetime.now(UTC)
             if cache:
                 await cache.invalidate_all()
-                logger.info("Scheduler: cache invalidated after computation")
-            logger.info("Scheduler: computations complete", next_run_hours=interval_hours)
+                logger.info("✅ Scheduler: cache invalidated after computation")
+            logger.info("✅ Scheduler: computations complete", next_run_hours=interval_hours)
         except asyncio.CancelledError:
             raise
         except Exception:
-            logger.exception("Scheduler: computation cycle failed, will retry next interval")
+            logger.exception("❌ Scheduler: computation cycle failed, will retry next interval")
 
         await asyncio.sleep(interval_seconds)
 
@@ -96,14 +96,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     global _config, _pool, _http_client, _redis, _cache, _scheduler_task
 
     setup_logging("insights", log_file=Path("/logs/insights.log"))
-    logger.info("Insights service starting...")
+    logger.info("🚀 Insights service starting...")
 
     _config = InsightsConfig.from_env()
 
     # Start health server
     health_srv = HealthServer(INSIGHTS_HEALTH_PORT, get_health_data)
     health_srv.start_background()
-    logger.info("Health server started", port=INSIGHTS_HEALTH_PORT)
+    logger.info("🏥 Health server started", port=INSIGHTS_HEALTH_PORT)
 
     # Initialize PostgreSQL
     host, port_str = _config.postgres_host.rsplit(":", 1)
@@ -119,11 +119,11 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         min_connections=1,
     )
     await _pool.initialize()
-    logger.info("PostgreSQL pool initialized")
+    logger.info("🐘 PostgreSQL pool initialized")
 
     # Initialize HTTP client for API service
     _http_client = httpx.AsyncClient(base_url=_config.api_base_url, timeout=90.0)
-    logger.info("API HTTP client initialized", base_url=_config.api_base_url)
+    logger.info("🔧 API HTTP client initialized", base_url=_config.api_base_url)
 
     # Initialize Redis cache
     try:
@@ -131,9 +131,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
         await _redis.ping()  # type: ignore[misc]  # redis.asyncio typing limitation
         ttl_seconds = _config.schedule_hours * 3600
         _cache = InsightsCache(_redis, ttl_seconds=ttl_seconds)
-        logger.info("Redis cache initialized", ttl_hours=_config.schedule_hours)
+        logger.info("✅ Redis cache initialized", ttl_hours=_config.schedule_hours)
     except Exception:
-        logger.warning("Redis unavailable — caching disabled, falling back to PostgreSQL")
+        logger.warning("⚠️ Redis unavailable — caching disabled, falling back to PostgreSQL")
         _redis = None
         _cache = None
 
@@ -147,13 +147,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             cache=_cache,
         )
     )
-    logger.info("Scheduler started", interval_hours=_config.schedule_hours)
+    logger.info("🔄 Scheduler started", interval_hours=_config.schedule_hours)
 
-    logger.info("Insights service ready", port=INSIGHTS_PORT)
+    logger.info("✅ Insights service ready", port=INSIGHTS_PORT)
     yield
 
     # Shutdown
-    logger.info("Insights service shutting down...")
+    logger.info("🔧 Insights service shutting down...")
     if _scheduler_task:
         _scheduler_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
@@ -165,7 +165,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     if _pool:
         await _pool.close()
     health_srv.stop()
-    logger.info("Insights service stopped")
+    logger.info("✅ Insights service stopped")
 
 
 app = FastAPI(

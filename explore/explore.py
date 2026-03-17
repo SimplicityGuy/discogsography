@@ -110,7 +110,7 @@ async def proxy_api(path: str, request: Request) -> Response:
             headers=forward_headers,
         )
     except httpx.TimeoutException:
-        logger.warning("⏱️ Proxy request timed out", path=path)
+        logger.warning("⚠️ Proxy request timed out", path=path)
         return JSONResponse(content={"error": "Request timed out"}, status_code=504)
     except httpx.HTTPError as exc:
         logger.error("❌ Proxy request failed", path=path, error=str(exc))

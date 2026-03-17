@@ -298,7 +298,7 @@ async def execute_search(
         if cached:
             return json.loads(cached)  # type: ignore[no-any-return]
 
-    logger.debug("Search cache miss, querying DB", q=q, types=types)
+    logger.debug("🔍 Search cache miss, querying DB", q=q, types=types)
 
     results_rows, total, type_counts, genre_facets, decade_facets = await asyncio.gather(
         _run_results(pool, q, types, genres, year_min, year_max, limit, offset),

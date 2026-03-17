@@ -66,7 +66,7 @@ async def search(
     # Parse genre filter
     genre_list = [g.strip() for g in genres.split(",") if g.strip()] if genres else []
 
-    logger.debug("Search request", q=q, types=requested_types, genres=genre_list, year_min=year_min, year_max=year_max)
+    logger.debug("🔍 Search request", q=q, types=requested_types, genres=genre_list, year_min=year_min, year_max=year_max)
 
     result = await execute_search(
         pool=_pool,

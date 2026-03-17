@@ -172,12 +172,12 @@ class TestFileCompletionHandling:
         # Build progress string as in the actual code
         progress_parts = []
         for data_type in ["artists", "labels", "masters", "releases"]:
-            emoji = "🎉 " if data_type in completed_files else ""
+            emoji = "✅ " if data_type in completed_files else ""
             progress_parts.append(f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}")
 
         result = ", ".join(progress_parts)
 
-        assert "🎉 Artists: 1000" in result
-        assert "🎉 Labels: 2000" in result
+        assert "✅ Artists: 1000" in result
+        assert "✅ Labels: 2000" in result
         assert "Masters: 3000" in result  # No emoji
         assert "Releases: 4000" in result  # No emoji
