@@ -34,6 +34,7 @@
 #   ARANGODB_URI       http://localhost:8529
 #   ARANGODB_USER      root
 #   ARANGODB_PASSWORD  discogsography
+#   DGRAPH_URI         grpc://localhost:9080
 #   BENCHMARK_SCALE    small (or large)
 
 set -euo pipefail
@@ -56,7 +57,7 @@ show_help() {
 	echo "  --clean      Remove vault, vault password, and SSH keys created by --cloud"
 	echo ""
 	echo "Local options:"
-	echo "  backend      neo4j, memgraph, age, falkordb, arangodb (default: all)"
+	echo "  backend      neo4j, memgraph, age, falkordb, arangodb, dgraph (default: all)"
 	echo "  scale        small, large (default: small)"
 	echo "  --compare    Compare all existing result files"
 	echo ""
@@ -73,6 +74,7 @@ show_help() {
 	echo "  AGE_URI"
 	echo "  FALKORDB_URI"
 	echo "  ARANGODB_URI, ARANGODB_USER, ARANGODB_PASSWORD"
+	echo "  DGRAPH_URI"
 	echo "  BENCHMARK_SCALE (small or large)"
 }
 
@@ -95,6 +97,7 @@ run_local() {
 		age) echo "investigations/docker/docker-compose.age.yml" ;;
 		falkordb) echo "investigations/docker/docker-compose.falkordb.yml" ;;
 		arangodb) echo "investigations/docker/docker-compose.arangodb.yml" ;;
+		dgraph) echo "investigations/docker/docker-compose.dgraph.yml" ;;
 		esac
 	}
 
@@ -105,6 +108,7 @@ run_local() {
 		age) echo "${AGE_URI:-postgresql://discogsography:discogsography@localhost:5433/discogsography}" ;;
 		falkordb) echo "${FALKORDB_URI:-redis://localhost:6380}" ;;
 		arangodb) echo "${ARANGODB_URI:-http://localhost:8529}" ;;
+		dgraph) echo "${DGRAPH_URI:-grpc://localhost:9080}" ;;
 		esac
 	}
 
@@ -179,7 +183,7 @@ run_local() {
 		local scale="${1:-$SCALE}"
 		local results=()
 
-		for db in neo4j memgraph falkordb arangodb age; do
+		for db in neo4j memgraph falkordb arangodb age dgraph; do
 			echo ""
 			echo "########################################"
 			echo "  Starting $db benchmark"
@@ -206,7 +210,7 @@ run_local() {
 	# Install investigation dependencies
 	echo "Installing dependencies..."
 	uv sync --all-extras 2>/dev/null || true
-	uv add --optional investigations neo4j 'psycopg[binary]' falkordb python-arango 2>/dev/null || true
+	uv add --optional investigations neo4j 'psycopg[binary]' falkordb python-arango pydgraph 2>/dev/null || true
 
 	if [[ -n "${1:-}" ]]; then
 		benchmark_single "$1" "${2:-$SCALE}"
@@ -239,7 +243,7 @@ compare_results() {
 #   2nd+ run: Check results on controller. Tear down servers whose
 #             benchmarks completed. Provision new servers for remaining
 #             databases (up to server limit). Restart any failed benchmarks.
-#   Final:    All 5 benchmarks done → tear down all DB servers, fetch
+#   Final:    All 6 benchmarks done → tear down all DB servers, fetch
 #             results. Only controller remains for manual inspection.
 #
 
@@ -362,7 +366,7 @@ run_cloud() {
 	local INITIAL_BATCH=3
 
 	# All databases to benchmark (order determines provisioning priority)
-	local ALL_DBS=(neo4j memgraph age falkordb arangodb)
+	local ALL_DBS=(neo4j memgraph age falkordb arangodb dgraph)
 
 	cloud_prerequisites "$INFRA_DIR"
 
