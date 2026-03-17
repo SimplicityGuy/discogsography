@@ -3,18 +3,14 @@
 from unittest.mock import AsyncMock, MagicMock
 
 from fastapi.testclient import TestClient
+import httpx
 import pytest
 
 
 @pytest.fixture
-def mock_neo4j_driver() -> AsyncMock:
-    """Mock Neo4j driver."""
-    driver = AsyncMock()
-    session = AsyncMock()
-    session.__aenter__ = AsyncMock(return_value=session)
-    session.__aexit__ = AsyncMock(return_value=False)
-    driver.session = MagicMock(return_value=session)
-    return driver
+def mock_http_client() -> AsyncMock:
+    """Mock httpx.AsyncClient for API calls."""
+    return AsyncMock(spec=httpx.AsyncClient)
 
 
 @pytest.fixture
@@ -38,11 +34,11 @@ def mock_pg_pool() -> AsyncMock:
 
 
 @pytest.fixture
-def test_client(mock_neo4j_driver: AsyncMock, mock_pg_pool: AsyncMock) -> TestClient:
+def test_client(mock_http_client: AsyncMock, mock_pg_pool: AsyncMock) -> TestClient:
     """Create a test client with mocked dependencies (no cache)."""
     import insights.insights as _module
 
-    _module._neo4j = mock_neo4j_driver
+    _module._http_client = mock_http_client
     _module._pool = mock_pg_pool
     _module._cache = None
 
@@ -63,14 +59,14 @@ def mock_cache() -> AsyncMock:
 
 @pytest.fixture
 def test_client_with_cache(
-    mock_neo4j_driver: AsyncMock,
+    mock_http_client: AsyncMock,
     mock_pg_pool: AsyncMock,
     mock_cache: AsyncMock,
 ) -> TestClient:
     """Create a test client with mocked dependencies and cache enabled."""
     import insights.insights as _module
 
-    _module._neo4j = mock_neo4j_driver
+    _module._http_client = mock_http_client
     _module._pool = mock_pg_pool
     _module._cache = mock_cache
 

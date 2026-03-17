@@ -1,8 +1,9 @@
 """Insights microservice — precomputed analytics and music trends.
 
-Runs scheduled batch analytics against Neo4j and PostgreSQL,
-stores precomputed results in insights.* PostgreSQL tables,
-and exposes them via read-only API endpoints.
+Runs scheduled batch computations by fetching raw query results
+from the API service over HTTP, stores precomputed results in
+insights.* PostgreSQL tables, and exposes them via read-only
+API endpoints.
 """
 
 import asyncio
@@ -16,11 +17,12 @@ from typing import Any, cast
 
 from fastapi import FastAPI, Query
 from fastapi.responses import JSONResponse
+import httpx
 import redis.asyncio as aioredis
 import structlog
 import uvicorn
 
-from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, setup_logging
+from common import AsyncPostgreSQLPool, HealthServer, setup_logging
 from common.config import InsightsConfig
 from insights.cache import InsightsCache
 from insights.computations import run_all_computations
@@ -42,8 +44,8 @@ INSIGHTS_HEALTH_PORT = 8009
 
 # Module-level state
 _config: InsightsConfig | None = None
-_neo4j: AsyncResilientNeo4jDriver | None = None
 _pool: AsyncPostgreSQLPool | None = None
+_http_client: httpx.AsyncClient | None = None
 _redis: aioredis.Redis | None = None
 _cache: InsightsCache | None = None
 _scheduler_task: asyncio.Task[None] | None = None
@@ -54,14 +56,14 @@ def get_health_data() -> dict[str, Any]:
     """Return health data for the health server."""
     return {
         "service": "insights",
-        "status": "healthy" if _pool and _neo4j else "starting",
+        "status": "healthy" if _pool and _http_client else "starting",
         "timestamp": datetime.now(UTC).isoformat(),
         "last_computation": _last_computation.isoformat() if _last_computation else None,
     }
 
 
 async def _scheduler_loop(
-    driver: Any,
+    client: httpx.AsyncClient,
     pool: Any,
     interval_hours: int = 24,
     milestone_years: list[int] | None = None,
@@ -74,7 +76,7 @@ async def _scheduler_loop(
     while True:
         try:
             logger.info("Scheduler: starting insight computations...")
-            await run_all_computations(driver, pool, milestone_years=milestone_years)
+            await run_all_computations(client, pool, milestone_years=milestone_years)
             _last_computation = datetime.now(UTC)
             if cache:
                 await cache.invalidate_all()
@@ -91,7 +93,7 @@ async def _scheduler_loop(
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage service lifecycle — connect to databases and start scheduler."""
-    global _config, _neo4j, _pool, _redis, _cache, _scheduler_task
+    global _config, _pool, _http_client, _redis, _cache, _scheduler_task
 
     setup_logging("insights", log_file=Path("/logs/insights.log"))
     logger.info("Insights service starting...")
@@ -119,14 +121,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     await _pool.initialize()
     logger.info("PostgreSQL pool initialized")
 
-    # Initialize Neo4j
-    _neo4j = AsyncResilientNeo4jDriver(
-        uri=_config.neo4j_host,
-        auth=(_config.neo4j_username, _config.neo4j_password),
-        max_retries=5,
-        encrypted=False,
-    )
-    logger.info("Neo4j driver initialized")
+    # Initialize HTTP client for API service
+    _http_client = httpx.AsyncClient(base_url=_config.api_base_url, timeout=90.0)
+    logger.info("API HTTP client initialized", base_url=_config.api_base_url)
 
     # Initialize Redis cache
     try:
@@ -143,7 +140,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     # Start scheduler
     _scheduler_task = asyncio.create_task(
         _scheduler_loop(
-            _neo4j,
+            _http_client,
             _pool,
             interval_hours=_config.schedule_hours,
             milestone_years=list(_config.milestone_years),
@@ -163,8 +160,8 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
             await _scheduler_task
     if _redis:
         await _redis.aclose()
-    if _neo4j:
-        await _neo4j.close()
+    if _http_client:
+        await _http_client.aclose()
     if _pool:
         await _pool.close()
     health_srv.stop()

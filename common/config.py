@@ -548,9 +548,7 @@ class ExploreConfig:
 class InsightsConfig:
     """Configuration for the insights service."""
 
-    neo4j_host: str
-    neo4j_username: str
-    neo4j_password: str
+    api_base_url: str
     postgres_host: str
     postgres_username: str
     postgres_password: str
@@ -562,19 +560,11 @@ class InsightsConfig:
     @classmethod
     def from_env(cls) -> "InsightsConfig":
         """Create configuration from environment variables."""
-        neo4j_username = getenv("NEO4J_USERNAME")
-        neo4j_password = get_secret("NEO4J_PASSWORD")
         postgres_username = getenv("POSTGRES_USERNAME")
         postgres_password = get_secret("POSTGRES_PASSWORD")
         postgres_database = getenv("POSTGRES_DATABASE")
 
         missing_vars = []
-        if not getenv("NEO4J_HOST"):
-            missing_vars.append("NEO4J_HOST")
-        if not neo4j_username:
-            missing_vars.append("NEO4J_USERNAME")
-        if not neo4j_password:
-            missing_vars.append("NEO4J_PASSWORD")
         if not getenv("POSTGRES_HOST"):
             missing_vars.append("POSTGRES_HOST")
         if not postgres_username:
@@ -586,6 +576,8 @@ class InsightsConfig:
 
         if missing_vars:
             raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        api_base_url = getenv("API_BASE_URL", "http://api:8004")
 
         schedule_hours_str = getenv("INSIGHTS_SCHEDULE_HOURS", "24")
         try:
@@ -605,9 +597,7 @@ class InsightsConfig:
         redis_host = _build_redis_url()
 
         return cls(
-            neo4j_host=_build_neo4j_uri(),
-            neo4j_username=cast("str", neo4j_username),
-            neo4j_password=cast("str", neo4j_password),
+            api_base_url=api_base_url,
             postgres_host=_build_postgres_connstr(),
             postgres_username=cast("str", postgres_username),
             postgres_password=cast("str", postgres_password),

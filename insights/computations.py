@@ -1,7 +1,7 @@
 """Computation orchestration for insights.
 
 Each compute_and_store_* function:
-1. Runs the corresponding query against Neo4j or PostgreSQL
+1. Fetches raw query results from the API service over HTTP
 2. Clears the previous results from the insights table
 3. Inserts the new results
 4. Returns the number of rows written
@@ -10,15 +10,8 @@ Each compute_and_store_* function:
 from datetime import UTC, datetime
 from typing import Any, cast
 
+import httpx
 import structlog
-
-from api.queries.insights_neo4j_queries import (
-    query_artist_centrality,
-    query_genre_trends,
-    query_label_longevity,
-    query_monthly_anniversaries,
-)
-from api.queries.insights_pg_queries import query_data_completeness
 
 
 logger = structlog.get_logger(__name__)
@@ -47,11 +40,20 @@ async def _log_computation(
         )
 
 
-async def compute_and_store_artist_centrality(driver: Any, pool: Any, limit: int = 100) -> int:
+async def _fetch_from_api(client: httpx.AsyncClient, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Fetch computation data from the API service."""
+    response = await client.get(path, params=params)
+    response.raise_for_status()
+    data: dict[str, Any] = response.json()
+    items: list[dict[str, Any]] = data.get("items", [])
+    return items
+
+
+async def compute_and_store_artist_centrality(client: httpx.AsyncClient, pool: Any, limit: int = 100) -> int:
     """Compute artist centrality and store results."""
     started_at = datetime.now(UTC)
     try:
-        results = await query_artist_centrality(driver, limit=limit)
+        results = await _fetch_from_api(client, "/api/internal/insights/artist-centrality", {"limit": limit})
         if not results:
             logger.info("No artist centrality results to store")
             await _log_computation(pool, "artist_centrality", "completed", started_at, 0)
@@ -77,11 +79,11 @@ async def compute_and_store_artist_centrality(driver: Any, pool: Any, limit: int
         raise
 
 
-async def compute_and_store_genre_trends(driver: Any, pool: Any) -> int:
+async def compute_and_store_genre_trends(client: httpx.AsyncClient, pool: Any) -> int:
     """Compute genre trends and store results."""
     started_at = datetime.now(UTC)
     try:
-        results = await query_genre_trends(driver)
+        results = await _fetch_from_api(client, "/api/internal/insights/genre-trends")
         if not results:
             await _log_computation(pool, "genre_trends", "completed", started_at, 0)
             return 0
@@ -106,11 +108,11 @@ async def compute_and_store_genre_trends(driver: Any, pool: Any) -> int:
         raise
 
 
-async def compute_and_store_label_longevity(driver: Any, pool: Any, limit: int = 50) -> int:
+async def compute_and_store_label_longevity(client: httpx.AsyncClient, pool: Any, limit: int = 50) -> int:
     """Compute label longevity and store results."""
     started_at = datetime.now(UTC)
     try:
-        results = await query_label_longevity(driver, limit=limit)
+        results = await _fetch_from_api(client, "/api/internal/insights/label-longevity", {"limit": limit})
         if not results:
             await _log_computation(pool, "label_longevity", "completed", started_at, 0)
             return 0
@@ -150,7 +152,7 @@ async def compute_and_store_label_longevity(driver: Any, pool: Any, limit: int =
 
 
 async def compute_and_store_anniversaries(
-    driver: Any,
+    client: httpx.AsyncClient,
     pool: Any,
     current_year: int | None = None,
     current_month: int | None = None,
@@ -166,11 +168,11 @@ async def compute_and_store_anniversaries(
         milestone_years = [25, 30, 40, 50, 75, 100]
 
     try:
-        results = await query_monthly_anniversaries(
-            driver,
-            current_year=year,
-            current_month=month,
-            milestone_years=milestone_years,
+        milestones_str = ",".join(str(m) for m in milestone_years)
+        results = await _fetch_from_api(
+            client,
+            "/api/internal/insights/anniversaries",
+            {"year": year, "month": month, "milestones": milestones_str},
         )
         if not results:
             await _log_computation(pool, "anniversaries", "completed", started_at, 0)
@@ -207,11 +209,11 @@ async def compute_and_store_anniversaries(
         raise
 
 
-async def compute_and_store_data_completeness(pool: Any) -> int:
+async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: Any) -> int:
     """Compute data completeness and store results."""
     started_at = datetime.now(UTC)
     try:
-        results = await query_data_completeness(pool)
+        results = await _fetch_from_api(client, "/api/internal/insights/data-completeness")
         if not results:
             await _log_computation(pool, "data_completeness", "completed", started_at, 0)
             return 0
@@ -247,7 +249,7 @@ async def compute_and_store_data_completeness(pool: Any) -> int:
 
 
 async def run_all_computations(
-    driver: Any,
+    client: httpx.AsyncClient,
     pool: Any,
     *,
     milestone_years: list[int] | None = None,
@@ -256,15 +258,15 @@ async def run_all_computations(
     logger.info("Starting all insight computations...")
     results: dict[str, int] = {}
 
-    results["artist_centrality"] = await compute_and_store_artist_centrality(driver, pool)
-    results["genre_trends"] = await compute_and_store_genre_trends(driver, pool)
-    results["label_longevity"] = await compute_and_store_label_longevity(driver, pool)
+    results["artist_centrality"] = await compute_and_store_artist_centrality(client, pool)
+    results["genre_trends"] = await compute_and_store_genre_trends(client, pool)
+    results["label_longevity"] = await compute_and_store_label_longevity(client, pool)
     results["anniversaries"] = await compute_and_store_anniversaries(
-        driver,
+        client,
         pool,
         milestone_years=milestone_years,
     )
-    results["data_completeness"] = await compute_and_store_data_completeness(pool)
+    results["data_completeness"] = await compute_and_store_data_completeness(client, pool)
 
     total = sum(results.values())
     logger.info("All insight computations complete", total_rows=total, breakdown=results)

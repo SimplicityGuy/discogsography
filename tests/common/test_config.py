@@ -866,9 +866,6 @@ class TestGetSecretViaFromEnv:
 
 def _set_insights_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """Set base environment variables required by InsightsConfig."""
-    monkeypatch.setenv("NEO4J_HOST", "neo4j")
-    monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
-    monkeypatch.setenv("NEO4J_PASSWORD", "password")
     monkeypatch.setenv("POSTGRES_HOST", "postgres")
     monkeypatch.setenv("POSTGRES_USERNAME", "user")
     monkeypatch.setenv("POSTGRES_PASSWORD", "pass")
@@ -881,11 +878,12 @@ class TestInsightsConfig:
     def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _set_insights_env(monkeypatch)
         monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "12")
+        monkeypatch.setenv("API_BASE_URL", "http://api:8004")
 
         from common.config import InsightsConfig
 
         config = InsightsConfig.from_env()
-        assert config.neo4j_host == "bolt://neo4j:7687"
+        assert config.api_base_url == "http://api:8004"
         assert config.postgres_database == "db"
         assert config.schedule_hours == 12
 
@@ -898,9 +896,6 @@ class TestInsightsConfig:
         assert config.schedule_hours == 24
 
     def test_from_env_missing_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.delenv("NEO4J_HOST", raising=False)
-        monkeypatch.delenv("NEO4J_USERNAME", raising=False)
-        monkeypatch.delenv("NEO4J_PASSWORD", raising=False)
         monkeypatch.delenv("POSTGRES_HOST", raising=False)
         monkeypatch.delenv("POSTGRES_USERNAME", raising=False)
         monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
@@ -910,6 +905,15 @@ class TestInsightsConfig:
 
         with pytest.raises(ValueError, match="Missing required environment variables"):
             InsightsConfig.from_env()
+
+    def test_api_base_url_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.delenv("API_BASE_URL", raising=False)
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.api_base_url == "http://api:8004"
 
     def test_default_milestone_years(self, monkeypatch: pytest.MonkeyPatch) -> None:
         _set_insights_env(monkeypatch)
