@@ -39,6 +39,7 @@ from api.models import LoginRequest, RegisterRequest
 import api.routers.collection as _collection_router
 import api.routers.explore as _explore_router
 import api.routers.insights as _insights_router
+import api.routers.insights_compute as _insights_compute_router
 import api.routers.label_dna as _label_dna_router
 import api.routers.recommend as _recommend_router
 import api.routers.search as _search_router
@@ -201,6 +202,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _label_dna_router.configure(_neo4j)
     _recommend_router.configure(_neo4j, jwt_secret_for_neo4j, _redis)
     _search_router.configure(_pool, _redis)
+    _insights_compute_router.configure(_neo4j, _pool)
     _snapshot_router.configure(
         jwt_secret=_config.jwt_secret_key,
         redis_client=_redis,
@@ -263,6 +265,7 @@ async def security_headers(request: Request, call_next: Any) -> Any:
 app.include_router(_sync_router.router)
 app.include_router(_explore_router.router)
 app.include_router(_insights_router.router)
+app.include_router(_insights_compute_router.router)
 app.include_router(_label_dna_router.router)
 app.include_router(_search_router.router)
 app.include_router(_snapshot_router.router)

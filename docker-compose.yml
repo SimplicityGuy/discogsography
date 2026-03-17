@@ -251,8 +251,6 @@ services:
         condition: service_healthy
       neo4j:
         condition: service_healthy
-      insights:
-        condition: service_healthy
     networks:
       - discogsography
     healthcheck:
@@ -542,11 +540,9 @@ services:
     hostname: insights
     user: "${UID:-1000}:${GID:-1000}"
     environment:
+      API_BASE_URL: "http://api:8004"
       INSIGHTS_SCHEDULE_HOURS: "24"
       LOG_LEVEL: INFO
-      NEO4J_HOST: neo4j
-      NEO4J_PASSWORD: discogsography
-      NEO4J_USERNAME: neo4j
       POSTGRES_DATABASE: discogsography
       POSTGRES_HOST: postgres
       POSTGRES_PASSWORD: discogsography
@@ -556,11 +552,11 @@ services:
       STARTUP_DELAY: "10"
       # INSIGHTS_MILESTONE_YEARS: "25,30,40,50,75,100"
     depends_on:
+      api:
+        condition: service_healthy
       schema-init:
         condition: service_completed_successfully
       postgres:
-        condition: service_healthy
-      neo4j:
         condition: service_healthy
       redis:
         condition: service_healthy

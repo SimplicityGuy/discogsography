@@ -69,7 +69,7 @@ class TestComputationStatusEndpoint:
         for status in data["statuses"]:
             assert status["status"] == "never_run"
 
-    def test_status_with_log_rows(self, mock_neo4j_driver: AsyncMock, mock_pg_pool: AsyncMock) -> None:
+    def test_status_with_log_rows(self, mock_http_client: AsyncMock, mock_pg_pool: AsyncMock) -> None:
         """When fetchone returns a row, status should reflect actual log data."""
         import insights.insights as _module
 
@@ -77,7 +77,7 @@ class TestComputationStatusEndpoint:
         mock_cursor = mock_pg_pool.connection.return_value.__aenter__.return_value.cursor.return_value.__aenter__.return_value
         mock_cursor.fetchone = AsyncMock(return_value=("artist_centrality", "completed", None, 1500))
 
-        _module._neo4j = mock_neo4j_driver
+        _module._http_client = mock_http_client
         _module._pool = mock_pg_pool
         _module._cache = None
 
