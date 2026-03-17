@@ -159,6 +159,7 @@ ignore = [
 "*/dashboard.py" = ["T201"]                 # Allow print statements for ASCII art
 "*/explore.py" = ["T201"]                   # Allow print statements for ASCII art
 "*/graphinator.py" = ["T201"]               # Allow print statements for ASCII art
+"*/insights.py" = ["T201"]                  # Allow print statements for ASCII art
 "*/schema_init.py" = ["T201"]               # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]               # Allow print statements for ASCII art
 "api/setup.py" = ["T201"]                   # CLI tool uses print for user output

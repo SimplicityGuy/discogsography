@@ -1330,34 +1330,16 @@ class TestLifespanFunction:
                 response = client.get("/health")
                 assert response.status_code == 200
 
-    def test_lifespan_prints_ascii_art(self, capsys: pytest.CaptureFixture[str]) -> None:
-        """Test that the lifespan function prints the ASCII art banner."""
-        mock_config = Mock()
-        mock_config.amqp_connection = "amqp://test"
-        mock_config.neo4j_host = "bolt://test:7687"
-        mock_config.neo4j_username = "neo4j"
-        mock_config.neo4j_password = "test"
-        mock_config.postgres_host = "localhost:5432"
-        mock_config.postgres_database = "testdb"
-        mock_config.postgres_username = "test"
-        mock_config.postgres_password = "test"
-
-        mock_rabbitmq = AsyncMock()
-        mock_neo4j = AsyncMock()
-        mock_postgres = AsyncMock()
-
+    def test_main_prints_ascii_art(self, capsys: pytest.CaptureFixture[str]) -> None:
+        """Test that the main function prints the ASCII art banner."""
         with (
-            patch("dashboard.dashboard.get_config", return_value=mock_config),
-            patch("dashboard.dashboard.AsyncResilientRabbitMQ", return_value=mock_rabbitmq),
-            patch("dashboard.dashboard.AsyncResilientNeo4jDriver", return_value=mock_neo4j),
-            patch("dashboard.dashboard.AsyncResilientPostgreSQL", return_value=mock_postgres),
-            patch("asyncio.create_task"),
-            patch.object(DashboardApp, "collect_metrics_loop", new_callable=AsyncMock),
+            patch("dashboard.dashboard.setup_logging"),
+            patch("dashboard.dashboard.uvicorn") as mock_uvicorn,
         ):
-            from dashboard.dashboard import app
+            mock_uvicorn.run = Mock()
+            from dashboard.dashboard import main
 
-            with TestClient(app):
-                pass
+            main()
 
         captured = capsys.readouterr()
         # The ASCII art includes "DISCOGS" characters
@@ -1365,37 +1347,22 @@ class TestLifespanFunction:
 
 
 class TestMainEntryPoint:
-    """Test the __main__ entry point (lines 582-587)."""
+    """Test the main() entry point."""
 
     def test_main_entry_point_calls_uvicorn(self) -> None:
-        """Test that running dashboard as __main__ calls uvicorn.run."""
+        """Test that main() calls setup_logging and uvicorn.run."""
         from pathlib import Path
-        import sys
-        from types import ModuleType
-
-        # Create a fake uvicorn module so the `import uvicorn` inside __main__ resolves
-        fake_uvicorn = ModuleType("uvicorn")
-        mock_run = Mock()
-        fake_uvicorn.run = mock_run  # type: ignore[attr-defined]
 
         with (
             patch("dashboard.dashboard.setup_logging") as mock_setup_logging,
-            patch.dict(sys.modules, {"uvicorn": fake_uvicorn}),
+            patch("dashboard.dashboard.uvicorn") as mock_uvicorn,
         ):
-            # Simulate the __main__ block by calling its constituent parts directly.
-            # We import uvicorn after patching sys.modules so it resolves to fake_uvicorn.
-            import uvicorn as _uvicorn  # type: ignore[import-not-found]
+            mock_run = Mock()
+            mock_uvicorn.run = mock_run
 
-            import dashboard.dashboard as dash_module
+            from dashboard.dashboard import main
 
-            dash_module.setup_logging("dashboard", log_file=Path("/logs/dashboard.log"))
-            _uvicorn.run(
-                "dashboard.dashboard:app",
-                host="0.0.0.0",  # noqa: S104
-                port=8003,
-                reload=False,
-                log_level="info",
-            )
+            main()
 
         mock_setup_logging.assert_called_once_with("dashboard", log_file=Path("/logs/dashboard.log"))
         mock_run.assert_called_once_with(

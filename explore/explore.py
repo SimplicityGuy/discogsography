@@ -124,9 +124,9 @@ async def proxy_api(path: str, request: Request) -> Response:
 app.mount("/", StaticFiles(directory=Path(__file__).parent / "static", html=True), name="static")
 
 
-if __name__ == "__main__":  # pragma: no cover
+def main() -> None:  # pragma: no cover
+    """Entry point for the Explore service."""
     setup_logging("explore", log_file=Path("/logs/explore.log"))
-
     # fmt: off
     print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗               ")
     print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝               ")
@@ -143,7 +143,6 @@ if __name__ == "__main__":  # pragma: no cover
     print("╚══════╝╚═╝  ╚═╝╚═╝     ╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝            ")
     print()
     # fmt: on
-
     uvicorn.run(
         "explore.explore:app",
         host="0.0.0.0",  # noqa: S104  # nosec B104
@@ -151,3 +150,7 @@ if __name__ == "__main__":  # pragma: no cover
         reload=False,
         log_level=os.getenv("LOG_LEVEL", "INFO").lower(),
     )
+
+
+if __name__ == "__main__":
+    main()

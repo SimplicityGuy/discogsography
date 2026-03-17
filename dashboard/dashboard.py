@@ -19,6 +19,7 @@ import httpx
 import orjson
 from prometheus_client import REGISTRY, Counter, Gauge, generate_latest
 from pydantic import BaseModel
+import uvicorn
 
 from common import (
     AsyncResilientNeo4jDriver,
@@ -431,23 +432,6 @@ dashboard: DashboardApp | None = None
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     """Manage application lifecycle."""
-    # fmt: off
-    print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗                      ")
-    print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝                      ")
-    print("██║  ██║██║███████╗██║     ██║   ██║██║  ███╗███████╗                      ")
-    print("██║  ██║██║╚════██║██║     ██║   ██║██║   ██║╚════██║                      ")
-    print("██████╔╝██║███████║╚██████╗╚██████╔╝╚██████╔╝███████║                      ")
-    print("╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝                      ")
-    print("                                                                           ")
-    print("██████╗  █████╗ ███████╗██╗  ██╗██████╗  ██████╗  █████╗ ██████╗ ██████╗   ")
-    print("██╔══██╗██╔══██╗██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔══██╗██╔══██╗██╔══██╗  ")
-    print("██║  ██║███████║███████╗███████║██████╔╝██║   ██║███████║██████╔╝██║  ██║  ")
-    print("██║  ██║██╔══██║╚════██║██╔══██║██╔══██╗██║   ██║██╔══██║██╔══██╗██║  ██║  ")
-    print("██████╔╝██║  ██║███████║██║  ██║██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝  ")
-    print("╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝   ")
-    print()
-    # fmt: on
-
     logger.info("🚀 Starting Dashboard service...")
 
     global dashboard
@@ -578,12 +562,25 @@ static_dir = Path(__file__).parent / "static"
 app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
 
 
-if __name__ == "__main__":
-    import uvicorn
-
-    # Set up logging
+def main() -> None:  # pragma: no cover
+    """Entry point for the Dashboard service."""
     setup_logging("dashboard", log_file=Path("/logs/dashboard.log"))
-
+    # fmt: off
+    print("██████╗ ██╗███████╗ ██████╗ ██████╗  ██████╗ ███████╗                      ")
+    print("██╔══██╗██║██╔════╝██╔════╝██╔═══██╗██╔════╝ ██╔════╝                      ")
+    print("██║  ██║██║███████╗██║     ██║   ██║██║  ███╗███████╗                      ")
+    print("██║  ██║██║╚════██║██║     ██║   ██║██║   ██║╚════██║                      ")
+    print("██████╔╝██║███████║╚██████╗╚██████╔╝╚██████╔╝███████║                      ")
+    print("╚═════╝ ╚═╝╚══════╝ ╚═════╝ ╚═════╝  ╚═════╝ ╚══════╝                      ")
+    print("                                                                           ")
+    print("██████╗  █████╗ ███████╗██╗  ██╗██████╗  ██████╗  █████╗ ██████╗ ██████╗   ")
+    print("██╔══██╗██╔══██╗██╔════╝██║  ██║██╔══██╗██╔═══██╗██╔══██╗██╔══██╗██╔══██╗  ")
+    print("██║  ██║███████║███████╗███████║██████╔╝██║   ██║███████║██████╔╝██║  ██║  ")
+    print("██║  ██║██╔══██║╚════██║██╔══██║██╔══██╗██║   ██║██╔══██║██╔══██╗██║  ██║  ")
+    print("██████╔╝██║  ██║███████║██║  ██║██████╔╝╚██████╔╝██║  ██║██║  ██║██████╔╝  ")
+    print("╚═════╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝   ")
+    print()
+    # fmt: on
     uvicorn.run(
         "dashboard.dashboard:app",
         host="0.0.0.0",  # noqa: S104  # nosec B104
@@ -591,3 +588,7 @@ if __name__ == "__main__":
         reload=False,
         log_level=os.getenv("LOG_LEVEL", "INFO").lower(),
     )
+
+
+if __name__ == "__main__":
+    main()
