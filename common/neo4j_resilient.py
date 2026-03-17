@@ -3,6 +3,8 @@
 import asyncio
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 from neo4j import AsyncGraphDatabase, GraphDatabase
@@ -146,10 +148,12 @@ class AsyncResilientNeo4jDriver(AsyncResilientConnection[Any]):
             logger.warning(f"⚠️ Async Neo4j health check failed: {e}")
             return False
 
-    async def session(self, **kwargs: Any) -> Any:
+    @asynccontextmanager
+    async def session(self, **kwargs: Any) -> AsyncIterator[Any]:
         """Get an async Neo4j session with resilient connection."""
         driver = await self.get_connection()
-        return driver.session(**kwargs)
+        async with driver.session(**kwargs) as session:
+            yield session
 
     async def close(self) -> None:
         """Close the async Neo4j driver."""
