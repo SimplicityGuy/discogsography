@@ -140,6 +140,9 @@
       arangodb:
         uri: "http://10.0.1.14:8529"
         user_args: "--user root --password discogsography"
+      dgraph:
+        uri: "grpc://10.0.1.15:9080"
+        user_args: ""
     db_uri: "{{ all_database_specs[db_name].uri }}"
     db_user_args: "{{ all_database_specs[db_name].user_args }}"
 
