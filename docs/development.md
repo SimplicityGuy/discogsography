@@ -81,6 +81,13 @@ discogsography/
 │   │   └── js/             # Modular JS (app, graph, trends, auth, etc.)
 │   ├── README.md
 │   └── __init__.py
+├── 📈 insights/            # Precomputed analytics and music trends
+│   ├── insights.py         # Insights service entry point (scheduler + endpoints)
+│   ├── computations.py     # Computation orchestration (fetches from API over HTTP)
+│   ├── cache.py            # Redis cache-aside layer
+│   ├── models.py           # Pydantic response models
+│   ├── README.md
+│   └── __init__.py
 ├── 🔗 graphinator/         # Neo4j graph database service
 │   ├── graphinator.py      # Graph relationship builder
 │   ├── README.md
@@ -101,9 +108,11 @@ discogsography/
 │   ├── system_monitor.py   # System health dashboard
 │   └── __init__.py
 ├── 🧪 tests/               # Comprehensive test suite
+│   ├── api/                # API service tests
 │   ├── common/             # Common module tests
 │   ├── dashboard/          # Dashboard tests (including E2E)
 │   ├── explore/            # Explore service tests
+│   ├── insights/           # Insights service tests
 │   ├── graphinator/        # Graphinator tests
 │   ├── schema-init/        # Schema initializer tests
 │   └── tableinator/        # Tableinator tests

@@ -154,7 +154,7 @@ RABBITMQ_PASSWORD=mypassword
 | `NEO4J_USERNAME` | Neo4j username | `neo4j`     | Yes      |
 | `NEO4J_PASSWORD` | Neo4j password | (none)      | Yes      |
 
-**Used By**: Graphinator, API, Schema-Init, Dashboard, Insights
+**Used By**: Graphinator, API, Schema-Init, Dashboard
 
 **Connection Details**:
 
@@ -697,9 +697,7 @@ Health check: http://localhost:8003/health
 
 ```bash
 # Required
-NEO4J_HOST="localhost"
-NEO4J_USERNAME="neo4j"
-NEO4J_PASSWORD="discogsography"
+API_BASE_URL="http://api:8004"       # URL of the API service (fetches raw query data over HTTP)
 POSTGRES_HOST="localhost"
 POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
@@ -958,4 +956,4 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-15
+**Last Updated**: 2026-03-18

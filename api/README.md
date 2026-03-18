@@ -242,7 +242,7 @@ Time-travel through the knowledge graph with year-range and genre-emergence quer
 
 ### Insights
 
-Proxied endpoints forwarding to the insights microservice for precomputed analytics and music trends. Returns 503 if the insights service is unavailable.
+Proxied endpoints forwarding to the insights microservice for precomputed analytics and music trends. Returns 503 if the insights service is unavailable. The API also exposes internal computation endpoints at `/api/internal/insights/*` that the insights service calls over HTTP to fetch raw Neo4j and PostgreSQL query results.
 
 | Method | Path                              | Auth Required | Description                         |
 | ------ | --------------------------------- | ------------- | ----------------------------------- |

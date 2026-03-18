@@ -25,7 +25,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables         | `psycopg3`, JSONB, full-text search                          | 8002 (health)         |
 | **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check      | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (internal) |
 | **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring                 | `FastAPI`, WebSocket, reactive UI                            | 8003 (ext)            |
-| **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends      | `FastAPI`, `psycopg3`, `neo4j-driver`                        | 8008 (ext), 8009      |
+| **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends      | `FastAPI`, `psycopg3`, `httpx`                               | 8008, 8009 (internal) |
 
 ### Infrastructure Components
 
@@ -79,8 +79,8 @@ graph TD
     DASH -.->|Stats| PG
 
     API -.->|Proxy /api/insights/*| INSIGHTS
-    INSIGHTS -.->|Analytics| PG
-    INSIGHTS -.->|Graph Queries| NEO4J
+    INSIGHTS -.->|Fetch /api/internal/*| API
+    INSIGHTS -.->|Store Results| PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
@@ -176,7 +176,7 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 
 **Insights Service** (precomputed analytics):
 
-- Scheduled batch analytics against Neo4j and PostgreSQL (configurable interval, default: 24h)
+- Scheduled batch analytics fetched from API internal endpoints over HTTP (configurable interval, default: 24h)
 - Top artists by graph centrality (`/api/insights/top-artists`)
 - Genre trends by decade (`/api/insights/genre-trends`)
 - Label longevity rankings (`/api/insights/label-longevity`)
@@ -345,14 +345,14 @@ See [Dashboard README](../dashboard/README.md) for details.
 
 **Responsibilities**:
 
-- Run scheduled batch analytics against Neo4j and PostgreSQL
+- Run scheduled batch analytics by fetching raw query data from the API service over HTTP
 - Compute artist centrality, genre trends, label longevity, anniversaries, and data completeness
 - Store precomputed results in PostgreSQL `insights.*` tables
 - Serve analytics via read-only HTTP endpoints
 
 **Key Features**:
 
-- FastAPI backend with async PostgreSQL and Neo4j drivers
+- FastAPI backend with async PostgreSQL and httpx (API client)
 - Configurable scheduler interval (default: 24 hours)
 - 5 computation types running sequentially
 - Redis caching with cache-aside pattern (TTL matches schedule interval, invalidated after computation)
@@ -361,7 +361,7 @@ See [Dashboard README](../dashboard/README.md) for details.
 
 **Configuration**:
 
-- `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
+- `API_BASE_URL`: URL of the API service for fetching raw query data over HTTP
 - `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`: PostgreSQL connection
 - `INSIGHTS_SCHEDULE_HOURS`: Computation interval in hours (default: 24)
 - `REDIS_HOST`: Redis hostname for result caching
@@ -749,4 +749,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-15
+**Last Updated**: 2026-03-18

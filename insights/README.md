@@ -4,13 +4,13 @@ Precomputed analytics and music trends engine for Discogsography.
 
 ## Overview
 
-The Insights service runs scheduled batch analytics against Neo4j and PostgreSQL, stores precomputed results in PostgreSQL `insights.*` tables, and exposes them via read-only HTTP endpoints. Results are proxied to users through the API service at `/api/insights/*`.
+The Insights service runs scheduled batch analytics, stores precomputed results in PostgreSQL `insights.*` tables, and exposes them via read-only HTTP endpoints. It fetches raw query data from the API service's internal endpoints (`/api/internal/insights/*`) over HTTP rather than connecting to Neo4j directly. Results are proxied to users through the API service at `/api/insights/*`.
 
 ## Architecture
 
 - **Language**: Python 3.13+
-- **Framework**: FastAPI with async PostgreSQL (`psycopg3`) and Neo4j (`neo4j-driver`)
-- **Database**: PostgreSQL 18 (result storage), Neo4j 2026 (graph queries)
+- **Framework**: FastAPI with async PostgreSQL (`psycopg3`) and `httpx` (API client)
+- **Database**: PostgreSQL 18 (result storage); graph data fetched from API service over HTTP
 - **Service Port**: 8008
 - **Health Port**: 8009
 
@@ -18,7 +18,7 @@ The Insights service runs scheduled batch analytics against Neo4j and PostgreSQL
 
 | Type                      | Description                                                           | Source     |
 | ------------------------- | --------------------------------------------------------------------- | ---------- |
-| **Artist Centrality**     | Top artists ranked by graph edge count                                | Neo4j      |
+| **Artist Centrality**     | Top artists ranked by graph edge count                                | API (Neo4j via HTTP) |
 | **Genre Trends**          | Release count per decade for each genre                               | PostgreSQL |
 | **Label Longevity**       | Labels ranked by years active                                         | PostgreSQL |
 | **Monthly Anniversaries** | Releases with 25/30/40/50/75/100-year milestones                      | PostgreSQL |
@@ -42,10 +42,8 @@ All endpoints are accessed via the API service proxy at `/api/insights/*`:
 Environment variables:
 
 ```bash
-# Neo4j connection
-NEO4J_HOST=neo4j
-NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=discogsography
+# API service connection (fetches raw query data over HTTP)
+API_BASE_URL=http://api:8004
 
 # PostgreSQL connection
 POSTGRES_HOST=postgres
@@ -53,8 +51,14 @@ POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
 
+# Redis caching (cache-aside pattern, TTL matches schedule interval)
+REDIS_HOST=redis
+
 # Scheduler interval in hours (default: 24)
 INSIGHTS_SCHEDULE_HOURS=24
+
+# Configurable anniversary milestone years (default: 25,30,40,50,75,100)
+INSIGHTS_MILESTONE_YEARS=25,30,40,50,75,100
 
 # Startup delay in seconds (default: 10)
 STARTUP_DELAY=10

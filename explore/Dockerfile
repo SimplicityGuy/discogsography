@@ -141,10 +141,7 @@ ENV HOME=/home/discogsography \
     UV_SYSTEM_PYTHON=1 \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
-    NEO4J_HOST="" \
-    NEO4J_USERNAME="" \
-    NEO4J_PASSWORD="" \
-    JWT_SECRET_KEY=""
+    API_BASE_URL="http://api:8004"
 
 EXPOSE 8006 8007
 

@@ -243,6 +243,7 @@ curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8003/health  # Dashboard
 curl http://localhost:8005/health  # API
 curl http://localhost:8007/health  # Explore
+curl http://localhost:8009/health  # Insights
 ```
 
 Expected response:
