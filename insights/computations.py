@@ -59,6 +59,13 @@ async def compute_and_store_artist_centrality(client: httpx.AsyncClient, pool: A
             await _log_computation(pool, "artist_centrality", "completed", started_at, 0)
             return 0
 
+        # Filter out artists with missing names (Neo4j nodes without a name property)
+        results = [r for r in results if r.get("artist_name")]
+        if not results:
+            logger.info("📊 No artist centrality results with valid names")
+            await _log_computation(pool, "artist_centrality", "completed", started_at, 0)
+            return 0
+
         async with pool.connection() as conn, conn.cursor() as cursor:
             cursor = cast("Any", cursor)
             await cursor.execute("DELETE FROM insights.artist_centrality")

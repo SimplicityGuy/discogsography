@@ -71,6 +71,24 @@ class TestComputeAndStoreArtistCentrality:
         assert rows == 0
 
     @pytest.mark.asyncio
+    async def test_filters_out_null_artist_names(self) -> None:
+        from insights.computations import compute_and_store_artist_centrality
+
+        mock_client = AsyncMock()
+        mock_pool = _make_mock_pool()
+
+        with patch("insights.computations._fetch_from_api") as mock_fetch:
+            mock_fetch.return_value = [
+                {"artist_id": "a1", "artist_name": "Artist One", "edge_count": 100},
+                {"artist_id": "a2", "artist_name": None, "edge_count": 90},
+                {"artist_id": "a3", "artist_name": "", "edge_count": 80},
+                {"artist_id": "a4", "artist_name": "Artist Four", "edge_count": 70},
+            ]
+            rows = await compute_and_store_artist_centrality(mock_client, mock_pool)
+
+        assert rows == 2
+
+    @pytest.mark.asyncio
     async def test_raises_on_api_error(self) -> None:
         from insights.computations import compute_and_store_artist_centrality
 
