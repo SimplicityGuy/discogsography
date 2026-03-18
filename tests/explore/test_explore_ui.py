@@ -346,6 +346,10 @@ class TestExploreSearchInteraction:
         trends_link = page.locator("[data-pane='trends']")
         trends_link.click()
 
+        # Wait for the pane to become active (Firefox can be slow to process the click)
+        trends_pane = page.locator("#trendsPane")
+        expect(trends_pane).to_have_class(re.compile(r"\bactive\b"), timeout=5000)
+
         placeholder = page.locator("#trendsPlaceholder")
         expect(placeholder).to_be_visible(timeout=5000)
 
