@@ -127,7 +127,7 @@ async def create_neo4j_schema(driver: Any) -> int:
     success_count = 0
     failure_count = 0
 
-    async with await driver.session(database="neo4j") as session:
+    async with driver.session(database="neo4j") as session:
         for name, cypher in SCHEMA_STATEMENTS:
             try:
                 await session.run(cypher)

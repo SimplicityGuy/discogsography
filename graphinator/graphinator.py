@@ -518,7 +518,7 @@ async def cleanup_stub_nodes(data_type: str) -> None:
         return
 
     try:
-        async with await graph.session(database="neo4j") as session:
+        async with graph.session(database="neo4j") as session:
             result = await session.run(
                 f"MATCH (n:{label}) WHERE n.sha256 IS NULL "
                 "DETACH DELETE n "
@@ -889,7 +889,7 @@ def make_message_handler(
             if graph is None:
                 raise RuntimeError("Neo4j driver not initialized")
 
-            async with await graph.session(database="neo4j") as session:
+            async with graph.session(database="neo4j") as session:
 
                 def tx_fn(tx: Any) -> bool:
                     return bool(process_fn(tx, record))
@@ -1124,7 +1124,7 @@ async def main() -> None:
 
     # Test Neo4j connectivity using async operations
     try:
-        async with await graph.session(database="neo4j") as session:
+        async with graph.session(database="neo4j") as session:
             result = await session.run("RETURN 1 as test")
             await result.single()
             logger.info("✅ Neo4j connectivity verified (async)")

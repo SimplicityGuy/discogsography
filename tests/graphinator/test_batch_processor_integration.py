@@ -21,8 +21,7 @@ def realistic_async_driver():
     """Create a realistic async Neo4j driver mock.
 
     This mock accurately represents the async behavior of AsyncResilientNeo4jDriver:
-    - driver.session() is an async method (returns awaitable)
-    - The awaitable returns an async context manager
+    - driver.session() is an @asynccontextmanager (returns async context manager directly)
     - session.run() is async
     - Results support async iteration
     """
@@ -36,8 +35,8 @@ def realistic_async_driver():
 
     # Create driver
     mock_driver = MagicMock()
-    # CRITICAL: session() must be async and return the context manager
-    mock_driver.session = AsyncMock(return_value=mock_session_context)
+    # CRITICAL: session() returns an async context manager directly (not awaitable)
+    mock_driver.session = MagicMock(return_value=mock_session_context)
 
     return mock_driver, mock_session
 
@@ -52,7 +51,7 @@ class TestAsyncDriverIntegration:
         This test would have caught the bug where we used:
             with self.driver.session() as session:  # WRONG - not async
         instead of:
-            async with await self.driver.session() as session:  # CORRECT
+            async with self.driver.session() as session:  # CORRECT
         """
         mock_driver, mock_session = realistic_async_driver
 
@@ -302,7 +301,7 @@ class TestAsyncErrorConditions:
         await processor._flush_queue("artists")
 
         # Verify context manager exit was called
-        session_context = await mock_driver.session()
+        session_context = mock_driver.session()
         session_context.__aexit__.assert_called()
 
     @pytest.mark.asyncio

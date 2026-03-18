@@ -10,14 +10,14 @@ from neo4j_schema import SCHEMA_STATEMENTS, create_neo4j_schema
 
 @pytest.fixture
 def mock_driver() -> MagicMock:
-    """Mock AsyncResilientNeo4jDriver whose session() is a coroutine."""
+    """Mock AsyncResilientNeo4jDriver whose session() is an @asynccontextmanager."""
     driver = MagicMock()
     mock_session = AsyncMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
     mock_session.run = AsyncMock()
-    # session() is an async method on AsyncResilientNeo4jDriver
-    driver.session = AsyncMock(return_value=mock_session)
+    # session() is an @asynccontextmanager, returns context manager directly
+    driver.session = MagicMock(return_value=mock_session)
     return driver
 
 
@@ -97,7 +97,7 @@ class TestCreateNeo4jSchema:
     async def test_runs_all_schema_statements(self, mock_driver: MagicMock) -> None:
         await create_neo4j_schema(mock_driver)
 
-        mock_driver.session.assert_awaited_once_with(database="neo4j")
+        mock_driver.session.assert_called_once_with(database="neo4j")
         session = mock_driver.session.return_value
         assert session.run.await_count == len(SCHEMA_STATEMENTS)
 

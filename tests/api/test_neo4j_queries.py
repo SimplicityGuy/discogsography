@@ -57,10 +57,7 @@ def _make_driver(records: list[dict[str, Any]] | None = None, single: dict[str, 
 
     driver = MagicMock()
 
-    async def _session_factory(*_args: Any, **_kwargs: Any) -> Any:
-        return mock_session
-
-    driver.session = MagicMock(side_effect=_session_factory)
+    driver.session = MagicMock(return_value=mock_session)
     return driver
 
 
@@ -78,11 +75,7 @@ def _make_driver_with_side_effects(results: list[_MockResult]) -> MagicMock:
     mock_session.run = AsyncMock(side_effect=_run_side_effect)
 
     driver = MagicMock()
-
-    async def _session_factory(*_args: Any, **_kwargs: Any) -> Any:
-        return mock_session
-
-    driver.session = MagicMock(side_effect=_session_factory)
+    driver.session = MagicMock(return_value=mock_session)
     return driver
 
 
@@ -593,10 +586,7 @@ def _make_capturing_driver(total: int = 10) -> tuple[MagicMock, list[str], list[
 
     driver: MagicMock = MagicMock()
 
-    async def session_factory(*_args: Any, **_kwargs: Any) -> Any:
-        return mock_session
-
-    driver.session = MagicMock(side_effect=session_factory)
+    driver.session = MagicMock(return_value=mock_session)
     return driver, captured_cypher, captured_params
 
 
@@ -781,10 +771,7 @@ class TestExpandBeforeYear:
 
         driver = MagicMock()
 
-        async def _session_factory(*_args: Any, **_kwargs: Any) -> Any:
-            return mock_session
-
-        driver.session = MagicMock(side_effect=_session_factory)
+        driver.session = MagicMock(return_value=mock_session)
         return driver, calls
 
     @pytest.mark.asyncio
@@ -987,7 +974,7 @@ class TestFindShortestPath:
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value=mock_record)
         mock_session.run = AsyncMock(return_value=mock_result)
-        mock_driver.session = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+        mock_driver.session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
 
         result = await find_shortest_path(mock_driver, "1", "2", max_depth=10)
 
@@ -1005,7 +992,7 @@ class TestFindShortestPath:
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value=None)
         mock_session.run = AsyncMock(return_value=mock_result)
-        mock_driver.session = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+        mock_driver.session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
 
         result = await find_shortest_path(mock_driver, "1", "999", max_depth=10)
 
@@ -1025,7 +1012,7 @@ class TestFindShortestPath:
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value=mock_record)
         mock_session.run = AsyncMock(return_value=mock_result)
-        mock_driver.session = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+        mock_driver.session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
 
         result = await find_shortest_path(mock_driver, "1", "1", max_depth=10)
 
@@ -1049,7 +1036,7 @@ class TestYearRangeQuery:
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value={"min_year": 1950, "max_year": 2025})
         mock_session.run = AsyncMock(return_value=mock_result)
-        mock_driver.session = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+        mock_driver.session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
 
         result = await get_year_range(mock_driver)
         assert result == {"min_year": 1950, "max_year": 2025}
@@ -1063,7 +1050,7 @@ class TestYearRangeQuery:
         mock_result = AsyncMock()
         mock_result.single = AsyncMock(return_value=None)
         mock_session.run = AsyncMock(return_value=mock_result)
-        mock_driver.session = AsyncMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
+        mock_driver.session = MagicMock(return_value=AsyncMock(__aenter__=AsyncMock(return_value=mock_session), __aexit__=AsyncMock()))
 
         result = await get_year_range(mock_driver)
         assert result is None

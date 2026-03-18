@@ -117,10 +117,7 @@ def mock_neo4j() -> MagicMock:
     mock_session.__aexit__ = AsyncMock(return_value=False)
     mock_session.run = AsyncMock()
 
-    async def _session_factory(*_a: object, **_kw: object) -> AsyncMock:
-        return mock_session
-
-    driver.session = MagicMock(side_effect=_session_factory)
+    driver.session = MagicMock(return_value=mock_session)
     driver._mock_session = mock_session
     return driver
 

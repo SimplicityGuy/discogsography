@@ -205,9 +205,8 @@ class TestAsyncResilientNeo4jDriver:
         # Mock get_connection to return the mock driver directly
         resilient_driver.get_connection = AsyncMock(return_value=mock_async_driver)
 
-        _session = await resilient_driver.session(database="neo4j")
-
-        mock_async_driver.session.assert_called_once_with(database="neo4j")
+        async with resilient_driver.session(database="neo4j") as _session:
+            mock_async_driver.session.assert_called_once_with(database="neo4j")
 
     @pytest.mark.asyncio
     @patch("common.neo4j_resilient.AsyncGraphDatabase")

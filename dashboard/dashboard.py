@@ -368,7 +368,7 @@ class DashboardApp:
         # Check Neo4j
         try:
             if self.neo4j_driver:
-                async with await self.neo4j_driver.session() as session:
+                async with self.neo4j_driver.session() as session:
                     result = await session.run("CALL dbms.components() YIELD name, versions")
                     await result.single()  # Consume result
 

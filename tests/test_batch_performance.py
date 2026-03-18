@@ -27,7 +27,7 @@ class TestGraphinatorBatchPerformance:
         session_context.__aenter__.return_value = session
         session_context.__aexit__.return_value = None
 
-        driver.session = AsyncMock(return_value=session_context)
+        driver.session = MagicMock(return_value=session_context)
 
         # Mock transaction execution
         async def mock_execute_write(func):
@@ -392,7 +392,7 @@ class TestPerformanceRegression:
         session_context.__aenter__.return_value = session
         session_context.__aexit__.return_value = None
 
-        mock_driver.session = AsyncMock(return_value=session_context)
+        mock_driver.session = MagicMock(return_value=session_context)
 
         async def mock_execute_write(func):
             tx = AsyncMock()

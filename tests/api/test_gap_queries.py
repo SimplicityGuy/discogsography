@@ -58,10 +58,7 @@ def _make_driver_with_results(results: list[_MockResult]) -> MagicMock:
 
     driver = MagicMock()
 
-    async def _session_factory(*_a: Any, **_kw: Any) -> Any:
-        return mock_session
-
-    driver.session = MagicMock(side_effect=_session_factory)
+    driver.session = MagicMock(return_value=mock_session)
     return driver
 
 

@@ -103,18 +103,13 @@ def mock_redis() -> AsyncMock:
 @pytest.fixture
 def mock_neo4j() -> MagicMock:
     """Mock AsyncResilientNeo4jDriver."""
-    from typing import Any
-
     driver = MagicMock()
     mock_session = AsyncMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
     mock_session.__aexit__ = AsyncMock(return_value=False)
     mock_session.run = AsyncMock()
 
-    async def _session_factory(*_args: Any, **_kwargs: Any) -> Any:
-        return mock_session
-
-    driver.session = MagicMock(side_effect=_session_factory)
+    driver.session = MagicMock(return_value=mock_session)
     driver.close = AsyncMock()
     return driver
 

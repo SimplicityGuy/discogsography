@@ -54,11 +54,7 @@ class TestLabelDnaEndpoint:
 
     def test_label_not_found(self, test_client: TestClient, mock_neo4j: MagicMock) -> None:
         session = _make_mock_session(single_return=None)
-
-        async def _session(*_a: Any, **_k: Any) -> Any:
-            return session
-
-        mock_neo4j.session = MagicMock(side_effect=_session)
+        mock_neo4j.session = MagicMock(return_value=session)
         response = test_client.get("/api/label/99999/dna")
         assert response.status_code == 404
 
@@ -66,11 +62,7 @@ class TestLabelDnaEndpoint:
         # First call returns identity with < 5 releases, second call also returns identity
         identity = {"label_id": "1", "label_name": "Tiny Label", "release_count": 3, "artist_count": 2}
         session = _make_mock_session(single_return=identity)
-
-        async def _session_factory(*_a: Any, **_k: Any) -> Any:
-            return session
-
-        mock_neo4j.session = MagicMock(side_effect=_session_factory)
+        mock_neo4j.session = MagicMock(return_value=session)
         response = test_client.get("/api/label/1/dna")
         assert response.status_code == 422
         assert "fewer than" in response.json()["error"]
@@ -123,11 +115,7 @@ class TestSimilarLabelsEndpoint:
 
     def test_label_not_found(self, test_client: TestClient, mock_neo4j: MagicMock) -> None:
         session = _make_mock_session(single_return=None)
-
-        async def _session(*_a: Any, **_k: Any) -> Any:
-            return session
-
-        mock_neo4j.session = MagicMock(side_effect=_session)
+        mock_neo4j.session = MagicMock(return_value=session)
         response = test_client.get("/api/label/99999/similar")
         assert response.status_code == 404
 

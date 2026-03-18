@@ -131,7 +131,7 @@ async def _init_neo4j() -> bool:
         )
 
         # Verify connectivity first
-        async with await driver.session(database="neo4j") as session:
+        async with driver.session(database="neo4j") as session:
             result = await session.run("RETURN 1 AS health")
             await result.single()
         logger.info("✅ Neo4j connectivity verified")
