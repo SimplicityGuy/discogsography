@@ -95,6 +95,9 @@ class TimelineScrubber {
         this.legendCloseBtn.addEventListener('click', () => {
             this.compareLegend.classList.add('hidden');
         });
+
+        // Close button hides the timeline panel
+        document.getElementById('timelineCloseBtn')?.addEventListener('click', () => this.toggle());
     }
 
     async init() {
@@ -113,7 +116,19 @@ class TimelineScrubber {
         this.currentYear = null;
         this._previousGenres.clear();
         this._emergenceCache.clear();
-        this.container.classList.remove('hidden');
+        this._ready = true;
+        // Show the toggle button but don't auto-show the timeline
+        document.getElementById('timelineToggleBtn')?.classList.remove('hidden');
+    }
+
+    toggle() {
+        if (!this._ready) return;
+        if (this.container.classList.contains('hidden')) {
+            this.container.classList.remove('hidden');
+        } else {
+            this.pause();
+            this.container.classList.add('hidden');
+        }
     }
 
     hide() {
@@ -453,6 +468,9 @@ class ExploreApp {
         // Share button
         document.getElementById('shareBtn').addEventListener('click', () => this._shareSnapshot());
 
+        // Timeline toggle
+        document.getElementById('timelineToggleBtn')?.addEventListener('click', () => this.timeline.toggle());
+
         // Login form
         document.getElementById('loginSubmitBtn')?.addEventListener('click', () => this._handleLogin());
         document.getElementById('loginPassword')?.addEventListener('keydown', (e) => {
@@ -621,9 +639,12 @@ class ExploreApp {
     _switchPane(pane) {
         this.activePane = pane;
 
-        // Update nav links
-        document.querySelectorAll('[data-pane]').forEach(link => {
-            link.classList.toggle('active', link.dataset.pane === pane);
+        // Update nav links — toggle active class and text color
+        document.querySelectorAll('.nav-link[data-pane]').forEach(link => {
+            const isActive = link.dataset.pane === pane;
+            link.classList.toggle('active', isActive);
+            link.classList.toggle('text-text-high', isActive);
+            link.classList.toggle('text-text-mid', !isActive);
         });
 
         // Show/hide panes
@@ -692,6 +713,7 @@ class ExploreApp {
     async _loadExplore(name, type) {
         const loading = document.getElementById('graphLoading');
         loading.classList.add('active');
+        let loaded = false;
         try {
             const data = await window.apiClient.explore(name, type);
             if (data) {
@@ -708,11 +730,14 @@ class ExploreApp {
                 });
                 // Decorate release nodes with ownership badges if logged in
                 await this._decorateOwnership();
-                // Initialize timeline scrubber
-                await this.timeline.init();
+                loaded = true;
             }
         } finally {
             loading.classList.remove('active');
+        }
+        // Initialize timeline scrubber after spinner is dismissed (don't auto-show)
+        if (loaded) {
+            await this.timeline.init();
         }
     }
 
@@ -1130,7 +1155,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // ----------------------------------------------------------------
 
     function setVisible(el, visible) {
-        el.classList.toggle('hidden', !visible);
+        // The loading overlay uses .active for display; all others use .hidden
+        if (el === loadingEl) {
+            el.classList.toggle('active', visible);
+        } else {
+            el.classList.toggle('hidden', !visible);
+        }
     }
 
     function showError(msg) {

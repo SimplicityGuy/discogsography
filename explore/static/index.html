@@ -18,15 +18,23 @@ body {
     -webkit-font-smoothing: antialiased;
 }
 
-/* Timeline Scrubber */
+/* Timeline Scrubber — slides down above the graph */
 .timeline-scrubber {
     padding: 8px 16px;
     background: var(--card-bg);
-    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
     display: flex;
     align-items: center;
+    overflow: hidden;
+    max-height: 60px;
+    transition: max-height 0.25s ease, padding 0.25s ease, border-color 0.25s ease;
 }
-.timeline-scrubber.hidden { display: none; }
+.timeline-scrubber.hidden {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-color: transparent;
+}
 .timeline-controls {
     display: flex;
     align-items: center;
@@ -106,7 +114,7 @@ body {
 /* Comparison legend */
 .compare-legend {
     position: absolute;
-    bottom: 56px;
+    top: 12px;
     left: 12px;
     background: var(--card-bg);
     border: 1px solid var(--border-color);
@@ -167,7 +175,7 @@ body {
 /* Same-year hint */
 .compare-same-year-hint {
     position: absolute;
-    bottom: 56px;
+    top: 12px;
     left: 50%;
     transform: translateX(-50%);
     background: var(--card-bg);
@@ -437,9 +445,12 @@ body {
                         <a class="block px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-type="style" @click="open = false">Style</a>
                     </div>
                 </div>
-                <input type="text" class="form-input-dark rounded-l-none" id="searchInput"
+                <input type="text" class="form-input-dark rounded-none border-r-0" id="searchInput"
                        placeholder="Search artists, genres, labels, styles..."
                        autocomplete="off">
+                <button class="btn-primary rounded-l-none" id="searchBtn" title="Search">
+                    <span class="material-symbols-outlined" style="font-size:18px">search</span>
+                </button>
             </div>
             <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
         </div>
@@ -506,6 +517,38 @@ body {
 
         <!-- Explore pane -->
         <div class="pane active" id="explorePane">
+            <!-- Timeline Scrubber — slides down above the graph -->
+            <div class="timeline-scrubber hidden" id="timelineScrubber">
+                <div class="timeline-controls" id="timelineExploreControls">
+                    <button class="timeline-btn" id="timelinePlayBtn" title="Play/Pause">
+                        <span class="material-symbols-outlined" id="timelinePlayIcon">play_arrow</span>
+                    </button>
+                    <span class="timeline-year" id="timelineYearLabel">—</span>
+                    <input type="range" class="timeline-slider" id="timelineSlider" min="1900" max="2025" value="2025" />
+                    <div class="timeline-speed" id="timelineSpeedToggle" title="Toggle speed">
+                        <span id="timelineSpeedLabel">1yr/s</span>
+                    </div>
+                    <button class="timeline-btn" id="timelineResetBtn" title="Reset (show all years)">
+                        <span class="material-symbols-outlined">undo</span>
+                    </button>
+                    <button class="timeline-btn" id="timelineCompareBtn" title="Compare two years">
+                        <span class="material-symbols-outlined">compare_arrows</span>
+                    </button>
+                    <button class="timeline-btn" id="timelineCloseBtn" title="Hide timeline">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+                <div class="timeline-controls hidden" id="timelineCompareControls">
+                    <span class="timeline-year timeline-year-a" id="compareYearALabel">1975</span>
+                    <input type="range" class="timeline-slider timeline-slider-a" id="compareSliderA" min="1900" max="2025" value="1975" />
+                    <span class="timeline-compare-arrow">↔</span>
+                    <input type="range" class="timeline-slider timeline-slider-b" id="compareSliderB" min="1900" max="2025" value="1995" />
+                    <span class="timeline-year timeline-year-b" id="compareYearBLabel">1995</span>
+                    <button class="timeline-btn" id="timelineExitCompareBtn" title="Exit comparison">
+                        <span class="material-symbols-outlined">close</span>
+                    </button>
+                </div>
+            </div>
             <div class="graph-container" id="graphContainer">
                 <svg id="graphSvg"></svg>
                 <div class="graph-legend" id="graphLegend">
@@ -531,6 +574,9 @@ body {
                     <button class="graph-control-btn" id="shareBtn" title="Share graph">
                         <span class="material-symbols-outlined">share</span>
                     </button>
+                    <button class="graph-control-btn hidden" id="timelineToggleBtn" title="Toggle timeline">
+                        <span class="material-symbols-outlined">timeline</span>
+                    </button>
                 </div>
                 <div class="share-toast" id="shareToast">
                     <span id="shareToastMsg">Link copied!</span>
@@ -542,6 +588,26 @@ body {
                 <div class="graph-placeholder" id="graphPlaceholder">
                     <span class="material-symbols-outlined icon-3x mb-3 text-text-mid">hub</span>
                     <p class="text-text-mid">Search for an artist, genre, label, or style to start exploring</p>
+                </div>
+                <div class="compare-legend hidden" id="compareLegend">
+                    <button class="compare-legend-close" id="compareLegendClose" title="Hide legend">
+                        <span class="material-symbols-outlined" style="font-size:14px">close</span>
+                    </button>
+                    <div class="compare-legend-item">
+                        <span class="compare-legend-swatch compare-swatch-both"></span>
+                        <span>Both years</span>
+                    </div>
+                    <div class="compare-legend-item">
+                        <span class="compare-legend-swatch compare-swatch-only-a"></span>
+                        <span>Year A only</span>
+                    </div>
+                    <div class="compare-legend-item">
+                        <span class="compare-legend-swatch compare-swatch-only-b"></span>
+                        <span>Year B only</span>
+                    </div>
+                </div>
+                <div class="compare-same-year-hint hidden" id="compareSameYearHint">
+                    Select different years to compare
                 </div>
             </div>
             <!-- Info panel -->
@@ -555,55 +621,6 @@ body {
                 <div class="info-panel-body" id="infoPanelBody">
                     <p class="text-text-mid">Click a node to see details</p>
                 </div>
-            </div>
-            <!-- Timeline Scrubber -->
-            <div class="timeline-scrubber hidden" id="timelineScrubber">
-                <div class="timeline-controls" id="timelineExploreControls">
-                    <button class="timeline-btn" id="timelinePlayBtn" title="Play/Pause">
-                        <span class="material-symbols-outlined" id="timelinePlayIcon">play_arrow</span>
-                    </button>
-                    <span class="timeline-year" id="timelineYearLabel">—</span>
-                    <input type="range" class="timeline-slider" id="timelineSlider" min="1900" max="2025" value="2025" />
-                    <div class="timeline-speed" id="timelineSpeedToggle" title="Toggle speed">
-                        <span id="timelineSpeedLabel">1yr/s</span>
-                    </div>
-                    <button class="timeline-btn" id="timelineResetBtn" title="Reset (show all years)">
-                        <span class="material-symbols-outlined">undo</span>
-                    </button>
-                    <button class="timeline-btn" id="timelineCompareBtn" title="Compare two years">
-                        <span class="material-symbols-outlined">compare_arrows</span>
-                    </button>
-                </div>
-                <div class="timeline-controls hidden" id="timelineCompareControls">
-                    <span class="timeline-year timeline-year-a" id="compareYearALabel">1975</span>
-                    <input type="range" class="timeline-slider timeline-slider-a" id="compareSliderA" min="1900" max="2025" value="1975" />
-                    <span class="timeline-compare-arrow">↔</span>
-                    <input type="range" class="timeline-slider timeline-slider-b" id="compareSliderB" min="1900" max="2025" value="1995" />
-                    <span class="timeline-year timeline-year-b" id="compareYearBLabel">1995</span>
-                    <button class="timeline-btn" id="timelineExitCompareBtn" title="Exit comparison">
-                        <span class="material-symbols-outlined">close</span>
-                    </button>
-                </div>
-            </div>
-            <div class="compare-legend hidden" id="compareLegend">
-                <button class="compare-legend-close" id="compareLegendClose" title="Hide legend">
-                    <span class="material-symbols-outlined" style="font-size:14px">close</span>
-                </button>
-                <div class="compare-legend-item">
-                    <span class="compare-legend-swatch compare-swatch-both"></span>
-                    <span>Both years</span>
-                </div>
-                <div class="compare-legend-item">
-                    <span class="compare-legend-swatch compare-swatch-only-a"></span>
-                    <span>Year A only</span>
-                </div>
-                <div class="compare-legend-item">
-                    <span class="compare-legend-swatch compare-swatch-only-b"></span>
-                    <span>Year B only</span>
-                </div>
-            </div>
-            <div class="compare-same-year-hint hidden" id="compareSameYearHint">
-                Select different years to compare
             </div>
         </div>
 

@@ -446,6 +446,15 @@ class TestYearRangeEndpoint:
         finally:
             explore_module._neo4j_driver = original
 
+    def test_year_range_clamps_out_of_bounds(self, test_client: TestClient) -> None:
+        """Years outside 1900-2030 are clamped to valid before_year bounds."""
+        with patch("api.routers.explore.get_year_range", AsyncMock(return_value={"min_year": 198, "max_year": 5276})):
+            response = test_client.get("/api/explore/year-range")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["min_year"] == 1900
+        assert data["max_year"] == 2030
+
 
 class TestGenreEmergenceEndpoint:
     """Tests for GET /api/explore/genre-emergence."""

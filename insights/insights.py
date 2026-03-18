@@ -389,10 +389,10 @@ async def computation_status() -> JSONResponse:
                         status=row[1],
                         last_computed=row[2],
                         duration_ms=row[3],
-                    ).model_dump()
+                    ).model_dump(mode="json")
                 )
             else:
-                statuses.append(ComputationStatus(insight_type=itype, status="never_run").model_dump())
+                statuses.append(ComputationStatus(insight_type=itype, status="never_run").model_dump(mode="json"))
 
     return JSONResponse(content={"statuses": statuses})
 

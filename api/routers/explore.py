@@ -154,7 +154,11 @@ async def year_range() -> JSONResponse:
     result = await get_year_range(_neo4j_driver)
     if result is None:
         return JSONResponse(content={"min_year": None, "max_year": None})
-    return JSONResponse(content=result)
+    # Clamp to valid bounds so the frontend slider stays within the
+    # before_year validation range (ge=1900, le=2030).
+    min_year = max(1900, min(2030, result.get("min_year", 1900)))
+    max_year = max(1900, min(2030, result.get("max_year", 2030)))
+    return JSONResponse(content={"min_year": min_year, "max_year": max_year})
 
 
 @router.get("/api/explore/genre-emergence")

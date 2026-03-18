@@ -1,10 +1,12 @@
 /**
- * Autocomplete handler with debouncing and keyboard navigation.
+ * Autocomplete handler with keyboard navigation.
+ * Shows suggestions on input; full search only triggers on Enter or button click.
  */
 class Autocomplete {
     constructor() {
         this.input = document.getElementById('searchInput');
         this.dropdown = document.getElementById('autocompleteDropdown');
+        this.searchBtn = document.getElementById('searchBtn');
         this.debounceTimer = null;
         this.debounceMs = 300;
         this.minChars = 2;
@@ -18,6 +20,9 @@ class Autocomplete {
     _bindEvents() {
         this.input.addEventListener('input', () => this._onInput());
         this.input.addEventListener('keydown', (e) => this._onKeydown(e));
+
+        // Search button triggers full search
+        this.searchBtn.addEventListener('click', () => this._submitSearch());
 
         // Close dropdown on outside click
         document.addEventListener('click', (e) => {
@@ -75,10 +80,7 @@ class Autocomplete {
         if (!this.dropdown.classList.contains('show')) {
             if (e.key === 'Enter') {
                 e.preventDefault();
-                const query = this.input.value.trim();
-                if (query && this.onSelect) {
-                    this.onSelect(query);
-                }
+                this._submitSearch();
             }
             return;
         }
@@ -99,11 +101,7 @@ class Autocomplete {
                 if (this.activeIndex >= 0) {
                     this._selectItem(this.activeIndex);
                 } else {
-                    const query = this.input.value.trim();
-                    if (query && this.onSelect) {
-                        this.close();
-                        this.onSelect(query);
-                    }
+                    this._submitSearch();
                 }
                 break;
             case 'Escape':
@@ -123,14 +121,18 @@ class Autocomplete {
         }
     }
 
+    /** Submit the current input value as a full search. */
+    _submitSearch() {
+        clearTimeout(this.debounceTimer);
+        const query = this.input.value.trim();
+        this.close();
+        if (query && this.onSelect) {
+            this.onSelect(query);
+        }
+    }
+
     close() {
         this.dropdown.classList.remove('show');
         this.activeIndex = -1;
-    }
-
-    _escapeHtml(text) {
-        const div = document.createElement('div');
-        div.textContent = text;
-        return div.innerHTML;
     }
 }

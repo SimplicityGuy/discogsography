@@ -73,9 +73,11 @@ class TestComputationStatusEndpoint:
         """When fetchone returns a row, status should reflect actual log data."""
         import insights.insights as _module
 
-        # Return a row with None for completed_at to avoid JSON serialization issues
+        # Return a row with a real datetime for completed_at to verify serialization
+        from datetime import datetime, timezone
+
         mock_cursor = mock_pg_pool.connection.return_value.__aenter__.return_value.cursor.return_value.__aenter__.return_value
-        mock_cursor.fetchone = AsyncMock(return_value=("artist_centrality", "completed", None, 1500))
+        mock_cursor.fetchone = AsyncMock(return_value=("artist_centrality", "completed", datetime(2026, 3, 18, 12, 0, 0, tzinfo=timezone.utc), 1500))
 
         _module._http_client = mock_http_client
         _module._pool = mock_pg_pool

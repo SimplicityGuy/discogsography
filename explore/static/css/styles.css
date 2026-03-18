@@ -102,6 +102,13 @@
 ::-webkit-scrollbar-track { background: var(--bg-deep); }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 10px; }
 
+/* Active nav-link indicator */
+.nav-link.active {
+    color: var(--text-high) !important;
+    background-color: var(--bg-hover);
+    font-weight: 500;
+}
+
 /* Material Symbols sizing helpers */
 .material-symbols-outlined.icon-2x { font-size: 2rem; }
 .material-symbols-outlined.icon-3x { font-size: 3rem; }
@@ -119,6 +126,12 @@
 
 .search-container .flex {
     width: 100%;
+}
+
+/* Align search type dropdown button height with input */
+.search-container .btn-outline-secondary {
+    padding-top: 0.5rem;
+    padding-bottom: 0.5rem;
 }
 
 #searchInput {

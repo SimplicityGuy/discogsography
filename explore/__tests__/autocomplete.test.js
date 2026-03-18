@@ -15,6 +15,10 @@ function setupAutocompleteDOM() {
     const dropdown = document.createElement('div');
     dropdown.id = 'autocompleteDropdown';
     document.body.appendChild(dropdown);
+
+    const searchBtn = document.createElement('button');
+    searchBtn.id = 'searchBtn';
+    document.body.appendChild(searchBtn);
 }
 
 describe('Autocomplete', () => {
@@ -137,15 +141,36 @@ describe('Autocomplete', () => {
         });
     });
 
-    describe('_escapeHtml', () => {
-        it('should escape HTML special characters', () => {
-            const result = instance._escapeHtml('<script>alert("xss")</script>');
-            expect(result).not.toContain('<script>');
+    describe('_submitSearch', () => {
+        it('should call onSelect with current input value', () => {
+            const onSelect = vi.fn();
+            instance.onSelect = onSelect;
+            instance.input.value = 'Radiohead';
+
+            instance._submitSearch();
+
+            expect(onSelect).toHaveBeenCalledWith('Radiohead');
         });
 
-        it('should return plain text unchanged', () => {
-            const result = instance._escapeHtml('Radiohead');
-            expect(result).toBe('Radiohead');
+        it('should close dropdown before submitting', () => {
+            const dropdown = document.getElementById('autocompleteDropdown');
+            dropdown.classList.add('show');
+            instance.onSelect = vi.fn();
+            instance.input.value = 'test';
+
+            instance._submitSearch();
+
+            expect(dropdown.classList.contains('show')).toBe(false);
+        });
+
+        it('should not call onSelect when input is empty', () => {
+            const onSelect = vi.fn();
+            instance.onSelect = onSelect;
+            instance.input.value = '';
+
+            instance._submitSearch();
+
+            expect(onSelect).not.toHaveBeenCalled();
         });
     });
 
