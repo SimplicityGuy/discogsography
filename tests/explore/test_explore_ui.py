@@ -6,6 +6,25 @@ from playwright.sync_api import Page, expect
 import pytest
 
 
+def _switch_pane(page: Page, pane: str) -> None:
+    """Click a nav-link to switch panes, retrying if Firefox drops the click.
+
+    Firefox in CI occasionally acknowledges the Playwright click but does not
+    dispatch it to the JS handler, leaving the target pane without the
+    ``active`` class.  We detect this and retry once before giving up.
+    """
+    link = page.locator(f"[data-pane='{pane}']")
+    target = page.locator(f"#{pane}Pane")
+
+    link.click()
+    try:
+        expect(target).to_have_class(re.compile(r"\bactive\b"), timeout=2000)
+    except AssertionError:
+        # Retry — the first click was swallowed
+        link.click()
+        expect(target).to_have_class(re.compile(r"\bactive\b"), timeout=5000)
+
+
 def _goto_ready(page: Page, url: str) -> None:
     """Navigate to the explore page and wait for the JS app to initialise.
 
@@ -307,12 +326,8 @@ class TestExploreSearchInteraction:
         """Test searching on the Trends pane loads chart data."""
         _goto_ready(page, test_server)
 
-        # Switch to trends pane
-        trends_link = page.locator("[data-pane='trends']")
-        trends_link.click()
-
-        trends_pane = page.locator("#trendsPane")
-        expect(trends_pane).to_have_class(re.compile("active"), timeout=5000)
+        # Switch to trends pane (with retry for Firefox)
+        _switch_pane(page, "trends")
 
         # Type search query and select from autocomplete
         search_input = page.locator("#searchInput")
@@ -342,13 +357,8 @@ class TestExploreSearchInteraction:
         """Test that the trends placeholder is visible before search."""
         _goto_ready(page, test_server)
 
-        # Switch to trends pane
-        trends_link = page.locator("[data-pane='trends']")
-        trends_link.click()
-
-        # Wait for the pane to become active (Firefox can be slow to process the click)
-        trends_pane = page.locator("#trendsPane")
-        expect(trends_pane).to_have_class(re.compile(r"\bactive\b"), timeout=5000)
+        # Switch to trends pane (with retry for Firefox)
+        _switch_pane(page, "trends")
 
         placeholder = page.locator("#trendsPlaceholder")
         expect(placeholder).to_be_visible(timeout=5000)
