@@ -110,13 +110,15 @@ def run_endpoint(
     params: dict[str, str] | None,
     iterations: int,
     *,
-    max_429_retries: int = 5,
-    base_429_delay: float = 2.0,
+    max_429_retries: int = 4,
+    base_429_delay: float = 32.0,
+    max_429_delay: float = 300.0,
 ) -> dict[str, Any]:
     """Run an endpoint N times, collect results and stats.
 
     If a 429 (Too Many Requests) response is received, pauses with
-    exponential backoff and retries that iteration.
+    exponential backoff (32s, 64s, 128s, 256s) and retries that
+    iteration, capping at 5 minutes per pause.
     """
     runs = []
     for i in range(iterations):
@@ -125,7 +127,7 @@ def run_endpoint(
             result = timed_get(client, url, params)
             if result["status"] == 429 and retries < max_429_retries:
                 retries += 1
-                delay = base_429_delay * (2 ** (retries - 1))
+                delay = min(base_429_delay * (2 ** (retries - 1)), max_429_delay)
                 print(f"  [{i + 1}/{iterations}] {name} -> 429 rate limited, pausing {delay:.0f}s (retry {retries}/{max_429_retries})")
                 time.sleep(delay)
                 continue
@@ -160,8 +162,9 @@ def resolve_ids(
     entities: list[str],
     entity_type: str,
     *,
-    max_429_retries: int = 5,
-    base_429_delay: float = 2.0,
+    max_429_retries: int = 4,
+    base_429_delay: float = 32.0,
+    max_429_delay: float = 300.0,
 ) -> dict[str, int | None]:
     """Resolve entity names to node IDs via autocomplete."""
     ids: dict[str, int | None] = {}
@@ -174,7 +177,7 @@ def resolve_ids(
             )
             if resp.status_code == 429 and retries < max_429_retries:
                 retries += 1
-                delay = base_429_delay * (2 ** (retries - 1))
+                delay = min(base_429_delay * (2 ** (retries - 1)), max_429_delay)
                 print(f"  {entity_type} '{name}' -> 429 rate limited, pausing {delay:.0f}s (retry {retries}/{max_429_retries})")
                 time.sleep(delay)
                 continue
