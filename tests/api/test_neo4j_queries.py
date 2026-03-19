@@ -763,7 +763,7 @@ class TestExpandBeforeYear:
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=False)
 
-        async def _run_side_effect(cypher: str, params: Any) -> _MockResult:
+        async def _run_side_effect(cypher: str, params: Any, **_kwargs: Any) -> _MockResult:
             calls.append((cypher, params))
             return mock_result
 

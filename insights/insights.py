@@ -122,7 +122,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     logger.info("🐘 PostgreSQL pool initialized")
 
     # Initialize HTTP client for API service
-    _http_client = httpx.AsyncClient(base_url=_config.api_base_url, timeout=90.0)
+    _http_client = httpx.AsyncClient(base_url=_config.api_base_url, timeout=300.0)
     logger.info("🔧 API HTTP client initialized", base_url=_config.api_base_url)
 
     # Initialize Redis cache
