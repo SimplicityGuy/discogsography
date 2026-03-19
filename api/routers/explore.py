@@ -174,7 +174,9 @@ async def genre_emergence(
 
 
 @router.get("/api/collaborators/{artist_id}")
+@limiter.limit("30/minute")
 async def get_collaborators(
+    request: Request,  # noqa: ARG001
     artist_id: str,
     limit: int = Query(20, ge=1, le=100),
 ) -> JSONResponse:
