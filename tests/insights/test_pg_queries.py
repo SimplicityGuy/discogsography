@@ -38,9 +38,9 @@ class TestQueryDataCompleteness:
         from api.queries.insights_pg_queries import query_data_completeness
 
         rows: list[tuple[Any, ...] | None] = [
-            (1000, 500),              # artists: total, with_image
-            (1000, 500),              # labels: total, with_image
-            (1000, 500, 500, 500),    # masters: total, with_year, with_genre, with_image
+            (1000, 500),  # artists: total, with_image
+            (1000, 500),  # labels: total, with_image
+            (1000, 500, 500, 500),  # masters: total, with_year, with_genre, with_image
             (1000, 500, 500, 500, 500),  # releases: total, with_year, with_country, with_genre, with_image
         ]
         mock_pool = _make_mock_pool_fetchone(rows)
@@ -71,9 +71,9 @@ class TestQueryDataCompleteness:
 
         # artists: 1 field, 500/1000 = 50%
         rows: list[tuple[Any, ...] | None] = [
-            (1000, 500),              # artists: 50%
-            (1000, 500),              # labels: 50%
-            (1000, 500, 500, 500),    # masters: 50%
+            (1000, 500),  # artists: 50%
+            (1000, 500),  # labels: 50%
+            (1000, 500, 500, 500),  # masters: 50%
             (1000, 500, 500, 500, 500),  # releases: 50%
         ]
         mock_pool = _make_mock_pool_fetchone(rows)

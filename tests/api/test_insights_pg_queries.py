@@ -67,9 +67,9 @@ class TestQueryDataCompleteness:
     async def test_returns_results_for_all_entity_types(self) -> None:
         # Each entity type returns one row: (total, field1, field2, ...)
         sequence: list[tuple[int, ...] | None] = [
-            (1000, 800),           # artists: total, with_image
-            (1000, 800),           # labels: total, with_image
-            (1000, 800, 800, 800), # masters: total, with_year, with_genre, with_image
+            (1000, 800),  # artists: total, with_image
+            (1000, 800),  # labels: total, with_image
+            (1000, 800, 800, 800),  # masters: total, with_year, with_genre, with_image
             (1000, 800, 800, 800, 800),  # releases: total, with_year, with_country, with_genre, with_image
         ]
         pool = _make_pool_with_fetchone_sequence(sequence)
@@ -83,9 +83,9 @@ class TestQueryDataCompleteness:
     async def test_calculates_completeness_percentage(self) -> None:
         # 80/100 = 80% for each field
         sequence: list[tuple[int, ...] | None] = [
-            (100, 80),           # artists
-            (100, 80),           # labels
-            (100, 80, 80, 80),   # masters
+            (100, 80),  # artists
+            (100, 80),  # labels
+            (100, 80, 80, 80),  # masters
             (100, 80, 80, 80, 80),  # releases
         ]
         pool = _make_pool_with_fetchone_sequence(sequence)
