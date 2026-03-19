@@ -2,6 +2,7 @@
 
 import asyncio
 from collections import OrderedDict
+import time
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -12,7 +13,7 @@ import structlog
 import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.models import PathNode, PathResponse
-from api.queries import collaborator_queries
+from api.queries import collaborator_queries, genre_tree_queries
 from api.queries.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
     COUNT_DISPATCH,
@@ -41,6 +42,11 @@ def configure(neo4j: Any, jwt_secret: str | None) -> None:
 
 _autocomplete_cache: OrderedDict[tuple[str, str, int], list[dict[str, Any]]] = OrderedDict()
 _AUTOCOMPLETE_CACHE_MAX = 512
+
+# Genre tree cache — refreshed every 5 minutes since the tree changes rarely
+_genre_tree_cache: dict | None = None
+_genre_tree_cache_time: float = 0
+_GENRE_TREE_TTL = 300  # 5 minutes
 
 
 def _get_cache_key(query: str, entity_type: str, limit: int) -> tuple[str, str, int]:
@@ -200,6 +206,27 @@ async def get_collaborators(
             "total": total,
         }
     )
+
+
+@router.get("/api/genre-tree")
+@limiter.limit("30/minute")
+async def genre_tree(
+    request: Request,  # noqa: ARG001
+) -> JSONResponse:
+    """Return the full genre/style hierarchy derived from release co-occurrence."""
+    global _genre_tree_cache, _genre_tree_cache_time
+
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    now = time.monotonic()
+    if _genre_tree_cache is not None and (now - _genre_tree_cache_time) < _GENRE_TREE_TTL:
+        return JSONResponse(content=_genre_tree_cache)
+
+    genres = await genre_tree_queries.get_genre_tree(_neo4j_driver)
+    _genre_tree_cache = {"genres": genres}
+    _genre_tree_cache_time = time.monotonic()
+    return JSONResponse(content=_genre_tree_cache)
 
 
 @router.get("/api/node/{node_id}")
