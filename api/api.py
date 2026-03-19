@@ -472,10 +472,17 @@ async def authorize_discogs(
         )
 
     consumer_key, consumer_secret = await _get_discogs_app_config()
-    if consumer_key:
-        consumer_key = decrypt_oauth_token(consumer_key, _config.oauth_encryption_key)
-    if consumer_secret:
-        consumer_secret = decrypt_oauth_token(consumer_secret, _config.oauth_encryption_key)
+    try:
+        if consumer_key:
+            consumer_key = decrypt_oauth_token(consumer_key, _config.oauth_encryption_key)
+        if consumer_secret:
+            consumer_secret = decrypt_oauth_token(consumer_secret, _config.oauth_encryption_key)
+    except ValueError:
+        logger.error("❌ Failed to decrypt Discogs app credentials — re-run discogs-setup")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Discogs app credentials could not be decrypted. Ask an admin to re-run discogs-setup on the API container.",
+        ) from None
 
     if not consumer_key or not consumer_secret:
         raise HTTPException(
@@ -531,10 +538,17 @@ async def verify_discogs(
         )
 
     consumer_key, consumer_secret = await _get_discogs_app_config()
-    if consumer_key:
-        consumer_key = decrypt_oauth_token(consumer_key, _config.oauth_encryption_key)
-    if consumer_secret:
-        consumer_secret = decrypt_oauth_token(consumer_secret, _config.oauth_encryption_key)
+    try:
+        if consumer_key:
+            consumer_key = decrypt_oauth_token(consumer_key, _config.oauth_encryption_key)
+        if consumer_secret:
+            consumer_secret = decrypt_oauth_token(consumer_secret, _config.oauth_encryption_key)
+    except ValueError:
+        logger.error("❌ Failed to decrypt Discogs app credentials — re-run discogs-setup")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Discogs app credentials could not be decrypted. Ask an admin to re-run discogs-setup on the API container.",
+        ) from None
 
     if not consumer_key or not consumer_secret:
         raise HTTPException(
