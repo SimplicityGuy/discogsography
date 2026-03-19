@@ -292,8 +292,7 @@ body {
          Discogs OAuth verifier modal
          ============================================================ -->
     <!-- nosemgrep: java.lang.security.audit.xss.jsf.autoescape-disabled.autoescape-disabled -->
-    <div x-data
-         @keydown.escape.window="$store.modals.discogsOpen = false"
+    <div x-data @keydown.escape.window="$store.modals.discogsOpen = false"
          x-show="$store.modals.discogsOpen"
          x-cloak
          x-transition:enter="transition ease-out duration-200"
