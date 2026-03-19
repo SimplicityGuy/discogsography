@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 import orjson
 import structlog
+
 from common import query_debug
 
 
@@ -337,7 +338,7 @@ def setup_logging(
 
     # Warn if Cypher profiling is active
     if query_debug.is_cypher_profiling():
-    log.warning(
+        log.warning(
             "⚠️ Cypher profiling enabled — PROFILE prefix will be added to all Cypher queries",
             cypher_profiling=True,
         )
