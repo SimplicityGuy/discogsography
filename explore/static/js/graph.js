@@ -104,7 +104,43 @@ class GraphVisualization {
     }
 
     zoomReset() {
-        this.svg.transition().duration(300).call(this.zoom.transform, d3.zoomIdentity);
+        this.fitToView();
+    }
+
+    fitToView() {
+        if (!this.nodes || this.nodes.length === 0) return;
+        const width = this.container.clientWidth;
+        const height = this.container.clientHeight;
+        if (width === 0 || height === 0) return;
+
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        this.nodes.forEach(n => {
+            const x = n.fx != null ? n.fx : n.x;
+            const y = n.fy != null ? n.fy : n.y;
+            if (x == null || y == null) return;
+            minX = Math.min(minX, x);
+            minY = Math.min(minY, y);
+            maxX = Math.max(maxX, x);
+            maxY = Math.max(maxY, y);
+        });
+
+        if (!isFinite(minX)) return;
+
+        const padding = 60;
+        const graphWidth = maxX - minX || 1;
+        const graphHeight = maxY - minY || 1;
+        const scale = Math.min(
+            (width - padding * 2) / graphWidth,
+            (height - padding * 2) / graphHeight,
+            1.5  // max zoom so small graphs don't get huge
+        );
+        const centerX = (minX + maxX) / 2;
+        const centerY = (minY + maxY) / 2;
+        const tx = width / 2 - centerX * scale;
+        const ty = height / 2 - centerY * scale;
+
+        const transform = d3.zoomIdentity.translate(tx, ty).scale(scale);
+        this.svg.transition().duration(500).call(this.zoom.transform, transform);
     }
 
     toggleFullscreen() {
@@ -483,6 +519,11 @@ class GraphVisualization {
                 .attr('y2', d => d.target.y);
 
             node.attr('transform', d => `translate(${d.x},${d.y})`);
+        });
+
+        // Auto-fit graph to view once simulation settles
+        this.simulation.on('end', () => {
+            this.fitToView();
         });
     }
 
