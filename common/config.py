@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 import orjson
 import structlog
 
+from common import query_debug
+
 
 logger = structlog.get_logger(__name__)
 
@@ -333,6 +335,13 @@ def setup_logging(
     # Get structured logger
     log = structlog.get_logger()
     log.info("✅ Logging configured for service", service=service_name)
+
+    # Warn if Cypher profiling is active
+    if query_debug.is_cypher_profiling():
+        log.warning(
+            "⚠️ Cypher profiling enabled — PROFILE prefix will be added to all Cypher queries",
+            cypher_profiling=True,
+        )
 
 
 @dataclass(frozen=True)

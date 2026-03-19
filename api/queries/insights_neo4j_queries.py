@@ -8,6 +8,8 @@ from typing import Any
 
 import structlog
 
+from api.queries.helpers import run_query
+
 
 logger = structlog.get_logger(__name__)
 
@@ -25,11 +27,7 @@ async def query_artist_centrality(driver: Any, limit: int = 100) -> list[dict[st
     LIMIT $limit
     RETURN a.id AS artist_id, a.name AS artist_name, edge_count
     """
-    results: list[dict[str, Any]] = []
-    async with driver.session(database="neo4j") as session:
-        result = await session.run(cypher, {"limit": limit})
-        async for record in result:
-            results.append(record.data())
+    results = await run_query(driver, cypher, database="neo4j", limit=limit)
     logger.info("🔍 Artist centrality query complete", count=len(results))
     return results
 
@@ -48,7 +46,7 @@ async def query_genre_trends(driver: Any, genre: str | None = None) -> list[dict
         ORDER BY decade
         RETURN genre, decade, release_count
         """
-        params: dict[str, Any] = {"genre": genre}
+        results = await run_query(driver, cypher, database="neo4j", genre=genre)
     else:
         cypher = """
         MATCH (r:Release)-[:HAS_GENRE]->(g:Genre)
@@ -57,13 +55,7 @@ async def query_genre_trends(driver: Any, genre: str | None = None) -> list[dict
         ORDER BY genre, decade
         RETURN genre, decade, release_count
         """
-        params = {}
-
-    results: list[dict[str, Any]] = []
-    async with driver.session(database="neo4j") as session:
-        result = await session.run(cypher, params)
-        async for record in result:
-            results.append(record.data())
+        results = await run_query(driver, cypher, database="neo4j")
     logger.info("🔍 Genre trends query complete", count=len(results), genre=genre)
     return results
 
@@ -96,11 +88,7 @@ async def query_label_longevity(driver: Any, limit: int = 50) -> list[dict[str, 
            first_year, last_year, years_active,
            total_releases, peak_decade
     """
-    results: list[dict[str, Any]] = []
-    async with driver.session(database="neo4j") as session:
-        result = await session.run(cypher, {"limit": limit})
-        async for record in result:
-            results.append(record.data())
+    results = await run_query(driver, cypher, database="neo4j", limit=limit)
     logger.info("🔍 Label longevity query complete", count=len(results))
     return results
 
@@ -130,11 +118,7 @@ async def query_monthly_anniversaries(
            m.year AS release_year
     ORDER BY m.year ASC
     """
-    results: list[dict[str, Any]] = []
-    async with driver.session(database="neo4j") as session:
-        result = await session.run(cypher, {"target_years": target_years})
-        async for record in result:
-            results.append(record.data())
+    results = await run_query(driver, cypher, database="neo4j", target_years=target_years)
     logger.info(
         "🔍 Monthly anniversaries query complete",
         count=len(results),
