@@ -40,18 +40,14 @@ def _build_autocomplete_query(query: str) -> str:
 # --- Query execution helpers ---
 
 
-async def _run_query(
-    driver: AsyncResilientNeo4jDriver, cypher: str, *, timeout: float | None = None, **params: Any
-) -> list[dict[str, Any]]:
+async def _run_query(driver: AsyncResilientNeo4jDriver, cypher: str, *, timeout: float | None = None, **params: Any) -> list[dict[str, Any]]:
     """Execute a Cypher query and return all results as a list of dicts."""
     async with driver.session() as session:
         result = await session.run(cypher, params, timeout=timeout)
         return [dict(record) async for record in result]
 
 
-async def _run_single(
-    driver: AsyncResilientNeo4jDriver, cypher: str, *, timeout: float | None = None, **params: Any
-) -> dict[str, Any] | None:
+async def _run_single(driver: AsyncResilientNeo4jDriver, cypher: str, *, timeout: float | None = None, **params: Any) -> dict[str, Any] | None:
     """Execute a Cypher query and return a single result, or None if not found."""
     async with driver.session() as session:
         result = await session.run(cypher, params, timeout=timeout)
