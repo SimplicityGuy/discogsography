@@ -14,9 +14,6 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
-# Allowlisted table names — only these are used in queries.
-_ALLOWED_TABLES = frozenset({"artists", "labels", "masters", "releases"})
-
 # Fields to check for completeness, per entity type.
 _COMPLETENESS_FIELDS: dict[str, list[tuple[str, str]]] = {
     "artists": [("with_image", "images")],
@@ -30,26 +27,29 @@ _COMPLETENESS_FIELDS: dict[str, list[tuple[str, str]]] = {
     ],
 }
 
-# Pre-built SQL queries from hardcoded allowlist — no runtime interpolation.
-_COUNT_QUERIES: dict[str, str] = {
-    table: f"SELECT count(*) FROM {table}"  # noqa: S608
-    for table in _ALLOWED_TABLES
-}
-
-_FIELD_QUERIES: dict[str, dict[str, str]] = {}
+# Pre-built combined queries per entity type — single table scan each.
+# Uses count(*) FILTER to compute all field counts in one pass.
+_COMBINED_QUERIES: dict[str, str] = {}
 for _table, _fields in _COMPLETENESS_FIELDS.items():
-    _FIELD_QUERIES[_table] = {}
+    _filter_parts = []
+    _aliases = []
     for _field_name, _jsonb_key in _fields:
-        _FIELD_QUERIES[_table][_field_name] = (
-            f"SELECT count(*) FROM {_table} WHERE data->>'{_jsonb_key}' IS NOT NULL AND data->>'{_jsonb_key}' != '' AND data->>'{_jsonb_key}' != '[]'"  # noqa: S608
+        _filter_parts.append(
+            f"count(*) FILTER (WHERE data->>'{_jsonb_key}' IS NOT NULL"
+            f" AND data->>'{_jsonb_key}' != ''"
+            f" AND data->>'{_jsonb_key}' != '[]') AS {_field_name}"
         )
+        _aliases.append(_field_name)
+    _filters_sql = ", ".join(_filter_parts)
+    _COMBINED_QUERIES[_table] = f"SELECT count(*) AS total_count, {_filters_sql} FROM {_table}"  # noqa: S608
 
 
 async def query_data_completeness(pool: Any) -> list[dict[str, Any]]:
     """Compute data completeness scores for each entity type.
 
     For each entity table, counts total records and how many have
-    non-null/non-empty values for key metadata fields.
+    non-null/non-empty values for key metadata fields in a single
+    table scan using FILTER clauses.
     """
     results: list[dict[str, Any]] = []
 
@@ -57,11 +57,10 @@ async def query_data_completeness(pool: Any) -> list[dict[str, Any]]:
         cursor = cast("Any", cursor)
 
         for entity_type, fields in _COMPLETENESS_FIELDS.items():
-            # Get total count using pre-built query
-            await cursor.execute(_COUNT_QUERIES[entity_type])
-            row = await cursor.fetchall()
-            total_count = row[0][0] if row else 0
+            await cursor.execute(_COMBINED_QUERIES[entity_type])
+            row = await cursor.fetchone()
 
+            total_count = row[0] if row else 0
             item: dict[str, Any] = {
                 "entity_type": entity_type,
                 "total_count": total_count,
@@ -71,16 +70,11 @@ async def query_data_completeness(pool: Any) -> list[dict[str, Any]]:
                 "with_genre": 0,
             }
 
-            if total_count > 0:
-                for field_name, _ in fields:
-                    # Use pre-built query from allowlist
-                    await cursor.execute(_FIELD_QUERIES[entity_type][field_name])
-                    field_row = await cursor.fetchall()
-                    item[field_name] = field_row[0][0] if field_row else 0
+            if total_count > 0 and row:
+                for i, (field_name, _) in enumerate(fields):
+                    item[field_name] = row[i + 1]
 
-                field_pcts = []
-                for field_name, _ in fields:
-                    field_pcts.append(item[field_name] / total_count * 100)
+                field_pcts = [item[field_name] / total_count * 100 for field_name, _ in fields]
                 item["completeness_pct"] = round(sum(field_pcts) / len(field_pcts), 2) if field_pcts else 0.0
             else:
                 item["completeness_pct"] = 0.0

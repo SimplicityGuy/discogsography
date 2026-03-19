@@ -6,10 +6,18 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
-def _make_mock_pool(rows: list[tuple[Any, ...]]) -> AsyncMock:
-    """Create a mock AsyncPostgreSQLPool that returns given rows."""
+def _make_mock_pool_fetchone(rows: list[tuple[Any, ...] | None]) -> AsyncMock:
+    """Create a mock AsyncPostgreSQLPool where fetchone returns rows in order."""
+    idx = 0
+
+    async def mock_fetchone() -> tuple[Any, ...] | None:
+        nonlocal idx
+        result = rows[idx] if idx < len(rows) else None
+        idx += 1
+        return result
+
     mock_cursor = AsyncMock()
-    mock_cursor.fetchall = AsyncMock(return_value=rows)
+    mock_cursor.fetchone = AsyncMock(side_effect=mock_fetchone)
     mock_cursor.execute = AsyncMock()
 
     mock_conn = AsyncMock()
@@ -29,7 +37,13 @@ class TestQueryDataCompleteness:
     async def test_returns_completeness_for_all_entity_types(self) -> None:
         from api.queries.insights_pg_queries import query_data_completeness
 
-        mock_pool = _make_mock_pool([(1000,)])
+        rows: list[tuple[Any, ...] | None] = [
+            (1000, 500),              # artists: total, with_image
+            (1000, 500),              # labels: total, with_image
+            (1000, 500, 500, 500),    # masters: total, with_year, with_genre, with_image
+            (1000, 500, 500, 500, 500),  # releases: total, with_year, with_country, with_genre, with_image
+        ]
+        mock_pool = _make_mock_pool_fetchone(rows)
         result = await query_data_completeness(mock_pool)
         assert len(result) == 4
         entity_types = {r["entity_type"] for r in result}
@@ -39,7 +53,13 @@ class TestQueryDataCompleteness:
     async def test_handles_empty_tables(self) -> None:
         from api.queries.insights_pg_queries import query_data_completeness
 
-        mock_pool = _make_mock_pool([(0,)])
+        rows: list[tuple[Any, ...] | None] = [
+            (0, 0),
+            (0, 0),
+            (0, 0, 0, 0),
+            (0, 0, 0, 0, 0),
+        ]
+        mock_pool = _make_mock_pool_fetchone(rows)
         result = await query_data_completeness(mock_pool)
         for item in result:
             assert item["total_count"] == 0
@@ -49,23 +69,16 @@ class TestQueryDataCompleteness:
     async def test_calculates_completeness_percentage(self) -> None:
         from api.queries.insights_pg_queries import query_data_completeness
 
-        # artists has only 1 field (with_image), so if count=1000 and image count=500, pct=50%
-        call_count = 0
-
-        async def side_effect(*_args: Any) -> list[tuple[int]]:
-            nonlocal call_count
-            call_count += 1
-            if call_count % 2 == 1:  # Total count queries (odd calls)
-                return [(1000,)]
-            return [(500,)]  # Field count queries (even calls)
-
-        mock_pool = _make_mock_pool([])
-        cursor = mock_pool.connection.return_value.__aenter__.return_value.cursor.return_value.__aenter__.return_value
-        cursor.fetchall = AsyncMock(side_effect=side_effect)
-
+        # artists: 1 field, 500/1000 = 50%
+        rows: list[tuple[Any, ...] | None] = [
+            (1000, 500),              # artists: 50%
+            (1000, 500),              # labels: 50%
+            (1000, 500, 500, 500),    # masters: 50%
+            (1000, 500, 500, 500, 500),  # releases: 50%
+        ]
+        mock_pool = _make_mock_pool_fetchone(rows)
         result = await query_data_completeness(mock_pool)
         assert len(result) == 4
-        # All should have non-zero completeness since total > 0
         for item in result:
             assert item["total_count"] == 1000
-            assert item["completeness_pct"] > 0
+            assert item["completeness_pct"] == 50.0
