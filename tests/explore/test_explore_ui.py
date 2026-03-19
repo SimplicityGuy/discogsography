@@ -375,3 +375,93 @@ class TestExploreSearchInteraction:
         for js_file in js_files:
             response = page.request.get(f"{test_server}/{js_file}")
             assert response.ok, f"Failed to load {js_file}"
+
+
+@pytest.mark.e2e
+@pytest.mark.usefixtures("test_server")
+class TestExploreGenreTree:
+    """E2E tests for the genre tree feature."""
+
+    def test_genres_tab_visible(self, page: Page, test_server: str) -> None:
+        """Test that the Genres nav tab exists and is visible."""
+        _goto_ready(page, test_server)
+
+        genres_link = page.locator("[data-pane='genres']")
+        expect(genres_link).to_be_visible(timeout=5000)
+
+    def test_genres_pane_switchable(self, page: Page, test_server: str) -> None:
+        """Test that clicking the Genres tab activates the genres pane."""
+        _goto_ready(page, test_server)
+
+        _switch_pane(page, "genres")
+
+        genres_pane = page.locator("#genresPane")
+        expect(genres_pane).to_have_class(re.compile(r"\bactive\b"), timeout=5000)
+
+    def test_genre_tree_renders(self, page: Page, test_server: str) -> None:
+        """Test that the genre tree loads and renders genre items."""
+        _goto_ready(page, test_server)
+
+        _switch_pane(page, "genres")
+
+        # Wait for genre tree items to appear (fetched from /api/genre-tree)
+        items = page.locator(".genre-tree-item")
+        expect(items.first).to_be_visible(timeout=5000)
+
+        # Verify genre names from mock data are present
+        genres_pane = page.locator("#genresPane")
+        expect(genres_pane).to_contain_text("Rock", timeout=5000)
+        expect(genres_pane).to_contain_text("Electronic", timeout=5000)
+
+    def test_genre_tree_api_endpoint(self, page: Page, test_server: str) -> None:
+        """Test the genre-tree API returns genre data."""
+        response = page.request.get(f"{test_server}/api/genre-tree")
+        assert response.ok
+        data = response.json()
+        assert "genres" in data
+        assert len(data["genres"]) == 2
+        assert data["genres"][0]["name"] == "Rock"
+        assert len(data["genres"][0]["styles"]) == 2
+
+
+@pytest.mark.e2e
+@pytest.mark.usefixtures("test_server")
+class TestExploreCollaborators:
+    """E2E tests for the collaborators feature."""
+
+    def test_collaborators_api_endpoint(self, page: Page, test_server: str) -> None:
+        """Test the collaborators API returns collaborator data."""
+        response = page.request.get(f"{test_server}/api/collaborators/1?limit=20")
+        assert response.ok
+        data = response.json()
+        assert data["artist_id"] == "1"
+        assert data["artist_name"] == "Radiohead"
+        assert len(data["collaborators"]) == 2
+        assert data["collaborators"][0]["artist_name"] == "Thom Yorke"
+        assert data["collaborators"][1]["artist_name"] == "Jonny Greenwood"
+        assert data["total"] == 2
+
+    def test_collaborators_in_artist_detail(self, page: Page, test_server: str) -> None:
+        """Test that the collaborators section appears in the artist info panel."""
+        _goto_ready(page, test_server)
+
+        # Search for an artist and select from autocomplete
+        search_input = page.locator("#searchInput")
+        search_input.fill("Radio")
+
+        dropdown = page.locator("#autocompleteDropdown")
+        expect(dropdown).to_have_class(re.compile("show"), timeout=5000)
+        page.locator(".autocomplete-item").first.click()
+
+        # Wait for graph to render
+        placeholder = page.locator("#graphPlaceholder")
+        expect(placeholder).to_be_hidden(timeout=5000)
+
+        # Programmatically trigger the node-click handler for an artist node
+        # (SVG <g> elements have no CSS class, so we call the app method directly)
+        page.evaluate("window.exploreApp._onNodeClick('1', 'artist')")
+
+        # The info panel should open and contain a Collaborators heading
+        info_panel = page.locator("#infoPanel")
+        expect(info_panel).to_have_class(re.compile("open"), timeout=5000)
+        expect(info_panel).to_contain_text("Collaborators", timeout=5000)
