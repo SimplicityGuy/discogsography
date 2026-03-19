@@ -56,7 +56,7 @@ class TestExploreUI:
         """Test that the navigation bar is visible."""
         page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
 
-        navbar = page.locator("nav")
+        navbar = page.locator("nav").first
         expect(navbar).to_be_visible(timeout=5000)
 
     def test_search_input_visible(self, page: Page, test_server: str) -> None:

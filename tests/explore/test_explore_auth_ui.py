@@ -51,13 +51,12 @@ class TestExploreAuthNavbar:
         expect(user_dropdown).to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
 
     def test_collection_nav_hidden_when_logged_out(self, page: Page, test_server: str) -> None:
-        """Collection, Wantlist, and Discover nav items are hidden when logged out."""
+        """Secondary nav bar is hidden when logged out."""
         page.goto(test_server, wait_until="domcontentloaded", timeout=30000)
         page.evaluate("window.localStorage.removeItem('auth_token')")
         page.reload(wait_until="domcontentloaded", timeout=30000)
 
-        for nav_id in ["navCollection", "navWantlist", "navRecommendations"]:
-            expect(page.locator(f"#{nav_id}")).to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
+        expect(page.locator("#navSecondary")).to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
 
     def test_user_dropdown_visible_when_logged_in(self, page: Page, test_server: str) -> None:
         """User dropdown is visible after injecting an auth token."""
@@ -81,11 +80,10 @@ class TestExploreAuthNavbar:
         expect(email_display).to_have_text("test@example.com", timeout=5000)
 
     def test_collection_nav_visible_when_logged_in(self, page: Page, test_server: str) -> None:
-        """Collection, Wantlist, and Discover nav items appear after login."""
+        """Secondary nav bar appears after login."""
         _set_logged_in(page, test_server)
 
-        for nav_id in ["navCollection", "navWantlist", "navRecommendations"]:
-            expect(page.locator(f"#{nav_id}")).not_to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
+        expect(page.locator("#navSecondary")).not_to_have_class(re.compile(r"\bhidden\b"), timeout=5000)
 
     def test_connect_discogs_button_visible_in_dropdown(self, page: Page, test_server: str) -> None:
         """Connect Discogs button is visible in the user dropdown when not connected."""
