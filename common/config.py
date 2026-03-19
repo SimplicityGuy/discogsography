@@ -334,6 +334,13 @@ def setup_logging(
     log = structlog.get_logger()
     log.info("✅ Logging configured for service", service=service_name)
 
+    # Warn if Cypher profiling is active
+    if level.upper() == "DEBUG" and getenv("CYPHER_PROFILING", "").lower() == "true":
+        log.warning(
+            "⚠️ Cypher profiling enabled — PROFILE prefix will be added to all Cypher queries",
+            cypher_profiling=True,
+        )
+
 
 @dataclass(frozen=True)
 class DashboardConfig:
