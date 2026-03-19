@@ -13,9 +13,17 @@
     <link rel="stylesheet" href="css/styles.css">
     <style>[x-cloak] { display: none !important; }</style>
     <style>
+/* Tailwind .hidden fallback — tailwind.css is only built during Docker builds,
+   so we need a local definition for the utility class to work in dev. */
+.hidden:not(.timeline-scrubber) { display: none !important; }
+
 body {
     font-family: 'Inter', sans-serif;
     -webkit-font-smoothing: antialiased;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    overflow: hidden;
 }
 
 /* Timeline Scrubber — slides down above the graph */
@@ -329,186 +337,182 @@ body {
     </div>
 
     <!-- ============================================================
-         Navbar
+         Navbar — two-tier: top bar (brand + search + auth)
+                            bottom bar (navigation tabs)
          ============================================================ -->
-    <nav class="relative z-[1000] flex items-center border-b border-border-color bg-card-bg px-4 py-2">
-        <!-- ============================================================
-             APP LOGO — easy to replace.
-
-             To swap in a custom logo, change the contents of #app-logo:
-
-               <img src="/my-logo.png" alt="Logo" class="w-10 h-10">
-
-             or any other element. The surrounding <div id="app-logo">
-             wrapper is intentionally unstyled so your element controls
-             its own size and shape.
-             ============================================================ -->
-        <div id="app-logo" class="mr-3 flex-shrink-0" aria-label="Discogsography logo">
-            <!-- Four-quadrant circle with center diamond -->
-            <div style="
-                position: relative;
-                width: 36px; height: 36px;
-                border-radius: 50%; overflow: hidden;
-                border: 2px solid var(--border-color);
-                box-sizing: border-box;
-            ">
-                <!-- Quadrants: terracotta / steel-blue / teal / olive -->
-                <div style="
-                    position: absolute; inset: 0;
-                    display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
-                ">
-                    <div style="background:#AA7272;"></div>
-                    <div style="background:#4A70A3;"></div>
-                    <div style="background:#3C7068;"></div>
-                    <div style="background:#7B8E57;"></div>
-                </div>
-                <!-- Depth shadow toward center -->
-                <div style="
-                    position: absolute; inset: 0;
-                    background: radial-gradient(circle at center, rgba(15,25,45,0.5) 18%, transparent 52%);
-                "></div>
-                <!-- White center diamond -->
-                <div style="
-                    position: absolute;
-                    top: 50%; left: 50%;
-                    width: 44%; height: 44%;
-                    background: #F0F1F3;
-                    transform: translate(-50%, -50%) rotate(45deg);
-                "></div>
-            </div>
-        </div>
-        <!-- END LOGO -->
-        <a class="mr-4 text-lg font-bold text-text-high" href="#">Discogsography Explore</a>
-        <ul class="flex items-center gap-1">
-            <li>
-                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-high hover:bg-bg-hover active" href="#" data-pane="explore">
-                    <span class="material-symbols-outlined mr-1" style="font-size:18px">hub</span>Explore
-                </a>
-            </li>
-            <li>
-                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-pane="trends">
-                    <span class="material-symbols-outlined mr-1" style="font-size:18px">trending_up</span>Trends
-                </a>
-            </li>
-            <li>
-                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-pane="path">
-                    <span class="material-symbols-outlined mr-1" style="font-size:18px">route</span>Find Path
-                </a>
-            </li>
-            <li>
-                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-pane="search">
-                    <span class="material-symbols-outlined mr-1" style="font-size:18px">search</span>Search
-                </a>
-            </li>
-            <li>
-                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-pane="insights">
-                    <span class="material-symbols-outlined mr-1" style="font-size:18px">pie_chart</span>Insights
-                </a>
-            </li>
-            <!-- Auth-required panes — hidden until logged in -->
-            <li class="hidden" id="navCollection">
-                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-pane="collection">
-                    <span class="material-symbols-outlined mr-1" style="font-size:18px">album</span>Collection
-                </a>
-            </li>
-            <li class="hidden" id="navWantlist">
-                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-pane="wantlist">
-                    <span class="material-symbols-outlined mr-1" style="font-size:18px">favorite</span>Wantlist
-                </a>
-            </li>
-            <li class="hidden" id="navRecommendations">
-                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-pane="recommendations">
-                    <span class="material-symbols-outlined mr-1" style="font-size:18px">lightbulb</span>Discover
-                </a>
-            </li>
-            <li class="hidden" id="navGaps">
-                <a class="nav-link flex items-center rounded px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-pane="gaps">
-                    <span class="material-symbols-outlined mr-1" style="font-size:18px">search_off</span>Missing
-                </a>
-            </li>
-        </ul>
-
-        <!-- Search bar -->
-        <div class="ml-auto flex items-center search-container">
-            <div class="flex">
-                <div x-data="{ open: false }" class="relative">
-                    <button class="btn-outline-secondary rounded-r-none border-r-0"
-                            @click="open = !open" @click.outside="open = false"
-                            id="searchTypeBtn">
-                        Artist
-                    </button>
-                    <div x-show="open" x-cloak
-                         class="absolute left-0 top-full z-50 mt-1 w-32 rounded border border-border-color bg-card-bg py-1 shadow-lg">
-                        <a class="block px-3 py-1.5 text-sm text-text-high hover:bg-bg-hover active" href="#" data-type="artist" @click="open = false">Artist</a>
-                        <a class="block px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-type="genre" @click="open = false">Genre</a>
-                        <a class="block px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-type="label" @click="open = false">Label</a>
-                        <a class="block px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-type="style" @click="open = false">Style</a>
+    <header class="navbar-header relative z-[1000]">
+        <!-- Top bar: brand, search, utilities -->
+        <div class="navbar-top">
+            <!-- Brand -->
+            <div class="navbar-brand">
+                <div id="app-logo" class="flex-shrink-0" aria-label="Discogsography logo">
+                    <div style="
+                        position: relative;
+                        width: 32px; height: 32px;
+                        border-radius: 50%; overflow: hidden;
+                        border: 2px solid var(--border-color);
+                        box-sizing: border-box;
+                    ">
+                        <div style="
+                            position: absolute; inset: 0;
+                            display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+                        ">
+                            <div style="background:#AA7272;"></div>
+                            <div style="background:#4A70A3;"></div>
+                            <div style="background:#3C7068;"></div>
+                            <div style="background:#7B8E57;"></div>
+                        </div>
+                        <div style="
+                            position: absolute; inset: 0;
+                            background: radial-gradient(circle at center, rgba(15,25,45,0.5) 18%, transparent 52%);
+                        "></div>
+                        <div style="
+                            position: absolute;
+                            top: 50%; left: 50%;
+                            width: 44%; height: 44%;
+                            background: #F0F1F3;
+                            transform: translate(-50%, -50%) rotate(45deg);
+                        "></div>
                     </div>
                 </div>
-                <input type="text" class="form-input-dark rounded-none border-r-0" id="searchInput"
-                       placeholder="Search artists, genres, labels, styles..."
-                       autocomplete="off">
-                <button class="btn-primary rounded-l-none" id="searchBtn" title="Search">
-                    <span class="material-symbols-outlined" style="font-size:18px">search</span>
-                </button>
-            </div>
-            <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
-        </div>
-
-        <!-- Theme toggle -->
-        <button id="theme-toggle" class="ml-3 p-2 rounded-full transition-colors card flex items-center justify-center" style="border-radius:9999px" title="Toggle theme">
-            <span id="theme-icon-sun" class="material-symbols-outlined text-lg t-dim hidden">light_mode</span>
-            <span id="theme-icon-moon" class="material-symbols-outlined text-lg t-dim hidden">dark_mode</span>
-        </button>
-
-        <!-- Auth area -->
-        <div class="navbar-auth">
-            <!-- Shown when logged OUT -->
-            <div id="authButtons">
-                <button class="btn-outline-secondary btn-sm mr-1" id="navLoginBtn"
-                        @click="$store.modals.authOpen = true">
-                    Login
-                </button>
+                <a class="navbar-title" href="#">Discogsography</a>
             </div>
 
-            <!-- Shown when logged IN -->
-            <div x-data="{ open: false }" class="relative hidden" id="userDropdown">
-                <a class="flex items-center rounded px-2 py-1.5 text-sm text-text-mid hover:bg-bg-hover cursor-pointer"
-                   @click="open = !open" @click.outside="open = false"
-                   id="userMenuToggle">
-                    <span class="material-symbols-outlined mr-1" style="font-size:20px">account_circle</span>
-                    <span id="userEmailDisplay" class="text-sm"></span>
-                    <span class="material-symbols-outlined ml-1" style="font-size:16px">expand_more</span>
-                </a>
-                <div x-show="open" x-cloak
-                     class="absolute right-0 top-full z-50 mt-1 w-56 rounded border border-border-color bg-card-bg py-1 shadow-lg">
-                    <!-- Discogs connection status -->
-                    <div class="px-3 py-2">
-                        <div class="text-xs text-text-mid mb-1">Discogs</div>
-                        <div id="discogsStatusDisplay">
-                            <span class="badge bg-gray-600 text-text-mid discogs-badge">Not connected</span>
+            <!-- Search bar — centered -->
+            <div class="navbar-search search-container">
+                <div class="flex">
+                    <div x-data="{ open: false }" class="relative">
+                        <button class="btn-outline-secondary rounded-r-none border-r-0"
+                                @click="open = !open" @click.outside="open = false"
+                                id="searchTypeBtn">
+                            Artist
+                        </button>
+                        <div x-show="open" x-cloak
+                             class="absolute left-0 top-full z-50 mt-1 w-32 rounded border border-border-color bg-card-bg py-1 shadow-lg">
+                            <a class="block px-3 py-1.5 text-sm text-text-high hover:bg-bg-hover active" href="#" data-type="artist" @click="open = false">Artist</a>
+                            <a class="block px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-type="genre" @click="open = false">Genre</a>
+                            <a class="block px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-type="label" @click="open = false">Label</a>
+                            <a class="block px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover" href="#" data-type="style" @click="open = false">Style</a>
                         </div>
                     </div>
-                    <hr class="border-border-color my-1">
-                    <!-- Connect / Disconnect Discogs -->
-                    <a class="hidden flex items-center px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover cursor-pointer" href="#" id="connectDiscogsBtn">
-                        <span class="material-symbols-outlined mr-2" style="font-size:18px">power</span>Connect Discogs
-                    </a>
-                    <a class="hidden flex items-center px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover cursor-pointer" href="#" id="disconnectDiscogsBtn">
-                        <span class="material-symbols-outlined mr-2" style="font-size:18px">link_off</span>Disconnect Discogs
-                    </a>
-                    <!-- Sync -->
-                    <a class="hidden flex items-center px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover cursor-pointer" href="#" id="syncBtn">
-                        <span class="material-symbols-outlined mr-2" style="font-size:18px">sync</span>Sync Collection
-                    </a>
-                    <hr class="border-border-color my-1">
-                    <a class="flex items-center px-3 py-1.5 text-sm text-accent-red hover:bg-bg-hover cursor-pointer" href="#" id="logoutBtn">
-                        <span class="material-symbols-outlined mr-2" style="font-size:18px">logout</span>Logout
-                    </a>
+                    <input type="text" class="form-input-dark rounded-none border-r-0" id="searchInput"
+                           placeholder="Search artists, genres, labels, styles..."
+                           autocomplete="off">
+                    <button class="btn-primary rounded-l-none" id="searchBtn" title="Search">
+                        <span class="material-symbols-outlined" style="font-size:18px">search</span>
+                    </button>
+                </div>
+                <div class="autocomplete-dropdown" id="autocompleteDropdown"></div>
+            </div>
+
+            <!-- Utilities: theme + auth -->
+            <div class="navbar-utils">
+                <button id="theme-toggle" class="navbar-icon-btn" title="Toggle theme">
+                    <span id="theme-icon-sun" class="material-symbols-outlined hidden">light_mode</span>
+                    <span id="theme-icon-moon" class="material-symbols-outlined hidden">dark_mode</span>
+                </button>
+
+                <div class="navbar-auth">
+                    <div id="authButtons">
+                        <button class="btn-outline-secondary btn-sm" id="navLoginBtn"
+                                @click="$store.modals.authOpen = true">
+                            Login
+                        </button>
+                    </div>
+
+                    <div x-data="{ open: false }" class="relative hidden" id="userDropdown">
+                        <a class="navbar-user-toggle"
+                           @click="open = !open" @click.outside="open = false"
+                           id="userMenuToggle">
+                            <span class="material-symbols-outlined" style="font-size:22px">account_circle</span>
+                            <span id="userEmailDisplay" class="navbar-user-email"></span>
+                            <span class="material-symbols-outlined" style="font-size:16px">expand_more</span>
+                        </a>
+                        <div x-show="open" x-cloak
+                             class="absolute right-0 top-full z-50 mt-1 w-56 rounded border border-border-color bg-card-bg py-1 shadow-lg">
+                            <div class="px-3 py-2">
+                                <div class="text-xs text-text-mid mb-1">Discogs</div>
+                                <div id="discogsStatusDisplay">
+                                    <span class="badge bg-gray-600 text-text-mid discogs-badge">Not connected</span>
+                                </div>
+                            </div>
+                            <hr class="border-border-color my-1">
+                            <a class="hidden flex items-center px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover cursor-pointer" href="#" id="connectDiscogsBtn">
+                                <span class="material-symbols-outlined mr-2" style="font-size:18px">power</span>Connect Discogs
+                            </a>
+                            <a class="hidden flex items-center px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover cursor-pointer" href="#" id="disconnectDiscogsBtn">
+                                <span class="material-symbols-outlined mr-2" style="font-size:18px">link_off</span>Disconnect Discogs
+                            </a>
+                            <a class="hidden flex items-center px-3 py-1.5 text-sm text-text-mid hover:bg-bg-hover cursor-pointer" href="#" id="syncBtn">
+                                <span class="material-symbols-outlined mr-2" style="font-size:18px">sync</span>Sync Collection
+                            </a>
+                            <hr class="border-border-color my-1">
+                            <a class="flex items-center px-3 py-1.5 text-sm text-accent-red hover:bg-bg-hover cursor-pointer" href="#" id="logoutBtn">
+                                <span class="material-symbols-outlined mr-2" style="font-size:18px">logout</span>Logout
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
-    </nav>
+
+        <!-- Primary navigation tabs — always visible -->
+        <nav class="navbar-tabs" aria-label="Main navigation">
+            <ul class="navbar-tab-list">
+                <li>
+                    <a class="nav-link active" href="#" data-pane="explore">
+                        <span class="material-symbols-outlined">hub</span>Explore
+                    </a>
+                </li>
+                <li>
+                    <a class="nav-link" href="#" data-pane="trends">
+                        <span class="material-symbols-outlined">trending_up</span>Trends
+                    </a>
+                </li>
+                <li>
+                    <a class="nav-link" href="#" data-pane="path">
+                        <span class="material-symbols-outlined">route</span>Find Path
+                    </a>
+                </li>
+                <li>
+                    <a class="nav-link" href="#" data-pane="search">
+                        <span class="material-symbols-outlined">search</span>Search
+                    </a>
+                </li>
+                <li>
+                    <a class="nav-link" href="#" data-pane="insights">
+                        <span class="material-symbols-outlined">pie_chart</span>Insights
+                    </a>
+                </li>
+            </ul>
+        </nav>
+
+        <!-- Secondary navigation — shown after login -->
+        <nav class="navbar-tabs navbar-tabs-secondary hidden" id="navSecondary" aria-label="Personal navigation">
+            <ul class="navbar-tab-list">
+                <li id="navCollection">
+                    <a class="nav-link" href="#" data-pane="collection">
+                        <span class="material-symbols-outlined">album</span>Collection
+                    </a>
+                </li>
+                <li id="navWantlist">
+                    <a class="nav-link" href="#" data-pane="wantlist">
+                        <span class="material-symbols-outlined">favorite</span>Wantlist
+                    </a>
+                </li>
+                <li id="navRecommendations">
+                    <a class="nav-link" href="#" data-pane="recommendations">
+                        <span class="material-symbols-outlined">lightbulb</span>Discover
+                    </a>
+                </li>
+                <li class="hidden" id="navGaps">
+                    <a class="nav-link" href="#" data-pane="gaps">
+                        <span class="material-symbols-outlined">search_off</span>Missing
+                    </a>
+                </li>
+            </ul>
+        </nav>
+    </header>
 
     <!-- ============================================================
          Main content
@@ -735,6 +739,9 @@ body {
                             <input type="text" class="form-input-dark search-pane-input" id="searchPaneInput"
                                    placeholder="Search artists, labels, masters, releases..." autocomplete="off">
                         </div>
+                        <button class="btn-primary search-pane-btn" id="searchPaneBtn">
+                            <span class="material-symbols-outlined mr-1" style="font-size:18px">search</span>Search
+                        </button>
                     </div>
                     <div class="search-pane-filters">
                         <div class="search-type-chips" id="searchTypeChips">

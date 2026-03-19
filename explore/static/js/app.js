@@ -381,10 +381,8 @@ class ExploreApp {
         document.getElementById('authButtons').classList.toggle('hidden', loggedIn);
         document.getElementById('userDropdown').classList.toggle('hidden', !loggedIn);
 
-        // Toggle auth-required nav items
-        ['navCollection', 'navWantlist', 'navRecommendations'].forEach(id => {
-            document.getElementById(id)?.classList.toggle('hidden', !loggedIn);
-        });
+        // Toggle secondary nav bar (collection, wantlist, discover, gaps)
+        document.getElementById('navSecondary')?.classList.toggle('hidden', !loggedIn);
         // Hide gaps nav when logged out (shown dynamically by gap analysis)
         if (!loggedIn) {
             document.getElementById('navGaps')?.classList.add('hidden');
@@ -639,12 +637,9 @@ class ExploreApp {
     _switchPane(pane) {
         this.activePane = pane;
 
-        // Update nav links — toggle active class and text color
+        // Update nav links — toggle active class
         document.querySelectorAll('.nav-link[data-pane]').forEach(link => {
-            const isActive = link.dataset.pane === pane;
-            link.classList.toggle('active', isActive);
-            link.classList.toggle('text-text-high', isActive);
-            link.classList.toggle('text-text-mid', !isActive);
+            link.classList.toggle('active', link.dataset.pane === pane);
         });
 
         // Show/hide panes

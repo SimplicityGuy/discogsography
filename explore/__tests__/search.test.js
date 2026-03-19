@@ -9,6 +9,7 @@ function setupSearchDOM() {
 
     const ids = [
         'searchPaneInput',
+        'searchPaneBtn',
         'searchTypeChips',
         'searchYearMin',
         'searchYearMax',
@@ -27,6 +28,8 @@ function setupSearchDOM() {
         if (id === 'searchPaneInput' || id === 'searchYearMin' || id === 'searchYearMax') {
             el = document.createElement('input');
             el.type = id.includes('Year') ? 'number' : 'text';
+        } else if (id === 'searchPaneBtn') {
+            el = document.createElement('button');
         } else {
             el = document.createElement('div');
         }
@@ -65,17 +68,6 @@ describe('search pane', () => {
     });
 
     describe('search input', () => {
-        it('should show placeholder when query is less than 3 chars', () => {
-            const input = document.getElementById('searchPaneInput');
-            const placeholder = document.getElementById('searchPlaceholder');
-            placeholder.classList.add('hidden');
-
-            input.value = 'ab';
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-
-            expect(placeholder.classList.contains('hidden')).toBe(false);
-        });
-
         it('should call apiClient.search after Enter keydown with valid query', async () => {
             vi.useFakeTimers();
             const input = document.getElementById('searchPaneInput');
@@ -99,18 +91,40 @@ describe('search pane', () => {
             vi.useRealTimers();
         });
 
-        it('should debounce search on input event', async () => {
+        it('should call apiClient.search on search button click', async () => {
             vi.useFakeTimers();
             const input = document.getElementById('searchPaneInput');
+            const btn = document.getElementById('searchPaneBtn');
             input.value = 'radiohead';
 
-            input.dispatchEvent(new Event('input', { bubbles: true }));
-            expect(window.apiClient.search).not.toHaveBeenCalled();
+            btn.click();
 
-            vi.advanceTimersByTime(300);
             await vi.runAllTimersAsync();
 
-            expect(window.apiClient.search).toHaveBeenCalled();
+            expect(window.apiClient.search).toHaveBeenCalledWith(
+                'radiohead',
+                expect.any(Array),
+                expect.any(Array),
+                null,
+                null,
+                20,
+                0
+            );
+
+            vi.useRealTimers();
+        });
+
+        it('should not search when input is less than 3 chars via button click', async () => {
+            vi.useFakeTimers();
+            const input = document.getElementById('searchPaneInput');
+            const btn = document.getElementById('searchPaneBtn');
+            input.value = 'ab';
+
+            btn.click();
+
+            await vi.runAllTimersAsync();
+
+            expect(window.apiClient.search).not.toHaveBeenCalled();
 
             vi.useRealTimers();
         });

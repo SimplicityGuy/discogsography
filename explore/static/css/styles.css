@@ -102,11 +102,173 @@
 ::-webkit-scrollbar-track { background: var(--bg-deep); }
 ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 10px; }
 
-/* Active nav-link indicator */
-.nav-link.active {
-    color: var(--text-high) !important;
-    background-color: var(--bg-hover);
+/* ============================================================
+   Navbar — two-tier layout
+   ============================================================ */
+.navbar-header {
+    background-color: var(--card-bg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+/* Top bar: brand | search | utilities */
+.navbar-top {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.5rem 1rem;
+}
+
+.navbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    flex-shrink: 0;
+}
+
+.navbar-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-high);
+    white-space: nowrap;
+    text-decoration: none;
+    letter-spacing: -0.01em;
+}
+
+.navbar-title:hover {
+    color: var(--text-high);
+    text-decoration: none;
+}
+
+/* Search — flex-grow to fill center */
+.navbar-search {
+    flex: 1;
+    max-width: 520px;
+    margin: 0 auto;
+}
+
+/* Utilities cluster */
+.navbar-utils {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-shrink: 0;
+}
+
+.navbar-icon-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--inner-bg);
+    color: var(--text-mid);
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+}
+
+.navbar-icon-btn:hover {
+    background: var(--bg-hover);
+    border-color: var(--blue-accent);
+    color: var(--text-high);
+}
+
+.navbar-icon-btn .material-symbols-outlined {
+    font-size: 20px;
+}
+
+.navbar-user-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    border-radius: 8px;
+    color: var(--text-mid);
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.navbar-user-toggle:hover {
+    background: var(--bg-hover);
+}
+
+.navbar-user-email {
+    font-size: 0.8125rem;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Navigation tab bar */
+.navbar-tabs {
+    border-top: 1px solid var(--border-color);
+    padding: 0 1rem;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.navbar-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.navbar-tab-list {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.navbar-tab-list li {
+    flex-shrink: 0;
+}
+
+/* Tab link styling */
+.nav-link {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.625rem 0.875rem;
+    font-size: 0.8125rem;
     font-weight: 500;
+    color: var(--text-mid);
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.nav-link .material-symbols-outlined {
+    font-size: 18px;
+}
+
+.nav-link:hover {
+    color: var(--text-high);
+    background: none;
+}
+
+.nav-link.active {
+    color: var(--blue-accent) !important;
+    border-bottom-color: var(--blue-accent);
+    font-weight: 600;
+}
+
+/* Secondary tab bar — personal/collection tabs after login */
+.navbar-tabs-secondary {
+    background-color: var(--inner-bg);
+    border-top: none;
+}
+
+.navbar-tabs-secondary .nav-link {
+    font-size: 0.75rem;
+    padding: 0.5rem 0.75rem;
+}
+
+.navbar-tabs-secondary .nav-link .material-symbols-outlined {
+    font-size: 16px;
 }
 
 /* Material Symbols sizing helpers */
@@ -201,8 +363,9 @@
 
 /* Main content */
 .main-content {
-    height: calc(100vh - 56px);
+    flex: 1;
     position: relative;
+    min-height: 0;
 }
 
 .pane {
@@ -514,7 +677,6 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin-left: 0.75rem;
 }
 
 /* ============================================================
@@ -1033,7 +1195,15 @@
 }
 
 .search-pane-input-row {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5rem;
     margin-bottom: 0.75rem;
+}
+
+.search-pane-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
 }
 
 .search-pane-input-wrap {

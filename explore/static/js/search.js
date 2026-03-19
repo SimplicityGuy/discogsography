@@ -19,7 +19,7 @@
     if (!input) return;
 
     const PAGE_SIZE = 20;
-    let debounceTimer;
+    const searchBtn = document.getElementById('searchPaneBtn');
     let currentOffset = 0;
     let lastQuery = '';
     let lastResult = null;
@@ -80,25 +80,16 @@
     // Debounced search input
     // ------------------------------------------------------------------
 
-    input.addEventListener('input', () => {
-        clearTimeout(debounceTimer);
-        const q = input.value.trim();
-        if (q.length < 3) {
-            showPlaceholder();
-            return;
-        }
-        debounceTimer = setTimeout(() => {
-            currentOffset = 0;
-            triggerSearch();
-        }, 300);
-    });
-
     input.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
-            clearTimeout(debounceTimer);
             currentOffset = 0;
             triggerSearch();
         }
+    });
+
+    searchBtn.addEventListener('click', () => {
+        currentOffset = 0;
+        triggerSearch();
     });
 
     // ------------------------------------------------------------------

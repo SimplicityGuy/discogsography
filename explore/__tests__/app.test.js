@@ -69,7 +69,7 @@ function setupAppDOM() {
         'shareBtn', 'shareToast', 'shareToastMsg',
         'authButtons', 'userDropdown', 'userEmailDisplay',
         'discogsStatusDisplay', 'connectDiscogsBtn', 'disconnectDiscogsBtn', 'syncBtn',
-        'navCollection', 'navWantlist', 'navRecommendations', 'navGaps',
+        'navSecondary', 'navCollection', 'navWantlist', 'navRecommendations', 'navGaps',
         'loginEmail', 'loginPassword', 'loginError', 'loginSubmitBtn',
         'registerEmail', 'registerPassword', 'registerError', 'registerSuccess', 'registerSubmitBtn',
         'logoutBtn', 'navLoginBtn',
