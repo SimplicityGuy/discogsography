@@ -672,6 +672,8 @@ class ExploreApp {
             this.userPanes.loadWantlist(true);
         } else if (pane === 'recommendations' && window.authManager.isLoggedIn()) {
             this.userPanes.loadRecommendations();
+        } else if (pane === 'genres' && window.genreTreeView) {
+            window.genreTreeView.load();
         }
     }
 

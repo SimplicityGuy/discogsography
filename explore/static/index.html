@@ -485,6 +485,11 @@ body {
                         <span class="material-symbols-outlined">pie_chart</span>Insights
                     </a>
                 </li>
+                <li>
+                    <a class="nav-link" href="#" data-pane="genres">
+                        <span class="material-symbols-outlined">account_tree</span>Genres
+                    </a>
+                </li>
             </ul>
         </nav>
 
@@ -841,6 +846,18 @@ body {
             </div>
         </div>
 
+        <!-- Genres pane -->
+        <div class="pane" id="genresPane">
+            <div class="genre-tree-pane-container">
+                <div id="genreTreeContainer">
+                    <div class="genre-tree-placeholder">
+                        <span class="material-symbols-outlined icon-3x mb-3 text-text-mid">account_tree</span>
+                        <p class="text-text-mid">Switch to the Genres tab to explore the genre/style hierarchy</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Collection pane -->
         <div class="pane" id="collectionPane">
             <div class="user-pane-body">
@@ -925,6 +942,7 @@ body {
     <script src="js/user-panes.js"></script>
     <script src="js/search.js"></script>
     <script src="js/insights.js"></script>
+    <script src="js/genre-tree.js"></script>
     <script src="js/collaborators.js"></script>
     <script src="js/theme.js"></script>
     <script src="js/app.js"></script>
