@@ -199,6 +199,60 @@ class TestRunSingle:
         result = await run_single(driver, "MATCH (a) RETURN a LIMIT 1")
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_passes_timeout(self) -> None:
+        from api.queries.helpers import run_single
+
+        driver = _make_driver(single={"id": "1"})
+        await run_single(driver, "MATCH (a) RETURN a LIMIT 1", timeout=60.0)
+        session = driver.session.return_value
+        call_kwargs = session.__aenter__.return_value.run.call_args
+        assert call_kwargs.kwargs.get("timeout") == 60.0
+
+    @pytest.mark.asyncio
+    async def test_passes_database(self) -> None:
+        from api.queries.helpers import run_single
+
+        driver = _make_driver(single={"id": "1"})
+        await run_single(driver, "MATCH (a) RETURN a LIMIT 1", database="neo4j")
+        driver.session.assert_called_once_with(database="neo4j")
+
+    @pytest.mark.asyncio
+    async def test_profile_prefix_when_enabled(self) -> None:
+        from api.queries.helpers import run_single
+
+        summary = MagicMock()
+        summary.profile = {"args": {"string-representation": "plan"}}
+        driver = _make_driver(single={"id": "1"}, summary=summary)
+
+        with patch("api.queries.helpers.is_cypher_profiling", return_value=True), patch("api.queries.helpers.log_profile_result") as mock_profile:
+            await run_single(driver, "MATCH (a) RETURN a LIMIT 1")
+            session = driver.session.return_value
+            run_call = session.__aenter__.return_value.run.call_args
+            assert run_call.args[0].startswith("PROFILE ")
+            mock_profile.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_explain_on_error_with_profiling(self) -> None:
+        from api.queries.helpers import run_single
+
+        error = RuntimeError("timeout")
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.run = AsyncMock(side_effect=error)
+
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+
+        with (
+            patch("api.queries.helpers.is_cypher_profiling", return_value=True),
+            patch("api.queries.helpers._try_explain_on_error") as mock_explain,
+            pytest.raises(RuntimeError, match="timeout"),
+        ):
+            await run_single(driver, "MATCH (a) RETURN a LIMIT 1")
+        mock_explain.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # TestRunCount
@@ -221,6 +275,60 @@ class TestRunCount:
         driver = _make_driver(single=None)
         result = await run_count(driver, "RETURN count(*) AS total")
         assert result == 0
+
+    @pytest.mark.asyncio
+    async def test_passes_timeout(self) -> None:
+        from api.queries.helpers import run_count
+
+        driver = _make_driver(single={"total": 1})
+        await run_count(driver, "RETURN count(*) AS total", timeout=30.0)
+        session = driver.session.return_value
+        call_kwargs = session.__aenter__.return_value.run.call_args
+        assert call_kwargs.kwargs.get("timeout") == 30.0
+
+    @pytest.mark.asyncio
+    async def test_passes_database(self) -> None:
+        from api.queries.helpers import run_count
+
+        driver = _make_driver(single={"total": 1})
+        await run_count(driver, "RETURN count(*) AS total", database="neo4j")
+        driver.session.assert_called_once_with(database="neo4j")
+
+    @pytest.mark.asyncio
+    async def test_profile_prefix_when_enabled(self) -> None:
+        from api.queries.helpers import run_count
+
+        summary = MagicMock()
+        summary.profile = {"args": {"string-representation": "plan"}}
+        driver = _make_driver(single={"total": 5}, summary=summary)
+
+        with patch("api.queries.helpers.is_cypher_profiling", return_value=True), patch("api.queries.helpers.log_profile_result") as mock_profile:
+            await run_count(driver, "RETURN count(*) AS total")
+            session = driver.session.return_value
+            run_call = session.__aenter__.return_value.run.call_args
+            assert run_call.args[0].startswith("PROFILE ")
+            mock_profile.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_explain_on_error_with_profiling(self) -> None:
+        from api.queries.helpers import run_count
+
+        error = RuntimeError("timeout")
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session.run = AsyncMock(side_effect=error)
+
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=mock_session)
+
+        with (
+            patch("api.queries.helpers.is_cypher_profiling", return_value=True),
+            patch("api.queries.helpers._try_explain_on_error") as mock_explain,
+            pytest.raises(RuntimeError, match="timeout"),
+        ):
+            await run_count(driver, "RETURN count(*) AS total")
+        mock_explain.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -290,6 +398,29 @@ class TestExplainFallback:
         original_error = RuntimeError("original")
         # Should NOT raise — failure is swallowed
         await _try_explain_on_error(driver, "MATCH (n) RETURN n", {"x": 1}, original_error)
+
+    @pytest.mark.asyncio
+    async def test_explain_passes_database(self) -> None:
+        """_try_explain_on_error passes database kwarg to session."""
+        from api.queries.helpers import _try_explain_on_error
+
+        summary = MagicMock()
+        summary.plan = {"args": {"string-representation": "plan"}}
+
+        mock_result = AsyncMock()
+        mock_result.consume = AsyncMock(return_value=summary)
+
+        explain_session = AsyncMock()
+        explain_session.__aenter__ = AsyncMock(return_value=explain_session)
+        explain_session.__aexit__ = AsyncMock(return_value=False)
+        explain_session.run = AsyncMock(return_value=mock_result)
+
+        driver = MagicMock()
+        driver.session = MagicMock(return_value=explain_session)
+
+        with patch("api.queries.helpers.log_explain_result"):
+            await _try_explain_on_error(driver, "MATCH (n) RETURN n", {}, RuntimeError("err"), database="neo4j")
+        driver.session.assert_called_once_with(database="neo4j")
 
     @pytest.mark.asyncio
     async def test_explain_calls_log_explain_result(self) -> None:
