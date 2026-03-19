@@ -102,8 +102,14 @@ schema-init = [
     "psycopg[binary]>=3.1.0",
     "structlog>=24.0.0",
 ]
+mcp-server = [
+    "mcp[cli]>=1.12.0",
+    "neo4j>=6.1.0",
+    "psycopg[binary]>=3.0.0",
+    "structlog>=24.0.0",
+]
 all = [
-    "discogsography[api,dashboard,explore,graphinator,schema-init,tableinator,dev,utilities]",
+    "discogsography[api,dashboard,explore,graphinator,mcp-server,schema-init,tableinator,dev,utilities]",
 ]
 
 [tool.ruff.format]
@@ -118,7 +124,7 @@ docstring-code-line-length = "dynamic"
 lines-after-imports = 2
 combine-as-imports = true
 split-on-trailing-comma = true
-known-first-party = ["api", "common", "dashboard", "explore", "graphinator", "neo4j_schema", "postgres_schema", "schema_init", "tableinator"]
+known-first-party = ["api", "common", "dashboard", "explore", "graphinator", "mcp_server", "neo4j_schema", "postgres_schema", "schema_init", "tableinator"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 force-sort-within-sections = true
 
@@ -162,6 +168,7 @@ ignore = [
 "*/graphinator.py" = ["T201"]               # Allow print statements for ASCII art
 "*/insights.py" = ["T201"]                  # Allow print statements for ASCII art
 "*/schema_init.py" = ["T201"]               # Allow print statements for ASCII art
+"*/server.py" = ["T201"]                    # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]               # Allow print statements for ASCII art
 "api/setup.py" = ["T201"]                   # CLI tool uses print for user output
 "utilities/*.py" = ["T201"]                 # Utility scripts use print for output
@@ -190,6 +197,20 @@ exclude = "^tests/"
 [[tool.mypy.overrides]]
 module = [
     "pika.*",
+    "psycopg.*",
+    "redis.*",
+    "scipy.*",
+    "tqdm",
+    "xmltodict",
+    "pandas.*",
+    "plotly.*",
+    "sklearn.*",
+    "networkx.*",
+    "sentence_transformers.*",
+    "fastapi.*",
+    "mcp.*",
+    "uvicorn.*",
+    "pydantic.*",
 ]
 ignore_missing_imports = true
 
@@ -199,7 +220,7 @@ disallow_untyped_decorators = false
 
 
 [tool.coverage.run]
-source = ["api", "common", "dashboard", "explore", "graphinator", "insights", "schema-init", "tableinator"]
+source = ["api", "common", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
 relative_files = true
 
@@ -221,7 +242,7 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 asyncio_mode = "strict"
 asyncio_default_fixture_loop_scope = "function"
-pythonpath = [".", "api", "insights", "schema-init"]
+pythonpath = [".", "api", "insights", "mcp-server", "schema-init"]
 timeout = 60
 timeout_method = "thread"
 markers = [
@@ -279,7 +300,7 @@ split_on_trailing_comma = true
 
 # uv workspace configuration
 [tool.uv.workspace]
-members = ["api", "common", "dashboard", "explore", "graphinator", "insights", "schema-init", "tableinator"]
+members = ["api", "common", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
 
 # Environment restrictions for uv to avoid iOS and other incompatible platforms
 [tool.uv]
