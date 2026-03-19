@@ -8,7 +8,7 @@ Explore From Here: personalized traversal with taste-based ranking.
 import asyncio
 from typing import Any
 
-from api.queries.neo4j_queries import _run_query, _run_single
+from api.queries.helpers import run_query, run_single
 from api.queries.similarity import cosine_similarity, to_genre_vector
 from common import AsyncResilientNeo4jDriver
 
@@ -41,7 +41,7 @@ async def get_artist_identity(driver: AsyncResilientNeo4jDriver, artist_id: str)
     RETURN a.id AS artist_id, a.name AS artist_name,
            count(DISTINCT r) AS release_count
     """
-    return await _run_single(driver, cypher, artist_id=artist_id)
+    return await run_single(driver, cypher, artist_id=artist_id)
 
 
 async def get_artist_profile(driver: AsyncResilientNeo4jDriver, artist_id: str) -> dict[str, Any]:
@@ -68,10 +68,10 @@ async def get_artist_profile(driver: AsyncResilientNeo4jDriver, artist_id: str) 
     ORDER BY count DESC
     """
     genres, styles, labels, collaborators = await asyncio.gather(
-        _run_query(driver, genre_cypher, artist_id=artist_id),
-        _run_query(driver, style_cypher, artist_id=artist_id),
-        _run_query(driver, label_cypher, artist_id=artist_id),
-        _run_query(driver, collab_cypher, artist_id=artist_id),
+        run_query(driver, genre_cypher, artist_id=artist_id),
+        run_query(driver, style_cypher, artist_id=artist_id),
+        run_query(driver, label_cypher, artist_id=artist_id),
+        run_query(driver, collab_cypher, artist_id=artist_id),
     )
     return {
         "genres": genres,
@@ -101,7 +101,7 @@ async def get_candidate_artists(driver: AsyncResilientNeo4jDriver, artist_id: st
     ORDER BY release_count DESC
     LIMIT 200
     """
-    candidates = await _run_query(driver, candidates_cypher, artist_id=artist_id, min_releases=MIN_ARTIST_RELEASES)
+    candidates = await run_query(driver, candidates_cypher, artist_id=artist_id, min_releases=MIN_ARTIST_RELEASES)
 
     if not candidates:
         return []
@@ -242,7 +242,7 @@ async def get_collector_counts(driver: AsyncResilientNeo4jDriver, release_ids: l
     OPTIONAL MATCH (u:User)-[:COLLECTED]->(r)
     RETURN r.id AS id, count(u) AS collectors
     """
-    rows = await _run_query(driver, cypher, release_ids=release_ids)
+    rows = await run_query(driver, cypher, release_ids=release_ids)
     return {row["id"]: row["collectors"] for row in rows}
 
 
@@ -267,7 +267,7 @@ async def get_label_affinity_candidates(driver: AsyncResilientNeo4jDriver, user_
     ORDER BY score DESC
     LIMIT $limit
     """
-    rows = await _run_query(driver, cypher, user_id=user_id, limit=limit)
+    rows = await run_query(driver, cypher, user_id=user_id, limit=limit)
     return [{**row, "source": f"label: {row['label']} (top label)", "score": row["score"]} for row in rows]
 
 
@@ -297,7 +297,7 @@ async def get_blindspot_candidates(driver: AsyncResilientNeo4jDriver, user_id: s
     ORDER BY score DESC
     LIMIT $limit
     """
-    rows = await _run_query(driver, cypher, user_id=user_id, limit=limit)
+    rows = await run_query(driver, cypher, user_id=user_id, limit=limit)
     return [{**row, "source": f"blind_spot: {row['genres'][0] if row.get('genres') else 'unknown'}"} for row in rows]
 
 
@@ -339,7 +339,7 @@ async def get_explore_traversal(
            path_names, rel_types, dist
     LIMIT 100
     """
-    return await _run_query(driver, cypher, entity_id=entity_id)
+    return await run_query(driver, cypher, entity_id=entity_id)
 
 
 def score_discoveries(
