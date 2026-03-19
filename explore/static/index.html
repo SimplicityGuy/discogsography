@@ -292,7 +292,8 @@ body {
          Discogs OAuth verifier modal
          ============================================================ -->
     <!-- nosemgrep: java.lang.security.audit.xss.jsf.autoescape-disabled.autoescape-disabled -->
-    <div @keydown.escape.window="$store.modals.discogsOpen = false"
+    <div x-data
+         @keydown.escape.window="$store.modals.discogsOpen = false"
          x-show="$store.modals.discogsOpen"
          x-cloak
          x-transition:enter="transition ease-out duration-200"
@@ -408,6 +409,7 @@ body {
             <!-- Utilities: theme + auth -->
             <div class="navbar-utils">
                 <button id="theme-toggle" class="navbar-icon-btn" title="Toggle theme">
+                    <span id="theme-icon-auto" class="material-symbols-outlined hidden">brightness_auto</span>
                     <span id="theme-icon-sun" class="material-symbols-outlined hidden">light_mode</span>
                     <span id="theme-icon-moon" class="material-symbols-outlined hidden">dark_mode</span>
                 </button>

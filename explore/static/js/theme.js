@@ -1,34 +1,56 @@
 /**
- * Theme toggle — light/dark mode with OS preference detection.
+ * Theme toggle — tri-state: auto (match OS, default) → light → dark.
  * Matches dashboard implementation.
  */
 (function initThemeToggle() {
     'use strict';
 
     const btn = document.getElementById('theme-toggle');
+    const autoIcon = document.getElementById('theme-icon-auto');
     const sunIcon = document.getElementById('theme-icon-sun');
     const moonIcon = document.getElementById('theme-icon-moon');
-    if (!btn || !sunIcon || !moonIcon) return;
+    if (!btn || !autoIcon || !sunIcon || !moonIcon) return;
 
-    function updateIcons() {
-        const isDark = document.documentElement.classList.contains('dark');
-        sunIcon.classList.toggle('hidden', isDark);
-        moonIcon.classList.toggle('hidden', !isDark);
+    function getMode() {
+        return localStorage.getItem('theme') || 'auto';
     }
 
+    function applyMode(mode) {
+        if (mode === 'auto') {
+            const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            document.documentElement.classList.toggle('dark', prefersDark);
+        } else {
+            document.documentElement.classList.toggle('dark', mode === 'dark');
+        }
+    }
+
+    function updateIcons() {
+        const mode = getMode();
+        autoIcon.classList.toggle('hidden', mode !== 'auto');
+        sunIcon.classList.toggle('hidden', mode !== 'light');
+        moonIcon.classList.toggle('hidden', mode !== 'dark');
+    }
+
+    applyMode(getMode());
     updateIcons();
 
+    const cycle = { auto: 'light', light: 'dark', dark: 'auto' };
+
     btn.addEventListener('click', () => {
-        const isDark = document.documentElement.classList.toggle('dark');
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+        const next = cycle[getMode()];
+        if (next === 'auto') {
+            localStorage.removeItem('theme');
+        } else {
+            localStorage.setItem('theme', next);
+        }
+        applyMode(next);
         updateIcons();
     });
 
-    // Listen for OS-level theme changes when no explicit preference is saved
+    // Listen for OS-level theme changes — only applies when in auto mode
     window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', (e) => {
-        if (!localStorage.getItem('theme')) {
+        if (getMode() === 'auto') {
             document.documentElement.classList.toggle('dark', e.matches);
-            updateIcons();
         }
     });
 })();
