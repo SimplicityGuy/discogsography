@@ -22,6 +22,7 @@ from api.queries.gap_queries import (
     get_master_gaps,
     get_master_metadata,
 )
+from common.query_debug import execute_sql
 
 
 logger = structlog.get_logger(__name__)
@@ -75,7 +76,8 @@ async def collection_formats(
     user_id: str = current_user.get("sub", "")
 
     async with _pg_pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(
+        await execute_sql(
+            cur,
             """
             SELECT DISTINCT f->>'name' AS format_name
             FROM user_collections, jsonb_array_elements(formats) AS f

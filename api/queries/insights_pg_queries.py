@@ -12,6 +12,8 @@ from typing import Any, cast
 
 import structlog
 
+from common.query_debug import execute_sql
+
 
 logger = structlog.get_logger(__name__)
 
@@ -49,7 +51,7 @@ async def _query_single_entity(pool: Any, entity_type: str, fields: list[tuple[s
     """Run a single entity completeness query and return the result dict."""
     async with pool.connection() as conn, conn.cursor() as cursor:
         cursor = cast("Any", cursor)
-        await cursor.execute(_COMBINED_QUERIES[entity_type])
+        await execute_sql(cursor, _COMBINED_QUERIES[entity_type])
         row = await cursor.fetchone()
 
     total_count = row[0] if row else 0
