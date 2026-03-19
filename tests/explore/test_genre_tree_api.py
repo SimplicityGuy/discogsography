@@ -129,8 +129,10 @@ class TestGenreTreeEndpoint:
             response1 = test_client.get("/api/genre-tree")
             assert response1.status_code == 200
 
-            # Expire the cache by backdating the timestamp
-            mod._genre_tree_cache_time = 0
+            # Expire the cache by backdating the timestamp beyond TTL
+            import time
+
+            mod._genre_tree_cache_time = time.monotonic() - mod._GENRE_TREE_TTL - 1
 
             # Second call — cache expired, should query again
             response2 = test_client.get("/api/genre-tree")
