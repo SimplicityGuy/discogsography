@@ -51,6 +51,13 @@ from common.postgres_resilient import (
     AsyncResilientPostgreSQL,
     ResilientPostgreSQLPool,
 )
+from common.query_debug import (
+    execute_sql,
+    is_cypher_profiling,
+    is_debug,
+    log_cypher_query,
+    log_sql_query,
+)
 from common.rabbitmq_resilient import (
     AsyncResilientRabbitMQ,
     ResilientRabbitMQConnection,
@@ -107,7 +114,12 @@ __all__ = [
     "_hmac_sha1_signature",
     "_oauth_escape",
     "async_resilient_connection",
+    "execute_sql",
     "get_config",
+    "is_cypher_profiling",
+    "is_debug",
+    "log_cypher_query",
+    "log_sql_query",
     "normalize_artist",
     "normalize_id",
     "normalize_item_with_id",
