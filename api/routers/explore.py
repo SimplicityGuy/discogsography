@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
+from neo4j.exceptions import ClientError as Neo4jClientError
 import structlog
 
 import api.dependencies as _dependencies
@@ -261,12 +262,21 @@ async def find_path(
             status_code=404,
         )
 
-    raw = await find_shortest_path(
-        _neo4j_driver,
-        str(from_node["id"]),
-        str(to_node["id"]),
-        max_depth=max_depth,
-    )
+    try:
+        raw = await find_shortest_path(
+            _neo4j_driver,
+            str(from_node["id"]),
+            str(to_node["id"]),
+            max_depth=max_depth,
+        )
+    except Neo4jClientError as exc:
+        if "TransactionTimedOut" in str(exc):
+            logger.warning("⏱️ Path query timed out", from_name=from_name, to_name=to_name, max_depth=max_depth)
+            return JSONResponse(
+                content={"error": "Path query timed out — try reducing max_depth or searching closer nodes"},
+                status_code=504,
+            )
+        raise
 
     if raw is None:
         return JSONResponse(content=PathResponse(found=False, length=None, path=[]).model_dump())
