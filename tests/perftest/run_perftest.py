@@ -109,16 +109,33 @@ def run_endpoint(
     url: str,
     params: dict[str, str] | None,
     iterations: int,
+    *,
+    max_429_retries: int = 5,
+    base_429_delay: float = 2.0,
 ) -> dict[str, Any]:
-    """Run an endpoint N times, collect results and stats."""
+    """Run an endpoint N times, collect results and stats.
+
+    If a 429 (Too Many Requests) response is received, pauses with
+    exponential backoff and retries that iteration.
+    """
     runs = []
     for i in range(iterations):
-        result = timed_get(client, url, params)
+        retries = 0
+        while True:
+            result = timed_get(client, url, params)
+            if result["status"] == 429 and retries < max_429_retries:
+                retries += 1
+                delay = base_429_delay * (2 ** (retries - 1))
+                print(f"  [{i + 1}/{iterations}] {name} -> 429 rate limited, pausing {delay:.0f}s (retry {retries}/{max_429_retries})")
+                time.sleep(delay)
+                continue
+            break
         runs.append(result)
         status_indicator = f"{result['status']}" if result["status"] else f"ERR: {result['error']}"
-        print(f"  [{i + 1}/{iterations}] {name} -> {status_indicator} in {result['elapsed']:.4f}s")
+        retry_note = f" (after {retries} 429 retries)" if retries > 0 else ""
+        print(f"  [{i + 1}/{iterations}] {name} -> {status_indicator} in {result['elapsed']:.4f}s{retry_note}")
 
-    timings = [r["elapsed"] for r in runs if r["error"] is None]
+    timings = [r["elapsed"] for r in runs if r["error"] is None and r["status"] != 429]
     errors = sum(1 for r in runs if r["error"] is not None or r["status"] >= 400)
 
     return {
@@ -142,14 +159,26 @@ def resolve_ids(
     base_url: str,
     entities: list[str],
     entity_type: str,
+    *,
+    max_429_retries: int = 5,
+    base_429_delay: float = 2.0,
 ) -> dict[str, int | None]:
     """Resolve entity names to node IDs via autocomplete."""
     ids: dict[str, int | None] = {}
     for name in entities:
-        resp = client.get(
-            f"{base_url}/api/autocomplete",
-            params={"q": name, "type": entity_type, "limit": "1"},
-        )
+        retries = 0
+        while True:
+            resp = client.get(
+                f"{base_url}/api/autocomplete",
+                params={"q": name, "type": entity_type, "limit": "1"},
+            )
+            if resp.status_code == 429 and retries < max_429_retries:
+                retries += 1
+                delay = base_429_delay * (2 ** (retries - 1))
+                print(f"  {entity_type} '{name}' -> 429 rate limited, pausing {delay:.0f}s (retry {retries}/{max_429_retries})")
+                time.sleep(delay)
+                continue
+            break
         if resp.status_code == 200:
             data = resp.json()
             results = data if isinstance(data, list) else data.get("results", [])
