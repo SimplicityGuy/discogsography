@@ -12,6 +12,7 @@ import structlog
 import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.models import PathNode, PathResponse
+from api.queries import collaborator_queries
 from api.queries.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
     COUNT_DISPATCH,
@@ -170,6 +171,33 @@ async def genre_emergence(
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     result = await get_genre_emergence(_neo4j_driver, before_year)
     return JSONResponse(content=result)
+
+
+@router.get("/api/collaborators/{artist_id}")
+async def get_collaborators(
+    artist_id: str,
+    limit: int = Query(20, ge=1, le=100),
+) -> JSONResponse:
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    identity = await collaborator_queries.get_artist_identity(_neo4j_driver, artist_id)
+    if not identity:
+        return JSONResponse(content={"error": f"Artist '{artist_id}' not found"}, status_code=404)
+
+    collaborators, total = await asyncio.gather(
+        collaborator_queries.get_collaborators(_neo4j_driver, artist_id, limit=limit),
+        collaborator_queries.count_collaborators(_neo4j_driver, artist_id),
+    )
+
+    return JSONResponse(
+        content={
+            "artist_id": identity["artist_id"],
+            "artist_name": identity["artist_name"],
+            "collaborators": collaborators,
+            "total": total,
+        }
+    )
 
 
 @router.get("/api/node/{node_id}")
