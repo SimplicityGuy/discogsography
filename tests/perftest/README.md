@@ -76,19 +76,13 @@ docker run --rm \
   discogsography/perftest
 ```
 
-### With API Log Collection
+### Collecting API Logs
 
-Mount the API logs volume as read-only to copy `api.log` and `profiling.log` into the results:
+After the performance test completes, copy logs from the API container into your results directory:
 
 ```bash
-mkdir -p perftest-results
-
-docker run --rm \
-  --network discogsography_discogsography \
-  -v "$(pwd)/perftest-results:/results" \
-  -v "$(pwd)/tests/perftest/config.yaml:/config/config.yaml:ro" \
-  -v discogsography_api_logs:/api-logs:ro \
-  discogsography/perftest
+docker cp discogsography-api:/logs/api.log ./perftest-results/
+docker cp discogsography-api:/logs/profiling.log ./perftest-results/
 ```
 
 > **Tip:** To capture Cypher profiling data, restart the API with `LOG_LEVEL=DEBUG` and `CYPHER_PROFILING=true` before running the performance test. This writes query execution plans to `profiling.log`.
@@ -102,7 +96,6 @@ docker run --rm \
   --network discogsography_discogsography \
   -v "$(pwd)/perftest-results:/results" \
   -v "$(pwd)/my-config.yaml:/config/config.yaml:ro" \
-  -v discogsography_api_logs:/api-logs:ro \
   discogsography/perftest
 ```
 
@@ -153,8 +146,8 @@ After a run, `perftest-results/` contains:
 |---|---|
 | `perftest-report.txt` | Human-readable report with per-endpoint stats grouped by category, top 10 slowest endpoints, and summary |
 | `perftest-results.json` | Machine-readable JSON with full timing data for every individual run |
-| `api.log` | API service log (if API logs volume was mounted) |
-| `profiling.log` | Cypher profiling output (if API logs volume was mounted and profiling was enabled) |
+| `api.log` | API service log (copied via `docker cp` after the run) |
+| `profiling.log` | Cypher profiling output (copied via `docker cp` after the run, requires `CYPHER_PROFILING=true`) |
 
 ### Example Report Output
 

@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir httpx pyyaml
 # Create non-root user and directories
 RUN groupadd -r perftest && \
     useradd -r -l -g perftest -m -s /bin/sh perftest && \
-    mkdir -p /app /results /api-logs && \
+    mkdir -p /app /results && \
     chown -R perftest:perftest /app /results
 
 WORKDIR /app
