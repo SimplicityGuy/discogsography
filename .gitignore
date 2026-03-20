@@ -327,3 +327,8 @@ Temporary Items
 ###
 .nyc_output/
 explore/coverage-e2e/
+
+###
+# Performance test results
+###
+perftest-results/

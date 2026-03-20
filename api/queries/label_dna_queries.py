@@ -7,7 +7,7 @@ and label-to-label similarity via cosine similarity on genre vectors.
 
 from typing import Any
 
-from api.queries.neo4j_queries import _run_query, _run_single
+from api.queries.helpers import run_query, run_single
 from api.queries.similarity import cosine_similarity, to_genre_vector
 from common import AsyncResilientNeo4jDriver
 
@@ -27,7 +27,7 @@ async def get_label_identity(driver: AsyncResilientNeo4jDriver, label_id: str) -
            size(releases) AS release_count,
            count(DISTINCT a) AS artist_count
     """
-    return await _run_single(driver, cypher, label_id=label_id)
+    return await run_single(driver, cypher, label_id=label_id)
 
 
 async def get_label_genre_profile(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
@@ -38,7 +38,7 @@ async def get_label_genre_profile(driver: AsyncResilientNeo4jDriver, label_id: s
     RETURN name, count
     ORDER BY count DESC
     """
-    return await _run_query(driver, cypher, label_id=label_id)
+    return await run_query(driver, cypher, label_id=label_id)
 
 
 async def get_label_style_profile(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
@@ -49,7 +49,7 @@ async def get_label_style_profile(driver: AsyncResilientNeo4jDriver, label_id: s
     RETURN name, count
     ORDER BY count DESC
     """
-    return await _run_query(driver, cypher, label_id=label_id)
+    return await run_query(driver, cypher, label_id=label_id)
 
 
 async def get_label_decade_profile(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
@@ -61,7 +61,7 @@ async def get_label_decade_profile(driver: AsyncResilientNeo4jDriver, label_id: 
     RETURN decade, count
     ORDER BY decade
     """
-    return await _run_query(driver, cypher, label_id=label_id)
+    return await run_query(driver, cypher, label_id=label_id)
 
 
 async def get_label_active_years(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[int]:
@@ -72,7 +72,7 @@ async def get_label_active_years(driver: AsyncResilientNeo4jDriver, label_id: st
     RETURN DISTINCT r.year AS year
     ORDER BY year
     """
-    rows = await _run_query(driver, cypher, label_id=label_id)
+    rows = await run_query(driver, cypher, label_id=label_id)
     return [row["year"] for row in rows]
 
 
@@ -86,7 +86,7 @@ async def get_label_format_profile(driver: AsyncResilientNeo4jDriver, label_id: 
     RETURN name, count
     ORDER BY count DESC
     """
-    return await _run_query(driver, cypher, label_id=label_id)
+    return await run_query(driver, cypher, label_id=label_id)
 
 
 async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
@@ -115,7 +115,7 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     ORDER BY release_count DESC
     LIMIT 200
     """
-    return await _run_query(driver, cypher, label_id=label_id, min_releases=MIN_RELEASES)
+    return await run_query(driver, cypher, label_id=label_id, min_releases=MIN_RELEASES)
 
 
 def compute_similar_labels(

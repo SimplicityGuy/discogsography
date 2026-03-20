@@ -13,22 +13,8 @@ Graph model additions (curator):
 import math
 from typing import Any
 
+from api.queries.helpers import run_count, run_query
 from common import AsyncResilientNeo4jDriver
-
-
-async def _run_query(driver: AsyncResilientNeo4jDriver, cypher: str, **params: Any) -> list[dict[str, Any]]:
-    """Execute a Cypher query and return all results as a list of dicts."""
-    async with driver.session() as session:
-        result = await session.run(cypher, params)
-        return [dict(record) async for record in result]
-
-
-async def _run_count(driver: AsyncResilientNeo4jDriver, cypher: str, **params: Any) -> int:
-    """Execute a count Cypher query and return the integer result."""
-    async with driver.session() as session:
-        result = await session.run(cypher, params)
-        record = await result.single()
-        return int(record["total"]) if record else 0
 
 
 async def get_user_collection(
@@ -65,8 +51,8 @@ async def get_user_collection(
     RETURN count(r) AS total
     """
     results, total = (
-        await _run_query(driver, cypher, user_id=user_id, limit=limit, offset=offset),
-        await _run_count(driver, count_cypher, user_id=user_id),
+        await run_query(driver, cypher, user_id=user_id, limit=limit, offset=offset),
+        await run_count(driver, count_cypher, user_id=user_id),
     )
     return results, total
 
@@ -104,8 +90,8 @@ async def get_user_wantlist(
     RETURN count(r) AS total
     """
     results, total = (
-        await _run_query(driver, cypher, user_id=user_id, limit=limit, offset=offset),
-        await _run_count(driver, count_cypher, user_id=user_id),
+        await run_query(driver, cypher, user_id=user_id, limit=limit, offset=offset),
+        await run_count(driver, count_cypher, user_id=user_id),
     )
     return results, total
 
@@ -142,7 +128,7 @@ async def get_user_recommendations(
     ORDER BY score DESC
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, user_id=user_id, limit=limit)
+    return await run_query(driver, cypher, user_id=user_id, limit=limit)
 
 
 async def get_user_collection_stats(
@@ -188,13 +174,13 @@ async def get_user_collection_stats(
     """
 
     genres, decades, labels, total, unique_artists, unique_labels, avg_rating_rows = (
-        await _run_query(driver, genre_cypher, user_id=user_id),
-        await _run_query(driver, decade_cypher, user_id=user_id),
-        await _run_query(driver, label_cypher, user_id=user_id),
-        await _run_count(driver, total_cypher, user_id=user_id),
-        await _run_count(driver, artists_cypher, user_id=user_id),
-        await _run_count(driver, unique_labels_cypher, user_id=user_id),
-        await _run_query(driver, avg_rating_cypher, user_id=user_id),
+        await run_query(driver, genre_cypher, user_id=user_id),
+        await run_query(driver, decade_cypher, user_id=user_id),
+        await run_query(driver, label_cypher, user_id=user_id),
+        await run_count(driver, total_cypher, user_id=user_id),
+        await run_count(driver, artists_cypher, user_id=user_id),
+        await run_count(driver, unique_labels_cypher, user_id=user_id),
+        await run_query(driver, avg_rating_cypher, user_id=user_id),
     )
 
     avg_rating = avg_rating_rows[0]["average"] if avg_rating_rows and avg_rating_rows[0]["average"] is not None else None
@@ -237,7 +223,7 @@ async def get_user_collection_timeline(
            genres, styles, labels
     ORDER BY bucket
     """
-    rows = await _run_query(driver, timeline_cypher, user_id=user_id, multiplier=multiplier)
+    rows = await run_query(driver, timeline_cypher, user_id=user_id, multiplier=multiplier)
 
     # Aggregate per-bucket data
     timeline: list[dict[str, Any]] = []
@@ -341,7 +327,7 @@ async def get_user_collection_evolution(
     RETURN r.year AS year, v.name AS value, count(r) AS count
     ORDER BY year, count DESC
     """
-    rows = await _run_query(driver, cypher, user_id=user_id)
+    rows = await run_query(driver, cypher, user_id=user_id)
 
     # Group by year
     year_data: dict[int, dict[str, int]] = {}
@@ -386,7 +372,7 @@ async def check_releases_user_status(
            c IS NOT NULL AS in_collection,
            w IS NOT NULL AS in_wantlist
     """
-    rows = await _run_query(driver, cypher, user_id=user_id, release_ids=release_ids)
+    rows = await run_query(driver, cypher, user_id=user_id, release_ids=release_ids)
     return {
         row["release_id"]: {
             "in_collection": row["in_collection"],

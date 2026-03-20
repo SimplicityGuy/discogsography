@@ -27,6 +27,7 @@ from psycopg.rows import dict_row
 import structlog
 
 from common import AsyncPostgreSQLPool
+from common.query_debug import execute_sql
 
 
 logger = structlog.get_logger(__name__)
@@ -149,7 +150,7 @@ async def _run_results(
     )
     params = [q, *year_params, *genre_params, limit, offset]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(query, params)  # nosemgrep
+        await execute_sql(cur, query, params)  # nosemgrep
         rows = await cur.fetchall()
     return [dict(r) for r in rows]
 
@@ -179,7 +180,7 @@ async def _run_total(
     )
     params = [q, *year_params, *genre_params]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(query, params)  # nosemgrep
+        await execute_sql(cur, query, params)  # nosemgrep
         row = await cur.fetchone()
     return int(row["total"]) if row else 0
 
@@ -204,7 +205,7 @@ async def _run_type_counts(pool: AsyncPostgreSQLPool, q: str, types: list[str]) 
     union_sql = sql.SQL(" UNION ALL ").join(union_parts)
     query = sql.SQL("WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq) {union_sql}").format(union_sql=union_sql)
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(query, [q])  # nosemgrep
+        await execute_sql(cur, query, [q])  # nosemgrep
         rows = await cur.fetchall()
     return {row["type"]: int(row["cnt"]) for row in rows}
 
@@ -222,7 +223,7 @@ async def _run_genre_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int]
         " LIMIT 20"
     )
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(query, [q])
+        await execute_sql(cur, query, [q])
         rows = await cur.fetchall()
     return {row["genre"]: int(row["cnt"]) for row in rows}
 
@@ -247,7 +248,7 @@ async def _run_decade_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int
         " ORDER BY decade"
     )
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(query, [q])
+        await execute_sql(cur, query, [q])
         rows = await cur.fetchall()
     return {row["decade"]: int(row["cnt"]) for row in rows}
 
