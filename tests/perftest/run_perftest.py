@@ -211,18 +211,18 @@ def build_test_plan(
     tests: list[dict[str, Any]] = []
 
     # --- Static endpoints (no parameters, do DB queries) ---
-    static_endpoints = [
-        ("explore/year-range", f"{base}/api/explore/year-range"),
-        ("explore/genre-emergence", f"{base}/api/explore/genre-emergence"),
-        ("insights/top-artists", f"{base}/api/insights/top-artists"),
-        ("insights/genre-trends", f"{base}/api/insights/genre-trends"),
-        ("insights/label-longevity", f"{base}/api/insights/label-longevity"),
-        ("insights/this-month", f"{base}/api/insights/this-month"),
-        ("insights/data-completeness", f"{base}/api/insights/data-completeness"),
-        ("insights/status", f"{base}/api/insights/status"),
+    static_endpoints: list[tuple[str, str, dict[str, str] | None]] = [
+        ("explore/year-range", f"{base}/api/explore/year-range", None),
+        ("explore/genre-emergence", f"{base}/api/explore/genre-emergence", {"before_year": "2025"}),
+        ("insights/top-artists", f"{base}/api/insights/top-artists", None),
+        ("insights/genre-trends", f"{base}/api/insights/genre-trends", None),
+        ("insights/label-longevity", f"{base}/api/insights/label-longevity", None),
+        ("insights/this-month", f"{base}/api/insights/this-month", None),
+        ("insights/data-completeness", f"{base}/api/insights/data-completeness", None),
+        ("insights/status", f"{base}/api/insights/status", None),
     ]
-    for name, url in static_endpoints:
-        tests.append({"name": name, "url": url, "params": None})
+    for name, url, params in static_endpoints:
+        tests.append({"name": name, "url": url, "params": params})
 
     # --- Autocomplete (per entity type + name) ---
     for entity_type, entities in [
@@ -341,6 +341,60 @@ def build_test_plan(
             }
         )
 
+    # --- Node Details (requires resolved IDs) ---
+    for artist_name, artist_id in artist_ids.items():
+        if artist_id is None:
+            continue
+        tests.append(
+            {
+                "name": f"node-details/artist/{artist_name}",
+                "url": f"{base}/api/node/{artist_id}",
+                "params": {"type": "artist"},
+            }
+        )
+    for label_name, label_id in label_ids.items():
+        if label_id is None:
+            continue
+        tests.append(
+            {
+                "name": f"node-details/label/{label_name}",
+                "url": f"{base}/api/node/{label_id}",
+                "params": {"type": "label"},
+            }
+        )
+
+    # --- Expand (requires resolved IDs, tests releases category) ---
+    for artist_name, artist_id in artist_ids.items():
+        if artist_id is None:
+            continue
+        tests.append(
+            {
+                "name": f"expand/artist/{artist_name}/releases",
+                "url": f"{base}/api/expand",
+                "params": {
+                    "node_id": str(artist_id),
+                    "type": "artist",
+                    "category": "releases",
+                    "limit": "20",
+                },
+            }
+        )
+    for label_name, label_id in label_ids.items():
+        if label_id is None:
+            continue
+        tests.append(
+            {
+                "name": f"expand/label/{label_name}/releases",
+                "url": f"{base}/api/expand",
+                "params": {
+                    "node_id": str(label_id),
+                    "type": "label",
+                    "category": "releases",
+                    "limit": "20",
+                },
+            }
+        )
+
     return tests
 
 
@@ -349,9 +403,26 @@ def build_test_plan(
 # ---------------------------------------------------------------------------
 
 
+def _verify_output_dir(output_dir: Path) -> None:
+    """Verify the output directory exists and is writable.
+
+    Creates the directory if needed. Exits with a clear message if the
+    directory cannot be written to (e.g. Docker volume permission issues).
+    """
+    output_dir.mkdir(parents=True, exist_ok=True)
+    test_file = output_dir / ".write-test"
+    try:
+        test_file.write_text("ok")
+        test_file.unlink()
+    except OSError as exc:
+        print(f"ERROR: Output directory '{output_dir}' is not writable: {exc}")
+        print("  Hint: ensure the Docker volume mount has correct permissions.")
+        sys.exit(1)
+
+
 def write_report(results: list[dict[str, Any]], output_dir: Path) -> None:
     """Write JSON results and human-readable report."""
-    output_dir.mkdir(parents=True, exist_ok=True)
+    _verify_output_dir(output_dir)
 
     # JSON output
     json_path = output_dir / "perftest-results.json"
@@ -444,6 +515,9 @@ def main() -> None:
     iterations = config.get("iterations", 3)
     timeout = config.get("timeout", 30)
     base_url = config["api_base_url"]
+
+    # Verify output directory is writable before running tests
+    _verify_output_dir(Path(args.output))
 
     # Wait for API to be healthy
     if not wait_for_health(

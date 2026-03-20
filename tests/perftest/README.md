@@ -6,12 +6,12 @@ Sequential performance test runner for all Discogsography API query endpoints. M
 
 The performance test covers all API endpoints that execute database queries (Neo4j, PostgreSQL, or Redis):
 
-### Static Endpoints (no parameters)
+### Static Endpoints (no parameters or fixed parameters)
 
 | Endpoint | Database |
 |---|---|
 | `GET /api/explore/year-range` | Neo4j |
-| `GET /api/explore/genre-emergence` | Neo4j |
+| `GET /api/explore/genre-emergence?before_year=2025` | Neo4j |
 | `GET /api/insights/top-artists` | Neo4j (via insights proxy) |
 | `GET /api/insights/genre-trends` | Neo4j (via insights proxy) |
 | `GET /api/insights/label-longevity` | Neo4j (via insights proxy) |
@@ -37,6 +37,8 @@ The performance test covers all API endpoints that execute database queries (Neo
 | `GET /api/label/{id}/similar` | Each label | Neo4j |
 | `GET /api/label/dna/compare` | All labels combined | Neo4j |
 | `GET /api/recommend/similar/artist/{id}` | Each artist | Neo4j |
+| `GET /api/node/{id}` | Each artist and label | Neo4j |
+| `GET /api/expand` | Each artist (releases), each label (releases) | Neo4j |
 
 ## Prerequisites
 
