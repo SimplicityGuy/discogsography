@@ -81,18 +81,82 @@ async def get_artist_profile(driver: AsyncResilientNeo4jDriver, artist_id: str) 
     }
 
 
+async def _batch_artist_profiles(
+    driver: AsyncResilientNeo4jDriver,
+    candidate_ids: list[str],
+) -> dict[str, dict[str, Any]]:
+    """Fetch profiles for many artists in 4 batch queries (one per dimension).
+
+    Returns a dict mapping artist_id to {genres, styles, labels, collaborators}.
+    This replaces the N+1 pattern of calling get_artist_profile() per candidate.
+    """
+    genre_cypher = """
+    UNWIND $ids AS aid
+    MATCH (r:Release)-[:BY]->(a:Artist {id: aid}), (r)-[:IS]->(g:Genre)
+    WITH a.id AS artist_id, g.name AS name, count(DISTINCT r) AS count
+    RETURN artist_id, collect({name: name, count: count}) AS items
+    """
+    style_cypher = """
+    UNWIND $ids AS aid
+    MATCH (r:Release)-[:BY]->(a:Artist {id: aid}), (r)-[:IS]->(s:Style)
+    WITH a.id AS artist_id, s.name AS name, count(DISTINCT r) AS count
+    RETURN artist_id, collect({name: name, count: count}) AS items
+    """
+    label_cypher = """
+    UNWIND $ids AS aid
+    MATCH (r:Release)-[:BY]->(a:Artist {id: aid}), (r)-[:ON]->(l:Label)
+    WITH a.id AS artist_id, l.name AS name, count(DISTINCT r) AS count
+    RETURN artist_id, collect({name: name, count: count}) AS items
+    """
+    collab_cypher = """
+    UNWIND $ids AS aid
+    MATCH (r:Release)-[:BY]->(a:Artist {id: aid}), (r)-[:BY]->(other:Artist)
+    WHERE other.id <> aid
+    WITH a.id AS artist_id, other.name AS name, count(DISTINCT r) AS count
+    RETURN artist_id, collect({name: name, count: count}) AS items
+    """
+    genre_rows, style_rows, label_rows, collab_rows = await asyncio.gather(
+        run_query(driver, genre_cypher, ids=candidate_ids),
+        run_query(driver, style_cypher, ids=candidate_ids),
+        run_query(driver, label_cypher, ids=candidate_ids),
+        run_query(driver, collab_cypher, ids=candidate_ids),
+    )
+
+    profiles: dict[str, dict[str, Any]] = {}
+    for aid in candidate_ids:
+        profiles[aid] = {"genres": [], "styles": [], "labels": [], "collaborators": []}
+
+    for row in genre_rows:
+        if row["artist_id"] in profiles:
+            profiles[row["artist_id"]]["genres"] = row["items"]
+    for row in style_rows:
+        if row["artist_id"] in profiles:
+            profiles[row["artist_id"]]["styles"] = row["items"]
+    for row in label_rows:
+        if row["artist_id"] in profiles:
+            profiles[row["artist_id"]]["labels"] = row["items"]
+    for row in collab_rows:
+        if row["artist_id"] in profiles:
+            profiles[row["artist_id"]]["collaborators"] = row["items"]
+
+    return profiles
+
+
 async def get_candidate_artists(driver: AsyncResilientNeo4jDriver, artist_id: str) -> list[dict[str, Any]]:
     """Get candidate artists sharing genres with the target, with their full profiles.
 
     Returns each candidate with actual release counts per genre/style/label/collaborator
     (not just presence), so cosine similarity on the vectors is meaningful.
+
+    Profiles are fetched in 4 batch queries (one per dimension) instead of
+    200 x 4 individual queries, eliminating the N+1 pattern.
     """
     candidates_cypher = """
-    MATCH (r:Release)-[:BY]->(a:Artist {id: $artist_id}), (r)-[:IS]->(g:Genre)
+    MATCH (a:Artist {id: $artist_id})<-[:BY]-(r:Release)-[:IS]->(g:Genre)
     WITH a, collect(DISTINCT g.name) AS target_genres
     UNWIND target_genres AS genre_name
-    MATCH (r2:Release)-[:IS]->(g2:Genre {name: genre_name}), (r2)-[:BY]->(a2:Artist)
-    WHERE a2.id <> a.id
+    MATCH (g2:Genre {name: genre_name})<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
+    WHERE a2 <> a
     WITH a2, count(DISTINCT r2) AS shared_count
     WHERE shared_count >= $min_releases
     MATCH (r3:Release)-[:BY]->(a2)
@@ -106,11 +170,10 @@ async def get_candidate_artists(driver: AsyncResilientNeo4jDriver, artist_id: st
     if not candidates:
         return []
 
-    async def _fetch_profile(cand: dict[str, Any]) -> dict[str, Any]:
-        profile = await get_artist_profile(driver, cand["artist_id"])
-        return {**cand, **profile}
+    candidate_ids = [c["artist_id"] for c in candidates]
+    profiles = await _batch_artist_profiles(driver, candidate_ids)
 
-    return list(await asyncio.gather(*[_fetch_profile(c) for c in candidates]))
+    return [{**cand, **profiles.get(cand["artist_id"], {})} for cand in candidates]
 
 
 def compute_similar_artists(
