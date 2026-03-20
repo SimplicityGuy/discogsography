@@ -314,6 +314,61 @@ class TestExecuteSql:
         # Only one execute call — the query itself
         cursor.execute.assert_awaited_once_with("SELECT 1", None)
 
+    @pytest.mark.asyncio
+    async def test_profile_explain_failure_swallowed(self, tmp_path: Path) -> None:
+        """execute_sql swallows errors when EXPLAIN ANALYZE itself fails."""
+        log_file = tmp_path / "profiling.log"
+
+        call_count = 0
+
+        async def side_effect(*_args: object, **_kwargs: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                raise RuntimeError("EXPLAIN not supported")
+
+        cursor = AsyncMock()
+        cursor.execute = AsyncMock(side_effect=side_effect)
+
+        with (
+            patch("common.query_debug.is_db_profiling", return_value=True),
+            patch("common.query_debug.PROFILING_LOG_PATH", log_file),
+        ):
+            import common.query_debug as mod
+
+            mod._profiling_logger = None
+
+            from common.query_debug import execute_sql
+
+            # Should not raise — the EXPLAIN failure is swallowed
+            await execute_sql(cursor, "SELECT 1")
+
+        assert call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_explain_on_error_failure_swallowed(self, tmp_path: Path) -> None:
+        """execute_sql swallows errors when EXPLAIN (on error path) itself fails."""
+        log_file = tmp_path / "profiling.log"
+
+        async def always_fail(*_args: object, **_kwargs: object) -> None:
+            raise RuntimeError("DB unreachable")
+
+        cursor = AsyncMock()
+        cursor.execute = AsyncMock(side_effect=always_fail)
+
+        with (
+            patch("common.query_debug.is_db_profiling", return_value=True),
+            patch("common.query_debug.PROFILING_LOG_PATH", log_file),
+            pytest.raises(RuntimeError, match="DB unreachable"),
+        ):
+            import common.query_debug as mod
+
+            mod._profiling_logger = None
+
+            from common.query_debug import execute_sql
+
+            await execute_sql(cursor, "SELECT 1")
+
 
 class TestLogProfileResult:
     """Test log_profile_result function."""
