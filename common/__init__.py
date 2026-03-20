@@ -53,7 +53,7 @@ from common.postgres_resilient import (
 )
 from common.query_debug import (
     execute_sql,
-    is_cypher_profiling,
+    is_db_profiling,
     is_debug,
     log_cypher_query,
     log_sql_query,
@@ -116,7 +116,7 @@ __all__ = [
     "async_resilient_connection",
     "execute_sql",
     "get_config",
-    "is_cypher_profiling",
+    "is_db_profiling",
     "is_debug",
     "log_cypher_query",
     "log_sql_query",

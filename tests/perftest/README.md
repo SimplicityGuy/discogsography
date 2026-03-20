@@ -85,7 +85,7 @@ docker cp discogsography-api:/logs/api.log ./perftest-results/
 docker cp discogsography-api:/logs/profiling.log ./perftest-results/
 ```
 
-> **Tip:** To capture Cypher profiling data, restart the API with `LOG_LEVEL=DEBUG` and `CYPHER_PROFILING=true` before running the performance test. This writes query execution plans to `profiling.log`.
+> **Tip:** To capture database profiling data, restart the API with `LOG_LEVEL=DEBUG` and `DB_PROFILING=true` before running the performance test. This writes Cypher PROFILE and SQL EXPLAIN (ANALYZE, BUFFERS, VERBOSE) execution plans to `profiling.log`.
 
 ### With Custom Config
 
@@ -147,7 +147,7 @@ After a run, `perftest-results/` contains:
 | `perftest-report.txt` | Human-readable report with per-endpoint stats grouped by category, top 10 slowest endpoints, and summary |
 | `perftest-results.json` | Machine-readable JSON with full timing data for every individual run |
 | `api.log` | API service log (copied via `docker cp` after the run) |
-| `profiling.log` | Cypher profiling output (copied via `docker cp` after the run, requires `CYPHER_PROFILING=true`) |
+| `profiling.log` | Database profiling output — Cypher PROFILE and SQL EXPLAIN plans (copied via `docker cp` after the run, requires `DB_PROFILING=true`) |
 
 ### Example Report Output
 

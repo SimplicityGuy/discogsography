@@ -4,7 +4,7 @@ Replaces duplicated ``_run_query`` / ``_run_single`` / ``_run_count`` across
 multiple query modules with a single set of helpers that add:
 
 - DEBUG-level query logging via :func:`common.query_debug.log_cypher_query`
-- Optional ``PROFILE`` prefix when Cypher profiling is enabled
+- Optional ``PROFILE`` prefix when database profiling is enabled
 - Best-effort ``EXPLAIN`` after query failure (when profiling is enabled)
 """
 
@@ -14,7 +14,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from common.query_debug import (
-    is_cypher_profiling,
+    is_db_profiling,
     log_cypher_query,
     log_explain_result,
     log_profile_result,
@@ -74,7 +74,7 @@ async def run_query(
     """
     log_cypher_query(cypher, params)
 
-    profiling = is_cypher_profiling()
+    profiling = is_db_profiling()
     actual_cypher = f"PROFILE {cypher}" if profiling else cypher
 
     run_kwargs: dict[str, Any] = {}
@@ -121,7 +121,7 @@ async def run_single(
     """
     log_cypher_query(cypher, params)
 
-    profiling = is_cypher_profiling()
+    profiling = is_db_profiling()
     actual_cypher = f"PROFILE {cypher}" if profiling else cypher
 
     run_kwargs: dict[str, Any] = {}
@@ -170,7 +170,7 @@ async def run_count(
     """
     log_cypher_query(cypher, params)
 
-    profiling = is_cypher_profiling()
+    profiling = is_db_profiling()
     actual_cypher = f"PROFILE {cypher}" if profiling else cypher
 
     run_kwargs: dict[str, Any] = {}

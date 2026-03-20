@@ -53,53 +53,53 @@ class TestIsDebug:
         assert is_debug() is False
 
 
-class TestIsCypherProfiling:
-    """Test is_cypher_profiling function."""
+class TestIsDbProfiling:
+    """Test is_db_profiling function."""
 
     def test_returns_true_when_debug_and_env_true(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Returns True when debug AND CYPHER_PROFILING=true."""
+        """Returns True when debug AND DB_PROFILING=true."""
         logging.getLogger().setLevel(logging.DEBUG)
-        monkeypatch.setenv("CYPHER_PROFILING", "true")
+        monkeypatch.setenv("DB_PROFILING", "true")
 
-        from common.query_debug import is_cypher_profiling
+        from common.query_debug import is_db_profiling
 
-        assert is_cypher_profiling() is True
+        assert is_db_profiling() is True
 
     def test_returns_true_case_insensitive(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Returns True with case-insensitive env var."""
         logging.getLogger().setLevel(logging.DEBUG)
-        monkeypatch.setenv("CYPHER_PROFILING", "TRUE")
+        monkeypatch.setenv("DB_PROFILING", "TRUE")
 
-        from common.query_debug import is_cypher_profiling
+        from common.query_debug import is_db_profiling
 
-        assert is_cypher_profiling() is True
+        assert is_db_profiling() is True
 
     def test_returns_false_when_not_debug(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Returns False when not at DEBUG level."""
         logging.getLogger().setLevel(logging.INFO)
-        monkeypatch.setenv("CYPHER_PROFILING", "true")
+        monkeypatch.setenv("DB_PROFILING", "true")
 
-        from common.query_debug import is_cypher_profiling
+        from common.query_debug import is_db_profiling
 
-        assert is_cypher_profiling() is False
+        assert is_db_profiling() is False
 
     def test_returns_false_when_env_not_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Returns False when CYPHER_PROFILING is not set."""
+        """Returns False when DB_PROFILING is not set."""
         logging.getLogger().setLevel(logging.DEBUG)
-        monkeypatch.delenv("CYPHER_PROFILING", raising=False)
+        monkeypatch.delenv("DB_PROFILING", raising=False)
 
-        from common.query_debug import is_cypher_profiling
+        from common.query_debug import is_db_profiling
 
-        assert is_cypher_profiling() is False
+        assert is_db_profiling() is False
 
     def test_returns_false_when_env_is_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Returns False when CYPHER_PROFILING=false."""
+        """Returns False when DB_PROFILING=false."""
         logging.getLogger().setLevel(logging.DEBUG)
-        monkeypatch.setenv("CYPHER_PROFILING", "false")
+        monkeypatch.setenv("DB_PROFILING", "false")
 
-        from common.query_debug import is_cypher_profiling
+        from common.query_debug import is_db_profiling
 
-        assert is_cypher_profiling() is False
+        assert is_db_profiling() is False
 
 
 class TestGetProfilingLogger:
@@ -114,7 +114,7 @@ class TestGetProfilingLogger:
 
             logger = get_profiling_logger()
 
-        assert logger.name == "cypher_profiling"
+        assert logger.name == "db_profiling"
         assert logger.propagate is False
         assert len(logger.handlers) >= 1
 
@@ -214,7 +214,7 @@ class TestExecuteSql:
 
         await execute_sql(cursor, "SELECT 1", {"x": 42})
 
-        cursor.execute.assert_awaited_once_with("SELECT 1", {"x": 42})
+        cursor.execute.assert_any_await("SELECT 1", {"x": 42})
 
     @pytest.mark.asyncio
     async def test_logs_at_debug(self, caplog: pytest.LogCaptureFixture) -> None:
@@ -238,6 +238,80 @@ class TestExecuteSql:
 
         await execute_sql(cursor, "SELECT 1")
 
+        cursor.execute.assert_any_await("SELECT 1", None)
+
+    @pytest.mark.asyncio
+    async def test_profiles_sql_when_enabled(self, tmp_path: Path) -> None:
+        """execute_sql runs EXPLAIN (ANALYZE, BUFFERS, VERBOSE) when profiling enabled."""
+        log_file = tmp_path / "profiling.log"
+        cursor = AsyncMock()
+        cursor.fetchall = AsyncMock(return_value=[("Seq Scan on artists",), ("  rows=100",)])
+
+        with (
+            patch("common.query_debug.is_db_profiling", return_value=True),
+            patch("common.query_debug.PROFILING_LOG_PATH", log_file),
+        ):
+            import common.query_debug as mod
+
+            mod._profiling_logger = None
+
+            from common.query_debug import execute_sql
+
+            await execute_sql(cursor, "SELECT * FROM artists", {"id": 1})
+
+        # Should have called execute twice: once for the query, once for EXPLAIN
+        assert cursor.execute.await_count == 2
+
+        content = log_file.read_text()
+        assert "EXPLAIN (ANALYZE, BUFFERS, VERBOSE) result for SQL query:" in content
+        assert "SELECT * FROM artists" in content
+        assert "Seq Scan on artists" in content
+
+    @pytest.mark.asyncio
+    async def test_explain_on_sql_error(self, tmp_path: Path) -> None:
+        """execute_sql runs EXPLAIN (without ANALYZE) on query failure."""
+        log_file = tmp_path / "profiling.log"
+
+        call_count = 0
+
+        async def side_effect(*_args: object, **_kwargs: object) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise RuntimeError("relation does not exist")
+
+        cursor = AsyncMock()
+        cursor.execute = AsyncMock(side_effect=side_effect)
+        cursor.fetchall = AsyncMock(return_value=[("Seq Scan",)])
+
+        with (
+            patch("common.query_debug.is_db_profiling", return_value=True),
+            patch("common.query_debug.PROFILING_LOG_PATH", log_file),
+            pytest.raises(RuntimeError, match="relation does not exist"),
+        ):
+            import common.query_debug as mod
+
+            mod._profiling_logger = None
+
+            from common.query_debug import execute_sql
+
+            await execute_sql(cursor, "SELECT * FROM bad_table")
+
+        content = log_file.read_text()
+        assert "EXPLAIN (after error) for SQL query:" in content
+        assert "RuntimeError: relation does not exist" in content
+
+    @pytest.mark.asyncio
+    async def test_no_profiling_when_disabled(self) -> None:
+        """execute_sql does not run EXPLAIN when profiling is disabled."""
+        cursor = AsyncMock()
+
+        with patch("common.query_debug.is_db_profiling", return_value=False):
+            from common.query_debug import execute_sql
+
+            await execute_sql(cursor, "SELECT 1")
+
+        # Only one execute call — the query itself
         cursor.execute.assert_awaited_once_with("SELECT 1", None)
 
 
@@ -314,3 +388,59 @@ class TestLogExplainResult:
         assert "MATCH (n) RETURN n" in content
         assert "Original error: ValueError: Connection timeout" in content
         assert "ProduceResults" in content
+
+
+class TestLogSqlProfileResult:
+    """Test log_sql_profile_result function."""
+
+    def test_writes_sql_profile_to_profiling_logger(self, tmp_path: Path) -> None:
+        """Writes SQL EXPLAIN ANALYZE results to profiling log."""
+        log_file = tmp_path / "profiling.log"
+
+        with patch("common.query_debug.PROFILING_LOG_PATH", log_file):
+            import common.query_debug as mod
+
+            mod._profiling_logger = None
+
+            from common.query_debug import log_sql_profile_result
+
+            log_sql_profile_result(
+                "SELECT * FROM artists WHERE id = 1",
+                {"id": 1},
+                "Seq Scan on artists\n  rows=100\n  Buffers: shared hit=5",
+            )
+
+        content = log_file.read_text()
+        assert "EXPLAIN (ANALYZE, BUFFERS, VERBOSE) result for SQL query:" in content
+        assert "SELECT * FROM artists WHERE id = 1" in content
+        assert "Seq Scan on artists" in content
+        assert "Buffers: shared hit=5" in content
+
+
+class TestLogSqlExplainResult:
+    """Test log_sql_explain_result function."""
+
+    def test_writes_sql_explain_with_error_info(self, tmp_path: Path) -> None:
+        """Writes SQL EXPLAIN results with original error to profiling log."""
+        log_file = tmp_path / "profiling.log"
+
+        original_error = RuntimeError("relation does not exist")
+
+        with patch("common.query_debug.PROFILING_LOG_PATH", log_file):
+            import common.query_debug as mod
+
+            mod._profiling_logger = None
+
+            from common.query_debug import log_sql_explain_result
+
+            log_sql_explain_result(
+                "SELECT * FROM bad_table",
+                None,
+                "Seq Scan on bad_table",
+                original_error,
+            )
+
+        content = log_file.read_text()
+        assert "EXPLAIN (after error) for SQL query:" in content
+        assert "SELECT * FROM bad_table" in content
+        assert "Original error: RuntimeError: relation does not exist" in content

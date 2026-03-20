@@ -1,4 +1,4 @@
-"""Query debug logging and Cypher profiling utilities.
+"""Query debug logging and database profiling utilities.
 
 Provides debug-level query logging for Cypher and SQL queries, plus optional
 PROFILE/EXPLAIN result logging to a dedicated profiling log file.
@@ -24,14 +24,14 @@ def is_debug() -> bool:
     return logging.getLogger().isEnabledFor(logging.DEBUG)
 
 
-def is_cypher_profiling() -> bool:
-    """Check if Cypher profiling is enabled.
+def is_db_profiling() -> bool:
+    """Check if database profiling is enabled.
 
     Returns True only when the root logger is at DEBUG level AND the
-    ``CYPHER_PROFILING`` environment variable is set to ``"true"``
+    ``DB_PROFILING`` environment variable is set to ``"true"``
     (case-insensitive).
     """
-    return is_debug() and os.environ.get("CYPHER_PROFILING", "").lower() == "true"
+    return is_debug() and os.environ.get("DB_PROFILING", "").lower() == "true"
 
 
 def get_profiling_logger() -> logging.Logger:
@@ -46,7 +46,7 @@ def get_profiling_logger() -> logging.Logger:
     if _profiling_logger is not None:
         return _profiling_logger
 
-    logger = logging.getLogger("cypher_profiling")
+    logger = logging.getLogger("db_profiling")
     logger.setLevel(logging.DEBUG)
     logger.propagate = False
 
@@ -91,10 +91,27 @@ def log_sql_query(query: Any, params: Any, cursor: Any) -> None:
     _logger.debug("🐘 SQL query: %s | params: %s", rendered, params)
 
 
+def _render_sql(query: Any, cursor: Any) -> str:
+    """Render a SQL query to a string for logging.
+
+    Args:
+        query: The SQL query (string or Composable).
+        cursor: The database cursor (used for rendering Composable queries).
+
+    Returns:
+        The rendered SQL string.
+    """
+    return query.as_string(cursor) if hasattr(query, "as_string") else str(query)
+
+
 async def execute_sql(cursor: Any, query: Any, params: Any = None) -> None:
-    """Execute a SQL query with debug logging.
+    """Execute a SQL query with debug logging and optional profiling.
 
     Calls :func:`log_sql_query` then awaits ``cursor.execute(query, params)``.
+    When :func:`is_db_profiling` is ``True``, runs
+    ``EXPLAIN (ANALYZE, BUFFERS, VERBOSE)`` after the query and writes the
+    execution plan to the profiling log.  On query failure, runs ``EXPLAIN``
+    (without ANALYZE) as a best-effort fallback.
 
     Args:
         cursor: An async database cursor.
@@ -102,7 +119,56 @@ async def execute_sql(cursor: Any, query: Any, params: Any = None) -> None:
         params: Optional query parameters.
     """
     log_sql_query(query, params, cursor)
-    await cursor.execute(query, params)
+
+    profiling = is_db_profiling()
+
+    try:
+        await cursor.execute(query, params)
+        if profiling:
+            await _try_sql_profile(cursor, query, params)
+    except Exception as exc:
+        if profiling:
+            await _try_sql_explain_on_error(cursor, query, params, exc)
+        raise
+
+
+async def _try_sql_profile(cursor: Any, query: Any, params: Any) -> None:
+    """Best-effort EXPLAIN (ANALYZE, BUFFERS, VERBOSE) after successful SQL execution.
+
+    Args:
+        cursor: An async database cursor.
+        query: The original SQL query.
+        params: Query parameters.
+    """
+    try:
+        rendered = _render_sql(query, cursor)
+        explain_query = f"EXPLAIN (ANALYZE, BUFFERS, VERBOSE) {rendered}"
+        await cursor.execute(explain_query, params)  # nosemgrep
+        rows = await cursor.fetchall()
+        plan_text = "\n".join(row[0] for row in rows)
+        log_sql_profile_result(rendered, params, plan_text)
+    except Exception:  # noqa: S110
+        pass  # nosec B110 — best-effort; query may not support EXPLAIN
+
+
+async def _try_sql_explain_on_error(cursor: Any, query: Any, params: Any, error: BaseException) -> None:
+    """Best-effort EXPLAIN (without ANALYZE) after SQL failure.
+
+    Args:
+        cursor: An async database cursor.
+        query: The original SQL query.
+        params: Query parameters.
+        error: The original exception.
+    """
+    try:
+        rendered = _render_sql(query, cursor)
+        explain_query = f"EXPLAIN {rendered}"
+        await cursor.execute(explain_query, params)  # nosemgrep
+        rows = await cursor.fetchall()
+        plan_text = "\n".join(row[0] for row in rows)
+        log_sql_explain_result(rendered, params, plan_text, error)
+    except Exception:  # noqa: S110
+        pass  # nosec B110 — best-effort; DB may be unreachable
 
 
 def log_profile_result(cypher: str, params: dict[str, Any] | None, summary: Any) -> None:
@@ -161,4 +227,58 @@ def log_explain_result(
         error_type,
         error_msg,
         string_repr,
+    )
+
+
+def log_sql_profile_result(sql: str, params: Any, plan_text: str) -> None:
+    """Write EXPLAIN (ANALYZE, BUFFERS, VERBOSE) results to the profiling log.
+
+    Args:
+        sql: The SQL query string.
+        params: Query parameters.
+        plan_text: The execution plan output from PostgreSQL.
+    """
+    prof_logger = get_profiling_logger()
+    prof_logger.info(
+        "\n══════════════════════════════════════════════════════════\n"
+        "EXPLAIN (ANALYZE, BUFFERS, VERBOSE) result for SQL query:\n\n"
+        "%s\n\n"
+        "Parameters: %s\n\n"
+        "%s",
+        sql,
+        params,
+        plan_text,
+    )
+
+
+def log_sql_explain_result(
+    sql: str,
+    params: Any,
+    plan_text: str,
+    original_error: BaseException,
+) -> None:
+    """Write EXPLAIN results to the profiling log after a SQL query failure.
+
+    Args:
+        sql: The SQL query string.
+        params: Query parameters.
+        plan_text: The execution plan output from PostgreSQL.
+        original_error: The exception that triggered the EXPLAIN fallback.
+    """
+    error_type = type(original_error).__name__
+    error_msg = str(original_error)
+
+    prof_logger = get_profiling_logger()
+    prof_logger.info(
+        "\n══════════════════════════════════════════════════════════\n"
+        "EXPLAIN (after error) for SQL query:\n\n"
+        "%s\n\n"
+        "Parameters: %s\n"
+        "Original error: %s: %s\n\n"
+        "%s",
+        sql,
+        params,
+        error_type,
+        error_msg,
+        plan_text,
     )

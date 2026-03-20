@@ -336,11 +336,11 @@ def setup_logging(
     log = structlog.get_logger()
     log.info("✅ Logging configured for service", service=service_name)
 
-    # Warn if Cypher profiling is active
-    if query_debug.is_cypher_profiling():
+    # Warn if database profiling is active
+    if query_debug.is_db_profiling():
         log.warning(
-            "⚠️ Cypher profiling enabled — PROFILE prefix will be added to all Cypher queries",
-            cypher_profiling=True,
+            "⚠️ Database profiling enabled — PROFILE/EXPLAIN plans will be logged for Cypher and SQL queries",
+            db_profiling=True,
         )
 
 
