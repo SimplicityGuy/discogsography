@@ -17,14 +17,16 @@ MIN_RELEASES = 5
 
 
 async def get_label_identity(driver: AsyncResilientNeo4jDriver, label_id: str) -> dict[str, Any] | None:
-    """Get basic label info and release/artist counts."""
+    """Get basic label info and release/artist counts.
+
+    Single traversal from label to releases, with OPTIONAL MATCH for artists.
+    """
     cypher = """
     MATCH (l:Label {id: $label_id})
-    OPTIONAL MATCH (r:Release)-[:ON]->(l)
-    WITH l, collect(DISTINCT r) AS releases
-    OPTIONAL MATCH (r2:Release)-[:ON]->(l), (r2)-[:BY]->(a:Artist)
+    OPTIONAL MATCH (l)<-[:ON]-(r:Release)
+    OPTIONAL MATCH (r)-[:BY]->(a:Artist)
     RETURN l.id AS label_id, l.name AS label_name,
-           size(releases) AS release_count,
+           count(DISTINCT r) AS release_count,
            count(DISTINCT a) AS artist_count
     """
     return await run_single(driver, cypher, label_id=label_id)
@@ -94,22 +96,31 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
 
     Returns each candidate label with its genre distribution,
     filtered to labels with at least MIN_RELEASES releases.
+
+    Uses genre-first traversal for candidate discovery and combines
+    genre-profile + release-count into a single traversal per candidate,
+    eliminating the previous triple re-traversal pattern.
     """
     cypher = """
-    MATCH (r:Release)-[:ON]->(l:Label {id: $label_id}), (r)-[:IS]->(g:Genre)
+    MATCH (l:Label {id: $label_id})<-[:ON]-(r:Release)-[:IS]->(g:Genre)
     WITH l, collect(DISTINCT g.name) AS target_genres
     UNWIND target_genres AS genre_name
-    MATCH (r2:Release)-[:IS]->(g2:Genre {name: genre_name}), (r2)-[:ON]->(l2:Label)
-    WHERE l2.id <> l.id
+    MATCH (g2:Genre {name: genre_name})<-[:IS]-(r2:Release)-[:ON]->(l2:Label)
+    WHERE l2 <> l
     WITH l2, count(DISTINCT r2) AS total_shared
     WHERE total_shared >= $min_releases
-    MATCH (r3:Release)-[:ON]->(l2), (r3)-[:IS]->(g3:Genre)
-    WITH l2, g3.name AS genre, count(DISTINCT r3) AS genre_count
-    WITH l2,
-         collect({name: genre, count: genre_count}) AS genres,
-         sum(genre_count) AS total_genre_refs
-    MATCH (r4:Release)-[:ON]->(l2)
-    WITH l2, genres, total_genre_refs, count(DISTINCT r4) AS release_count
+    CALL {
+        WITH l2
+        MATCH (l2)<-[:ON]-(r3:Release)
+        OPTIONAL MATCH (r3)-[:IS]->(g3:Genre)
+        WITH count(DISTINCT r3) AS release_count,
+             g3.name AS genre,
+             count(DISTINCT CASE WHEN g3 IS NOT NULL THEN r3 END) AS genre_count
+        WITH release_count,
+             collect(CASE WHEN genre IS NOT NULL THEN {name: genre, count: genre_count} END) AS raw_genres
+        RETURN release_count,
+               [g IN raw_genres WHERE g IS NOT NULL] AS genres
+    }
     RETURN l2.id AS label_id, l2.name AS label_name,
            release_count, genres
     ORDER BY release_count DESC
