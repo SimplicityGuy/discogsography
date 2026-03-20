@@ -186,7 +186,7 @@ def resolve_ids(
             data = resp.json()
             results = data if isinstance(data, list) else data.get("results", [])
             if results:
-                ids[name] = results[0].get("node_id")
+                ids[name] = results[0].get("id")
             else:
                 print(f"  WARNING: No autocomplete result for {entity_type} '{name}'")
                 ids[name] = None
