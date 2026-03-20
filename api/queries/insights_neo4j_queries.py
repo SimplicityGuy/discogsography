@@ -110,8 +110,8 @@ async def query_monthly_anniversaries(
     target_years = [current_year - m for m in milestone_years]
 
     cypher = """
-    MATCH (m:Master)
-    WHERE m.year IN $target_years AND m.year > 0
+    UNWIND $target_years AS target_year
+    MATCH (m:Master {year: target_year})
     OPTIONAL MATCH (m)<-[:MASTER_OF]-(r:Release)<-[:PERFORMED]-(a:Artist)
     WITH m, collect(DISTINCT a.name)[0] AS artist_name
     RETURN m.id AS master_id, m.title AS title, artist_name,

@@ -205,8 +205,8 @@ async def get_trends(
 
 
 _VALID_PATH_TYPES = frozenset(EXPLORE_DISPATCH.keys())
-_MAX_PATH_DEPTH = 15
-_DEFAULT_PATH_DEPTH = 10
+_MAX_PATH_DEPTH = 10
+_DEFAULT_PATH_DEPTH = 6
 
 
 def _node_label_to_type(labels: list[str]) -> str:
@@ -268,6 +268,8 @@ async def find_path(
             str(from_node["id"]),
             str(to_node["id"]),
             max_depth=max_depth,
+            from_type=from_type_lower,
+            to_type=to_type_lower,
         )
     except Neo4jClientError as exc:
         if "TransactionTimedOut" in str(exc):

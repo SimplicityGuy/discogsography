@@ -38,11 +38,27 @@ def _build_autocomplete_query(query: str) -> str:
     return " AND ".join(_escape_lucene_query(term) + "*" for term in terms)
 
 
+_LABEL_MAP: dict[str, str] = {
+    "artist": "Artist",
+    "label": "Label",
+    "genre": "Genre",
+    "style": "Style",
+    "master": "Master",
+    "release": "Release",
+}
+
+# Known relationship types in the graph — restricting shortestPath to these
+# prevents traversal of internal Neo4j edges (fulltext indexes, etc.).
+_PATH_REL_TYPES = "BY|ON|IS|ALIAS_OF|MEMBER_OF|MASTER_OF|DERIVED_FROM"
+
+
 async def find_shortest_path(
     driver: AsyncResilientNeo4jDriver,
     from_id: str,
     to_id: str,
-    max_depth: int = 10,
+    max_depth: int = 6,
+    from_type: str = "",
+    to_type: str = "",
 ) -> dict[str, Any] | None:
     """Find the shortest path between two nodes by their string IDs.
 
@@ -52,11 +68,26 @@ async def find_shortest_path(
 
     ``max_depth`` is interpolated as an integer literal in Cypher (it cannot
     be a query parameter). The caller is responsible for validating the range.
+
+    ``from_type`` and ``to_type`` (e.g. "artist", "label") allow the query
+    to use label-specific indexes instead of AllNodesScan.  When a type uses
+    ``name`` as its identifier (Genre, Style), ``$from_id`` / ``$to_id`` are
+    matched against the ``name`` property instead of ``id``.
     """
     depth = int(max_depth)
+    from_label = _LABEL_MAP.get(from_type, "")
+    to_label = _LABEL_MAP.get(to_type, "")
+
+    # Genre/Style nodes use 'name' as their identifier, not 'id'
+    from_prop = "name" if from_type in ("genre", "style") else "id"
+    to_prop = "name" if to_type in ("genre", "style") else "id"
+
+    a_match = f"(a:{from_label} {{{from_prop}: $from_id}})" if from_label else "(a {id: $from_id})"
+    b_match = f"(b:{to_label} {{{to_prop}: $to_id}})" if to_label else "(b {id: $to_id})"
+
     cypher = f"""
-    MATCH (a {{id: $from_id}}), (b {{id: $to_id}})
-    MATCH p = shortestPath((a)-[*..{depth}]-(b))
+    MATCH {a_match}, {b_match}
+    MATCH p = shortestPath((a)-[:{_PATH_REL_TYPES}*..{depth}]-(b))
     RETURN [node IN nodes(p) | {{
                id: node.id,
                name: coalesce(node.name, node.title, ''),
@@ -136,39 +167,77 @@ async def explore_artist(driver: AsyncResilientNeo4jDriver, name: str) -> dict[s
 
 
 async def explore_genre(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
-    """Get genre center node with category counts."""
+    """Get genre center node with category counts.
+
+    Single traversal: collects releases once, then expands for artist/label/style
+    counts — avoids re-traversing the genre's IS edges four separate times.
+    """
     cypher = """
     MATCH (g:Genre {name: $name})
+    WITH g
+    MATCH (r:Release)-[:IS]->(g)
+    WITH g, collect(DISTINCT r) AS releases
+    WITH g, size(releases) AS release_count, releases
+    UNWIND releases AS r
+    OPTIONAL MATCH (r)-[:BY]->(a:Artist)
+    OPTIONAL MATCH (r)-[:ON]->(l:Label)
+    OPTIONAL MATCH (r)-[:IS]->(s:Style)
+    WITH g, release_count,
+         count(DISTINCT a) AS artist_count,
+         count(DISTINCT l) AS label_count,
+         count(DISTINCT s) AS style_count
     RETURN g.name AS id, g.name AS name,
-           COUNT { MATCH (r:Release)-[:IS]->(g) RETURN DISTINCT r } AS release_count,
-           COUNT { MATCH (r:Release)-[:IS]->(g), (r)-[:BY]->(a:Artist) RETURN DISTINCT a } AS artist_count,
-           COUNT { MATCH (r:Release)-[:IS]->(g), (r)-[:ON]->(l:Label) RETURN DISTINCT l } AS label_count,
-           COUNT { MATCH (r:Release)-[:IS]->(g), (r)-[:IS]->(s:Style) RETURN DISTINCT s } AS style_count
+           release_count, artist_count, label_count, style_count
     """
     return await run_single(driver, cypher, name=name)
 
 
 async def explore_label(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
-    """Get label center node with category counts."""
+    """Get label center node with category counts.
+
+    Single traversal: collects releases once, then expands for artist/genre
+    counts (see explore_genre for rationale).
+    """
     cypher = """
     MATCH (l:Label {name: $name})
+    WITH l
+    MATCH (r:Release)-[:ON]->(l)
+    WITH l, collect(DISTINCT r) AS releases
+    WITH l, size(releases) AS release_count, releases
+    UNWIND releases AS r
+    OPTIONAL MATCH (r)-[:BY]->(a:Artist)
+    OPTIONAL MATCH (r)-[:IS]->(g:Genre)
+    WITH l, release_count,
+         count(DISTINCT a) AS artist_count,
+         count(DISTINCT g) AS genre_count
     RETURN l.id AS id, l.name AS name,
-           COUNT { MATCH (r:Release)-[:ON]->(l) RETURN DISTINCT r } AS release_count,
-           COUNT { MATCH (r:Release)-[:ON]->(l), (r)-[:BY]->(a:Artist) RETURN DISTINCT a } AS artist_count,
-           COUNT { MATCH (r:Release)-[:ON]->(l), (r)-[:IS]->(g:Genre) RETURN DISTINCT g } AS genre_count
+           release_count, artist_count, genre_count
     """
     return await run_single(driver, cypher, name=name)
 
 
 async def explore_style(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
-    """Get style center node with category counts."""
+    """Get style center node with category counts.
+
+    Single traversal: collects releases once, then expands for artist/label/genre
+    counts (see explore_genre for rationale).
+    """
     cypher = """
     MATCH (s:Style {name: $name})
+    WITH s
+    MATCH (r:Release)-[:IS]->(s)
+    WITH s, collect(DISTINCT r) AS releases
+    WITH s, size(releases) AS release_count, releases
+    UNWIND releases AS r
+    OPTIONAL MATCH (r)-[:BY]->(a:Artist)
+    OPTIONAL MATCH (r)-[:ON]->(l:Label)
+    OPTIONAL MATCH (r)-[:IS]->(g:Genre)
+    WITH s, release_count,
+         count(DISTINCT a) AS artist_count,
+         count(DISTINCT l) AS label_count,
+         count(DISTINCT g) AS genre_count
     RETURN s.name AS id, s.name AS name,
-           COUNT { MATCH (r:Release)-[:IS]->(s) RETURN DISTINCT r } AS release_count,
-           COUNT { MATCH (r:Release)-[:IS]->(s), (r)-[:BY]->(a:Artist) RETURN DISTINCT a } AS artist_count,
-           COUNT { MATCH (r:Release)-[:IS]->(s), (r)-[:ON]->(l:Label) RETURN DISTINCT l } AS label_count,
-           COUNT { MATCH (r:Release)-[:IS]->(s), (r)-[:IS]->(g:Genre) RETURN DISTINCT g } AS genre_count
+           release_count, artist_count, label_count, genre_count
     """
     return await run_single(driver, cypher, name=name)
 
@@ -679,9 +748,16 @@ async def trends_artist(driver: AsyncResilientNeo4jDriver, name: str) -> list[di
 
 
 async def trends_genre(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
-    """Get release count by year for a genre."""
+    """Get release count by year for a genre.
+
+    The WITH barrier after the Genre match forces the planner to resolve
+    the genre node first via index seek, then expand outward — preventing
+    a Cartesian product of all releases x the genre node.
+    """
     cypher = """
-    MATCH (r:Release)-[:IS]->(g:Genre {name: $name})
+    MATCH (g:Genre {name: $name})
+    WITH g
+    MATCH (r:Release)-[:IS]->(g)
     WHERE r.year > 0
     WITH r.year AS year, count(DISTINCT r) AS count
     RETURN year, count
@@ -703,9 +779,14 @@ async def trends_label(driver: AsyncResilientNeo4jDriver, name: str) -> list[dic
 
 
 async def trends_style(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
-    """Get release count by year for a style."""
+    """Get release count by year for a style.
+
+    Uses WITH barrier to force style-first resolution (see trends_genre).
+    """
     cypher = """
-    MATCH (r:Release)-[:IS]->(s:Style {name: $name})
+    MATCH (s:Style {name: $name})
+    WITH s
+    MATCH (r:Release)-[:IS]->(s)
     WHERE r.year > 0
     WITH r.year AS year, count(DISTINCT r) AS count
     RETURN year, count
@@ -718,27 +799,60 @@ async def trends_style(driver: AsyncResilientNeo4jDriver, name: str) -> list[dic
 
 
 async def get_year_range(driver: AsyncResilientNeo4jDriver) -> dict[str, int] | None:
-    """Get min/max release year across all Release nodes."""
+    """Get min/max release year across all Release nodes.
+
+    Uses two indexed seeks (ORDER BY + LIMIT 1) instead of scanning all
+    releases, leveraging the release_year_index for O(1) lookups.
+    """
     cypher = """
-    MATCH (r:Release) WHERE r.year > 0
-    RETURN min(r.year) AS min_year, max(r.year) AS max_year
+    CALL {
+        MATCH (r:Release) WHERE r.year > 0
+        RETURN r.year AS year
+        ORDER BY r.year ASC
+        LIMIT 1
+    }
+    WITH year AS min_year
+    CALL {
+        MATCH (r:Release) WHERE r.year > 0
+        RETURN r.year AS year
+        ORDER BY r.year DESC
+        LIMIT 1
+    }
+    RETURN min_year, year AS max_year
     """
     return await run_single(driver, cypher)
 
 
 async def get_genre_emergence(driver: AsyncResilientNeo4jDriver, before_year: int) -> dict[str, list[dict[str, Any]]]:
-    """Get genres and styles with their first appearance year, up to before_year."""
+    """Get genres and styles with their first appearance year, up to before_year.
+
+    Starts from Genre/Style nodes and expands outward to releases, rather than
+    scanning all 16M+ releases and filtering. Uses CALL {} subqueries so each
+    genre/style is processed independently with early termination.
+    """
     genre_cypher = """
-    MATCH (r:Release)-[:IS]->(g:Genre)
-    WHERE r.year > 0 AND r.year <= $before_year
-    WITH g.name AS name, min(r.year) AS first_year
+    MATCH (g:Genre)
+    CALL {
+        WITH g
+        MATCH (g)<-[:IS]-(r:Release)
+        WHERE r.year > 0 AND r.year <= $before_year
+        RETURN min(r.year) AS first_year
+    }
+    WITH g.name AS name, first_year
+    WHERE first_year IS NOT NULL
     RETURN name, first_year
     ORDER BY first_year
     """
     style_cypher = """
-    MATCH (r:Release)-[:IS]->(s:Style)
-    WHERE r.year > 0 AND r.year <= $before_year
-    WITH s.name AS name, min(r.year) AS first_year
+    MATCH (s:Style)
+    CALL {
+        WITH s
+        MATCH (s)<-[:IS]-(r:Release)
+        WHERE r.year > 0 AND r.year <= $before_year
+        RETURN min(r.year) AS first_year
+    }
+    WITH s.name AS name, first_year
+    WHERE first_year IS NOT NULL
     RETURN name, first_year
     ORDER BY first_year
     """
