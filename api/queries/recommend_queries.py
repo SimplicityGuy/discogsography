@@ -156,7 +156,7 @@ async def get_candidate_artists(driver: AsyncResilientNeo4jDriver, artist_id: st
     WITH a, collect(DISTINCT g.name) AS target_genres
     UNWIND target_genres AS genre_name
     MATCH (g2:Genre {name: genre_name})<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
-    WHERE a2 <> a
+    WHERE a2 <> a AND a2.name IS NOT NULL
     WITH a2, count(DISTINCT r2) AS shared_count
     WHERE shared_count >= $min_releases
     MATCH (r3:Release)-[:BY]->(a2)
@@ -197,6 +197,9 @@ def compute_similar_artists(
 
     results = []
     for candidate in candidates:
+        # Skip candidates with missing names (NULL in Neo4j)
+        if not candidate.get("artist_name"):
+            continue
         cand_vecs = {
             "genre": to_genre_vector(candidate.get("genres", [])),
             "style": to_genre_vector(candidate.get("styles", [])),
