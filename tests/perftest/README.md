@@ -78,6 +78,16 @@ docker run --rm \
   discogsography/perftest
 ```
 
+### Preparing Clean Logs
+
+Before running a performance test, truncate the API and profiling logs so results only contain queries from this run. This prevents stale data from prior sessions mixing into the profiling output:
+
+```bash
+docker exec discogsography-api sh -c 'truncate -s 0 /logs/api.log /logs/profiling.log 2>/dev/null; echo "Logs cleared"'
+```
+
+> **Why this matters:** Profiling logs accumulate across API restarts and prior test runs. Without truncating, the profiling output contains queries from different code versions and cache states, making it hard to attribute execution plans to specific query changes.
+
 ### Collecting API Logs
 
 After the performance test completes, copy logs from the API container into your results directory:
