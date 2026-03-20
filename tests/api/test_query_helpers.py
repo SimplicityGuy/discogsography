@@ -157,7 +157,7 @@ class TestRunQuery:
         summary.profile = {"args": {"string-representation": "plan"}}
         driver = _make_driver(records=[], summary=summary)
 
-        with patch("api.queries.helpers.is_cypher_profiling", return_value=True), patch("api.queries.helpers.log_profile_result") as mock_profile:
+        with patch("api.queries.helpers.is_db_profiling", return_value=True), patch("api.queries.helpers.log_profile_result") as mock_profile:
             await run_query(driver, "MATCH (n) RETURN n")
             session = driver.session.return_value
             run_call = session.__aenter__.return_value.run.call_args
@@ -169,7 +169,7 @@ class TestRunQuery:
         from api.queries.helpers import run_query
 
         driver = _make_driver(records=[])
-        with patch("api.queries.helpers.is_cypher_profiling", return_value=False):
+        with patch("api.queries.helpers.is_db_profiling", return_value=False):
             await run_query(driver, "MATCH (n) RETURN n")
             session = driver.session.return_value
             run_call = session.__aenter__.return_value.run.call_args
@@ -225,7 +225,7 @@ class TestRunSingle:
         summary.profile = {"args": {"string-representation": "plan"}}
         driver = _make_driver(single={"id": "1"}, summary=summary)
 
-        with patch("api.queries.helpers.is_cypher_profiling", return_value=True), patch("api.queries.helpers.log_profile_result") as mock_profile:
+        with patch("api.queries.helpers.is_db_profiling", return_value=True), patch("api.queries.helpers.log_profile_result") as mock_profile:
             await run_single(driver, "MATCH (a) RETURN a LIMIT 1")
             session = driver.session.return_value
             run_call = session.__aenter__.return_value.run.call_args
@@ -246,7 +246,7 @@ class TestRunSingle:
         driver.session = MagicMock(return_value=mock_session)
 
         with (
-            patch("api.queries.helpers.is_cypher_profiling", return_value=True),
+            patch("api.queries.helpers.is_db_profiling", return_value=True),
             patch("api.queries.helpers._try_explain_on_error") as mock_explain,
             pytest.raises(RuntimeError, match="timeout"),
         ):
@@ -302,7 +302,7 @@ class TestRunCount:
         summary.profile = {"args": {"string-representation": "plan"}}
         driver = _make_driver(single={"total": 5}, summary=summary)
 
-        with patch("api.queries.helpers.is_cypher_profiling", return_value=True), patch("api.queries.helpers.log_profile_result") as mock_profile:
+        with patch("api.queries.helpers.is_db_profiling", return_value=True), patch("api.queries.helpers.log_profile_result") as mock_profile:
             await run_count(driver, "RETURN count(*) AS total")
             session = driver.session.return_value
             run_call = session.__aenter__.return_value.run.call_args
@@ -323,7 +323,7 @@ class TestRunCount:
         driver.session = MagicMock(return_value=mock_session)
 
         with (
-            patch("api.queries.helpers.is_cypher_profiling", return_value=True),
+            patch("api.queries.helpers.is_db_profiling", return_value=True),
             patch("api.queries.helpers._try_explain_on_error") as mock_explain,
             pytest.raises(RuntimeError, match="timeout"),
         ):
@@ -353,7 +353,7 @@ class TestExplainFallback:
         driver.session = MagicMock(return_value=mock_session)
 
         with (
-            patch("api.queries.helpers.is_cypher_profiling", return_value=True),
+            patch("api.queries.helpers.is_db_profiling", return_value=True),
             patch("api.queries.helpers._try_explain_on_error") as mock_explain,
         ):
             with pytest.raises(RuntimeError, match="Neo4j timeout"):
@@ -375,7 +375,7 @@ class TestExplainFallback:
         driver.session = MagicMock(return_value=mock_session)
 
         with (
-            patch("api.queries.helpers.is_cypher_profiling", return_value=True),
+            patch("api.queries.helpers.is_db_profiling", return_value=True),
             patch("api.queries.helpers._try_explain_on_error"),
             pytest.raises(RuntimeError, match="original error"),
         ):

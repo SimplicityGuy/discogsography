@@ -6,12 +6,12 @@ Sequential performance test runner for all Discogsography API query endpoints. M
 
 The performance test covers all API endpoints that execute database queries (Neo4j, PostgreSQL, or Redis):
 
-### Static Endpoints (no parameters)
+### Static Endpoints (no parameters or fixed parameters)
 
 | Endpoint | Database |
 |---|---|
 | `GET /api/explore/year-range` | Neo4j |
-| `GET /api/explore/genre-emergence` | Neo4j |
+| `GET /api/explore/genre-emergence?before_year=2025` | Neo4j |
 | `GET /api/insights/top-artists` | Neo4j (via insights proxy) |
 | `GET /api/insights/genre-trends` | Neo4j (via insights proxy) |
 | `GET /api/insights/label-longevity` | Neo4j (via insights proxy) |
@@ -37,6 +37,8 @@ The performance test covers all API endpoints that execute database queries (Neo
 | `GET /api/label/{id}/similar` | Each label | Neo4j |
 | `GET /api/label/dna/compare` | All labels combined | Neo4j |
 | `GET /api/recommend/similar/artist/{id}` | Each artist | Neo4j |
+| `GET /api/node/{id}` | Each artist and label | Neo4j |
+| `GET /api/expand` | Each artist (releases), each label (releases) | Neo4j |
 
 ## Prerequisites
 
@@ -85,7 +87,7 @@ docker cp discogsography-api:/logs/api.log ./perftest-results/
 docker cp discogsography-api:/logs/profiling.log ./perftest-results/
 ```
 
-> **Tip:** To capture Cypher profiling data, restart the API with `LOG_LEVEL=DEBUG` and `CYPHER_PROFILING=true` before running the performance test. This writes query execution plans to `profiling.log`.
+> **Tip:** To capture database profiling data, restart the API with `LOG_LEVEL=DEBUG` and `DB_PROFILING=true` before running the performance test. This writes Cypher PROFILE and SQL EXPLAIN (ANALYZE, BUFFERS, VERBOSE) execution plans to `profiling.log`.
 
 ### With Custom Config
 
@@ -147,7 +149,7 @@ After a run, `perftest-results/` contains:
 | `perftest-report.txt` | Human-readable report with per-endpoint stats grouped by category, top 10 slowest endpoints, and summary |
 | `perftest-results.json` | Machine-readable JSON with full timing data for every individual run |
 | `api.log` | API service log (copied via `docker cp` after the run) |
-| `profiling.log` | Cypher profiling output (copied via `docker cp` after the run, requires `CYPHER_PROFILING=true`) |
+| `profiling.log` | Database profiling output — Cypher PROFILE and SQL EXPLAIN plans (copied via `docker cp` after the run, requires `DB_PROFILING=true`) |
 
 ### Example Report Output
 
