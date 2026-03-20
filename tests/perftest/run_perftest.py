@@ -22,6 +22,66 @@ import yaml
 
 
 # ---------------------------------------------------------------------------
+# Database index listing
+# ---------------------------------------------------------------------------
+
+
+def list_neo4j_indexes(config: dict[str, Any]) -> list[str]:
+    """List all Neo4j indexes. Returns formatted lines for the report."""
+    uri = config.get("neo4j_uri")
+    if not uri:
+        return ["  (neo4j_uri not configured — skipped)"]
+    try:
+        from neo4j import GraphDatabase
+
+        driver = GraphDatabase.driver(
+            uri,
+            auth=(config.get("neo4j_user", "neo4j"), config.get("neo4j_password", "")),
+        )
+        with driver.session() as session:
+            result = session.run("SHOW INDEXES YIELD name, type, entityType, labelsOrTypes, properties, state")
+            lines = []
+            lines.append(f"  {'Name':<40} {'Type':<12} {'Entity':<8} {'Labels/Types':<25} {'Properties':<30} {'State':<8}")
+            lines.append(f"  {'-' * 123}")
+            for record in result:
+                labels = ", ".join(record["labelsOrTypes"] or [])
+                props = ", ".join(record["properties"] or [])
+                lines.append(f"  {record['name']:<40} {record['type']:<12} {record['entityType']:<8} {labels:<25} {props:<30} {record['state']:<8}")
+        driver.close()
+        return lines if len(lines) > 2 else ["  (no indexes found)"]
+    except Exception as exc:
+        return [f"  (failed to connect: {exc})"]
+
+
+def list_postgres_indexes(config: dict[str, Any]) -> list[str]:
+    """List all PostgreSQL indexes. Returns formatted lines for the report."""
+    url = config.get("postgres_url")
+    if not url:
+        return ["  (postgres_url not configured — skipped)"]
+    try:
+        import psycopg2
+
+        conn = psycopg2.connect(url)
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT schemaname, tablename, indexname, indexdef
+            FROM pg_indexes
+            WHERE schemaname = 'public'
+            ORDER BY tablename, indexname
+        """)
+        lines = []
+        lines.append(f"  {'Table':<30} {'Index Name':<40} {'Definition'}")
+        lines.append(f"  {'-' * 120}")
+        for row in cur.fetchall():
+            lines.append(f"  {row[1]:<30} {row[2]:<40} {row[3]}")
+        cur.close()
+        conn.close()
+        return lines if len(lines) > 2 else ["  (no indexes found)"]
+    except Exception as exc:
+        return [f"  (failed to connect: {exc})"]
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
@@ -420,7 +480,13 @@ def _verify_output_dir(output_dir: Path) -> None:
         sys.exit(1)
 
 
-def write_report(results: list[dict[str, Any]], output_dir: Path) -> None:
+def write_report(
+    results: list[dict[str, Any]],
+    output_dir: Path,
+    *,
+    neo4j_indexes: list[str] | None = None,
+    postgres_indexes: list[str] | None = None,
+) -> None:
     """Write JSON results and human-readable report."""
     _verify_output_dir(output_dir)
 
@@ -444,6 +510,15 @@ def write_report(results: list[dict[str, Any]], output_dir: Path) -> None:
         "=" * 78,
         "",
     ]
+
+    # Database indexes section
+    if neo4j_indexes or postgres_indexes:
+        lines.append("--- NEO4J INDEXES ---")
+        lines.extend(neo4j_indexes or ["  (not collected)"])
+        lines.append("")
+        lines.append("--- POSTGRESQL INDEXES ---")
+        lines.extend(postgres_indexes or ["  (not collected)"])
+        lines.append("")
 
     # Group results by category
     categories: dict[str, list[dict[str, Any]]] = {}
@@ -553,6 +628,14 @@ def main() -> None:
         print(f"  {name} -> {lid}")
     print()
 
+    # Collect database indexes
+    print("Collecting database indexes...")
+    neo4j_indexes = list_neo4j_indexes(config)
+    postgres_indexes = list_postgres_indexes(config)
+    print(f"  Neo4j: {len(neo4j_indexes) - 2} indexes")
+    print(f"  PostgreSQL: {len(postgres_indexes) - 2} indexes")
+    print()
+
     # Build test plan
     test_plan = build_test_plan(config, artist_ids, label_ids)
     print(f"Test plan: {len(test_plan)} endpoints")
@@ -569,7 +652,12 @@ def main() -> None:
     client.close()
 
     # Write results
-    write_report(results, Path(args.output))
+    write_report(
+        results,
+        Path(args.output),
+        neo4j_indexes=neo4j_indexes,
+        postgres_indexes=postgres_indexes,
+    )
 
 
 if __name__ == "__main__":
