@@ -163,6 +163,7 @@ ignore = [
 "*/insights.py" = ["T201"]                  # Allow print statements for ASCII art
 "*/schema_init.py" = ["T201"]               # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]               # Allow print statements for ASCII art
+"api/admin_setup.py" = ["T201"]              # CLI tool uses print for user output
 "api/setup.py" = ["T201"]                   # CLI tool uses print for user output
 "utilities/*.py" = ["T201"]                 # Utility scripts use print for output
 "tests/**/*.py" = ["PLC", "S105", "T201"]   # Test files: pylint conventions, hardcoded passwords, print statements

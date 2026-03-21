@@ -42,6 +42,28 @@ pub struct ExtractorState {
     pub completed_files: HashSet<String>,
     pub active_connections: HashMap<DataType, String>,
     pub error_count: u64,
+    pub extraction_status: ExtractionStatus,
+}
+
+/// Lifecycle status of the extraction process
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExtractionStatus {
+    #[default]
+    Idle,
+    Running,
+    Completed,
+    Failed,
+}
+
+impl ExtractionStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ExtractionStatus::Idle => "idle",
+            ExtractionStatus::Running => "running",
+            ExtractionStatus::Completed => "completed",
+            ExtractionStatus::Failed => "failed",
+        }
+    }
 }
 
 /// Process Discogs data files
@@ -64,6 +86,7 @@ pub async fn process_discogs_data(
         s.completed_files.clear();
         s.active_connections.clear();
         s.error_count = 0;
+        s.extraction_status = ExtractionStatus::Running;
     }
 
     // Get file list to determine version
@@ -117,8 +140,7 @@ pub async fn process_discogs_data(
     let data_files = downloader.download_discogs_data().await.context("Failed to download Discogs data")?;
 
     // Get state marker back from downloader
-    let mut state_marker = downloader.take_state_marker()
-        .ok_or_else(|| anyhow::anyhow!("State marker missing after download"))?;
+    let mut state_marker = downloader.take_state_marker().ok_or_else(|| anyhow::anyhow!("State marker missing after download"))?;
 
     // Filter out checksum files
     let data_files: Vec<_> = data_files.into_iter().filter(|f| !f.contains("CHECKSUM")).collect();
@@ -148,10 +170,7 @@ pub async fn process_discogs_data(
         let record_counts = HashMap::new();
         match mq_factory.create(&config.amqp_connection).await {
             Ok(mq) => {
-                if let Err(e) = mq
-                    .send_extraction_complete(&version, extraction_started_at, record_counts)
-                    .await
-                {
+                if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts).await {
                     error!("❌ Failed to send extraction_complete message: {}", e);
                 }
                 let _ = mq.close().await;
@@ -185,8 +204,7 @@ pub async fn process_discogs_data(
 
         let task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
-            let mq = mq_factory.create(&config.amqp_connection).await
-                .context("Failed to connect to message queue")?;
+            let mq = mq_factory.create(&config.amqp_connection).await.context("Failed to connect to message queue")?;
 
             process_single_file(&file, config, state, state_marker_arc.clone(), marker_path.clone(), mq).await?;
 
@@ -254,10 +272,7 @@ pub async fn process_discogs_data(
         drop(s); // Release read lock before async MQ operations
         match mq_factory.create(&config.amqp_connection).await {
             Ok(mq) => {
-                if let Err(e) = mq
-                    .send_extraction_complete(&version, extraction_started_at, record_counts)
-                    .await
-                {
+                if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts).await {
                     error!("❌ Failed to send extraction_complete message: {}", e);
                     success = false;
                 }
@@ -268,6 +283,12 @@ pub async fn process_discogs_data(
                 success = false;
             }
         }
+    }
+
+    // Update extraction status based on result
+    {
+        let mut s = state.write().await;
+        s.extraction_status = if success { ExtractionStatus::Completed } else { ExtractionStatus::Failed };
     }
 
     Ok(success)
@@ -544,6 +565,16 @@ fn extract_version_from_filename(filename: &str) -> Option<String> {
     if parts.len() >= 2 { Some(parts[1].to_string()) } else { None }
 }
 
+/// Wait for the trigger flag to be set, then clear it and return
+async fn wait_for_trigger(trigger: &Arc<std::sync::atomic::AtomicBool>) {
+    loop {
+        if trigger.compare_exchange(true, false, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst).is_ok() {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
 /// Main extraction loop with periodic checks
 pub async fn run_extraction_loop(
     config: Arc<ExtractorConfig>,
@@ -551,6 +582,7 @@ pub async fn run_extraction_loop(
     shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
     mq_factory: Arc<dyn MessageQueueFactory>,
+    trigger: Arc<std::sync::atomic::AtomicBool>,
 ) -> Result<()> {
     info!("📥 Starting initial data processing...");
 
@@ -592,6 +624,22 @@ pub async fn run_extraction_loop(
                     Err(e) => {
                         error!("❌ Periodic check failed: {}", e);
                     }
+                }
+            }
+            _ = wait_for_trigger(&trigger) => {
+                info!("🔄 Extraction triggered via API...");
+                let start = Instant::now();
+                let mut downloader = match Downloader::new(config.discogs_root.clone()).await {
+                    Ok(dl) => dl,
+                    Err(e) => {
+                        error!("❌ Failed to create downloader for triggered extraction: {}", e);
+                        continue;
+                    }
+                };
+                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), false, &mut downloader, mq_factory.clone()).await {
+                    Ok(true) => info!("✅ Triggered extraction completed successfully in {:?}", start.elapsed()),
+                    Ok(false) => error!("❌ Triggered extraction completed with errors"),
+                    Err(e) => error!("❌ Triggered extraction failed: {}", e),
                 }
             }
             _ = shutdown.notified() => {
