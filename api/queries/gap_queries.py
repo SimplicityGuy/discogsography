@@ -13,7 +13,7 @@ Graph model used:
 
 from typing import Any
 
-from api.queries.user_queries import _run_count, _run_query
+from api.queries.helpers import run_count, run_query
 from common import AsyncResilientNeo4jDriver
 
 
@@ -65,8 +65,8 @@ async def get_label_gaps(
     params: dict[str, Any] = {"user_id": user_id, "label_id": label_id, "limit": limit, "offset": offset}
     if formats:
         params["formats"] = formats
-    results = await _run_query(driver, cypher, **params)
-    total = await _run_count(driver, count_cypher, **params)
+    results = await run_query(driver, cypher, **params)
+    total = await run_count(driver, count_cypher, **params)
     return results, total
 
 
@@ -83,7 +83,7 @@ async def get_label_gap_summary(
     WITH total_releases, count(c) AS owned
     RETURN total_releases AS total, owned, total_releases - owned AS missing
     """
-    rows = await _run_query(driver, cypher, user_id=user_id, label_id=label_id)
+    rows = await run_query(driver, cypher, user_id=user_id, label_id=label_id)
     if rows:
         return {"total": rows[0]["total"], "owned": rows[0]["owned"], "missing": rows[0]["missing"]}
     return {"total": 0, "owned": 0, "missing": 0}
@@ -94,7 +94,7 @@ async def get_label_metadata(
     label_id: str,
 ) -> dict[str, Any] | None:
     """Get label name and ID."""
-    rows = await _run_query(driver, "MATCH (l:Label {id: $label_id}) RETURN l.id AS id, l.name AS name", label_id=label_id)
+    rows = await run_query(driver, "MATCH (l:Label {id: $label_id}) RETURN l.id AS id, l.name AS name", label_id=label_id)
     return rows[0] if rows else None
 
 
@@ -136,8 +136,8 @@ async def get_artist_gaps(
     params: dict[str, Any] = {"user_id": user_id, "artist_id": artist_id, "limit": limit, "offset": offset}
     if formats:
         params["formats"] = formats
-    results = await _run_query(driver, cypher, **params)
-    total = await _run_count(driver, count_cypher, **params)
+    results = await run_query(driver, cypher, **params)
+    total = await run_count(driver, count_cypher, **params)
     return results, total
 
 
@@ -154,7 +154,7 @@ async def get_artist_gap_summary(
     WITH total_releases, count(c) AS owned
     RETURN total_releases AS total, owned, total_releases - owned AS missing
     """
-    rows = await _run_query(driver, cypher, user_id=user_id, artist_id=artist_id)
+    rows = await run_query(driver, cypher, user_id=user_id, artist_id=artist_id)
     if rows:
         return {"total": rows[0]["total"], "owned": rows[0]["owned"], "missing": rows[0]["missing"]}
     return {"total": 0, "owned": 0, "missing": 0}
@@ -165,7 +165,7 @@ async def get_artist_metadata(
     artist_id: str,
 ) -> dict[str, Any] | None:
     """Get artist name and ID."""
-    rows = await _run_query(driver, "MATCH (a:Artist {id: $artist_id}) RETURN a.id AS id, a.name AS name", artist_id=artist_id)
+    rows = await run_query(driver, "MATCH (a:Artist {id: $artist_id}) RETURN a.id AS id, a.name AS name", artist_id=artist_id)
     return rows[0] if rows else None
 
 
@@ -210,8 +210,8 @@ async def get_master_gaps(
     params: dict[str, Any] = {"user_id": user_id, "master_id": master_id, "limit": limit, "offset": offset}
     if formats:
         params["formats"] = formats
-    results = await _run_query(driver, cypher, **params)
-    total = await _run_count(driver, count_cypher, **params)
+    results = await run_query(driver, cypher, **params)
+    total = await run_count(driver, count_cypher, **params)
     return results, total
 
 
@@ -228,7 +228,7 @@ async def get_master_gap_summary(
     WITH total_releases, count(c) AS owned
     RETURN total_releases AS total, owned, total_releases - owned AS missing
     """
-    rows = await _run_query(driver, cypher, user_id=user_id, master_id=master_id)
+    rows = await run_query(driver, cypher, user_id=user_id, master_id=master_id)
     if rows:
         return {"total": rows[0]["total"], "owned": rows[0]["owned"], "missing": rows[0]["missing"]}
     return {"total": 0, "owned": 0, "missing": 0}
@@ -239,5 +239,5 @@ async def get_master_metadata(
     master_id: str,
 ) -> dict[str, Any] | None:
     """Get master title and ID."""
-    rows = await _run_query(driver, "MATCH (m:Master {id: $master_id}) RETURN m.id AS id, m.title AS name", master_id=master_id)
+    rows = await run_query(driver, "MATCH (m:Master {id: $master_id}) RETURN m.id AS id, m.title AS name", master_id=master_id)
     return rows[0] if rows else None

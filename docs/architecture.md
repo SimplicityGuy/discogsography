@@ -167,9 +167,9 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 
 **API Service** (new feature endpoints):
 
-- Path finder (`/api/explore/path`)
+- Path finder (`/api/path`)
 - Unified full-text search (`/api/search`)
-- Label DNA fingerprinting and comparison (`/api/label-dna/*`)
+- Label DNA fingerprinting and comparison (`/api/label/{label_id}/dna`, `/api/label/{label_id}/similar`, `/api/label/dna/compare`)
 - Taste fingerprint analytics (`/api/user/taste/*`)
 - Vinyl Archaeology time-travel filtering (`/api/explore/year-range`, `/api/explore/genre-emergence`, `before_year` parameter on `/api/expand`)
 - Collection timeline evolution (`/api/user/collection/timeline`, `/api/user/collection/evolution`)
@@ -749,4 +749,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-18
+**Last Updated**: 2026-03-20

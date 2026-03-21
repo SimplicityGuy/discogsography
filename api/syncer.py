@@ -26,6 +26,7 @@ from api.auth import decrypt_oauth_token
 from api.cache import RecommendCache
 from api.services.discogs import _build_oauth_header, _hmac_sha1_signature as _hmac_sha1
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
+from common.query_debug import execute_sql, log_cypher_query
 
 
 logger = structlog.get_logger(__name__)
@@ -207,16 +208,23 @@ async def sync_collection(
             ]
 
             if neo4j_releases:
+                cypher_params: dict[str, Any] = {
+                    "user_id": str(user_uuid),
+                    "discogs_username": discogs_username,
+                    "releases": neo4j_releases,
+                    "synced_at": datetime.now(UTC).isoformat(),
+                }
+                log_cypher_query(
+                    cypher,
+                    {
+                        "user_id": str(user_uuid),
+                        "discogs_username": discogs_username,
+                        "releases": f"[{len(neo4j_releases)} items]",
+                        "synced_at": "...",
+                    },
+                )
                 async with neo4j_driver.session() as session:
-                    await session.run(
-                        cypher,
-                        {
-                            "user_id": str(user_uuid),
-                            "discogs_username": discogs_username,
-                            "releases": neo4j_releases,
-                            "synced_at": datetime.now(UTC).isoformat(),
-                        },
-                    )
+                    await session.run(cypher, cypher_params)
 
             # Check if there are more pages
             pagination = data.get("pagination", {})
@@ -368,16 +376,23 @@ async def sync_wantlist(
             ]
 
             if neo4j_wants:
+                cypher_params: dict[str, Any] = {
+                    "user_id": str(user_uuid),
+                    "discogs_username": discogs_username,
+                    "wants": neo4j_wants,
+                    "synced_at": datetime.now(UTC).isoformat(),
+                }
+                log_cypher_query(
+                    cypher,
+                    {
+                        "user_id": str(user_uuid),
+                        "discogs_username": discogs_username,
+                        "wants": f"[{len(neo4j_wants)} items]",
+                        "synced_at": "...",
+                    },
+                )
                 async with neo4j_driver.session() as session:
-                    await session.run(
-                        cypher,
-                        {
-                            "user_id": str(user_uuid),
-                            "discogs_username": discogs_username,
-                            "wants": neo4j_wants,
-                            "synced_at": datetime.now(UTC).isoformat(),
-                        },
-                    )
+                    await session.run(cypher, cypher_params)
 
             pagination = data.get("pagination", {})
             if page >= pagination.get("pages", 1):
@@ -414,7 +429,8 @@ async def run_full_sync(
     try:
         # Fetch OAuth tokens for the user
         async with pg_pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
+            await execute_sql(
+                cur,
                 """
                     SELECT ot.access_token, ot.access_secret, ot.provider_username
                     FROM oauth_tokens ot
@@ -432,7 +448,7 @@ async def run_full_sync(
             access_secret_value = decrypt_oauth_token(token["access_secret"], oauth_encryption_key)
 
             # Fetch app credentials
-            await cur.execute("SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
+            await execute_sql(cur, "SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
             config_rows = await cur.fetchall()
             app_config = {row["key"]: row["value"] for row in config_rows}
             for cred_key in ("discogs_consumer_key", "discogs_consumer_secret"):
@@ -484,7 +500,8 @@ async def run_full_sync(
     final_status = "failed" if error_message else "completed"
     try:
         async with pg_pool.connection() as conn, conn.cursor() as cur:
-            await cur.execute(
+            await execute_sql(
+                cur,
                 """
                     UPDATE sync_history
                     SET status = %s,

@@ -132,52 +132,52 @@ class TestBuildAutocompleteQuery:
 class TestRunHelpers:
     @pytest.mark.asyncio
     async def test_run_query_returns_list(self) -> None:
-        from api.queries.neo4j_queries import _run_query
+        from api.queries.helpers import run_query
 
         records = [{"id": "1", "name": "Rock"}, {"id": "2", "name": "Jazz"}]
         driver = _make_driver(records=records)
-        result = await _run_query(driver, "MATCH (n) RETURN n")
+        result = await run_query(driver, "MATCH (n) RETURN n")
         assert result == records
 
     @pytest.mark.asyncio
     async def test_run_query_empty(self) -> None:
-        from api.queries.neo4j_queries import _run_query
+        from api.queries.helpers import run_query
 
         driver = _make_driver(records=[])
-        result = await _run_query(driver, "MATCH (n) RETURN n")
+        result = await run_query(driver, "MATCH (n) RETURN n")
         assert result == []
 
     @pytest.mark.asyncio
     async def test_run_single_with_record(self) -> None:
-        from api.queries.neo4j_queries import _run_single
+        from api.queries.helpers import run_single
 
         record = {"id": "1", "name": "Radiohead"}
         driver = _make_driver(single=record)
-        result = await _run_single(driver, "MATCH (a) RETURN a LIMIT 1")
+        result = await run_single(driver, "MATCH (a) RETURN a LIMIT 1")
         assert result == record
 
     @pytest.mark.asyncio
     async def test_run_single_none(self) -> None:
-        from api.queries.neo4j_queries import _run_single
+        from api.queries.helpers import run_single
 
         driver = _make_driver(single=None)
-        result = await _run_single(driver, "MATCH (a) RETURN a LIMIT 1")
+        result = await run_single(driver, "MATCH (a) RETURN a LIMIT 1")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_run_count_with_total(self) -> None:
-        from api.queries.neo4j_queries import _run_count
+        from api.queries.helpers import run_count
 
         driver = _make_driver(single={"total": 42})
-        result = await _run_count(driver, "RETURN count(*) AS total")
+        result = await run_count(driver, "RETURN count(*) AS total")
         assert result == 42
 
     @pytest.mark.asyncio
     async def test_run_count_no_record(self) -> None:
-        from api.queries.neo4j_queries import _run_count
+        from api.queries.helpers import run_count
 
         driver = _make_driver(single=None)
-        result = await _run_count(driver, "RETURN count(*) AS total")
+        result = await run_count(driver, "RETURN count(*) AS total")
         assert result == 0
 
 
@@ -1088,7 +1088,16 @@ class TestGenreEmergenceQuery:
     async def test_genre_emergence_empty_results(self) -> None:
         from api.queries.neo4j_queries import get_genre_emergence
 
-        mock_driver = _make_driver_with_side_effects([_MockResult(), _MockResult()])
+        # Fast path returns empty (no pre-computed first_year), then
+        # fallback slow path also returns empty.
+        mock_driver = _make_driver_with_side_effects(
+            [
+                _MockResult(),
+                _MockResult(),  # fast path (empty)
+                _MockResult(),
+                _MockResult(),  # slow fallback (empty)
+            ]
+        )
 
         result = await get_genre_emergence(mock_driver, 2000)
         assert result == {"genres": [], "styles": []}

@@ -1,5 +1,6 @@
 """Tests for explore endpoints in the API service (api/routers/explore.py)."""
 
+import json
 from typing import Any
 from unittest.mock import ANY, AsyncMock, patch
 
@@ -148,6 +149,59 @@ class TestTrendsEndpoint:
             assert response.status_code == 503
         finally:
             explore_module._neo4j_driver = original
+
+
+class TestTrendsCaching:
+    """Tests for Redis caching on genre/style trends."""
+
+    def test_trends_genre_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Cached genre trends should be returned without calling the query function."""
+
+        cached = {"name": "Electronic", "type": "genre", "data": [{"year": 2000, "count": 5}]}
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        response = test_client.get("/api/trends?name=Electronic&type=genre")
+        assert response.status_code == 200
+        assert response.json() == cached
+
+    def test_trends_genre_cache_miss_stores_result(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """On cache miss, query result should be stored in Redis."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_func = AsyncMock(return_value=[{"year": 2000, "count": 5}])
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"genre": mock_func}):
+            response = test_client.get("/api/trends?name=Electronic&type=genre")
+        assert response.status_code == 200
+        mock_redis.setex.assert_called_once()
+        call_args = mock_redis.setex.call_args
+        assert call_args[0][0] == "trends:genre:Electronic"
+
+    def test_trends_artist_skips_cache(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Artist trends should NOT be cached (only genre/style)."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_func = AsyncMock(return_value=[{"year": 2000, "count": 5}])
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"artist": mock_func}):
+            response = test_client.get("/api/trends?name=Radiohead&type=artist")
+        assert response.status_code == 200
+        mock_redis.get.assert_not_called()
+        mock_redis.setex.assert_not_called()
+
+    def test_trends_cache_get_failure_falls_through(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis get failure should fall through to query."""
+        mock_redis.get = AsyncMock(side_effect=Exception("connection lost"))
+        mock_func = AsyncMock(return_value=[{"year": 2000, "count": 5}])
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"genre": mock_func}):
+            response = test_client.get("/api/trends?name=Electronic&type=genre")
+        assert response.status_code == 200
+        mock_func.assert_called_once()
+
+    def test_trends_cache_set_failure_still_returns(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis set failure should not prevent response."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=Exception("connection lost"))
+        mock_func = AsyncMock(return_value=[{"year": 2000, "count": 5}])
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"genre": mock_func}):
+            response = test_client.get("/api/trends?name=Electronic&type=genre")
+        assert response.status_code == 200
 
 
 class TestNodeDetailsEndpoint:

@@ -22,9 +22,16 @@ class _AsyncIterator:
             raise StopAsyncIteration from None
 
 
+class _DictRecord(dict):  # type: ignore[type-arg]
+    """A dict subclass that also exposes .data() for backward-compat tests."""
+
+    def data(self) -> dict[str, Any]:
+        return dict(self)
+
+
 def _make_mock_driver(records: list[dict[str, Any]]) -> AsyncMock:
     """Create a mock Neo4j driver that returns the given records."""
-    mock_records = [MagicMock(data=MagicMock(return_value=r)) for r in records]
+    mock_records = [_DictRecord(r) for r in records]
 
     mock_result = _AsyncIterator(mock_records)
 

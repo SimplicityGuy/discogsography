@@ -48,16 +48,33 @@ graph BT
 tests/
 ├── conftest.py                          # Shared fixtures
 ├── test_batch_performance.py            # Batch performance benchmarks
-├── test_config.py                       # Configuration tests
 ├── test_file_completion.py              # File completion tracking tests
 ├── test_health_server.py                # Health server tests
 ├── test_integration.py                  # Cross-service integration tests
 │
+├── api/                                 # API service tests (30+ modules)
+│   ├── conftest.py                      # API fixtures
+│   ├── test_api.py                      # Core API tests
+│   ├── test_auth.py                     # Authentication tests
+│   ├── test_explore.py                  # Graph exploration endpoint tests
+│   ├── test_search.py                   # Full-text search tests
+│   ├── test_label_dna.py                # Label DNA endpoint tests
+│   ├── test_taste.py                    # Taste fingerprint tests
+│   ├── test_collection.py               # Collection gap analysis tests
+│   ├── test_recommend.py                # Recommendation endpoint tests
+│   ├── test_snapshot.py                 # Snapshot save/restore tests
+│   ├── test_sync.py                     # Sync trigger tests
+│   ├── test_user.py                     # User endpoint tests
+│   └── ...                              # Query, model, and integration tests
+│
 ├── common/                              # Shared module tests
+│   ├── test_config.py                   # Configuration tests
 │   ├── test_data_normalizer.py
 │   ├── test_db_resilience.py
+│   ├── test_health_server.py
 │   ├── test_neo4j_resilient.py
 │   ├── test_postgres_resilient.py
+│   ├── test_query_debug.py              # Query profiling tests
 │   ├── test_rabbitmq_resilient.py
 │   └── test_state_marker.py
 │
@@ -71,6 +88,7 @@ tests/
 ├── explore/
 │   ├── conftest.py
 │   ├── test_explore_api.py              # API unit tests
+│   ├── test_explore_auth_ui.py          # Auth UI tests
 │   ├── test_explore_ui.py               # E2E tests (playwright, @pytest.mark.e2e)
 │   └── test_snapshot.py
 │
@@ -79,6 +97,24 @@ tests/
 │   ├── test_batch_processor.py
 │   ├── test_batch_processor_integration.py
 │   └── test_graphinator.py
+│
+├── insights/                            # Insights service tests
+│   ├── conftest.py
+│   ├── test_cache.py                    # Redis caching tests
+│   ├── test_computations.py             # Computation orchestration tests
+│   ├── test_insights.py                 # Main service tests
+│   ├── test_models.py                   # Response model tests
+│   ├── test_neo4j_queries.py            # Neo4j query tests
+│   ├── test_pg_queries.py               # PostgreSQL query tests
+│   └── test_scheduler.py               # Scheduler tests
+│
+├── mcp-server/                          # MCP server tests
+│
+├── perftest/                            # Performance testing suite
+│   ├── config.yaml                      # Test configuration (entities, iterations)
+│   ├── run_perftest.py                  # Performance test orchestration
+│   ├── Dockerfile                       # Containerized test environment
+│   └── entrypoint.sh                    # Test execution script
 │
 ├── schema-init/
 │   ├── conftest.py                      # Adds schema-init/ to sys.path

@@ -38,6 +38,7 @@
 - ✅ Use single quotes in GitHub Actions expressions (`${{ }}`) and double quotes for YAML strings.
 - ✅ Composite actions are preferred for reusable workflow steps (see `.github/actions/`).
 - ✅ Run tests and E2E tests in parallel for optimal performance.
+- ✅ **Add perf tests for new API endpoints** - When adding API endpoints that query Neo4j or PostgreSQL, add corresponding test entries to `tests/perftest/config.yaml` and update `tests/perftest/run_perftest.py` to cover the new endpoint.
 
 ## 🐍 Python Package Management with uv
 

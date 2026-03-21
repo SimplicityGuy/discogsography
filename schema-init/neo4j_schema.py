@@ -80,10 +80,26 @@ SCHEMA_STATEMENTS: list[tuple[str, str]] = [
         "label_name",
         "CREATE INDEX label_name IF NOT EXISTS FOR (l:Label) ON (l.name)",
     ),
-    # Year range index used by explore for temporal queries.
+    # Year range indexes used by explore for temporal queries and insights
+    # for anniversary lookups.
     (
         "release_year_index",
         "CREATE INDEX release_year_index IF NOT EXISTS FOR (r:Release) ON (r.year)",
+    ),
+    (
+        "master_year_index",
+        "CREATE INDEX master_year_index IF NOT EXISTS FOR (m:Master) ON (m.year)",
+    ),
+    # first_year indexes for genre-emergence queries.  Pre-computed by
+    # graphinator after release import; allows emergence lookups with
+    # ~100 DB hits instead of scanning all IS edges (~184M DB hits).
+    (
+        "genre_first_year_index",
+        "CREATE INDEX genre_first_year_index IF NOT EXISTS FOR (g:Genre) ON (g.first_year)",
+    ),
+    (
+        "style_first_year_index",
+        "CREATE INDEX style_first_year_index IF NOT EXISTS FOR (s:Style) ON (s.first_year)",
     ),
     # ── Fulltext indexes ──────────────────────────────────────────────────────
     # Used by explore for autocomplete and full-text search.

@@ -5,6 +5,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response
+from neo4j.exceptions import ClientError as Neo4jClientError
 import structlog
 
 import api.dependencies as _dependencies
@@ -96,12 +97,21 @@ async def taste_fingerprint(
     if err:
         return err
 
-    heatmap_result, obscurity_result, drift_result, blind_spots_result = await asyncio.gather(
-        get_taste_heatmap(_neo4j_driver, user_id),
-        get_obscurity_score(_neo4j_driver, user_id),
-        get_taste_drift(_neo4j_driver, user_id),
-        get_blind_spots(_neo4j_driver, user_id),
-    )
+    try:
+        heatmap_result, obscurity_result, drift_result, blind_spots_result = await asyncio.gather(
+            get_taste_heatmap(_neo4j_driver, user_id),
+            get_obscurity_score(_neo4j_driver, user_id),
+            get_taste_drift(_neo4j_driver, user_id),
+            get_blind_spots(_neo4j_driver, user_id),
+        )
+    except Neo4jClientError as exc:
+        if "TransactionTimedOut" in str(exc):
+            logger.warning("⏱️ Taste fingerprint query timed out", user_id=user_id)
+            return JSONResponse(
+                content={"error": "Taste fingerprint query timed out — collection may be too large"},
+                status_code=504,
+            )
+        raise
 
     cells, _total = heatmap_result
     resp = FingerprintResponse(
@@ -126,7 +136,16 @@ async def taste_blindspots(
     err = await _check_minimum(_neo4j_driver, user_id)
     if err:
         return err
-    spots = await get_blind_spots(_neo4j_driver, user_id, limit=limit)
+    try:
+        spots = await get_blind_spots(_neo4j_driver, user_id, limit=limit)
+    except Neo4jClientError as exc:
+        if "TransactionTimedOut" in str(exc):
+            logger.warning("⏱️ Blind spots query timed out", user_id=user_id)
+            return JSONResponse(
+                content={"error": "Blind spots query timed out — collection may be too large"},
+                status_code=504,
+            )
+        raise
     return JSONResponse(content={"blind_spots": [BlindSpot(**b).model_dump() for b in spots]})
 
 
