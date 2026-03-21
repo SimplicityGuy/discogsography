@@ -11,6 +11,7 @@ mod extractor;
 mod health;
 mod message_queue;
 mod parser;
+mod rules;
 mod state_marker;
 mod types;
 
@@ -72,8 +73,7 @@ async fn main() -> Result<()> {
     let shutdown = setup_shutdown_handler();
 
     // Create factory for message queue connections
-    let mq_factory: Arc<dyn extractor::MessageQueueFactory> =
-        Arc::new(extractor::DefaultMessageQueueFactory);
+    let mq_factory: Arc<dyn extractor::MessageQueueFactory> = Arc::new(extractor::DefaultMessageQueueFactory);
 
     // Run the main extraction loop
     let extraction_result = extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory).await;
