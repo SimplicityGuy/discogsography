@@ -488,6 +488,13 @@ async def check_file_completion(
         if graph is not None:
             await cleanup_stub_nodes(data_type)
 
+        # After releases are fully loaded, pre-compute first_year on
+        # Genre and Style nodes so the genre-emergence query can read
+        # properties (~100 DB hits) instead of scanning all IS edges
+        # (~184M DB hits).
+        if graph is not None and data_type == "releases":
+            await compute_first_years()
+
         await message.ack()
         return True
 
@@ -542,6 +549,62 @@ async def cleanup_stub_nodes(data_type: str) -> None:
         logger.error(
             f"❌ Failed to clean up stub {label} nodes",
             data_type=data_type,
+            error=str(e),
+        )
+
+
+async def compute_first_years() -> None:
+    """Pre-compute first_year property on Genre and Style nodes.
+
+    Sets ``first_year`` to the earliest release year (> 0) linked via
+    IS edges.  This allows the genre-emergence query to read a single
+    property per node (~100 DB hits) instead of scanning all IS
+    relationships (~184M DB hits for 16 genres + 757 styles).
+    """
+    if graph is None:
+        return
+
+    genre_cypher = """
+    MATCH (g:Genre)
+    CALL {
+        WITH g
+        MATCH (g)<-[:IS]-(r:Release)
+        WHERE r.year > 0
+        RETURN min(r.year) AS min_year
+    }
+    SET g.first_year = min_year
+    RETURN count(g) AS updated
+    """
+    style_cypher = """
+    MATCH (s:Style)
+    CALL {
+        WITH s
+        MATCH (s)<-[:IS]-(r:Release)
+        WHERE r.year > 0
+        RETURN min(r.year) AS min_year
+    }
+    SET s.first_year = min_year
+    RETURN count(s) AS updated
+    """
+
+    try:
+        async with graph.session(database="neo4j") as session:
+            result = await session.run(genre_cypher)
+            record = await result.single()
+            genre_count = record["updated"] if record else 0
+            logger.info(
+                f"📅 Pre-computed first_year on {genre_count} Genre nodes",
+            )
+
+            result = await session.run(style_cypher)
+            record = await result.single()
+            style_count = record["updated"] if record else 0
+            logger.info(
+                f"📅 Pre-computed first_year on {style_count} Style nodes",
+            )
+    except Exception as e:
+        logger.error(
+            "❌ Failed to compute first_year properties",
             error=str(e),
         )
 
