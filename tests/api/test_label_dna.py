@@ -1,5 +1,6 @@
 """Unit tests for Label DNA router endpoints."""
 
+import json
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -420,3 +421,95 @@ class TestLabelDnaModels:
         )
         resp = LabelCompareResponse(labels=[LabelCompareEntry(dna=dna)])
         assert len(resp.labels) == 1
+
+
+class TestLabelDnaCaching:
+    """Tests for Redis caching on label DNA and similar endpoints."""
+
+    def test_dna_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Cached DNA response should be returned without querying Neo4j."""
+        cached = {"label_id": "157", "label_name": "Hooj Choons", "release_count": 100}
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        response = test_client.get("/api/label/157/dna")
+        assert response.status_code == 200
+        assert response.json() == cached
+
+    def test_dna_cache_miss_stores_result(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """On cache miss, DNA result should be computed and stored in Redis."""
+        from api.models import LabelDNA
+
+        mock_redis.get = AsyncMock(return_value=None)
+        fake_dna = LabelDNA(
+            label_id="157",
+            label_name="Hooj",
+            release_count=100,
+            artist_count=50,
+            artist_diversity=0.5,
+            active_years=[2000],
+            peak_decade=2000,
+            prolificacy=100.0,
+            genres=[],
+            styles=[],
+            formats=[],
+            decades=[],
+        )
+        with patch("api.routers.label_dna._build_dna", return_value=(fake_dna, "ok")):
+            response = test_client.get("/api/label/157/dna")
+
+        assert response.status_code == 200
+        mock_redis.setex.assert_called_once()
+        call_args = mock_redis.setex.call_args
+        assert call_args[0][0] == "label-dna:157"
+
+    def test_dna_cache_get_failure_falls_through(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis get failure should fall through to Neo4j query."""
+        mock_redis.get = AsyncMock(side_effect=Exception("connection lost"))
+        with patch("api.routers.label_dna._build_dna", return_value=(None, "not_found")):
+            response = test_client.get("/api/label/999/dna")
+        assert response.status_code == 404
+
+    def test_similar_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Cached similar-labels response should be returned without computing."""
+        cached = {"label_id": "157", "label_name": "Hooj Choons", "similar": []}
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        response = test_client.get("/api/label/157/similar")
+        assert response.status_code == 200
+        assert response.json() == cached
+
+    def test_similar_cache_miss_stores_result(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """On cache miss, similar result should be stored in Redis."""
+        mock_redis.get = AsyncMock(return_value=None)
+
+        with (
+            patch(
+                "api.routers.label_dna.get_label_identity",
+                return_value={"label_id": "157", "label_name": "Hooj", "release_count": 100, "artist_count": 50},
+            ),
+            patch("api.routers.label_dna.get_label_genre_profile", return_value=[]),
+            patch("api.routers.label_dna.get_candidate_labels_genre_vectors", return_value=[]),
+        ):
+            response = test_client.get("/api/label/157/similar")
+
+        assert response.status_code == 200
+        mock_redis.setex.assert_called_once()
+        call_args = mock_redis.setex.call_args
+        assert call_args[0][0] == "label-similar:157:10"
+
+    def test_similar_cache_set_failure_still_returns(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis set failure should not prevent response."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=Exception("connection lost"))
+
+        with (
+            patch(
+                "api.routers.label_dna.get_label_identity",
+                return_value={"label_id": "157", "label_name": "Hooj", "release_count": 100, "artist_count": 50},
+            ),
+            patch("api.routers.label_dna.get_label_genre_profile", return_value=[]),
+            patch("api.routers.label_dna.get_candidate_labels_genre_vectors", return_value=[]),
+        ):
+            response = test_client.get("/api/label/157/similar")
+
+        assert response.status_code == 200

@@ -585,11 +585,22 @@ async def compute_genre_style_stats() -> None:
     RETURN s.name AS name, rc, ac, lc, gc, fy
     """
 
+    # These queries scan all IS relationships for every genre/style node,
+    # which can take several minutes on large datasets.  Use explicit
+    # transactions with a 10-minute timeout to avoid the default 120s limit.
+    tx_timeout = 600  # 10 minutes
+
     try:
         logger.info("📊 Computing aggregate stats on Genre nodes...")
         async with graph.session(database="neo4j") as session:
-            result = await session.run(genre_cypher)
-            records = [record async for record in result]
+            tx = await session.begin_transaction(timeout=tx_timeout)
+            try:
+                result = await tx.run(genre_cypher)
+                records = [record async for record in result]
+                await tx.commit()
+            except Exception:
+                await tx.rollback()
+                raise
             logger.info(
                 "✅ Genre stats computed",
                 count=len(records),
@@ -597,8 +608,14 @@ async def compute_genre_style_stats() -> None:
 
         logger.info("📊 Computing aggregate stats on Style nodes...")
         async with graph.session(database="neo4j") as session:
-            result = await session.run(style_cypher)
-            records = [record async for record in result]
+            tx = await session.begin_transaction(timeout=tx_timeout)
+            try:
+                result = await tx.run(style_cypher)
+                records = [record async for record in result]
+                await tx.commit()
+            except Exception:
+                await tx.rollback()
+                raise
             logger.info(
                 "✅ Style stats computed",
                 count=len(records),

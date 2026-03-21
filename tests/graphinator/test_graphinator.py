@@ -982,7 +982,15 @@ class TestComputeGenreStyleStats:
         genre_result.__aiter__ = lambda _self: _genre_iter()
         style_result = AsyncMock()
         style_result.__aiter__ = lambda _self: _style_iter()
-        mock_session.run = AsyncMock(side_effect=[genre_result, style_result])
+
+        # Mock begin_transaction → tx.run → tx.commit pattern
+        genre_tx = AsyncMock()
+        genre_tx.run = AsyncMock(return_value=genre_result)
+        genre_tx.commit = AsyncMock()
+        style_tx = AsyncMock()
+        style_tx.run = AsyncMock(return_value=style_result)
+        style_tx.commit = AsyncMock()
+        mock_session.begin_transaction = AsyncMock(side_effect=[genre_tx, style_tx])
 
         import graphinator.graphinator
 
@@ -992,18 +1000,23 @@ class TestComputeGenreStyleStats:
 
         await compute_genre_style_stats()
 
-        assert mock_session.run.call_count == 2
+        assert mock_session.begin_transaction.call_count == 2
+        # Verify timeout is set for long-running queries
+        for call in mock_session.begin_transaction.call_args_list:
+            assert call.kwargs.get("timeout") == 600
         # Verify genre query includes aggregate counts and first_year
-        genre_query = mock_session.run.call_args_list[0][0][0]
+        genre_query = genre_tx.run.call_args_list[0][0][0]
         assert "Genre" in genre_query
         assert "release_count" in genre_query
         assert "artist_count" in genre_query
         assert "first_year" in genre_query
+        genre_tx.commit.assert_called_once()
         # Verify style query
-        style_query = mock_session.run.call_args_list[1][0][0]
+        style_query = style_tx.run.call_args_list[0][0][0]
         assert "Style" in style_query
         assert "release_count" in style_query
         assert "first_year" in style_query
+        style_tx.commit.assert_called_once()
 
         # Reset
         graphinator.graphinator.graph = None
@@ -1029,7 +1042,7 @@ class TestComputeGenreStyleStats:
         mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
         mock_driver.session = MagicMock(return_value=mock_session_ctx)
-        mock_session.run = AsyncMock(side_effect=Exception("connection lost"))
+        mock_session.begin_transaction = AsyncMock(side_effect=Exception("connection lost"))
 
         import graphinator.graphinator
 
@@ -1060,7 +1073,10 @@ class TestComputeGenreStyleStats:
 
         empty_result = AsyncMock()
         empty_result.__aiter__ = lambda _self: _empty_iter()
-        mock_session.run = AsyncMock(return_value=empty_result)
+        mock_tx = AsyncMock()
+        mock_tx.run = AsyncMock(return_value=empty_result)
+        mock_tx.commit = AsyncMock()
+        mock_session.begin_transaction = AsyncMock(return_value=mock_tx)
 
         import graphinator.graphinator
 

@@ -227,6 +227,34 @@ class TestSearchQueryModuleHelpers:
         assert result["relevance"] == 0.9
         assert result["metadata"] == {}
 
+    def test_entity_select_without_per_table_limit(self) -> None:
+        from api.queries.search_queries import _entity_select
+
+        frag = _entity_select("artist", "name", has_year=False, has_genres=False)
+        rendered = frag.as_string(None)
+        assert "LIMIT" not in rendered
+
+    def test_entity_select_with_per_table_limit(self) -> None:
+        from api.queries.search_queries import _entity_select
+
+        frag = _entity_select("artist", "name", has_year=False, has_genres=False, per_table_limit=50)
+        rendered = frag.as_string(None)
+        assert "ORDER BY rank DESC LIMIT 50" in rendered
+
+    def test_build_union_passes_per_table_limit(self) -> None:
+        from api.queries.search_queries import _build_union
+
+        frag = _build_union(["artist"], per_table_limit=30)
+        rendered = frag.as_string(None)
+        assert "LIMIT 30" in rendered
+
+    def test_build_union_no_limit_by_default(self) -> None:
+        from api.queries.search_queries import _build_union
+
+        frag = _build_union(["artist"])
+        rendered = frag.as_string(None)
+        assert "LIMIT" not in rendered
+
     def test_format_result_release_with_metadata(self) -> None:
         from api.queries.search_queries import _format_result
 
