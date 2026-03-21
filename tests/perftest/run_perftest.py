@@ -275,7 +275,6 @@ def build_test_plan(
         ("explore/year-range", f"{base}/api/explore/year-range", None),
         ("explore/genre-emergence", f"{base}/api/explore/genre-emergence", {"before_year": "2025"}),
         ("insights/top-artists", f"{base}/api/insights/top-artists", None),
-        ("insights/genre-trends", f"{base}/api/insights/genre-trends", None),
         ("insights/label-longevity", f"{base}/api/insights/label-longevity", None),
         ("insights/this-month", f"{base}/api/insights/this-month", None),
         ("insights/data-completeness", f"{base}/api/insights/data-completeness", None),
@@ -283,6 +282,16 @@ def build_test_plan(
     ]
     for name, url, params in static_endpoints:
         tests.append({"name": name, "url": url, "params": params})
+
+    # --- Insights genre trends (per genre) ---
+    for genre_name in config.get("genres", []):
+        tests.append(
+            {
+                "name": f"insights/genre-trends/{genre_name}",
+                "url": f"{base}/api/insights/genre-trends",
+                "params": {"genre": genre_name},
+            }
+        )
 
     # --- Autocomplete (per entity type + name) ---
     for entity_type, entities in [
