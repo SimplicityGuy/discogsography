@@ -898,7 +898,7 @@ async def get_genre_emergence(driver: AsyncResilientNeo4jDriver, before_year: in
     """
     genres, styles = await asyncio.gather(
         run_query(driver, genre_cypher, timeout=90, before_year=before_year),
-        run_query(driver, style_cypher, timeout=90, before_year=before_year),
+        run_query(driver, style_cypher, timeout=180, before_year=before_year),
     )
     return {"genres": genres, "styles": styles}
 
