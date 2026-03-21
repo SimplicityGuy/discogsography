@@ -97,11 +97,16 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     Returns each candidate label with its genre distribution,
     filtered to labels with at least MIN_RELEASES releases.
 
-    Uses genre-first traversal for candidate discovery and combines
-    genre-profile + release-count into a single traversal per candidate,
-    eliminating the previous triple re-traversal pattern.
+    Split into two phases to avoid 206M DB hit explosion:
+    1. Candidate discovery: find label IDs sharing genres (lightweight)
+    2. Batch profile fetch: get genre vectors for top 200 candidates
+
+    The old monolithic query expanded all releases per genre into all
+    labels (20M rows) then re-traversed each candidate for genre
+    vectors, using 1GB memory for EagerAggregation.
     """
-    cypher = """
+    # Phase 1: Find candidate label IDs with shared genre counts
+    candidates_cypher = """
     MATCH (l:Label {id: $label_id})<-[:ON]-(r:Release)-[:IS]->(g:Genre)
     WITH l, collect(DISTINCT g.name) AS target_genres
     UNWIND target_genres AS genre_name
@@ -109,24 +114,41 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     WHERE l2 <> l
     WITH l2, count(DISTINCT r2) AS total_shared
     WHERE total_shared >= $min_releases
-    CALL {
-        WITH l2
-        MATCH (l2)<-[:ON]-(r3:Release)
-        OPTIONAL MATCH (r3)-[:IS]->(g3:Genre)
-        WITH count(DISTINCT r3) AS release_count,
-             g3.name AS genre,
-             count(DISTINCT CASE WHEN g3 IS NOT NULL THEN r3 END) AS genre_count
-        WITH release_count,
-             collect(CASE WHEN genre IS NOT NULL THEN {name: genre, count: genre_count} END) AS raw_genres
-        RETURN release_count,
-               [g IN raw_genres WHERE g IS NOT NULL] AS genres
-    }
-    RETURN l2.id AS label_id, l2.name AS label_name,
-           release_count, genres
-    ORDER BY release_count DESC
+    RETURN l2.id AS label_id, l2.name AS label_name, total_shared
+    ORDER BY total_shared DESC
     LIMIT 200
     """
-    return await run_query(driver, cypher, label_id=label_id, min_releases=MIN_RELEASES)
+    candidates = await run_query(driver, candidates_cypher, label_id=label_id, min_releases=MIN_RELEASES)
+
+    if not candidates:
+        return []
+
+    # Phase 2: Batch-fetch genre vectors and release counts for candidates
+    candidate_ids = [c["label_id"] for c in candidates]
+    profile_cypher = """
+    UNWIND $label_ids AS lid
+    MATCH (l:Label {id: lid})<-[:ON]-(r:Release)
+    WITH l, count(DISTINCT r) AS release_count
+    CALL {
+        WITH l
+        MATCH (l)<-[:ON]-(r2:Release)-[:IS]->(g:Genre)
+        WITH g.name AS genre, count(DISTINCT r2) AS genre_count
+        RETURN collect({name: genre, count: genre_count}) AS genres
+    }
+    RETURN l.id AS label_id, l.name AS label_name, release_count, genres
+    """
+    profiles = await run_query(driver, profile_cypher, label_ids=candidate_ids)
+
+    # Merge candidates with profiles
+    profile_map = {p["label_id"]: p for p in profiles}
+    results = []
+    for cand in candidates:
+        profile = profile_map.get(cand["label_id"])
+        if profile:
+            results.append(profile)
+        else:
+            results.append({**cand, "release_count": 0, "genres": []})
+    return results
 
 
 def compute_similar_labels(

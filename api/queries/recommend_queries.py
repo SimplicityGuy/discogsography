@@ -153,16 +153,17 @@ async def get_candidate_artists(driver: AsyncResilientNeo4jDriver, artist_id: st
     """
     candidates_cypher = """
     MATCH (a:Artist {id: $artist_id})<-[:BY]-(r:Release)-[:IS]->(g:Genre)
-    WITH a, collect(DISTINCT g.name) AS target_genres
+    WITH a, g, count(DISTINCT r) AS genre_count
+    ORDER BY genre_count DESC
+    LIMIT 5
+    WITH a, collect(g.name) AS target_genres
     UNWIND target_genres AS genre_name
     MATCH (g2:Genre {name: genre_name})<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
-    WHERE a2 <> a
+    WHERE a2 <> a AND a2.name IS NOT NULL
     WITH a2, count(DISTINCT r2) AS shared_count
     WHERE shared_count >= $min_releases
-    MATCH (r3:Release)-[:BY]->(a2)
-    WITH a2, count(DISTINCT r3) AS release_count
-    RETURN a2.id AS artist_id, a2.name AS artist_name, release_count
-    ORDER BY release_count DESC
+    RETURN a2.id AS artist_id, a2.name AS artist_name, shared_count AS release_count
+    ORDER BY shared_count DESC
     LIMIT 200
     """
     candidates = await run_query(driver, candidates_cypher, artist_id=artist_id, min_releases=MIN_ARTIST_RELEASES)
@@ -197,6 +198,9 @@ def compute_similar_artists(
 
     results = []
     for candidate in candidates:
+        # Skip candidates with missing names (NULL in Neo4j)
+        if not candidate.get("artist_name"):
+            continue
         cand_vecs = {
             "genre": to_genre_vector(candidate.get("genres", [])),
             "style": to_genre_vector(candidate.get("styles", [])),
