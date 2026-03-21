@@ -156,19 +156,30 @@ async def get_candidate_artists(driver: AsyncResilientNeo4jDriver, artist_id: st
     - Profiles only the top 50 candidates instead of 200 (since the final
       result is limited to 20 after cosine scoring).
     - Batch queries for profiles (4 queries total, not 200x4).
+    - CALL {} per-genre prevents cross-genre row explosion (157M → ~20-30M
+      DB hits for Johnny Cash; 1GB → ~300MB memory).
+    - Per-genre LIMIT 500 caps broad genres like Rock (7M+ releases).
     """
     candidates_cypher = """
     MATCH (a:Artist {id: $artist_id})<-[:BY]-(r:Release)-[:IS]->(g:Genre)
     WITH a, g, count(DISTINCT r) AS genre_count
     ORDER BY genre_count DESC
     LIMIT 5
-    WITH a, collect(g.name) AS target_genres
-    UNWIND target_genres AS genre_name
-    MATCH (g2:Genre {name: genre_name})<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
-    WHERE a2 <> a AND a2.name IS NOT NULL
-    WITH a2, count(DISTINCT r2) AS shared_count
+    WITH a, collect(g) AS top_genres
+    UNWIND top_genres AS g2
+    CALL {
+        WITH g2, a
+        MATCH (g2)<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
+        WHERE a2 <> a AND a2.name IS NOT NULL
+        WITH a2, count(DISTINCT r2) AS shared_in_genre
+        ORDER BY shared_in_genre DESC
+        LIMIT 500
+        RETURN a2, shared_in_genre
+    }
+    WITH a2, sum(shared_in_genre) AS shared_count
     WHERE shared_count >= $min_releases
-    RETURN a2.id AS artist_id, a2.name AS artist_name, shared_count AS release_count
+    RETURN a2.id AS artist_id, a2.name AS artist_name,
+           shared_count AS release_count
     ORDER BY shared_count DESC
     LIMIT 200
     """
