@@ -113,7 +113,8 @@ async fn test_message_batcher_basic() {
 
     // Send some test messages
     for i in 0..5 {
-        let message = DataMessage { sha256: format!("sha{}", i), data: serde_json::json!({ "test": format!("test{}", i) }), id: i.to_string() };
+        let message =
+            DataMessage { sha256: format!("sha{}", i), data: serde_json::json!({ "test": format!("test{}", i) }), id: i.to_string(), raw_xml: None };
         parse_sender.send(message).await.unwrap();
     }
     drop(parse_sender);
@@ -162,7 +163,8 @@ async fn test_message_batcher_respects_batch_size() {
     // Send exactly batch_size messages
     let batch_size = 10;
     for i in 0..batch_size {
-        let message = DataMessage { sha256: format!("sha{}", i), data: serde_json::json!({ "test": format!("test{}", i) }), id: i.to_string() };
+        let message =
+            DataMessage { sha256: format!("sha{}", i), data: serde_json::json!({ "test": format!("test{}", i) }), id: i.to_string(), raw_xml: None };
         parse_sender.send(message).await.unwrap();
     }
     drop(parse_sender);
@@ -201,7 +203,8 @@ async fn test_message_batcher_timeout_flush() {
 
     // Send fewer messages than batch size
     for i in 0..3 {
-        let message = DataMessage { sha256: format!("sha{}", i), data: serde_json::json!({ "test": format!("test{}", i) }), id: i.to_string() };
+        let message =
+            DataMessage { sha256: format!("sha{}", i), data: serde_json::json!({ "test": format!("test{}", i) }), id: i.to_string(), raw_xml: None };
         parse_sender.send(message).await.unwrap();
     }
 
@@ -418,7 +421,7 @@ async fn test_message_batcher_triggers_state_save() {
     // state_save_interval = 5, send exactly 5 messages to trigger a save
     let save_interval = 5usize;
     for i in 0..save_interval {
-        let message = DataMessage { id: i.to_string(), sha256: format!("hash{i}"), data: serde_json::json!({}) };
+        let message = DataMessage { id: i.to_string(), sha256: format!("hash{i}"), data: serde_json::json!({}), raw_xml: None };
         parse_sender.send(message).await.unwrap();
     }
     drop(parse_sender);
@@ -449,18 +452,9 @@ async fn test_message_batcher_triggers_state_save() {
 
 #[test]
 fn test_extract_version_from_filename() {
-    assert_eq!(
-        extract_version_from_filename("discogs_20260101_artists.xml.gz"),
-        Some("20260101".to_string())
-    );
-    assert_eq!(
-        extract_version_from_filename("discogs_20241201_labels.xml.gz"),
-        Some("20241201".to_string())
-    );
-    assert_eq!(
-        extract_version_from_filename("discogs_20230615_masters.xml.gz"),
-        Some("20230615".to_string())
-    );
+    assert_eq!(extract_version_from_filename("discogs_20260101_artists.xml.gz"), Some("20260101".to_string()));
+    assert_eq!(extract_version_from_filename("discogs_20241201_labels.xml.gz"), Some("20241201".to_string()));
+    assert_eq!(extract_version_from_filename("discogs_20230615_masters.xml.gz"), Some("20230615".to_string()));
 }
 
 #[test]
@@ -472,28 +466,16 @@ fn test_extract_version_from_filename_invalid() {
     // Empty string
     assert_eq!(extract_version_from_filename(""), None);
     // Single underscore should still work (parts.len() == 2)
-    assert_eq!(
-        extract_version_from_filename("discogs_20260101"),
-        Some("20260101".to_string())
-    );
+    assert_eq!(extract_version_from_filename("discogs_20260101"), Some("20260101".to_string()));
 }
 
 #[test]
 fn test_extract_data_type_with_path_prefix() {
     // Filenames with path components - the split on '_' still works because
     // the path prefix becomes part of parts[0]
-    assert_eq!(
-        extract_data_type("2026/discogs_20260101_artists.xml.gz"),
-        Some(DataType::Artists)
-    );
-    assert_eq!(
-        extract_data_type("data/discogs_20260101_releases.xml.gz"),
-        Some(DataType::Releases)
-    );
-    assert_eq!(
-        extract_data_type("some/deep/path/discogs_20260101_masters.xml.gz"),
-        Some(DataType::Masters)
-    );
+    assert_eq!(extract_data_type("2026/discogs_20260101_artists.xml.gz"), Some(DataType::Artists));
+    assert_eq!(extract_data_type("data/discogs_20260101_releases.xml.gz"), Some(DataType::Releases));
+    assert_eq!(extract_data_type("some/deep/path/discogs_20260101_masters.xml.gz"), Some(DataType::Masters));
 }
 
 #[test]
@@ -601,11 +583,8 @@ async fn test_message_batcher_multiple_batch_sizes() {
 
     // Send 25 messages with batch_size=10 => expect 3 batches (10, 10, 5)
     for i in 0..25 {
-        let message = DataMessage {
-            id: i.to_string(),
-            sha256: format!("sha{}", i),
-            data: serde_json::json!({ "test": format!("test{}", i) }),
-        };
+        let message =
+            DataMessage { id: i.to_string(), sha256: format!("sha{}", i), data: serde_json::json!({ "test": format!("test{}", i) }), raw_xml: None };
         parse_sender.send(message).await.unwrap();
     }
     drop(parse_sender);
@@ -668,9 +647,7 @@ async fn test_message_batcher_empty_input() {
         state_save_interval: 5000,
     };
 
-    let handle = tokio::spawn(async move {
-        message_batcher(parse_receiver, batch_sender, batcher_config).await
-    });
+    let handle = tokio::spawn(async move { message_batcher(parse_receiver, batch_sender, batcher_config).await });
 
     // Should receive no batches
     let result = batch_receiver.recv().await;

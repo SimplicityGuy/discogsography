@@ -164,7 +164,7 @@ impl XmlParser {
                         if let Value::Object(ref obj) = record {
                             let id = obj.get("@id").or_else(|| obj.get("id")).and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
                             let sha256 = calculate_record_hash(&record);
-                            let message = DataMessage { id, sha256, data: record.clone() };
+                            let message = DataMessage { id, sha256, data: record.clone(), raw_xml: None };
 
                             if self.sender.send(message).await.is_err() {
                                 warn!("⚠️ Receiver dropped, stopping parsing");
@@ -211,7 +211,7 @@ impl XmlParser {
 
                                 let final_value = Value::Object(final_obj);
                                 let sha256 = calculate_record_hash(&final_value);
-                                let message = DataMessage { id: id.clone(), sha256, data: final_value };
+                                let message = DataMessage { id: id.clone(), sha256, data: final_value, raw_xml: None };
 
                                 if self.sender.send(message).await.is_err() {
                                     warn!("⚠️ Receiver dropped, stopping parsing");
@@ -237,7 +237,8 @@ impl XmlParser {
                 }
 
                 Ok(Event::Text(e)) => {
-                    if in_target_element && let Some(context) = element_stack.last_mut()
+                    if in_target_element
+                        && let Some(context) = element_stack.last_mut()
                         && let Ok(text) = e.decode()
                     {
                         context.text_content.push_str(&text);
