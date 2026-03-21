@@ -6,7 +6,7 @@ contains the styles that appear on releases tagged with that genre.
 
 from typing import Any
 
-from api.queries.neo4j_queries import _run_query
+from api.queries.helpers import run_query
 from common import AsyncResilientNeo4jDriver
 
 
@@ -35,4 +35,4 @@ async def get_genre_tree(driver: AsyncResilientNeo4jDriver) -> list[dict[str, An
     Each row contains ``name``, ``release_count``, and ``styles`` (a list of
     dicts with ``name`` and ``release_count``).
     """
-    return await _run_query(driver, _GENRE_TREE_CYPHER, timeout=30.0)
+    return await run_query(driver, _GENRE_TREE_CYPHER, timeout=30.0)

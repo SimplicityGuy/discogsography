@@ -78,6 +78,30 @@ class TestUserRecommendationsEndpoint:
         assert "recommendations" in data
         assert data["total"] == 1
 
+    def test_recommendations_artist_normalizes_scores(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """Artist strategy normalizes raw count scores to 0-1 range."""
+        mock_result = [
+            {"id": "r1", "title": "Album A", "score": 130},
+            {"id": "r2", "title": "Album B", "score": 65},
+            {"id": "r3", "title": "Album C", "score": 0},
+        ]
+        with patch("api.routers.user.get_user_recommendations", new=AsyncMock(return_value=mock_result)):
+            response = test_client.get("/api/user/recommendations", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        scores = [r["score"] for r in data["recommendations"]]
+        assert scores[0] == 1.0  # max score normalized to 1
+        assert scores[1] == 0.5  # 65/130
+        assert scores[2] == 0.0  # 0/130
+        assert all(0 <= s <= 1 for s in scores)
+
+    def test_recommendations_artist_empty_skips_normalization(self, test_client: TestClient, auth_headers: dict[str, str]) -> None:
+        """Empty results skip normalization without error."""
+        with patch("api.routers.user.get_user_recommendations", new=AsyncMock(return_value=[])):
+            response = test_client.get("/api/user/recommendations", headers=auth_headers)
+        assert response.status_code == 200
+        assert response.json()["recommendations"] == []
+
 
 class TestUserCollectionStatsEndpoint:
     """Tests for GET /api/user/collection/stats."""

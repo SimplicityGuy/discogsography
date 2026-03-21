@@ -488,10 +488,132 @@ async def check_file_completion(
         if graph is not None:
             await cleanup_stub_nodes(data_type)
 
+        # After releases are fully imported, compute aggregate stats on Genre/Style nodes
+        if graph is not None and data_type == "releases":
+            await compute_genre_style_stats()
+
         await message.ack()
         return True
 
     return False
+
+
+async def compute_genre_style_stats() -> None:
+    """Pre-compute aggregate counts and first_year on Genre and Style nodes.
+
+    Sets release_count, artist_count, label_count, style_count/genre_count,
+    and first_year properties on each Genre and Style node.
+
+    - Aggregate counts are read by the explore/genre and explore/style API
+      endpoints, replacing 4 expensive traversal queries (~200M DB hits for
+      Rock) with a single property read (~3 DB hits).
+    - first_year is read by the genre-emergence query, replacing a full IS
+      edge scan (~184M DB hits) with an index seek (~100 DB hits).
+
+    Should be called after all releases have been imported.
+    """
+    if graph is None:
+        return
+
+    # Use CALL {} IN TRANSACTIONS OF 1 ROWS to process each genre/style
+    # in its own transaction.  This avoids the default 120s transaction
+    # timeout — each individual node takes ~10-30s (even for Electronic/Rock
+    # with millions of releases), well within the limit.
+    genre_cypher = """
+    CALL {
+        MATCH (g:Genre)
+        CALL {
+            WITH g
+            MATCH (g)<-[:IS]-(r:Release)
+            RETURN count(DISTINCT r) AS rc
+        }
+        CALL {
+            WITH g
+            MATCH (g)<-[:IS]-(r:Release)-[:BY]->(a:Artist)
+            RETURN count(DISTINCT a) AS ac
+        }
+        CALL {
+            WITH g
+            MATCH (g)<-[:IS]-(r:Release)-[:ON]->(l:Label)
+            RETURN count(DISTINCT l) AS lc
+        }
+        CALL {
+            WITH g
+            MATCH (g)<-[:IS]-(r:Release)-[:IS]->(s:Style)
+            WHERE s <> g
+            RETURN count(DISTINCT s) AS sc
+        }
+        CALL {
+            WITH g
+            MATCH (g)<-[:IS]-(r:Release)
+            WHERE r.year > 0
+            RETURN min(r.year) AS fy
+        }
+        SET g.release_count = rc, g.artist_count = ac,
+            g.label_count = lc, g.style_count = sc,
+            g.first_year = fy
+    } IN TRANSACTIONS OF 1 ROWS
+    """
+
+    style_cypher = """
+    CALL {
+        MATCH (s:Style)
+        CALL {
+            WITH s
+            MATCH (s)<-[:IS]-(r:Release)
+            RETURN count(DISTINCT r) AS rc
+        }
+        CALL {
+            WITH s
+            MATCH (s)<-[:IS]-(r:Release)-[:BY]->(a:Artist)
+            RETURN count(DISTINCT a) AS ac
+        }
+        CALL {
+            WITH s
+            MATCH (s)<-[:IS]-(r:Release)-[:ON]->(l:Label)
+            RETURN count(DISTINCT l) AS lc
+        }
+        CALL {
+            WITH s
+            MATCH (s)<-[:IS]-(r:Release)-[:IS]->(g:Genre)
+            WHERE g <> s
+            RETURN count(DISTINCT g) AS gc
+        }
+        CALL {
+            WITH s
+            MATCH (s)<-[:IS]-(r:Release)
+            WHERE r.year > 0
+            RETURN min(r.year) AS fy
+        }
+        SET s.release_count = rc, s.artist_count = ac,
+            s.label_count = lc, s.genre_count = gc,
+            s.first_year = fy
+    } IN TRANSACTIONS OF 1 ROWS
+    """
+
+    try:
+        logger.info("📊 Computing aggregate stats on Genre nodes...")
+        async with graph.session(database="neo4j") as session:
+            result = await session.run(genre_cypher)
+            summary = await result.consume()
+            logger.info(
+                "✅ Genre stats computed",
+                counters=str(summary.counters),
+            )
+
+        logger.info("📊 Computing aggregate stats on Style nodes...")
+        async with graph.session(database="neo4j") as session:
+            result = await session.run(style_cypher)
+            summary = await result.consume()
+            logger.info(
+                "✅ Style stats computed",
+                counters=str(summary.counters),
+            )
+    except Exception as e:
+        logger.error(
+            "❌ Failed to compute genre/style stats",
+            error=str(e),
+        )
 
 
 async def cleanup_stub_nodes(data_type: str) -> None:

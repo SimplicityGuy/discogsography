@@ -10,6 +10,44 @@ Last Updated: March 2026
 
 ## 🆕 Latest Improvements (March 2026)
 
+### ⚡ Cypher Query Optimization — 10-100x Fewer DB Hits (#175)
+
+**Overview**: Optimized the 6 slowest Cypher queries identified by the query profiling infrastructure, achieving 10-100x fewer database hits per query.
+
+#### Features
+
+- **Targeted optimization**: Profiling data from #174 identified the exact bottleneck queries
+- **Better index usage**: Rewrote queries to leverage existing indexes more effectively
+- **Reduced traversals**: Minimized relationship traversals and node lookups
+- **Measurable impact**: Before/after perftest results stored in `perftest-results/`
+
+______________________________________________________________________
+
+### 🔬 Query Debug Profiling for SQL and Perftest Coverage (#174)
+
+**Overview**: Expanded the query profiling infrastructure to cover SQL queries alongside Cypher, and broadened the perftest suite to cover additional API endpoints.
+
+#### Features
+
+- **SQL profiling**: Added `EXPLAIN ANALYZE` profiling for PostgreSQL queries alongside existing Cypher `PROFILE`
+- **Perftest expansion**: Additional API endpoints covered in `tests/perftest/config.yaml`
+- **Latency reports**: p50, p95, p99 latency measurements with statistical accuracy
+- **Query plan inspection**: Automated query plan analysis for identifying performance regressions
+
+______________________________________________________________________
+
+### 🦀 Neo4j Rust Driver Extension — Up to 10x Driver Performance (#173)
+
+**Overview**: Switched to `neo4j-rust-ext`, a Rust-backed extension for the Neo4j Python driver that accelerates Bolt protocol serialization/deserialization.
+
+#### Features
+
+- **Drop-in replacement**: No code changes required — the Rust extension transparently accelerates the existing `neo4j` Python driver
+- **Up to 10x faster**: Bolt protocol handling moved from Python to compiled Rust code
+- **All services benefit**: API, Graphinator, Dashboard, and Schema-Init all use the Neo4j driver
+
+______________________________________________________________________
+
 ### 🧪 JavaScript Testing Framework with Vitest (#147)
 
 **Overview**: Added a JavaScript testing framework using Vitest for the Explore frontend, enabling unit testing of the modular JS codebase (app.js, graph.js, api-client.js, etc.).
@@ -129,8 +167,9 @@ ______________________________________________________________________
 
 #### Features
 
-- **Label identity**: `/api/label-dna/{id}` returns a label's identity profile (genres, styles, formats, decades active)
-- **Label comparison**: `/api/label-dna/compare` compares two labels and returns a similarity score
+- **Label identity**: `/api/label/{label_id}/dna` returns a label's identity profile (genres, styles, formats, decades active)
+- **Similar labels**: `/api/label/{label_id}/similar` returns labels with similar DNA profiles
+- **Label comparison**: `/api/label/dna/compare` compares two labels and returns a similarity score
 - **Genre/style profiles**: Percentage breakdown of a label's releases by genre and style
 
 ______________________________________________________________________

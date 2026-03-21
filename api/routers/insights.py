@@ -4,8 +4,6 @@ Forwards /api/insights/* requests to the insights microservice
 running on port 8008.
 """
 
-from typing import Any
-
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 import httpx
@@ -27,8 +25,8 @@ def configure(insights_base_url: str | None = None) -> None:
         _INSIGHTS_BASE_URL = insights_base_url
 
 
-async def _forward(request: Request, path: str) -> Any:
-    """Forward a request to the insights service."""
+async def _forward(request: Request, path: str) -> JSONResponse:
+    """Forward a request to the insights service, preserving the status code."""
     global _client
     if _client is None:
         _client = httpx.AsyncClient(timeout=30.0)
@@ -38,15 +36,14 @@ async def _forward(request: Request, path: str) -> Any:
         url = f"{url}?{request.url.query}"
 
     response = await _client.get(url)
-    return response.json()
+    return JSONResponse(content=response.json(), status_code=response.status_code)
 
 
 @router.get("/api/insights/top-artists")
 async def proxy_top_artists(request: Request) -> JSONResponse:
     """Proxy top artists endpoint."""
     try:
-        data = await _forward(request, "/api/insights/top-artists")
-        return JSONResponse(content=data)
+        return await _forward(request, "/api/insights/top-artists")
     except Exception:
         logger.exception("❌ Insights service unavailable")
         return JSONResponse(content={"error": "Insights service unavailable"}, status_code=503)
@@ -56,8 +53,7 @@ async def proxy_top_artists(request: Request) -> JSONResponse:
 async def proxy_genre_trends(request: Request) -> JSONResponse:
     """Proxy genre trends endpoint."""
     try:
-        data = await _forward(request, "/api/insights/genre-trends")
-        return JSONResponse(content=data)
+        return await _forward(request, "/api/insights/genre-trends")
     except Exception:
         logger.exception("❌ Insights service unavailable")
         return JSONResponse(content={"error": "Insights service unavailable"}, status_code=503)
@@ -67,8 +63,7 @@ async def proxy_genre_trends(request: Request) -> JSONResponse:
 async def proxy_label_longevity(request: Request) -> JSONResponse:
     """Proxy label longevity endpoint."""
     try:
-        data = await _forward(request, "/api/insights/label-longevity")
-        return JSONResponse(content=data)
+        return await _forward(request, "/api/insights/label-longevity")
     except Exception:
         logger.exception("❌ Insights service unavailable")
         return JSONResponse(content={"error": "Insights service unavailable"}, status_code=503)
@@ -78,8 +73,7 @@ async def proxy_label_longevity(request: Request) -> JSONResponse:
 async def proxy_this_month(request: Request) -> JSONResponse:
     """Proxy this month endpoint."""
     try:
-        data = await _forward(request, "/api/insights/this-month")
-        return JSONResponse(content=data)
+        return await _forward(request, "/api/insights/this-month")
     except Exception:
         logger.exception("❌ Insights service unavailable")
         return JSONResponse(content={"error": "Insights service unavailable"}, status_code=503)
@@ -89,8 +83,7 @@ async def proxy_this_month(request: Request) -> JSONResponse:
 async def proxy_data_completeness(request: Request) -> JSONResponse:
     """Proxy data completeness endpoint."""
     try:
-        data = await _forward(request, "/api/insights/data-completeness")
-        return JSONResponse(content=data)
+        return await _forward(request, "/api/insights/data-completeness")
     except Exception:
         logger.exception("❌ Insights service unavailable")
         return JSONResponse(content={"error": "Insights service unavailable"}, status_code=503)
@@ -100,8 +93,7 @@ async def proxy_data_completeness(request: Request) -> JSONResponse:
 async def proxy_status(request: Request) -> JSONResponse:
     """Proxy computation status endpoint."""
     try:
-        data = await _forward(request, "/api/insights/status")
-        return JSONResponse(content=data)
+        return await _forward(request, "/api/insights/status")
     except Exception:
         logger.exception("❌ Insights service unavailable")
         return JSONResponse(content={"error": "Insights service unavailable"}, status_code=503)

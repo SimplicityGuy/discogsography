@@ -75,42 +75,42 @@ def _simple_driver(records: list[dict[str, Any]] | None = None, single: dict[str
 class TestRunQuery:
     @pytest.mark.asyncio
     async def test_returns_list_of_dicts(self) -> None:
-        from api.queries.user_queries import _run_query
+        from api.queries.helpers import run_query
 
         records = [{"id": "1", "name": "OK Computer"}]
         driver = _simple_driver(records=records)
-        result = await _run_query(driver, "MATCH (r:Release) RETURN r.id AS id, r.title AS name")
+        result = await run_query(driver, "MATCH (r:Release) RETURN r.id AS id, r.title AS name")
         assert result == records
 
     @pytest.mark.asyncio
     async def test_returns_empty_list(self) -> None:
-        from api.queries.user_queries import _run_query
+        from api.queries.helpers import run_query
 
         driver = _simple_driver(records=[])
-        result = await _run_query(driver, "MATCH (r:Release) RETURN r.id AS id")
+        result = await run_query(driver, "MATCH (r:Release) RETURN r.id AS id")
         assert result == []
 
 
 # ---------------------------------------------------------------------------
-# _run_count helper
+# run_count helper
 # ---------------------------------------------------------------------------
 
 
 class TestRunCount:
     @pytest.mark.asyncio
     async def test_returns_count(self) -> None:
-        from api.queries.user_queries import _run_count
+        from api.queries.helpers import run_count
 
         driver = _simple_driver(single={"total": 7})
-        result = await _run_count(driver, "RETURN count(*) AS total")
+        result = await run_count(driver, "RETURN count(*) AS total")
         assert result == 7
 
     @pytest.mark.asyncio
     async def test_returns_zero_when_no_record(self) -> None:
-        from api.queries.user_queries import _run_count
+        from api.queries.helpers import run_count
 
         driver = _simple_driver(single=None)
-        result = await _run_count(driver, "RETURN count(*) AS total")
+        result = await run_count(driver, "RETURN count(*) AS total")
         assert result == 0
 
 

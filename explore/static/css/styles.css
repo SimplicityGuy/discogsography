@@ -704,7 +704,7 @@
 
 .user-pane-body {
     flex: 1;
-    overflow: hidden;
+    overflow-y: auto;
     display: flex;
     flex-direction: column;
     padding: 0;
@@ -1067,6 +1067,16 @@
 
 .recommendation-item:last-child {
     border-bottom: none;
+}
+
+.recommendation-item .release-list-title a {
+    color: var(--text-high);
+    text-decoration: none;
+}
+
+.recommendation-item .release-list-title a:hover {
+    color: var(--accent-green);
+    text-decoration: underline;
 }
 
 .recommendation-score {

@@ -2,6 +2,7 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 import pytest
 
@@ -83,6 +84,48 @@ class TestInsightsProxySuccess:
         assert response.json() == mock_data
 
 
+class TestForwardStatusCodePreservation:
+    """Tests that _forward preserves upstream HTTP status codes."""
+
+    @pytest.mark.asyncio
+    async def test_forward_preserves_422_status(self) -> None:
+        """_forward returns upstream 422 instead of masking it as 200."""
+        import api.routers.insights as mod
+        from api.routers.insights import _forward
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"detail": [{"msg": "field required", "type": "missing"}]}
+        mock_response.status_code = 422
+
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+
+        original_client = mod._client
+        mod._client = mock_client
+
+        try:
+            from starlette.datastructures import URL
+            from starlette.requests import Request
+
+            mock_request = AsyncMock(spec=Request)
+            mock_request.url = URL("http://test/api/insights/genre-trends")
+
+            result = await _forward(mock_request, "/api/insights/genre-trends")
+            assert result.status_code == 422
+        finally:
+            mod._client = original_client
+
+    def test_proxy_genre_trends_forwards_422(self, test_client: TestClient) -> None:
+        """Proxy returns 422 when upstream insights service returns 422."""
+        error_response = JSONResponse(
+            content={"detail": [{"msg": "field required", "type": "missing"}]},
+            status_code=422,
+        )
+        with patch("api.routers.insights._forward", new=AsyncMock(return_value=error_response)):
+            response = test_client.get("/api/insights/genre-trends")
+        assert response.status_code == 422
+
+
 class TestForwardWithQueryString:
     """Tests for _forward appending query strings."""
 
@@ -94,6 +137,7 @@ class TestForwardWithQueryString:
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"items": []}
+        mock_response.status_code = 200
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
@@ -109,7 +153,8 @@ class TestForwardWithQueryString:
             mock_request.url = URL("http://test/api/insights/genre-trends?genre=Jazz")
 
             result = await _forward(mock_request, "/api/insights/genre-trends")
-            assert result == {"items": []}
+            assert result.status_code == 200
+            assert result.body == JSONResponse(content={"items": []}).body
             mock_client.get.assert_awaited_once_with("http://insights:8008/api/insights/genre-trends?genre=Jazz")
         finally:
             mod._client = original_client
@@ -126,6 +171,7 @@ class TestForwardWithQueryString:
         try:
             mock_response = MagicMock()
             mock_response.json.return_value = {"ok": True}
+            mock_response.status_code = 200
 
             from starlette.datastructures import URL
             from starlette.requests import Request
@@ -140,7 +186,8 @@ class TestForwardWithQueryString:
 
                 result = await _forward(mock_request, "/api/insights/status")
 
-            assert result == {"ok": True}
+            assert result.status_code == 200
+            assert result.body == JSONResponse(content={"ok": True}).body
             mock_cls.assert_called_once_with(timeout=30.0)
         finally:
             mod._client = original_client
@@ -186,6 +233,7 @@ class TestInsightsProxy:
 
         mock_response = MagicMock()
         mock_response.json.return_value = {"items": [], "count": 0}
+        mock_response.status_code = 200
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
@@ -201,7 +249,8 @@ class TestInsightsProxy:
             mock_request.url = URL("http://test/api/insights/top-artists")
 
             result = await _forward(mock_request, "/api/insights/top-artists")
-            assert result == {"items": [], "count": 0}
+            assert result.status_code == 200
+            assert result.body == JSONResponse(content={"items": [], "count": 0}).body
             mock_client.get.assert_awaited_once_with("http://insights:8008/api/insights/top-artists")
         finally:
             mod._client = original_client

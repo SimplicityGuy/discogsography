@@ -185,7 +185,24 @@ class UserPanes {
             const info = document.createElement('div');
             const title = document.createElement('div');
             title.className = 'release-list-title';
-            title.textContent = r.title || '(Unknown title)';
+            if (r.artist) {
+                const link = document.createElement('a');
+                link.href = '#';
+                link.textContent = r.title || '(Unknown title)';
+                link.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    if (window.exploreApp) {
+                        window.exploreApp._setSearchType('artist');
+                        window.exploreApp.currentQuery = r.artist;
+                        document.getElementById('searchInput').value = r.artist;
+                        window.exploreApp._switchPane('explore');
+                        window.exploreApp._loadExplore(r.artist, 'artist');
+                    }
+                });
+                title.appendChild(link);
+            } else {
+                title.textContent = r.title || '(Unknown title)';
+            }
             const meta = document.createElement('div');
             meta.className = 'release-list-meta';
             meta.textContent = [r.artist, r.year].filter(Boolean).join(' · ');

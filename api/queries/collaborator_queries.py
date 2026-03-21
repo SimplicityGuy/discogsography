@@ -6,7 +6,7 @@ temporal collaboration data (yearly counts, first/last year).
 
 from typing import Any
 
-from api.queries.neo4j_queries import _run_count, _run_query, _run_single
+from api.queries.helpers import run_count, run_query, run_single
 from common import AsyncResilientNeo4jDriver
 
 
@@ -16,7 +16,7 @@ async def get_artist_identity(driver: AsyncResilientNeo4jDriver, artist_id: str)
     MATCH (a:Artist {id: $artist_id})
     RETURN a.id AS artist_id, a.name AS artist_name
     """
-    return await _run_single(driver, cypher, artist_id=artist_id)
+    return await run_single(driver, cypher, artist_id=artist_id)
 
 
 async def get_collaborators(driver: AsyncResilientNeo4jDriver, artist_id: str, limit: int = 20) -> list[dict[str, Any]]:
@@ -37,7 +37,7 @@ async def get_collaborators(driver: AsyncResilientNeo4jDriver, artist_id: str, l
     RETURN other.id AS artist_id, other.name AS artist_name,
            release_count, first_year, last_year, yearly_counts
     """
-    return await _run_query(driver, cypher, artist_id=artist_id, limit=limit)
+    return await run_query(driver, cypher, artist_id=artist_id, limit=limit)
 
 
 async def count_collaborators(driver: AsyncResilientNeo4jDriver, artist_id: str) -> int:
@@ -48,4 +48,4 @@ async def count_collaborators(driver: AsyncResilientNeo4jDriver, artist_id: str)
     WHERE other.id <> $artist_id AND r.year > 0
     RETURN count(DISTINCT other) AS total
     """
-    return await _run_count(driver, cypher, artist_id=artist_id)
+    return await run_count(driver, cypher, artist_id=artist_id)

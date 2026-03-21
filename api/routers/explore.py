@@ -2,6 +2,7 @@
 
 import asyncio
 from collections import OrderedDict
+import json
 import time
 from typing import Any
 
@@ -32,11 +33,16 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 _neo4j_driver: Any = None
+_redis: Any = None
+
+# Redis cache TTL for trends/genre and trends/style (24 hours — data changes only on import)
+_TRENDS_CACHE_TTL = 86400
 
 
-def configure(neo4j: Any, jwt_secret: str | None) -> None:
-    global _neo4j_driver
+def configure(neo4j: Any, jwt_secret: str | None, redis: Any = None) -> None:
+    global _neo4j_driver, _redis
     _neo4j_driver = neo4j
+    _redis = redis
     _dependencies.configure(jwt_secret)
 
 
@@ -256,14 +262,34 @@ async def get_trends(
     entity_type = type.lower()
     if entity_type not in TRENDS_DISPATCH:
         return JSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
+
+    # Cache genre and style trends in Redis (data changes only on import)
+    if _redis and entity_type in ("genre", "style"):
+        cache_key = f"trends:{entity_type}:{name}"
+        try:
+            cached = await _redis.get(cache_key)
+            if cached:
+                return JSONResponse(content=json.loads(cached))
+        except Exception:
+            logger.debug("⚠️ Trends cache get failed", key=cache_key)
+
     query_func = TRENDS_DISPATCH[entity_type]
     results = await query_func(_neo4j_driver, name)
-    return JSONResponse(content={"name": name, "type": entity_type, "data": results})
+    response = {"name": name, "type": entity_type, "data": results}
+
+    if _redis and entity_type in ("genre", "style"):
+        cache_key = f"trends:{entity_type}:{name}"
+        try:
+            await _redis.setex(cache_key, _TRENDS_CACHE_TTL, json.dumps(response))
+        except Exception:
+            logger.debug("⚠️ Trends cache set failed", key=cache_key)
+
+    return JSONResponse(content=response)
 
 
 _VALID_PATH_TYPES = frozenset(EXPLORE_DISPATCH.keys())
-_MAX_PATH_DEPTH = 15
-_DEFAULT_PATH_DEPTH = 10
+_MAX_PATH_DEPTH = 10
+_DEFAULT_PATH_DEPTH = 6
 
 
 def _node_label_to_type(labels: list[str]) -> str:
@@ -325,6 +351,8 @@ async def find_path(
             str(from_node["id"]),
             str(to_node["id"]),
             max_depth=max_depth,
+            from_type=from_type_lower,
+            to_type=to_type_lower,
         )
     except Neo4jClientError as exc:
         if "TransactionTimedOut" in str(exc):
