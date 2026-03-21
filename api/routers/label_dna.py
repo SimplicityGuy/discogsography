@@ -1,6 +1,7 @@
 """Label DNA endpoints — fingerprint and compare record labels."""
 
 import asyncio
+import json
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -37,11 +38,16 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 _neo4j_driver: Any = None
+_redis: Any = None
+
+# Redis cache TTL for label DNA (24 hours — data changes only on import)
+_LABEL_DNA_CACHE_TTL = 86400
 
 
-def configure(neo4j: Any) -> None:
-    global _neo4j_driver
+def configure(neo4j: Any, redis: Any = None) -> None:
+    global _neo4j_driver, _redis
     _neo4j_driver = neo4j
+    _redis = redis
 
 
 def _add_percentages(items: list[dict[str, Any]], total: int) -> list[dict[str, Any]]:
@@ -114,6 +120,16 @@ async def label_dna(
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
+    # Check Redis cache first
+    cache_key = f"label-dna:{label_id}"
+    if _redis:
+        try:
+            cached = await _redis.get(cache_key)
+            if cached:
+                return JSONResponse(content=json.loads(cached))
+        except Exception:
+            logger.debug("⚠️ Label DNA cache get failed", key=cache_key)
+
     dna, reason = await _build_dna(label_id)
     if dna is None:
         if reason == "not_found":
@@ -123,7 +139,16 @@ async def label_dna(
             status_code=422,
         )
 
-    return JSONResponse(content=dna.model_dump())
+    response = dna.model_dump()
+
+    # Cache the result
+    if _redis:
+        try:
+            await _redis.setex(cache_key, _LABEL_DNA_CACHE_TTL, json.dumps(response, default=str))
+        except Exception:
+            logger.debug("⚠️ Label DNA cache set failed", key=cache_key)
+
+    return JSONResponse(content=response)
 
 
 @router.get("/api/label/{label_id}/similar")
@@ -136,6 +161,16 @@ async def similar_labels(
     """Find labels with the closest DNA fingerprint to the given label."""
     if not _neo4j_driver:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    # Check Redis cache first (keyed by label_id + limit)
+    cache_key = f"label-similar:{label_id}:{limit}"
+    if _redis:
+        try:
+            cached = await _redis.get(cache_key)
+            if cached:
+                return JSONResponse(content=json.loads(cached))
+        except Exception:
+            logger.debug("⚠️ Label similar cache get failed", key=cache_key)
 
     identity = await get_label_identity(_neo4j_driver, label_id)
     if not identity:
@@ -159,7 +194,16 @@ async def similar_labels(
         label_name=identity["label_name"],
         similar=[SimilarLabel(**r) for r in ranked],
     )
-    return JSONResponse(content=response.model_dump())
+    response_data = response.model_dump()
+
+    # Cache the result
+    if _redis:
+        try:
+            await _redis.setex(cache_key, _LABEL_DNA_CACHE_TTL, json.dumps(response_data, default=str))
+        except Exception:
+            logger.debug("⚠️ Label similar cache set failed", key=cache_key)
+
+    return JSONResponse(content=response_data)
 
 
 @router.get("/api/label/dna/compare")

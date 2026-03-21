@@ -488,17 +488,126 @@ async def check_file_completion(
         if graph is not None:
             await cleanup_stub_nodes(data_type)
 
-        # After releases are fully loaded, pre-compute first_year on
-        # Genre and Style nodes so the genre-emergence query can read
-        # properties (~100 DB hits) instead of scanning all IS edges
-        # (~184M DB hits).
+        # After releases are fully imported, compute aggregate stats on Genre/Style nodes
         if graph is not None and data_type == "releases":
-            await compute_first_years()
+            await compute_genre_style_stats()
 
         await message.ack()
         return True
 
     return False
+
+
+async def compute_genre_style_stats() -> None:
+    """Pre-compute aggregate counts and first_year on Genre and Style nodes.
+
+    Sets release_count, artist_count, label_count, style_count/genre_count,
+    and first_year properties on each Genre and Style node.
+
+    - Aggregate counts are read by the explore/genre and explore/style API
+      endpoints, replacing 4 expensive traversal queries (~200M DB hits for
+      Rock) with a single property read (~3 DB hits).
+    - first_year is read by the genre-emergence query, replacing a full IS
+      edge scan (~184M DB hits) with an index seek (~100 DB hits).
+
+    Should be called after all releases have been imported.
+    """
+    if graph is None:
+        return
+
+    genre_cypher = """
+    MATCH (g:Genre)
+    CALL {
+        WITH g
+        MATCH (g)<-[:IS]-(r:Release)
+        RETURN count(DISTINCT r) AS rc
+    }
+    CALL {
+        WITH g
+        MATCH (g)<-[:IS]-(r:Release)-[:BY]->(a:Artist)
+        RETURN count(DISTINCT a) AS ac
+    }
+    CALL {
+        WITH g
+        MATCH (g)<-[:IS]-(r:Release)-[:ON]->(l:Label)
+        RETURN count(DISTINCT l) AS lc
+    }
+    CALL {
+        WITH g
+        MATCH (g)<-[:IS]-(r:Release)-[:IS]->(s:Style)
+        WHERE s <> g
+        RETURN count(DISTINCT s) AS sc
+    }
+    CALL {
+        WITH g
+        MATCH (g)<-[:IS]-(r:Release)
+        WHERE r.year > 0
+        RETURN min(r.year) AS fy
+    }
+    SET g.release_count = rc, g.artist_count = ac,
+        g.label_count = lc, g.style_count = sc,
+        g.first_year = fy
+    RETURN g.name AS name, rc, ac, lc, sc, fy
+    """
+
+    style_cypher = """
+    MATCH (s:Style)
+    CALL {
+        WITH s
+        MATCH (s)<-[:IS]-(r:Release)
+        RETURN count(DISTINCT r) AS rc
+    }
+    CALL {
+        WITH s
+        MATCH (s)<-[:IS]-(r:Release)-[:BY]->(a:Artist)
+        RETURN count(DISTINCT a) AS ac
+    }
+    CALL {
+        WITH s
+        MATCH (s)<-[:IS]-(r:Release)-[:ON]->(l:Label)
+        RETURN count(DISTINCT l) AS lc
+    }
+    CALL {
+        WITH s
+        MATCH (s)<-[:IS]-(r:Release)-[:IS]->(g:Genre)
+        WHERE g <> s
+        RETURN count(DISTINCT g) AS gc
+    }
+    CALL {
+        WITH s
+        MATCH (s)<-[:IS]-(r:Release)
+        WHERE r.year > 0
+        RETURN min(r.year) AS fy
+    }
+    SET s.release_count = rc, s.artist_count = ac,
+        s.label_count = lc, s.genre_count = gc,
+        s.first_year = fy
+    RETURN s.name AS name, rc, ac, lc, gc, fy
+    """
+
+    try:
+        logger.info("📊 Computing aggregate stats on Genre nodes...")
+        async with graph.session(database="neo4j") as session:
+            result = await session.run(genre_cypher)
+            records = [record async for record in result]
+            logger.info(
+                "✅ Genre stats computed",
+                count=len(records),
+            )
+
+        logger.info("📊 Computing aggregate stats on Style nodes...")
+        async with graph.session(database="neo4j") as session:
+            result = await session.run(style_cypher)
+            records = [record async for record in result]
+            logger.info(
+                "✅ Style stats computed",
+                count=len(records),
+            )
+    except Exception as e:
+        logger.error(
+            "❌ Failed to compute genre/style stats",
+            error=str(e),
+        )
 
 
 async def cleanup_stub_nodes(data_type: str) -> None:
@@ -549,62 +658,6 @@ async def cleanup_stub_nodes(data_type: str) -> None:
         logger.error(
             f"❌ Failed to clean up stub {label} nodes",
             data_type=data_type,
-            error=str(e),
-        )
-
-
-async def compute_first_years() -> None:
-    """Pre-compute first_year property on Genre and Style nodes.
-
-    Sets ``first_year`` to the earliest release year (> 0) linked via
-    IS edges.  This allows the genre-emergence query to read a single
-    property per node (~100 DB hits) instead of scanning all IS
-    relationships (~184M DB hits for 16 genres + 757 styles).
-    """
-    if graph is None:
-        return
-
-    genre_cypher = """
-    MATCH (g:Genre)
-    CALL {
-        WITH g
-        MATCH (g)<-[:IS]-(r:Release)
-        WHERE r.year > 0
-        RETURN min(r.year) AS min_year
-    }
-    SET g.first_year = min_year
-    RETURN count(g) AS updated
-    """
-    style_cypher = """
-    MATCH (s:Style)
-    CALL {
-        WITH s
-        MATCH (s)<-[:IS]-(r:Release)
-        WHERE r.year > 0
-        RETURN min(r.year) AS min_year
-    }
-    SET s.first_year = min_year
-    RETURN count(s) AS updated
-    """
-
-    try:
-        async with graph.session(database="neo4j") as session:
-            result = await session.run(genre_cypher)
-            record = await result.single()
-            genre_count = record["updated"] if record else 0
-            logger.info(
-                f"📅 Pre-computed first_year on {genre_count} Genre nodes",
-            )
-
-            result = await session.run(style_cypher)
-            record = await result.single()
-            style_count = record["updated"] if record else 0
-            logger.info(
-                f"📅 Pre-computed first_year on {style_count} Style nodes",
-            )
-    except Exception as e:
-        logger.error(
-            "❌ Failed to compute first_year properties",
             error=str(e),
         )
 
