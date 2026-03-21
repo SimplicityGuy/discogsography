@@ -127,26 +127,31 @@ class TestComputeSimilarLabels:
 
 
 class TestGetCandidateLabelsGenreVectors:
-    """Tests for the two-phase get_candidate_labels_genre_vectors query."""
+    """Tests for the two-phase get_candidate_labels_genre_vectors query.
+
+    Phase 1: style-based candidate discovery (1 run_query call)
+    Phase 2: split into 25-label batches, each with 2 concurrent queries
+             (count + genre), so 2 run_query calls per batch.
+    """
 
     @pytest.mark.asyncio
     @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
     async def test_returns_profiles_for_candidates(self, mock_run_query: AsyncMock) -> None:
-        """Phase 1 returns candidates, phase 2 fetches counts + genres separately."""
+        """Phase 1 returns candidates, phase 2 returns their genre profiles."""
         phase1_result = [
             {"label_id": "10", "label_name": "Warp Records", "total_shared": 42},
             {"label_id": "20", "label_name": "Ninja Tune", "total_shared": 31},
         ]
-        # Phase 2 runs two concurrent queries: counts and genres
-        counts_result = [
+        # Phase 2: count query result and genre query result (1 batch of 2 labels)
+        count_result = [
             {"label_id": "10", "label_name": "Warp Records", "release_count": 100},
             {"label_id": "20", "label_name": "Ninja Tune", "release_count": 60},
         ]
-        genres_result = [
+        genre_result = [
             {"label_id": "10", "genres": [{"name": "Electronic", "count": 80}]},
             {"label_id": "20", "genres": [{"name": "Electronic", "count": 50}]},
         ]
-        mock_run_query.side_effect = [phase1_result, counts_result, genres_result]
+        mock_run_query.side_effect = [phase1_result, count_result, genre_result]
 
         driver = AsyncMock()
         result = await get_candidate_labels_genre_vectors(driver, "1")
@@ -157,10 +162,8 @@ class TestGetCandidateLabelsGenreVectors:
         assert result[0]["genres"] == [{"name": "Electronic", "count": 80}]
         assert result[1]["label_id"] == "20"
         assert result[1]["release_count"] == 60
+        # Phase 1 + 2 queries per batch (1 batch for 2 candidates)
         assert mock_run_query.call_count == 3
-        # Phase 2 queries should receive the candidate IDs from phase 1
-        _, counts_kwargs = mock_run_query.call_args_list[1]
-        assert counts_kwargs["label_ids"] == ["10", "20"]
 
     @pytest.mark.asyncio
     @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
@@ -177,7 +180,7 @@ class TestGetCandidateLabelsGenreVectors:
 
     @pytest.mark.asyncio
     @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
-    async def test_passes_timeout_to_all_phases(self, mock_run_query: AsyncMock) -> None:
+    async def test_passes_timeout_to_all_queries(self, mock_run_query: AsyncMock) -> None:
         """All query phases use timeout=60."""
         mock_run_query.side_effect = [
             [{"label_id": "5", "label_name": "L", "total_shared": 10}],

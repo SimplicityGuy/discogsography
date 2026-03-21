@@ -168,40 +168,31 @@ async def explore_artist(driver: AsyncResilientNeo4jDriver, name: str) -> dict[s
 
 
 async def explore_genre(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
-    """Get genre center node with category counts.
+    """Get genre center node with pre-computed category counts.
 
-    Uses 2 concurrent queries instead of 4.  The main query merges
-    release_count + artist_count + label_count in a single traversal
-    of ``(g)<-[:IS]-(r)`` with OPTIONAL MATCHes for artists and labels.
-    Artist/label expansions are roughly 1:1 with releases so row
-    multiplication is minimal.  Style count is kept separate because
-    ``(r)-[:IS]->(s:Style)`` doubles the row count (multiple styles per
-    release), which would inflate artist/label counts.
+    Reads release_count, artist_count, label_count, style_count directly
+    from Genre node properties (set during graphinator post-import).
+    This replaces 4 independent traversal queries (~200M DB hits for Rock)
+    with a single property read (~3 DB hits).
     """
-    main_cypher = """
-    MATCH (g:Genre {name: $name})<-[:IS]-(r:Release)
-    OPTIONAL MATCH (r)-[:BY]->(a:Artist)
-    OPTIONAL MATCH (r)-[:ON]->(l:Label)
-    WITH g, count(DISTINCT r) AS release_count,
-         count(DISTINCT a) AS artist_count,
-         count(DISTINCT l) AS label_count
+    cypher = """
+    MATCH (g:Genre {name: $name})
     RETURN g.name AS id, g.name AS name,
-           release_count, artist_count, label_count
+           g.release_count AS release_count,
+           g.artist_count AS artist_count,
+           g.label_count AS label_count,
+           g.style_count AS style_count
     """
-    style_cypher = """
-    MATCH (g:Genre {name: $name})<-[:IS]-(r:Release)-[:IS]->(s:Style)
-    WHERE s <> g
-    RETURN count(DISTINCT s) AS style_count
-    """
-    main_row, style_row = await asyncio.gather(
-        run_single(driver, main_cypher, name=name),
-        run_single(driver, style_cypher, name=name),
-    )
-    if not main_row:
+    result = await run_single(driver, cypher, name=name)
+    if not result:
         return None
     return {
-        **main_row,
-        "style_count": style_row["style_count"] if style_row else 0,
+        "id": result["id"],
+        "name": result["name"],
+        "release_count": result.get("release_count") or 0,
+        "artist_count": result.get("artist_count") or 0,
+        "label_count": result.get("label_count") or 0,
+        "style_count": result.get("style_count") or 0,
     }
 
 
@@ -228,34 +219,30 @@ async def explore_label(driver: AsyncResilientNeo4jDriver, name: str) -> dict[st
 
 
 async def explore_style(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
-    """Get style center node with category counts.
+    """Get style center node with pre-computed category counts.
 
-    Uses 2 concurrent queries (see explore_genre for rationale).
+    Reads release_count, artist_count, label_count, genre_count directly
+    from Style node properties (set during graphinator post-import).
+    This replaces 4 independent traversal queries with a single property read.
     """
-    main_cypher = """
-    MATCH (s:Style {name: $name})<-[:IS]-(r:Release)
-    OPTIONAL MATCH (r)-[:BY]->(a:Artist)
-    OPTIONAL MATCH (r)-[:ON]->(l:Label)
-    WITH s, count(DISTINCT r) AS release_count,
-         count(DISTINCT a) AS artist_count,
-         count(DISTINCT l) AS label_count
+    cypher = """
+    MATCH (s:Style {name: $name})
     RETURN s.name AS id, s.name AS name,
-           release_count, artist_count, label_count
+           s.release_count AS release_count,
+           s.artist_count AS artist_count,
+           s.label_count AS label_count,
+           s.genre_count AS genre_count
     """
-    genre_cypher = """
-    MATCH (s:Style {name: $name})<-[:IS]-(r:Release)-[:IS]->(g:Genre)
-    WHERE g <> s
-    RETURN count(DISTINCT g) AS genre_count
-    """
-    main_row, genre_row = await asyncio.gather(
-        run_single(driver, main_cypher, name=name),
-        run_single(driver, genre_cypher, name=name),
-    )
-    if not main_row:
+    result = await run_single(driver, cypher, name=name)
+    if not result:
         return None
     return {
-        **main_row,
-        "genre_count": genre_row["genre_count"] if genre_row else 0,
+        "id": result["id"],
+        "name": result["name"],
+        "release_count": result.get("release_count") or 0,
+        "artist_count": result.get("artist_count") or 0,
+        "label_count": result.get("label_count") or 0,
+        "genre_count": result.get("genre_count") or 0,
     }
 
 
@@ -767,13 +754,11 @@ async def trends_artist(driver: AsyncResilientNeo4jDriver, name: str) -> list[di
 async def trends_genre(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
     """Get release count by year for a genre.
 
-    Forces genre-first traversal by expanding ``(g)<-[:IS]-(r)`` inside
-    a CALL {} subquery with **no** ``WHERE r.year`` clause.  Without a
-    year predicate the planner has no reason to start from the
-    ``release_year_index`` (which causes 150M DB hits via Expand(Into)
-    on 16M releases).  The ``year > 0`` filter is applied **after** the
-    expansion in a separate WITH clause so it cannot influence plan
-    selection.
+    Uses CALL {} barrier with post-expansion year filter to force
+    genre-first traversal.  The year filter is placed OUTSIDE the MATCH
+    (as ``WITH year WHERE year > 0``) to prevent the planner from latching
+    onto the release_year_index.  This reduces DB hits from 150M to ~16M
+    for Electronic.
     """
     cypher = """
     MATCH (g:Genre {name: $name})
@@ -805,7 +790,8 @@ async def trends_label(driver: AsyncResilientNeo4jDriver, name: str) -> list[dic
 async def trends_style(driver: AsyncResilientNeo4jDriver, name: str) -> list[dict[str, Any]]:
     """Get release count by year for a style.
 
-    Forces style-first traversal (see trends_genre for rationale).
+    Uses CALL {} barrier with post-expansion year filter to force
+    style-first traversal (see trends_genre for rationale).
     """
     cypher = """
     MATCH (s:Style {name: $name})
@@ -853,70 +839,48 @@ async def get_year_range(driver: AsyncResilientNeo4jDriver) -> dict[str, int] | 
 async def get_genre_emergence(driver: AsyncResilientNeo4jDriver, before_year: int) -> dict[str, list[dict[str, Any]]]:
     """Get genres and styles with their first appearance year, up to before_year.
 
-    Reads the pre-computed ``first_year`` property on Genre/Style nodes
-    (set by graphinator after release import).  This reduces ~184M DB
-    hits to ~100 (16 genres + 757 styles x ~3 property reads each).
-
-    Falls back to scanning IS edges if ``first_year`` properties are not
-    yet populated (e.g. first run before graphinator has completed).
+    Uses UNWIND over a pre-collected node list to force per-genre/style
+    expansion.  The ``collect()`` + ``UNWIND`` pattern materialises the
+    small list (~16 genres, ~757 styles) and then the inner ``CALL``
+    subquery expands from each bound node outward — avoiding the
+    release-first plan the planner otherwise chooses (16M+ release scan).
 
     Genre and style queries run in parallel via ``asyncio.gather``.
     """
-    # Fast path: read pre-computed first_year properties
-    genre_fast = """
+    genre_cypher = """
     MATCH (g:Genre)
-    WHERE g.first_year IS NOT NULL AND g.first_year <= $before_year
-    RETURN g.name AS name, g.first_year AS first_year
+    WITH collect(g) AS genres
+    UNWIND genres AS g
+    CALL {
+        WITH g
+        MATCH (g)<-[:IS]-(r:Release)
+        WHERE r.year > 0 AND r.year <= $before_year
+        RETURN min(r.year) AS first_year
+    }
+    WITH g.name AS name, first_year
+    WHERE first_year IS NOT NULL
+    RETURN name, first_year
     ORDER BY first_year
     """
-    style_fast = """
+    style_cypher = """
     MATCH (s:Style)
-    WHERE s.first_year IS NOT NULL AND s.first_year <= $before_year
-    RETURN s.name AS name, s.first_year AS first_year
+    WITH collect(s) AS styles
+    UNWIND styles AS s
+    CALL {
+        WITH s
+        MATCH (s)<-[:IS]-(r:Release)
+        WHERE r.year > 0 AND r.year <= $before_year
+        RETURN min(r.year) AS first_year
+    }
+    WITH s.name AS name, first_year
+    WHERE first_year IS NOT NULL
+    RETURN name, first_year
     ORDER BY first_year
     """
     genres, styles = await asyncio.gather(
-        run_query(driver, genre_fast, before_year=before_year),
-        run_query(driver, style_fast, before_year=before_year),
+        run_query(driver, genre_cypher, timeout=90, before_year=before_year),
+        run_query(driver, style_cypher, timeout=180, before_year=before_year),
     )
-
-    # Fallback: if no pre-computed data, scan IS edges
-    if not genres and not styles:
-        genre_slow = """
-        MATCH (g:Genre)
-        WITH collect(g) AS genres
-        UNWIND genres AS g
-        CALL {
-            WITH g
-            MATCH (g)<-[:IS]-(r:Release)
-            WHERE r.year > 0 AND r.year <= $before_year
-            RETURN min(r.year) AS first_year
-        }
-        WITH g.name AS name, first_year
-        WHERE first_year IS NOT NULL
-        RETURN name, first_year
-        ORDER BY first_year
-        """
-        style_slow = """
-        MATCH (s:Style)
-        WITH collect(s) AS styles
-        UNWIND styles AS s
-        CALL {
-            WITH s
-            MATCH (s)<-[:IS]-(r:Release)
-            WHERE r.year > 0 AND r.year <= $before_year
-            RETURN min(r.year) AS first_year
-        }
-        WITH s.name AS name, first_year
-        WHERE first_year IS NOT NULL
-        RETURN name, first_year
-        ORDER BY first_year
-        """
-        genres, styles = await asyncio.gather(
-            run_query(driver, genre_slow, timeout=90, before_year=before_year),
-            run_query(driver, style_slow, timeout=180, before_year=before_year),
-        )
-
     return {"genres": genres, "styles": styles}
 
 

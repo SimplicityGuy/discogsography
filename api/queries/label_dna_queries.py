@@ -93,37 +93,41 @@ async def get_label_format_profile(driver: AsyncResilientNeo4jDriver, label_id: 
 
 
 async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
-    """Get genre vectors for labels sharing genres with the target label.
+    """Get genre vectors for labels sharing styles with the target label.
 
     Returns each candidate label with its genre distribution,
     filtered to labels with at least MIN_RELEASES releases.
 
     Optimizations:
-    - Limits genre expansion to the label's top 5 genres (avoids exploding
-      through mega-genres like "Rock" / "Electronic" with millions of releases).
+    - Uses style-based similarity instead of genre-based.  Styles are far
+      more specific than genres (757 styles vs 16 genres), so each style
+      traversal processes 5-10x fewer releases.  e.g. Trance (~671K releases)
+      vs Electronic (~4.9M releases).
     - Two-phase approach: first find candidate IDs (fast), then batch-fetch
       genre profiles for the top 100 candidates only.
+    - Uses CALL {} per-style to prevent cross-style row explosion.
+    - Phase 2 splits into 25-label batches with 2 lightweight queries each.
     - Timeout protection on each phase.
     """
-    # Phase 1: Find candidate label IDs via genre overlap (top 5 genres only).
-    # Uses CALL {} per-genre to prevent cross-genre row explosion.
-    # Without the barrier the planner expands ALL releases across ALL 5
-    # genres simultaneously (206M DB hits, 1GB memory for Hooj Choons).
-    # Processing one genre at a time reduces to ~60-80M hits, ~200MB.
+    # Phase 1: Find candidate label IDs via style overlap (top 5 styles).
+    # Styles are more specific than genres (757 styles vs 16 genres), so each
+    # style traversal processes 5-10x fewer releases.  e.g. Trance (~671K
+    # releases) vs Electronic (~4.9M releases).
+    # Uses CALL {} per-style to prevent cross-style row explosion.
     candidates_cypher = """
-    MATCH (l:Label {id: $label_id})<-[:ON]-(r:Release)-[:IS]->(g:Genre)
-    WITH l, g, count(DISTINCT r) AS genre_count
-    ORDER BY genre_count DESC
+    MATCH (l:Label {id: $label_id})<-[:ON]-(r:Release)-[:IS]->(s:Style)
+    WITH l, s, count(DISTINCT r) AS style_count
+    ORDER BY style_count DESC
     LIMIT 5
-    WITH l, collect(g) AS top_genres
-    UNWIND top_genres AS g2
+    WITH l, collect(s) AS top_styles
+    UNWIND top_styles AS s2
     CALL {
-        WITH g2, l
-        MATCH (g2)<-[:IS]-(r2:Release)-[:ON]->(l2:Label)
+        With s2, l
+        MATCH (s2)<-[:IS]-(r2:Release)-[:ON]->(l2:Label)
         WHERE l2 <> l
-        RETURN l2, count(DISTINCT r2) AS shared_in_genre
+        RETURN l2, count(DISTINCT r2) AS shared_in_style
     }
-    WITH l2, sum(shared_in_genre) AS total_shared
+    WITH l2, sum(shared_in_style) AS total_shared
     WHERE total_shared >= $min_releases
     RETURN l2.id AS label_id, l2.name AS label_name, total_shared
     ORDER BY total_shared DESC
@@ -140,38 +144,49 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     if not candidates:
         return []
 
-    # Phase 2: Batch-fetch release counts and genre profiles separately.
-    # Two lighter queries run concurrently instead of one 585MB
-    # EagerAggregation that combined both metrics in a single pass.
+    # Phase 2: Batch-fetch genre profiles + release counts for candidates.
+    # Split into 2 lightweight queries per batch (release counts + genre
+    # distribution), run concurrently.  Batches of 25 labels keep peak
+    # memory low (~60-75MB per batch vs 585MB for 100 labels in one query).
     candidate_ids = [c["label_id"] for c in candidates]
-    counts_cypher = """
-    UNWIND $label_ids AS lid
-    MATCH (l:Label {id: lid})<-[:ON]-(r:Release)
-    RETURN l.id AS label_id, l.name AS label_name, count(r) AS release_count
-    """
-    genres_cypher = """
-    UNWIND $label_ids AS lid
-    MATCH (l:Label {id: lid})<-[:ON]-(r:Release)-[:IS]->(g:Genre)
-    WITH l, g.name AS genre, count(DISTINCT r) AS genre_count
-    RETURN l.id AS label_id,
-           collect({name: genre, count: genre_count}) AS genres
-    """
-    counts_rows, genre_rows = await asyncio.gather(
-        run_query(driver, counts_cypher, timeout=60, label_ids=candidate_ids),
-        run_query(driver, genres_cypher, timeout=60, label_ids=candidate_ids),
-    )
 
-    # Merge the two result sets by label_id
-    genre_map: dict[str, list[dict[str, Any]]] = {row["label_id"]: row["genres"] for row in genre_rows}
-    return [
-        {
-            "label_id": row["label_id"],
-            "label_name": row["label_name"],
-            "release_count": row["release_count"],
-            "genres": genre_map.get(row["label_id"], []),
-        }
-        for row in counts_rows
-    ]
+    batch_size = 25
+    batches = [candidate_ids[i : i + batch_size] for i in range(0, len(candidate_ids), batch_size)]
+
+    async def _fetch_batch(batch_ids: list[str]) -> list[dict[str, Any]]:
+        count_cypher = """
+        UNWIND $label_ids AS lid
+        MATCH (l:Label {id: lid})<-[:ON]-(r:Release)
+        RETURN l.id AS label_id, l.name AS label_name, count(r) AS release_count
+        """
+        genre_cypher = """
+        UNWIND $label_ids AS lid
+        MATCH (l:Label {id: lid})<-[:ON]-(r:Release)-[:IS]->(g:Genre)
+        WITH l, g.name AS genre, count(DISTINCT r) AS genre_count
+        RETURN l.id AS label_id,
+               collect({name: genre, count: genre_count}) AS genres
+        """
+        counts, genres = await asyncio.gather(
+            run_query(driver, count_cypher, timeout=60, label_ids=batch_ids),
+            run_query(driver, genre_cypher, timeout=60, label_ids=batch_ids),
+        )
+
+        genre_map: dict[str, list[dict[str, Any]]] = {row["label_id"]: row["genres"] for row in genres}
+        results: list[dict[str, Any]] = []
+        for row in counts:
+            lid = row["label_id"]
+            results.append(
+                {
+                    "label_id": lid,
+                    "label_name": row["label_name"],
+                    "release_count": row["release_count"],
+                    "genres": genre_map.get(lid, []),
+                }
+            )
+        return results
+
+    batch_results = await asyncio.gather(*[_fetch_batch(batch) for batch in batches])
+    return [item for batch in batch_results for item in batch]
 
 
 def compute_similar_labels(
