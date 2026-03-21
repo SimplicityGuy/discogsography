@@ -240,30 +240,24 @@ class TestBuildDnaInternal:
 
     @patch("api.routers.label_dna.get_label_format_profile")
     @patch("api.routers.label_dna.get_label_active_years")
-    @patch("api.routers.label_dna.get_label_decade_profile")
-    @patch("api.routers.label_dna.get_label_style_profile")
-    @patch("api.routers.label_dna.get_label_genre_profile")
-    @patch("api.routers.label_dna.get_label_identity")
+    @patch("api.routers.label_dna.get_label_full_profile")
     def test_build_dna_success(
         self,
-        mock_identity: AsyncMock,
-        mock_genres: AsyncMock,
-        mock_styles: AsyncMock,
-        mock_decades: AsyncMock,
+        mock_full_profile: AsyncMock,
         mock_active_years: AsyncMock,
         mock_formats: AsyncMock,
         test_client: TestClient,
     ) -> None:
-        """Lines 64-91: _build_dna full success path via /api/label/{id}/dna."""
-        mock_identity.return_value = {
+        """_build_dna full success path via /api/label/{id}/dna."""
+        mock_full_profile.return_value = {
             "label_id": "42",
             "label_name": "ECM Records",
             "release_count": 200,
             "artist_count": 80,
+            "genres": [{"name": "Jazz", "count": 150}, {"name": "Classical", "count": 50}],
+            "styles": [{"name": "Avant-garde", "count": 100}],
+            "decades": [{"decade": 1970, "count": 80}, {"decade": 1980, "count": 120}],
         }
-        mock_genres.return_value = [{"name": "Jazz", "count": 150}, {"name": "Classical", "count": 50}]
-        mock_styles.return_value = [{"name": "Avant-garde", "count": 100}]
-        mock_decades.return_value = [{"decade": 1970, "count": 80}, {"decade": 1980, "count": 120}]
         mock_active_years.return_value = [1970, 1975, 1980, 1985, 1990]
         mock_formats.return_value = [{"name": "Vinyl", "count": 100}, {"name": "CD", "count": 100}]
 
@@ -283,30 +277,24 @@ class TestBuildDnaInternal:
 
     @patch("api.routers.label_dna.get_label_format_profile")
     @patch("api.routers.label_dna.get_label_active_years")
-    @patch("api.routers.label_dna.get_label_decade_profile")
-    @patch("api.routers.label_dna.get_label_style_profile")
-    @patch("api.routers.label_dna.get_label_genre_profile")
-    @patch("api.routers.label_dna.get_label_identity")
+    @patch("api.routers.label_dna.get_label_full_profile")
     def test_build_dna_no_decades_peak_none(
         self,
-        mock_identity: AsyncMock,
-        mock_genres: AsyncMock,
-        mock_styles: AsyncMock,
-        mock_decades: AsyncMock,
+        mock_full_profile: AsyncMock,
         mock_active_years: AsyncMock,
         mock_formats: AsyncMock,
         test_client: TestClient,
     ) -> None:
-        """Line 79: peak_decade is None when decades list is empty."""
-        mock_identity.return_value = {
+        """peak_decade is None when decades list is empty."""
+        mock_full_profile.return_value = {
             "label_id": "99",
             "label_name": "Empty Label",
             "release_count": 10,
             "artist_count": 5,
+            "genres": [],
+            "styles": [],
+            "decades": [],
         }
-        mock_genres.return_value = []
-        mock_styles.return_value = []
-        mock_decades.return_value = []
         mock_active_years.return_value = []
         mock_formats.return_value = []
 
