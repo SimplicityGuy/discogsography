@@ -858,30 +858,48 @@ async def get_year_range(driver: AsyncResilientNeo4jDriver) -> dict[str, int] | 
 async def get_genre_emergence(driver: AsyncResilientNeo4jDriver, before_year: int) -> dict[str, list[dict[str, Any]]]:
     """Get genres and styles with their first appearance year, up to before_year.
 
-    Uses pattern comprehension to force per-genre/style expansion from each
-    node outward.  A plain CALL {} subquery still lets the planner choose a
-    release-first plan (scanning 16M+ releases); pattern comprehension
-    ``[(g)<-[:IS]-(r) WHERE ... | r.year]`` guarantees the traversal starts
-    from the already-bound genre/style node.
+    Uses UNWIND over a pre-collected node list to force per-genre/style
+    expansion.  The ``collect()`` + ``UNWIND`` pattern materialises the
+    small list (~16 genres, ~757 styles) and then the inner ``CALL``
+    subquery expands from each bound node outward — avoiding the
+    release-first plan the planner otherwise chooses (16M+ release scan).
+
+    Genre and style queries run in parallel via ``asyncio.gather``.
     """
     genre_cypher = """
     MATCH (g:Genre)
-    WITH g, [(g)<-[:IS]-(r:Release) WHERE r.year > 0 AND r.year <= $before_year | r.year] AS years
-    WITH g.name AS name, reduce(m = years[0], y IN tail(years) | CASE WHEN y < m THEN y ELSE m END) AS first_year
+    WITH collect(g) AS genres
+    UNWIND genres AS g
+    CALL {
+        WITH g
+        MATCH (g)<-[:IS]-(r:Release)
+        WHERE r.year > 0 AND r.year <= $before_year
+        RETURN min(r.year) AS first_year
+    }
+    WITH g.name AS name, first_year
     WHERE first_year IS NOT NULL
     RETURN name, first_year
     ORDER BY first_year
     """
     style_cypher = """
     MATCH (s:Style)
-    WITH s, [(s)<-[:IS]-(r:Release) WHERE r.year > 0 AND r.year <= $before_year | r.year] AS years
-    WITH s.name AS name, reduce(m = years[0], y IN tail(years) | CASE WHEN y < m THEN y ELSE m END) AS first_year
+    WITH collect(s) AS styles
+    UNWIND styles AS s
+    CALL {
+        WITH s
+        MATCH (s)<-[:IS]-(r:Release)
+        WHERE r.year > 0 AND r.year <= $before_year
+        RETURN min(r.year) AS first_year
+    }
+    WITH s.name AS name, first_year
     WHERE first_year IS NOT NULL
     RETURN name, first_year
     ORDER BY first_year
     """
-    genres = await run_query(driver, genre_cypher, before_year=before_year)
-    styles = await run_query(driver, style_cypher, before_year=before_year)
+    genres, styles = await asyncio.gather(
+        run_query(driver, genre_cypher, timeout=90, before_year=before_year),
+        run_query(driver, style_cypher, timeout=90, before_year=before_year),
+    )
     return {"genres": genres, "styles": styles}
 
 

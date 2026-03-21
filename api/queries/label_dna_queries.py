@@ -97,18 +97,20 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     Returns each candidate label with its genre distribution,
     filtered to labels with at least MIN_RELEASES releases.
 
-    Split into two phases to avoid 206M DB hit explosion:
-    1. Candidate discovery: find label IDs sharing genres (lightweight)
-    2. Batch profile fetch: get genre vectors for top 200 candidates
-
-    The old monolithic query expanded all releases per genre into all
-    labels (20M rows) then re-traversed each candidate for genre
-    vectors, using 1GB memory for EagerAggregation.
+    Optimizations:
+    - Limits genre expansion to the label's top 5 genres (avoids exploding
+      through mega-genres like "Rock" / "Electronic" with millions of releases).
+    - Two-phase approach: first find candidate IDs (fast), then batch-fetch
+      genre profiles for the top 100 candidates only.
+    - Timeout protection on each phase.
     """
-    # Phase 1: Find candidate label IDs with shared genre counts
+    # Phase 1: Find candidate label IDs via genre overlap (top 5 genres only)
     candidates_cypher = """
     MATCH (l:Label {id: $label_id})<-[:ON]-(r:Release)-[:IS]->(g:Genre)
-    WITH l, collect(DISTINCT g.name) AS target_genres
+    WITH l, g, count(DISTINCT r) AS genre_count
+    ORDER BY genre_count DESC
+    LIMIT 5
+    WITH l, collect(g.name) AS target_genres
     UNWIND target_genres AS genre_name
     MATCH (g2:Genre {name: genre_name})<-[:IS]-(r2:Release)-[:ON]->(l2:Label)
     WHERE l2 <> l
@@ -116,14 +118,20 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     WHERE total_shared >= $min_releases
     RETURN l2.id AS label_id, l2.name AS label_name, total_shared
     ORDER BY total_shared DESC
-    LIMIT 200
+    LIMIT 100
     """
-    candidates = await run_query(driver, candidates_cypher, label_id=label_id, min_releases=MIN_RELEASES)
+    candidates = await run_query(
+        driver,
+        candidates_cypher,
+        timeout=60,
+        label_id=label_id,
+        min_releases=MIN_RELEASES,
+    )
 
     if not candidates:
         return []
 
-    # Phase 2: Batch-fetch genre vectors and release counts for candidates
+    # Phase 2: Batch-fetch genre profiles + release counts for candidates
     candidate_ids = [c["label_id"] for c in candidates]
     profile_cypher = """
     UNWIND $label_ids AS lid
@@ -137,18 +145,7 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     }
     RETURN l.id AS label_id, l.name AS label_name, release_count, genres
     """
-    profiles = await run_query(driver, profile_cypher, label_ids=candidate_ids)
-
-    # Merge candidates with profiles
-    profile_map = {p["label_id"]: p for p in profiles}
-    results = []
-    for cand in candidates:
-        profile = profile_map.get(cand["label_id"])
-        if profile:
-            results.append(profile)
-        else:
-            results.append({**cand, "release_count": 0, "genres": []})
-    return results
+    return await run_query(driver, profile_cypher, timeout=60, label_ids=candidate_ids)
 
 
 def compute_similar_labels(

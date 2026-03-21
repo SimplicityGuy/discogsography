@@ -189,6 +189,37 @@ class TestComputeSimilarArtists:
         results = compute_similar_artists(target, [], limit=10)
         assert results == []
 
+    def test_null_artist_name_excluded(self) -> None:
+        """Candidates with None artist_name are excluded to prevent validation errors.
+
+        Regression test: some Artist nodes in Neo4j have NULL names, which caused
+        pydantic ValidationError in SimilarArtist(artist_name=None). The Cypher
+        query now filters these out, but compute_similar_artists also skips them
+        as a defense-in-depth measure.
+        """
+        target = {
+            "genres": [{"name": "Rock", "count": 100}],
+            "styles": [],
+            "labels": [],
+            "collaborators": [],
+        }
+        candidates = [
+            self._make_candidate(artist_id="good", artist_name="Valid Artist"),
+            {
+                "artist_id": "bad",
+                "artist_name": None,
+                "release_count": 10,
+                "genres": [{"name": "Rock", "count": 10}],
+                "styles": [],
+                "labels": [],
+                "collaborators": [],
+            },
+        ]
+        results = compute_similar_artists(target, candidates, limit=10)
+        artist_ids = [r["artist_id"] for r in results]
+        assert "good" in artist_ids
+        assert "bad" not in artist_ids
+
     def test_zero_similarity_excluded(self) -> None:
         target = {
             "genres": [{"name": "Rock", "count": 100}],

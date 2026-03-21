@@ -148,8 +148,14 @@ async def get_candidate_artists(driver: AsyncResilientNeo4jDriver, artist_id: st
     Returns each candidate with actual release counts per genre/style/label/collaborator
     (not just presence), so cosine similarity on the vectors is meaningful.
 
-    Profiles are fetched in 4 batch queries (one per dimension) instead of
-    200 x 4 individual queries, eliminating the N+1 pattern.
+    Optimizations over the naive approach:
+    - Limits genre expansion to the artist's top 5 genres (avoids exploding
+      through mega-genres like "Rock" with 6M+ releases).
+    - Uses shared_count for ordering instead of re-traversing all releases
+      per candidate (eliminates an extra MATCH per candidate).
+    - Profiles only the top 50 candidates instead of 200 (since the final
+      result is limited to 20 after cosine scoring).
+    - Batch queries for profiles (4 queries total, not 200x4).
     """
     candidates_cypher = """
     MATCH (a:Artist {id: $artist_id})<-[:BY]-(r:Release)-[:IS]->(g:Genre)
@@ -166,15 +172,23 @@ async def get_candidate_artists(driver: AsyncResilientNeo4jDriver, artist_id: st
     ORDER BY shared_count DESC
     LIMIT 200
     """
-    candidates = await run_query(driver, candidates_cypher, artist_id=artist_id, min_releases=MIN_ARTIST_RELEASES)
+    candidates = await run_query(
+        driver,
+        candidates_cypher,
+        timeout=60,
+        artist_id=artist_id,
+        min_releases=MIN_ARTIST_RELEASES,
+    )
 
     if not candidates:
         return []
 
-    candidate_ids = [c["artist_id"] for c in candidates]
+    # Profile only top 50 candidates (final result is limited to 20 after scoring)
+    profile_candidates = candidates[:50]
+    candidate_ids = [c["artist_id"] for c in profile_candidates]
     profiles = await _batch_artist_profiles(driver, candidate_ids)
 
-    return [{**cand, **profiles.get(cand["artist_id"], {})} for cand in candidates]
+    return [{**cand, **profiles.get(cand["artist_id"], {})} for cand in profile_candidates]
 
 
 def compute_similar_artists(
