@@ -274,6 +274,7 @@ def build_test_plan(
     static_endpoints: list[tuple[str, str, dict[str, str] | None]] = [
         ("explore/year-range", f"{base}/api/explore/year-range", None),
         ("explore/genre-emergence", f"{base}/api/explore/genre-emergence", {"before_year": "2025"}),
+        ("genre-tree", f"{base}/api/genre-tree", None),
         ("insights/top-artists", f"{base}/api/insights/top-artists", None),
         ("insights/label-longevity", f"{base}/api/insights/label-longevity", None),
         ("insights/this-month", f"{base}/api/insights/this-month", None),
@@ -407,6 +408,18 @@ def build_test_plan(
                 "name": f"artist-similar/{artist_name}",
                 "url": f"{base}/api/recommend/similar/artist/{artist_id}",
                 "params": {"limit": "5"},
+            }
+        )
+
+    # --- Collaborators (requires resolved IDs) ---
+    for artist_name, artist_id in artist_ids.items():
+        if artist_id is None:
+            continue
+        tests.append(
+            {
+                "name": f"collaborators/{artist_name}",
+                "url": f"{base}/api/collaborators/{artist_id}",
+                "params": {"limit": "20"},
             }
         )
 

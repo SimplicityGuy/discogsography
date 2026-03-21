@@ -3,6 +3,7 @@
 import asyncio
 from collections import OrderedDict
 import json
+import time
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
@@ -13,6 +14,7 @@ import structlog
 import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.models import PathNode, PathResponse
+from api.queries import collaborator_queries, genre_tree_queries
 from api.queries.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
     COUNT_DISPATCH,
@@ -46,6 +48,11 @@ def configure(neo4j: Any, jwt_secret: str | None, redis: Any = None) -> None:
 
 _autocomplete_cache: OrderedDict[tuple[str, str, int], list[dict[str, Any]]] = OrderedDict()
 _AUTOCOMPLETE_CACHE_MAX = 512
+
+# Genre tree cache — refreshed every 5 minutes since the tree changes rarely
+_genre_tree_cache: dict | None = None
+_genre_tree_cache_time: float = 0
+_GENRE_TREE_TTL = 300  # 5 minutes
 
 
 def _get_cache_key(query: str, entity_type: str, limit: int) -> tuple[str, str, int]:
@@ -176,6 +183,75 @@ async def genre_emergence(
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
     result = await get_genre_emergence(_neo4j_driver, before_year)
     return JSONResponse(content=result)
+
+
+@router.get("/api/collaborators/{artist_id}")
+@limiter.limit("30/minute")
+async def get_collaborators(
+    request: Request,  # noqa: ARG001
+    artist_id: str,
+    limit: int = Query(20, ge=1, le=100),
+) -> JSONResponse:
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    try:
+        identity = await collaborator_queries.get_artist_identity(_neo4j_driver, artist_id)
+        if not identity:
+            return JSONResponse(content={"error": f"Artist '{artist_id}' not found"}, status_code=404)
+
+        collaborators, total = await asyncio.gather(
+            collaborator_queries.get_collaborators(_neo4j_driver, artist_id, limit=limit),
+            collaborator_queries.count_collaborators(_neo4j_driver, artist_id),
+        )
+    except Neo4jClientError as exc:
+        if "TransactionTimedOut" in str(exc):
+            logger.warning("⏱️ Collaborators query timed out", artist_id=artist_id)
+            return JSONResponse(
+                content={"error": "Collaborators query timed out — try again later"},
+                status_code=504,
+            )
+        raise
+
+    return JSONResponse(
+        content={
+            "artist_id": identity["artist_id"],
+            "artist_name": identity["artist_name"],
+            "collaborators": collaborators,
+            "total": total,
+        }
+    )
+
+
+@router.get("/api/genre-tree")
+@limiter.limit("30/minute")
+async def genre_tree(
+    request: Request,  # noqa: ARG001
+) -> JSONResponse:
+    """Return the full genre/style hierarchy derived from release co-occurrence."""
+    global _genre_tree_cache, _genre_tree_cache_time
+
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    now = time.monotonic()
+    if _genre_tree_cache is not None and (now - _genre_tree_cache_time) < _GENRE_TREE_TTL:
+        return JSONResponse(content=_genre_tree_cache)
+
+    try:
+        genres = await genre_tree_queries.get_genre_tree(_neo4j_driver)
+    except Neo4jClientError as exc:
+        if "TransactionTimedOut" in str(exc):
+            logger.warning("⏱️ Genre tree query timed out")
+            return JSONResponse(
+                content={"error": "Genre tree query timed out — try again later"},
+                status_code=504,
+            )
+        raise
+
+    _genre_tree_cache = {"genres": genres}
+    _genre_tree_cache_time = time.monotonic()
+    return JSONResponse(content=_genre_tree_cache)
 
 
 @router.get("/api/node/{node_id}")

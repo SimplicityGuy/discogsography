@@ -363,6 +363,69 @@ def create_test_app() -> FastAPI:
             }
         )
 
+    @app.get("/api/collaborators/{artist_id}")
+    async def get_collaborators(
+        artist_id: str,
+        limit: int = Query(20, ge=1, le=100),  # noqa: ARG001
+    ) -> JSONResponse:
+        return JSONResponse(
+            content={
+                "artist_id": artist_id,
+                "artist_name": "Radiohead",
+                "collaborators": [
+                    {
+                        "artist_id": "456",
+                        "artist_name": "Thom Yorke",
+                        "release_count": 5,
+                        "first_year": 1993,
+                        "last_year": 2011,
+                        "yearly_counts": [
+                            {"year": 1993, "count": 1},
+                            {"year": 1997, "count": 2},
+                            {"year": 2011, "count": 2},
+                        ],
+                    },
+                    {
+                        "artist_id": "789",
+                        "artist_name": "Jonny Greenwood",
+                        "release_count": 3,
+                        "first_year": 1995,
+                        "last_year": 2007,
+                        "yearly_counts": [
+                            {"year": 1995, "count": 1},
+                            {"year": 2007, "count": 2},
+                        ],
+                    },
+                ],
+                "total": 2,
+            }
+        )
+
+    @app.get("/api/genre-tree")
+    async def genre_tree() -> JSONResponse:
+        return JSONResponse(
+            content={
+                "genres": [
+                    {
+                        "name": "Rock",
+                        "release_count": 98000,
+                        "styles": [
+                            {"name": "Alternative Rock", "release_count": 15000},
+                            {"name": "Punk", "release_count": 9500},
+                        ],
+                    },
+                    {
+                        "name": "Electronic",
+                        "release_count": 75000,
+                        "styles": [
+                            {"name": "House", "release_count": 20000},
+                            {"name": "Techno", "release_count": 18000},
+                        ],
+                    },
+                ]
+            }
+        )
+
     # Serve static files from explore module (html=True serves index.html at root)
     static_dir = Path(__file__).parent.parent.parent / "explore" / "static"
     app.mount("/", StaticFiles(directory=str(static_dir), html=True), name="static")
