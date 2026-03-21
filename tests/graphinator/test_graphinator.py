@@ -971,18 +971,11 @@ class TestComputeGenreStyleStats:
         mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
         mock_driver.session = MagicMock(return_value=mock_session_ctx)
 
-        # Results are iterated with `async for record in result`
-        async def _genre_iter() -> Any:
-            yield {"name": "Rock", "rc": 100}
-
-        async def _style_iter() -> Any:
-            yield {"name": "Trance", "rc": 50}
-
+        # Results use result.consume() to get summary (no records returned)
         genre_result = AsyncMock()
-        genre_result.__aiter__ = lambda _self: _genre_iter()
+        genre_result.consume = AsyncMock(return_value=MagicMock(counters="properties_set=96"))
         style_result = AsyncMock()
-        style_result.__aiter__ = lambda _self: _style_iter()
-
+        style_result.consume = AsyncMock(return_value=MagicMock(counters="properties_set=4542"))
         mock_session.run = AsyncMock(side_effect=[genre_result, style_result])
 
         import graphinator.graphinator
@@ -1056,13 +1049,9 @@ class TestComputeGenreStyleStats:
         mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
         mock_driver.session = MagicMock(return_value=mock_session_ctx)
 
-        # Both queries return empty async iterator
-        async def _empty_iter() -> Any:
-            return
-            yield  # make this an async generator
-
+        # Both queries return empty summary
         empty_result = AsyncMock()
-        empty_result.__aiter__ = lambda _self: _empty_iter()
+        empty_result.consume = AsyncMock(return_value=MagicMock(counters="properties_set=0"))
         mock_session.run = AsyncMock(return_value=empty_result)
 
         import graphinator.graphinator

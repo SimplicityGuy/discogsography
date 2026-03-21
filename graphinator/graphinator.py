@@ -552,7 +552,6 @@ async def compute_genre_style_stats() -> None:
         SET g.release_count = rc, g.artist_count = ac,
             g.label_count = lc, g.style_count = sc,
             g.first_year = fy
-        RETURN g.name AS gname, rc AS rc, ac AS ac, lc AS lc, sc AS sc, fy AS fy
     } IN TRANSACTIONS OF 1 ROWS
     """
 
@@ -589,7 +588,6 @@ async def compute_genre_style_stats() -> None:
         SET s.release_count = rc, s.artist_count = ac,
             s.label_count = lc, s.genre_count = gc,
             s.first_year = fy
-        RETURN s.name AS sname, rc AS rc, ac AS ac, lc AS lc, gc AS gc, fy AS fy
     } IN TRANSACTIONS OF 1 ROWS
     """
 
@@ -597,19 +595,19 @@ async def compute_genre_style_stats() -> None:
         logger.info("📊 Computing aggregate stats on Genre nodes...")
         async with graph.session(database="neo4j") as session:
             result = await session.run(genre_cypher)
-            records = [record async for record in result]
+            summary = await result.consume()
             logger.info(
                 "✅ Genre stats computed",
-                count=len(records),
+                counters=str(summary.counters),
             )
 
         logger.info("📊 Computing aggregate stats on Style nodes...")
         async with graph.session(database="neo4j") as session:
             result = await session.run(style_cypher)
-            records = [record async for record in result]
+            summary = await result.consume()
             logger.info(
                 "✅ Style stats computed",
-                count=len(records),
+                counters=str(summary.counters),
             )
     except Exception as e:
         logger.error(
