@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
+from neo4j.exceptions import ClientError as Neo4jClientError
 
 
 class TestCollaboratorsEndpoint:
@@ -148,3 +149,29 @@ class TestCollaboratorsEndpoint:
         """GET /api/collaborators/123?limit=0 returns 422 (below min)."""
         response = test_client.get("/api/collaborators/123?limit=0")
         assert response.status_code == 422
+
+    def test_collaborators_timeout(self, test_client: TestClient) -> None:
+        """GET /api/collaborators/123 returns 504 on Neo4j timeout."""
+        identity = {"artist_id": "123", "artist_name": "Radiohead"}
+
+        with (
+            patch(
+                "api.routers.explore.collaborator_queries.get_artist_identity",
+                new_callable=AsyncMock,
+                return_value=identity,
+            ),
+            patch(
+                "api.routers.explore.collaborator_queries.get_collaborators",
+                new_callable=AsyncMock,
+                side_effect=Neo4jClientError("TransactionTimedOut"),
+            ),
+            patch(
+                "api.routers.explore.collaborator_queries.count_collaborators",
+                new_callable=AsyncMock,
+                return_value=0,
+            ),
+        ):
+            response = test_client.get("/api/collaborators/123")
+
+        assert response.status_code == 504
+        assert "timed out" in response.json()["error"].lower()

@@ -3,6 +3,7 @@
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
+from neo4j.exceptions import ClientError as Neo4jClientError
 
 
 SAMPLE_GENRE_TREE = [
@@ -139,3 +140,20 @@ class TestGenreTreeEndpoint:
             assert response2.status_code == 200
 
         assert mock_query.await_count == 2
+
+    def test_genre_tree_timeout(self, test_client: TestClient) -> None:
+        """GET /api/genre-tree returns 504 on Neo4j timeout."""
+        import api.routers.explore as mod
+
+        mod._genre_tree_cache = None
+        mod._genre_tree_cache_time = 0
+
+        with patch(
+            "api.routers.explore.genre_tree_queries.get_genre_tree",
+            new_callable=AsyncMock,
+            side_effect=Neo4jClientError("TransactionTimedOut"),
+        ):
+            response = test_client.get("/api/genre-tree")
+
+        assert response.status_code == 504
+        assert "timed out" in response.json()["error"].lower()

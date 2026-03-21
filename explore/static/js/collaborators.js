@@ -97,14 +97,16 @@ class CollaboratorsPanel {
             .attr('height', height)
             .attr('class', 'sparkline-svg');
 
+        const [minYear, maxYear] = d3.extent(yearlyCounts, (d) => d.year);
         const x = d3
             .scaleLinear()
-            .domain(d3.extent(yearlyCounts, (d) => d.year))
+            .domain([minYear, maxYear === minYear ? minYear + 1 : maxYear])
             .range([margin.left, width - margin.right]);
 
+        const maxCount = d3.max(yearlyCounts, (d) => d.count) || 1;
         const y = d3
             .scaleLinear()
-            .domain([0, d3.max(yearlyCounts, (d) => d.count)])
+            .domain([0, maxCount])
             .range([height - margin.bottom, margin.top]);
 
         const line = d3
