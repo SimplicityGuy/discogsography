@@ -1,9 +1,105 @@
-"""Tests for the insights compute router — data-completeness caching."""
+"""Tests for the insights compute router endpoints."""
 
 import json
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
+
+
+class TestArtistCentralityEndpoint:
+    """Tests for GET /api/internal/insights/artist-centrality."""
+
+    def test_success(self, test_client: TestClient) -> None:
+        """Returns 200 with artist centrality results."""
+        items = [{"artist_id": "1", "artist_name": "Miles Davis", "edge_count": 500}]
+        with patch("api.routers.insights_compute.query_artist_centrality", new_callable=AsyncMock, return_value=items):
+            response = test_client.get("/api/internal/insights/artist-centrality")
+        assert response.status_code == 200
+        assert response.json() == {"items": items}
+
+    def test_not_ready(self, test_client: TestClient) -> None:
+        """Returns 503 when Neo4j is not configured."""
+        import api.routers.insights_compute as mod
+
+        original = mod._neo4j
+        mod._neo4j = None
+        try:
+            response = test_client.get("/api/internal/insights/artist-centrality")
+            assert response.status_code == 503
+        finally:
+            mod._neo4j = original
+
+
+class TestGenreTrendsEndpoint:
+    """Tests for GET /api/internal/insights/genre-trends."""
+
+    def test_success(self, test_client: TestClient) -> None:
+        """Returns 200 with genre trends results."""
+        items = [{"genre": "Jazz", "decade": 1960, "release_count": 50}]
+        with patch("api.routers.insights_compute.query_genre_trends", new_callable=AsyncMock, return_value=items):
+            response = test_client.get("/api/internal/insights/genre-trends")
+        assert response.status_code == 200
+        assert response.json() == {"items": items}
+
+    def test_not_ready(self, test_client: TestClient) -> None:
+        """Returns 503 when Neo4j is not configured."""
+        import api.routers.insights_compute as mod
+
+        original = mod._neo4j
+        mod._neo4j = None
+        try:
+            response = test_client.get("/api/internal/insights/genre-trends")
+            assert response.status_code == 503
+        finally:
+            mod._neo4j = original
+
+
+class TestLabelLongevityEndpoint:
+    """Tests for GET /api/internal/insights/label-longevity."""
+
+    def test_success(self, test_client: TestClient) -> None:
+        """Returns 200 with label longevity results."""
+        items = [{"label_id": "1", "label_name": "Blue Note", "years_active": 80}]
+        with patch("api.routers.insights_compute.query_label_longevity", new_callable=AsyncMock, return_value=items):
+            response = test_client.get("/api/internal/insights/label-longevity")
+        assert response.status_code == 200
+        assert response.json() == {"items": items}
+
+    def test_not_ready(self, test_client: TestClient) -> None:
+        """Returns 503 when Neo4j is not configured."""
+        import api.routers.insights_compute as mod
+
+        original = mod._neo4j
+        mod._neo4j = None
+        try:
+            response = test_client.get("/api/internal/insights/label-longevity")
+            assert response.status_code == 503
+        finally:
+            mod._neo4j = original
+
+
+class TestAnniversariesEndpoint:
+    """Tests for GET /api/internal/insights/anniversaries."""
+
+    def test_success(self, test_client: TestClient) -> None:
+        """Returns 200 with anniversary results."""
+        items = [{"master_id": "1", "title": "Kind of Blue", "release_year": 1959}]
+        with patch("api.routers.insights_compute.query_monthly_anniversaries", new_callable=AsyncMock, return_value=items):
+            response = test_client.get("/api/internal/insights/anniversaries?year=2026&month=3")
+        assert response.status_code == 200
+        assert response.json() == {"items": items}
+
+    def test_not_ready(self, test_client: TestClient) -> None:
+        """Returns 503 when Neo4j is not configured."""
+        import api.routers.insights_compute as mod
+
+        original = mod._neo4j
+        mod._neo4j = None
+        try:
+            response = test_client.get("/api/internal/insights/anniversaries?year=2026&month=3")
+            assert response.status_code == 503
+        finally:
+            mod._neo4j = original
 
 
 class TestDataCompletenessCache:
