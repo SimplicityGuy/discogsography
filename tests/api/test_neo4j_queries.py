@@ -1088,7 +1088,16 @@ class TestGenreEmergenceQuery:
     async def test_genre_emergence_empty_results(self) -> None:
         from api.queries.neo4j_queries import get_genre_emergence
 
-        mock_driver = _make_driver_with_side_effects([_MockResult(), _MockResult()])
+        # Fast path returns empty (no pre-computed first_year), then
+        # fallback slow path also returns empty.
+        mock_driver = _make_driver_with_side_effects(
+            [
+                _MockResult(),
+                _MockResult(),  # fast path (empty)
+                _MockResult(),
+                _MockResult(),  # slow fallback (empty)
+            ]
+        )
 
         result = await get_genre_emergence(mock_driver, 2000)
         assert result == {"genres": [], "styles": []}

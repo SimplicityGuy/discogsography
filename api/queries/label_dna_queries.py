@@ -5,6 +5,7 @@ genre/style profiles, era distribution, artist diversity, format preference,
 and label-to-label similarity via cosine similarity on genre vectors.
 """
 
+import asyncio
 from typing import Any
 
 from api.queries.helpers import run_query, run_single
@@ -139,26 +140,38 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     if not candidates:
         return []
 
-    # Phase 2: Batch-fetch genre profiles + release counts for candidates.
-    # Single traversal of (l)<-[:ON]-(r) — the old CALL {} subquery
-    # re-expanded ON edges separately for genres (82M → ~44M DB hits).
+    # Phase 2: Batch-fetch release counts and genre profiles separately.
+    # Two lighter queries run concurrently instead of one 585MB
+    # EagerAggregation that combined both metrics in a single pass.
     candidate_ids = [c["label_id"] for c in candidates]
-    profile_cypher = """
+    counts_cypher = """
     UNWIND $label_ids AS lid
     MATCH (l:Label {id: lid})<-[:ON]-(r:Release)
-    OPTIONAL MATCH (r)-[:IS]->(g:Genre)
-    WITH l, count(DISTINCT r) AS release_count,
-         g.name AS genre,
-         count(DISTINCT CASE WHEN g IS NOT NULL THEN r END) AS genre_count
-    WITH l, release_count,
-         collect(CASE WHEN genre IS NOT NULL
-                      THEN {name: genre, count: genre_count}
-                 END) AS raw_genres
-    RETURN l.id AS label_id, l.name AS label_name,
-           release_count,
-           [g IN raw_genres WHERE g IS NOT NULL] AS genres
+    RETURN l.id AS label_id, l.name AS label_name, count(r) AS release_count
     """
-    return await run_query(driver, profile_cypher, timeout=60, label_ids=candidate_ids)
+    genres_cypher = """
+    UNWIND $label_ids AS lid
+    MATCH (l:Label {id: lid})<-[:ON]-(r:Release)-[:IS]->(g:Genre)
+    WITH l, g.name AS genre, count(DISTINCT r) AS genre_count
+    RETURN l.id AS label_id,
+           collect({name: genre, count: genre_count}) AS genres
+    """
+    counts_rows, genre_rows = await asyncio.gather(
+        run_query(driver, counts_cypher, timeout=60, label_ids=candidate_ids),
+        run_query(driver, genres_cypher, timeout=60, label_ids=candidate_ids),
+    )
+
+    # Merge the two result sets by label_id
+    genre_map: dict[str, list[dict[str, Any]]] = {row["label_id"]: row["genres"] for row in genre_rows}
+    return [
+        {
+            "label_id": row["label_id"],
+            "label_name": row["label_name"],
+            "release_count": row["release_count"],
+            "genres": genre_map.get(row["label_id"], []),
+        }
+        for row in counts_rows
+    ]
 
 
 def compute_similar_labels(

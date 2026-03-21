@@ -958,6 +958,171 @@ class TestCleanupStubNodes:
         await cleanup_stub_nodes("artists")
 
 
+class TestComputeFirstYears:
+    """Test compute_first_years function."""
+
+    @pytest.mark.asyncio
+    async def test_computes_first_year_for_genres_and_styles(self) -> None:
+        """Test pre-computes first_year on Genre and Style nodes."""
+        mock_driver = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_driver.session = MagicMock(return_value=mock_session_ctx)
+
+        # First call returns genre count, second returns style count
+        genre_result = AsyncMock()
+        genre_result.single = AsyncMock(return_value={"updated": 16})
+        style_result = AsyncMock()
+        style_result.single = AsyncMock(return_value={"updated": 757})
+        mock_session.run = AsyncMock(side_effect=[genre_result, style_result])
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import compute_first_years
+
+        await compute_first_years()
+
+        assert mock_session.run.call_count == 2
+        # Verify genre query
+        genre_query = mock_session.run.call_args_list[0][0][0]
+        assert "Genre" in genre_query
+        assert "first_year" in genre_query
+        assert "min(r.year)" in genre_query
+        # Verify style query
+        style_query = mock_session.run.call_args_list[1][0][0]
+        assert "Style" in style_query
+        assert "first_year" in style_query
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_driver(self) -> None:
+        """Test does nothing when graph driver is None."""
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = None
+
+        from graphinator.graphinator import compute_first_years
+
+        # Should not raise
+        await compute_first_years()
+
+    @pytest.mark.asyncio
+    async def test_handles_exception_gracefully(self) -> None:
+        """Test logs error and does not raise on failure."""
+        mock_driver = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_driver.session = MagicMock(return_value=mock_session_ctx)
+        mock_session.run = AsyncMock(side_effect=Exception("connection lost"))
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import compute_first_years
+
+        # Should not raise
+        await compute_first_years()
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    async def test_handles_none_record(self) -> None:
+        """Test handles None record from query result."""
+        mock_driver = AsyncMock()
+        mock_session_ctx = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_driver.session = MagicMock(return_value=mock_session_ctx)
+
+        # Both queries return None record
+        empty_result = AsyncMock()
+        empty_result.single = AsyncMock(return_value=None)
+        mock_session.run = AsyncMock(return_value=empty_result)
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import compute_first_years
+
+        # Should not raise — defaults to 0
+        await compute_first_years()
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+
+class TestCheckFileCompletionComputeFirstYears:
+    """Test that check_file_completion calls compute_first_years for releases."""
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.compute_first_years", new_callable=AsyncMock)
+    @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
+    async def test_calls_compute_first_years_for_releases(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """Test compute_first_years is called when releases extraction completes."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+        }
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.batch_processor = None
+        mock_driver = AsyncMock()
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "releases", mock_message)
+
+        assert result is True
+        mock_cleanup.assert_called_once_with("releases")
+        mock_compute.assert_called_once()
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+    @pytest.mark.asyncio
+    @patch("graphinator.graphinator.compute_first_years", new_callable=AsyncMock)
+    @patch("graphinator.graphinator.cleanup_stub_nodes", new_callable=AsyncMock)
+    async def test_does_not_call_compute_first_years_for_artists(self, mock_cleanup: AsyncMock, mock_compute: AsyncMock) -> None:
+        """Test compute_first_years is NOT called for non-release data types."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        completion_data = {
+            "type": "extraction_complete",
+            "version": "20260101",
+        }
+
+        import graphinator.graphinator
+
+        graphinator.graphinator.batch_processor = None
+        mock_driver = AsyncMock()
+        graphinator.graphinator.graph = mock_driver
+
+        from graphinator.graphinator import check_file_completion
+
+        result = await check_file_completion(completion_data, "artists", mock_message)
+
+        assert result is True
+        mock_cleanup.assert_called_once_with("artists")
+        mock_compute.assert_not_called()
+
+        # Reset
+        graphinator.graphinator.graph = None
+
+
 class TestScheduleConsumerCancellation:
     """Test schedule_consumer_cancellation function."""
 
