@@ -103,6 +103,12 @@ async def user_recommendations(
 
     if strategy == "artist":
         results = await get_user_recommendations(_neo4j_driver, user_id, limit)
+        # Normalize raw count scores to 0-1 range
+        if results:
+            max_score = max(r.get("score", 0) for r in results)
+            if max_score > 0:
+                for r in results:
+                    r["score"] = round(r.get("score", 0) / max_score, 4)
         return JSONResponse(content={"recommendations": results, "total": len(results)})
 
     # Multi-signal strategy
