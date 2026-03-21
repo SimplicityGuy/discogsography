@@ -5,9 +5,11 @@
 use anyhow::{Context, Result};
 use regex::Regex;
 use serde::Deserialize;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
-use std::path::Path;
+use std::fs;
+use std::io::{BufWriter, Write};
+use std::path::{Path, PathBuf};
 
 use crate::types::DataType;
 
@@ -262,6 +264,233 @@ fn check_condition(condition: &CompiledCondition, value: &str) -> bool {
             false
         }
         CompiledCondition::Enum { values } => !values.contains(value),
+    }
+}
+
+// ── Quality Report ──────────────────────────────────────────────────
+
+#[derive(Debug, Default)]
+pub struct RuleCounts {
+    pub errors: u64,
+    pub warnings: u64,
+    pub info: u64,
+}
+
+#[derive(Debug, Default)]
+pub struct QualityReport {
+    /// data_type -> rule_name -> counts (BTreeMap for deterministic output ordering)
+    pub counts: HashMap<String, BTreeMap<String, RuleCounts>>,
+    /// data_type -> total records evaluated
+    pub total_records: HashMap<String, u64>,
+}
+
+impl QualityReport {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn record_violation(&mut self, data_type: &str, rule_name: &str, severity: &Severity) {
+        let rule_counts = self
+            .counts
+            .entry(data_type.to_string())
+            .or_default()
+            .entry(rule_name.to_string())
+            .or_default();
+        match severity {
+            Severity::Error => rule_counts.errors += 1,
+            Severity::Warning => rule_counts.warnings += 1,
+            Severity::Info => rule_counts.info += 1,
+        }
+    }
+
+    pub fn increment_total(&mut self, data_type: &str) {
+        *self.total_records.entry(data_type.to_string()).or_default() += 1;
+    }
+
+    pub fn merge(&mut self, other: QualityReport) {
+        for (dt, rules) in other.counts {
+            let entry = self.counts.entry(dt).or_default();
+            for (rule, counts) in rules {
+                let rc = entry.entry(rule).or_default();
+                rc.errors += counts.errors;
+                rc.warnings += counts.warnings;
+                rc.info += counts.info;
+            }
+        }
+        for (dt, count) in other.total_records {
+            *self.total_records.entry(dt).or_default() += count;
+        }
+    }
+
+    pub fn has_violations(&self) -> bool {
+        self.counts
+            .values()
+            .any(|rules| rules.values().any(|c| c.errors > 0 || c.warnings > 0 || c.info > 0))
+    }
+
+    pub fn format_summary(&self, version: &str) -> String {
+        if !self.has_violations() {
+            return format!(
+                "📊 Data Quality Report for discogs_{}: No data quality violations found.\n",
+                version
+            );
+        }
+        let mut output = format!("📊 Data Quality Report for discogs_{}:\n", version);
+        for dt in &["releases", "artists", "labels", "masters"] {
+            let total = self.total_records.get(*dt).copied().unwrap_or(0);
+            if let Some(rules) = self.counts.get(*dt) {
+                let total_errors: u64 = rules.values().map(|c| c.errors).sum();
+                let total_warnings: u64 = rules.values().map(|c| c.warnings).sum();
+                output.push_str(&format!(
+                    "  {}: {} errors, {} warnings (of {} records)\n",
+                    dt, total_errors, total_warnings, total
+                ));
+                for (rule_name, counts) in rules {
+                    let mut parts = Vec::new();
+                    if counts.errors > 0 {
+                        parts.push(format!("{} errors", counts.errors));
+                    }
+                    if counts.warnings > 0 {
+                        parts.push(format!("{} warnings", counts.warnings));
+                    }
+                    if counts.info > 0 {
+                        parts.push(format!("{} info", counts.info));
+                    }
+                    output.push_str(&format!("    {}: {}\n", rule_name, parts.join(", ")));
+                }
+            } else if total > 0 {
+                output.push_str(&format!(
+                    "  {}: 0 errors, 0 warnings (of {} records)\n",
+                    dt, total
+                ));
+            }
+        }
+        output
+    }
+}
+
+// ── Flagged Record Writer ───────────────────────────────────────────
+
+pub struct FlaggedRecordWriter {
+    base_dir: PathBuf,
+    written_records: HashSet<String>,
+    jsonl_writers: HashMap<String, BufWriter<std::fs::File>>,
+}
+
+/// Sanitize a value from parsed data for use as a filename component.
+/// Retains only alphanumeric characters, hyphens, underscores, and dots;
+/// removes path separators and `..` traversal sequences entirely.
+fn sanitize_filename(raw: &str) -> String {
+    raw.chars()
+        .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        .collect::<String>()
+        // Collapse any remaining `..` that could still traverse after filtering
+        .replace("..", "_")
+}
+
+impl FlaggedRecordWriter {
+    pub fn new(discogs_root: &Path, version: &str) -> Self {
+        Self {
+            // `discogs_root` and `version` come from operator-controlled config, not user input.
+            base_dir: discogs_root.join("flagged").join(version), // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            written_records: HashSet::new(),
+            jsonl_writers: HashMap::new(),
+        }
+    }
+
+    /// Write violation to JSONL log. If capture_files is true, also write XML/JSON files.
+    pub fn write_violation(
+        &mut self,
+        data_type: &str,
+        record_id: &str,
+        violation: &Violation,
+        raw_xml: Option<&[u8]>,
+        parsed_json: &Value,
+        capture_files: bool,
+    ) {
+        // `data_type` is always one of the four enum variants ("artists", "labels",
+        // "masters", "releases") — validated upstream via DataType::as_str().
+        let type_dir = self.base_dir.join(data_type); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+
+        if let Err(e) = fs::create_dir_all(&type_dir) {
+            tracing::warn!("⚠️ Failed to create flagged directory {:?}: {}", type_dir, e);
+            return;
+        }
+
+        // Sanitize record_id before using it in any file path — it originates from
+        // parsed XML data and must not be allowed to traverse directories.
+        let safe_id = sanitize_filename(record_id);
+
+        // Write XML and JSON files once per record (only for error/warning)
+        if capture_files {
+            let record_key = format!("{}:{}", data_type, safe_id);
+            if !self.written_records.contains(&record_key) {
+                if let Some(xml_bytes) = raw_xml {
+                    let xml_path = type_dir.join(format!("{}.xml", safe_id));
+                    if let Err(e) = fs::write(&xml_path, xml_bytes) {
+                        tracing::warn!("⚠️ Failed to write flagged XML {:?}: {}", xml_path, e);
+                    }
+                }
+                let json_path = type_dir.join(format!("{}.json", safe_id));
+                if let Err(e) = fs::write(
+                    &json_path,
+                    serde_json::to_string_pretty(parsed_json).unwrap_or_default(),
+                ) {
+                    tracing::warn!("⚠️ Failed to write flagged JSON {:?}: {}", json_path, e);
+                }
+                self.written_records.insert(record_key);
+            }
+        }
+
+        // Append to violations.jsonl — path is fully under base_dir/data_type (both operator-
+        // controlled); the filename "violations.jsonl" is a literal constant.
+        if !self.jsonl_writers.contains_key(data_type) {
+            let jsonl_path = type_dir.join("violations.jsonl");
+            match fs::OpenOptions::new().create(true).append(true).open(&jsonl_path) { // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+                Ok(file) => {
+                    self.jsonl_writers.insert(data_type.to_string(), BufWriter::new(file));
+                }
+                Err(e) => {
+                    tracing::warn!("⚠️ Failed to open violations.jsonl {:?}: {}", jsonl_path, e);
+                    return;
+                }
+            }
+        }
+        let writer = self.jsonl_writers.get_mut(data_type).unwrap();
+
+        let entry = serde_json::json!({
+            "record_id": record_id,
+            "rule": violation.rule_name,
+            "severity": violation.severity.to_string(),
+            "field": violation.field,
+            "field_value": violation.field_value,
+            "xml_file": format!("{}.xml", safe_id),
+            "json_file": format!("{}.json", safe_id),
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+        });
+        if let Err(e) =
+            writeln!(writer, "{}", serde_json::to_string(&entry).unwrap_or_default())
+        {
+            tracing::warn!("⚠️ Failed to write violation entry: {}", e);
+        }
+    }
+
+    pub fn flush(&mut self) {
+        for writer in self.jsonl_writers.values_mut() {
+            let _ = writer.flush();
+        }
+    }
+
+    pub fn write_report(&self, report: &QualityReport, version: &str) {
+        if let Err(e) = fs::create_dir_all(&self.base_dir) {
+            tracing::warn!("⚠️ Failed to create flagged directory: {}", e);
+            return;
+        }
+        // `self.base_dir` is built from operator config in `new()` — not user input.
+        let report_path = self.base_dir.join("report.txt"); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        if let Err(e) = fs::write(&report_path, report.format_summary(version)) {
+            tracing::warn!("⚠️ Failed to write quality report: {}", e);
+        }
     }
 }
 

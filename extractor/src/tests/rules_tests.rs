@@ -1,4 +1,4 @@
-use crate::rules::{CompiledRulesConfig, RulesConfig, Severity, Violation, evaluate_rules};
+use crate::rules::{CompiledRulesConfig, QualityReport, RulesConfig, Severity, Violation, evaluate_rules};
 use serde_json::json;
 
 // ── Helper ───────────────────────────────────────────────────────────
@@ -583,4 +583,44 @@ rules:
         let compiled = CompiledRulesConfig::compile(config);
         assert!(compiled.is_ok(), "Failed to compile config for data type: {data_type}");
     }
+}
+
+// ── QualityReport ─────────────────────────────────────────────────────
+
+#[test]
+fn test_quality_report_accumulation() {
+    let mut report = QualityReport::new();
+    report.record_violation("releases", "genre-is-numeric", &Severity::Error);
+    report.record_violation("releases", "genre-is-numeric", &Severity::Error);
+    report.record_violation("releases", "year-out-of-range", &Severity::Warning);
+    report.record_violation("artists", "suspicious-name", &Severity::Warning);
+    report.increment_total("releases");
+    report.increment_total("releases");
+    report.increment_total("artists");
+    let summary = report.format_summary("20260301");
+    assert!(summary.contains("releases:"));
+    assert!(summary.contains("genre-is-numeric"));
+    assert!(summary.contains("2 errors"));
+    assert!(summary.contains("artists:"));
+}
+
+#[test]
+fn test_quality_report_merge() {
+    let mut report1 = QualityReport::new();
+    report1.record_violation("releases", "test-rule", &Severity::Error);
+    report1.increment_total("releases");
+    let mut report2 = QualityReport::new();
+    report2.record_violation("artists", "test-rule", &Severity::Warning);
+    report2.increment_total("artists");
+    report1.merge(report2);
+    let summary = report1.format_summary("20260301");
+    assert!(summary.contains("releases:"));
+    assert!(summary.contains("artists:"));
+}
+
+#[test]
+fn test_quality_report_empty() {
+    let report = QualityReport::new();
+    let summary = report.format_summary("20260301");
+    assert!(summary.contains("No data quality violations"));
 }
