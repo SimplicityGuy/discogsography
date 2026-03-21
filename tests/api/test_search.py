@@ -1,9 +1,10 @@
 """Tests for GET /api/search endpoint."""
 
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
+import pytest
 
 
 class TestSearchEndpointBasic:
@@ -275,3 +276,30 @@ class TestSearchQueryModuleHelpers:
         from api.queries.search_queries import ALL_TYPES
 
         assert set(ALL_TYPES) == {"artist", "label", "master", "release"}
+
+    @pytest.mark.asyncio
+    async def test_run_results_uses_per_table_limit(self) -> None:
+        """_run_results passes per_table_limit = limit + offset to _build_union."""
+        from api.queries.search_queries import _run_results
+
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = MagicMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        with patch("api.queries.search_queries.execute_sql", new_callable=AsyncMock) as mock_exec:
+            result = await _run_results(mock_pool, "Rock", ["artist"], [], None, None, 20, 0)
+
+        assert result == []
+        # Verify the SQL was built with per_table_limit (LIMIT 20 for limit=20, offset=0)
+        executed_sql = mock_exec.call_args[0][1]
+        rendered = executed_sql.as_string(None)
+        assert "LIMIT 20" in rendered
