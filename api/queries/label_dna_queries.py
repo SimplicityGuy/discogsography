@@ -104,17 +104,25 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
       genre profiles for the top 100 candidates only.
     - Timeout protection on each phase.
     """
-    # Phase 1: Find candidate label IDs via genre overlap (top 5 genres only)
+    # Phase 1: Find candidate label IDs via genre overlap (top 5 genres only).
+    # Uses CALL {} per-genre to prevent cross-genre row explosion.
+    # Without the barrier the planner expands ALL releases across ALL 5
+    # genres simultaneously (206M DB hits, 1GB memory for Hooj Choons).
+    # Processing one genre at a time reduces to ~60-80M hits, ~200MB.
     candidates_cypher = """
     MATCH (l:Label {id: $label_id})<-[:ON]-(r:Release)-[:IS]->(g:Genre)
     WITH l, g, count(DISTINCT r) AS genre_count
     ORDER BY genre_count DESC
     LIMIT 5
-    WITH l, collect(g.name) AS target_genres
-    UNWIND target_genres AS genre_name
-    MATCH (g2:Genre {name: genre_name})<-[:IS]-(r2:Release)-[:ON]->(l2:Label)
-    WHERE l2 <> l
-    WITH l2, count(DISTINCT r2) AS total_shared
+    WITH l, collect(g) AS top_genres
+    UNWIND top_genres AS g2
+    CALL {
+        WITH g2, l
+        MATCH (g2)<-[:IS]-(r2:Release)-[:ON]->(l2:Label)
+        WHERE l2 <> l
+        RETURN l2, count(DISTINCT r2) AS shared_in_genre
+    }
+    WITH l2, sum(shared_in_genre) AS total_shared
     WHERE total_shared >= $min_releases
     RETURN l2.id AS label_id, l2.name AS label_name, total_shared
     ORDER BY total_shared DESC
@@ -131,19 +139,24 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
     if not candidates:
         return []
 
-    # Phase 2: Batch-fetch genre profiles + release counts for candidates
+    # Phase 2: Batch-fetch genre profiles + release counts for candidates.
+    # Single traversal of (l)<-[:ON]-(r) — the old CALL {} subquery
+    # re-expanded ON edges separately for genres (82M → ~44M DB hits).
     candidate_ids = [c["label_id"] for c in candidates]
     profile_cypher = """
     UNWIND $label_ids AS lid
     MATCH (l:Label {id: lid})<-[:ON]-(r:Release)
-    WITH l, count(DISTINCT r) AS release_count
-    CALL {
-        WITH l
-        MATCH (l)<-[:ON]-(r2:Release)-[:IS]->(g:Genre)
-        WITH g.name AS genre, count(DISTINCT r2) AS genre_count
-        RETURN collect({name: genre, count: genre_count}) AS genres
-    }
-    RETURN l.id AS label_id, l.name AS label_name, release_count, genres
+    OPTIONAL MATCH (r)-[:IS]->(g:Genre)
+    WITH l, count(DISTINCT r) AS release_count,
+         g.name AS genre,
+         count(DISTINCT CASE WHEN g IS NOT NULL THEN r END) AS genre_count
+    WITH l, release_count,
+         collect(CASE WHEN genre IS NOT NULL
+                      THEN {name: genre, count: genre_count}
+                 END) AS raw_genres
+    RETURN l.id AS label_id, l.name AS label_name,
+           release_count,
+           [g IN raw_genres WHERE g IS NOT NULL] AS genres
     """
     return await run_query(driver, profile_cypher, timeout=60, label_ids=candidate_ids)
 
