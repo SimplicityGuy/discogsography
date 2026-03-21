@@ -7,6 +7,12 @@
 api_base_url: "http://api:8004"
 health_url: "http://api:8005/health"
 
+# Database connections for index listing (optional — skipped if unavailable)
+neo4j_uri: "bolt://neo4j:7687"
+neo4j_user: "neo4j"
+neo4j_password: "discogsography"
+postgres_url: "postgresql://discogsography:discogsography@postgres:5432/discogsography"
+
 # Number of times each endpoint is called (for statistical accuracy)
 iterations: 3
 

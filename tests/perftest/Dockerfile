@@ -15,7 +15,7 @@ LABEL org.opencontainers.image.title="Discogsography Performance Test" \
       com.discogsography.service="perftest"
 
 # hadolint ignore=DL3013
-RUN pip install --no-cache-dir httpx pyyaml
+RUN pip install --no-cache-dir httpx pyyaml neo4j psycopg2-binary
 
 # Create non-root user and directories
 RUN groupadd -r perftest && \

@@ -1,8 +1,13 @@
 """Unit tests for Label DNA query functions."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
-from api.queries.label_dna_queries import compute_similar_labels
+from api.queries.label_dna_queries import (
+    compute_similar_labels,
+    get_candidate_labels_genre_vectors,
+)
 from api.queries.similarity import cosine_similarity, to_genre_vector
 
 
@@ -119,3 +124,58 @@ class TestComputeSimilarLabels:
         ]
         results = compute_similar_labels(target, candidates, limit=10)
         assert results[0]["shared_genres"] == ["Rock"]
+
+
+class TestGetCandidateLabelsGenreVectors:
+    """Tests for the two-phase get_candidate_labels_genre_vectors query."""
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
+    async def test_returns_profiles_for_candidates(self, mock_run_query: AsyncMock) -> None:
+        """Phase 1 returns candidates, phase 2 returns their genre profiles."""
+        phase1_result = [
+            {"label_id": "10", "label_name": "Warp Records", "total_shared": 42},
+            {"label_id": "20", "label_name": "Ninja Tune", "total_shared": 31},
+        ]
+        phase2_result = [
+            {"label_id": "10", "label_name": "Warp Records", "release_count": 100, "genres": [{"name": "Electronic", "count": 80}]},
+            {"label_id": "20", "label_name": "Ninja Tune", "release_count": 60, "genres": [{"name": "Electronic", "count": 50}]},
+        ]
+        mock_run_query.side_effect = [phase1_result, phase2_result]
+
+        driver = AsyncMock()
+        result = await get_candidate_labels_genre_vectors(driver, "1")
+
+        assert result == phase2_result
+        assert mock_run_query.call_count == 2
+        # Phase 2 should receive the candidate IDs from phase 1
+        _, phase2_kwargs = mock_run_query.call_args_list[1]
+        assert phase2_kwargs["label_ids"] == ["10", "20"]
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
+    async def test_returns_empty_when_no_candidates(self, mock_run_query: AsyncMock) -> None:
+        """Early return when phase 1 finds no candidate labels."""
+        mock_run_query.return_value = []
+
+        driver = AsyncMock()
+        result = await get_candidate_labels_genre_vectors(driver, "nonexistent")
+
+        assert result == []
+        # Only phase 1 should run — phase 2 is skipped
+        assert mock_run_query.call_count == 1
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
+    async def test_passes_timeout_to_both_phases(self, mock_run_query: AsyncMock) -> None:
+        """Both query phases use timeout=60."""
+        mock_run_query.side_effect = [
+            [{"label_id": "5", "label_name": "L", "total_shared": 10}],
+            [{"label_id": "5", "label_name": "L", "release_count": 20, "genres": []}],
+        ]
+
+        driver = AsyncMock()
+        await get_candidate_labels_genre_vectors(driver, "1")
+
+        for call in mock_run_query.call_args_list:
+            assert call.kwargs["timeout"] == 60

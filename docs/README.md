@@ -66,6 +66,7 @@
 | **[File Completion Tracking](file-completion-tracking.md)**           | 📊 Intelligent completion tracking and stalled detection  |
 | **[Platform Targeting](platform-targeting.md)**                       | 🎯 Cross-platform compatibility guidelines                |
 | **[Neo4j Indexing](neo4j-indexing.md)**                               | 🔗 Advanced Neo4j indexing strategies                     |
+| **[Recent Improvements](recent-improvements.md)**                     | 🚀 Latest platform enhancements and changelog             |
 
 ## 🎯 Documentation by Role
 
@@ -268,7 +269,7 @@ ______________________________________________________________________
 
 <div align="center">
 
-**Last Updated**: 2026-03-14
+**Last Updated**: 2026-03-20
 
 Made with ❤️ by the Discogsography community
 

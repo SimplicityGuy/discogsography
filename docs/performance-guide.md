@@ -153,13 +153,14 @@ The extractor publishes to 4 fanout exchanges (one per data type). Each consumer
 
 ```python
 # Configured via environment variables (enabled by default)
+# Code defaults shown; docker-compose.yml overrides to 500/2.0 for production
 NEO4J_BATCH_MODE=true           # Enable batch processing
-NEO4J_BATCH_SIZE=100            # Records per batch
-NEO4J_BATCH_FLUSH_INTERVAL=5.0  # Seconds between flushes
+NEO4J_BATCH_SIZE=500            # Records per batch (docker-compose default)
+NEO4J_BATCH_FLUSH_INTERVAL=2.0  # Seconds between flushes (docker-compose default)
 
 POSTGRES_BATCH_MODE=true           # Enable batch processing
-POSTGRES_BATCH_SIZE=100            # Records per batch
-POSTGRES_BATCH_FLUSH_INTERVAL=5.0  # Seconds between flushes
+POSTGRES_BATCH_SIZE=500            # Records per batch (docker-compose default)
+POSTGRES_BATCH_FLUSH_INTERVAL=2.0  # Seconds between flushes (docker-compose default)
 ```
 
 **How it works:**
@@ -191,7 +192,7 @@ NEO4J_BATCH_FLUSH_INTERVAL=1.0
 POSTGRES_BATCH_SIZE=10
 POSTGRES_BATCH_FLUSH_INTERVAL=1.0
 
-# Balanced (default - good for most use cases)
+# Balanced (docker-compose default - good for most use cases)
 NEO4J_BATCH_SIZE=500
 NEO4J_BATCH_FLUSH_INTERVAL=2.0
 POSTGRES_BATCH_SIZE=500
@@ -378,6 +379,31 @@ class AsyncCache:
             return value
 ```
 
+## 🏎️ Recent Performance Improvements
+
+### Neo4j Rust Driver Extension (#173)
+
+Switched to `neo4j-rust-ext`, a Rust-backed extension for the Neo4j Python driver, delivering up to 10x faster Bolt protocol handling. This is a drop-in replacement that accelerates serialization/deserialization between Python and the Neo4j wire protocol.
+
+### Query Debug Profiling (#174)
+
+Added query profiling infrastructure for both Cypher and SQL queries. The perftest suite now covers additional API endpoints and generates detailed latency reports (p50, p95, p99) with query plan inspection via `EXPLAIN`/`PROFILE`.
+
+### Cypher Query Optimization (#175)
+
+Optimized the 6 slowest Cypher queries identified by the profiling infrastructure, achieving 10-100x fewer database hits per query through better index usage, reduced relationship traversals, and more targeted `MATCH` patterns.
+
+### Performance Testing
+
+The `tests/perftest/` suite provides automated performance regression testing:
+
+- **Configurable endpoints**: `tests/perftest/config.yaml` defines test entities and parameters
+- **Statistical accuracy**: Each endpoint is called multiple times for reliable measurements
+- **Containerized**: `tests/perftest/Dockerfile` for isolated test runs
+- **Results tracking**: Historical results stored in `perftest-results/`
+
+When adding new API endpoints that query Neo4j or PostgreSQL, add corresponding entries to the perftest configuration.
+
 ## 📊 Performance Metrics
 
 ### Key Metrics to Track
@@ -528,4 +554,4 @@ ______________________________________________________________________
 
 Remember: Measure first, optimize second. Focus on bottlenecks that matter! 🚀
 
-**Last Updated**: 2026-03-07
+**Last Updated**: 2026-03-20

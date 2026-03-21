@@ -17,14 +17,16 @@ MIN_RELEASES = 5
 
 
 async def get_label_identity(driver: AsyncResilientNeo4jDriver, label_id: str) -> dict[str, Any] | None:
-    """Get basic label info and release/artist counts."""
+    """Get basic label info and release/artist counts.
+
+    Single traversal from label to releases, with OPTIONAL MATCH for artists.
+    """
     cypher = """
     MATCH (l:Label {id: $label_id})
-    OPTIONAL MATCH (r:Release)-[:ON]->(l)
-    WITH l, collect(DISTINCT r) AS releases
-    OPTIONAL MATCH (r2:Release)-[:ON]->(l), (r2)-[:BY]->(a:Artist)
+    OPTIONAL MATCH (l)<-[:ON]-(r:Release)
+    OPTIONAL MATCH (r)-[:BY]->(a:Artist)
     RETURN l.id AS label_id, l.name AS label_name,
-           size(releases) AS release_count,
+           count(DISTINCT r) AS release_count,
            count(DISTINCT a) AS artist_count
     """
     return await run_single(driver, cypher, label_id=label_id)
@@ -94,28 +96,56 @@ async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, 
 
     Returns each candidate label with its genre distribution,
     filtered to labels with at least MIN_RELEASES releases.
+
+    Optimizations:
+    - Limits genre expansion to the label's top 5 genres (avoids exploding
+      through mega-genres like "Rock" / "Electronic" with millions of releases).
+    - Two-phase approach: first find candidate IDs (fast), then batch-fetch
+      genre profiles for the top 100 candidates only.
+    - Timeout protection on each phase.
     """
-    cypher = """
-    MATCH (r:Release)-[:ON]->(l:Label {id: $label_id}), (r)-[:IS]->(g:Genre)
-    WITH l, collect(DISTINCT g.name) AS target_genres
+    # Phase 1: Find candidate label IDs via genre overlap (top 5 genres only)
+    candidates_cypher = """
+    MATCH (l:Label {id: $label_id})<-[:ON]-(r:Release)-[:IS]->(g:Genre)
+    WITH l, g, count(DISTINCT r) AS genre_count
+    ORDER BY genre_count DESC
+    LIMIT 5
+    WITH l, collect(g.name) AS target_genres
     UNWIND target_genres AS genre_name
-    MATCH (r2:Release)-[:IS]->(g2:Genre {name: genre_name}), (r2)-[:ON]->(l2:Label)
-    WHERE l2.id <> l.id
+    MATCH (g2:Genre {name: genre_name})<-[:IS]-(r2:Release)-[:ON]->(l2:Label)
+    WHERE l2 <> l
     WITH l2, count(DISTINCT r2) AS total_shared
     WHERE total_shared >= $min_releases
-    MATCH (r3:Release)-[:ON]->(l2), (r3)-[:IS]->(g3:Genre)
-    WITH l2, g3.name AS genre, count(DISTINCT r3) AS genre_count
-    WITH l2,
-         collect({name: genre, count: genre_count}) AS genres,
-         sum(genre_count) AS total_genre_refs
-    MATCH (r4:Release)-[:ON]->(l2)
-    WITH l2, genres, total_genre_refs, count(DISTINCT r4) AS release_count
-    RETURN l2.id AS label_id, l2.name AS label_name,
-           release_count, genres
-    ORDER BY release_count DESC
-    LIMIT 200
+    RETURN l2.id AS label_id, l2.name AS label_name, total_shared
+    ORDER BY total_shared DESC
+    LIMIT 100
     """
-    return await run_query(driver, cypher, label_id=label_id, min_releases=MIN_RELEASES)
+    candidates = await run_query(
+        driver,
+        candidates_cypher,
+        timeout=60,
+        label_id=label_id,
+        min_releases=MIN_RELEASES,
+    )
+
+    if not candidates:
+        return []
+
+    # Phase 2: Batch-fetch genre profiles + release counts for candidates
+    candidate_ids = [c["label_id"] for c in candidates]
+    profile_cypher = """
+    UNWIND $label_ids AS lid
+    MATCH (l:Label {id: lid})<-[:ON]-(r:Release)
+    WITH l, count(DISTINCT r) AS release_count
+    CALL {
+        WITH l
+        MATCH (l)<-[:ON]-(r2:Release)-[:IS]->(g:Genre)
+        WITH g.name AS genre, count(DISTINCT r2) AS genre_count
+        RETURN collect({name: genre, count: genre_count}) AS genres
+    }
+    RETURN l.id AS label_id, l.name AS label_name, release_count, genres
+    """
+    return await run_query(driver, profile_cypher, timeout=60, label_ids=candidate_ids)
 
 
 def compute_similar_labels(
