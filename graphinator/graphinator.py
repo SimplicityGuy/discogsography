@@ -515,92 +515,89 @@ async def compute_genre_style_stats() -> None:
     if graph is None:
         return
 
+    # Use CALL {} IN TRANSACTIONS OF 1 ROWS to process each genre/style
+    # in its own transaction.  This avoids the default 120s transaction
+    # timeout — each individual node takes ~10-30s (even for Electronic/Rock
+    # with millions of releases), well within the limit.
     genre_cypher = """
-    MATCH (g:Genre)
     CALL {
-        WITH g
-        MATCH (g)<-[:IS]-(r:Release)
-        RETURN count(DISTINCT r) AS rc
-    }
-    CALL {
-        WITH g
-        MATCH (g)<-[:IS]-(r:Release)-[:BY]->(a:Artist)
-        RETURN count(DISTINCT a) AS ac
-    }
-    CALL {
-        WITH g
-        MATCH (g)<-[:IS]-(r:Release)-[:ON]->(l:Label)
-        RETURN count(DISTINCT l) AS lc
-    }
-    CALL {
-        WITH g
-        MATCH (g)<-[:IS]-(r:Release)-[:IS]->(s:Style)
-        WHERE s <> g
-        RETURN count(DISTINCT s) AS sc
-    }
-    CALL {
-        WITH g
-        MATCH (g)<-[:IS]-(r:Release)
-        WHERE r.year > 0
-        RETURN min(r.year) AS fy
-    }
-    SET g.release_count = rc, g.artist_count = ac,
-        g.label_count = lc, g.style_count = sc,
-        g.first_year = fy
-    RETURN g.name AS name, rc, ac, lc, sc, fy
+        MATCH (g:Genre)
+        CALL {
+            WITH g
+            MATCH (g)<-[:IS]-(r:Release)
+            RETURN count(DISTINCT r) AS rc
+        }
+        CALL {
+            WITH g
+            MATCH (g)<-[:IS]-(r:Release)-[:BY]->(a:Artist)
+            RETURN count(DISTINCT a) AS ac
+        }
+        CALL {
+            WITH g
+            MATCH (g)<-[:IS]-(r:Release)-[:ON]->(l:Label)
+            RETURN count(DISTINCT l) AS lc
+        }
+        CALL {
+            WITH g
+            MATCH (g)<-[:IS]-(r:Release)-[:IS]->(s:Style)
+            WHERE s <> g
+            RETURN count(DISTINCT s) AS sc
+        }
+        CALL {
+            WITH g
+            MATCH (g)<-[:IS]-(r:Release)
+            WHERE r.year > 0
+            RETURN min(r.year) AS fy
+        }
+        SET g.release_count = rc, g.artist_count = ac,
+            g.label_count = lc, g.style_count = sc,
+            g.first_year = fy
+        RETURN g.name AS gname, rc AS rc, ac AS ac, lc AS lc, sc AS sc, fy AS fy
+    } IN TRANSACTIONS OF 1 ROWS
     """
 
     style_cypher = """
-    MATCH (s:Style)
     CALL {
-        WITH s
-        MATCH (s)<-[:IS]-(r:Release)
-        RETURN count(DISTINCT r) AS rc
-    }
-    CALL {
-        WITH s
-        MATCH (s)<-[:IS]-(r:Release)-[:BY]->(a:Artist)
-        RETURN count(DISTINCT a) AS ac
-    }
-    CALL {
-        WITH s
-        MATCH (s)<-[:IS]-(r:Release)-[:ON]->(l:Label)
-        RETURN count(DISTINCT l) AS lc
-    }
-    CALL {
-        WITH s
-        MATCH (s)<-[:IS]-(r:Release)-[:IS]->(g:Genre)
-        WHERE g <> s
-        RETURN count(DISTINCT g) AS gc
-    }
-    CALL {
-        WITH s
-        MATCH (s)<-[:IS]-(r:Release)
-        WHERE r.year > 0
-        RETURN min(r.year) AS fy
-    }
-    SET s.release_count = rc, s.artist_count = ac,
-        s.label_count = lc, s.genre_count = gc,
-        s.first_year = fy
-    RETURN s.name AS name, rc, ac, lc, gc, fy
+        MATCH (s:Style)
+        CALL {
+            WITH s
+            MATCH (s)<-[:IS]-(r:Release)
+            RETURN count(DISTINCT r) AS rc
+        }
+        CALL {
+            WITH s
+            MATCH (s)<-[:IS]-(r:Release)-[:BY]->(a:Artist)
+            RETURN count(DISTINCT a) AS ac
+        }
+        CALL {
+            WITH s
+            MATCH (s)<-[:IS]-(r:Release)-[:ON]->(l:Label)
+            RETURN count(DISTINCT l) AS lc
+        }
+        CALL {
+            WITH s
+            MATCH (s)<-[:IS]-(r:Release)-[:IS]->(g:Genre)
+            WHERE g <> s
+            RETURN count(DISTINCT g) AS gc
+        }
+        CALL {
+            WITH s
+            MATCH (s)<-[:IS]-(r:Release)
+            WHERE r.year > 0
+            RETURN min(r.year) AS fy
+        }
+        SET s.release_count = rc, s.artist_count = ac,
+            s.label_count = lc, s.genre_count = gc,
+            s.first_year = fy
+        RETURN s.name AS sname, rc AS rc, ac AS ac, lc AS lc, gc AS gc, fy AS fy
+    } IN TRANSACTIONS OF 1 ROWS
     """
-
-    # These queries scan all IS relationships for every genre/style node,
-    # which can take several minutes on large datasets.  Use explicit
-    # transactions with a 10-minute timeout to avoid the default 120s limit.
-    tx_timeout = 600  # 10 minutes
 
     try:
         logger.info("📊 Computing aggregate stats on Genre nodes...")
         async with graph.session(database="neo4j") as session:
-            tx = await session.begin_transaction(timeout=tx_timeout)
-            try:
-                result = await tx.run(genre_cypher)
-                records = [record async for record in result]
-                await tx.commit()
-            except Exception:
-                await tx.rollback()
-                raise
+            result = await session.run(genre_cypher)
+            records = [record async for record in result]
             logger.info(
                 "✅ Genre stats computed",
                 count=len(records),
@@ -608,14 +605,8 @@ async def compute_genre_style_stats() -> None:
 
         logger.info("📊 Computing aggregate stats on Style nodes...")
         async with graph.session(database="neo4j") as session:
-            tx = await session.begin_transaction(timeout=tx_timeout)
-            try:
-                result = await tx.run(style_cypher)
-                records = [record async for record in result]
-                await tx.commit()
-            except Exception:
-                await tx.rollback()
-                raise
+            result = await session.run(style_cypher)
+            records = [record async for record in result]
             logger.info(
                 "✅ Style stats computed",
                 count=len(records),
