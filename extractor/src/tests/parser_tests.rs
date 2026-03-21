@@ -540,3 +540,56 @@ fn test_calculate_record_hash_empty_value() {
     // Null and empty object should produce different hashes
     assert_ne!(null_hash, empty_obj_hash);
 }
+
+#[tokio::test]
+async fn test_raw_xml_capture() {
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Test Artist</name>
+    </artist>
+</artists>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::with_options(DataType::Artists, sender, true);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+    let msg = receiver.recv().await.unwrap();
+    assert!(msg.raw_xml.is_some(), "raw_xml should be populated when capture is enabled");
+    let xml_str = String::from_utf8_lossy(msg.raw_xml.as_ref().unwrap());
+    assert!(xml_str.contains("Test Artist"), "reconstructed XML should contain the artist name");
+    assert!(xml_str.contains("artist"), "reconstructed XML should contain the element name");
+}
+
+#[tokio::test]
+async fn test_raw_xml_not_captured_by_default() {
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Test Artist</name>
+    </artist>
+</artists>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::new(DataType::Artists, sender);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+    let msg = receiver.recv().await.unwrap();
+    assert!(msg.raw_xml.is_none(), "raw_xml should be None when capture is disabled");
+}
