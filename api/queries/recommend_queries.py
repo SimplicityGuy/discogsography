@@ -159,6 +159,8 @@ async def get_candidate_artists(driver: AsyncResilientNeo4jDriver, artist_id: st
     - CALL {} per-genre prevents cross-genre row explosion (157M → ~20-30M
       DB hits for Johnny Cash; 1GB → ~300MB memory).
     - Per-genre LIMIT 500 caps broad genres like Rock (7M+ releases).
+    - Inner release scan capped at 100K per genre to prevent full traversal
+      of mega-genres (Rock: 7M → 100K releases sampled).
     """
     candidates_cypher = """
     MATCH (a:Artist {id: $artist_id})<-[:BY]-(r:Release)-[:IS]->(g:Genre)
@@ -169,7 +171,10 @@ async def get_candidate_artists(driver: AsyncResilientNeo4jDriver, artist_id: st
     UNWIND top_genres AS g2
     CALL {
         WITH g2, a
-        MATCH (g2)<-[:IS]-(r2:Release)-[:BY]->(a2:Artist)
+        MATCH (g2)<-[:IS]-(r2:Release)
+        WITH r2, a
+        LIMIT 100000
+        MATCH (r2)-[:BY]->(a2:Artist)
         WHERE a2 <> a AND a2.name IS NOT NULL
         WITH a2, count(DISTINCT r2) AS shared_in_genre
         ORDER BY shared_in_genre DESC

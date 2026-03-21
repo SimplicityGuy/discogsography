@@ -839,47 +839,27 @@ async def get_year_range(driver: AsyncResilientNeo4jDriver) -> dict[str, int] | 
 async def get_genre_emergence(driver: AsyncResilientNeo4jDriver, before_year: int) -> dict[str, list[dict[str, Any]]]:
     """Get genres and styles with their first appearance year, up to before_year.
 
-    Uses UNWIND over a pre-collected node list to force per-genre/style
-    expansion.  The ``collect()`` + ``UNWIND`` pattern materialises the
-    small list (~16 genres, ~757 styles) and then the inner ``CALL``
-    subquery expands from each bound node outward — avoiding the
-    release-first plan the planner otherwise chooses (16M+ release scan).
+    Reads pre-computed ``first_year`` properties from Genre/Style nodes
+    (populated by graphinator during data ingestion).  This avoids the
+    183M+ DB-access live traversal of all IS relationships.
 
     Genre and style queries run in parallel via ``asyncio.gather``.
     """
     genre_cypher = """
     MATCH (g:Genre)
-    WITH collect(g) AS genres
-    UNWIND genres AS g
-    CALL {
-        WITH g
-        MATCH (g)<-[:IS]-(r:Release)
-        WHERE r.year > 0 AND r.year <= $before_year
-        RETURN min(r.year) AS first_year
-    }
-    WITH g.name AS name, first_year
-    WHERE first_year IS NOT NULL
-    RETURN name, first_year
+    WHERE g.first_year IS NOT NULL AND g.first_year <= $before_year
+    RETURN g.name AS name, g.first_year AS first_year
     ORDER BY first_year
     """
     style_cypher = """
     MATCH (s:Style)
-    WITH collect(s) AS styles
-    UNWIND styles AS s
-    CALL {
-        WITH s
-        MATCH (s)<-[:IS]-(r:Release)
-        WHERE r.year > 0 AND r.year <= $before_year
-        RETURN min(r.year) AS first_year
-    }
-    WITH s.name AS name, first_year
-    WHERE first_year IS NOT NULL
-    RETURN name, first_year
+    WHERE s.first_year IS NOT NULL AND s.first_year <= $before_year
+    RETURN s.name AS name, s.first_year AS first_year
     ORDER BY first_year
     """
     genres, styles = await asyncio.gather(
-        run_query(driver, genre_cypher, timeout=90, before_year=before_year),
-        run_query(driver, style_cypher, timeout=180, before_year=before_year),
+        run_query(driver, genre_cypher, before_year=before_year),
+        run_query(driver, style_cypher, before_year=before_year),
     )
     return {"genres": genres, "styles": styles}
 

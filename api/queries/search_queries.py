@@ -173,6 +173,9 @@ async def _run_results(
     return [dict(r) for r in rows]
 
 
+_TOTAL_COUNT_CAP = 10000
+
+
 async def _run_total(
     pool: AsyncPostgreSQLPool,
     q: str,
@@ -181,8 +184,13 @@ async def _run_total(
     year_min: int | None,
     year_max: int | None,
 ) -> int:
-    """Count total matching results (ignoring pagination)."""
-    union_sql = _build_union(types)
+    """Count total matching results (ignoring pagination).
+
+    Each table is capped at _TOTAL_COUNT_CAP rows to prevent full scans
+    on high-cardinality terms like "Rock" (18.9M releases).  The reported
+    total is an approximate lower bound when capped.
+    """
+    union_sql = _build_union(types, per_table_limit=_TOTAL_COUNT_CAP)
     year_clause, year_params = _year_filter_clause(year_min, year_max)
     genre_clause, genre_params = _genre_filter_clause(genres)
 
@@ -204,20 +212,25 @@ async def _run_total(
 
 
 async def _run_type_counts(pool: AsyncPostgreSQLPool, q: str, types: list[str]) -> dict[str, int]:
-    """Count matching records per entity type (for type facet)."""
+    """Count matching records per entity type (for type facet).
+
+    Each table count is capped at _TOTAL_COUNT_CAP to prevent full scans
+    on common terms.  Reported counts are approximate when capped.
+    """
     union_parts = []
     for t in types:
         table, name_field, _, _ = _ENTITY_CONFIG[t]
         union_parts.append(
             sql.SQL(
-                "SELECT {type}::text AS type, COUNT(*) AS cnt"
-                " FROM {table}, q"
+                "SELECT {type}::text AS type,"
+                " (SELECT COUNT(*) FROM (SELECT 1 FROM {table}, q"
                 " WHERE to_tsvector('english', COALESCE(data->>{name}, '')) @@ q.tsq"
-                " GROUP BY type"
+                " LIMIT {cap}) sub) AS cnt"
             ).format(
                 type=sql.Literal(t),
                 table=sql.Identifier(table),
                 name=sql.Literal(name_field),
+                cap=sql.Literal(_TOTAL_COUNT_CAP),
             )
         )
     union_sql = sql.SQL(" UNION ALL ").join(union_parts)
@@ -229,17 +242,23 @@ async def _run_type_counts(pool: AsyncPostgreSQLPool, q: str, types: list[str]) 
 
 
 async def _run_genre_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int]:
-    """Count matching releases per genre (for genre facet)."""
+    """Count matching releases per genre (for genre facet).
+
+    Caps the release scan to prevent full table traversal on common terms.
+    """
     query = sql.SQL(
-        "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq)"
-        " SELECT genre, COUNT(*) AS cnt"
-        " FROM releases, q,"
-        " jsonb_array_elements_text(data->'genres') AS genre"
+        "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),"
+        " matched AS ("
+        " SELECT data->'genres' AS genres FROM releases, q"
         " WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq"
+        " LIMIT {cap})"
+        " SELECT genre, COUNT(*) AS cnt"
+        " FROM matched,"
+        " jsonb_array_elements_text(genres) AS genre"
         " GROUP BY genre"
         " ORDER BY cnt DESC"
         " LIMIT 20"
-    )
+    ).format(cap=sql.Literal(_TOTAL_COUNT_CAP))
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(cur, query, [q])
         rows = await cur.fetchall()
@@ -247,24 +266,28 @@ async def _run_genre_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int]
 
 
 async def _run_decade_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int]:
-    """Count matching masters+releases per decade (for decade facet)."""
+    """Count matching masters+releases per decade (for decade facet).
+
+    Caps each table scan to prevent full traversal on common terms.
+    """
     query = sql.SQL(
         "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),"
         " matches AS ("
-        " SELECT data->>'year' AS year FROM masters, q"
+        " (SELECT data->>'year' AS year FROM masters, q"
         " WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq"
         " AND data->>'year' IS NOT NULL"
+        " LIMIT {cap})"
         " UNION ALL"
-        " SELECT data->>'year' FROM releases, q"
+        " (SELECT data->>'year' FROM releases, q"
         " WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq"
         " AND data->>'year' IS NOT NULL"
-        ")"
+        " LIMIT {cap}))"
         " SELECT (year::int / 10 * 10)::text || 's' AS decade, COUNT(*) AS cnt"
         " FROM matches"
         " WHERE year ~ '^[0-9]{{4}}$'"
         " GROUP BY decade"
         " ORDER BY decade"
-    )
+    ).format(cap=sql.Literal(_TOTAL_COUNT_CAP))
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(cur, query, [q])
         rows = await cur.fetchall()

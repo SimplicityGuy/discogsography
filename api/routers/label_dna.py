@@ -25,11 +25,10 @@ from api.queries.label_dna_queries import (
     compute_similar_labels,
     get_candidate_labels_genre_vectors,
     get_label_active_years,
-    get_label_decade_profile,
     get_label_format_profile,
+    get_label_full_profile,
     get_label_genre_profile,
     get_label_identity,
-    get_label_style_profile,
 )
 
 
@@ -59,24 +58,28 @@ async def _build_dna(label_id: str) -> tuple[LabelDNA | None, str]:
     """Build a full LabelDNA fingerprint for a label.
 
     Returns (dna, reason) — reason is "ok", "not_found", or "too_few".
+
+    Uses ``get_label_full_profile`` to batch identity + genre + style +
+    decade into a single traversal (6 queries → 3), then fetches
+    active_years and formats in parallel.
     """
-    identity = await get_label_identity(_neo4j_driver, label_id)
-    if not identity:
+    profile = await get_label_full_profile(_neo4j_driver, label_id)
+    if not profile:
         return None, "not_found"
 
-    if identity["release_count"] < MIN_RELEASES:
+    release_count = profile["release_count"]
+    if release_count < MIN_RELEASES:
         return None, "too_few"
 
-    genres, styles, decades, active_years, formats = await asyncio.gather(
-        get_label_genre_profile(_neo4j_driver, label_id),
-        get_label_style_profile(_neo4j_driver, label_id),
-        get_label_decade_profile(_neo4j_driver, label_id),
+    artist_count = profile["artist_count"]
+    genres = profile["genres"]
+    styles = profile["styles"]
+    decades = profile["decades"]
+
+    active_years, formats = await asyncio.gather(
         get_label_active_years(_neo4j_driver, label_id),
         get_label_format_profile(_neo4j_driver, label_id),
     )
-
-    release_count = identity["release_count"]
-    artist_count = identity["artist_count"]
 
     # Artist diversity: unique artists / total releases (capped at 1.0)
     artist_diversity = round(min(artist_count / release_count, 1.0), 4) if release_count else 0.0
@@ -95,8 +98,8 @@ async def _build_dna(label_id: str) -> tuple[LabelDNA | None, str]:
     format_total = sum(f["count"] for f in formats)
 
     return LabelDNA(
-        label_id=identity["label_id"],
-        label_name=identity["label_name"],
+        label_id=profile["label_id"],
+        label_name=profile["label_name"],
         release_count=release_count,
         artist_count=artist_count,
         artist_diversity=artist_diversity,
