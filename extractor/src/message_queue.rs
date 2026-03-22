@@ -20,12 +20,7 @@ pub trait MessagePublisher: Send + Sync {
     async fn setup_exchange(&self, data_type: DataType) -> Result<()>;
     async fn publish(&self, message: Message, data_type: DataType) -> Result<()>;
     async fn publish_batch(&self, messages: Vec<DataMessage>, data_type: DataType) -> Result<()>;
-    async fn send_file_complete(
-        &self,
-        data_type: DataType,
-        file_name: &str,
-        total_processed: u64,
-    ) -> Result<()>;
+    async fn send_file_complete(&self, data_type: DataType, file_name: &str, total_processed: u64) -> Result<()>;
     async fn send_extraction_complete(
         &self,
         version: &str,
@@ -105,12 +100,7 @@ impl MessageQueue {
     }
 
     async fn try_connect(&self) -> Result<()> {
-        let conn = Connection::connect(
-            &self.url,
-            ConnectionProperties::default(),
-        )
-        .await
-        .context("Failed to establish AMQP connection")?;
+        let conn = Connection::connect(&self.url, ConnectionProperties::default()).await.context("Failed to establish AMQP connection")?;
 
         let channel = conn.create_channel().await.context("Failed to create AMQP channel")?;
 
@@ -147,7 +137,6 @@ impl MessageQueue {
 
         self.channel.read().await.as_ref().cloned().ok_or_else(|| anyhow::anyhow!("Failed to get channel after reconnection"))
     }
-
 }
 
 #[async_trait]
@@ -177,13 +166,7 @@ impl MessagePublisher for MessageQueue {
         let payload = serde_json::to_vec(&message).context("Failed to serialize message")?;
 
         let confirm = channel
-            .basic_publish(
-                exchange_name.as_str().into(),
-                "".into(),
-                BasicPublishOptions::default(),
-                &payload,
-                Self::message_properties(),
-            )
+            .basic_publish(exchange_name.as_str().into(), "".into(), BasicPublishOptions::default(), &payload, Self::message_properties())
             .await
             .context("Failed to publish message")?
             .await
@@ -204,13 +187,7 @@ impl MessagePublisher for MessageQueue {
             let payload = serde_json::to_vec(&Message::Data(message)).context("Failed to serialize message")?;
 
             let confirm = channel
-                .basic_publish(
-                    exchange_name.as_str().into(),
-                    "".into(),
-                    BasicPublishOptions::default(),
-                    &payload,
-                    Self::message_properties(),
-                )
+                .basic_publish(exchange_name.as_str().into(), "".into(), BasicPublishOptions::default(), &payload, Self::message_properties())
                 .await
                 .context("Failed to publish message")?
                 .await
@@ -241,12 +218,7 @@ impl MessagePublisher for MessageQueue {
         started_at: chrono::DateTime<chrono::Utc>,
         record_counts: std::collections::HashMap<String, u64>,
     ) -> Result<()> {
-        let message = ExtractionCompleteMessage {
-            version: version.to_string(),
-            timestamp: chrono::Utc::now(),
-            started_at,
-            record_counts,
-        };
+        let message = ExtractionCompleteMessage { version: version.to_string(), timestamp: chrono::Utc::now(), started_at, record_counts };
 
         // Publish to all data type exchanges so every consumer queue receives it
         // Attempt all exchanges before returning, so a single failure doesn't prevent
@@ -260,24 +232,11 @@ impl MessagePublisher for MessageQueue {
         }
 
         if errors.is_empty() {
-            info!(
-                "🏁 Extraction complete message sent to all {} exchanges (version: {})",
-                DataType::all().len(),
-                version,
-            );
+            info!("🏁 Extraction complete message sent to all {} exchanges (version: {})", DataType::all().len(), version,);
         } else {
             let succeeded = DataType::all().len() - errors.len();
-            warn!(
-                "⚠️ Extraction complete sent to {}/{} exchanges (version: {})",
-                succeeded,
-                DataType::all().len(),
-                version,
-            );
-            return Err(anyhow::anyhow!(
-                "Failed to send extraction_complete to {} exchange(s): {}",
-                errors.len(),
-                errors.join("; ")
-            ));
+            warn!("⚠️ Extraction complete sent to {}/{} exchanges (version: {})", succeeded, DataType::all().len(), version,);
+            return Err(anyhow::anyhow!("Failed to send extraction_complete to {} exchange(s): {}", errors.len(), errors.join("; ")));
         }
 
         Ok(())

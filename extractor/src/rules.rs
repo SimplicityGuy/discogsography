@@ -85,25 +85,18 @@ pub enum CompiledCondition {
 impl RulesConfig {
     pub fn load(path: &Path) -> Result<Self> {
         // Canonicalize resolves symlinks and `..` components, preventing path traversal.
-        let canonical = path
-            .canonicalize()
-            .with_context(|| format!("Failed to resolve rules file path: {:?}", path))?;
+        let canonical = path.canonicalize().with_context(|| format!("Failed to resolve rules file path: {:?}", path))?;
 
         // Only allow YAML files to be loaded as rules configs.
         let ext = canonical.extension().and_then(|e| e.to_str()).unwrap_or("");
-        anyhow::ensure!(
-            ext == "yaml" || ext == "yml",
-            "Rules file must have a .yaml or .yml extension, got: {:?}",
-            canonical
-        );
+        anyhow::ensure!(ext == "yaml" || ext == "yml", "Rules file must have a .yaml or .yml extension, got: {:?}", canonical);
 
         // False positive: `canonical` is the result of `Path::canonicalize()` (symlinks and `..`
         // resolved) and the extension has been validated to `.yaml`/`.yml`. This is a CLI tool —
         // the path comes from operator config, not an HTTP request.
         let contents = std::fs::read_to_string(&canonical) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
             .with_context(|| format!("Failed to read rules file: {:?}", canonical))?;
-        serde_yml::from_str(&contents)
-            .with_context(|| format!("Failed to parse rules YAML: {:?}", canonical))
+        serde_yml::from_str(&contents).with_context(|| format!("Failed to parse rules YAML: {:?}", canonical))
     }
 }
 
@@ -111,23 +104,18 @@ impl CompiledRulesConfig {
     pub fn compile(config: RulesConfig) -> Result<Self> {
         let mut compiled = HashMap::new();
         for (key, rules) in config.rules {
-            key.parse::<DataType>()
-                .map_err(|_| anyhow::anyhow!("Unknown data type in rules config: '{}'", key))?;
+            key.parse::<DataType>().map_err(|_| anyhow::anyhow!("Unknown data type in rules config: '{}'", key))?;
             let mut compiled_rules = Vec::with_capacity(rules.len());
             for rule in rules {
                 let condition = match rule.condition {
                     RuleCondition::Range { min, max } => CompiledCondition::Range { min, max },
                     RuleCondition::Required => CompiledCondition::Required,
                     RuleCondition::Regex { pattern } => {
-                        let regex = Regex::new(&pattern).with_context(|| {
-                            format!("Invalid regex in rule '{}': {}", rule.name, pattern)
-                        })?;
+                        let regex = Regex::new(&pattern).with_context(|| format!("Invalid regex in rule '{}': {}", rule.name, pattern))?;
                         CompiledCondition::Regex { regex }
                     }
                     RuleCondition::Length { min, max } => CompiledCondition::Length { min, max },
-                    RuleCondition::Enum { values } => {
-                        CompiledCondition::Enum { values: values.into_iter().collect() }
-                    }
+                    RuleCondition::Enum { values } => CompiledCondition::Enum { values: values.into_iter().collect() },
                 };
                 compiled_rules.push(CompiledRule {
                     name: rule.name,
@@ -290,12 +278,7 @@ impl QualityReport {
     }
 
     pub fn record_violation(&mut self, data_type: &str, rule_name: &str, severity: &Severity) {
-        let rule_counts = self
-            .counts
-            .entry(data_type.to_string())
-            .or_default()
-            .entry(rule_name.to_string())
-            .or_default();
+        let rule_counts = self.counts.entry(data_type.to_string()).or_default().entry(rule_name.to_string()).or_default();
         match severity {
             Severity::Error => rule_counts.errors += 1,
             Severity::Warning => rule_counts.warnings += 1,
@@ -323,17 +306,12 @@ impl QualityReport {
     }
 
     pub fn has_violations(&self) -> bool {
-        self.counts
-            .values()
-            .any(|rules| rules.values().any(|c| c.errors > 0 || c.warnings > 0 || c.info > 0))
+        self.counts.values().any(|rules| rules.values().any(|c| c.errors > 0 || c.warnings > 0 || c.info > 0))
     }
 
     pub fn format_summary(&self, version: &str) -> String {
         if !self.has_violations() {
-            return format!(
-                "📊 Data Quality Report for discogs_{}: No data quality violations found.\n",
-                version
-            );
+            return format!("📊 Data Quality Report for discogs_{}: No data quality violations found.\n", version);
         }
         let mut output = format!("📊 Data Quality Report for discogs_{}:\n", version);
         for dt in &["releases", "artists", "labels", "masters"] {
@@ -341,10 +319,7 @@ impl QualityReport {
             if let Some(rules) = self.counts.get(*dt) {
                 let total_errors: u64 = rules.values().map(|c| c.errors).sum();
                 let total_warnings: u64 = rules.values().map(|c| c.warnings).sum();
-                output.push_str(&format!(
-                    "  {}: {} errors, {} warnings (of {} records)\n",
-                    dt, total_errors, total_warnings, total
-                ));
+                output.push_str(&format!("  {}: {} errors, {} warnings (of {} records)\n", dt, total_errors, total_warnings, total));
                 for (rule_name, counts) in rules {
                     let mut parts = Vec::new();
                     if counts.errors > 0 {
@@ -359,10 +334,7 @@ impl QualityReport {
                     output.push_str(&format!("    {}: {}\n", rule_name, parts.join(", ")));
                 }
             } else if total > 0 {
-                output.push_str(&format!(
-                    "  {}: 0 errors, 0 warnings (of {} records)\n",
-                    dt, total
-                ));
+                output.push_str(&format!("  {}: 0 errors, 0 warnings (of {} records)\n", dt, total));
             }
         }
         output
@@ -432,10 +404,7 @@ impl FlaggedRecordWriter {
                     }
                 }
                 let json_path = type_dir.join(format!("{}.json", safe_id));
-                if let Err(e) = fs::write(
-                    &json_path,
-                    serde_json::to_string_pretty(parsed_json).unwrap_or_default(),
-                ) {
+                if let Err(e) = fs::write(&json_path, serde_json::to_string_pretty(parsed_json).unwrap_or_default()) {
                     tracing::warn!("⚠️ Failed to write flagged JSON {:?}: {}", json_path, e);
                 }
                 self.written_records.insert(record_key);
@@ -446,7 +415,8 @@ impl FlaggedRecordWriter {
         // controlled); the filename "violations.jsonl" is a literal constant.
         if !self.jsonl_writers.contains_key(data_type) {
             let jsonl_path = type_dir.join("violations.jsonl");
-            match fs::OpenOptions::new().create(true).append(true).open(&jsonl_path) { // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            match fs::OpenOptions::new().create(true).append(true).open(&jsonl_path) {
+                // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
                 Ok(file) => {
                     self.jsonl_writers.insert(data_type.to_string(), BufWriter::new(file));
                 }
@@ -468,9 +438,7 @@ impl FlaggedRecordWriter {
             "json_file": format!("{}.json", safe_id),
             "timestamp": chrono::Utc::now().to_rfc3339(),
         });
-        if let Err(e) =
-            writeln!(writer, "{}", serde_json::to_string(&entry).unwrap_or_default())
-        {
+        if let Err(e) = writeln!(writer, "{}", serde_json::to_string(&entry).unwrap_or_default()) {
             tracing::warn!("⚠️ Failed to write violation entry: {}", e);
         }
     }

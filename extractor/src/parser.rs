@@ -110,11 +110,7 @@ impl XmlParser {
     }
 
     #[allow(dead_code)]
-    pub fn with_options(
-        data_type: DataType,
-        sender: mpsc::Sender<DataMessage>,
-        capture_raw_xml: bool,
-    ) -> Self {
+    pub fn with_options(data_type: DataType, sender: mpsc::Sender<DataMessage>, capture_raw_xml: bool) -> Self {
         Self { data_type, sender, capture_raw_xml }
     }
 
@@ -327,10 +323,10 @@ fn write_element<W: std::io::Write>(writer: &mut quick_xml::Writer<W>, name: &st
         Value::Object(map) => {
             let mut start = BytesStart::new(name);
             for (key, val) in map {
-                if let Some(attr_name) = key.strip_prefix('@') {
-                    if let Value::String(s) = val {
-                        start.push_attribute((attr_name, s.as_str()));
-                    }
+                if let Some(attr_name) = key.strip_prefix('@')
+                    && let Value::String(s) = val
+                {
+                    start.push_attribute((attr_name, s.as_str()));
                 }
             }
             writer.write_event(Event::Start(start)).unwrap();

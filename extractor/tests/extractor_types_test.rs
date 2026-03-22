@@ -35,7 +35,6 @@ fn test_data_type_all_conversions() {
 
         // Test as_str roundtrip
         assert_eq!(parsed.as_str(), string_val);
-
     }
 }
 

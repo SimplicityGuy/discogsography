@@ -72,7 +72,8 @@ async fn main() -> Result<()> {
     // Load and compile data quality rules if configured
     let compiled_rules = if let Some(ref rules_path) = config.data_quality_rules {
         info!("📋 Loading data quality rules from {:?}", rules_path);
-        match RulesConfig::load(rules_path) { // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        match RulesConfig::load(rules_path) {
+            // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
             Ok(rules_config) => match rules::CompiledRulesConfig::compile(rules_config) {
                 Ok(compiled) => {
                     info!("✅ Data quality rules loaded and compiled successfully");
@@ -112,7 +113,8 @@ async fn main() -> Result<()> {
     let mq_factory: Arc<dyn extractor::MessageQueueFactory> = Arc::new(extractor::DefaultMessageQueueFactory);
 
     // Run the main extraction loop
-    let extraction_result = extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, compiled_rules).await;
+    let extraction_result =
+        extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, compiled_rules).await;
 
     // Cleanup
     info!("🛑 Shutting down rust-extractor...");

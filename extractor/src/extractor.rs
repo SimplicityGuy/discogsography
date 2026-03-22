@@ -120,8 +120,7 @@ pub async fn process_discogs_data(
     let data_files = downloader.download_discogs_data().await.context("Failed to download Discogs data")?;
 
     // Get state marker back from downloader
-    let mut state_marker = downloader.take_state_marker()
-        .ok_or_else(|| anyhow::anyhow!("State marker missing after download"))?;
+    let mut state_marker = downloader.take_state_marker().ok_or_else(|| anyhow::anyhow!("State marker missing after download"))?;
 
     // Filter out checksum files
     let data_files: Vec<_> = data_files.into_iter().filter(|f| !f.contains("CHECKSUM")).collect();
@@ -151,10 +150,7 @@ pub async fn process_discogs_data(
         let record_counts = HashMap::new();
         match mq_factory.create(&config.amqp_connection).await {
             Ok(mq) => {
-                if let Err(e) = mq
-                    .send_extraction_complete(&version, extraction_started_at, record_counts)
-                    .await
-                {
+                if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts).await {
                     error!("❌ Failed to send extraction_complete message: {}", e);
                 }
                 let _ = mq.close().await;
@@ -189,8 +185,7 @@ pub async fn process_discogs_data(
 
         let task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
-            let mq = mq_factory.create(&config.amqp_connection).await
-                .context("Failed to connect to message queue")?;
+            let mq = mq_factory.create(&config.amqp_connection).await.context("Failed to connect to message queue")?;
 
             process_single_file(&file, config, state, state_marker_arc.clone(), marker_path.clone(), mq, compiled_rules).await?;
 
@@ -258,10 +253,7 @@ pub async fn process_discogs_data(
         drop(s); // Release read lock before async MQ operations
         match mq_factory.create(&config.amqp_connection).await {
             Ok(mq) => {
-                if let Err(e) = mq
-                    .send_extraction_complete(&version, extraction_started_at, record_counts)
-                    .await
-                {
+                if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts).await {
                     error!("❌ Failed to send extraction_complete message: {}", e);
                     success = false;
                 }
@@ -324,9 +316,10 @@ pub async fn process_single_file(
         let version_clone = version.clone();
         let data_type_str = data_type.as_str().to_string();
 
-        let handle = tokio::spawn(async move {
-            message_validator(parse_receiver, validated_sender, rules, &data_type_str, &discogs_root, &version_clone).await
-        });
+        let handle =
+            tokio::spawn(
+                async move { message_validator(parse_receiver, validated_sender, rules, &data_type_str, &discogs_root, &version_clone).await },
+            );
 
         let batcher_config = BatcherConfig {
             batch_size: config.batch_size,
@@ -361,8 +354,9 @@ pub async fn process_single_file(
         if report.has_violations() {
             // file_name comes from S3 file listing (operator-controlled, not user input)
             let version_for_report = extract_version_from_filename(
-                Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or("") // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-            ).unwrap_or_default();
+                Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or(""), // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            )
+            .unwrap_or_default();
             info!("{}", report.format_summary(&version_for_report));
         }
 
@@ -532,14 +526,7 @@ async fn message_validator(
         for violation in &violations {
             report.record_violation(data_type, &violation.rule_name, &violation.severity);
             let capture_files = matches!(violation.severity, Severity::Error | Severity::Warning);
-            writer.write_violation(
-                data_type,
-                &message.id,
-                violation,
-                message.raw_xml.as_deref(),
-                &message.data,
-                capture_files,
-            );
+            writer.write_violation(data_type, &message.id, violation, message.raw_xml.as_deref(), &message.data, capture_files);
         }
         if sender.send(message).await.is_err() {
             warn!("⚠️ Validator: downstream receiver dropped");
@@ -657,7 +644,16 @@ pub async fn run_extraction_loop(
 
     // Process initial data
     let mut downloader = Downloader::new(config.discogs_root.clone()).await?;
-    let success = process_discogs_data(config.clone(), state.clone(), shutdown.clone(), force_reprocess, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await?;
+    let success = process_discogs_data(
+        config.clone(),
+        state.clone(),
+        shutdown.clone(),
+        force_reprocess,
+        &mut downloader,
+        mq_factory.clone(),
+        compiled_rules.clone(),
+    )
+    .await?;
 
     if !success {
         error!("❌ Initial data processing failed");

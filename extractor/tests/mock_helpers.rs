@@ -69,8 +69,8 @@ impl MockDownloader {
 }
 
 use async_trait::async_trait;
-use extractor::message_queue::MessagePublisher;
 use extractor::extractor::MessageQueueFactory;
+use extractor::message_queue::MessagePublisher;
 
 /// Mock factory that returns a pre-configured mock publisher.
 /// Each call to `create()` returns a clone of the same Arc<dyn MessagePublisher>.
