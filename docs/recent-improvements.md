@@ -52,6 +52,66 @@ Last Updated: 2026-03-22
 
 ______________________________________________________________________
 
+### ⚡ Cache Label-DNA Compare, Pre-Warm Search, Increase Search TTL (#189)
+
+**Overview**: Eliminated cold-cache penalties for label-DNA compare and common search terms by reusing Redis caches and pre-warming on startup.
+
+#### Features
+
+- **Label-DNA compare cache reuse**: `_build_dna` now checks and populates the same Redis cache as the `/dna` endpoint — compare was doing 15.1s cold cache because it bypassed the label DNA cache
+- **Search pre-warming**: Pre-warm Redis search cache on startup for 10 common high-cardinality terms (Rock, Electronic, Jazz, etc.) that take ~9s cold
+- **Increased search TTL**: Search cache TTL increased from 300s (5 min) to 3600s (1 hour) to reduce cold cache frequency
+
+______________________________________________________________________
+
+### ⚡ Pre-Compute Label Stats, Cache Explore/Trends, Fix Label-DNA-Compare 500 (#188)
+
+**Overview**: Pre-compute label statistics during import, add Redis caching for explore and trends endpoints, and fix label-DNA compare 500 errors.
+
+#### Features
+
+- **Pre-computed label stats**: Extend `compute_genre_style_stats` to set `release_count`, `artist_count`, `genre_count` on Label nodes (batched in transactions of 100 rows)
+- **Redis caching**: Cache `trends/label` (24h TTL) and `explore/artist`/`explore/label` (24h TTL) to avoid expensive COUNT traversals
+- **Label-DNA compare fix**: Replace broken single-traversal Cypher with parallel `asyncio.gather` of 4 individual queries; add early return for labels below MIN_RELEASES
+- **Migration script**: One-time `scripts/compute-label-stats.sh` for existing databases
+
+______________________________________________________________________
+
+### 🔧 Configurable Data Quality Rules for Extraction Validation (#187)
+
+**Overview**: A configurable rule engine in the Rust extractor that validates parsed records against YAML-defined quality rules, flagging bad data without blocking the pipeline.
+
+#### Features
+
+- **YAML rule configuration**: Define rules per data type with 5 condition types — Required, Range, Regex, Length, and Enum
+- **Observation-only pipeline stage**: Validator evaluates records between parser and batcher; all messages pass through regardless of violations
+- **Raw XML reconstruction**: Parser reconstructs XML fragments from parsed element trees for comparing against parsed JSON to diagnose data vs parsing errors
+- **Flagged record storage**: Writes separate XML, JSON, and JSONL files per flagged record organized by version/data_type
+- **Quality report**: Tracks per-rule violation counts with deterministic output for automated analysis
+- **Default rules**: Ships with `extraction-rules.yaml` covering numeric genre detection, year-out-of-range checks, missing title/name validation across all 4 data types
+- **Docker integration**: Rules file mounted read-only into extractor container via docker-compose
+
+#### Documentation
+
+- Design spec: `docs/superpowers/specs/2026-03-21-data-quality-rules-design.md`
+- Implementation plan: `docs/superpowers/plans/2026-03-21-data-quality-rules.md`
+
+______________________________________________________________________
+
+### ⚡ Optimize 6 Query Families for Fewer DB Hits and Faster Cold Cache (#186)
+
+**Overview**: Targeted optimization of 6 query families — genre-emergence, artist-similar, label-DNA, search, and data-completeness — for dramatic reductions in DB hits and cold cache latency.
+
+#### Features
+
+- **Genre-emergence**: Read pre-computed `first_year` from Genre/Style nodes instead of live traversal (183.5M → ~50 DB accesses)
+- **Artist-similar**: Cap inner release scan at 100K per genre to prevent full traversal of mega-genres like Rock (7M releases → 100K sampled)
+- **Label-DNA**: Batch 4 separate identity/genre/style/decade queries into a single `get_label_full_profile` traversal (6 queries → 3 for cold cache)
+- **Search**: Cap total count, type counts, genre facets, and decade facets at 10K rows per table to prevent full scans on common terms
+- **Data-completeness**: Add Redis caching (6h TTL) to prevent repeated full table scans of the releases table
+
+______________________________________________________________________
+
 ### 🔄 CI: Skip Heavy Jobs for Markdown-Only Changes (#185)
 
 **Overview**: GitHub Actions workflows now detect when a PR only changes markdown files and skip heavy jobs (build, test, lint) to save CI minutes.
