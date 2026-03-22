@@ -352,7 +352,7 @@ pub struct FlaggedRecordWriter {
 /// Sanitize a value from parsed data for use as a filename component.
 /// Retains only alphanumeric characters, hyphens, underscores, and dots;
 /// removes path separators and `..` traversal sequences entirely.
-fn sanitize_filename(raw: &str) -> String {
+pub(crate) fn sanitize_filename(raw: &str) -> String {
     raw.chars()
         .filter(|c| c.is_alphanumeric() || matches!(c, '-' | '_' | '.'))
         .collect::<String>()

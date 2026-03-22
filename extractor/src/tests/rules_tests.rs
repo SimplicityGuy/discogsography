@@ -669,6 +669,283 @@ fn test_quality_report_empty() {
     assert!(summary.contains("No data quality violations"));
 }
 
+// ── sanitize_filename ─────────────────────────────────────────────────
+
+#[test]
+fn test_sanitize_filename_normal() {
+    use crate::rules::sanitize_filename;
+    assert_eq!(sanitize_filename("12345"), "12345");
+    assert_eq!(sanitize_filename("artist-name_1"), "artist-name_1");
+}
+
+#[test]
+fn test_sanitize_filename_path_traversal() {
+    use crate::rules::sanitize_filename;
+    // Path separators stripped, `..` collapsed to `_`
+    assert_eq!(sanitize_filename("../../../etc/passwd"), "___etcpasswd");
+    assert_eq!(sanitize_filename("foo/bar\\baz"), "foobarbaz");
+}
+
+#[test]
+fn test_sanitize_filename_double_dots() {
+    use crate::rules::sanitize_filename;
+    // Dots are kept but `..` is collapsed to `_`
+    assert_eq!(sanitize_filename(".."), "_");
+    assert_eq!(sanitize_filename("a..b"), "a_b");
+    assert_eq!(sanitize_filename("file.xml"), "file.xml");
+}
+
+#[test]
+fn test_sanitize_filename_special_chars() {
+    use crate::rules::sanitize_filename;
+    // Only alphanumeric, hyphens, underscores, and dots survive
+    assert_eq!(sanitize_filename("hello world!@#$%"), "helloworld");
+    assert_eq!(sanitize_filename(""), "");
+}
+
+// ── FlaggedRecordWriter ──────────────────────────────────────────────
+
+#[test]
+fn test_flagged_writer_write_violation_and_flush() {
+    use crate::rules::{FlaggedRecordWriter, Severity, Violation};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260301");
+
+    let violation = Violation {
+        rule_name: "test-rule".to_string(),
+        severity: Severity::Error,
+        field: "name".to_string(),
+        field_value: "".to_string(),
+    };
+
+    let parsed_json = json!({"name": "", "id": "123"});
+    let raw_xml = b"<artist id=\"123\"><name></name></artist>";
+
+    writer.write_violation("artists", "123", &violation, Some(raw_xml.as_slice()), &parsed_json, true);
+    writer.flush();
+
+    // Check that files were created
+    let type_dir = temp_dir.path().join("flagged").join("20260301").join("artists");
+    assert!(type_dir.join("123.xml").exists(), "XML file should be created");
+    assert!(type_dir.join("123.json").exists(), "JSON file should be created");
+    assert!(type_dir.join("violations.jsonl").exists(), "JSONL file should be created");
+
+    // Verify JSONL content
+    let jsonl = std::fs::read_to_string(type_dir.join("violations.jsonl")).unwrap();
+    assert!(jsonl.contains("test-rule"));
+    assert!(jsonl.contains("\"severity\":\"error\""));
+}
+
+#[test]
+fn test_flagged_writer_deduplicates_files() {
+    use crate::rules::{FlaggedRecordWriter, Severity, Violation};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260301");
+
+    let violation1 = Violation {
+        rule_name: "rule-a".to_string(),
+        severity: Severity::Warning,
+        field: "name".to_string(),
+        field_value: "bad".to_string(),
+    };
+    let violation2 = Violation {
+        rule_name: "rule-b".to_string(),
+        severity: Severity::Error,
+        field: "year".to_string(),
+        field_value: "0".to_string(),
+    };
+
+    let parsed_json = json!({"name": "bad", "year": "0"});
+
+    // Write two violations for the same record
+    writer.write_violation("artists", "42", &violation1, None, &parsed_json, true);
+    writer.write_violation("artists", "42", &violation2, None, &parsed_json, true);
+    writer.flush();
+
+    // JSON file should exist (written once for first violation)
+    let type_dir = temp_dir.path().join("flagged").join("20260301").join("artists");
+    assert!(type_dir.join("42.json").exists());
+
+    // JSONL should have two entries
+    let jsonl = std::fs::read_to_string(type_dir.join("violations.jsonl")).unwrap();
+    let lines: Vec<&str> = jsonl.trim().lines().collect();
+    assert_eq!(lines.len(), 2, "Should have two JSONL entries for two violations");
+}
+
+#[test]
+fn test_flagged_writer_no_capture_files() {
+    use crate::rules::{FlaggedRecordWriter, Severity, Violation};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260301");
+
+    let violation = Violation {
+        rule_name: "info-rule".to_string(),
+        severity: Severity::Info,
+        field: "x".to_string(),
+        field_value: "y".to_string(),
+    };
+
+    let parsed_json = json!({"x": "y"});
+
+    // capture_files = false — should not write XML/JSON files
+    writer.write_violation("labels", "99", &violation, None, &parsed_json, false);
+    writer.flush();
+
+    let type_dir = temp_dir.path().join("flagged").join("20260301").join("labels");
+    assert!(!type_dir.join("99.xml").exists(), "XML should not be created when capture_files is false");
+    assert!(!type_dir.join("99.json").exists(), "JSON should not be created when capture_files is false");
+    // JSONL should still be written
+    assert!(type_dir.join("violations.jsonl").exists());
+}
+
+#[test]
+fn test_flagged_writer_write_report() {
+    use crate::rules::{FlaggedRecordWriter, QualityReport, Severity};
+    use tempfile::TempDir;
+
+    let temp_dir = TempDir::new().unwrap();
+    let writer = FlaggedRecordWriter::new(temp_dir.path(), "20260301");
+
+    let mut report = QualityReport::new();
+    report.record_violation("releases", "test-rule", &Severity::Error);
+    report.increment_total("releases");
+
+    writer.write_report(&report, "20260301");
+
+    let report_path = temp_dir.path().join("flagged").join("20260301").join("report.txt");
+    assert!(report_path.exists(), "Report file should be created");
+    let content = std::fs::read_to_string(report_path).unwrap();
+    assert!(content.contains("test-rule"));
+    assert!(content.contains("1 errors"));
+}
+
+// ── QualityReport edge cases ─────────────────────────────────────────
+
+#[test]
+fn test_quality_report_has_violations_false_when_empty() {
+    let report = QualityReport::new();
+    assert!(!report.has_violations());
+}
+
+#[test]
+fn test_quality_report_has_violations_true_with_info() {
+    let mut report = QualityReport::new();
+    report.record_violation("artists", "test", &Severity::Info);
+    assert!(report.has_violations());
+}
+
+#[test]
+fn test_quality_report_format_summary_data_type_with_total_but_no_violations() {
+    let mut report = QualityReport::new();
+    // Add violation to releases so has_violations() returns true
+    report.record_violation("releases", "some-rule", &Severity::Warning);
+    report.increment_total("releases");
+    // masters has total records but no violations — tests the `else if total > 0` branch
+    report.increment_total("masters");
+    report.increment_total("masters");
+    report.increment_total("masters");
+
+    let summary = report.format_summary("20260301");
+    assert!(summary.contains("masters: 0 errors, 0 warnings (of 3 records)"));
+}
+
+#[test]
+fn test_quality_report_format_summary_info_counts() {
+    let mut report = QualityReport::new();
+    report.record_violation("artists", "info-rule", &Severity::Info);
+    report.record_violation("artists", "info-rule", &Severity::Info);
+    report.increment_total("artists");
+
+    let summary = report.format_summary("20260301");
+    assert!(summary.contains("2 info"));
+}
+
+#[test]
+fn test_quality_report_merge_overlapping_rules() {
+    let mut report1 = QualityReport::new();
+    report1.record_violation("releases", "shared-rule", &Severity::Error);
+    report1.record_violation("releases", "shared-rule", &Severity::Warning);
+    report1.increment_total("releases");
+
+    let mut report2 = QualityReport::new();
+    report2.record_violation("releases", "shared-rule", &Severity::Error);
+    report2.record_violation("releases", "shared-rule", &Severity::Info);
+    report2.increment_total("releases");
+
+    report1.merge(report2);
+
+    let counts = &report1.counts["releases"]["shared-rule"];
+    assert_eq!(counts.errors, 2);
+    assert_eq!(counts.warnings, 1);
+    assert_eq!(counts.info, 1);
+    assert_eq!(report1.total_records["releases"], 2);
+}
+
+// ── RulesConfig::load edge cases ─────────────────────────────────────
+
+#[test]
+fn test_load_rejects_non_yaml_extension() {
+    use crate::rules::RulesConfig;
+    use tempfile::NamedTempFile;
+
+    let temp_file = NamedTempFile::with_suffix(".json").unwrap();
+    std::fs::write(temp_file.path(), "{}").unwrap();
+
+    let result = RulesConfig::load(temp_file.path());
+    assert!(result.is_err());
+    let msg = result.unwrap_err().to_string();
+    assert!(msg.contains(".yaml") || msg.contains(".yml"), "Error should mention required extension: {msg}");
+}
+
+#[test]
+fn test_load_rejects_nonexistent_file() {
+    use crate::rules::RulesConfig;
+    use std::path::Path;
+
+    let result = RulesConfig::load(Path::new("/nonexistent/path/rules.yaml"));
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_load_accepts_yml_extension() {
+    use crate::rules::RulesConfig;
+    use tempfile::NamedTempFile;
+
+    let temp_file = NamedTempFile::with_suffix(".yml").unwrap();
+    std::fs::write(
+        temp_file.path(),
+        r#"rules:
+  artists:
+    - name: test
+      field: name
+      condition: {type: required}
+      severity: error
+"#,
+    )
+    .unwrap();
+
+    let result = RulesConfig::load(temp_file.path());
+    assert!(result.is_ok(), "Should accept .yml extension: {:?}", result.err());
+}
+
+#[test]
+fn test_load_rejects_invalid_yaml() {
+    use crate::rules::RulesConfig;
+    use tempfile::NamedTempFile;
+
+    let temp_file = NamedTempFile::with_suffix(".yaml").unwrap();
+    std::fs::write(temp_file.path(), "not: [valid: yaml: {{{{").unwrap();
+
+    let result = RulesConfig::load(temp_file.path());
+    assert!(result.is_err());
+}
+
 #[test]
 fn test_default_rules_file() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("extraction-rules.yaml");

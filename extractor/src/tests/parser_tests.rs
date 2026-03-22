@@ -698,6 +698,50 @@ async fn test_reconstruct_xml_id_dedup_for_releases() {
 }
 
 #[tokio::test]
+async fn test_reconstruct_xml_with_numeric_values() {
+    // A master with numeric year field — tests the Value::Number branch of write_element
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<masters>
+    <master id="500">
+        <title>Numeric Test</title>
+        <year>2025</year>
+    </master>
+</masters>"#;
+
+    let raw = capture_raw_xml(xml_content, DataType::Masters).await;
+    assert!(raw.contains("2025"), "reconstructed XML should contain numeric year value");
+    assert!(raw.contains("<year>"), "reconstructed XML should have year element");
+    assert!(raw.contains("Numeric Test"), "reconstructed XML should contain title");
+}
+
+#[tokio::test]
+async fn test_reconstruct_xml_self_closing_target() {
+    // Self-closing target element with capture_raw_xml enabled
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="999" />
+</artists>"#;
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::with_options(DataType::Artists, sender, true);
+    let count = parser.parse_file(temp_file.path()).await.unwrap();
+
+    assert_eq!(count, 1);
+    let msg = receiver.recv().await.unwrap();
+    assert!(msg.raw_xml.is_some(), "raw_xml should be populated for self-closing target");
+    let xml_str = String::from_utf8_lossy(msg.raw_xml.as_ref().unwrap());
+    assert!(xml_str.contains("artist"), "reconstructed XML should contain element name");
+    assert!(xml_str.contains("999"), "reconstructed XML should contain id attribute value");
+}
+
+#[tokio::test]
 async fn test_reconstruct_xml_id_without_at_id_is_kept() {
     // Artists/Labels use child <id> elements (not @id attributes).
     // write_element must NOT skip the `id` child when no @id attribute is present.
