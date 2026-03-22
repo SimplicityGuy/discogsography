@@ -593,3 +593,124 @@ async fn test_raw_xml_not_captured_by_default() {
     let msg = receiver.recv().await.unwrap();
     assert!(msg.raw_xml.is_none(), "raw_xml should be None when capture is disabled");
 }
+
+// ── reconstruct_xml / write_element coverage ────────────────────────
+
+/// Helper: parse XML, capture raw_xml, return it as a UTF-8 string.
+async fn capture_raw_xml(xml_content: &str, data_type: DataType) -> String {
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let (sender, mut receiver) = mpsc::channel(10);
+    let parser = XmlParser::with_options(data_type, sender, true);
+    parser.parse_file(temp_file.path()).await.unwrap();
+    let msg = receiver.recv().await.unwrap();
+    String::from_utf8(msg.raw_xml.unwrap()).unwrap()
+}
+
+#[tokio::test]
+async fn test_reconstruct_xml_with_null_value() {
+    // An element with no content or attributes → Value::Null → self-closing tag
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Test Artist</name>
+        <profile/>
+    </artist>
+</artists>"#;
+
+    let raw = capture_raw_xml(xml_content, DataType::Artists).await;
+    // profile element is null → should be written as self-closing <profile/>
+    assert!(raw.contains("profile"), "reconstructed XML should include empty profile element");
+    assert!(raw.contains("Test Artist"), "reconstructed XML should include name text");
+}
+
+#[tokio::test]
+async fn test_reconstruct_xml_with_array_children() {
+    // Multiple genre elements → stored as Value::Array → each emitted as separate element
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<masters>
+    <master id="999">
+        <title>Multi-Genre Album</title>
+        <genres>
+            <genre>Rock</genre>
+            <genre>Jazz</genre>
+            <genre>Blues</genre>
+        </genres>
+    </master>
+</masters>"#;
+
+    let raw = capture_raw_xml(xml_content, DataType::Masters).await;
+    // All three genres should appear in the reconstructed XML
+    assert!(raw.contains("Rock"), "reconstructed XML should contain first genre");
+    assert!(raw.contains("Jazz"), "reconstructed XML should contain second genre");
+    assert!(raw.contains("Blues"), "reconstructed XML should contain third genre");
+    // The genre tag should appear three times
+    let genre_count = raw.matches("<genre>").count();
+    assert_eq!(genre_count, 3, "should have 3 <genre> elements, got {}", genre_count);
+}
+
+#[tokio::test]
+async fn test_reconstruct_xml_with_text_and_attributes() {
+    // Element with both @id attribute and #text content
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist>
+        <id>42</id>
+        <name>Mixed Content Artist</name>
+        <aliases>
+            <name id="99">An Alias Name</name>
+        </aliases>
+    </artist>
+</artists>"#;
+
+    let raw = capture_raw_xml(xml_content, DataType::Artists).await;
+    // The alias element has @id attribute and #text — both must appear in output
+    assert!(raw.contains("An Alias Name"), "reconstructed XML should contain alias text");
+    assert!(raw.contains("id=\"99\""), "reconstructed XML should contain alias id attribute");
+}
+
+#[tokio::test]
+async fn test_reconstruct_xml_id_dedup_for_releases() {
+    // Releases get a plain `id` field added alongside @id.
+    // write_element should skip the plain `id` child when @id is present to avoid duplication.
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<releases>
+    <release id="555">
+        <title>Dedup Test Release</title>
+        <genres>
+            <genre>Electronic</genre>
+        </genres>
+    </release>
+</releases>"#;
+
+    let raw = capture_raw_xml(xml_content, DataType::Releases).await;
+    // The reconstructed XML should have the id attribute but not a standalone <id> child element,
+    // because write_element skips `id` when `@id` is present.
+    assert!(raw.contains("id=\"555\""), "reconstructed XML should contain id attribute");
+    // Should NOT contain <id>555</id> — that would be the deduplicated plain id child
+    assert!(!raw.contains("<id>"), "reconstructed XML should not contain a standalone <id> element");
+    assert!(raw.contains("Dedup Test Release"), "reconstructed XML should contain title");
+}
+
+#[tokio::test]
+async fn test_reconstruct_xml_id_without_at_id_is_kept() {
+    // Artists/Labels use child <id> elements (not @id attributes).
+    // write_element must NOT skip the `id` child when no @id attribute is present.
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist>
+        <id>77</id>
+        <name>Artist With Child ID</name>
+    </artist>
+</artists>"#;
+
+    let raw = capture_raw_xml(xml_content, DataType::Artists).await;
+    // The plain `id` element should be present because there is no @id on this artist
+    assert!(raw.contains("<id>"), "reconstructed XML should retain <id> child when no @id attribute");
+    assert!(raw.contains("77"), "reconstructed XML should contain the id value");
+}
