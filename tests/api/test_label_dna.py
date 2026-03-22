@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
+import pytest
 
 
 # --- Helpers ---
@@ -304,6 +305,69 @@ class TestBuildDnaInternal:
         assert data["peak_decade"] is None
         # prolificacy: num_active_years=0 → 0.0
         assert data["prolificacy"] == 0.0
+
+
+class TestGetLabelFullProfile:
+    """Tests for get_label_full_profile query function."""
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.get_label_decade_profile")
+    @patch("api.queries.label_dna_queries.get_label_style_profile")
+    @patch("api.queries.label_dna_queries.get_label_genre_profile")
+    @patch("api.queries.label_dna_queries.get_label_identity")
+    async def test_full_profile_with_sufficient_releases(
+        self,
+        mock_identity: AsyncMock,
+        mock_genres: AsyncMock,
+        mock_styles: AsyncMock,
+        mock_decades: AsyncMock,
+    ) -> None:
+        """Labels with >= MIN_RELEASES run parallel genre/style/decade queries."""
+        from api.queries.label_dna_queries import get_label_full_profile
+
+        mock_identity.return_value = {
+            "label_id": "42",
+            "label_name": "ECM Records",
+            "release_count": 200,
+            "artist_count": 80,
+        }
+        mock_genres.return_value = [{"name": "Jazz", "count": 150}]
+        mock_styles.return_value = [{"name": "Avant-garde", "count": 100}]
+        mock_decades.return_value = [{"decade": 1970, "count": 80}]
+
+        result = await get_label_full_profile(AsyncMock(), "42")
+        assert result is not None
+        assert result["release_count"] == 200
+        assert result["genres"] == [{"name": "Jazz", "count": 150}]
+        assert result["styles"] == [{"name": "Avant-garde", "count": 100}]
+        assert result["decades"] == [{"decade": 1970, "count": 80}]
+        mock_genres.assert_called_once()
+        mock_styles.assert_called_once()
+        mock_decades.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.get_label_genre_profile")
+    @patch("api.queries.label_dna_queries.get_label_identity")
+    async def test_full_profile_below_min_releases_skips_profiles(
+        self,
+        mock_identity: AsyncMock,
+        mock_genres: AsyncMock,
+    ) -> None:
+        """Labels below MIN_RELEASES return early without profile queries."""
+        from api.queries.label_dna_queries import get_label_full_profile
+
+        mock_identity.return_value = {
+            "label_id": "1",
+            "label_name": "Tiny Label",
+            "release_count": 3,
+            "artist_count": 1,
+        }
+
+        result = await get_label_full_profile(AsyncMock(), "1")
+        assert result is not None
+        assert result["release_count"] == 3
+        assert result["genres"] == []
+        mock_genres.assert_not_called()
 
 
 class TestSimilarLabelsEndpointNotReady:

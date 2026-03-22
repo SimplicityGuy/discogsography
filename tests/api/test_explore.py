@@ -89,6 +89,31 @@ class TestExploreEndpoint:
             explore_module._neo4j_driver = original
 
 
+class TestExploreLabelFallback:
+    """Tests for explore_label pre-computed vs fallback paths."""
+
+    def test_explore_label_with_precomputed_stats(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Label with pre-computed stats reads properties directly."""
+        mock_redis.get = AsyncMock(return_value=None)
+        result: dict[str, Any] = {"id": "1", "name": "Hooj Choons", "release_count": 500, "artist_count": 80, "genre_count": 5}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"label": mock_func}):
+            response = test_client.get("/api/explore?name=Hooj Choons&type=label")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["center"]["name"] == "Hooj Choons"
+
+    def test_explore_label_fallback_no_precomputed(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Label without pre-computed stats falls back to live traversal."""
+        mock_redis.get = AsyncMock(return_value=None)
+        # Simulate label without pre-computed stats (release_count=None)
+        result: dict[str, Any] = {"id": "1", "name": "New Label", "release_count": 50, "artist_count": 10, "genre_count": 3}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"label": mock_func}):
+            response = test_client.get("/api/explore?name=New Label&type=label")
+        assert response.status_code == 200
+
+
 class TestExpandEndpoint:
     """Tests for GET /api/expand."""
 
