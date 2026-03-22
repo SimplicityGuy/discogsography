@@ -287,9 +287,11 @@ services:
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_USERNAME: discogsography
       STARTUP_DELAY: "30"
+      DATA_QUALITY_RULES: /discogs-data/extraction-rules.yaml
     volumes:
       - discogs_data:/discogs-data
       - extractor_logs:/logs
+      - ./extractor/extraction-rules.yaml:/discogs-data/extraction-rules.yaml:ro
     depends_on:
       rabbitmq:
         condition: service_healthy
