@@ -7,7 +7,7 @@ use std::sync::Arc;
 use tempfile::TempDir;
 
 fn compile_rules(yaml: &str) -> Arc<CompiledRulesConfig> {
-    let config: RulesConfig = serde_yml::from_str(yaml).unwrap();
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
     Arc::new(CompiledRulesConfig::compile(config).unwrap())
 }
 

@@ -57,13 +57,12 @@ rules:
     # Note: years like 197 and 338 are already caught by year-out-of-range (< min 1860).
 
   artists:
-    - name: suspicious-name
-      description: "Artist name is purely numeric or single character"
+    - name: empty-artist-name
+      description: "Artist has no name"
       field: name
       condition:
-        type: regex
-        pattern: "^\\d+$|^.$"
-      severity: warning
+        type: required
+      severity: error
 
   labels:
     - name: empty-label-name

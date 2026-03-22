@@ -4,7 +4,7 @@ use serde_json::json;
 // ── Helper ───────────────────────────────────────────────────────────
 
 fn compile_yaml(yaml: &str) -> CompiledRulesConfig {
-    let config: RulesConfig = serde_yml::from_str(yaml).unwrap();
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
     CompiledRulesConfig::compile(config).unwrap()
 }
 
@@ -95,7 +95,7 @@ rules:
         pattern: "[invalid("
       severity: error
 "#;
-    let config: RulesConfig = serde_yml::from_str(yaml).unwrap();
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
     let result = CompiledRulesConfig::compile(config);
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -112,7 +112,7 @@ rules:
       condition: {type: required}
       severity: error
 "#;
-    let config: RulesConfig = serde_yml::from_str(yaml).unwrap();
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
     let result = CompiledRulesConfig::compile(config);
     assert!(result.is_err());
     let msg = result.unwrap_err().to_string();
@@ -620,10 +620,10 @@ rules:
       severity: error
 "#
         );
-        let result = serde_yml::from_str::<RulesConfig>(&yaml).and_then(|_| Ok(())).is_ok();
+        let result = serde_yaml_ng::from_str::<RulesConfig>(&yaml).map(|_| ()).is_ok();
         assert!(result, "Failed to parse config for data type: {data_type}");
 
-        let config: RulesConfig = serde_yml::from_str(&yaml).unwrap();
+        let config: RulesConfig = serde_yaml_ng::from_str(&yaml).unwrap();
         let compiled = CompiledRulesConfig::compile(config);
         assert!(compiled.is_ok(), "Failed to compile config for data type: {data_type}");
     }
