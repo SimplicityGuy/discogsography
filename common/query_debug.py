@@ -135,6 +135,8 @@ async def execute_sql(cursor: Any, query: Any, params: Any = None) -> None:
 async def _try_sql_profile(cursor: Any, query: Any, params: Any) -> None:
     """Best-effort EXPLAIN (ANALYZE, BUFFERS, VERBOSE) after successful SQL execution.
 
+    Uses a separate cursor to avoid overwriting the original query results.
+
     Args:
         cursor: An async database cursor.
         query: The original SQL query.
@@ -143,8 +145,9 @@ async def _try_sql_profile(cursor: Any, query: Any, params: Any) -> None:
     try:
         rendered = _render_sql(query, cursor)
         explain_query = f"EXPLAIN (ANALYZE, BUFFERS, VERBOSE) {rendered}"
-        await cursor.execute(explain_query, params)  # nosemgrep
-        rows = await cursor.fetchall()
+        async with cursor.connection.cursor() as explain_cur:
+            await explain_cur.execute(explain_query, params)  # nosemgrep
+            rows = await explain_cur.fetchall()
         plan_text = "\n".join(row[0] for row in rows)
         log_sql_profile_result(rendered, params, plan_text)
     except Exception:  # noqa: S110
@@ -153,6 +156,8 @@ async def _try_sql_profile(cursor: Any, query: Any, params: Any) -> None:
 
 async def _try_sql_explain_on_error(cursor: Any, query: Any, params: Any, error: BaseException) -> None:
     """Best-effort EXPLAIN (without ANALYZE) after SQL failure.
+
+    Uses a separate cursor to avoid overwriting the original query results.
 
     Args:
         cursor: An async database cursor.
@@ -163,8 +168,9 @@ async def _try_sql_explain_on_error(cursor: Any, query: Any, params: Any, error:
     try:
         rendered = _render_sql(query, cursor)
         explain_query = f"EXPLAIN {rendered}"
-        await cursor.execute(explain_query, params)  # nosemgrep
-        rows = await cursor.fetchall()
+        async with cursor.connection.cursor() as explain_cur:
+            await explain_cur.execute(explain_query, params)  # nosemgrep
+            rows = await explain_cur.fetchall()
         plan_text = "\n".join(row[0] for row in rows)
         log_sql_explain_result(rendered, params, plan_text, error)
     except Exception:  # noqa: S110
