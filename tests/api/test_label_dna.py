@@ -346,6 +346,16 @@ class TestGetLabelFullProfile:
         mock_decades.assert_called_once()
 
     @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.get_label_identity")
+    async def test_full_profile_not_found(self, mock_identity: AsyncMock) -> None:
+        """Returns None when label identity is not found."""
+        from api.queries.label_dna_queries import get_label_full_profile
+
+        mock_identity.return_value = None
+        result = await get_label_full_profile(AsyncMock(), "999")
+        assert result is None
+
+    @pytest.mark.asyncio
     @patch("api.queries.label_dna_queries.get_label_genre_profile")
     @patch("api.queries.label_dna_queries.get_label_identity")
     async def test_full_profile_below_min_releases_skips_profiles(

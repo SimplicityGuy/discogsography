@@ -276,6 +276,15 @@ class TestExploreQueries:
         assert result == record
 
     @pytest.mark.asyncio
+    async def test_explore_label_not_found(self) -> None:
+        """Label not found returns None."""
+        from api.queries.neo4j_queries import explore_label
+
+        driver = _make_driver(single=None)
+        result = await explore_label(driver, "Nonexistent Label")
+        assert result is None
+
+    @pytest.mark.asyncio
     async def test_explore_label_fallback_no_precomputed(self) -> None:
         """Label without pre-computed stats falls back to live traversal."""
         from api.queries.neo4j_queries import explore_label
