@@ -25,6 +25,7 @@ fn test_config(root: &std::path::Path) -> ExtractorConfig {
         queue_size: 100,
         progress_log_interval: 1000,
         state_save_interval: 1000,
+        data_quality_rules: None,
     }
 }
 
@@ -49,7 +50,7 @@ async fn test_process_single_file_mq_setup_called() {
 
     let result = process_single_file(
         "discogs_20260101_artists.xml.gz",
-        config, state, state_marker, marker_path, mq,
+        config, state, state_marker, marker_path, mq, None,
     ).await;
 
     // Error expected — file doesn't exist on disk
@@ -122,7 +123,7 @@ async fn test_process_discogs_data_empty_files() {
 
     let result = extractor::extractor::process_discogs_data(
         config, state, shutdown, false,
-        &mut mock_dl, factory,
+        &mut mock_dl, factory, None,
     ).await;
 
     assert!(result.is_ok());
@@ -165,7 +166,7 @@ async fn test_process_discogs_data_skip_when_already_complete() {
 
     let result = extractor::extractor::process_discogs_data(
         config, state, shutdown, false,
-        &mut mock_dl, factory,
+        &mut mock_dl, factory, None,
     ).await;
 
     assert!(result.is_ok());
@@ -228,7 +229,7 @@ async fn test_process_discogs_data_force_reprocess_bypasses_skip() {
 
     let result = extractor::extractor::process_discogs_data(
         config, state, shutdown, true,
-        &mut mock_dl, factory,
+        &mut mock_dl, factory, None,
     ).await;
 
     // Result may be Ok or Err — key assertion is download_discogs_data was called (verified by mock times(1))
@@ -285,7 +286,7 @@ async fn test_process_discogs_data_take_state_marker_none() {
 
     let result = extractor::extractor::process_discogs_data(
         config, state, shutdown, true,
-        &mut mock_dl, factory,
+        &mut mock_dl, factory, None,
     ).await;
 
     assert!(result.is_err());
@@ -332,7 +333,7 @@ async fn test_process_discogs_data_no_data_files() {
 
     let result = extractor::extractor::process_discogs_data(
         config, state, shutdown, true,
-        &mut mock_dl, factory,
+        &mut mock_dl, factory, None,
     ).await;
 
     // Should return Ok(true) — "No data files to process"
@@ -387,7 +388,7 @@ async fn test_process_discogs_data_all_files_already_processed() {
 
     let result = extractor::extractor::process_discogs_data(
         config, state, shutdown, true,
-        &mut mock_dl, factory,
+        &mut mock_dl, factory, None,
     ).await;
 
     assert!(result.is_ok());
@@ -445,7 +446,7 @@ async fn test_process_discogs_data_mq_factory_create_fails_on_all_processed() {
 
     let result = extractor::extractor::process_discogs_data(
         config, state, shutdown, true,
-        &mut mock_dl, factory,
+        &mut mock_dl, factory, None,
     ).await;
 
     // Should still succeed (extraction_complete failure is logged, not fatal)
