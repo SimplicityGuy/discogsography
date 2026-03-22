@@ -962,8 +962,8 @@ class TestComputeGenreStyleStats:
     """Test compute_genre_style_stats function."""
 
     @pytest.mark.asyncio
-    async def test_computes_stats_for_genres_and_styles(self) -> None:
-        """Test pre-computes aggregate stats and first_year on Genre and Style nodes."""
+    async def test_computes_stats_for_genres_styles_and_labels(self) -> None:
+        """Test pre-computes aggregate stats on Genre, Style, and Label nodes."""
         mock_driver = AsyncMock()
         mock_session_ctx = AsyncMock()
         mock_session = AsyncMock()
@@ -976,7 +976,9 @@ class TestComputeGenreStyleStats:
         genre_result.consume = AsyncMock(return_value=MagicMock(counters="properties_set=96"))
         style_result = AsyncMock()
         style_result.consume = AsyncMock(return_value=MagicMock(counters="properties_set=4542"))
-        mock_session.run = AsyncMock(side_effect=[genre_result, style_result])
+        label_result = AsyncMock()
+        label_result.consume = AsyncMock(return_value=MagicMock(counters="properties_set=6900000"))
+        mock_session.run = AsyncMock(side_effect=[genre_result, style_result, label_result])
 
         import graphinator.graphinator
 
@@ -986,7 +988,7 @@ class TestComputeGenreStyleStats:
 
         await compute_genre_style_stats()
 
-        assert mock_session.run.call_count == 2
+        assert mock_session.run.call_count == 3
         # Verify genre query includes aggregate counts, first_year, and IN TRANSACTIONS
         genre_query = mock_session.run.call_args_list[0][0][0]
         assert "Genre" in genre_query
@@ -1000,6 +1002,13 @@ class TestComputeGenreStyleStats:
         assert "release_count" in style_query
         assert "first_year" in style_query
         assert "IN TRANSACTIONS" in style_query
+        # Verify label query
+        label_query = mock_session.run.call_args_list[2][0][0]
+        assert "Label" in label_query
+        assert "release_count" in label_query
+        assert "artist_count" in label_query
+        assert "genre_count" in label_query
+        assert "IN TRANSACTIONS" in label_query
 
         # Reset
         graphinator.graphinator.graph = None

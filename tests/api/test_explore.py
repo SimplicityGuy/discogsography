@@ -203,6 +203,89 @@ class TestTrendsCaching:
             response = test_client.get("/api/trends?name=Electronic&type=genre")
         assert response.status_code == 200
 
+    def test_trends_label_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Cached label trends should be returned without calling the query function."""
+        cached = {"name": "Reprise Records", "type": "label", "data": [{"year": 1970, "count": 100}]}
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        response = test_client.get("/api/trends?name=Reprise Records&type=label")
+        assert response.status_code == 200
+        assert response.json() == cached
+
+    def test_trends_label_cache_miss_stores_result(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """On label cache miss, query result should be stored in Redis."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_func = AsyncMock(return_value=[{"year": 1970, "count": 100}])
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"label": mock_func}):
+            response = test_client.get("/api/trends?name=Reprise Records&type=label")
+        assert response.status_code == 200
+        mock_redis.setex.assert_called_once()
+        assert mock_redis.setex.call_args[0][0] == "trends:label:Reprise Records"
+
+
+class TestExploreCaching:
+    """Tests for Redis caching on artist/label explore endpoints."""
+
+    def test_explore_artist_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Cached artist explore should be returned without Neo4j query."""
+        cached = {"center": {"id": "1", "name": "Radiohead", "type": "artist"}, "categories": []}
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        response = test_client.get("/api/explore?name=Radiohead&type=artist")
+        assert response.status_code == 200
+        assert response.json() == cached
+
+    def test_explore_label_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Cached label explore should be returned without Neo4j query."""
+        cached = {"center": {"id": "1", "name": "Hooj Choons", "type": "label"}, "categories": []}
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        response = test_client.get("/api/explore?name=Hooj Choons&type=label")
+        assert response.status_code == 200
+        assert response.json() == cached
+
+    def test_explore_artist_cache_miss_stores(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """On cache miss, explore result should be stored in Redis."""
+        mock_redis.get = AsyncMock(return_value=None)
+        result: dict[str, Any] = {"id": "1", "name": "Radiohead", "release_count": 50, "label_count": 5, "alias_count": 2}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
+            response = test_client.get("/api/explore?name=Radiohead&type=artist")
+        assert response.status_code == 200
+        mock_redis.setex.assert_called_once()
+        assert mock_redis.setex.call_args[0][0] == "explore:artist:Radiohead"
+
+    def test_explore_genre_skips_cache(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Genre explore should NOT be cached (already uses pre-computed properties)."""
+        mock_redis.get = AsyncMock(return_value=None)
+        result: dict[str, Any] = {"id": "Rock", "name": "Rock", "release_count": 100, "artist_count": 50, "label_count": 20, "style_count": 10}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"genre": mock_func}):
+            response = test_client.get("/api/explore?name=Rock&type=genre")
+        assert response.status_code == 200
+        mock_redis.get.assert_not_called()
+        mock_redis.setex.assert_not_called()
+
+    def test_explore_cache_get_failure_falls_through(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis get failure should fall through to Neo4j query."""
+        mock_redis.get = AsyncMock(side_effect=Exception("connection lost"))
+        result: dict[str, Any] = {"id": "1", "name": "Radiohead", "release_count": 50, "label_count": 5, "alias_count": 2}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
+            response = test_client.get("/api/explore?name=Radiohead&type=artist")
+        assert response.status_code == 200
+        mock_func.assert_called_once()
+
+    def test_explore_cache_set_failure_still_returns(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis set failure should not prevent response."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=Exception("write failed"))
+        result: dict[str, Any] = {"id": "1", "name": "Radiohead", "release_count": 50, "label_count": 5, "alias_count": 2}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
+            response = test_client.get("/api/explore?name=Radiohead&type=artist")
+        assert response.status_code == 200
+
 
 class TestNodeDetailsEndpoint:
     """Tests for GET /api/node/{node_id}."""

@@ -197,11 +197,36 @@ async def explore_genre(driver: AsyncResilientNeo4jDriver, name: str) -> dict[st
 
 
 async def explore_label(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:
-    """Get label center node with category counts.
+    """Get label center node with pre-computed category counts.
 
-    Streams releases in a single pass (see explore_genre for rationale).
+    Reads release_count, artist_count, genre_count directly from Label
+    node properties (set during graphinator post-import).  This replaces
+    a 1.2M DB-hit traversal with a single property read (~3 DB hits).
+    Falls back to live traversal if pre-computed properties are absent.
     """
     cypher = """
+    MATCH (l:Label {name: $name})
+    RETURN l.id AS id, l.name AS name,
+           l.release_count AS release_count,
+           l.artist_count AS artist_count,
+           l.genre_count AS genre_count
+    """
+    result = await run_single(driver, cypher, name=name)
+    if not result:
+        return None
+
+    # If pre-computed stats exist, return them directly
+    if result.get("release_count") is not None:
+        return {
+            "id": result["id"],
+            "name": result["name"],
+            "release_count": result["release_count"],
+            "artist_count": result.get("artist_count") or 0,
+            "genre_count": result.get("genre_count") or 0,
+        }
+
+    # Fallback: live traversal (for labels without pre-computed stats)
+    fallback_cypher = """
     MATCH (l:Label {name: $name})
     CALL {
         WITH l
@@ -215,7 +240,7 @@ async def explore_label(driver: AsyncResilientNeo4jDriver, name: str) -> dict[st
     RETURN l.id AS id, l.name AS name,
            release_count, artist_count, genre_count
     """
-    return await run_single(driver, cypher, name=name)
+    return await run_single(driver, fallback_cypher, name=name)
 
 
 async def explore_style(driver: AsyncResilientNeo4jDriver, name: str) -> dict[str, Any] | None:

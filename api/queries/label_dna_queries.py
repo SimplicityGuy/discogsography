@@ -96,61 +96,41 @@ async def get_label_full_profile(
     driver: AsyncResilientNeo4jDriver,
     label_id: str,
 ) -> dict[str, Any] | None:
-    """Get identity, genre, style, and decade profiles in a single traversal.
+    """Get identity, genre, style, and decade profiles in parallel.
 
-    Batches 4 separate queries into one Cypher query that traverses the
-    label's releases once, reducing cold-cache label-DNA from ~8s to ~2s
-    for large labels like Reprise Records (55K releases).
+    Runs 4 lightweight queries concurrently instead of 6 sequential ones.
+    The identity query includes artist counts; genre, style, and decade
+    profiles are fetched in parallel with asyncio.gather.
     """
-    cypher = """
-    MATCH (l:Label {id: $label_id})
-    OPTIONAL MATCH (l)<-[:ON]-(r:Release)
-    WITH l, collect(r) AS releases
-    WITH l, releases, size(releases) AS release_count
-    UNWIND CASE WHEN size(releases) > 0 THEN releases ELSE [null] END AS r
-    OPTIONAL MATCH (r)-[:BY]->(a:Artist)
-    OPTIONAL MATCH (r)-[:IS]->(g:Genre)
-    OPTIONAL MATCH (r)-[:IS]->(s:Style)
-    WITH l,
-         release_count,
-         count(DISTINCT a) AS artist_count,
-         CASE WHEN g IS NOT NULL
-              THEN {name: g.name, count: count(DISTINCT
-                  CASE WHEN g IS NOT NULL THEN r END)}
-              ELSE null END AS genre_entry,
-         CASE WHEN s IS NOT NULL
-              THEN {name: s.name, count: count(DISTINCT
-                  CASE WHEN s IS NOT NULL THEN r END)}
-              ELSE null END AS style_entry,
-         CASE WHEN r IS NOT NULL AND r.year > 0
-              THEN {decade: (r.year / 10) * 10, count: count(DISTINCT
-                  CASE WHEN r.year > 0 THEN r END)}
-              ELSE null END AS decade_entry
-    RETURN l.id AS label_id, l.name AS label_name,
-           release_count, artist_count,
-           collect(DISTINCT genre_entry) AS genres,
-           collect(DISTINCT style_entry) AS styles,
-           collect(DISTINCT decade_entry) AS decades
-    """
-    row = await run_single(driver, cypher, label_id=label_id)
-    if not row:
+    identity = await get_label_identity(driver, label_id)
+    if not identity:
         return None
 
-    # Filter out null entries from CASE expressions
-    genres = [g for g in row.get("genres", []) if g is not None]
-    styles = [s for s in row.get("styles", []) if s is not None]
-    decades = [d for d in row.get("decades", []) if d is not None]
+    # Return identity early if release count is below threshold —
+    # avoids running 3 parallel profile queries for labels that will
+    # be rejected by _build_dna anyway.
+    if identity["release_count"] < MIN_RELEASES:
+        return {
+            "label_id": identity["label_id"],
+            "label_name": identity["label_name"],
+            "release_count": identity["release_count"],
+            "artist_count": identity["artist_count"],
+            "genres": [],
+            "styles": [],
+            "decades": [],
+        }
 
-    # Sort genres/styles by count desc, decades by decade asc
-    genres.sort(key=lambda x: x["count"], reverse=True)
-    styles.sort(key=lambda x: x["count"], reverse=True)
-    decades.sort(key=lambda x: x["decade"])
+    genres, styles, decades = await asyncio.gather(
+        get_label_genre_profile(driver, label_id),
+        get_label_style_profile(driver, label_id),
+        get_label_decade_profile(driver, label_id),
+    )
 
     return {
-        "label_id": row["label_id"],
-        "label_name": row["label_name"],
-        "release_count": row["release_count"],
-        "artist_count": row["artist_count"],
+        "label_id": identity["label_id"],
+        "label_name": identity["label_name"],
+        "release_count": identity["release_count"],
+        "artist_count": identity["artist_count"],
         "genres": genres,
         "styles": styles,
         "decades": decades,
