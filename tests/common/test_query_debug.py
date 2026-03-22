@@ -247,9 +247,7 @@ class TestExecuteSql:
 
         # Set up the explain cursor (used by _try_sql_profile via cursor.connection.cursor())
         explain_cursor = AsyncMock()
-        explain_cursor.fetchall = AsyncMock(
-            return_value=[("Seq Scan on artists",), ("  rows=100",)]
-        )
+        explain_cursor.fetchall = AsyncMock(return_value=[("Seq Scan on artists",), ("  rows=100",)])
         explain_cursor.__aenter__ = AsyncMock(return_value=explain_cursor)
         explain_cursor.__aexit__ = AsyncMock(return_value=False)
 
@@ -332,9 +330,7 @@ class TestExecuteSql:
 
         # Set up explain cursor that raises on execute
         explain_cursor = AsyncMock()
-        explain_cursor.execute = AsyncMock(
-            side_effect=RuntimeError("EXPLAIN not supported")
-        )
+        explain_cursor.execute = AsyncMock(side_effect=RuntimeError("EXPLAIN not supported"))
         explain_cursor.__aenter__ = AsyncMock(return_value=explain_cursor)
         explain_cursor.__aexit__ = AsyncMock(return_value=False)
 
@@ -365,16 +361,12 @@ class TestExecuteSql:
 
         # Set up explain cursor that also fails
         explain_cursor = AsyncMock()
-        explain_cursor.execute = AsyncMock(
-            side_effect=RuntimeError("DB unreachable")
-        )
+        explain_cursor.execute = AsyncMock(side_effect=RuntimeError("DB unreachable"))
         explain_cursor.__aenter__ = AsyncMock(return_value=explain_cursor)
         explain_cursor.__aexit__ = AsyncMock(return_value=False)
 
         cursor = AsyncMock()
-        cursor.execute = AsyncMock(
-            side_effect=RuntimeError("DB unreachable")
-        )
+        cursor.execute = AsyncMock(side_effect=RuntimeError("DB unreachable"))
         cursor.connection.cursor = MagicMock(return_value=explain_cursor)
 
         with (
