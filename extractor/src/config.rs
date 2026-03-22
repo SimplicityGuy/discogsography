@@ -13,6 +13,7 @@ pub struct ExtractorConfig {
     pub queue_size: usize,
     pub progress_log_interval: usize,
     pub state_save_interval: usize,
+    pub data_quality_rules: Option<PathBuf>,
 }
 
 impl Default for ExtractorConfig {
@@ -27,6 +28,7 @@ impl Default for ExtractorConfig {
             queue_size: 5000,
             progress_log_interval: 1000,
             state_save_interval: 5000,
+            data_quality_rules: None,
         }
     }
 }
@@ -70,7 +72,9 @@ impl ExtractorConfig {
 
         let batch_size = std::env::var("BATCH_SIZE").unwrap_or_else(|_| "100".to_string()).parse::<usize>().unwrap_or(100);
 
-        Ok(Self { amqp_connection, discogs_root, periodic_check_days, max_workers, batch_size, ..Default::default() })
+        let data_quality_rules = std::env::var("DATA_QUALITY_RULES").ok().map(PathBuf::from);
+
+        Ok(Self { amqp_connection, discogs_root, periodic_check_days, max_workers, batch_size, data_quality_rules, ..Default::default() })
     }
 }
 

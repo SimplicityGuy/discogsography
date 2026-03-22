@@ -28,7 +28,6 @@ impl DataType {
             DataType::Releases => "releases",
         }
     }
-
 }
 
 impl fmt::Display for DataType {
@@ -104,6 +103,10 @@ pub struct DataMessage {
     pub sha256: String,
     #[serde(flatten)]
     pub data: serde_json::Value,
+    /// Raw XML fragment for data quality inspection; never serialized to AMQP
+    #[serde(skip)]
+    #[allow(dead_code)]
+    pub raw_xml: Option<Vec<u8>>,
 }
 
 /// File completion message

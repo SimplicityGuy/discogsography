@@ -5,7 +5,7 @@ use serde_json::json;
 
 #[test]
 fn test_data_message_serialization() {
-    let message = DataMessage { id: "123".to_string(), sha256: "abc123".to_string(), data: json!({"name": "Test Artist"}) };
+    let message = DataMessage { id: "123".to_string(), sha256: "abc123".to_string(), data: json!({"name": "Test Artist"}), raw_xml: None };
 
     let serialized = serde_json::to_string(&message).unwrap();
     assert!(serialized.contains("\"id\":\"123\""));
@@ -39,7 +39,7 @@ fn test_file_complete_message_serialization() {
 
 #[test]
 fn test_message_enum_data_variant() {
-    let data_msg = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({"test": "value"}) };
+    let data_msg = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({"test": "value"}), raw_xml: None };
 
     let message = Message::Data(data_msg);
     let serialized = serde_json::to_string(&message).unwrap();
@@ -60,7 +60,7 @@ fn test_message_enum_file_complete_variant() {
 
 #[test]
 fn test_message_serialization_round_trip() {
-    let data_msg = DataMessage { id: "test-id".to_string(), sha256: "test-sha".to_string(), data: json!({"field": "value"}) };
+    let data_msg = DataMessage { id: "test-id".to_string(), sha256: "test-sha".to_string(), data: json!({"field": "value"}), raw_xml: None };
 
     let message = Message::Data(data_msg);
     let serialized = serde_json::to_string(&message).unwrap();
@@ -86,7 +86,7 @@ fn test_data_message_with_complex_data() {
         "array": [1, 2, 3]
     });
 
-    let message = DataMessage { id: "complex".to_string(), sha256: "hash".to_string(), data: complex_data };
+    let message = DataMessage { id: "complex".to_string(), sha256: "hash".to_string(), data: complex_data, raw_xml: None };
 
     let serialized = serde_json::to_string(&message).unwrap();
     let deserialized: DataMessage = serde_json::from_str(&serialized).unwrap();
@@ -113,7 +113,7 @@ fn test_file_complete_message_timestamp() {
 
 #[test]
 fn test_message_type_tag() {
-    let data_msg = DataMessage { id: "1".to_string(), sha256: "hash".to_string(), data: json!({}) };
+    let data_msg = DataMessage { id: "1".to_string(), sha256: "hash".to_string(), data: json!({}), raw_xml: None };
 
     let message = Message::Data(data_msg);
     let json_value = serde_json::to_value(&message).unwrap();
@@ -124,7 +124,7 @@ fn test_message_type_tag() {
 #[test]
 fn test_data_message_flattened_data() {
     // The data field is flattened, so it should be at the same level as id and sha256
-    let message = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({"custom_field": "custom_value"}) };
+    let message = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({"custom_field": "custom_value"}), raw_xml: None };
 
     let json_value = serde_json::to_value(&message).unwrap();
 
@@ -171,7 +171,7 @@ fn test_data_type_from_str() {
 #[test]
 fn test_message_enum_tagged() {
     // Test that Message enum uses tagged format
-    let data_msg = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({}) };
+    let data_msg = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({}), raw_xml: None };
     let message = Message::Data(data_msg);
     let json_str = serde_json::to_string(&message).unwrap();
     assert!(json_str.contains("\"type\":\"data\""));
@@ -185,7 +185,7 @@ fn test_message_enum_tagged() {
 
 #[test]
 fn test_data_message_with_empty_data() {
-    let message = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({}) };
+    let message = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: json!({}), raw_xml: None };
 
     let serialized = serde_json::to_string(&message).unwrap();
     let deserialized: DataMessage = serde_json::from_str(&serialized).unwrap();
@@ -225,7 +225,7 @@ fn test_data_message_large_data() {
         }
     });
 
-    let message = DataMessage { id: "large_test".to_string(), sha256: "hash123".to_string(), data: large_data.clone() };
+    let message = DataMessage { id: "large_test".to_string(), sha256: "hash123".to_string(), data: large_data.clone(), raw_xml: None };
 
     let serialized = serde_json::to_string(&message).unwrap();
     let deserialized: DataMessage = serde_json::from_str(&serialized).unwrap();
@@ -242,9 +242,9 @@ fn test_data_message_large_data() {
 #[test]
 fn test_message_batch_serialization() {
     let messages = [
-        DataMessage { id: "1".to_string(), sha256: "hash1".to_string(), data: json!({"field": "value1"}) },
-        DataMessage { id: "2".to_string(), sha256: "hash2".to_string(), data: json!({"field": "value2"}) },
-        DataMessage { id: "3".to_string(), sha256: "hash3".to_string(), data: json!({"field": "value3"}) },
+        DataMessage { id: "1".to_string(), sha256: "hash1".to_string(), data: json!({"field": "value1"}), raw_xml: None },
+        DataMessage { id: "2".to_string(), sha256: "hash2".to_string(), data: json!({"field": "value2"}), raw_xml: None },
+        DataMessage { id: "3".to_string(), sha256: "hash3".to_string(), data: json!({"field": "value3"}), raw_xml: None },
     ];
 
     // Serialize batch
@@ -279,6 +279,7 @@ fn test_message_size_estimation() {
             "name": "Test Artist",
             "members": vec!["member1", "member2", "member3"],
         }),
+        raw_xml: None,
     };
 
     let serialized = serde_json::to_vec(&Message::Data(message)).unwrap();
