@@ -304,3 +304,176 @@ rules:
     assert!(summary.contains("profile-length"), "summary should mention profile-length");
     assert!(summary.contains("(of 2 records)"), "summary should show 2 total records");
 }
+
+// ── message_validator async pipeline test ────────────────────────────
+
+#[tokio::test]
+async fn test_message_validator_forwards_all_messages() {
+    use extractor::extractor::message_validator;
+    use tokio::sync::mpsc;
+
+    let rules = compile_rules(r#"
+rules:
+  artists:
+    - name: name-required
+      field: name
+      condition:
+        type: required
+      severity: error
+"#);
+
+    let temp_dir = TempDir::new().unwrap();
+    let (in_tx, in_rx) = mpsc::channel::<DataMessage>(10);
+    let (out_tx, mut out_rx) = mpsc::channel::<DataMessage>(10);
+
+    // Spawn the validator
+    let handle = tokio::spawn({
+        let rules = rules.clone();
+        let root = temp_dir.path().to_path_buf();
+        async move {
+            message_validator(in_rx, out_tx, rules, "artists", &root, "20260301").await
+        }
+    });
+
+    // Send 3 messages: 1 bad (missing name), 2 clean
+    let bad = DataMessage {
+        id: "1".to_string(),
+        sha256: "aaa".to_string(),
+        data: json!({"@id": "1", "profile": "no name"}),
+        raw_xml: Some(b"<artist id=\"1\"><profile>no name</profile></artist>".to_vec()),
+    };
+    let good1 = DataMessage {
+        id: "2".to_string(),
+        sha256: "bbb".to_string(),
+        data: json!({"@id": "2", "name": "Artist Two"}),
+        raw_xml: Some(b"<artist id=\"2\"><name>Artist Two</name></artist>".to_vec()),
+    };
+    let good2 = DataMessage {
+        id: "3".to_string(),
+        sha256: "ccc".to_string(),
+        data: json!({"@id": "3", "name": "Artist Three"}),
+        raw_xml: None,
+    };
+
+    in_tx.send(bad).await.unwrap();
+    in_tx.send(good1).await.unwrap();
+    in_tx.send(good2).await.unwrap();
+    drop(in_tx); // Close channel so validator exits
+
+    // All 3 messages should pass through
+    let mut received = Vec::new();
+    while let Some(msg) = out_rx.recv().await {
+        received.push(msg);
+    }
+    assert_eq!(received.len(), 3, "All messages should be forwarded regardless of violations");
+    assert_eq!(received[0].id, "1");
+    assert_eq!(received[1].id, "2");
+    assert_eq!(received[2].id, "3");
+
+    // Check the report
+    let report = handle.await.unwrap().unwrap();
+    assert!(report.has_violations());
+    let summary = report.format_summary("20260301");
+    assert!(summary.contains("name-required"));
+    assert!(summary.contains("1 errors"));
+    assert!(summary.contains("(of 3 records)"));
+
+    // Check flagged files were written for the bad record
+    let flagged_dir = temp_dir.path().join("flagged").join("20260301").join("artists");
+    assert!(flagged_dir.join("1.xml").exists(), "Bad record should have XML file");
+    assert!(flagged_dir.join("1.json").exists(), "Bad record should have JSON file");
+    assert!(!flagged_dir.join("2.xml").exists(), "Clean record should NOT have XML file");
+    assert!(!flagged_dir.join("3.xml").exists(), "Clean record should NOT have XML file");
+}
+
+#[tokio::test]
+async fn test_message_validator_no_violations_clean_report() {
+    use extractor::extractor::message_validator;
+    use tokio::sync::mpsc;
+
+    let rules = compile_rules(r#"
+rules:
+  releases:
+    - name: year-check
+      field: year
+      condition:
+        type: range
+        min: 1860
+        max: 2027
+      severity: warning
+"#);
+
+    let temp_dir = TempDir::new().unwrap();
+    let (in_tx, in_rx) = mpsc::channel::<DataMessage>(10);
+    let (out_tx, mut out_rx) = mpsc::channel::<DataMessage>(10);
+
+    let handle = tokio::spawn({
+        let rules = rules.clone();
+        let root = temp_dir.path().to_path_buf();
+        async move {
+            message_validator(in_rx, out_tx, rules, "releases", &root, "20260301").await
+        }
+    });
+
+    let msg = DataMessage {
+        id: "1".to_string(),
+        sha256: "aaa".to_string(),
+        data: json!({"@id": "1", "year": "1990"}),
+        raw_xml: None,
+    };
+    in_tx.send(msg).await.unwrap();
+    drop(in_tx);
+
+    let mut received = Vec::new();
+    while let Some(msg) = out_rx.recv().await {
+        received.push(msg);
+    }
+    assert_eq!(received.len(), 1);
+
+    let report = handle.await.unwrap().unwrap();
+    assert!(!report.has_violations());
+}
+
+#[tokio::test]
+async fn test_message_validator_downstream_dropped() {
+    use extractor::extractor::message_validator;
+    use tokio::sync::mpsc;
+
+    let rules = compile_rules(r#"
+rules:
+  artists:
+    - name: test
+      field: name
+      condition:
+        type: required
+      severity: error
+"#);
+
+    let temp_dir = TempDir::new().unwrap();
+    let (in_tx, in_rx) = mpsc::channel::<DataMessage>(10);
+    let (out_tx, out_rx) = mpsc::channel::<DataMessage>(1);
+
+    // Drop the receiver immediately so validator hits the "downstream dropped" path
+    drop(out_rx);
+
+    let handle = tokio::spawn({
+        let rules = rules.clone();
+        let root = temp_dir.path().to_path_buf();
+        async move {
+            message_validator(in_rx, out_tx, rules, "artists", &root, "20260301").await
+        }
+    });
+
+    let msg = DataMessage {
+        id: "1".to_string(),
+        sha256: "aaa".to_string(),
+        data: json!({"@id": "1", "name": "Test"}),
+        raw_xml: None,
+    };
+    in_tx.send(msg).await.unwrap();
+    drop(in_tx);
+
+    // Validator should still complete without error
+    let report = handle.await.unwrap().unwrap();
+    assert!(!report.has_violations());
+}

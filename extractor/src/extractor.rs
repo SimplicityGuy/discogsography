@@ -509,7 +509,7 @@ pub async fn message_batcher(mut receiver: mpsc::Receiver<DataMessage>, sender: 
 
 /// Validate messages against data quality rules.
 /// All messages are forwarded downstream regardless of violations.
-async fn message_validator(
+pub async fn message_validator(
     mut receiver: mpsc::Receiver<DataMessage>,
     sender: mpsc::Sender<DataMessage>,
     rules: Arc<CompiledRulesConfig>,
