@@ -144,6 +144,7 @@ See [Database Schema — Extractor Message Format](database-schema.md#extractor-
 - Creates nodes: Artist, Label, Release, Master, Genre, Style
 - Builds relationships: BY, ON, MEMBER_OF, DERIVED_FROM, etc.
 - On `extraction_complete`: deletes stub nodes (no `sha256` property) created by cross-type MERGE operations
+- **Post-import computation** (after releases complete): Runs `compute_genre_style_stats()` to pre-compute aggregate properties on Genre and Style nodes (release_count, artist_count, label_count, style_count/genre_count, first_year). Uses `CALL {} IN TRANSACTIONS OF 1 ROWS` to process each node in its own transaction (avoids 120s timeout for mega-genres like Rock/Electronic). These properties replace expensive runtime traversals (~200M DB hits → 6 DB hits per query).
 
 **Tableinator** (PostgreSQL):
 
@@ -255,6 +256,7 @@ See [Extractor README](../extractor/README.md) for details.
 - Create nodes and relationships
 - Maintain graph indexes
 - Handle schema evolution
+- Pre-compute aggregate statistics on Genre/Style nodes after release import
 
 **Key Features**:
 
@@ -262,6 +264,7 @@ See [Extractor README](../extractor/README.md) for details.
 - Batch transaction processing
 - Connection resilience with retry logic
 - Smart consumer lifecycle management
+- **Post-import aggregation**: `compute_genre_style_stats()` sets 5 pre-computed properties (release_count, artist_count, label_count, style_count/genre_count, first_year) on each Genre and Style node using `CALL {} IN TRANSACTIONS OF 1 ROWS`
 
 **Configuration**:
 
@@ -554,10 +557,21 @@ See [Database Schema](database-schema.md) for details.
 - Insights computation results (Insights — TTL matches schedule interval, invalidated after each run)
 - Query result caching (Dashboard)
 - Dashboard metrics
+- **API query result caching** (cache-aside pattern):
+
+| Cache Key Pattern | TTL | Endpoints Covered |
+|---|---|---|
+| `trends:{type}:{name}` | 24h | `/api/trends?type=genre\|style` |
+| `label-dna:{label_id}` | 24h | `/api/label/{id}/dna` |
+| `label-similar:{label_id}:{limit}` | 24h | `/api/label/{id}/similar` |
+| `artist-similar:{artist_id}:{limit}` | 24h | `/api/artist/{id}/similar` |
+| `explore-artist:{name}` | 24h | `/api/explore?type=artist` |
+| `trends-label:{label_id}` | 24h | `/api/trends?type=label` |
+| `search:{md5_digest}` | 5m | `/api/search` |
 
 **Configuration**:
 
-- Default TTL: 1 hour
+- Default TTL: varies by cache type (see table above)
 - Max memory: Configurable
 - Eviction policy: LRU
 
@@ -699,9 +713,11 @@ See [Monitoring](monitoring.md) for details.
 - Prefetch count tuning
 - Connection pool sizing
 - Index optimization
-- Query caching strategies
+- Query caching strategies (Redis cache-aside pattern)
+- Pre-computed aggregate properties on graph nodes
+- Neo4j Cypher query plan optimization (CALL {} barriers, pattern comprehension)
 
-See [Performance Guide](performance-guide.md) for details.
+See [Performance Guide](performance-guide.md) for general strategies and [Query Performance Optimizations](query-performance-optimizations.md) for the detailed Cypher optimization report (249x overall improvement).
 
 ## Deployment Options
 
@@ -749,4 +765,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-20
+**Last Updated**: 2026-03-22

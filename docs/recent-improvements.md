@@ -4,11 +4,59 @@
 
 **Summary of recent enhancements to the Discogsography platform**
 
-Last Updated: March 2026
+Last Updated: 2026-03-22
 
 </div>
 
 ## 🆕 Latest Improvements (March 2026)
+
+### ⚡ Comprehensive Query Performance Optimization — 249x Overall Improvement (#175-#184)
+
+**Overview**: Over 11 optimization rounds across PRs #175-#184, the entire API query layer was systematically profiled and optimized, achieving a **249x reduction in overall average latency** (10.95s → 0.044s) across 88 endpoints. See the full [Query Performance Optimizations](query-performance-optimizations.md) report for detailed analysis.
+
+#### Optimization Rounds
+
+| PR | Focus | Key Impact |
+|----|-------|------------|
+| **#175** | Initial Cypher optimization of 6 slowest queries | 10-100x fewer DB hits per query |
+| **#176** | 7 query families: CALL {} barriers, streaming aggregation, batch similarity | Path finder: 58s → 0.2s, trends: CartesianProduct eliminated |
+| **#177** | Cardinality management with per-genre LIMITs, parallel genre-emergence | artist-similar: top-5-genre cap prevents mega-genre explosion |
+| **#179** | asyncio.gather() concurrency, pattern comprehension for planner control | explore/genre: 4 concurrent queries vs chained OPTIONAL MATCHes |
+| **#180** | Per-genre CALL {} barriers for similarity queries | label-similar: 206M → 60-80M DB hits, 1GB → 200MB memory |
+| **#181** | Pre-computed Genre/Style/Label node properties at import time | explore/genre: 200M → 6 DB hits; genre-emergence: 410M → 33 DB hits |
+| **#184** | Style-based similarity, Redis caching (24h TTL), search per-table LIMIT | trends/genre: 28s → 0.001s; artist-similar: 112s → 0.002s |
+
+#### Techniques Applied
+
+- **Pre-computed node properties**: Aggregate counts (release_count, artist_count, label_count, style_count, first_year) computed during graphinator post-import step and stored on Genre/Style/Label nodes
+- **CALL {} subqueries**: Prevent Neo4j planner CartesianProduct plans by creating strong barriers for traversal order
+- **Pattern comprehension**: Force specific node-first traversal when even CALL {} doesn't control the planner
+- **Redis cache-aside**: 24h TTL for trends, similarity, and label-DNA; 5m TTL for search results
+- **Batch queries**: N+1 query patterns (800 queries → 4 queries) replaced with UNWIND-based batching
+- **Per-dimension LIMIT**: Cap high-cardinality genre expansions (Rock: 6M+ releases → LIMIT 500 per genre)
+- **asyncio.gather()**: Execute independent Neo4j/PostgreSQL queries concurrently
+- **Relationship type filtering**: shortestPath with explicit type list eliminates unbounded BFS
+
+#### Results by Category
+
+| Category | Before | After | Speedup |
+|----------|--------|-------|---------|
+| Path finder (6 endpoints) | 58.5s | 0.21s | **279x** |
+| Explore genre (2) | 24.1s | 0.014s | **1,721x** |
+| Trends genre (2) | 28.6s | 0.001s | **28,600x** |
+| Trends style (3) | 13.2s | 0.001s | **13,200x** |
+| Genre emergence | 64.3s | 0.10s | **630x** |
+| Artist similarity (4) | 64s | 0.002s | **32,000x** |
+| Label similarity (3) | 86s | 0.001s | **86,000x** |
+| **Overall (88 endpoints)** | **10.95s** | **0.044s** | **249x** |
+
+______________________________________________________________________
+
+### 🔄 CI: Skip Heavy Jobs for Markdown-Only Changes (#185)
+
+**Overview**: GitHub Actions workflows now detect when a PR only changes markdown files and skip heavy jobs (build, test, lint) to save CI minutes.
+
+______________________________________________________________________
 
 ### ⚡ Cypher Query Optimization — 10-100x Fewer DB Hits (#175)
 

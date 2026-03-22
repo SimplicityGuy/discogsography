@@ -50,6 +50,8 @@ flowchart TD
 
 > **Note**: ✅ indicates optimizations that are implemented and enabled by default.
 
+> 📖 **For detailed Neo4j Cypher query optimization results**, see the [Query Performance Optimizations](query-performance-optimizations.md) report — documenting 11 optimization rounds that achieved a **249x overall improvement** (10.95s → 0.044s average across 88 endpoints).
+
 ## 🔍 Profiling & Monitoring
 
 ### Performance Profiling
@@ -122,6 +124,114 @@ async def monitor_resources():
 
         await asyncio.sleep(30)  # Log every 30 seconds
 ```
+
+## 🗄️ Neo4j Cypher Query Optimization
+
+The API service executes Cypher queries against a Neo4j graph with ~33.8M nodes and ~134M relationships. Optimization was critical — the original queries averaged 10.95s; after 11 rounds they average 0.044s (249x improvement).
+
+### Key Techniques
+
+```mermaid
+flowchart TD
+    Problem[Slow Cypher Query]
+    Profile[PROFILE the query]
+
+    Problem --> Profile
+
+    Profile --> Check{Check execution plan}
+
+    Check -->|CartesianProduct| Fix1["Use CALL {} subquery<br/>or pattern comprehension<br/>to force traversal order"]
+    Check -->|AllNodesScan| Fix2["Add index on<br/>filtered property"]
+    Check -->|High DB Hits<br/>on aggregation| Fix3["Pre-compute aggregates<br/>as node properties<br/>at import time"]
+    Check -->|N+1 pattern<br/>many Apply ops| Fix4["Batch with UNWIND<br/>or asyncio.gather()"]
+    Check -->|Acceptable plan<br/>but slow| Fix5["Add Redis caching<br/>(cache-aside pattern)"]
+
+    Fix1 --> Verify[PROFILE again]
+    Fix2 --> Verify
+    Fix3 --> Verify
+    Fix4 --> Verify
+    Fix5 --> Verify
+
+    Verify --> Done{DB Hits reduced?}
+    Done -->|Yes| Monitor[Deploy & monitor]
+    Done -->|No| Profile
+
+    style Problem fill:#fce4ec,stroke:#e91e63
+    style Monitor fill:#e8f5e9,stroke:#4caf50
+    style Verify fill:#e3f2fd,stroke:#2196f3
+```
+
+#### 1. CALL {} Subqueries to Control the Planner
+
+The Neo4j planner can see through `WITH` barriers and choose unexpected plans (e.g., CartesianProduct scanning 16M releases instead of expanding from 1 genre node). CALL {} subqueries create stronger barriers:
+
+```cypher
+-- GOOD: forces genre-first expansion
+MATCH (g:Genre {name: $name})
+CALL {
+    WITH g
+    MATCH (g)<-[:IS]-(r:Release)
+    WHERE r.year > 0
+    RETURN r.year AS year, count(DISTINCT r) AS count
+}
+RETURN year, count ORDER BY year
+```
+
+#### 2. Pre-Computed Node Properties
+
+For expensive aggregate queries that only change on data import, compute results during the graphinator post-import step and store as node properties:
+
+```cypher
+-- At import time: compute once
+SET g.release_count = count, g.artist_count = count, ...
+
+-- At query time: read properties (6 DB hits vs 200M)
+MATCH (g:Genre {name: $name})
+RETURN g.release_count, g.artist_count, g.label_count, g.style_count
+```
+
+#### 3. Relationship Type Filtering on shortestPath
+
+Always specify explicit relationship types to limit BFS scope:
+
+```cypher
+-- 70s → 0.3s by excluding irrelevant relationship types
+MATCH p = shortestPath((a)-[:BY|ON|IS|ALIAS_OF|MEMBER_OF|MASTER_OF|DERIVED_FROM*..6]-(b))
+```
+
+#### 4. Redis Cache-Aside Pattern
+
+For queries that are expensive on first call but stable between data imports:
+
+```python
+# Check cache → query DB → store → return
+cached = await redis.get(cache_key)
+if cached:
+    return json.loads(cached)
+result = await run_query(...)
+await redis.setex(cache_key, TTL_24H, json.dumps(result))
+return result
+```
+
+#### 5. Batch Queries with asyncio.gather()
+
+Replace N+1 query patterns with concurrent batch queries:
+
+```python
+# BAD: 200 sequential queries
+for candidate in candidates:
+    profile = await get_profile(candidate.id)
+
+# GOOD: 4 concurrent dimension queries
+genres, styles, labels, collabs = await asyncio.gather(
+    batch_genre_query(candidate_ids),
+    batch_style_query(candidate_ids),
+    batch_label_query(candidate_ids),
+    batch_collab_query(candidate_ids),
+)
+```
+
+> 📖 See [Query Performance Optimizations](query-performance-optimizations.md) for the complete optimization report with per-endpoint measurements.
 
 ## 🚀 Optimization Strategies
 

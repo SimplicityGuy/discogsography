@@ -157,13 +157,92 @@ See **[State Marker System](../docs/state-marker-system.md)** for complete docum
 
 ## Architecture
 
-Extractor uses a streaming pipeline architecture:
+Extractor uses a streaming pipeline architecture with trait-based dependency injection for testability:
+
+### Pipeline Stages
 
 1. **Downloader**: Fetches latest Discogs dumps from S3
 1. **Parser**: Streams XML using quick-xml, extracting records
 1. **Batcher**: Groups records for efficient AMQP publishing
-1. **Publisher**: Sends batched messages to RabbitMQ exchanges
+1. **Publisher**: Sends batched messages to RabbitMQ fanout exchanges
 1. **State Tracker**: Updates progress markers at each phase
+
+### Trait-Based Dependency Injection
+
+The extractor uses three core traits to decouple components and enable comprehensive mocking in tests:
+
+```mermaid
+classDiagram
+    class DataSource {
+        <<trait>>
+        +list_s3_files() Vec~S3FileInfo~
+        +get_latest_monthly_files(files) Vec~S3FileInfo~
+        +download_discogs_data() Vec~String~
+        +set_state_marker(marker, path)
+        +take_state_marker() Option~StateMarker~
+    }
+
+    class MessagePublisher {
+        <<trait>>
+        +setup_exchange(data_type)
+        +publish(message, data_type)
+        +publish_batch(messages, data_type)
+        +send_file_complete(data_type, file, count)
+        +send_extraction_complete(version, started_at, counts)
+        +close()
+    }
+
+    class MessageQueueFactory {
+        <<trait>>
+        +create(url) Arc~MessagePublisher~
+    }
+
+    class Downloader {
+        +output_directory: PathBuf
+        +metadata: HashMap
+        +state_marker: Option~StateMarker~
+    }
+
+    class MessageQueue {
+        +connection: Arc~RwLock~
+        +channel: Arc~RwLock~
+    }
+
+    class DefaultMessageQueueFactory
+
+    DataSource <|.. Downloader : implements
+    MessagePublisher <|.. MessageQueue : implements
+    MessageQueueFactory <|.. DefaultMessageQueueFactory : implements
+    MessageQueueFactory ..> MessagePublisher : creates
+
+    note for DataSource "Mockable via #[cfg_attr(feature = 'test-support', mockall::automock)]"
+    note for MessagePublisher "Mockable via mockall::automock"
+    note for MessageQueueFactory "Mockable via mockall::automock"
+```
+
+| Trait | Purpose | Production Impl | Test Mock |
+|-------|---------|----------------|-----------|
+| **`DataSource`** | S3 file listing, downloading, state marker management | `Downloader` | `MockDataSource` (mockall) |
+| **`MessagePublisher`** | AMQP exchange setup, message publishing, completion signals | `MessageQueue` | `MockMessagePublisher` (mockall) |
+| **`MessageQueueFactory`** | Creates `MessagePublisher` instances (enables per-data-type connections) | `DefaultMessageQueueFactory` | `MockMessageQueueFactory` (mockall) |
+
+All traits use the `#[async_trait]` attribute for async method support and `#[cfg_attr(feature = "test-support", mockall::automock)]` for conditional mock generation. The `test-support` feature flag ensures mock code is only compiled during testing.
+
+The main entry point `process_discogs_data()` accepts trait objects (`&mut dyn DataSource`, `Arc<dyn MessageQueueFactory>`) rather than concrete types, allowing tests to inject mocks for S3, RabbitMQ, and state marker operations without any network dependencies.
+
+### Module Structure
+
+| Module | Responsibility |
+|--------|---------------|
+| `main.rs` | Entry point, CLI args, health server, periodic check loop |
+| `extractor.rs` | Core orchestration: download → parse → publish pipeline |
+| `downloader.rs` | S3 file discovery, download with retry, checksum validation |
+| `parser.rs` | Streaming XML parser using quick-xml (artists, labels, masters, releases) |
+| `message_queue.rs` | AMQP connection management, exchange declaration, batch publishing |
+| `state_marker.rs` | Version-specific progress tracking, resume decisions |
+| `types.rs` | Data types (DataType, DataMessage, Message, S3FileInfo, etc.) |
+| `config.rs` | Environment variable configuration |
+| `health.rs` | HTTP health/metrics/readiness endpoints |
 
 ## Logging
 
