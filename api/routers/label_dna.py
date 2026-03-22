@@ -59,10 +59,20 @@ async def _build_dna(label_id: str) -> tuple[LabelDNA | None, str]:
 
     Returns (dna, reason) — reason is "ok", "not_found", or "too_few".
 
-    Uses ``get_label_full_profile`` to batch identity + genre + style +
-    decade into a single traversal (6 queries → 3), then fetches
-    active_years and formats in parallel.
+    Checks Redis cache first (same key as ``/api/label/{id}/dna``).
+    On miss, runs profile queries and caches the result so that
+    subsequent calls (e.g. from ``/api/label/dna/compare``) are instant.
     """
+    # Check cache first — reuses the same key as the /dna endpoint
+    cache_key = f"label-dna:{label_id}"
+    if _redis:
+        try:
+            cached = await _redis.get(cache_key)
+            if cached:
+                return LabelDNA(**json.loads(cached)), "ok"
+        except Exception:
+            logger.debug("⚠️ Label DNA _build_dna cache get failed", key=cache_key)
+
     profile = await get_label_full_profile(_neo4j_driver, label_id)
     if not profile:
         return None, "not_found"
@@ -97,7 +107,7 @@ async def _build_dna(label_id: str) -> tuple[LabelDNA | None, str]:
     decade_total = sum(d["count"] for d in decades)
     format_total = sum(f["count"] for f in formats)
 
-    return LabelDNA(
+    dna = LabelDNA(
         label_id=profile["label_id"],
         label_name=profile["label_name"],
         release_count=release_count,
@@ -110,7 +120,16 @@ async def _build_dna(label_id: str) -> tuple[LabelDNA | None, str]:
         styles=[StyleWeight(**s) for s in _add_percentages(styles, style_total)],
         formats=[FormatWeight(**f) for f in _add_percentages(formats, format_total)],
         decades=[DecadeCount(**d) for d in _add_percentages(decades, decade_total)],
-    ), "ok"
+    )
+
+    # Cache the result so compare and subsequent /dna calls are instant
+    if _redis:
+        try:
+            await _redis.setex(cache_key, _LABEL_DNA_CACHE_TTL, json.dumps(dna.model_dump(), default=str))
+        except Exception:
+            logger.debug("⚠️ Label DNA _build_dna cache set failed", key=cache_key)
+
+    return dna, "ok"
 
 
 @router.get("/api/label/{label_id}/dna")

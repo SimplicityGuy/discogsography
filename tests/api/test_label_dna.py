@@ -614,3 +614,92 @@ class TestLabelDnaCaching:
             response = test_client.get("/api/label/157/similar")
 
         assert response.status_code == 200
+
+
+class TestBuildDnaCaching:
+    """Tests for Redis caching inside _build_dna."""
+
+    def test_build_dna_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """_build_dna returns cached LabelDNA without running queries."""
+        from api.models import DecadeCount, FormatWeight, GenreWeight, LabelDNA, StyleWeight
+
+        dna = LabelDNA(
+            label_id="42",
+            label_name="ECM",
+            release_count=200,
+            artist_count=80,
+            artist_diversity=0.4,
+            active_years=[1970],
+            peak_decade=1970,
+            prolificacy=200.0,
+            genres=[GenreWeight(name="Jazz", count=200, percentage=100.0)],
+            styles=[StyleWeight(name="Avant", count=100, percentage=100.0)],
+            formats=[FormatWeight(name="Vinyl", count=100, percentage=100.0)],
+            decades=[DecadeCount(decade=1970, count=200, percentage=100.0)],
+        )
+        mock_redis.get = AsyncMock(return_value=json.dumps(dna.model_dump(), default=str))
+
+        response = test_client.get("/api/label/42/dna")
+        assert response.status_code == 200
+        assert response.json()["label_id"] == "42"
+
+    @patch("api.routers.label_dna.get_label_format_profile")
+    @patch("api.routers.label_dna.get_label_active_years")
+    @patch("api.routers.label_dna.get_label_full_profile")
+    def test_build_dna_cache_miss_stores(
+        self,
+        mock_full_profile: AsyncMock,
+        mock_active_years: AsyncMock,
+        mock_formats: AsyncMock,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """_build_dna caches computed DNA on miss."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_full_profile.return_value = {
+            "label_id": "42",
+            "label_name": "ECM",
+            "release_count": 200,
+            "artist_count": 80,
+            "genres": [{"name": "Jazz", "count": 200}],
+            "styles": [],
+            "decades": [{"decade": 1970, "count": 200}],
+        }
+        mock_active_years.return_value = [1970]
+        mock_formats.return_value = []
+
+        response = test_client.get("/api/label/42/dna")
+        assert response.status_code == 200
+        assert mock_redis.setex.call_count >= 1
+        cache_keys = [call[0][0] for call in mock_redis.setex.call_args_list]
+        assert "label-dna:42" in cache_keys
+
+    @patch("api.routers.label_dna.get_label_format_profile")
+    @patch("api.routers.label_dna.get_label_active_years")
+    @patch("api.routers.label_dna.get_label_full_profile")
+    def test_build_dna_cache_set_failure(
+        self,
+        mock_full_profile: AsyncMock,
+        mock_active_years: AsyncMock,
+        mock_formats: AsyncMock,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """_build_dna still returns DNA even if cache set fails."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=Exception("write failed"))
+        mock_full_profile.return_value = {
+            "label_id": "42",
+            "label_name": "ECM",
+            "release_count": 200,
+            "artist_count": 80,
+            "genres": [],
+            "styles": [],
+            "decades": [],
+        }
+        mock_active_years.return_value = []
+        mock_formats.return_value = []
+
+        response = test_client.get("/api/label/42/dna")
+        assert response.status_code == 200
+        assert response.json()["label_id"] == "42"

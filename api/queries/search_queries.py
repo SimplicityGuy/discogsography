@@ -34,6 +34,10 @@ logger = structlog.get_logger(__name__)
 
 ALL_TYPES: list[str] = ["artist", "label", "master", "release"]
 
+# Search cache TTL (1 hour — longer than the old 5 min to reduce cold cache
+# frequency for high-cardinality terms like "Rock" that take ~9s to compute)
+_SEARCH_CACHE_TTL = 3600
+
 # Maps entity type → (table, name_field, has_year, has_genres)
 _ENTITY_CONFIG: dict[str, tuple[str, str, bool, bool]] = {
     "artist": ("artists", "name", False, False),
@@ -367,6 +371,6 @@ async def execute_search(
     }
 
     if redis is not None:
-        await redis.setex(key, 300, json.dumps(response))
+        await redis.setex(key, _SEARCH_CACHE_TTL, json.dumps(response))
 
     return response

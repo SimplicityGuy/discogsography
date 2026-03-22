@@ -36,6 +36,7 @@ from api.auth import (
 import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.models import LoginRequest, RegisterRequest
+from api.queries.search_queries import ALL_TYPES, execute_search
 import api.routers.collection as _collection_router
 import api.routers.explore as _explore_router
 import api.routers.insights as _insights_router
@@ -151,6 +152,28 @@ async def _get_current_user(
         ) from exc
 
 
+# Common search terms that produce high-cardinality FTS results (~9s for "Rock").
+# Pre-warming the Redis cache on startup ensures users never wait for cold cache.
+_PREWARM_SEARCH_TERMS = ["Rock", "Electronic", "Jazz", "Pop", "Punk", "Hip Hop", "Trance", "Blues", "Country", "Metal"]
+
+
+async def _prewarm_search_cache() -> None:  # pragma: no cover
+    """Pre-warm Redis search cache for common high-cardinality terms.
+
+    Runs as a background task after startup. Each term is searched with
+    default parameters, populating the Redis cache (1h TTL). Errors are
+    logged and swallowed — pre-warming is best-effort.
+    """
+    if not _pool or not _redis:
+        return
+    for term in _PREWARM_SEARCH_TERMS:
+        try:
+            await execute_search(_pool, _redis, term, ALL_TYPES, [], None, None, 20, 0)
+            logger.debug("🔥 Search cache pre-warmed", term=term)
+        except Exception:
+            logger.debug("⚠️ Search pre-warm failed", term=term)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     """Manage API service lifecycle."""
@@ -211,6 +234,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         max_nodes=_config.snapshot_max_nodes,
     )
     logger.info("✅ API service ready", port=API_PORT)
+
+    # Pre-warm search cache for common high-cardinality terms in background.
+    # Store reference on app.state to prevent garbage collection (RUF006).
+    _app.state.prewarm_task = asyncio.create_task(_prewarm_search_cache())
 
     yield
 
