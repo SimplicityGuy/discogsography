@@ -26,22 +26,33 @@ if [ ${#NEW_PASSWORD} -lt 8 ]; then
 fi
 
 # Generate the PBKDF2-SHA256 hash using Python (matches api/auth.py format)
-HASHED=$(docker exec "${CONTAINER}" python3 -c "
+if HASHED=$(docker exec "${CONTAINER}" python3 -c "
 import hashlib, os
 password = '''${NEW_PASSWORD}'''
 salt = os.urandom(32)
 key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100_000)
 print(salt.hex() + ':' + key.hex())
-" 2>/dev/null) || {
+" 2>/dev/null); then
+  : # success
+else
   # Alpine postgres image may not have python3; use the API container instead
-  HASHED=$(docker exec discogsography-api uv run python -c "
+  echo "python3 not available in '${CONTAINER}' container, trying API container..."
+  HASHED=$(docker exec discogsography-api python3 -c "
 import hashlib, os
 password = '''${NEW_PASSWORD}'''
 salt = os.urandom(32)
 key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100_000)
 print(salt.hex() + ':' + key.hex())
-")
-}
+") || {
+    echo "Error: Failed to generate password hash. Ensure either '${CONTAINER}' has python3 or the 'discogsography-api' container is running."
+    exit 1
+  }
+fi
+
+if [ -z "$HASHED" ]; then
+  echo "Error: Failed to generate password hash (empty result)."
+  exit 1
+fi
 
 echo "Updating password for: ${EMAIL}"
 
