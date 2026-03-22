@@ -161,14 +161,16 @@ rules:
 
 #[test]
 fn test_range_within_bounds_no_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   masters:
     - name: year_range
       field: year
       condition: {type: range, min: 1900, max: 2100}
       severity: warning
-"#);
+"#,
+    );
     let record = json!({"year": "2000"});
     let violations = evaluate_rules(&config, "masters", &record);
     assert!(violations.is_empty());
@@ -176,14 +178,16 @@ rules:
 
 #[test]
 fn test_range_below_min_produces_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   masters:
     - name: year_range
       field: year
       condition: {type: range, min: 1900, max: 2100}
       severity: warning
-"#);
+"#,
+    );
     let record = json!({"year": "1800"});
     let violations = evaluate_rules(&config, "masters", &record);
     assert_eq!(violations.len(), 1);
@@ -193,14 +197,16 @@ rules:
 
 #[test]
 fn test_range_above_max_produces_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   masters:
     - name: year_range
       field: year
       condition: {type: range, min: 1900, max: 2100}
       severity: warning
-"#);
+"#,
+    );
     let record = json!({"year": "2200"});
     let violations = evaluate_rules(&config, "masters", &record);
     assert_eq!(violations.len(), 1);
@@ -209,14 +215,16 @@ rules:
 
 #[test]
 fn test_range_non_numeric_field_no_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   masters:
     - name: year_range
       field: year
       condition: {type: range, min: 1900, max: 2100}
       severity: warning
-"#);
+"#,
+    );
     // Non-numeric value: range check skips (returns false), no violation
     let record = json!({"year": "unknown"});
     let violations = evaluate_rules(&config, "masters", &record);
@@ -227,14 +235,16 @@ rules:
 
 #[test]
 fn test_required_field_present_no_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   artists:
     - name: name_required
       field: name
       condition: {type: required}
       severity: error
-"#);
+"#,
+    );
     let record = json!({"name": "Aphex Twin"});
     let violations = evaluate_rules(&config, "artists", &record);
     assert!(violations.is_empty());
@@ -242,14 +252,16 @@ rules:
 
 #[test]
 fn test_required_field_missing_produces_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   artists:
     - name: name_required
       field: name
       condition: {type: required}
       severity: error
-"#);
+"#,
+    );
     let record = json!({"other": "value"});
     let violations = evaluate_rules(&config, "artists", &record);
     assert_eq!(violations.len(), 1);
@@ -259,14 +271,16 @@ rules:
 
 #[test]
 fn test_required_field_empty_string_produces_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   artists:
     - name: name_required
       field: name
       condition: {type: required}
       severity: error
-"#);
+"#,
+    );
     let record = json!({"name": ""});
     let violations = evaluate_rules(&config, "artists", &record);
     assert_eq!(violations.len(), 1);
@@ -275,14 +289,16 @@ rules:
 
 #[test]
 fn test_required_field_null_produces_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   artists:
     - name: name_required
       field: name
       condition: {type: required}
       severity: error
-"#);
+"#,
+    );
     let record = json!({"name": null});
     let violations = evaluate_rules(&config, "artists", &record);
     assert_eq!(violations.len(), 1);
@@ -292,7 +308,8 @@ rules:
 
 #[test]
 fn test_regex_match_produces_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   labels:
     - name: no_digits_in_name
@@ -301,7 +318,8 @@ rules:
         type: regex
         pattern: "\\d"
       severity: warning
-"#);
+"#,
+    );
     // Name contains digits — regex matches → violation
     let record = json!({"name": "Label123"});
     let violations = evaluate_rules(&config, "labels", &record);
@@ -311,7 +329,8 @@ rules:
 
 #[test]
 fn test_regex_no_match_no_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   labels:
     - name: no_digits_in_name
@@ -320,7 +339,8 @@ rules:
         type: regex
         pattern: "\\d"
       severity: warning
-"#);
+"#,
+    );
     let record = json!({"name": "Clean Label"});
     let violations = evaluate_rules(&config, "labels", &record);
     assert!(violations.is_empty());
@@ -330,7 +350,8 @@ rules:
 
 #[test]
 fn test_enum_valid_value_no_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   releases:
     - name: valid_format
@@ -339,7 +360,8 @@ rules:
         type: enum
         values: [Vinyl, CD, Digital, Cassette]
       severity: warning
-"#);
+"#,
+    );
     let record = json!({"format": "Vinyl"});
     let violations = evaluate_rules(&config, "releases", &record);
     assert!(violations.is_empty());
@@ -347,7 +369,8 @@ rules:
 
 #[test]
 fn test_enum_invalid_value_produces_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   releases:
     - name: valid_format
@@ -356,7 +379,8 @@ rules:
         type: enum
         values: [Vinyl, CD, Digital, Cassette]
       severity: warning
-"#);
+"#,
+    );
     let record = json!({"format": "Wax Cylinder"});
     let violations = evaluate_rules(&config, "releases", &record);
     assert_eq!(violations.len(), 1);
@@ -367,14 +391,16 @@ rules:
 
 #[test]
 fn test_length_within_bounds_no_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   artists:
     - name: name_length
       field: name
       condition: {type: length, min: 1, max: 100}
       severity: warning
-"#);
+"#,
+    );
     let record = json!({"name": "The Beatles"});
     let violations = evaluate_rules(&config, "artists", &record);
     assert!(violations.is_empty());
@@ -382,14 +408,16 @@ rules:
 
 #[test]
 fn test_length_too_short_produces_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   artists:
     - name: name_length
       field: name
       condition: {type: length, min: 2, max: 100}
       severity: warning
-"#);
+"#,
+    );
     let record = json!({"name": "X"});
     let violations = evaluate_rules(&config, "artists", &record);
     assert_eq!(violations.len(), 1);
@@ -398,14 +426,16 @@ rules:
 
 #[test]
 fn test_length_too_long_produces_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   artists:
     - name: name_length
       field: name
       condition: {type: length, min: 1, max: 5}
       severity: info
-"#);
+"#,
+    );
     let record = json!({"name": "This name is way too long"});
     let violations = evaluate_rules(&config, "artists", &record);
     assert_eq!(violations.len(), 1);
@@ -415,14 +445,16 @@ rules:
 
 #[test]
 fn test_dot_notation_nested_object() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   releases:
     - name: label_name_required
       field: label.name
       condition: {type: required}
       severity: error
-"#);
+"#,
+    );
     let record = json!({"label": {"name": "Sub Pop"}});
     let violations = evaluate_rules(&config, "releases", &record);
     assert!(violations.is_empty());
@@ -430,14 +462,16 @@ rules:
 
 #[test]
 fn test_dot_notation_missing_intermediate_produces_violation() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   releases:
     - name: label_name_required
       field: label.name
       condition: {type: required}
       severity: error
-"#);
+"#,
+    );
     // `label` key is absent entirely
     let record = json!({"title": "Some Album"});
     let violations = evaluate_rules(&config, "releases", &record);
@@ -447,14 +481,16 @@ rules:
 
 #[test]
 fn test_dot_notation_array_expands_to_multiple_values() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   releases:
     - name: genre_length
       field: genres.name
       condition: {type: length, min: 1, max: 50}
       severity: warning
-"#);
+"#,
+    );
     // All genre names are within bounds — no violations
     let record = json!({"genres": [{"name": "Rock"}, {"name": "Jazz"}]});
     let violations = evaluate_rules(&config, "releases", &record);
@@ -463,14 +499,16 @@ rules:
 
 #[test]
 fn test_dot_notation_array_one_violating_element() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   releases:
     - name: genre_length
       field: genres.name
       condition: {type: length, min: 1, max: 5}
       severity: warning
-"#);
+"#,
+    );
     // "Electronic" is 10 chars, exceeds max of 5
     let record = json!({"genres": [{"name": "Rock"}, {"name": "Electronic"}]});
     let violations = evaluate_rules(&config, "releases", &record);
@@ -480,14 +518,16 @@ rules:
 
 #[test]
 fn test_no_rules_for_data_type_returns_empty_violations() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   artists:
     - name: name_required
       field: name
       condition: {type: required}
       severity: error
-"#);
+"#,
+    );
     // Record is for "releases" — no rules defined for it
     let record = json!({"title": "Some Album"});
     let violations = evaluate_rules(&config, "releases", &record);
@@ -496,14 +536,16 @@ rules:
 
 #[test]
 fn test_violation_carries_correct_severity() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   artists:
     - name: name_required
       field: name
       condition: {type: required}
       severity: error
-"#);
+"#,
+    );
     let record = json!({});
     let violations = evaluate_rules(&config, "artists", &record);
     assert_eq!(violations.len(), 1);
@@ -513,7 +555,8 @@ rules:
 
 #[test]
 fn test_multiple_rules_multiple_violations() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   artists:
     - name: name_required
@@ -524,7 +567,8 @@ rules:
       field: year
       condition: {type: range, min: 1900, max: 2100}
       severity: warning
-"#);
+"#,
+    );
     // Both rules violate: name missing, year out of range
     let record = json!({"year": "1800"});
     let violations = evaluate_rules(&config, "artists", &record);
@@ -543,14 +587,16 @@ fn test_severity_display() {
 
 #[test]
 fn test_violation_fields_populated_correctly() {
-    let config = compile_yaml(r#"
+    let config = compile_yaml(
+        r#"
 rules:
   labels:
     - name: name_required
       field: name
       condition: {type: required}
       severity: warning
-"#);
+"#,
+    );
     let record = json!({});
     let violations = evaluate_rules(&config, "labels", &record);
     assert_eq!(violations.len(), 1);
@@ -574,9 +620,7 @@ rules:
       severity: error
 "#
         );
-        let result = serde_yml::from_str::<RulesConfig>(&yaml)
-            .and_then(|_| Ok(()))
-            .is_ok();
+        let result = serde_yml::from_str::<RulesConfig>(&yaml).and_then(|_| Ok(())).is_ok();
         assert!(result, "Failed to parse config for data type: {data_type}");
 
         let config: RulesConfig = serde_yml::from_str(&yaml).unwrap();
@@ -623,4 +667,17 @@ fn test_quality_report_empty() {
     let report = QualityReport::new();
     let summary = report.format_summary("20260301");
     assert!(summary.contains("No data quality violations"));
+}
+
+#[test]
+fn test_default_rules_file() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("extraction-rules.yaml");
+    if path.exists() {
+        let config = RulesConfig::load(&path).unwrap();
+        let compiled = CompiledRulesConfig::compile(config).unwrap();
+        assert!(!compiled.rules_for("releases").is_empty());
+        assert!(!compiled.rules_for("artists").is_empty());
+        assert!(!compiled.rules_for("labels").is_empty());
+        assert!(!compiled.rules_for("masters").is_empty());
+    }
 }
