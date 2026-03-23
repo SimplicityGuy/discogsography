@@ -1,0 +1,1479 @@
+
+[1;36m🚀  Starting Project Update[0m
+[1;36m============================================================[0m
+
+[1;36m🔍  Verifying Project Components[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Checking Python configuration files...
+[0;34mℹ️  [INFO][0m Checking Dockerfiles...
+[0;34mℹ️  [INFO][0m Found Rust extractor (Cargo.toml)
+[0;32m✅  [SUCCESS][0m Found 18/18 expected components
+[0;32m✅  [SUCCESS][0m All expected components found!
+
+
+[1;36m🐳  Updating UV Version[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Latest UV version: 0.10.12
+[0;34mℹ️  [INFO][0m Latest setup-uv action: v7.6.0 (commit: 37802ad)
+[0;32m✅  [SUCCESS][0m UV version in Dockerfiles is already up to date (0.10.12)
+[0;34mℹ️  [INFO][0m Checking GitHub workflows for setup-uv updates...
+[0;32m✅  [SUCCESS][0m GitHub workflows are already up to date
+
+[1;36m🪝  Updating Pre-commit Hooks[0m
+[1;36m============================================================[0m
+[1;33m⚠️  [WARNING][0m pre-commit not installed, skipping hook updates
+
+[1;36m📦  Updating ALL Python Dependencies[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Checking for uv updates...
+uv self update
+error: Self-update is only available for uv binaries installed via the standalone installation scripts.
+
+If you installed uv with pip, brew, or another package manager, update uv with `pip install --upgrade`, `brew upgrade`, or similar.
+error: Recipe `update-uv` failed on line 75 with exit code 2
+[1;33m⚠️  [WARNING][0m Could not update uv (may already be latest)
+[0;34mℹ️  [INFO][0m Updating ALL dependency types:
+[0;34mℹ️  [INFO][0m   • Core dependencies ([project] dependencies)
+[0;34mℹ️  [INFO][0m   • Optional dependencies ([project.optional-dependencies])
+[0;34mℹ️  [INFO][0m   • Dev dependencies ([dependency-groups])
+[0;34mℹ️  [INFO][0m   • Build dependencies ([build-system])
+[0;34mℹ️  [INFO][0m Upgrading ALL dependencies to latest versions (respecting >= constraints)
+[0;34mℹ️  [INFO][0m Note: With >= constraints, this includes major upgrades. Use specific version pins to restrict.
+uv lock --upgrade
+Resolved 128 packages in 1.76s
+Updated aiormq v6.9.3 -> v6.9.4
+[0;32m✅  [SUCCESS][0m ALL dependencies compiled successfully
+[0;34mℹ️  [INFO][0m Syncing ALL upgraded dependencies (including optional and dev)...
+uv sync --all-extras --dev
+Resolved 128 packages in 3ms
+   Building discogsography @ file:///home/runner/work/discogsography/discogsography
+      Built discogsography @ file:///home/runner/work/discogsography/discogsography
+Prepared 2 packages in 474ms
+Uninstalled 10 packages in 2ms
+Installed 2 packages in 0.72ms
+ - aiormq==6.9.3
+ + aiormq==6.9.4
+ ~ discogsography==0.1.0 (from file:///home/runner/work/discogsography/discogsography)
+ - discogsography-api==0.1.0 (from file:///home/runner/work/discogsography/discogsography/api)
+ - discogsography-common==0.1.0 (from file:///home/runner/work/discogsography/discogsography/common)
+ - discogsography-dashboard==0.1.0 (from file:///home/runner/work/discogsography/discogsography/dashboard)
+ - discogsography-explore==0.1.0 (from file:///home/runner/work/discogsography/discogsography/explore)
+ - discogsography-graphinator==0.1.0 (from file:///home/runner/work/discogsography/discogsography/graphinator)
+ - discogsography-schema-init==0.1.0 (from file:///home/runner/work/discogsography/discogsography/schema-init)
+ - discogsography-tableinator==0.1.0 (from file:///home/runner/work/discogsography/discogsography/tableinator)
+ - insights==0.1.0 (from file:///home/runner/work/discogsography/discogsography/insights)
+[0;32m✅  [SUCCESS][0m ALL dependencies synced successfully
+[0;32m✅  [SUCCESS][0m Completed Python dependency updates
+
+[1;36m🦀  Updating Rust Dependencies[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Updating Cargo.lock to latest compatible versions (within Cargo.toml constraints)
+[0;34mℹ️  [INFO][0m   Run with --major to also update Cargo.toml version requirements
+[0;34mℹ️  [INFO][0m Updating Cargo.lock...
+cd extractor && cargo update
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/runner/work/discogsography/discogsography/extractor/Cargo.toml
+workspace: /home/runner/work/discogsography/discogsography/Cargo.toml
+    Updating crates.io index
+     Locking 1 package to latest compatible version
+    Updating iri-string v0.7.10 -> v0.7.11
+note: pass `--verbose` to see 2 unchanged dependencies behind latest
+[0;32m✅  [SUCCESS][0m Cargo.lock updated with latest compatible versions
+[0;32m✅  [SUCCESS][0m Completed Rust dependency updates
+
+[1;36m📦  Updating Node.js Dependencies[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Updating npm packages in explore/ (via just for single-source-of-truth)...
+cd explore && npm update --save
+
+added 229 packages, and audited 230 packages in 12s
+
+45 packages are looking for funding
+  run `npm fund` for details
+
+found 0 vulnerabilities
+[0;32m✅  [SUCCESS][0m npm packages updated successfully
+
+[1;36m✅  Verifying Dependency Updates[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m All dependency types have been updated:
+[0;32m✅  [SUCCESS][0m ✓ Python core dependencies ([project] dependencies)
+[0;32m✅  [SUCCESS][0m ✓ Python optional dependencies ([project.optional-dependencies])
+[0;32m✅  [SUCCESS][0m ✓ Python dev dependencies ([dependency-groups])
+[0;32m✅  [SUCCESS][0m ✓ Python build dependencies ([build-system])
+[0;32m✅  [SUCCESS][0m ✓ Rust dependencies (Cargo.lock updated within existing constraints)
+[0;32m✅  [SUCCESS][0m ✓ Node.js dependencies (explore/package.json + package-lock.json)
+[0;32m✅  [SUCCESS][0m ✓ Pre-commit hooks and their dependencies
+[0;32m✅  [SUCCESS][0m ✓ UV package manager in Dockerfiles
+[0;32m✅  [SUCCESS][0m ✓ GitHub Actions dependencies
+[0;34mℹ️  [INFO][0m Run 'uv tree --outdated' to verify all Python packages are up to date
+[0;34mℹ️  [INFO][0m Run 'cd extractor && cargo update --dry-run' to verify Rust crates
+
+[1;36m🧪  Running Tests[0m
+[1;36m============================================================[0m
+[0;34mℹ️  [INFO][0m Running linters...
+uv run pre-commit run --all-files
+[INFO] Initializing environment for https://github.com/pre-commit/pre-commit-hooks.
+[INFO] Initializing environment for https://github.com/python-jsonschema/check-jsonschema.
+[INFO] Initializing environment for https://github.com/astral-sh/ruff-pre-commit.
+[INFO] Initializing environment for https://github.com/PyCQA/bandit.
+[INFO] Initializing environment for https://github.com/hadolint/hadolint.
+[INFO] Initializing environment for https://github.com/IamTheFij/docker-pre-commit.
+[INFO] Initializing environment for https://github.com/rhysd/actionlint.
+[INFO] Initializing environment for https://github.com/adrienverge/yamllint.
+[INFO] Initializing environment for https://github.com/shellcheck-py/shellcheck-py.
+[INFO] Initializing environment for https://github.com/scop/pre-commit-shfmt.
+[INFO] Installing environment for https://github.com/pre-commit/pre-commit-hooks.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+[INFO] Installing environment for https://github.com/python-jsonschema/check-jsonschema.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+[INFO] Installing environment for https://github.com/astral-sh/ruff-pre-commit.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+[INFO] Installing environment for https://github.com/PyCQA/bandit.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+[INFO] Installing environment for https://github.com/rhysd/actionlint.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+[INFO] Installing environment for https://github.com/adrienverge/yamllint.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+[INFO] Installing environment for https://github.com/shellcheck-py/shellcheck-py.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+[INFO] Installing environment for https://github.com/scop/pre-commit-shfmt.
+[INFO] Once installed this environment will be reused.
+[INFO] This may take a few minutes...
+check for added large files..............................................Passed
+check that executables have shebangs.....................................Passed
+check json...............................................................Passed
+check for merge conflicts................................................Passed
+check that scripts with shebangs are executable..........................Passed
+check toml...............................................................Passed
+check yaml...............................................................Passed
+detect aws credentials...................................................Passed
+detect private key.......................................................Passed
+fix end of files.........................................................Passed
+mixed line ending........................................................Passed
+trim trailing whitespace.................................................Passed
+pretty format json.......................................................Passed
+Validate GitHub Workflows................................................Passed
+Validate GitHub Actions..................................................Passed
+ruff (legacy alias)......................................................Passed
+ruff format..............................................................Passed
+bandit...................................................................Passed
+Lint Dockerfiles.........................................................Failed
+- hook id: hadolint
+- exit code: 1
+
+Executable `hadolint` not found
+
+Validate docker compose files............................................Passed
+Lint GitHub Actions workflow files.......................................Passed
+yamllint.................................................................Passed
+shellcheck...............................................................Passed
+shfmt....................................................................Passed
+mypy.....................................................................Passed
+cargo fmt................................................................Passed
+cargo clippy.............................................................Passed
+error: Recipe `lint` failed on line 109 with exit code 1
+[1;33m⚠️  [WARNING][0m Linting failed - review the changes
+[0;34mℹ️  [INFO][0m Running Python tests...
+uv run pytest -m 'not e2e'
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  4%]
+........................................................................ [  8%]
+........................................................................ [ 12%]
+........................................................................ [ 16%]
+........................................................................ [ 20%]
+........................................................................ [ 24%]
+........................................................................ [ 28%]
+........................................................................ [ 32%]
+........................................................................ [ 36%]
+........................................................................ [ 40%]
+........................................................................ [ 44%]
+........................................................................ [ 48%]
+........................................................................ [ 52%]
+........................................................................ [ 56%]
+........................................................................ [ 60%]
+........................................................................ [ 64%]
+........................................................................ [ 68%]
+........................................................................ [ 72%]
+........................................................................ [ 76%]
+........................................................................ [ 80%]
+........................................................................ [ 84%]
+........................................................................ [ 88%]
+........................................................................ [ 92%]
+........................................................................ [ 96%]
+........................................................................ [100%]
+=============================== warnings summary ===============================
+tests/test_batch_performance.py:379
+tests/test_batch_performance.py:379
+  /home/runner/work/discogsography/discogsography/tests/test_batch_performance.py:379: PytestUnknownMarkWarning: Unknown pytest.mark.benchmark - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.benchmark
+
+tests/graphinator/test_graphinator.py::TestMain::test_main_execution
+tests/graphinator/test_graphinator.py::TestMainBatchProcessorFlushError::test_batch_processor_flush_error_logs
+tests/graphinator/test_graphinator.py::TestMainNeo4jCloseError::test_neo4j_close_error_logs_warning
+  /home/runner/work/discogsography/discogsography/graphinator/graphinator.py:1460: RuntimeWarning: coroutine 'Event.wait' was never awaited
+    continue
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/tableinator/test_tableinator.py::TestMain::test_main_execution
+tests/tableinator/test_tableinator.py::TestMainBatchProcessor::test_main_initializes_batch_processor
+  /home/runner/work/discogsography/discogsography/tableinator/tableinator.py:1071: RuntimeWarning: coroutine 'Event.wait' was never awaited
+    continue
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/graphinator/test_graphinator.py::TestScheduleConsumerCancellation::test_cancels_existing_scheduled_task
+  /home/runner/work/discogsography/discogsography/graphinator/graphinator.py:199: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    consumer_cancel_tasks[data_type].cancel()
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/tableinator/test_tableinator.py::TestScheduleConsumerCancellation::test_cancels_existing_scheduled_task
+  /home/runner/work/discogsography/discogsography/tableinator/tableinator.py:212: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    consumer_cancel_tasks[data_type].cancel()
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/dashboard/test_dashboard_app.py::TestDashboardAppStartup::test_startup_error
+tests/dashboard/test_dashboard_app.py::TestDashboardAppDataCollection::test_get_queue_info_auth_failure
+  /opt/hostedtoolcache/Python/3.13.12/x64/lib/python3.13/unittest/mock.py:2247: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    def __init__(self, name, parent):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/dashboard/test_dashboard_app.py::TestPrometheusMetricsInitialization::test_metrics_already_registered
+  /home/runner/work/discogsography/discogsography/.venv/lib/python3.13/site-packages/pydantic/_internal/_generate_schema.py:982: RuntimeWarning: coroutine 'DashboardApp.collect_metrics_loop' was never awaited
+    args = tuple(self._resolve_forward_ref(a) if isinstance(a, ForwardRef) else a for a in args)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/schema-init/test_schema_init.py::TestInitNeo4jPartialFailure::test_partial_failures_returns_false
+  /home/runner/work/discogsography/discogsography/schema-init/schema_init.py:134: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    async with driver.session(database="neo4j") as session:
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/api/test_sync.py::TestSyncStatusEndpoint::test_sync_status_returns_history
+tests/api/test_sync.py::TestSyncRedisCooldown::test_redis_none_skips_cooldown
+  /opt/hostedtoolcache/Python/3.13.12/x64/lib/python3.13/unittest/mock.py:2247: RuntimeWarning: coroutine 'run_full_sync' was never awaited
+    def __init__(self, name, parent):
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/api/test_sync.py::TestSyncRedisCooldown::test_trigger_sync_passes_encryption_key
+  /opt/hostedtoolcache/Python/3.13.12/x64/lib/python3.13/unittest/mock.py:2596: RuntimeWarning: coroutine 'run_full_sync' was never awaited
+    return tuple.__new__(cls, (name, args, kwargs))
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+1800 passed, 16 warnings in 65.63s (0:01:05)
+[0;32m✅  [SUCCESS][0m Python tests passed
+[0;34mℹ️  [INFO][0m Running JavaScript tests...
+cd explore && npx vitest run
+
+[1m[46m RUN [49m[22m [36mv4.1.0 [39m[90m/home/runner/work/discogsography/discogsography/explore[39m
+
+ [32m✓[39m __tests__/api-client.test.js [2m([22m[2m94 tests[22m[2m)[22m[32m 57[2mms[22m[39m
+Not implemented: Window's alert() method
+Not implemented: Window's alert() method
+ [32m✓[39m __tests__/user-panes.test.js [2m([22m[2m114 tests[22m[2m)[22m[33m 829[2mms[22m[39m
+ [32m✓[39m __tests__/app.test.js [2m([22m[2m141 tests[22m[2m)[22m[33m 1170[2mms[22m[39m
+ [32m✓[39m __tests__/graph.test.js [2m([22m[2m61 tests[22m[2m)[22m[32m 296[2mms[22m[39m
+ [32m✓[39m __tests__/insights.test.js [2m([22m[2m48 tests[22m[2m)[22m[32m 174[2mms[22m[39m
+ [32m✓[39m __tests__/path-finder.test.js [2m([22m[2m18 tests[22m[2m)[22m[32m 249[2mms[22m[39m
+ [32m✓[39m __tests__/search.test.js [2m([22m[2m22 tests[22m[2m)[22m[33m 327[2mms[22m[39m
+ [32m✓[39m __tests__/autocomplete.test.js [2m([22m[2m25 tests[22m[2m)[22m[32m 94[2mms[22m[39m
+ [32m✓[39m __tests__/trends.test.js [2m([22m[2m24 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+ [32m✓[39m __tests__/theme.test.js [2m([22m[2m8 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+ [32m✓[39m __tests__/auth.test.js [2m([22m[2m13 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m11 passed[39m[22m[90m (11)[39m
+[2m      Tests [22m [1m[32m568 passed[39m[22m[90m (568)[39m
+[2m   Start at [22m 10:04:09
+[2m   Duration [22m 6.03s[2m (transform 397ms, setup 0ms, import 833ms, tests 3.28s, environment 10.49s)[22m
+
+[0;32m✅  [SUCCESS][0m JavaScript tests passed
+[0;34mℹ️  [INFO][0m Running Rust tests...
+cd extractor && cargo test
+warning: profiles for the non root package will be ignored, specify profiles at the workspace root:
+package:   /home/runner/work/discogsography/discogsography/extractor/Cargo.toml
+workspace: /home/runner/work/discogsography/discogsography/Cargo.toml
+   Compiling unicode-ident v1.0.24
+   Compiling cfg-if v1.0.4
+   Compiling libc v0.2.183
+   Compiling memchr v2.8.0
+   Compiling serde_core v1.0.228
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling itoa v1.0.18
+   Compiling once_cell v1.21.4
+   Compiling syn v2.0.117
+   Compiling smallvec v1.15.1
+   Compiling pin-project-lite v0.2.17
+   Compiling futures-core v0.3.32
+   Compiling typenum v1.19.0
+   Compiling jobserver v0.1.34
+   Compiling scopeguard v1.2.0
+   Compiling lock_api v0.4.14
+   Compiling generic-array v0.14.7
+   Compiling cc v1.2.57
+   Compiling bytes v1.11.1
+   Compiling zeroize v1.8.2
+   Compiling parking_lot_core v0.9.12
+   Compiling parking_lot v0.12.5
+   Compiling errno v0.3.14
+   Compiling subtle v2.6.1
+   Compiling log v0.4.29
+   Compiling signal-hook-registry v1.4.8
+   Compiling crypto-common v0.1.7
+   Compiling mio v1.1.1
+   Compiling socket2 v0.6.3
+   Compiling futures-io v0.3.32
+   Compiling cmake v0.1.57
+   Compiling stable_deref_trait v1.2.1
+   Compiling tracing-core v0.1.36
+   Compiling futures-sink v0.3.32
+   Compiling aws-lc-sys v0.39.0
+   Compiling num-traits v0.2.19
+   Compiling block-padding v0.3.3
+   Compiling synstructure v0.13.2
+   Compiling inout v0.1.4
+   Compiling zmij v1.0.21
+   Compiling rustls-pki-types v1.14.0
+   Compiling block-buffer v0.10.4
+   Compiling slab v0.4.12
+   Compiling digest v0.10.7
+   Compiling serde_json v1.0.149
+   Compiling cipher v0.4.4
+   Compiling futures-channel v0.3.32
+   Compiling base64ct v1.8.3
+   Compiling serde_derive v1.0.228
+   Compiling displaydoc v0.2.5
+   Compiling tokio-macros v2.6.1
+   Compiling zerofrom-derive v0.1.6
+   Compiling tokio v1.50.0
+   Compiling zerofrom v0.1.6
+   Compiling yoke-derive v0.8.1
+   Compiling serde v1.0.228
+   Compiling yoke v0.8.1
+   Compiling zerovec-derive v0.11.2
+   Compiling tracing-attributes v0.1.31
+   Compiling zerovec v0.11.5
+   Compiling tinystr v0.8.2
+   Compiling untrusted v0.9.0
+   Compiling tracing v0.1.44
+   Compiling percent-encoding v2.3.2
+   Compiling litemap v0.8.1
+   Compiling writeable v0.6.2
+   Compiling icu_locale_core v2.1.1
+   Compiling potential_utf v0.1.4
+   Compiling zerotrie v0.2.3
+   Compiling pem-rfc7468 v0.7.0
+   Compiling der_derive v0.7.3
+   Compiling futures-macro v0.3.32
+   Compiling http v1.4.0
+   Compiling const-oid v0.9.6
+   Compiling minimal-lexical v0.2.1
+   Compiling powerfmt v0.2.0
+   Compiling rand_core v0.10.0
+   Compiling num-conv v0.2.0
+   Compiling futures-task v0.3.32
+   Compiling time-core v0.1.8
+   Compiling flagset v0.4.7
+   Compiling time-macros v0.2.27
+   Compiling der v0.7.10
+   Compiling futures-util v0.3.32
+   Compiling deranged v0.5.8
+   Compiling nom v7.1.3
+   Compiling icu_provider v2.1.1
+   Compiling icu_collections v2.1.1
+   Compiling thiserror-impl v2.0.18
+   Compiling base64 v0.22.1
+   Compiling cpufeatures v0.2.17
+   Compiling rusticata-macros v4.1.0
+   Compiling time v0.3.47
+   Compiling icu_normalizer_data v2.1.1
+   Compiling spki v0.7.3
+   Compiling getrandom v0.4.2
+   Compiling icu_properties_data v2.1.2
+   Compiling http-body v1.0.1
+   Compiling form_urlencoded v1.2.2
+   Compiling thiserror v2.0.18
+   Compiling asn1-rs-derive v0.6.0
+   Compiling asn1-rs-impl v0.2.0
+   Compiling hashbrown v0.16.1
+   Compiling fnv v1.0.7
+   Compiling equivalent v1.0.2
+   Compiling icu_properties v2.1.2
+   Compiling indexmap v2.13.0
+   Compiling asn1-rs v0.7.1
+   Compiling icu_normalizer v2.1.1
+   Compiling zerocopy-derive v0.8.47
+   Compiling hmac v0.12.1
+   Compiling num-integer v0.1.46
+   Compiling bitflags v2.11.0
+   Compiling lazy_static v1.5.0
+   Compiling openssl-probe v0.2.1
+   Compiling tower-service v0.3.3
+   Compiling rustls-native-certs v0.8.3
+   Compiling num-bigint v0.4.6
+   Compiling zerocopy v0.8.47
+   Compiling pbkdf2 v0.12.2
+   Compiling idna_adapter v1.2.1
+   Compiling x509-cert v0.2.5
+   Compiling sha2 v0.10.9
+   Compiling tokio-util v0.7.18
+   Compiling salsa20 v0.10.2
+   Compiling utf8_iter v1.0.4
+   Compiling try-lock v0.2.5
+   Compiling atomic-waker v1.1.2
+   Compiling cpufeatures v0.3.0
+   Compiling regex-syntax v0.8.10
+   Compiling chacha20 v0.10.0
+   Compiling h2 v0.4.13
+   Compiling want v0.3.1
+   Compiling idna v1.1.0
+   Compiling scrypt v0.11.0
+   Compiling cms v0.2.3
+   Compiling der-parser v10.0.0
+   Compiling oid-registry v0.8.1
+   Compiling httparse v1.10.1
+   Compiling aes v0.8.4
+   Compiling async-trait v0.1.89
+   Compiling cbc v0.1.2
+   Compiling getrandom v0.2.17
+   Compiling aho-corasick v1.1.4
+   Compiling anstyle v1.0.14
+   Compiling httpdate v1.0.3
+   Compiling data-encoding v2.10.0
+   Compiling ucd-trie v0.1.7
+   Compiling pin-utils v0.1.0
+   Compiling hyper v1.8.1
+   Compiling pest v2.8.6
+   Compiling regex-automata v0.4.14
+   Compiling x509-parser v0.18.1
+   Compiling const-random-macro v0.1.16
+   Compiling pkcs5 v0.7.1
+   Compiling pkcs12 v0.1.0
+   Compiling url v2.5.8
+   Compiling rand v0.10.0
+   Compiling sha1 v0.10.6
+   Compiling tokio-stream v0.1.18
+   Compiling async-compat v0.2.5
+   Compiling des v0.8.1
+   Compiling rc2 v0.8.1
+   Compiling sync_wrapper v1.0.2
+   Compiling nom v8.0.0
+   Compiling cookie-factory v0.3.3
+   Compiling utf8parse v0.2.2
+   Compiling hex v0.4.3
+   Compiling ipnet v2.12.0
+   Compiling tower-layer v0.3.3
+   Compiling fastrand v2.3.0
+   Compiling hyper-util v0.1.20
+   Compiling p12-keystore v0.2.1
+   Compiling amq-protocol-types v10.0.1
+   Compiling anstyle-parse v1.0.0
+   Compiling async-rs v0.8.2
+   Compiling const-random v0.1.18
+   Compiling getrandom v0.3.4
+   Compiling typeid v1.0.3
+   Compiling pest_meta v2.8.6
+   Compiling http-body-util v0.1.3
+   Compiling colorchoice v1.0.5
+   Compiling anstyle-query v1.1.5
+   Compiling foldhash v0.1.5
+   Compiling ryu v1.0.23
+   Compiling is_terminal_polyfill v1.70.2
+   Compiling anstream v1.0.0
+   Compiling hashbrown v0.15.5
+   Compiling rand_core v0.9.5
+   Compiling pest_generator v2.8.6
+   Compiling dlv-list v0.5.2
+   Compiling amq-protocol-uri v10.0.1
+   Compiling crossbeam-utils v0.8.21
+   Compiling tower v0.5.3
+   Compiling encoding_rs v0.8.35
+   Compiling winnow v1.0.0
+   Compiling clap_lex v1.1.0
+   Compiling mime v0.3.17
+   Compiling strsim v0.11.1
+   Compiling predicates-core v1.0.10
+   Compiling hashbrown v0.14.5
+   Compiling clap_derive v4.6.0
+   Compiling ordered-multimap v0.7.3
+   Compiling toml_parser v1.0.10+spec-1.1.0
+   Compiling clap_builder v4.6.0
+   Compiling pest_derive v2.8.6
+   Compiling crossbeam-epoch v0.9.18
+   Compiling hashlink v0.10.0
+   Compiling erased-serde v0.4.10
+   Compiling serde_urlencoded v0.7.1
+   Compiling regex v1.12.3
+   Compiling ppv-lite86 v0.2.21
+   Compiling futures-executor v0.3.32
+   Compiling serde_spanned v1.0.4
+   Compiling toml_datetime v1.0.1+spec-1.1.0
+   Compiling spin v0.9.8
+   Compiling either v1.15.0
+   Compiling unicode-width v0.2.2
+   Compiling iri-string v0.7.11
+   Compiling arraydeque v0.5.1
+   Compiling unicode-segmentation v1.12.0
+   Compiling linux-raw-sys v0.12.1
+   Compiling simd-adler32 v0.3.8
+   Compiling termtree v0.5.1
+   Compiling adler2 v2.0.1
+   Compiling miniz_oxide v0.8.9
+   Compiling tower-http v0.6.8
+   Compiling predicates-tree v1.0.13
+   Compiling rustix v1.1.4
+   Compiling convert_case v0.6.0
+   Compiling yaml-rust2 v0.10.4
+   Compiling console v0.16.3
+   Compiling flume v0.12.0
+   Compiling toml v1.0.7+spec-1.1.0
+   Compiling rand_chacha v0.9.0
+   Compiling clap v4.6.0
+   Compiling serde-untagged v0.1.9
+   Compiling crossbeam-deque v0.8.6
+   Compiling json5 v0.4.1
+   Compiling crc32fast v1.5.0
+   Compiling mockall_derive v0.14.0
+   Compiling portable-atomic v1.13.1
+   Compiling rust-ini v0.21.3
+   Compiling predicates v3.1.4
+   Compiling axum-core v0.5.6
+   Compiling ron v0.12.0
+   Compiling backon v1.6.0
+   Compiling matchers v0.2.0
+   Compiling half v2.7.1
+   Compiling sharded-slab v0.1.7
+   Compiling tracing-serde v0.2.0
+   Compiling tracing-log v0.2.0
+   Compiling alloca v0.4.0
+   Compiling serde_path_to_error v0.1.20
+   Compiling thread_local v1.1.9
+   Compiling unit-prefix v0.5.2
+   Compiling unsafe-libyaml v0.2.11
+   Compiling plotters-backend v0.3.7
+   Compiling nu-ansi-term v0.50.3
+   Compiling ciborium-io v0.2.2
+   Compiling downcast v0.11.0
+   Compiling pathdiff v0.2.3
+   Compiling matchit v0.8.4
+   Compiling fragile v2.0.1
+   Compiling iana-time-zone v0.1.65
+   Compiling axum v0.8.8
+   Compiling chrono v0.4.44
+   Compiling serde_yaml_ng v0.10.0
+   Compiling mockall v0.14.0
+   Compiling config v0.15.22
+   Compiling tracing-subscriber v0.3.23
+   Compiling ciborium-ll v0.2.2
+   Compiling plotters-svg v0.3.7
+   Compiling indicatif v0.18.4
+   Compiling flate2 v1.1.9
+   Compiling rayon-core v1.13.0
+   Compiling rand v0.9.2
+   Compiling anyhow v1.0.102
+   Compiling tempfile v3.27.0
+   Compiling itertools v0.13.0
+   Compiling futures v0.3.32
+   Compiling quick-xml v0.39.2
+   Compiling wait-timeout v0.2.1
+   Compiling num_cpus v1.17.0
+   Compiling sdd v3.0.10
+   Compiling urlencoding v2.1.3
+   Compiling cast v0.3.0
+   Compiling dotenvy v0.15.7
+   Compiling quick-error v1.2.3
+   Compiling same-file v1.0.6
+   Compiling bit-vec v0.8.0
+   Compiling walkdir v2.5.0
+   Compiling bit-set v0.8.0
+   Compiling rusty-fork v0.3.1
+   Compiling criterion-plot v0.8.2
+   Compiling scc v2.4.0
+   Compiling rayon v1.11.0
+   Compiling plotters v0.3.7
+   Compiling ciborium v0.2.2
+   Compiling rand_xorshift v0.4.0
+   Compiling tinytemplate v1.2.1
+   Compiling assert-json-diff v2.0.2
+   Compiling serial_test_derive v3.4.0
+   Compiling page_size v0.6.0
+   Compiling colored v3.1.1
+   Compiling unarray v0.1.4
+   Compiling anes v0.1.6
+   Compiling similar v2.7.0
+   Compiling oorandom v11.1.5
+   Compiling serial_test v3.4.0
+   Compiling criterion v0.8.2
+   Compiling mockito v1.7.2
+   Compiling proptest v1.10.0
+   Compiling aws-lc-rs v1.16.2
+   Compiling rustls v0.23.37
+   Compiling rustls-webpki v0.103.10
+   Compiling futures-rustls v0.26.0
+   Compiling tokio-rustls v0.26.4
+   Compiling rustls-platform-verifier v0.6.2
+   Compiling rustls-connector v0.22.0
+   Compiling hyper-rustls v0.27.7
+   Compiling tcp-stream v0.34.2
+   Compiling reqwest v0.13.2
+   Compiling amq-protocol-tcp v10.0.1
+   Compiling amq-protocol v10.0.1
+   Compiling lapin v4.3.0
+   Compiling extractor v0.1.0 (/home/runner/work/discogsography/discogsography/extractor)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 55s
+     Running unittests src/lib.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/extractor-f0ef0f43f46c0fb3)
+
+running 246 tests
+test config::tests::test_build_amqp_url_special_characters ... ok
+test config::tests::test_default_config ... ok
+test config::tests::test_default_max_workers ... ok
+test config::tests::test_from_env_default_discogs_root ... ok
+test config::tests::test_from_env_invalid_batch_size ... ok
+test config::tests::test_from_env_invalid_max_workers ... ok
+test config::tests::test_from_env_fixed_values ... ok
+test config::tests::test_from_env_invalid_periodic_check_days ... ok
+test config::tests::test_from_env_reads_secret_from_file ... ok
+test config::tests::test_from_env_secret_file_not_found ... ok
+test config::tests::test_from_env_with_all_settings ... ok
+test config::tests::test_from_env_with_rabbitmq_credentials ... ok
+test config::tests::test_from_env_secret_file_with_whitespace ... ok
+test config::tests::test_from_env_uses_credential_defaults ... ok
+test downloader::tests::test_calculate_file_checksum_nonexistent ... ok
+test downloader::tests::test_calculate_file_checksum_empty_file ... ok
+test downloader::tests::test_datasource_get_latest_monthly_files_via_trait ... ok
+test downloader::tests::test_datasource_set_and_take_state_marker ... ok
+test downloader::tests::test_download_discogs_data_skips_already_downloaded ... ok
+test downloader::tests::test_datasource_list_s3_files_via_trait ... ok
+test downloader::tests::test_calculate_file_checksum ... ok
+test downloader::tests::test_download_discogs_data_with_state_marker_skips ... ok
+test downloader::tests::test_downloader_new ... ok
+test downloader::tests::test_extract_month ... ok
+test downloader::tests::test_downloader_save_metadata ... ok
+test downloader::tests::test_extract_month_edge_cases ... ok
+test downloader::tests::test_extract_month_invalid_filename ... ok
+test downloader::tests::test_get_latest_monthly_files_empty_input ... ok
+test downloader::tests::test_get_latest_monthly_files_complete_set ... ok
+test downloader::tests::test_get_latest_monthly_files_no_complete_set ... ok
+test downloader::tests::test_get_latest_monthly_files_multiple_versions ... ok
+test downloader::tests::test_load_metadata_invalid_json ... ok
+test downloader::tests::test_load_metadata_nonexistent ... ok
+test downloader::tests::test_load_metadata_valid ... ok
+test downloader::tests::test_new_with_base_url ... ok
+test downloader::tests::test_save_state_marker_failure_warns ... ok
+test downloader::tests::test_save_state_marker_with_marker ... ok
+test downloader::tests::test_save_state_marker_without_marker ... ok
+test downloader::tests::test_should_download_checksum_mismatch ... ok
+test downloader::tests::test_should_download_file_not_exists ... ok
+test downloader::tests::test_should_download_no_metadata_file_exists ... ok
+test downloader::tests::test_should_download_size_changed ... ok
+test downloader::tests::test_should_download_up_to_date ... ok
+test downloader::tests::test_with_state_marker ... ok
+test extractor::tests::test_extract_data_type ... ok
+test extractor::tests::test_extract_data_type_all_types ... ok
+test extractor::tests::test_extract_data_type_checksum_file ... ok
+test extractor::tests::test_extract_data_type_empty_string ... ok
+test extractor::tests::test_extract_data_type_invalid_formats ... ok
+test extractor::tests::test_extract_data_type_with_path_prefix ... ok
+test extractor::tests::test_extract_version_from_filename ... ok
+test extractor::tests::test_extract_version_from_filename_invalid ... ok
+test extractor::tests::test_extractor_state_default ... ok
+test extractor::tests::test_extractor_state_last_extraction_time ... ok
+test extractor::tests::test_extractor_state_tracks_active_connections ... ok
+test extractor::tests::test_extractor_state_tracks_completed_files ... ok
+test extractor::tests::test_extractor_state_tracks_errors ... ok
+test extractor::tests::test_extractor_state_tracks_progress ... ok
+test extractor::tests::test_message_batcher_basic ... ok
+test extractor::tests::test_message_batcher_empty_input ... ok
+test extractor::tests::test_message_batcher_multiple_batch_sizes ... ok
+test extractor::tests::test_message_batcher_respects_batch_size ... ok
+test downloader::tests::test_list_s3_files_uses_cache ... ok
+test extractor::tests::test_message_batcher_triggers_state_save ... ok
+test extractor::tests::test_message_validator_downstream_dropped ... ok
+test extractor::tests::test_message_validator_multiple_messages ... ok
+test extractor::tests::test_message_validator_no_rules_for_data_type ... ok
+test extractor::tests::test_message_validator_no_violations ... ok
+test extractor::tests::test_message_validator_with_violations ... ok
+test extractor::tests::test_message_validator_writes_flagged_files ... ok
+test extractor::tests::test_progress_reporter_immediate_shutdown ... ok
+test extractor::tests::test_progress_reporter_interval_increases_after_three_reports ... ok
+test extractor::tests::test_progress_reporter_logs_on_timer_fire ... ok
+test extractor::tests::test_progress_reporter_stall_detection ... ok
+test extractor::tests::test_progress_reporter_with_completed_files_and_active_connections ... ok
+test extractor::tests::test_state_marker_file_tracking ... ok
+test extractor::tests::test_state_marker_periodic_updates ... ok
+test extractor::tests::test_state_marker_save_load ... ok
+test health::tests::test_health_handler_default_state ... ok
+test health::tests::test_health_handler_with_progress ... ok
+test health::tests::test_health_json_format ... ok
+test health::tests::test_health_server_new ... ok
+test health::tests::test_health_server_run_and_endpoints ... ok
+test health::tests::test_metrics_handler_default_state ... ok
+test health::tests::test_metrics_handler_with_data ... ok
+test health::tests::test_metrics_json_format ... ok
+test health::tests::test_ready_handler_not_ready ... ok
+test health::tests::test_ready_handler_ready ... ok
+test health::tests::test_ready_handler_transitions ... ok
+test health::tests::test_ready_handler_with_active_connections ... ok
+test message_queue::tests::test_constants ... ok
+test message_queue::tests::test_data_message_serialization_format ... ok
+test message_queue::tests::test_exchange_names ... ok
+test message_queue::tests::test_extraction_complete_message_roundtrip ... ok
+test message_queue::tests::test_file_complete_message_serialization_format ... ok
+test message_queue::tests::test_message_properties_content_type ... ok
+test message_queue::tests::test_message_properties_persistent_delivery ... ok
+test message_queue::tests::test_message_serialization_data ... ok
+test message_queue::tests::test_message_serialization_file_complete ... ok
+test message_queue::tests::test_new_connection_failure ... ok
+test downloader::tests::test_download_discogs_data_with_state_marker ... ok
+test downloader::tests::test_datasource_download_discogs_data_via_trait ... ok
+test message_queue::tests::test_normalize_amqp_url_amqps_scheme ... ok
+test message_queue::tests::test_normalize_amqp_url_different_ports ... ok
+test message_queue::tests::test_normalize_amqp_url_empty ... ok
+test message_queue::tests::test_normalize_amqp_url_invalid ... ok
+test message_queue::tests::test_normalize_amqp_url_minimal ... ok
+test message_queue::tests::test_normalize_amqp_url_with_credentials_special_chars ... ok
+test message_queue::tests::test_normalize_amqp_url_with_encoded_default_vhost ... ok
+test message_queue::tests::test_normalize_amqp_url_with_explicit_vhost ... ok
+test message_queue::tests::test_normalize_amqp_url_with_query_params ... ok
+test message_queue::tests::test_normalize_amqp_url_with_trailing_slash ... ok
+test message_queue::tests::test_normalize_amqp_url_without_trailing_slash ... ok
+test message_queue_unit_tests::test_data_message_with_empty_data ... ok
+test message_queue_unit_tests::test_data_type_display ... ok
+test message_queue_unit_tests::test_data_message_with_nested_data ... ok
+test message_queue_unit_tests::test_data_type_from_string_all_variants ... ok
+test message_queue_unit_tests::test_file_complete_message_fields ... ok
+test message_queue_unit_tests::test_message_data_variant_round_trip ... ok
+test message_queue_unit_tests::test_message_file_complete_variant_round_trip ... ok
+test message_queue_unit_tests::test_message_json_structure ... ok
+test message_queue_unit_tests::test_message_serialization_data ... ok
+test message_queue_unit_tests::test_message_serialization_file_complete ... ok
+test message_queue_unit_tests::test_message_size_estimation ... ok
+test parser::tests::test_calculate_record_hash ... ok
+test parser::tests::test_calculate_record_hash_different_records ... ok
+test parser::tests::test_calculate_record_hash_empty_value ... ok
+test parser::tests::test_element_context_add_child_multiple ... ok
+test parser::tests::test_element_context_add_child_single ... ok
+test parser::tests::test_element_context_add_child_to_existing_array ... ok
+test parser::tests::test_element_context_new ... ok
+test message_queue_unit_tests::test_large_data_message ... ok
+test parser::tests::test_element_context_to_value_attributes_only ... ok
+test parser::tests::test_element_context_to_value_attributes_and_text ... ok
+test parser::tests::test_element_context_to_value_empty ... ok
+test parser::tests::test_element_context_to_value_mixed_content ... ok
+test parser::tests::test_element_context_to_value_text_only ... ok
+test parser::tests::test_element_context_to_value_whitespace_preserved ... ok
+test parser::tests::test_parse_file_not_found ... ok
+test parser::tests::test_parse_artist_with_members ... ok
+test parser::tests::test_parse_label_with_sublabels ... ok
+test parser::tests::test_parse_master_with_artists ... ok
+test parser::tests::test_parse_receiver_dropped ... ok
+test parser::tests::test_parse_release_with_artists ... ok
+test parser::tests::test_parse_self_closing_child_element ... ok
+test parser::tests::test_parse_self_closing_target_element ... ok
+test parser::tests::test_parse_simple_xml ... ok
+test parser::tests::test_parse_with_entity_references ... ok
+test parser::tests::test_raw_xml_capture ... ok
+test parser::tests::test_raw_xml_not_captured_by_default ... ok
+test parser::tests::test_reconstruct_xml_id_dedup_for_releases ... ok
+test parser::tests::test_reconstruct_xml_self_closing_target ... ok
+test parser::tests::test_reconstruct_xml_id_without_at_id_is_kept ... ok
+test parser::tests::test_reconstruct_xml_with_null_value ... ok
+test parser::tests::test_reconstruct_xml_with_array_children ... ok
+test parser::tests::test_reconstruct_xml_with_numeric_values ... ok
+test parser::tests::test_reconstruct_xml_with_text_and_attributes ... ok
+test rules::tests::test_all_valid_data_type_keys_accepted ... ok
+test rules::tests::test_dot_notation_array_expands_to_multiple_values ... ok
+test rules::tests::test_dot_notation_array_one_violating_element ... ok
+test rules::tests::test_dot_notation_missing_intermediate_produces_violation ... ok
+test rules::tests::test_dot_notation_nested_object ... ok
+test rules::tests::test_enum_invalid_value_produces_violation ... ok
+test rules::tests::test_enum_valid_value_no_violation ... ok
+test rules::tests::test_flagged_writer_deduplicates_files ... ok
+test rules::tests::test_default_rules_file ... ok
+test rules::tests::test_flagged_writer_no_capture_files ... ok
+test rules::tests::test_flagged_writer_write_report ... ok
+test rules::tests::test_flagged_writer_write_violation_and_flush ... ok
+test rules::tests::test_invalid_data_type_returns_error ... ok
+test rules::tests::test_invalid_regex_returns_error ... ok
+test rules::tests::test_length_too_long_produces_violation ... ok
+test rules::tests::test_length_too_short_produces_violation ... ok
+test rules::tests::test_length_within_bounds_no_violation ... ok
+test rules::tests::test_load_rejects_invalid_yaml ... ok
+test rules::tests::test_load_accepts_yml_extension ... ok
+test rules::tests::test_load_rejects_nonexistent_file ... ok
+test rules::tests::test_load_valid_config_all_condition_types ... ok
+test rules::tests::test_multiple_rules_multiple_violations ... ok
+test rules::tests::test_no_rules_for_data_type_returns_empty_violations ... ok
+test rules::tests::test_no_rules_for_unknown_data_type ... ok
+test rules::tests::test_optional_description_field ... ok
+test rules::tests::test_quality_report_accumulation ... ok
+test rules::tests::test_quality_report_empty ... ok
+test rules::tests::test_quality_report_format_summary_data_type_with_total_but_no_violations ... ok
+test rules::tests::test_quality_report_format_summary_info_counts ... ok
+test rules::tests::test_quality_report_has_violations_false_when_empty ... ok
+test rules::tests::test_quality_report_has_violations_true_with_info ... ok
+test rules::tests::test_quality_report_merge ... ok
+test rules::tests::test_quality_report_merge_overlapping_rules ... ok
+test rules::tests::test_range_above_max_produces_violation ... ok
+test rules::tests::test_range_below_min_produces_violation ... ok
+test rules::tests::test_range_non_numeric_field_no_violation ... ok
+test rules::tests::test_range_within_bounds_no_violation ... ok
+test rules::tests::test_regex_match_produces_violation ... ok
+test rules::tests::test_regex_no_match_no_violation ... ok
+test rules::tests::test_required_field_empty_string_produces_violation ... ok
+test rules::tests::test_required_field_missing_produces_violation ... ok
+test rules::tests::test_required_field_null_produces_violation ... ok
+test rules::tests::test_required_field_present_no_violation ... ok
+test rules::tests::test_sanitize_filename_double_dots ... ok
+test rules::tests::test_sanitize_filename_normal ... ok
+test rules::tests::test_sanitize_filename_path_traversal ... ok
+test rules::tests::test_sanitize_filename_special_chars ... ok
+test rules::tests::test_severity_display ... ok
+test rules::tests::test_severity_levels_deserialize ... ok
+test rules::tests::test_violation_carries_correct_severity ... ok
+test rules::tests::test_violation_fields_populated_correctly ... ok
+test state_marker::tests::test_atomic_save_no_temp_file_remains ... ok
+test state_marker::tests::test_complete_extraction ... ok
+test state_marker::tests::test_complete_extraction_without_download_start ... ok
+test state_marker::tests::test_complete_file_processing_syncs_messages_with_records ... ok
+test state_marker::tests::test_download_phase_lifecycle ... ok
+test state_marker::tests::test_extract_data_type ... ok
+test state_marker::tests::test_file_downloaded_tracks_bytes ... ok
+test state_marker::tests::test_file_downloaded_without_prior_tracking ... ok
+test state_marker::tests::test_file_path_generation ... ok
+test rules::tests::test_load_rejects_non_yaml_extension ... ok
+test state_marker::tests::test_load_and_save_roundtrip ... ok
+test state_marker::tests::test_load_missing_file ... ok
+test state_marker::tests::test_new_state_marker ... ok
+test state_marker::tests::test_pending_files ... ok
+test state_marker::tests::test_load_corrupt_file ... ok
+test state_marker::tests::test_processing_phase_lifecycle ... ok
+test state_marker::tests::test_should_process_decisions ... ok
+test state_marker::tests::test_should_process_failed_processing ... ok
+test state_marker::tests::test_sync_phase_totals_multiple_files ... ok
+test types::tests::test_data_type_all ... ok
+test types::tests::test_data_type_all_types ... ok
+test state_marker::tests::test_serialization ... ok
+test types::tests::test_data_type_as_str ... ok
+test types::tests::test_data_type_case_insensitive ... ok
+test types::tests::test_data_type_conversion ... ok
+test types::tests::test_data_type_display ... ok
+test types::tests::test_data_type_invalid ... ok
+test types::tests::test_extraction_progress ... ok
+test types::tests::test_extraction_complete_serialization_format ... ok
+test types::tests::test_extraction_progress_all_types ... ok
+test types::tests::test_extraction_progress_default ... ok
+test types::tests::test_file_complete_message ... ok
+test types::tests::test_message_enum_data ... ok
+test types::tests::test_message_enum_extraction_complete ... ok
+test types::tests::test_message_enum_file_complete ... ok
+test types::tests::test_message_serialization ... ok
+test extractor::tests::test_message_batcher_timeout_flush ... ok
+test message_queue::tests::test_new_connection_failure_with_retries ... ok
+
+test result: ok. 246 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.29s
+
+     Running unittests src/main.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/extractor-35eea16b05a36117)
+
+running 241 tests
+test config::tests::test_build_amqp_url_special_characters ... ok
+test config::tests::test_default_max_workers ... ok
+test config::tests::test_default_config ... ok
+test config::tests::test_from_env_default_discogs_root ... ok
+test config::tests::test_from_env_invalid_batch_size ... ok
+test config::tests::test_from_env_fixed_values ... ok
+test config::tests::test_from_env_invalid_max_workers ... ok
+test config::tests::test_from_env_invalid_periodic_check_days ... ok
+test config::tests::test_from_env_secret_file_with_whitespace ... ok
+test config::tests::test_from_env_secret_file_not_found ... ok
+test config::tests::test_from_env_with_all_settings ... ok
+test config::tests::test_from_env_uses_credential_defaults ... ok
+test config::tests::test_from_env_reads_secret_from_file ... ok
+test config::tests::test_from_env_with_rabbitmq_credentials ... ok
+test downloader::tests::test_calculate_file_checksum_nonexistent ... ok
+test downloader::tests::test_calculate_file_checksum_empty_file ... ok
+test downloader::tests::test_datasource_get_latest_monthly_files_via_trait ... ok
+test downloader::tests::test_datasource_set_and_take_state_marker ... ok
+test downloader::tests::test_calculate_file_checksum ... ok
+test downloader::tests::test_datasource_list_s3_files_via_trait ... ok
+test downloader::tests::test_download_discogs_data_skips_already_downloaded ... ok
+test downloader::tests::test_downloader_new ... ok
+test downloader::tests::test_downloader_save_metadata ... ok
+test downloader::tests::test_extract_month ... ok
+test downloader::tests::test_extract_month_edge_cases ... ok
+test downloader::tests::test_extract_month_invalid_filename ... ok
+test downloader::tests::test_get_latest_monthly_files_complete_set ... ok
+test downloader::tests::test_get_latest_monthly_files_empty_input ... ok
+test downloader::tests::test_get_latest_monthly_files_multiple_versions ... ok
+test downloader::tests::test_get_latest_monthly_files_no_complete_set ... ok
+test downloader::tests::test_list_s3_files_uses_cache ... ok
+test downloader::tests::test_load_metadata_invalid_json ... ok
+test downloader::tests::test_load_metadata_nonexistent ... ok
+test downloader::tests::test_load_metadata_valid ... ok
+test downloader::tests::test_new_with_base_url ... ok
+test downloader::tests::test_download_discogs_data_with_state_marker_skips ... ok
+test downloader::tests::test_save_state_marker_failure_warns ... ok
+test downloader::tests::test_save_state_marker_without_marker ... ok
+test downloader::tests::test_save_state_marker_with_marker ... ok
+test downloader::tests::test_should_download_file_not_exists ... ok
+test downloader::tests::test_should_download_checksum_mismatch ... ok
+test downloader::tests::test_should_download_no_metadata_file_exists ... ok
+test downloader::tests::test_should_download_size_changed ... ok
+test downloader::tests::test_with_state_marker ... ok
+test downloader::tests::test_should_download_up_to_date ... ok
+test extractor::tests::test_extract_data_type ... ok
+test extractor::tests::test_extract_data_type_all_types ... ok
+test extractor::tests::test_extract_data_type_checksum_file ... ok
+test extractor::tests::test_extract_data_type_empty_string ... ok
+test extractor::tests::test_extract_data_type_invalid_formats ... ok
+test extractor::tests::test_extract_data_type_with_path_prefix ... ok
+test extractor::tests::test_extract_version_from_filename ... ok
+test extractor::tests::test_extract_version_from_filename_invalid ... ok
+test extractor::tests::test_extractor_state_default ... ok
+test extractor::tests::test_extractor_state_last_extraction_time ... ok
+test extractor::tests::test_extractor_state_tracks_active_connections ... ok
+test extractor::tests::test_extractor_state_tracks_errors ... ok
+test extractor::tests::test_extractor_state_tracks_completed_files ... ok
+test extractor::tests::test_extractor_state_tracks_progress ... ok
+test extractor::tests::test_message_batcher_basic ... ok
+test extractor::tests::test_message_batcher_empty_input ... ok
+test extractor::tests::test_message_batcher_respects_batch_size ... ok
+test extractor::tests::test_message_batcher_multiple_batch_sizes ... ok
+test extractor::tests::test_message_batcher_triggers_state_save ... ok
+test extractor::tests::test_message_validator_downstream_dropped ... ok
+test extractor::tests::test_message_validator_multiple_messages ... ok
+test extractor::tests::test_message_validator_no_rules_for_data_type ... ok
+test extractor::tests::test_message_validator_no_violations ... ok
+test extractor::tests::test_message_validator_with_violations ... ok
+test extractor::tests::test_message_validator_writes_flagged_files ... ok
+test extractor::tests::test_progress_reporter_immediate_shutdown ... ok
+test extractor::tests::test_progress_reporter_interval_increases_after_three_reports ... ok
+test extractor::tests::test_progress_reporter_logs_on_timer_fire ... ok
+test extractor::tests::test_progress_reporter_stall_detection ... ok
+test extractor::tests::test_progress_reporter_with_completed_files_and_active_connections ... ok
+test extractor::tests::test_state_marker_file_tracking ... ok
+test extractor::tests::test_state_marker_periodic_updates ... ok
+test extractor::tests::test_state_marker_save_load ... ok
+test health::tests::test_health_handler_default_state ... ok
+test health::tests::test_health_handler_with_progress ... ok
+test health::tests::test_health_json_format ... ok
+test health::tests::test_health_server_new ... ok
+test downloader::tests::test_download_discogs_data_with_state_marker ... ok
+test downloader::tests::test_datasource_download_discogs_data_via_trait ... ok
+test health::tests::test_metrics_handler_default_state ... ok
+test health::tests::test_metrics_handler_with_data ... ok
+test health::tests::test_metrics_json_format ... ok
+test health::tests::test_ready_handler_not_ready ... ok
+test health::tests::test_ready_handler_ready ... ok
+test health::tests::test_ready_handler_transitions ... ok
+test message_queue::tests::test_constants ... ok
+test health::tests::test_ready_handler_with_active_connections ... ok
+test message_queue::tests::test_data_message_serialization_format ... ok
+test message_queue::tests::test_exchange_names ... ok
+test message_queue::tests::test_file_complete_message_serialization_format ... ok
+test message_queue::tests::test_extraction_complete_message_roundtrip ... ok
+test message_queue::tests::test_message_properties_content_type ... ok
+test message_queue::tests::test_message_properties_persistent_delivery ... ok
+test message_queue::tests::test_message_serialization_data ... ok
+test message_queue::tests::test_message_serialization_file_complete ... ok
+test message_queue::tests::test_new_connection_failure ... ok
+test message_queue::tests::test_normalize_amqp_url_amqps_scheme ... ok
+test message_queue::tests::test_normalize_amqp_url_different_ports ... ok
+test message_queue::tests::test_normalize_amqp_url_empty ... ok
+test message_queue::tests::test_normalize_amqp_url_invalid ... ok
+test message_queue::tests::test_normalize_amqp_url_minimal ... ok
+test message_queue::tests::test_normalize_amqp_url_with_credentials_special_chars ... ok
+test message_queue::tests::test_normalize_amqp_url_with_encoded_default_vhost ... ok
+test message_queue::tests::test_normalize_amqp_url_with_explicit_vhost ... ok
+test message_queue::tests::test_normalize_amqp_url_with_query_params ... ok
+test message_queue::tests::test_normalize_amqp_url_with_trailing_slash ... ok
+test message_queue::tests::test_normalize_amqp_url_without_trailing_slash ... ok
+test parser::tests::test_calculate_record_hash ... ok
+test parser::tests::test_calculate_record_hash_different_records ... ok
+test parser::tests::test_calculate_record_hash_empty_value ... ok
+test parser::tests::test_element_context_add_child_multiple ... ok
+test parser::tests::test_element_context_add_child_single ... ok
+test parser::tests::test_element_context_add_child_to_existing_array ... ok
+test parser::tests::test_element_context_new ... ok
+test parser::tests::test_element_context_to_value_attributes_and_text ... ok
+test parser::tests::test_element_context_to_value_attributes_only ... ok
+test parser::tests::test_element_context_to_value_empty ... ok
+test parser::tests::test_element_context_to_value_mixed_content ... ok
+test parser::tests::test_element_context_to_value_text_only ... ok
+test parser::tests::test_element_context_to_value_whitespace_preserved ... ok
+test parser::tests::test_parse_artist_with_members ... ok
+test parser::tests::test_parse_file_not_found ... ok
+test parser::tests::test_parse_label_with_sublabels ... ok
+test parser::tests::test_parse_master_with_artists ... ok
+test parser::tests::test_parse_receiver_dropped ... ok
+test parser::tests::test_parse_release_with_artists ... ok
+test parser::tests::test_parse_self_closing_child_element ... ok
+test parser::tests::test_parse_self_closing_target_element ... ok
+test parser::tests::test_parse_simple_xml ... ok
+test parser::tests::test_parse_with_entity_references ... ok
+test parser::tests::test_raw_xml_capture ... ok
+test parser::tests::test_raw_xml_not_captured_by_default ... ok
+test parser::tests::test_reconstruct_xml_id_dedup_for_releases ... ok
+test parser::tests::test_reconstruct_xml_id_without_at_id_is_kept ... ok
+test parser::tests::test_reconstruct_xml_self_closing_target ... ok
+test parser::tests::test_reconstruct_xml_with_array_children ... ok
+test parser::tests::test_reconstruct_xml_with_null_value ... ok
+test parser::tests::test_reconstruct_xml_with_numeric_values ... ok
+test parser::tests::test_reconstruct_xml_with_text_and_attributes ... ok
+test rules::tests::test_all_valid_data_type_keys_accepted ... ok
+test rules::tests::test_default_rules_file ... ok
+test rules::tests::test_dot_notation_array_expands_to_multiple_values ... ok
+test rules::tests::test_dot_notation_array_one_violating_element ... ok
+test rules::tests::test_dot_notation_missing_intermediate_produces_violation ... ok
+test rules::tests::test_dot_notation_nested_object ... ok
+test rules::tests::test_enum_invalid_value_produces_violation ... ok
+test rules::tests::test_enum_valid_value_no_violation ... ok
+test rules::tests::test_flagged_writer_deduplicates_files ... ok
+test rules::tests::test_flagged_writer_no_capture_files ... ok
+test rules::tests::test_flagged_writer_write_report ... ok
+test rules::tests::test_flagged_writer_write_violation_and_flush ... ok
+test rules::tests::test_invalid_data_type_returns_error ... ok
+test rules::tests::test_invalid_regex_returns_error ... ok
+test rules::tests::test_length_too_long_produces_violation ... ok
+test rules::tests::test_length_too_short_produces_violation ... ok
+test rules::tests::test_length_within_bounds_no_violation ... ok
+test rules::tests::test_load_accepts_yml_extension ... ok
+test rules::tests::test_load_rejects_invalid_yaml ... ok
+test rules::tests::test_load_rejects_non_yaml_extension ... ok
+test rules::tests::test_load_rejects_nonexistent_file ... ok
+test rules::tests::test_load_valid_config_all_condition_types ... ok
+test rules::tests::test_multiple_rules_multiple_violations ... ok
+test rules::tests::test_no_rules_for_data_type_returns_empty_violations ... ok
+test rules::tests::test_no_rules_for_unknown_data_type ... ok
+test rules::tests::test_optional_description_field ... ok
+test rules::tests::test_quality_report_accumulation ... ok
+test rules::tests::test_quality_report_empty ... ok
+test rules::tests::test_quality_report_format_summary_data_type_with_total_but_no_violations ... ok
+test rules::tests::test_quality_report_format_summary_info_counts ... ok
+test rules::tests::test_quality_report_has_violations_false_when_empty ... ok
+test rules::tests::test_quality_report_has_violations_true_with_info ... ok
+test rules::tests::test_quality_report_merge ... ok
+test rules::tests::test_quality_report_merge_overlapping_rules ... ok
+test rules::tests::test_range_above_max_produces_violation ... ok
+test rules::tests::test_range_below_min_produces_violation ... ok
+test rules::tests::test_range_non_numeric_field_no_violation ... ok
+test rules::tests::test_range_within_bounds_no_violation ... ok
+test rules::tests::test_regex_match_produces_violation ... ok
+test rules::tests::test_regex_no_match_no_violation ... ok
+test rules::tests::test_required_field_empty_string_produces_violation ... ok
+test rules::tests::test_required_field_missing_produces_violation ... ok
+test rules::tests::test_required_field_null_produces_violation ... ok
+test rules::tests::test_required_field_present_no_violation ... ok
+test rules::tests::test_sanitize_filename_double_dots ... ok
+test rules::tests::test_sanitize_filename_normal ... ok
+test rules::tests::test_sanitize_filename_path_traversal ... ok
+test rules::tests::test_sanitize_filename_special_chars ... ok
+test rules::tests::test_severity_display ... ok
+test rules::tests::test_severity_levels_deserialize ... ok
+test rules::tests::test_violation_carries_correct_severity ... ok
+test rules::tests::test_violation_fields_populated_correctly ... ok
+test state_marker::tests::test_atomic_save_no_temp_file_remains ... ok
+test state_marker::tests::test_complete_extraction ... ok
+test state_marker::tests::test_complete_extraction_without_download_start ... ok
+test state_marker::tests::test_complete_file_processing_syncs_messages_with_records ... ok
+test state_marker::tests::test_download_phase_lifecycle ... ok
+test state_marker::tests::test_extract_data_type ... ok
+test state_marker::tests::test_file_downloaded_tracks_bytes ... ok
+test state_marker::tests::test_file_downloaded_without_prior_tracking ... ok
+test state_marker::tests::test_file_path_generation ... ok
+test state_marker::tests::test_load_and_save_roundtrip ... ok
+test state_marker::tests::test_load_corrupt_file ... ok
+test state_marker::tests::test_load_missing_file ... ok
+test state_marker::tests::test_new_state_marker ... ok
+test state_marker::tests::test_pending_files ... ok
+test state_marker::tests::test_processing_phase_lifecycle ... ok
+test state_marker::tests::test_serialization ... ok
+test state_marker::tests::test_should_process_decisions ... ok
+test state_marker::tests::test_should_process_failed_processing ... ok
+test state_marker::tests::test_sync_phase_totals_multiple_files ... ok
+test tests::test_ascii_art_display ... ok
+test tests::test_build_tracing_filter_debug ... ok
+test tests::test_build_tracing_filter_error ... ok
+test tests::test_build_tracing_filter_info ... ok
+test tests::test_build_tracing_filter_python_levels ... ok
+test tests::test_build_tracing_filter_warn ... ok
+test tests::test_setup_shutdown_handler ... ok
+test types::tests::test_data_type_all ... ok
+test types::tests::test_data_type_all_types ... ok
+test types::tests::test_data_type_as_str ... ok
+test types::tests::test_data_type_case_insensitive ... ok
+test types::tests::test_data_type_conversion ... ok
+test types::tests::test_data_type_display ... ok
+test types::tests::test_data_type_invalid ... ok
+test types::tests::test_extraction_complete_serialization_format ... ok
+test types::tests::test_extraction_progress ... ok
+test types::tests::test_extraction_progress_all_types ... ok
+test types::tests::test_extraction_progress_default ... ok
+test types::tests::test_file_complete_message ... ok
+test types::tests::test_message_enum_data ... ok
+test types::tests::test_message_enum_extraction_complete ... ok
+test types::tests::test_message_enum_file_complete ... ok
+test types::tests::test_message_serialization ... ok
+test health::tests::test_health_server_run_and_endpoints ... ok
+test message_queue::tests::test_new_connection_failure_with_retries ... ok
+test extractor::tests::test_message_batcher_timeout_flush ... ok
+
+test result: ok. 241 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.51s
+
+     Running tests/downloader_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/downloader_test-586c92edcb9e2b8c)
+
+running 18 tests
+test test_downloader_initialization ... ok
+test test_corrupted_metadata_handling ... ok
+test test_downloader_creates_output_directory ... ok
+test test_get_latest_monthly_files_complete_set ... ok
+test test_empty_metadata_file ... ok
+test test_get_latest_monthly_files_incomplete_set ... ok
+test test_get_latest_monthly_files_deeply_nested_paths ... ok
+test test_local_file_info_structure ... ok
+test test_get_latest_monthly_files_selects_newest ... ok
+test test_metadata_persistence ... ok
+test test_metadata_with_multiple_versions ... ok
+test test_metadata_file_location ... ok
+test test_metadata_json_format ... ok
+test test_s3_file_info_structure ... ok
+test test_should_download_missing_file ... ok
+test test_should_download_when_checksum_differs ... ok
+test test_should_download_when_size_differs ... ok
+test test_should_not_download_up_to_date_file ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/extractor_batcher_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/extractor_batcher_test-46e7361aab70a255)
+
+running 7 tests
+test test_message_batcher_multiple_batches ... ok
+test test_message_batcher_empty_batch ... ok
+test test_message_batcher_final_batch_increments_total_batches ... ok
+test test_message_batcher_saves_marker_on_read_only_path_warns ... ok
+test test_message_batcher_periodic_state_save ... ok
+test test_message_batcher_single_message ... ok
+test test_message_batcher_saves_final_state_marker ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/extractor_di_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/extractor_di_test-b116956c90b6fce2)
+
+running 15 tests
+test mock_helpers::tests::test_mock_message_queue_failure ... ok
+test mock_helpers::tests::test_mock_downloader_not_found ... ok
+test mock_helpers::tests::test_mock_message_queue ... ok
+test mock_helpers::tests::test_mock_downloader ... ok
+test test_message_publisher_increments_error_count_on_failure ... ok
+test test_message_publisher_success_path ... ok
+test test_process_discogs_data_empty_files ... ok
+test test_process_discogs_data_all_files_already_processed ... ok
+test test_process_discogs_data_no_data_files ... ok
+test test_process_discogs_data_mq_factory_create_fails_on_all_processed ... ok
+test test_process_discogs_data_take_state_marker_none ... ok
+test test_process_discogs_data_skip_when_already_complete ... ok
+test test_process_single_file_mq_setup_called ... ok
+test test_process_discogs_data_force_reprocess_bypasses_skip ... ok
+test test_default_mq_factory_create_fails_without_broker ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.01s
+
+     Running tests/extractor_state_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/extractor_state_test-32c7e02339ebcad1)
+
+running 14 tests
+test test_extractor_state_active_connections ... ok
+test test_extractor_state_completed_files_tracking ... ok
+test test_extractor_state_concurrent_file_tracking ... ok
+test test_extractor_state_concurrent_updates ... ok
+test test_extractor_state_error_count ... ok
+test test_extractor_state_large_scale_updates ... ok
+test test_extractor_state_error_tracking ... ok
+test test_extractor_state_initialization ... ok
+test test_extractor_state_last_extraction_time ... ok
+test test_extractor_state_progress_increment ... ok
+test test_extractor_state_reset ... ok
+test test_extractor_state_memory_cleanup ... ok
+test test_extractor_state_updates ... ok
+test test_state_progress_tracking_accuracy ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/extractor_types_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/extractor_types_test-5176902f7fd368e3)
+
+running 8 tests
+test test_data_type_all_conversions ... ok
+test test_data_type_all_variants ... ok
+test test_data_type_case_insensitive_parsing ... ok
+test test_data_type_display_formatting ... ok
+test test_data_type_from_str_invalid ... ok
+test test_extraction_progress_default ... ok
+test test_extraction_progress_increment_all_types ... ok
+test test_extraction_progress_large_numbers ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/extractor_utils_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/extractor_utils_test-d186ae777cf66a85)
+
+running 3 tests
+test test_extract_data_type_from_filename ... ok
+test test_extract_version_from_filename ... ok
+test test_filename_parsing_edge_cases ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/http_integration_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/http_integration_test-3ab6dc4938b1e64a)
+
+running 17 tests
+test test_concurrent_year_scraping ... ok
+test test_download_with_state_marker_save_failure ... ok
+test test_checksum_calculation_during_download ... ok
+test test_empty_website_response ... ok
+test test_download_failure_cleans_up_partial_file ... ok
+test test_http_download_404 ... ok
+test test_http_download_cleans_partial_file_on_retry ... ok
+test test_http_download_retries_on_failure_then_succeeds ... ok
+test test_download_discogs_data_propagates_download_error ... ok
+test test_http_download_success ... ok
+test test_large_file_streaming ... ok
+test test_successful_web_scraping ... ok
+test test_incomplete_file_set ... ok
+test test_url_encoding_in_download ... ok
+test test_website_connection_failure ... ok
+test test_http_download_exhausts_all_retries ... ok
+test test_http_download_failure ... ok
+
+test result: ok. 17 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 12.34s
+
+     Running tests/integration_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/integration_test-2382096cd1343329)
+
+running 3 tests
+test test_data_type_conversion ... ok
+test test_extraction_progress ... ok
+test test_config_from_env ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/main_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/main_test-d807fad04d342e63)
+
+running 9 tests
+test test_config_path_default ... ok
+test test_environment_variable_defaults ... ok
+test test_filter_format ... ok
+test test_force_reprocess_flag ... ok
+test test_lapin_level_selection ... ok
+test test_log_level_case_insensitive ... ok
+test test_log_level_mapping ... ok
+test test_ascii_art_generation ... ok
+test test_shutdown_signal_handler ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/message_queue_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/message_queue_test-4082c5f93573364d)
+
+running 23 tests
+test test_data_message_flattened_data ... ok
+test test_data_message_deserialization ... ok
+test test_data_message_serialization ... ok
+test test_data_type_as_str ... ok
+test test_data_message_with_empty_data ... ok
+test test_data_message_with_complex_data ... ok
+test test_data_type_clone ... ok
+test test_data_type_display ... ok
+test test_data_type_equality ... ok
+test test_data_type_from_str ... ok
+test test_file_complete_message_serialization ... ok
+test test_file_complete_message_serialization_fields ... ok
+test test_file_complete_message_timestamp ... ok
+test test_file_complete_message_with_zero_processed ... ok
+test test_message_batch_serialization ... ok
+test test_message_enum_data_variant ... ok
+test test_file_complete_message_with_large_count ... ok
+test test_message_enum_file_complete_variant ... ok
+test test_data_message_large_data ... ok
+test test_message_enum_tagged ... ok
+test test_message_serialization_round_trip ... ok
+test test_message_type_tag ... ok
+test test_message_size_estimation ... ok
+
+test result: ok. 23 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mock_helpers.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/mock_helpers-adf186b9ac28ebc4)
+
+running 4 tests
+test tests::test_mock_downloader_not_found ... ok
+test tests::test_mock_downloader ... ok
+test tests::test_mock_message_queue ... ok
+test tests::test_mock_message_queue_failure ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/parser_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/parser_test-3e1f3c69d5bf662b)
+
+running 20 tests
+test test_parse_element_with_text_only ... ok
+test test_parse_channel_closed_gracefully ... ok
+test test_parse_deeply_nested_structure ... ok
+test test_parse_hash_calculation ... ok
+test test_parse_labels_data_type ... ok
+test test_parse_malformed_xml ... ok
+test test_parse_master_with_id_field ... ok
+test test_parse_masters_data_type ... ok
+test test_parse_mixed_content_element ... ok
+test test_parse_empty_xml ... ok
+test test_parse_numeric_char_ref ... ok
+test test_parse_release_with_id_field ... ok
+test test_parse_with_array_elements ... ok
+test test_parse_with_cdata ... ok
+test test_parse_with_empty_elements ... ok
+test test_parse_with_special_characters ... ok
+test test_parse_large_batch ... ok
+test test_parse_multiple_records ... ok
+test test_parse_with_whitespace ... ok
+test test_parse_large_batch_with_logging ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running tests/rules_integration_test.rs (/home/runner/work/discogsography/discogsography/target/debug/deps/rules_integration_test-0467b7354aac8394)
+
+running 14 tests
+test test_format_summary_no_violations_message ... ok
+test test_format_summary_data_type_with_totals_but_no_violations ... ok
+test test_has_violations_returns_false_after_only_totals ... ok
+test test_has_violations_returns_false_when_empty ... ok
+test test_flagged_record_storage ... ok
+test test_evaluate_rules_with_combined_writer_and_report ... ok
+test test_message_validator_downstream_dropped ... ok
+test test_pipeline_without_rules_unchanged ... ok
+test test_quality_report_info_severity_counted ... ok
+test test_message_validator_forwards_all_messages ... ok
+test test_write_violation_capture_files_true_writes_xml_and_json ... ok
+test test_message_validator_no_violations_clean_report ... ok
+test test_write_violation_info_severity_no_files ... ok
+test test_issue_182_bad_data_detected ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests extractor
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+[0;32m✅  [SUCCESS][0m Rust tests passed
+
+[1;36m📝  Update Summary[0m
+[1;36m============================================================[0m
+
+📄 File Updates:
+  • Cargo.lock: Updated to latest compatible versions
+  • explore/package-lock.json: Updated npm lockfile
+  • explore/package.json: Updated npm dependencies
+
+
+[1;36m🔀  Next Steps[0m
+[1;36m============================================================[0m
+1. Review the changes:
+   git diff --stat
+   git diff uv.lock
+
+2. Stage the changes:
+   git add */Dockerfile extractor/*/Dockerfile docs/dockerfile-standards.md
+
+3. Commit the changes:
+   git commit -m "chore: update dependencies
+   "
+
+[1;36m📋  File Update Report[0m
+[1;36m============================================================[0m
+The following files were checked and updated:
+
+🐍 Python Configuration:
+  ✓ pyproject.toml (root)
+  ✓ api/pyproject.toml
+  ✓ common/pyproject.toml
+  ✓ dashboard/pyproject.toml
+  ✓ explore/pyproject.toml
+  ✓ graphinator/pyproject.toml
+  ✓ insights/pyproject.toml
+  ✓ schema-init/pyproject.toml
+  ✓ tableinator/pyproject.toml
+  ✓ uv.lock (root)
+  ✓ pyrightconfig.json
+
+🐳 Docker Configuration:
+  ✓ api/Dockerfile
+  ✓ dashboard/Dockerfile
+  ✓ explore/Dockerfile
+  ✓ extractor/Dockerfile
+  ✓ graphinator/Dockerfile
+  ✓ insights/Dockerfile
+  ✓ schema-init/Dockerfile
+  ✓ tableinator/Dockerfile
+  ✓ docs/dockerfile-standards.md
+  ✓ docker-compose.yml
+  ✓ docker-compose.prod.yml
+
+🦀 Rust Configuration:
+  ✓ extractor/Cargo.toml (constraints unchanged)
+  ✓ Cargo.lock (updated to latest compatible)
+
+📦 Node.js Configuration:
+  ✓ explore/package.json
+  ✓ explore/package-lock.json
+
+🔄 GitHub Workflows:
+  ✓ .github/workflows/*.yml (setup-uv action)
+  ✓ Python version references
+
+📊 Summary:
+  • Total files updated: 3
+  • Python packages updated: 0
+  • Dockerfiles updated: 0
+0
+  • Workflows updated: 0
+
+[1;36m🔍  Manual Verification Steps[0m
+[1;36m============================================================[0m
+Please verify the following before merging:
+
+1. 🐳 Docker builds:
+   docker-compose build --no-cache
+
+2. 🧪 Service health checks:
+   docker-compose up -d
+   docker-compose ps  # All services should be 'healthy'
+
+3. 🔍 Smoke tests:
+   # Check API service
+   curl -f http://localhost:8005/health
+   # Check dashboard
+   curl -f http://localhost:8003/health
+   # Check explore service
+   curl -f http://localhost:8007/health
+   # Check insights service
+   curl -f http://localhost:8009/health
+
+4. 📊 Review dependency changes:
+   # Check for security advisories
+   uv pip audit
+   # Review major version changes
+   git diff uv.lock | grep -E "^[+-]version"
+
+5. 📝 Update CHANGELOG.md if needed
