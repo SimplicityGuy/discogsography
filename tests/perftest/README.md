@@ -8,37 +8,37 @@ The performance test covers all API endpoints that execute database queries (Neo
 
 ### Static Endpoints (no parameters or fixed parameters)
 
-| Endpoint | Database |
-|---|---|
-| `GET /api/explore/year-range` | Neo4j |
-| `GET /api/explore/genre-emergence?before_year=2025` | Neo4j |
-| `GET /api/insights/top-artists` | Neo4j (via insights proxy) |
-| `GET /api/insights/genre-trends` | Neo4j (via insights proxy) |
-| `GET /api/insights/label-longevity` | Neo4j (via insights proxy) |
-| `GET /api/insights/this-month` | Neo4j (via insights proxy) |
-| `GET /api/insights/data-completeness` | PostgreSQL (via insights proxy) |
-| `GET /api/insights/status` | Redis (via insights proxy) |
+| Endpoint                                            | Database                        |
+| --------------------------------------------------- | ------------------------------- |
+| `GET /api/explore/year-range`                       | Neo4j                           |
+| `GET /api/explore/genre-emergence?before_year=2025` | Neo4j                           |
+| `GET /api/insights/top-artists`                     | Neo4j (via insights proxy)      |
+| `GET /api/insights/genre-trends`                    | Neo4j (via insights proxy)      |
+| `GET /api/insights/label-longevity`                 | Neo4j (via insights proxy)      |
+| `GET /api/insights/this-month`                      | Neo4j (via insights proxy)      |
+| `GET /api/insights/data-completeness`               | PostgreSQL (via insights proxy) |
+| `GET /api/insights/status`                          | Redis (via insights proxy)      |
 
 ### Parameterized Endpoints (driven by config)
 
-| Endpoint | Test Coverage | Database |
-|---|---|---|
-| `GET /api/autocomplete` | Each artist, genre, style, label | Neo4j |
-| `GET /api/explore` | Each artist, genre, style, label | Neo4j |
-| `GET /api/trends` | Each artist, genre, style, label | Neo4j |
-| `GET /api/search` | Each entity name | PostgreSQL |
-| `GET /api/path` | All artist pair combinations | Neo4j |
+| Endpoint                | Test Coverage                    | Database   |
+| ----------------------- | -------------------------------- | ---------- |
+| `GET /api/autocomplete` | Each artist, genre, style, label | Neo4j      |
+| `GET /api/explore`      | Each artist, genre, style, label | Neo4j      |
+| `GET /api/trends`       | Each artist, genre, style, label | Neo4j      |
+| `GET /api/search`       | Each entity name                 | PostgreSQL |
+| `GET /api/path`         | All artist pair combinations     | Neo4j      |
 
 ### ID-Resolved Endpoints (IDs resolved via autocomplete)
 
-| Endpoint | Test Coverage | Database |
-|---|---|---|
-| `GET /api/label/{id}/dna` | Each label | Neo4j |
-| `GET /api/label/{id}/similar` | Each label | Neo4j |
-| `GET /api/label/dna/compare` | All labels combined | Neo4j |
-| `GET /api/recommend/similar/artist/{id}` | Each artist | Neo4j |
-| `GET /api/node/{id}` | Each artist and label | Neo4j |
-| `GET /api/expand` | Each artist (releases), each label (releases) | Neo4j |
+| Endpoint                                 | Test Coverage                                 | Database |
+| ---------------------------------------- | --------------------------------------------- | -------- |
+| `GET /api/label/{id}/dna`                | Each label                                    | Neo4j    |
+| `GET /api/label/{id}/similar`            | Each label                                    | Neo4j    |
+| `GET /api/label/dna/compare`             | All labels combined                           | Neo4j    |
+| `GET /api/recommend/similar/artist/{id}` | Each artist                                   | Neo4j    |
+| `GET /api/node/{id}`                     | Each artist and label                         | Neo4j    |
+| `GET /api/expand`                        | Each artist (releases), each label (releases) | Neo4j    |
 
 ## Prerequisites
 
@@ -154,12 +154,12 @@ labels:
 
 After a run, `perftest-results/` contains:
 
-| File | Description |
-|---|---|
-| `perftest-report.txt` | Human-readable report with per-endpoint stats grouped by category, top 10 slowest endpoints, and summary |
-| `perftest-results.json` | Machine-readable JSON with full timing data for every individual run |
-| `api.log` | API service log (copied via `docker cp` after the run) |
-| `profiling.log` | Database profiling output — Cypher PROFILE and SQL EXPLAIN plans (copied via `docker cp` after the run, requires `DB_PROFILING=true`) |
+| File                    | Description                                                                                                                           |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `perftest-report.txt`   | Human-readable report with per-endpoint stats grouped by category, top 10 slowest endpoints, and summary                              |
+| `perftest-results.json` | Machine-readable JSON with full timing data for every individual run                                                                  |
+| `api.log`               | API service log (copied via `docker cp` after the run)                                                                                |
+| `profiling.log`         | Database profiling output — Cypher PROFILE and SQL EXPLAIN plans (copied via `docker cp` after the run, requires `DB_PROFILING=true`) |
 
 ### Example Report Output
 

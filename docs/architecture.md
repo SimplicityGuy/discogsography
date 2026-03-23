@@ -560,15 +560,15 @@ See [Database Schema](database-schema.md) for details.
 - Dashboard metrics
 - **API query result caching** (cache-aside pattern):
 
-| Cache Key Pattern | TTL | Endpoints Covered |
-|---|---|---|
-| `trends:{type}:{name}` | 24h | `/api/trends?type=genre\|style` |
-| `label-dna:{label_id}` | 24h | `/api/label/{id}/dna` |
-| `label-similar:{label_id}:{limit}` | 24h | `/api/label/{id}/similar` |
-| `artist-similar:{artist_id}:{limit}` | 24h | `/api/artist/{id}/similar` |
-| `explore-artist:{name}` | 24h | `/api/explore?type=artist` |
-| `trends-label:{label_id}` | 24h | `/api/trends?type=label` |
-| `search:{md5_digest}` | 5m | `/api/search` |
+| Cache Key Pattern                    | TTL | Endpoints Covered               |
+| ------------------------------------ | --- | ------------------------------- |
+| `trends:{type}:{name}`               | 24h | `/api/trends?type=genre\|style` |
+| `label-dna:{label_id}`               | 24h | `/api/label/{id}/dna`           |
+| `label-similar:{label_id}:{limit}`   | 24h | `/api/label/{id}/similar`       |
+| `artist-similar:{artist_id}:{limit}` | 24h | `/api/artist/{id}/similar`      |
+| `explore-artist:{name}`              | 24h | `/api/explore?type=artist`      |
+| `trends-label:{label_id}`            | 24h | `/api/trends?type=label`        |
+| `search:{md5_digest}`                | 5m  | `/api/search`                   |
 
 **Configuration**:
 

@@ -179,8 +179,8 @@ queues = ["labels", "artists", "releases", "masters"]
 After all queues have been consumed, the graphinator performs cleanup and enrichment steps:
 
 1. **Batch Queue Flushing** — Any remaining messages in batch queues are flushed to ensure no data is left unprocessed
-2. **Stub Node Cleanup** — Removes nodes that have no `sha256` property, which are created as side effects of `MERGE` operations when referenced entities (e.g., artists, labels) haven't been ingested yet
-3. **Aggregate Stats Computation** — Runs `compute_genre_style_stats()` to pre-compute node properties (see below)
+1. **Stub Node Cleanup** — Removes nodes that have no `sha256` property, which are created as side effects of `MERGE` operations when referenced entities (e.g., artists, labels) haven't been ingested yet
+1. **Aggregate Stats Computation** — Runs `compute_genre_style_stats()` to pre-compute node properties (see below)
 
 ### 📊 Pre-Computed Node Properties
 
@@ -188,31 +188,31 @@ After graph import of releases, the graphinator runs `compute_genre_style_stats(
 
 **Genre nodes:**
 
-| Property | Description |
-|---|---|
-| `release_count` | Number of releases classified as this genre |
-| `artist_count` | Number of distinct artists with releases in this genre |
-| `label_count` | Number of distinct labels with releases in this genre |
-| `style_count` | Number of styles associated with this genre |
-| `first_year` | Earliest release year for this genre |
+| Property        | Description                                            |
+| --------------- | ------------------------------------------------------ |
+| `release_count` | Number of releases classified as this genre            |
+| `artist_count`  | Number of distinct artists with releases in this genre |
+| `label_count`   | Number of distinct labels with releases in this genre  |
+| `style_count`   | Number of styles associated with this genre            |
+| `first_year`    | Earliest release year for this genre                   |
 
 **Style nodes:**
 
-| Property | Description |
-|---|---|
-| `release_count` | Number of releases classified as this style |
-| `artist_count` | Number of distinct artists with releases in this style |
-| `label_count` | Number of distinct labels with releases in this style |
-| `genre_count` | Number of genres associated with this style |
-| `first_year` | Earliest release year for this style |
+| Property        | Description                                            |
+| --------------- | ------------------------------------------------------ |
+| `release_count` | Number of releases classified as this style            |
+| `artist_count`  | Number of distinct artists with releases in this style |
+| `label_count`   | Number of distinct labels with releases in this style  |
+| `genre_count`   | Number of genres associated with this style            |
+| `first_year`    | Earliest release year for this style                   |
 
 **Label nodes:**
 
-| Property | Description |
-|---|---|
-| `release_count` | Number of releases on this label |
-| `artist_count` | Number of distinct artists on this label |
-| `genre_count` | Number of distinct genres across this label's releases |
+| Property        | Description                                            |
+| --------------- | ------------------------------------------------------ |
+| `release_count` | Number of releases on this label                       |
+| `artist_count`  | Number of distinct artists on this label               |
+| `genre_count`   | Number of distinct genres across this label's releases |
 
 ## Development
 

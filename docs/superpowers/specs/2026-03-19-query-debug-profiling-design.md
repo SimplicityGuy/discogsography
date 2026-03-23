@@ -10,11 +10,11 @@ Add opt-in query debug logging and database profiling to the API service, contro
 
 ## Behavior Matrix
 
-| LOG_LEVEL | DB_PROFILING | Console log (structlog JSON)       | `/logs/profiling.log`                              |
-|-----------|-------------|------------------------------------|----------------------------------------------------|
-| INFO+     | any         | No query logging                   | Nothing                                            |
-| DEBUG     | unset/false | Full query + params (Cypher & SQL) | Nothing                                            |
-| DEBUG     | true        | Full query + params (Cypher & SQL) | Full query + params + PROFILE/EXPLAIN summary (both Cypher and SQL) |
+| LOG_LEVEL | DB_PROFILING | Console log (structlog JSON)       | `/logs/profiling.log`                                               |
+| --------- | ------------ | ---------------------------------- | ------------------------------------------------------------------- |
+| INFO+     | any          | No query logging                   | Nothing                                                             |
+| DEBUG     | unset/false  | Full query + params (Cypher & SQL) | Nothing                                                             |
+| DEBUG     | true         | Full query + params (Cypher & SQL) | Full query + params + PROFILE/EXPLAIN summary (both Cypher and SQL) |
 
 Both conditions (DEBUG **and** DB_PROFILING=true) must be met for profiling. The PROFILE/EXPLAIN summary never appears in the console log — only in the dedicated profiling log file.
 
@@ -48,11 +48,12 @@ Consolidated Neo4j query execution helpers, replacing the duplicated copies acro
 - `run_count(driver, cypher, *, timeout=None, database=None, **params) -> int`
 
 Each helper:
+
 1. Logs query + params to console at DEBUG level (always, regardless of profiling).
-2. If profiling enabled: prepends `PROFILE` to the Cypher query.
-3. Executes the query and collects results.
-4. If profiling enabled: calls `await result.consume()` **inside the session context manager** to get `ResultSummary`, writes profile to profiling log (includes query + params for correlation).
-5. On timeout/exception with profiling enabled: opens a new session, re-runs with `EXPLAIN` prefix (wrapped in try/except to handle unreachable DB gracefully), writes the plan to profiling log with the original error, then re-raises the original exception.
+1. If profiling enabled: prepends `PROFILE` to the Cypher query.
+1. Executes the query and collects results.
+1. If profiling enabled: calls `await result.consume()` **inside the session context manager** to get `ResultSummary`, writes profile to profiling log (includes query + params for correlation).
+1. On timeout/exception with profiling enabled: opens a new session, re-runs with `EXPLAIN` prefix (wrapped in try/except to handle unreachable DB gracefully), writes the plan to profiling log with the original error, then re-raises the original exception.
 
 Note: `insights_neo4j_queries.py` currently passes `database="neo4j"` to `driver.session()`. The consolidated helpers will accept an optional `database` parameter (default `None`) to support this. The `record.data()` vs `dict(record)` difference is functionally equivalent for the field projections used in these queries.
 
@@ -190,10 +191,10 @@ Seq Scan on bad_table  (cost=0.00..1.05 rows=1 width=64)
 
 ## Environment Variables
 
-| Variable | Values | Default | Description |
-|----------|--------|---------|-------------|
-| `LOG_LEVEL` | DEBUG, INFO, WARNING, ERROR, CRITICAL | INFO | Existing. DEBUG enables query logging. |
-| `DB_PROFILING` | true, false | (unset = false) | When true AND LOG_LEVEL=DEBUG, adds PROFILE to Cypher queries and EXPLAIN (ANALYZE, BUFFERS, VERBOSE) to SQL queries, writing results to profiling log. |
+| Variable       | Values                                | Default         | Description                                                                                                                                             |
+| -------------- | ------------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `LOG_LEVEL`    | DEBUG, INFO, WARNING, ERROR, CRITICAL | INFO            | Existing. DEBUG enables query logging.                                                                                                                  |
+| `DB_PROFILING` | true, false                           | (unset = false) | When true AND LOG_LEVEL=DEBUG, adds PROFILE to Cypher queries and EXPLAIN (ANALYZE, BUFFERS, VERBOSE) to SQL queries, writing results to profiling log. |
 
 ## Security Considerations
 

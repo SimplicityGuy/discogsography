@@ -69,10 +69,10 @@ ORDER BY a.name
 
 #### Range Queries
 
-| Index Name               | Label   | Properties | Use Case                              |
-| ------------------------ | ------- | ---------- | ------------------------------------- |
-| `release_year_index`     | Release | year       | Year range queries, trends, year-range min/max |
-| `master_year_index`      | Master  | year       | Monthly anniversaries (insights/this-month) |
+| Index Name               | Label   | Properties | Use Case                                         |
+| ------------------------ | ------- | ---------- | ------------------------------------------------ |
+| `release_year_index`     | Release | year       | Year range queries, trends, year-range min/max   |
+| `master_year_index`      | Master  | year       | Monthly anniversaries (insights/this-month)      |
 | `genre_first_year_index` | Genre   | first_year | Genre emergence timeline (index-backed ORDER BY) |
 | `style_first_year_index` | Style   | first_year | Style emergence timeline (index-backed ORDER BY) |
 
@@ -91,27 +91,28 @@ In addition to indexes, several node types have pre-computed aggregate propertie
 
 #### Genre Node Properties
 
-| Property | Description | Replaces |
-|----------|-------------|----------|
-| `release_count` | Number of releases tagged with this genre | `COUNT { (g)<-[:IS]-(r:Release) }` |
-| `artist_count` | Number of distinct artists across releases | Traversal of IS→BY edges |
-| `label_count` | Number of distinct labels across releases | Traversal of IS→ON edges |
-| `style_count` | Number of distinct styles across releases | Traversal of IS→IS edges |
-| `first_year` | Earliest release year in this genre | `min(r.year)` across all releases |
+| Property        | Description                                | Replaces                           |
+| --------------- | ------------------------------------------ | ---------------------------------- |
+| `release_count` | Number of releases tagged with this genre  | `COUNT { (g)<-[:IS]-(r:Release) }` |
+| `artist_count`  | Number of distinct artists across releases | Traversal of IS→BY edges           |
+| `label_count`   | Number of distinct labels across releases  | Traversal of IS→ON edges           |
+| `style_count`   | Number of distinct styles across releases  | Traversal of IS→IS edges           |
+| `first_year`    | Earliest release year in this genre        | `min(r.year)` across all releases  |
 
 #### Style Node Properties
 
-| Property | Description |
-|----------|-------------|
-| `release_count` | Number of releases tagged with this style |
-| `artist_count` | Number of distinct artists across releases |
-| `label_count` | Number of distinct labels across releases |
-| `genre_count` | Number of distinct genres across releases |
-| `first_year` | Earliest release year in this style |
+| Property        | Description                                |
+| --------------- | ------------------------------------------ |
+| `release_count` | Number of releases tagged with this style  |
+| `artist_count`  | Number of distinct artists across releases |
+| `label_count`   | Number of distinct labels across releases  |
+| `genre_count`   | Number of distinct genres across releases  |
+| `first_year`    | Earliest release year in this style        |
 
 **Impact**: For `explore/genre/Electronic`, this reduces queries from **200M DB accesses** (traversing 5.6M releases × 4 relationship types) to **6 DB accesses** (single NodeUniqueIndexSeek + 4 property reads).
 
 **Example Query (before):**
+
 ```cypher
 -- 200M DB hits, 201MB memory for "Electronic"
 MATCH (g:Genre {name: $name})
@@ -122,6 +123,7 @@ WITH g, collect(DISTINCT r) AS releases
 ```
 
 **Example Query (after):**
+
 ```cypher
 -- 6 DB hits, 64 bytes memory
 MATCH (g:Genre {name: $name})

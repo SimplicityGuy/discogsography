@@ -10,17 +10,17 @@ The Explore service serves the interactive frontend for navigating the Discogs k
 
 The Explore frontend organizes functionality into tabbed panes:
 
-| Pane | Description | Auth Required |
-| --- | --- | --- |
-| **explore** | Interactive force-directed graph explorer | No |
-| **trends** | Time-series release count charts | No |
-| **path** | Shortest path finder between any two entities | No |
-| **search** | Full-text search with type, genre, and decade filters | No |
-| **insights** | Precomputed analytics dashboard with auto-refresh (60s) | No |
-| **collection** | User's synced Discogs collection with stats and taste fingerprint | Yes |
-| **wantlist** | User's synced Discogs wantlist | Yes |
-| **recommendations** | Personalized release recommendations based on collection | Yes |
-| **gaps** | Collection gap finder — missing releases for an artist, label, or master | Yes |
+| Pane                | Description                                                              | Auth Required |
+| ------------------- | ------------------------------------------------------------------------ | ------------- |
+| **explore**         | Interactive force-directed graph explorer                                | No            |
+| **trends**          | Time-series release count charts                                         | No            |
+| **path**            | Shortest path finder between any two entities                            | No            |
+| **search**          | Full-text search with type, genre, and decade filters                    | No            |
+| **insights**        | Precomputed analytics dashboard with auto-refresh (60s)                  | No            |
+| **collection**      | User's synced Discogs collection with stats and taste fingerprint        | Yes           |
+| **wantlist**        | User's synced Discogs wantlist                                           | Yes           |
+| **recommendations** | Personalized release recommendations based on collection                 | Yes           |
+| **gaps**            | Collection gap finder — missing releases for an artist, label, or master | Yes           |
 
 ### 🔍 Interactive Graph Explorer
 
@@ -211,134 +211,134 @@ The Explore service exposes only a health endpoint. All data endpoints are serve
 
 ### Graph Exploration
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/autocomplete` | Search entities with autocomplete |
-| GET | `/api/explore` | Get center node with category counts |
-| GET | `/api/expand` | Expand a category node (paginated, supports `before_year` filter) |
-| GET | `/api/node/{node_id}` | Get full details for a node |
-| GET | `/api/explore/year-range` | Min/max release year for timeline bounds |
-| GET | `/api/explore/genre-emergence` | Genre/style first-appearance years up to a given year |
+| Method | Path                           | Description                                                       |
+| ------ | ------------------------------ | ----------------------------------------------------------------- |
+| GET    | `/api/autocomplete`            | Search entities with autocomplete                                 |
+| GET    | `/api/explore`                 | Get center node with category counts                              |
+| GET    | `/api/expand`                  | Expand a category node (paginated, supports `before_year` filter) |
+| GET    | `/api/node/{node_id}`          | Get full details for a node                                       |
+| GET    | `/api/explore/year-range`      | Min/max release year for timeline bounds                          |
+| GET    | `/api/explore/genre-emergence` | Genre/style first-appearance years up to a given year             |
 
 ### Trends
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/trends` | Year-by-year release counts for an entity |
+| Method | Path          | Description                               |
+| ------ | ------------- | ----------------------------------------- |
+| GET    | `/api/trends` | Year-by-year release counts for an entity |
 
 ### Path Finder
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/path` | Shortest path between two named entities |
+| Method | Path        | Description                              |
+| ------ | ----------- | ---------------------------------------- |
+| GET    | `/api/path` | Shortest path between two named entities |
 
 ### Search
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/search` | Full-text search with type/genre/year filters, facets, and pagination |
+| Method | Path          | Description                                                           |
+| ------ | ------------- | --------------------------------------------------------------------- |
+| GET    | `/api/search` | Full-text search with type/genre/year filters, facets, and pagination |
 
 ### Snapshots
 
-| Method | Path | Description |
-| --- | --- | --- |
-| POST | `/api/snapshot` | Save a graph snapshot (returns shareable token) |
-| GET | `/api/snapshot/{token}` | Restore a saved graph snapshot |
+| Method | Path                    | Description                                     |
+| ------ | ----------------------- | ----------------------------------------------- |
+| POST   | `/api/snapshot`         | Save a graph snapshot (returns shareable token) |
+| GET    | `/api/snapshot/{token}` | Restore a saved graph snapshot                  |
 
 ### Authentication
 
-| Method | Path | Description |
-| --- | --- | --- |
-| POST | `/api/auth/register` | Create a new account |
-| POST | `/api/auth/login` | Login and receive JWT token |
-| POST | `/api/auth/logout` | Revoke JWT token |
-| GET | `/api/auth/me` | Get current user info |
+| Method | Path                 | Description                 |
+| ------ | -------------------- | --------------------------- |
+| POST   | `/api/auth/register` | Create a new account        |
+| POST   | `/api/auth/login`    | Login and receive JWT token |
+| POST   | `/api/auth/logout`   | Revoke JWT token            |
+| GET    | `/api/auth/me`       | Get current user info       |
 
 ### Discogs OAuth
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/oauth/authorize/discogs` | Start Discogs OAuth flow (returns authorize URL) |
-| POST | `/api/oauth/verify/discogs` | Submit OAuth verifier code |
-| GET | `/api/oauth/status/discogs` | Check Discogs connection status |
-| DELETE | `/api/oauth/revoke/discogs` | Disconnect Discogs account |
+| Method | Path                           | Description                                      |
+| ------ | ------------------------------ | ------------------------------------------------ |
+| GET    | `/api/oauth/authorize/discogs` | Start Discogs OAuth flow (returns authorize URL) |
+| POST   | `/api/oauth/verify/discogs`    | Submit OAuth verifier code                       |
+| GET    | `/api/oauth/status/discogs`    | Check Discogs connection status                  |
+| DELETE | `/api/oauth/revoke/discogs`    | Disconnect Discogs account                       |
 
 ### User Data
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/user/collection` | Paginated collection releases |
-| GET | `/api/user/collection/stats` | Collection summary statistics |
-| GET | `/api/user/collection/timeline` | Collection acquisition timeline |
-| GET | `/api/user/collection/evolution` | Collection evolution over time |
-| GET | `/api/user/wantlist` | Paginated wantlist releases |
-| GET | `/api/user/recommendations` | Personalized release recommendations |
-| GET | `/api/user/status` | Ownership status for a set of release IDs |
-| POST | `/api/sync` | Trigger collection/wantlist sync from Discogs |
-| GET | `/api/sync/status` | Check sync job status |
+| Method | Path                             | Description                                   |
+| ------ | -------------------------------- | --------------------------------------------- |
+| GET    | `/api/user/collection`           | Paginated collection releases                 |
+| GET    | `/api/user/collection/stats`     | Collection summary statistics                 |
+| GET    | `/api/user/collection/timeline`  | Collection acquisition timeline               |
+| GET    | `/api/user/collection/evolution` | Collection evolution over time                |
+| GET    | `/api/user/wantlist`             | Paginated wantlist releases                   |
+| GET    | `/api/user/recommendations`      | Personalized release recommendations          |
+| GET    | `/api/user/status`               | Ownership status for a set of release IDs     |
+| POST   | `/api/sync`                      | Trigger collection/wantlist sync from Discogs |
+| GET    | `/api/sync/status`               | Check sync job status                         |
 
 ### Taste Fingerprint
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/user/taste/fingerprint` | Full fingerprint (heatmap, obscurity, drift, blind spots) |
-| GET | `/api/user/taste/heatmap` | Genre/decade heatmap data |
-| GET | `/api/user/taste/blindspots` | Under-explored genre suggestions |
-| GET | `/api/user/taste/card` | Downloadable SVG taste card |
+| Method | Path                          | Description                                               |
+| ------ | ----------------------------- | --------------------------------------------------------- |
+| GET    | `/api/user/taste/fingerprint` | Full fingerprint (heatmap, obscurity, drift, blind spots) |
+| GET    | `/api/user/taste/heatmap`     | Genre/decade heatmap data                                 |
+| GET    | `/api/user/taste/blindspots`  | Under-explored genre suggestions                          |
+| GET    | `/api/user/taste/card`        | Downloadable SVG taste card                               |
 
 ### Label DNA
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/label/{label_id}/dna` | Label fingerprint (genres, decades, top artists, formats) |
-| GET | `/api/label/{label_id}/similar` | Find similar labels by DNA profile |
-| GET | `/api/label/dna/compare` | Compare two labels side-by-side |
+| Method | Path                            | Description                                               |
+| ------ | ------------------------------- | --------------------------------------------------------- |
+| GET    | `/api/label/{label_id}/dna`     | Label fingerprint (genres, decades, top artists, formats) |
+| GET    | `/api/label/{label_id}/similar` | Find similar labels by DNA profile                        |
+| GET    | `/api/label/dna/compare`        | Compare two labels side-by-side                           |
 
 ### Collection Gap Analysis
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/collection/formats` | Available format options for filtering |
-| GET | `/api/collection/gaps/artist/{artist_id}` | Missing releases from an artist |
-| GET | `/api/collection/gaps/label/{label_id}` | Missing releases from a label |
-| GET | `/api/collection/gaps/master/{master_id}` | Missing releases from a master |
+| Method | Path                                      | Description                            |
+| ------ | ----------------------------------------- | -------------------------------------- |
+| GET    | `/api/collection/formats`                 | Available format options for filtering |
+| GET    | `/api/collection/gaps/artist/{artist_id}` | Missing releases from an artist        |
+| GET    | `/api/collection/gaps/label/{label_id}`   | Missing releases from a label          |
+| GET    | `/api/collection/gaps/master/{master_id}` | Missing releases from a master         |
 
 ### Artist Similarity and Discovery
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/recommend/similar/artist/{artist_id}` | Similar artists by connection patterns |
-| GET | `/api/recommend/explore/{entity_type}/{entity_id}` | Multi-signal discovery from an entity |
+| Method | Path                                               | Description                            |
+| ------ | -------------------------------------------------- | -------------------------------------- |
+| GET    | `/api/recommend/similar/artist/{artist_id}`        | Similar artists by connection patterns |
+| GET    | `/api/recommend/explore/{entity_type}/{entity_id}` | Multi-signal discovery from an entity  |
 
 ### Insights (Proxied from Insights Service)
 
-| Method | Path | Description |
-| --- | --- | --- |
-| GET | `/api/insights/top-artists` | Most connected artists |
-| GET | `/api/insights/genre-trends` | Decade-by-decade genre release counts |
-| GET | `/api/insights/label-longevity` | Label activity longevity rankings |
-| GET | `/api/insights/this-month` | Anniversary releases this month |
-| GET | `/api/insights/data-completeness` | Entity type completeness percentages |
-| GET | `/api/insights/status` | Computation status and timestamps |
+| Method | Path                              | Description                           |
+| ------ | --------------------------------- | ------------------------------------- |
+| GET    | `/api/insights/top-artists`       | Most connected artists                |
+| GET    | `/api/insights/genre-trends`      | Decade-by-decade genre release counts |
+| GET    | `/api/insights/label-longevity`   | Label activity longevity rankings     |
+| GET    | `/api/insights/this-month`        | Anniversary releases this month       |
+| GET    | `/api/insights/data-completeness` | Entity type completeness percentages  |
+| GET    | `/api/insights/status`            | Computation status and timestamps     |
 
 ### Health
 
-| Method | Path | Service | Description |
-| --- | --- | --- | --- |
-| GET | `/health` | Explore (:8006 or :8007) | Health check |
+| Method | Path      | Service                  | Description  |
+| ------ | --------- | ------------------------ | ------------ |
+| GET    | `/health` | Explore (:8006 or :8007) | Health check |
 
 ## ⚙️ Configuration
 
-| Variable | Description | Default |
-| --- | --- | --- |
-| `API_BASE_URL` | Base URL of the API service for proxying | `http://api:8004` |
-| `CORS_ORIGINS` | Comma-separated list of allowed origins | `http://localhost:3000,http://localhost:8003` |
+| Variable       | Description                              | Default                                       |
+| -------------- | ---------------------------------------- | --------------------------------------------- |
+| `API_BASE_URL` | Base URL of the API service for proxying | `http://api:8004`                             |
+| `CORS_ORIGINS` | Comma-separated list of allowed origins  | `http://localhost:3000,http://localhost:8003` |
 
 ## 🔌 Ports
 
-| Port | Purpose |
-| --- | --- |
-| 8006 | Static file server (internal only in Docker) |
+| Port | Purpose                                         |
+| ---- | ----------------------------------------------- |
+| 8006 | Static file server (internal only in Docker)    |
 | 8007 | Health check endpoint (internal only in Docker) |
 
 ## 🧪 Testing
@@ -366,6 +366,7 @@ cd explore && npx vitest run
 ```
 
 Test coverage includes:
+
 - `api-client.test.js` — API client fetch calls and error handling
 - `app.test.js` — Main application controller and pane switching
 - `auth.test.js` — Authentication state management

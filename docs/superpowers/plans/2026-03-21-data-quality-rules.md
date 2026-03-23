@@ -11,37 +11,38 @@
 **Spec:** `docs/superpowers/specs/2026-03-21-data-quality-rules-design.md`
 **Issue:** #182
 
----
+______________________________________________________________________
 
 ## File Structure
 
 ### New Files
 
-| File | Responsibility |
-|------|---------------|
-| `extractor/src/rules.rs` | Rule engine: config loading, YAML deserialization, rule compilation, field resolution, condition evaluation, violation types, quality report, flagged record writer |
-| `extractor/src/tests/rules_tests.rs` | Unit tests for rule engine (condition evaluation, field resolution, YAML loading, quality report) |
-| `extractor/tests/rules_integration_test.rs` | Integration test: full pipeline with rules active, flagged record storage verification |
-| `extractor/extraction-rules.yaml` | Default rules config file from issue #182 |
+| File                                        | Responsibility                                                                                                                                                      |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extractor/src/rules.rs`                    | Rule engine: config loading, YAML deserialization, rule compilation, field resolution, condition evaluation, violation types, quality report, flagged record writer |
+| `extractor/src/tests/rules_tests.rs`        | Unit tests for rule engine (condition evaluation, field resolution, YAML loading, quality report)                                                                   |
+| `extractor/tests/rules_integration_test.rs` | Integration test: full pipeline with rules active, flagged record storage verification                                                                              |
+| `extractor/extraction-rules.yaml`           | Default rules config file from issue #182                                                                                                                           |
 
 ### Modified Files
 
-| File | Changes |
-|------|---------|
-| `extractor/Cargo.toml` | Add `serde_yml` dependency |
-| `extractor/src/types.rs:101-107` | Add `raw_xml: Option<Vec<u8>>` with `#[serde(skip)]` to `DataMessage` |
-| `extractor/src/parser.rs:101-109,190-227` | Add `capture_raw_xml` flag, reconstruct XML via `quick-xml::Writer` |
-| `extractor/src/config.rs:5-16,53-74` | Add `data_quality_rules: Option<PathBuf>` field |
-| `extractor/src/main.rs:20-27,29-58,75-79` | Add `--data-quality-rules` CLI arg, load rules, pass to pipeline |
-| `extractor/src/extractor.rs:277-367` | Wire validator stage in `process_single_file`, aggregate reports |
-| `extractor/tests/extractor_di_test.rs` | Add `compiled_rules: None` parameter to all `process_single_file` and `process_discogs_data` calls |
-| 8 test files (36 occurrences) | Add `raw_xml: None` to all `DataMessage` struct literals |
+| File                                      | Changes                                                                                            |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `extractor/Cargo.toml`                    | Add `serde_yml` dependency                                                                         |
+| `extractor/src/types.rs:101-107`          | Add `raw_xml: Option<Vec<u8>>` with `#[serde(skip)]` to `DataMessage`                              |
+| `extractor/src/parser.rs:101-109,190-227` | Add `capture_raw_xml` flag, reconstruct XML via `quick-xml::Writer`                                |
+| `extractor/src/config.rs:5-16,53-74`      | Add `data_quality_rules: Option<PathBuf>` field                                                    |
+| `extractor/src/main.rs:20-27,29-58,75-79` | Add `--data-quality-rules` CLI arg, load rules, pass to pipeline                                   |
+| `extractor/src/extractor.rs:277-367`      | Wire validator stage in `process_single_file`, aggregate reports                                   |
+| `extractor/tests/extractor_di_test.rs`    | Add `compiled_rules: None` parameter to all `process_single_file` and `process_discogs_data` calls |
+| 8 test files (36 occurrences)             | Add `raw_xml: None` to all `DataMessage` struct literals                                           |
 
----
+______________________________________________________________________
 
 ### Task 1: Add `serde_yaml` dependency to Cargo.toml
 
 **Files:**
+
 - Modify: `extractor/Cargo.toml:31-33`
 
 - [ ] **Step 1: Add serde_yaml dependency**
@@ -64,13 +65,16 @@ git add extractor/Cargo.toml
 git commit -m "chore: add serde_yaml dependency for data quality rules"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: Add `raw_xml` field to `DataMessage`
 
 **Files:**
+
 - Modify: `extractor/src/types.rs:101-107`
+
 - Modify: `extractor/src/parser.rs:167,214` (the two sites that construct `DataMessage`)
+
 - Modify: All 8 test files with `DataMessage` struct literals (36 occurrences)
 
 - [ ] **Step 1: Add `raw_xml` field to `DataMessage`**
@@ -96,11 +100,13 @@ pub struct DataMessage {
 In `extractor/src/parser.rs`, update the two `DataMessage { ... }` constructions:
 
 At line 167 (self-closing element):
+
 ```rust
 let message = DataMessage { id, sha256, data: record.clone(), raw_xml: None };
 ```
 
 At line 214 (normal record end):
+
 ```rust
 let message = DataMessage { id: id.clone(), sha256, data: final_value, raw_xml: None };
 ```
@@ -149,13 +155,16 @@ git add extractor/src/types.rs extractor/src/parser.rs extractor/src/tests/ extr
 git commit -m "feat: add raw_xml field to DataMessage for data quality inspection"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Create rule engine module — types, loading, and compilation
 
 **Files:**
+
 - Create: `extractor/src/rules.rs`
+
 - Create: `extractor/src/tests/rules_tests.rs`
+
 - Modify: `extractor/src/main.rs:8-15` (add `mod rules;`)
 
 - [ ] **Step 1: Write failing tests for YAML deserialization and rule compilation**
@@ -473,12 +482,14 @@ git add extractor/src/rules.rs extractor/src/tests/rules_tests.rs extractor/src/
 git commit -m "feat: add rule engine types, YAML loading, and compilation"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Implement condition evaluation and field resolution
 
 **Files:**
+
 - Modify: `extractor/src/rules.rs` (add evaluation functions)
+
 - Modify: `extractor/src/tests/rules_tests.rs` (add evaluation tests)
 
 - [ ] **Step 1: Write failing tests for condition evaluation**
@@ -1007,12 +1018,14 @@ git add extractor/src/rules.rs extractor/src/tests/rules_tests.rs
 git commit -m "feat: implement condition evaluation and dot-notation field resolution"
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: Add quality report accumulator and flagged record writer
 
 **Files:**
+
 - Modify: `extractor/src/rules.rs` (add QualityReport, FlaggedRecordWriter)
+
 - Modify: `extractor/src/tests/rules_tests.rs` (add report tests)
 
 - [ ] **Step 1: Write failing tests for QualityReport**
@@ -1306,12 +1319,14 @@ git add extractor/src/rules.rs extractor/src/tests/rules_tests.rs
 git commit -m "feat: add quality report accumulator and flagged record writer"
 ```
 
----
+______________________________________________________________________
 
 ### Task 6: Add raw XML reconstruction to the parser
 
 **Files:**
+
 - Modify: `extractor/src/parser.rs:101-109` (add `capture_raw_xml` flag)
+
 - Modify: `extractor/src/parser.rs:190-227` (reconstruct XML on record completion)
 
 - [ ] **Step 1: Write a test for raw XML capture**
@@ -1520,12 +1535,14 @@ git add extractor/src/parser.rs extractor/src/tests/parser_tests.rs
 git commit -m "feat: add raw XML reconstruction to parser for data quality inspection"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Add configuration and CLI arg for rules file
 
 **Files:**
+
 - Modify: `extractor/src/config.rs:5-16,53-74`
+
 - Modify: `extractor/src/main.rs:20-27,29-58`
 
 - [ ] **Step 1: Add `data_quality_rules` field to `ExtractorConfig`**
@@ -1643,13 +1660,16 @@ git add extractor/src/config.rs extractor/src/main.rs
 git commit -m "feat: add data_quality_rules config field and CLI arg"
 ```
 
----
+______________________________________________________________________
 
 ### Task 8: Wire the validator pipeline stage
 
 **Files:**
+
 - Modify: `extractor/src/extractor.rs:277-367` (add validator stage to `process_single_file`)
+
 - Modify: `extractor/src/extractor.rs:548-604` (pass rules through `run_extraction_loop`)
+
 - Modify: `extractor/src/main.rs:75-79` (pass compiled_rules to extraction loop)
 
 - [ ] **Step 1: Add `compiled_rules` parameter through the call chain**
@@ -1854,11 +1874,12 @@ git add extractor/src/extractor.rs extractor/src/main.rs
 git commit -m "feat: wire validator pipeline stage between parser and batcher"
 ```
 
----
+______________________________________________________________________
 
 ### Task 9: Create default extraction-rules.yaml
 
 **Files:**
+
 - Create: `extractor/extraction-rules.yaml`
 
 - [ ] **Step 1: Create the default rules file**
@@ -1982,11 +2003,12 @@ git add extractor/extraction-rules.yaml extractor/src/tests/rules_tests.rs
 git commit -m "feat: add default extraction-rules.yaml with rules from issue #182"
 ```
 
----
+______________________________________________________________________
 
 ### Task 10: Integration test — full pipeline with rules active
 
 **Files:**
+
 - Create: `extractor/tests/rules_integration_test.rs`
 
 - [ ] **Step 1: Write integration test**
@@ -2144,11 +2166,12 @@ git add extractor/tests/rules_integration_test.rs
 git commit -m "test: add integration tests for data quality rules pipeline"
 ```
 
----
+______________________________________________________________________
 
 ### Task 11: Final verification and cleanup
 
 **Files:**
+
 - All modified files
 
 - [ ] **Step 1: Run clippy**

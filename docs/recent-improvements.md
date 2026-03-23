@@ -16,15 +16,15 @@ Last Updated: 2026-03-22
 
 #### Optimization Rounds
 
-| PR | Focus | Key Impact |
-|----|-------|------------|
-| **#175** | Initial Cypher optimization of 6 slowest queries | 10-100x fewer DB hits per query |
-| **#176** | 7 query families: CALL {} barriers, streaming aggregation, batch similarity | Path finder: 58s → 0.2s, trends: CartesianProduct eliminated |
-| **#177** | Cardinality management with per-genre LIMITs, parallel genre-emergence | artist-similar: top-5-genre cap prevents mega-genre explosion |
-| **#179** | asyncio.gather() concurrency, pattern comprehension for planner control | explore/genre: 4 concurrent queries vs chained OPTIONAL MATCHes |
-| **#180** | Per-genre CALL {} barriers for similarity queries | label-similar: 206M → 60-80M DB hits, 1GB → 200MB memory |
-| **#181** | Pre-computed Genre/Style/Label node properties at import time | explore/genre: 200M → 6 DB hits; genre-emergence: 410M → 33 DB hits |
-| **#184** | Style-based similarity, Redis caching (24h TTL), search per-table LIMIT | trends/genre: 28s → 0.001s; artist-similar: 112s → 0.002s |
+| PR       | Focus                                                                       | Key Impact                                                          |
+| -------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **#175** | Initial Cypher optimization of 6 slowest queries                            | 10-100x fewer DB hits per query                                     |
+| **#176** | 7 query families: CALL {} barriers, streaming aggregation, batch similarity | Path finder: 58s → 0.2s, trends: CartesianProduct eliminated        |
+| **#177** | Cardinality management with per-genre LIMITs, parallel genre-emergence      | artist-similar: top-5-genre cap prevents mega-genre explosion       |
+| **#179** | asyncio.gather() concurrency, pattern comprehension for planner control     | explore/genre: 4 concurrent queries vs chained OPTIONAL MATCHes     |
+| **#180** | Per-genre CALL {} barriers for similarity queries                           | label-similar: 206M → 60-80M DB hits, 1GB → 200MB memory            |
+| **#181** | Pre-computed Genre/Style/Label node properties at import time               | explore/genre: 200M → 6 DB hits; genre-emergence: 410M → 33 DB hits |
+| **#184** | Style-based similarity, Redis caching (24h TTL), search per-table LIMIT     | trends/genre: 28s → 0.001s; artist-similar: 112s → 0.002s           |
 
 #### Techniques Applied
 
@@ -39,16 +39,16 @@ Last Updated: 2026-03-22
 
 #### Results by Category
 
-| Category | Before | After | Speedup |
-|----------|--------|-------|---------|
-| Path finder (6 endpoints) | 58.5s | 0.21s | **279x** |
-| Explore genre (2) | 24.1s | 0.014s | **1,721x** |
-| Trends genre (2) | 28.6s | 0.001s | **28,600x** |
-| Trends style (3) | 13.2s | 0.001s | **13,200x** |
-| Genre emergence | 64.3s | 0.10s | **630x** |
-| Artist similarity (4) | 64s | 0.002s | **32,000x** |
-| Label similarity (3) | 86s | 0.001s | **86,000x** |
-| **Overall (88 endpoints)** | **10.95s** | **0.044s** | **249x** |
+| Category                   | Before     | After      | Speedup     |
+| -------------------------- | ---------- | ---------- | ----------- |
+| Path finder (6 endpoints)  | 58.5s      | 0.21s      | **279x**    |
+| Explore genre (2)          | 24.1s      | 0.014s     | **1,721x**  |
+| Trends genre (2)           | 28.6s      | 0.001s     | **28,600x** |
+| Trends style (3)           | 13.2s      | 0.001s     | **13,200x** |
+| Genre emergence            | 64.3s      | 0.10s      | **630x**    |
+| Artist similarity (4)      | 64s        | 0.002s     | **32,000x** |
+| Label similarity (3)       | 86s        | 0.001s     | **86,000x** |
+| **Overall (88 endpoints)** | **10.95s** | **0.044s** | **249x**    |
 
 ______________________________________________________________________
 

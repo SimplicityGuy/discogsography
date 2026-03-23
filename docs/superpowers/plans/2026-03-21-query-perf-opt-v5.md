@@ -10,22 +10,23 @@
 
 **Note:** Items 1-2 from the v5 analysis (trends/genre pattern comprehension, explore/genre COUNT {} split) are already implemented in `origin/main`. This plan covers items 3-8.
 
----
+______________________________________________________________________
 
 ## File Structure
 
-| File | Responsibility | Change Type |
-|------|---------------|-------------|
-| `api/queries/label_dna_queries.py` | Label-similar candidate + batch vector queries | Modify |
-| `api/queries/recommend_queries.py` | Artist-similar candidate query | Modify |
-| `tests/api/test_label_dna_queries.py` | Label DNA query unit tests | Modify |
-| `tests/api/test_recommend_queries.py` | Recommend query unit tests | Modify |
+| File                                  | Responsibility                                 | Change Type |
+| ------------------------------------- | ---------------------------------------------- | ----------- |
+| `api/queries/label_dna_queries.py`    | Label-similar candidate + batch vector queries | Modify      |
+| `api/queries/recommend_queries.py`    | Artist-similar candidate query                 | Modify      |
+| `tests/api/test_label_dna_queries.py` | Label DNA query unit tests                     | Modify      |
+| `tests/api/test_recommend_queries.py` | Recommend query unit tests                     | Modify      |
 
----
+______________________________________________________________________
 
 ### Task 1: Optimize label-similar candidate discovery — CALL {} per-genre
 
 **Files:**
+
 - Modify: `api/queries/label_dna_queries.py:108-122` (candidates_cypher)
 - Test: `tests/api/test_label_dna_queries.py`
 
@@ -114,11 +115,12 @@ Previous plan expanded all 5 genres simultaneously (206M DB hits, 1GB).
 CALL {} per-genre reduces to ~60-80M DB hits, ~200MB memory."
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: Optimize label-similar batch vectors — eliminate duplicate ON traversal
 
 **Files:**
+
 - Modify: `api/queries/label_dna_queries.py:136-147` (profile_cypher)
 - Test: `tests/api/test_label_dna_queries.py`
 
@@ -162,11 +164,12 @@ Merge release_count and genre profile into a single pass through
 duplicate Expand(All) operator."
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Optimize artist-similar candidate discovery — CALL {} per-genre + LIMIT
 
 **Files:**
+
 - Modify: `api/queries/recommend_queries.py:160-173` (candidates_cypher)
 - Test: `tests/api/test_recommend_queries.py`
 
@@ -218,7 +221,7 @@ broad-genre explosion (Rock has 7M releases, millions of artists).
 Reduces 157M DB hits → ~20-30M, 1GB memory → ~300MB."
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Run full test suite and lint
 
@@ -237,7 +240,7 @@ Expected: No errors.
 Run: `uv run mypy api/queries/label_dna_queries.py api/queries/recommend_queries.py`
 Expected: No errors.
 
----
+______________________________________________________________________
 
 ### Task 5: Update optimization analysis doc
 

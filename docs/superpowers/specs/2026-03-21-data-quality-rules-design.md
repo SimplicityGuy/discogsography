@@ -14,15 +14,15 @@ Add an optional, configurable data quality rule engine to the Rust extractor. Ru
 
 ## Design Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Raw XML capture | Buffer raw bytes in parser | Needed to distinguish parsing errors from upstream data errors |
-| Config format | YAML | Naturally represents nested rule structures; matches issue examples |
-| Pipeline insertion | Dedicated validation stage | Clean separation, independently testable, easy to disable |
-| Flagged storage writes | Buffered inline in validator | Only ~0.001% of records flag; dedicated async writer is over-engineering |
-| Flagged storage format | Separate XML, JSON, and JSONL log files | Each artifact independently inspectable (xmllint, jq, grep) |
-| Rule engine architecture | Static enum-based dispatch | Compile-time safety, exhaustive match, idiomatic Rust for 5 condition types |
-| Version in storage path | Discogs dump version (e.g., 20260301) | Aligns with existing versioning throughout extractor |
+| Decision                 | Choice                                  | Rationale                                                                   |
+| ------------------------ | --------------------------------------- | --------------------------------------------------------------------------- |
+| Raw XML capture          | Buffer raw bytes in parser              | Needed to distinguish parsing errors from upstream data errors              |
+| Config format            | YAML                                    | Naturally represents nested rule structures; matches issue examples         |
+| Pipeline insertion       | Dedicated validation stage              | Clean separation, independently testable, easy to disable                   |
+| Flagged storage writes   | Buffered inline in validator            | Only ~0.001% of records flag; dedicated async writer is over-engineering    |
+| Flagged storage format   | Separate XML, JSON, and JSONL log files | Each artifact independently inspectable (xmllint, jq, grep)                 |
+| Rule engine architecture | Static enum-based dispatch              | Compile-time safety, exhaustive match, idiomatic Rust for 5 condition types |
+| Version in storage path  | Discogs dump version (e.g., 20260301)   | Aligns with existing versioning throughout extractor                        |
 
 ## Architecture
 
@@ -179,12 +179,12 @@ Wired between parser and batcher in `process_single_file()`.
 **Per-message behavior:**
 
 1. Look up rules for the current `data_type` in `Arc<CompiledRulesConfig>`
-2. Evaluate all matching rules against `message.data`
-3. If violations exist at `error` or `warning` severity:
+1. Evaluate all matching rules against `message.data`
+1. If violations exist at `error` or `warning` severity:
    - Write `{record_id}.xml` and `{record_id}.json` if not already written for this record
    - Append violation lines to `violations.jsonl`
    - Increment per-rule counters in `QualityReport`
-4. Forward the message downstream (always — flagging is non-blocking)
+1. Forward the message downstream (always — flagging is non-blocking)
 
 **`QualityReport` accumulator:**
 

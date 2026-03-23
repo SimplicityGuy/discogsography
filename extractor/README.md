@@ -201,21 +201,21 @@ rules:
 
 ### Condition Types
 
-| Type | Parameters | Description |
-|------|-----------|-------------|
-| **required** | *(none)* | Field must exist and not be empty/null |
-| **range** | `min`, `max` (optional) | Numeric value must fall within bounds |
-| **regex** | `pattern` | Field value must match (or *not* match, depending on rule intent) the regex pattern |
-| **length** | `min`, `max` (optional) | String length must fall within bounds |
-| **enum** | `values` (list) | Field value must be one of the listed values |
+| Type         | Parameters              | Description                                                                         |
+| ------------ | ----------------------- | ----------------------------------------------------------------------------------- |
+| **required** | *(none)*                | Field must exist and not be empty/null                                              |
+| **range**    | `min`, `max` (optional) | Numeric value must fall within bounds                                               |
+| **regex**    | `pattern`               | Field value must match (or *not* match, depending on rule intent) the regex pattern |
+| **length**   | `min`, `max` (optional) | String length must fall within bounds                                               |
+| **enum**     | `values` (list)         | Field value must be one of the listed values                                        |
 
 ### Severity Levels
 
-| Level | Description |
-|-------|-------------|
-| **error** | Definite data problem (e.g., missing required field, numeric genre) |
-| **warning** | Likely data problem (e.g., year out of expected range) |
-| **info** | Informational flag for review |
+| Level       | Description                                                         |
+| ----------- | ------------------------------------------------------------------- |
+| **error**   | Definite data problem (e.g., missing required field, numeric genre) |
+| **warning** | Likely data problem (e.g., year out of expected range)              |
+| **info**    | Informational flag for review                                       |
 
 ### Dot-Notation Field Paths
 
@@ -236,15 +236,15 @@ When rules are configured, the validator produces:
 
 The shipped `extraction-rules.yaml` includes:
 
-| Data Type | Rule | Condition | Severity |
-|-----------|------|-----------|----------|
-| releases | year-out-of-range | range 1860–2027 | warning |
-| releases | missing-title | required | error |
-| releases | genre-not-recognized | enum (15 known Discogs genres) | warning |
-| releases | genre-is-numeric | regex `^\d+$` | error |
-| artists | empty-artist-name | required | error |
-| labels | empty-label-name | required | error |
-| masters | year-out-of-range | range 1860–2027 | warning |
+| Data Type | Rule                 | Condition                      | Severity |
+| --------- | -------------------- | ------------------------------ | -------- |
+| releases  | year-out-of-range    | range 1860–2027                | warning  |
+| releases  | missing-title        | required                       | error    |
+| releases  | genre-not-recognized | enum (15 known Discogs genres) | warning  |
+| releases  | genre-is-numeric     | regex `^\d+$`                  | error    |
+| artists   | empty-artist-name    | required                       | error    |
+| labels    | empty-label-name     | required                       | error    |
+| masters   | year-out-of-range    | range 1860–2027                | warning  |
 
 > **Note**: The `max` value in year-range rules is static and should be bumped to `current_year + 1` at the start of each year.
 
@@ -314,10 +314,10 @@ classDiagram
     note for MessageQueueFactory "Mockable via mockall::automock"
 ```
 
-| Trait | Purpose | Production Impl | Test Mock |
-|-------|---------|----------------|-----------|
-| **`DataSource`** | S3 file listing, downloading, state marker management | `Downloader` | `MockDataSource` (mockall) |
-| **`MessagePublisher`** | AMQP exchange setup, message publishing, completion signals | `MessageQueue` | `MockMessagePublisher` (mockall) |
+| Trait                     | Purpose                                                                  | Production Impl              | Test Mock                           |
+| ------------------------- | ------------------------------------------------------------------------ | ---------------------------- | ----------------------------------- |
+| **`DataSource`**          | S3 file listing, downloading, state marker management                    | `Downloader`                 | `MockDataSource` (mockall)          |
+| **`MessagePublisher`**    | AMQP exchange setup, message publishing, completion signals              | `MessageQueue`               | `MockMessagePublisher` (mockall)    |
 | **`MessageQueueFactory`** | Creates `MessagePublisher` instances (enables per-data-type connections) | `DefaultMessageQueueFactory` | `MockMessageQueueFactory` (mockall) |
 
 All traits use the `#[async_trait]` attribute for async method support and `#[cfg_attr(feature = "test-support", mockall::automock)]` for conditional mock generation. The `test-support` feature flag ensures mock code is only compiled during testing.
@@ -326,18 +326,18 @@ The main entry point `process_discogs_data()` accepts trait objects (`&mut dyn D
 
 ### Module Structure
 
-| Module | Responsibility |
-|--------|---------------|
-| `main.rs` | Entry point, CLI args, health server, periodic check loop |
-| `extractor.rs` | Core orchestration: download → parse → publish pipeline |
-| `downloader.rs` | S3 file discovery, download with retry, checksum validation |
-| `parser.rs` | Streaming XML parser using quick-xml (artists, labels, masters, releases) |
-| `message_queue.rs` | AMQP connection management, exchange declaration, batch publishing |
-| `state_marker.rs` | Version-specific progress tracking, resume decisions |
-| `rules.rs` | Data quality rule engine — YAML loading, compilation, condition evaluation, flagged record writing, quality reports |
-| `types.rs` | Data types (DataType, DataMessage, Message, S3FileInfo, etc.) |
-| `config.rs` | Environment variable configuration |
-| `health.rs` | HTTP health/metrics/readiness endpoints |
+| Module             | Responsibility                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `main.rs`          | Entry point, CLI args, health server, periodic check loop                                                           |
+| `extractor.rs`     | Core orchestration: download → parse → publish pipeline                                                             |
+| `downloader.rs`    | S3 file discovery, download with retry, checksum validation                                                         |
+| `parser.rs`        | Streaming XML parser using quick-xml (artists, labels, masters, releases)                                           |
+| `message_queue.rs` | AMQP connection management, exchange declaration, batch publishing                                                  |
+| `state_marker.rs`  | Version-specific progress tracking, resume decisions                                                                |
+| `rules.rs`         | Data quality rule engine — YAML loading, compilation, condition evaluation, flagged record writing, quality reports |
+| `types.rs`         | Data types (DataType, DataMessage, Message, S3FileInfo, etc.)                                                       |
+| `config.rs`        | Environment variable configuration                                                                                  |
+| `health.rs`        | HTTP health/metrics/readiness endpoints                                                                             |
 
 ## Logging
 

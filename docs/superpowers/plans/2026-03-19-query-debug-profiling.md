@@ -10,41 +10,44 @@
 
 **Spec:** `docs/superpowers/specs/2026-03-19-query-debug-profiling-design.md`
 
----
+______________________________________________________________________
 
 ## File Map
 
-| Action | File | Responsibility |
-|--------|------|----------------|
-| Create | `common/query_debug.py` | Debug logging utilities, profiling logger, `execute_sql` wrapper |
-| Create | `api/queries/helpers.py` | Consolidated `run_query`, `run_single`, `run_count` with profiling |
-| Create | `tests/common/test_query_debug.py` | Tests for query_debug utilities |
-| Create | `tests/api/test_query_helpers.py` | Tests for consolidated Neo4j helpers |
-| Modify | `common/__init__.py` | Export new utilities |
-| Modify | `common/config.py:216-335` | Add profiling startup warning |
-| Modify | `api/queries/neo4j_queries.py:43-63` | Remove local helpers, import from helpers.py |
-| Modify | `api/queries/user_queries.py:19-31` | Remove local helpers, import from helpers.py |
-| Modify | `api/queries/taste_queries.py:13-25` | Remove local helpers, import from helpers.py |
-| Modify | `api/queries/insights_neo4j_queries.py` | Replace inline session.run with helpers |
-| Modify | `api/queries/gap_queries.py:16` | Update import path |
-| Modify | `api/queries/label_dna_queries.py:10` | Update import path |
-| Modify | `api/queries/recommend_queries.py:11` | Update import path |
-| Modify | `api/syncer.py:211,372` | Add debug logging for write queries |
-| Modify | `api/api.py` | Use `execute_sql` for SQL calls |
-| Modify | `api/queries/search_queries.py` | Use `execute_sql` for SQL calls |
-| Modify | `api/queries/insights_pg_queries.py:52` | Use `execute_sql` for SQL calls |
-| Modify | `api/routers/sync.py` | Use `execute_sql` for SQL calls |
-| Modify | `api/routers/collection.py:78` | Use `execute_sql` for SQL calls |
-| Modify | `api/syncer.py` | Use `execute_sql` for SQL calls |
-| Modify | Existing test files | Update imports from old helper locations |
+| Action | File                                    | Responsibility                                                     |
+| ------ | --------------------------------------- | ------------------------------------------------------------------ |
+| Create | `common/query_debug.py`                 | Debug logging utilities, profiling logger, `execute_sql` wrapper   |
+| Create | `api/queries/helpers.py`                | Consolidated `run_query`, `run_single`, `run_count` with profiling |
+| Create | `tests/common/test_query_debug.py`      | Tests for query_debug utilities                                    |
+| Create | `tests/api/test_query_helpers.py`       | Tests for consolidated Neo4j helpers                               |
+| Modify | `common/__init__.py`                    | Export new utilities                                               |
+| Modify | `common/config.py:216-335`              | Add profiling startup warning                                      |
+| Modify | `api/queries/neo4j_queries.py:43-63`    | Remove local helpers, import from helpers.py                       |
+| Modify | `api/queries/user_queries.py:19-31`     | Remove local helpers, import from helpers.py                       |
+| Modify | `api/queries/taste_queries.py:13-25`    | Remove local helpers, import from helpers.py                       |
+| Modify | `api/queries/insights_neo4j_queries.py` | Replace inline session.run with helpers                            |
+| Modify | `api/queries/gap_queries.py:16`         | Update import path                                                 |
+| Modify | `api/queries/label_dna_queries.py:10`   | Update import path                                                 |
+| Modify | `api/queries/recommend_queries.py:11`   | Update import path                                                 |
+| Modify | `api/syncer.py:211,372`                 | Add debug logging for write queries                                |
+| Modify | `api/api.py`                            | Use `execute_sql` for SQL calls                                    |
+| Modify | `api/queries/search_queries.py`         | Use `execute_sql` for SQL calls                                    |
+| Modify | `api/queries/insights_pg_queries.py:52` | Use `execute_sql` for SQL calls                                    |
+| Modify | `api/routers/sync.py`                   | Use `execute_sql` for SQL calls                                    |
+| Modify | `api/routers/collection.py:78`          | Use `execute_sql` for SQL calls                                    |
+| Modify | `api/syncer.py`                         | Use `execute_sql` for SQL calls                                    |
+| Modify | Existing test files                     | Update imports from old helper locations                           |
 
----
+______________________________________________________________________
 
 ### Task 1: Create `common/query_debug.py` with tests
 
 **Files:**
+
 - Create: `common/query_debug.py`
+
 - Create: `tests/common/test_query_debug.py`
+
 - Modify: `common/__init__.py`
 
 - [ ] **Step 1: Write tests for `is_debug` and `is_cypher_profiling`**
@@ -431,12 +434,14 @@ git add common/query_debug.py tests/common/test_query_debug.py common/__init__.p
 git commit -m "feat: add query debug logging utilities (common/query_debug.py)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 2: Create `api/queries/helpers.py` with tests
 
 **Files:**
+
 - Create: `api/queries/helpers.py`
+
 - Create: `tests/api/test_query_helpers.py`
 
 - [ ] **Step 1: Write tests for `run_query`**
@@ -853,11 +858,12 @@ git add api/queries/helpers.py tests/api/test_query_helpers.py
 git commit -m "feat: add consolidated Neo4j query helpers with profiling (api/queries/helpers.py)"
 ```
 
----
+______________________________________________________________________
 
 ### Task 3: Migrate `neo4j_queries.py` to use shared helpers
 
 **Files:**
+
 - Modify: `api/queries/neo4j_queries.py`
 
 - [ ] **Step 1: Remove local helper definitions and add import**
@@ -873,8 +879,11 @@ from api.queries.helpers import run_count, run_query, run_single
 - [ ] **Step 2: Replace all `_run_query` calls with `run_query`, `_run_single` with `run_single`, `_run_count` with `run_count`**
 
 Use find-and-replace across the file:
+
 - `_run_query(` → `run_query(`
+
 - `_run_single(` → `run_single(`
+
 - `_run_count(` → `run_count(`
 
 - [ ] **Step 3: Run existing tests**
@@ -889,11 +898,12 @@ git add api/queries/neo4j_queries.py
 git commit -m "refactor: migrate neo4j_queries.py to shared query helpers"
 ```
 
----
+______________________________________________________________________
 
 ### Task 4: Migrate `user_queries.py` to use shared helpers
 
 **Files:**
+
 - Modify: `api/queries/user_queries.py`
 
 - [ ] **Step 1: Remove local helpers and add import**
@@ -920,11 +930,12 @@ git add api/queries/user_queries.py
 git commit -m "refactor: migrate user_queries.py to shared query helpers"
 ```
 
----
+______________________________________________________________________
 
 ### Task 5: Migrate `taste_queries.py` to use shared helpers
 
 **Files:**
+
 - Modify: `api/queries/taste_queries.py`
 
 - [ ] **Step 1: Remove local helpers and add import**
@@ -964,11 +975,12 @@ git add api/queries/taste_queries.py
 git commit -m "refactor: migrate taste_queries.py to shared query helpers"
 ```
 
----
+______________________________________________________________________
 
 ### Task 6: Migrate `insights_neo4j_queries.py` to use shared helpers
 
 **Files:**
+
 - Modify: `api/queries/insights_neo4j_queries.py`
 
 - [ ] **Step 1: Replace inline session management with helper calls**
@@ -1064,22 +1076,28 @@ git add api/queries/insights_neo4j_queries.py
 git commit -m "refactor: migrate insights_neo4j_queries.py to shared query helpers"
 ```
 
----
+______________________________________________________________________
 
 ### Task 7: Update import paths in dependent query files
 
 **Files:**
+
 - Modify: `api/queries/gap_queries.py:16`
+
 - Modify: `api/queries/label_dna_queries.py:10`
+
 - Modify: `api/queries/recommend_queries.py:11`
 
 - [ ] **Step 1: Update gap_queries.py import**
 
 Change line 16 from:
+
 ```python
 from api.queries.user_queries import _run_count, _run_query
 ```
+
 to:
+
 ```python
 from api.queries.helpers import run_count, run_query
 ```
@@ -1089,10 +1107,13 @@ Replace `_run_query` with `run_query` and `_run_count` with `run_count` througho
 - [ ] **Step 2: Update label_dna_queries.py import**
 
 Change line 10 from:
+
 ```python
 from api.queries.neo4j_queries import _run_query, _run_single
 ```
+
 to:
+
 ```python
 from api.queries.helpers import run_query, run_single
 ```
@@ -1102,10 +1123,13 @@ Replace `_run_query` with `run_query` and `_run_single` with `run_single` throug
 - [ ] **Step 3: Update recommend_queries.py import**
 
 Change line 11 from:
+
 ```python
 from api.queries.neo4j_queries import _run_query, _run_single
 ```
+
 to:
+
 ```python
 from api.queries.helpers import run_query, run_single
 ```
@@ -1124,11 +1148,12 @@ git add api/queries/gap_queries.py api/queries/label_dna_queries.py api/queries/
 git commit -m "refactor: update query file imports to use shared helpers"
 ```
 
----
+______________________________________________________________________
 
 ### Task 8: Add debug logging to syncer write queries
 
 **Files:**
+
 - Modify: `api/syncer.py`
 
 - [ ] **Step 1: Add import**
@@ -1163,16 +1188,22 @@ git add api/syncer.py
 git commit -m "feat: add debug logging for syncer Neo4j write queries"
 ```
 
----
+______________________________________________________________________
 
 ### Task 9: Migrate SQL execution sites to `execute_sql`
 
 **Files:**
+
 - Modify: `api/api.py` (lines 298, 346, 415, 442, 452, 603, 658, 694)
+
 - Modify: `api/queries/search_queries.py` (lines 152, 182, 207, 225, 250)
+
 - Modify: `api/queries/insights_pg_queries.py` (line 52)
+
 - Modify: `api/routers/sync.py` (lines 107, 118, 155)
+
 - Modify: `api/routers/collection.py` (line 78)
+
 - Modify: `api/syncer.py` (lines 417, 435, 487)
 
 - [ ] **Step 1: Add `execute_sql` import to each file**
@@ -1186,15 +1217,19 @@ from common import execute_sql
 - [ ] **Step 2: Replace `await cur.execute(query, params)` with `await execute_sql(cur, query, params)` in api/api.py**
 
 For each of the 8 call sites in api.py, change:
+
 ```python
 await cur.execute(query, params)
 ```
+
 to:
+
 ```python
 await execute_sql(cur, query, params)
 ```
 
 Where `params` is the second argument (or `None` if not present). Some calls use positional args — keep the same structure:
+
 ```python
 # Old:
 await cur.execute("SELECT value FROM app_config WHERE key = %s", (key,))
@@ -1216,6 +1251,7 @@ await execute_sql(cur, query, params)  # nosemgrep
 - [ ] **Step 4: Replace in insights_pg_queries.py**
 
 1 call site:
+
 ```python
 # Old:
 await cursor.execute(_COMBINED_QUERIES[entity_type])
@@ -1247,11 +1283,12 @@ git add api/api.py api/queries/search_queries.py api/queries/insights_pg_queries
 git commit -m "feat: add debug SQL query logging via execute_sql wrapper"
 ```
 
----
+______________________________________________________________________
 
 ### Task 10: Add profiling startup warning to `setup_logging`
 
 **Files:**
+
 - Modify: `common/config.py`
 
 - [ ] **Step 1: Add startup warning**
@@ -1279,12 +1316,14 @@ git add common/config.py
 git commit -m "feat: log startup warning when Cypher profiling is active"
 ```
 
----
+______________________________________________________________________
 
 ### Task 11: Update existing test imports
 
 **Files:**
+
 - Modify: `tests/api/test_neo4j_queries.py`
+
 - Modify: `tests/api/test_user_queries.py`
 
 - [ ] **Step 1: Delete `TestRunHelpers` class from `tests/api/test_neo4j_queries.py`**
@@ -1292,6 +1331,7 @@ git commit -m "feat: log startup warning when Cypher profiling is active"
 Delete lines 127-181 (the `TestRunHelpers` class and its 6 test methods) from `tests/api/test_neo4j_queries.py`. These tests directly import `_run_query`, `_run_single`, `_run_count` from `neo4j_queries.py` which no longer exist there. The equivalent tests are now in `tests/api/test_query_helpers.py` (Task 2).
 
 The affected imports (inside each test method, not at module level):
+
 ```python
 # DELETE these 6 test methods that use:
 from api.queries.neo4j_queries import _run_query   # lines 135, 144
@@ -1327,7 +1367,7 @@ git add tests/api/test_neo4j_queries.py tests/api/test_user_queries.py
 git commit -m "test: update test imports for consolidated query helpers"
 ```
 
----
+______________________________________________________________________
 
 ### Task 12: Final verification
 
