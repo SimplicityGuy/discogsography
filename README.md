@@ -218,15 +218,24 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
+## Other Discogs Projects
+
+Some other projects working with the monthly Discogs data dump.
+
+- [DiscoDOS](https://github.com/JOJ0/discodo)
+- [disco-quick](https://github.com/sublipri/disco-quick)
+- [discogs-load](https://github.com/DylanBartels/discogs-load)
+
 ## 🙏 Acknowledgments
 
 - 🎵 [Discogs](https://www.discogs.com/) for providing the monthly data dumps
 - 🚀 [uv](https://github.com/astral-sh/uv) for blazing-fast package management
 - 🔥 [Ruff](https://github.com/astral-sh/ruff) for lightning-fast linting
 - 🐍 The Python community for excellent libraries and tools
+- 🦀 The Rust community for excellent libraries and amazing performance
 
 ______________________________________________________________________
 
 <div align="center">
-Made with ❤️ by the Discogsography community
+Made with ❤️ in the Pacific Northwest
 </div>
