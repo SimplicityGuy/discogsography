@@ -52,10 +52,7 @@ The Python version is configured in these locations:
 
 ```bash
 # Update to Python 3.14
-./scripts/update-python-version.sh 3.14
-
-# Preview changes without applying
-./scripts/update-python-version.sh 3.14 --dry-run
+./scripts/update-project.sh --python 3.14
 ```
 
 The script will:
@@ -65,6 +62,8 @@ The script will:
 1. Update pyrightconfig.json
 1. Show a summary of changes
 1. Remind you to update `.env` if needed
+
+> **Note**: The `--python` flag is also available as a workflow dispatch parameter in the `update-dependencies.yml` GitHub Actions workflow.
 
 ### Method 2: Environment Variable
 

@@ -34,7 +34,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🐰](emoji-guide.md#service-identifiers) RabbitMQ**   | Message broker and queue management   | 5672, 15672   |
 | **[🔗](emoji-guide.md#service-identifiers) Neo4j**      | Graph database for relationships      | 7474, 7687    |
 | **[🐘](emoji-guide.md#service-identifiers) PostgreSQL** | Relational database for analytics     | 5433 (mapped) |
-| **[🔴](emoji-guide.md#service-identifiers) Redis**      | Cache layer for queries and ML models | 6379          |
+| **[🔴](emoji-guide.md#service-identifiers) Redis**      | Cache layer for queries, sessions, and analytics | 6379          |
 
 ## System Architecture Diagram
 
@@ -223,7 +223,8 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 
 - `DISCOGS_ROOT`: Data storage directory
 - `PERIODIC_CHECK_DAYS`: Update check interval
-- `AMQP_CONNECTION`: RabbitMQ connection string
+- `RABBITMQ_HOST`: RabbitMQ hostname
+- `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`: RabbitMQ auth credentials
 
 See [Extractor README](../extractor/README.md) for details.
 
@@ -386,6 +387,13 @@ See [Insights README](../insights/README.md) for details.
 - Collection gap analysis (`/api/collection/gaps/{type}/{id}`, `/api/collection/formats`)
 - Collection and wantlist sync (`/api/sync`, `/api/sync/status`)
 - Graph snapshot save/restore (`/api/snapshot`, `/api/snapshot/{token}`)
+- Recommendation endpoints (`/api/recommend/similar/artist/{artist_id}`, `/api/recommend/explore/{entity_type}/{entity_id}`)
+- Label DNA endpoints (`/api/label/{id}/dna`, `/api/label/{id}/similar`, `/api/label/dna/compare`)
+- Taste fingerprint endpoints (`/api/user/taste/*`)
+- Unified full-text search (`/api/search`)
+- Collection timeline and evolution (`/api/user/collection/timeline`, `/api/user/collection/evolution`)
+- Vinyl Archaeology endpoints (`/api/explore/year-range`, `/api/explore/genre-emergence`)
+- Path finder (`/api/path`)
 - Reads Discogs app credentials from `app_config` table (set via `discogs-setup` CLI)
 
 **Key Features**:
@@ -565,7 +573,7 @@ See [Database Schema](database-schema.md) for details.
 | `trends:{type}:{name}`               | 24h | `/api/trends?type=genre\|style` |
 | `label-dna:{label_id}`               | 24h | `/api/label/{id}/dna`           |
 | `label-similar:{label_id}:{limit}`   | 24h | `/api/label/{id}/similar`       |
-| `artist-similar:{artist_id}:{limit}` | 24h | `/api/artist/{id}/similar`      |
+| `recommend:similar:artist:{artist_id}` | 24h | `/api/recommend/similar/artist/{artist_id}` |
 | `explore-artist:{name}`              | 24h | `/api/explore?type=artist`      |
 | `trends-label:{label_id}`            | 24h | `/api/trends?type=label`        |
 | `search:{md5_digest}`                | 5m  | `/api/search`                   |
@@ -683,7 +691,7 @@ See [Monitoring](monitoring.md) for details.
 |   **ALIAS_OF**    | ~4.9 million  | Artist → Artist (aliases)          |
 |   **MEMBER_OF**   | ~2.3 million  | Artist → Artist (group membership) |
 |  **SUBLABEL_OF**  |     ~278K     | Label → Label (parent/child)       |
-|    **PART_OF**    |     ~10K      | Series relationships               |
+|    **PART_OF**    |     ~10K      | Style → Genre membership           |
 
 </div>
 

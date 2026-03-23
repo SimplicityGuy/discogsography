@@ -26,7 +26,7 @@ Environment variables:
 
 ```bash
 # Neo4j connection
-NEO4J_HOST=neo4j:7687
+NEO4J_HOST=neo4j
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=discogsography
 

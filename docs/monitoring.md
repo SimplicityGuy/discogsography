@@ -650,18 +650,18 @@ Set `LOG_LEVEL` environment variable:
 
 ### Log Format
 
-All services use consistent logging:
+All services use **structlog** with JSON output. Each log entry is a JSON object containing structured fields:
 
-```
-%(asctime)s - {service_name} - %(name)s - %(levelname)s - %(message)s
+```json
+{"service": "graphinator", "environment": "production", "event": "🚀 Starting service", "level": "info", "timestamp": "2025-01-15T10:30:45.123456Z"}
 ```
 
-Example:
+Example output:
 
-```
-2025-01-15 10:30:45 - Graphinator - graphinator - INFO - 🚀 Starting service
-2025-01-15 10:30:46 - Graphinator - graphinator - INFO - 🔗 Connected to Neo4j
-2025-01-15 10:30:47 - Graphinator - graphinator - INFO - 🐰 Connected to RabbitMQ
+```json
+{"service": "graphinator", "environment": "production", "event": "🚀 Starting service", "level": "info", "timestamp": "2025-01-15T10:30:45.123456Z"}
+{"service": "graphinator", "environment": "production", "event": "🔗 Connected to Neo4j", "level": "info", "timestamp": "2025-01-15T10:30:46.234567Z"}
+{"service": "graphinator", "environment": "production", "event": "🐰 Connected to RabbitMQ", "level": "info", "timestamp": "2025-01-15T10:30:47.345678Z"}
 ```
 
 See [Logging Guide](logging-guide.md) for complete logging documentation.

@@ -132,6 +132,91 @@ The script now includes comprehensive component verification and updates **all**
    "
 ```
 
+## 🔧 compute-label-stats.sh
+
+One-time migration script that pre-computes `release_count`, `artist_count`, and `genre_count` properties on all Label nodes in Neo4j. This replaces expensive per-request traversals with direct property reads (~3 DB hits instead of 1.2M). New data imports compute these stats automatically via graphinator's `compute_genre_style_stats()`.
+
+### Usage
+
+```bash
+# Default settings
+./scripts/compute-label-stats.sh
+
+# Custom container/credentials
+NEO4J_CONTAINER=my-neo4j NEO4J_PASSWORD=secret ./scripts/compute-label-stats.sh
+```
+
+### Environment Variables
+
+- `NEO4J_CONTAINER`: Docker container name (default: `discogsography-neo4j`)
+- `NEO4J_USER`: Neo4j username (default: `neo4j`)
+- `NEO4J_PASSWORD`: Neo4j password (default: `discogsography`)
+
+## 🔐 create-secrets.sh
+
+Bootstraps the `secrets/` directory for production deployment. Run once on the host before starting `docker-compose.prod.yml`. The script is idempotent — it skips files that already exist and sets directory permissions to 700 and file permissions to 600.
+
+### Usage
+
+```bash
+bash scripts/create-secrets.sh
+```
+
+## 🔄 migrate-master-year-to-int.sh
+
+One-time migration script that converts `Master.year` from string to integer in Neo4j. Prior to this fix, graphinator stored `Master.year` as a raw string from the Discogs XML (e.g., `"1969"`). New ingests write integers directly; run this script once against an existing database to align historical data without a full re-ingest.
+
+### Usage
+
+```bash
+# Default settings
+./scripts/migrate-master-year-to-int.sh
+
+# Custom container/credentials
+NEO4J_CONTAINER=my-neo4j NEO4J_PASSWORD=secret ./scripts/migrate-master-year-to-int.sh
+```
+
+### Environment Variables
+
+- `NEO4J_CONTAINER`: Docker container name (default: `discogsography-neo4j`)
+- `NEO4J_USER`: Neo4j username (default: `neo4j`)
+- `NEO4J_PASSWORD`: Neo4j password (default: `discogsography`)
+
+## 🐳 neo4j-entrypoint.sh
+
+Thin wrapper for the Neo4j Docker container entrypoint. Reads the password from `/run/secrets/neo4j_password` and sets `NEO4J_AUTH` before delegating to the official Neo4j entrypoint. This is needed because Neo4j does not natively support the Docker `_FILE` secret convention.
+
+### Usage
+
+Used as the Docker entrypoint for the Neo4j container in `docker-compose.prod.yml` — not intended to be run manually.
+
+## 🔑 reset-password.sh
+
+Resets a user's password in the Discogsography PostgreSQL database. Generates a PBKDF2-SHA256 hash matching the format used by `api/auth.py` and updates the user record by email address.
+
+### Usage
+
+```bash
+./scripts/reset-password.sh <container_name> <postgres_password> <email> <new_password>
+
+# Example
+./scripts/reset-password.sh postgres discogsography user@example.com mynewpassword123
+```
+
+Password must be at least 8 characters.
+
+## 🧪 test-database-resilience.sh
+
+Interactive test script that simulates database outages to verify resilience features. Stops and restarts Neo4j and PostgreSQL containers while checking service health endpoints, validating that circuit breakers and retry logic handle outages gracefully.
+
+### Usage
+
+```bash
+./scripts/test-database-resilience.sh
+```
+
+Requires all services to be running before starting. The script prompts for confirmation before proceeding.
+
 ## 🤖 GitHub Actions Integration
 
 The project includes automated weekly dependency updates via GitHub Actions.

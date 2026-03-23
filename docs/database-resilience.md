@@ -110,18 +110,20 @@ No changes required to existing environment variables. The resilient connections
 
 ```bash
 # Neo4j
-NEO4J_HOST=bolt://neo4j:7687
+NEO4J_HOST=neo4j
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=password
 
 # PostgreSQL
-POSTGRES_HOST=postgres:5432
+POSTGRES_HOST=postgres
 POSTGRES_DATABASE=discogsography
 POSTGRES_USERNAME=postgres
 POSTGRES_PASSWORD=postgres
 
 # RabbitMQ
-AMQP_CONNECTION=amqp://discogsography:discogsography@rabbitmq:5672//
+RABBITMQ_HOST=rabbitmq
+RABBITMQ_USERNAME=discogsography
+RABBITMQ_PASSWORD=discogsography
 ```
 
 ### Tuning Parameters
@@ -171,6 +173,9 @@ Each service exposes health data including connection status:
 - Graphinator: `http://localhost:8001/health`
 - Tableinator: `http://localhost:8002/health`
 - Dashboard: `http://localhost:8003/health`
+- API: `http://localhost:8005/health`
+- Explore: `http://localhost:8007/health`
+- Insights: `http://localhost:8009/health`
 
 ### Logging
 

@@ -328,6 +328,7 @@ The main entry point `process_discogs_data()` accepts trait objects (`&mut dyn D
 
 | Module             | Responsibility                                                                                                      |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `lib.rs`           | Library crate root — re-exports all public modules for integration testing                                           |
 | `main.rs`          | Entry point, CLI args, health server, periodic check loop                                                           |
 | `extractor.rs`     | Core orchestration: download → parse → publish pipeline                                                             |
 | `downloader.rs`    | S3 file discovery, download with retry, checksum validation                                                         |

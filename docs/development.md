@@ -222,7 +222,7 @@ just tableinator
 # Run all quality checks
 just lint      # Linting with ruff
 just format    # Code formatting with ruff
-just typecheck # Type checking with mypy
+just lint-python # Linting with ruff + type checking with mypy
 just security  # Security scan with bandit
 
 # Or run everything at once
