@@ -31,6 +31,74 @@ services:
 
   postgres:
     restart: always
+    command:
+      - "postgres"
+      # --- Memory ---
+      - "-c"
+      - "shared_buffers=2GB"
+      - "-c"
+      - "effective_cache_size=6GB"
+      - "-c"
+      - "work_mem=64MB"
+      - "-c"
+      - "maintenance_work_mem=512MB"
+      - "-c"
+      - "huge_pages=try"
+      # --- WAL / Checkpoints ---
+      - "-c"
+      - "wal_buffers=64MB"
+      - "-c"
+      - "max_wal_size=4GB"
+      - "-c"
+      - "min_wal_size=1GB"
+      - "-c"
+      - "checkpoint_completion_target=0.9"
+      # --- I/O (SSD-optimized) ---
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "seq_page_cost=1.0"
+      # --- Parallelism ---
+      - "-c"
+      - "max_parallel_workers_per_gather=4"
+      - "-c"
+      - "max_parallel_workers=8"
+      - "-c"
+      - "max_parallel_maintenance_workers=4"
+      - "-c"
+      - "parallel_leader_participation=on"
+      # --- Query Planner ---
+      - "-c"
+      - "default_statistics_target=200"
+      - "-c"
+      - "jit=on"
+      # --- Connections ---
+      - "-c"
+      - "max_connections=100"
+      # --- Logging / Diagnostics ---
+      - "-c"
+      - "shared_preload_libraries=pg_stat_statements"
+      - "-c"
+      - "pg_stat_statements.max=10000"
+      - "-c"
+      - "pg_stat_statements.track=all"
+      - "-c"
+      - "log_min_duration_statement=1000"
+      - "-c"
+      - "log_checkpoints=on"
+      - "-c"
+      - "log_temp_files=0"
+      # --- Autovacuum Tuning ---
+      - "-c"
+      - "autovacuum_max_workers=4"
+      - "-c"
+      - "autovacuum_vacuum_scale_factor=0.05"
+      - "-c"
+      - "autovacuum_analyze_scale_factor=0.025"
+      - "-c"
+      - "autovacuum_vacuum_cost_delay=2ms"
     environment:
       POSTGRES_DB: discogsography
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
@@ -42,23 +110,52 @@ services:
   neo4j:
     restart: always
     environment:
+      JAVA_TOOL_OPTIONS: '--enable-native-access=ALL-UNNAMED'
       NEO4J_AUTH: neo4j/${NEO4J_PASSWORD}
-      NEO4J_dbms_memory_transaction_total_max: 3G
+      NEO4J_dbms_memory_transaction_total_max: 8G
+      # --- Memory: heap 8G + page cache 16G = ~24G (fits 25GB store in cache) ---
+      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_SIZE:-8g}
+      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-8g}
+      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE_SIZE:-16g}
+      NEO4J_server_memory_pagecache_flush_buffer_size__in__pages: '512'
+      # --- JVM Tuning for large heap with 131M relationships ---
       NEO4J_server_jvm_additional: >-
         -XX:+UseG1GC
+        -XX:G1HeapRegionSize=16m
         -XX:+AlwaysPreTouch
         -XX:+DisableExplicitGC
         -XX:+ExitOnOutOfMemoryError
         -XX:+UseCompressedOops
+        -XX:MaxGCPauseMillis=200
+        -XX:G1ReservePercent=15
+        -XX:InitiatingHeapOccupancyPercent=45
+        -XX:SurvivorRatio=8
+        -XX:+ParallelRefProcEnabled
         -XX:FlightRecorderOptions=stackdepth=256
         --add-modules jdk.incubator.vector
-      NEO4J_server_memory_heap_initial__size: ${NEO4J_HEAP_SIZE:-2G}
-      NEO4J_server_memory_heap_max__size: ${NEO4J_HEAP_SIZE:-2G}
-      NEO4J_server_memory_pagecache_size: ${NEO4J_PAGECACHE_SIZE:-1G}
+        --enable-native-access=ALL-UNNAMED
+      # --- I/O and Checkpointing ---
+      NEO4J_db_checkpoint_iops_limit: '4000'
+      NEO4J_db_checkpoint_interval_time: '15m'
+      NEO4J_db_checkpoint_interval_tx: '1000000'
+      # --- Query Logging ---
+      NEO4J_db_logs_query_threshold: '5s'
+      NEO4J_db_logs_query_plan__description__enabled: 'true'
+      # --- Transaction ---
+      NEO4J_db_transaction_timeout: '600s'
+      NEO4J_db_transaction_bookmark__ready__timeout: '30s'
+      # --- Cypher Runtime ---
+      NEO4J_dbms_cypher_min__replan__interval: '5s'
+      NEO4J_dbms_cypher_statistics__divergence__threshold: '0.1'
+      # --- Bolt Thread Pool ---
+      NEO4J_server_bolt_thread__pool__min__size: '10'
+      NEO4J_server_bolt_thread__pool__max__size: '400'
+      NEO4J_server_bolt_connection__keep__alive__for__requests: 'ALL'
+      NEO4J_server_bolt_connection__keep__alive: '30m'
     deploy:
       resources:
         limits:
-          memory: ${NEO4J_MEMORY_LIMIT:-20G}
+          memory: ${NEO4J_MEMORY_LIMIT:-48G}
 
   schema-init:
     environment:
@@ -162,7 +259,9 @@ services:
   explore:
     restart: always
     environment:
+      NEO4J_HOST: neo4j
       NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
+      NEO4J_USERNAME: ${NEO4J_USER:-neo4j}
     secrets:
       - neo4j_password
     deploy:
