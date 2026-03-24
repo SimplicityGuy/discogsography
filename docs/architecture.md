@@ -36,23 +36,22 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🐘](emoji-guide.md#service-identifiers) PostgreSQL** | Relational database for analytics     | 5433 (mapped) |
 | **[🔴](emoji-guide.md#service-identifiers) Redis**      | Cache layer for queries, sessions, and analytics | 6379          |
 
-## System Architecture Diagram
+## System Architecture Diagrams
+
+### Data Pipeline
+
+Shows the ingestion flow from Discogs data dumps through extraction, message distribution, and persistence into both databases.
 
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~11.3GB XML")]
-    EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     SCHEMA[["🔧 Schema-Init<br/>One-Shot DB<br/>Schema Initialiser"]]
+    EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>4 Fanout Exchanges"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
-    REDIS[("🔴 Redis<br/>Cache Layer<br/>Query Cache")]
     GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
-    DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
-    EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
-    API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
-    INSIGHTS[["📈 Insights<br/>Precomputed Analytics<br/>Music Trends"]]
 
     SCHEMA -->|0. Create schemas| NEO4J
     SCHEMA -->|0. Create schemas| PG
@@ -63,38 +62,91 @@ graph TD
     GRAPH -->|4a. Build Graph| NEO4J
     TABLE -->|4b. Store Data| PG
 
+    style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style SCHEMA fill:#f9fbe7,stroke:#827717,stroke-width:2px
+    style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```
+
+### Service Communication
+
+Shows how user-facing services interact with each other and with the storage layer at runtime.
+
+```mermaid
+graph TD
+    NEO4J[("🔗 Neo4j 2026<br/>Graph Database")]
+    PG[("🐘 PostgreSQL 18<br/>Analytics DB")]
+    REDIS[("🔴 Redis<br/>Cache Layer")]
+
+    EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
+    API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
+    INSIGHTS[["📈 Insights<br/>Precomputed Analytics<br/>Music Trends"]]
+    DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
+
     EXPLORE -.->|Proxy /api/*| API
 
     API -.->|User Accounts| PG
     API -.->|Graph Queries| NEO4J
     API -.->|OAuth State + Snapshots| REDIS
 
+    API -.->|Proxy /api/insights/*| INSIGHTS
+    INSIGHTS -.->|Fetch /api/internal/*| API
+    INSIGHTS -.->|Store Results| PG
+    INSIGHTS -.->|Cache Results| REDIS
+
+    DASH -.->|Cache| REDIS
+    DASH -.->|Stats| NEO4J
+    DASH -.->|Stats| PG
+
+    style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
+    style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style INSIGHTS fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```
+
+### Dashboard Monitoring
+
+Shows the Dashboard service's monitoring connections to all pipeline services and infrastructure.
+
+```mermaid
+graph TD
+    DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
+
+    EXT[["⚡ Extractor"]]
+    GRAPH[["🔗 Graphinator"]]
+    TABLE[["🐘 Tableinator"]]
+    EXPLORE[["🔍 Explore"]]
+
+    RMQ{{"🐰 RabbitMQ"}}
+    NEO4J[("🔗 Neo4j")]
+    PG[("🐘 PostgreSQL")]
+    REDIS[("🔴 Redis")]
+
     DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
     DASH -.->|Monitor| EXPLORE
-    DASH -.->|Cache| REDIS
     DASH -.->|Stats| RMQ
     DASH -.->|Stats| NEO4J
     DASH -.->|Stats| PG
+    DASH -.->|Cache| REDIS
 
-    API -.->|Proxy /api/insights/*| INSIGHTS
-    INSIGHTS -.->|Fetch /api/internal/*| API
-    INSIGHTS -.->|Store Results| PG
-
-    style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
-    style SCHEMA fill:#f9fbe7,stroke:#827717,stroke-width:2px
+    style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
     style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
-    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
-    style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
-    style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
-    style INSIGHTS fill:#fff9c4,stroke:#f57f17,stroke-width:2px
 ```
 
 ## Data Flow
@@ -774,4 +826,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-22
+**Last Updated**: 2026-03-23
