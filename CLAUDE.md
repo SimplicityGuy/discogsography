@@ -1,412 +1,180 @@
-# 🤖 CLAUDE.md - Claude Code Development Guide
+# CLAUDE.md - Development Guide
 
-<div align="center">
+## Project Overview
 
-**The comprehensive guide for AI-assisted development with Claude Code (claude.ai/code)**
+**Discogsography** is a Python 3.13+ / Rust microservices platform that transforms Discogs music database exports into Neo4j knowledge graphs and PostgreSQL analytics.
 
-[🐍 uv Package Manager](#-python-package-management-with-uv) | [📚 Quick Reference](#-quick-reference) | [🎯 Architecture](#-architecture-components) | [🛠️ Development](#-development-commands) | [📋 Guidelines](#-development-guidelines) | [📋 Emoji Guide](docs/emoji-guide.md)
+> **CRITICAL**: Use **[uv](https://github.com/astral-sh/uv)** exclusively for all Python operations. **Never use pip, python, pytest, or mypy directly** — always prefix with `uv run`. See [uv Commands](#uv-commands) below.
 
-</div>
+## AI Development Rules
 
-> 💡 **Pro Tip**: This guide is optimized for Claude Code's understanding of the codebase. It includes specific conventions, patterns, and instructions that help Claude Code provide better assistance.
+- **ALWAYS use `uv run`** for any Python command (pytest, mypy, ruff, python scripts)
+- **Use git worktrees** for all feature work — create in `.worktrees/` directory, branch from `origin/main`. Each worktree = one branch = one PR. Use the `superpowers:using-git-worktrees` skill.
+- **Open a PR for every change** — never push directly to `main`
+- **Mermaid diagrams** for all diagrams in Markdown files
+- **Lowercase filenames** with hyphens for new markdown files (except README). Do not rename existing markdown files.
+- **Emojis in GitHub Actions** step names; single quotes in `${{ }}` expressions, double quotes for YAML strings
+- **Composite actions** preferred for reusable workflow steps (see `.github/actions/`)
+- **Add perf tests** for new API endpoints — update `tests/perftest/config.yaml` and `tests/perftest/run_perftest.py`
+- **All log messages** must use emojis from [docs/emoji-guide.md](docs/emoji-guide.md) — no ad-hoc emojis
+- **pyproject.toml ordering**: `[build-system]` → `[project]` → `[project.scripts]` → `[tool.hatch...]` → tool configs (`ruff`, `mypy`, `coverage`, `pytest`) → `[dependency-groups]`. Sort dependencies alphabetically. Service-specific files extend from root config.
 
-## 🎯 Project Overview
+## Directory Structure
 
-**Discogsography** is a production-grade Python 3.13+ microservices platform that transforms Discogs music database exports into powerful, queryable knowledge graphs and analytics engines.
+```
+api/              API service — all user-facing HTTP endpoints (auth, search, graph, OAuth, insights proxy)
+common/           Shared library — config, models, utilities used by all Python services
+dashboard/        Dashboard service — real-time monitoring UI
+explore/          Explore service — static file serving for graph exploration frontend (Vitest for JS tests)
+extractor/        Rust-based extractor — high-performance Discogs XML data ingestion
+graphinator/      Graphinator service — consumes messages, builds Neo4j graph
+insights/         Insights service — precomputed analytics (proxied via API at /api/insights/*)
+schema-init/      Schema initialization — one-time Neo4j and PostgreSQL schema setup
+tableinator/      Tableinator service — consumes messages, builds PostgreSQL tables
+utilities/        Monitoring utilities — queue monitor, error checker, system monitor
+tests/            All tests organized by service (tests/api/, tests/common/, etc.)
+scripts/          Build and update scripts
+docs/             Documentation
+backups/          Database backups
+```
 
-> **⚠️ CRITICAL**: This project uses **[uv](https://github.com/astral-sh/uv)** exclusively for all Python operations. **ALWAYS use `uv run` for Python commands.** Never use pip, python, pytest, or mypy directly. See the [uv Package Manager](#-python-package-management-with-uv) section below for details.
+## Architecture Notes
 
-### Core Design Principles
+- **Extractor** declares 4 fanout exchanges (`discogsography-artists`, `-labels`, `-masters`, `-releases`) and publishes messages. It has zero knowledge of consumers.
+- **Each consumer** (graphinator, tableinator) independently declares its own queues, DLQs, and DLXs.
+- **Insights** fetches data from API internal endpoints (`/api/internal/insights/*`) over HTTP — does NOT connect to Neo4j directly. Uses Redis for caching.
+- **Explore** serves static files only — no external HTTP endpoints, no Neo4j env vars.
+- **State markers**: The extractor uses version-specific state markers (`.extraction_status_<version>.json`) to track progress. See `docs/state-marker-system.md`.
 
-- **🚀 Performance First**: Async operations, efficient parsing, optimized queries
-- **🔒 Type Safety**: Full type hints, strict mypy validation, runtime checks
-- **🛡️ Security by Design**: Container hardening, secure defaults, continuous scanning
-- **📊 Observable**: Comprehensive logging, real-time monitoring, health checks
-- **🧪 Testable**: Unit, integration, and E2E tests with high coverage
-
-## 🤖 AI Development Memories
-
-- ✅ **ALWAYS use `uv` for Python package management and running Python tools** - Never use pip, pipenv, or poetry.
-- ✅ **Use git worktrees for all feature work** - Create an isolated worktree per branch in the `.worktrees` directory (e.g., `.worktrees/feature-name`); never work directly on `main`. Use the `superpowers:using-git-worktrees` skill. Each worktree must branch from `origin/main` and contain only commits unique to that feature — worktrees must never share commits with each other. Each worktree maps to exactly one PR.
-- ✅ **Open a PR for every change** - All work merges via pull request; never push directly to `main`.
-- ✅ **State Marker System** - The extractor uses version-specific state markers (`.extraction_status_<version>.json`) to track progress and enable safe restarts. See `docs/state-marker-system.md`.
-- ✅ **Extractor Architecture** - The Rust-based extractor declares 4 per-data-type fanout exchanges and publishes messages. It has zero knowledge of consumers — each consumer independently declares its own queues, DLQs, and DLXs.
-- ✅ Create Mermaid style diagrams when diagrams are added to Markdown files.
-- ✅ New markdown files should have a lowercase filename preferring - instead \_, unless the document is a README. Do not rename any existing markdown files.
-- ✅ All pyproject.toml files should follow the standard structure and ordering (see pyproject.toml Standards section).
-- ✅ GitHub Actions workflows use emojis at the start of each step name for visual clarity.
-- ✅ Use single quotes in GitHub Actions expressions (`${{ }}`) and double quotes for YAML strings.
-- ✅ Composite actions are preferred for reusable workflow steps (see `.github/actions/`).
-- ✅ Run tests and E2E tests in parallel for optimal performance.
-- ✅ **Add perf tests for new API endpoints** - When adding API endpoints that query Neo4j or PostgreSQL, add corresponding test entries to `tests/perftest/config.yaml` and update `tests/perftest/run_perftest.py` to cover the new endpoint.
-
-## 🐍 Python Package Management with uv
-
-**CRITICAL**: This project uses [uv](https://github.com/astral-sh/uv) exclusively for all Python operations. **Never use pip, pipenv, poetry, or virtualenv directly.**
-
-### Why uv?
-
-- **⚡ 10-100x faster** than pip for package installation
-- **🔒 Better dependency resolution** - deterministic lockfiles
-- **🎯 Drop-in replacement** for pip, but much faster
-- **🔄 Consistent environments** across all developers
-- **📦 Unified tool** for package management and running scripts
-
-### Always Use uv Commands
-
-**❌ NEVER DO THIS:**
+## uv Commands
 
 ```bash
-pip install package-name
-python script.py
-pytest
-mypy .
-```
-
-**✅ ALWAYS DO THIS:**
-
-```bash
-uv add package-name           # Add dependency
-uv run python script.py       # Run Python scripts
-uv run pytest                 # Run tests
-uv run mypy .                # Run type checking
-```
-
-### Common uv Commands
-
-```bash
-# Install/sync all dependencies from pyproject.toml
-uv sync --all-extras
-
-# Add a new dependency
-uv add package-name
-
-# Add a development dependency
-uv add --dev package-name
-
-# Remove a dependency
-uv remove package-name
-
-# Run any Python command
-uv run python script.py
-uv run pytest
-uv run mypy .
-uv run ruff check .
-
-# Update dependencies
-uv lock --upgrade-package package-name
-
-# Install specific package version
-uv add "package-name>=1.2.3"
-```
-
-### Using just Task Runner
-
-For convenience, the project includes a `justfile` with pre-configured tasks that use uv:
-
-```bash
-# These all use uv internally
-just install      # uv sync --all-extras
-just test         # uv run pytest
-just test-js      # cd explore && npx vitest run
-just lint         # uv run pre-commit run --all-files
-just format       # uv run ruff format .
-just typecheck    # uv run mypy (via lint-python)
-just update-deps  # Run comprehensive dependency update script
-```
-
-### Package Installation Pattern
-
-When adding new dependencies:
-
-1. **Add to pyproject.toml** using uv:
-
-   ```bash
-   uv add package-name
-   ```
-
-1. **This automatically**:
-
-   - Updates `pyproject.toml`
-   - Updates `uv.lock` lockfile
-   - Installs the package in the environment
-
-1. **Commit both files**:
-
-   ```bash
-   git add pyproject.toml uv.lock
-   git commit -m "chore: add package-name dependency"
-   ```
-
-### Development Workflow
-
-```bash
-# 1. Initial setup
-just install
-
-# 2. Install pre-commit hooks
-just init
-
-# 3. Make changes and test
-just test
-just test-js
-just lint
-
-# 4. Run the service
-uv run python dashboard/dashboard.py
-```
-
-### Docker and uv
-
-In Docker environments, uv is pre-installed and used in all Dockerfiles:
-
-```dockerfile
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
-
-# Install dependencies
-COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
-```
-
-### Migration from pip/poetry
-
-If you see old commands in documentation or scripts:
-
-| Old Command                       | New Command               |
-| --------------------------------- | ------------------------- |
-| `pip install -r requirements.txt` | `uv sync`                 |
-| `pip install package`             | `uv add package`          |
-| `pip install -e .`                | `uv sync`                 |
-| `python script.py`                | `uv run python script.py` |
-| `pytest`                          | `uv run pytest`           |
-| `poetry install`                  | `uv sync`                 |
-| `poetry add package`              | `uv add package`          |
-
-**Update them to use uv!**
-
-## 📋 Development Guidelines
-
-### Logging Standards
-
-All services use consistent logging with emojis for visual clarity:
-
-- **Format**: `%(asctime)s - {service_name} - %(name)s - %(levelname)s - %(message)s`
-- **Files**: Services log to `/logs/{service_name}.log`
-- **Emojis**: See [Emoji Guide](docs/emoji-guide.md) for standardized usage
-
-Example:
-
-```python
-logger.info("🚀 Service starting...")
-logger.info("✅ Operation completed successfully")
-logger.error("❌ Failed to connect to database")
-```
-
-### ASCII Art Standards
-
-Each service displays ASCII art on startup:
-
-- Pure text only (no emojis in ASCII art)
-- Service name prominently displayed
-- Consistent style across all services
-
-### Code Style
-
-- Use type hints for all function parameters and returns
-- Follow PEP 8 with 88-character line length (Black formatter)
-- Use descriptive variable names
-- Add docstrings to all public functions and classes
-
-### Testing Requirements
-
-- Unit tests for all business logic
-- Integration tests for service interactions
-- E2E tests for critical user paths
-- Maintain >80% code coverage
-
-### Security Best Practices
-
-- Never log sensitive data (passwords, tokens, PII)
-- Use environment variables for configuration
-- Run containers as non-root users
-- Keep dependencies updated
-
-### pyproject.toml Standards
-
-All `pyproject.toml` files in the project follow a consistent structure and ordering:
-
-1. **Section Order**:
-
-   - `[build-system]` - Build system configuration
-   - `[project]` - Project metadata and dependencies
-   - `[project.scripts]` - Entry points (if applicable)
-   - `[project.optional-dependencies]` - Optional dependencies (root only)
-   - `[tool.hatch.build.targets.wheel]` - Package configuration
-   - Tool configurations (inherit from root):
-     - `[tool.ruff]` and related sections
-     - `[tool.mypy]` and overrides
-     - `[tool.coverage]`
-     - `[tool.pytest.ini_options]`
-     - Other tools as needed
-   - `[dependency-groups]` - Development dependencies (root only)
-
-1. **Standard Fields**:
-
-   - All service pyproject.toml files should include:
-     - `name`, `version`, `description`
-     - `authors` with name and email
-     - `readme` field (if applicable)
-     - `requires-python = ">=3.13"`
-     - `classifiers` list (for published packages)
-     - `license` field (for published packages)
-
-1. **Dependencies**:
-
-   - Sort dependencies alphabetically within logical groups
-   - Use comments to describe dependency groups or specific purposes
-   - Align end-of-line comments vertically for readability
-
-1. **Tool Configuration**:
-
-   - Service-specific files should extend from root configuration
-   - Only include overrides specific to that service
-   - Include comment: `# Tool configurations inherit from root pyproject.toml`
-
-## 🛠️ Development Commands
-
-### Local Development (prefer just commands)
-
-```bash
-# Install dependencies
-just install                     # Python dependencies
-just install-js                  # JavaScript dependencies (Explore frontend)
-just init                        # Pre-commit hooks
-
-# Run tests
-just test                        # Python tests (excluding E2E)
-just test-js                     # JavaScript tests (Vitest)
-just test-parallel               # All service tests in parallel
-just test-all                    # Everything including E2E
-
-# Code quality
-just lint                        # All pre-commit hooks
-just lint-python                 # Ruff + mypy
-just format                      # Auto-format Python code
-
-# Run a service locally
-just dashboard
-just api
-just explore
-just insights
-
-# Update dependencies
-just update-deps                 # Comprehensive update (all ecosystems)
-```
-
-### Service Management (Docker)
-
-```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f [service_name]
-
-# Run tests in container
-docker-compose exec [service_name] pytest
-
-# Check service health
-docker-compose ps
-```
-
-### Database Access
-
-```bash
-# Neo4j Browser
-http://localhost:7474
-
-# PostgreSQL
-docker-compose exec postgres psql -U discogsography discogsography
-```
-
-### Debugging
-
-```bash
-# View RabbitMQ management
-http://localhost:15672
-
-# Check service health
-http://localhost:8005/health       # API
-http://localhost:8003/health       # Dashboard
-http://localhost:8007/health       # Explore
-http://localhost:8009/health       # Insights
-```
-
-## 📚 Quick Reference
-
-### Service Ports
-
-- API: 8004 (service), 8005 (health)
-- Dashboard: 8003
-- Neo4j: 7474 (browser), 7687 (bolt)
-- PostgreSQL: 5433 (mapped from 5432)
-- RabbitMQ: 5672 (AMQP), 15672 (management)
-- Explore: 8006 (service), 8007 (health)
-- Insights: 8008 (service), 8009 (health)
-- Extractor: 8000 (health)
-- Graphinator: 8001 (health)
-- Tableinator: 8002 (health)
-
-### Environment Variables
-
-- `NEO4J_URI`: Neo4j connection string
-- `POSTGRES_URL`: PostgreSQL connection string
-- `RABBITMQ_URL`: RabbitMQ connection string
-- `LOG_LEVEL`: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL) - defaults to INFO if not set
-
-### Common Tasks
-
-- Adding new endpoints: Update FastAPI routers in service
-- Processing new data types: Extend message schemas
-- Adding visualizations: Update dashboard components
-- Performance tuning: Check service metrics first
-
-## 🎯 Architecture Components
-
-See main [README.md](README.md) for detailed architecture information.
-
-## 📐 Best Practices for Claude Code
-
-1. **ALWAYS use `uv` for Python commands** - Never use pip, python, pytest, mypy directly
-1. **Always read existing code** before making changes
-1. **Follow established patterns** in the codebase
-1. **Use the emoji guide** for consistent visual communication
-1. **Test changes** before marking tasks complete
-1. **Document significant changes** in code comments
-1. **Check logs** when debugging issues
-1. **Validate data** at service boundaries
-1. **Handle errors gracefully** with proper logging
-
-### Running Tools - Prefer just Commands
-
-**Use the just task runner** (single source of truth for all commands):
-
-```bash
-just test              # Python tests (excluding E2E)
-just test-js           # JavaScript tests (Vitest)
-just test-parallel     # All service tests in parallel
-just lint              # Pre-commit hooks (ruff, mypy, etc.)
-just lint-python       # Ruff + mypy only
-just format            # Auto-format Python code
-just update-deps       # Update all dependencies
-```
-
-**Or run tools directly with uv:**
-
-```bash
+uv sync --all-extras             # Install/sync all dependencies
+uv add package-name              # Add dependency (updates pyproject.toml + uv.lock)
+uv add --dev package-name        # Add dev dependency
 uv run pytest                    # Run tests
-uv run mypy .                   # Type checking
-uv run ruff check .             # Linting
-uv run python script.py         # Run any Python script
+uv run mypy .                    # Type checking
+uv run ruff check .              # Linting
+uv run ruff format .             # Formatting
+uv run python script.py          # Run any Python script
+uv lock --upgrade-package name   # Update specific package
 ```
+
+## just Commands (preferred)
+
+The `justfile` is the single source of truth for all commands. Run `just --list` for the full list.
+
+### Setup
+
+```bash
+just install              # uv sync --all-extras
+just install-js           # cd explore && npm ci
+just init                 # Install pre-commit hooks
+just update-deps          # Comprehensive update (Python, Rust, pre-commit, Docker)
+just update-uv            # Update uv itself
+just lock-upgrade         # Lock with upgrades
+just sync                 # Sync all deps (dev + extras)
+just sync-upgrade         # Sync with upgrades
+just update-npm           # Update Explore frontend npm deps
+just update-cargo         # Update Rust deps
+just update-hooks         # Update pre-commit hooks
+```
+
+### Testing
+
+```bash
+just test                 # Python tests (excluding E2E)
+just test-js              # JavaScript tests (Vitest)
+just test-cov             # Python tests with coverage
+just test-js-cov          # JavaScript tests with coverage
+just test-e2e             # End-to-end browser tests
+just test-all             # Everything including E2E
+just test-parallel        # All service tests in parallel (fastest)
+just test-api             # API tests with coverage
+just test-common          # Common library tests with coverage
+just test-dashboard       # Dashboard tests with coverage
+just test-explore         # Explore tests with coverage
+just test-extractor       # Rust extractor tests
+just test-extractor-cov   # Rust tests with coverage (cargo-llvm-cov)
+just test-insights        # Insights tests with coverage
+just test-graphinator     # Graphinator tests with coverage
+just test-schema-init     # Schema-init tests with coverage
+just test-tableinator     # Tableinator tests with coverage
+```
+
+### Code Quality
+
+```bash
+just lint                 # All pre-commit hooks
+just lint-python          # Ruff + mypy only
+just format               # Auto-format Python (ruff format)
+just security             # Security checks (bandit)
+```
+
+### Rust
+
+```bash
+just extractor-build      # Build release
+just extractor-test       # Run tests
+just extractor-bench      # Run benchmarks
+just extractor-lint       # Clippy (warnings = errors)
+just extractor-fmt        # Format code
+just extractor-fmt-check  # Check formatting (CI)
+just extractor-clean      # Clean build artifacts
+```
+
+### Docker
+
+```bash
+just up                   # Start all services
+just down                 # Stop all services
+just logs                 # Follow service logs
+just rebuild              # Down + build + up
+just build                # Build all service images
+just build-prod           # Build production images
+just deploy-prod          # Deploy in production mode
+```
+
+### Monitoring & Cleanup
+
+```bash
+just monitor              # Monitor RabbitMQ queues
+just check-errors         # Check service logs for errors
+just system-monitor       # System resource monitoring
+just clean                # Remove temp files and caches
+just deep-clean           # Clean + Docker volumes (destructive)
+```
+
+## Service Ports
+
+| Service | Port | Health |
+|---------|------|--------|
+| API | 8004 | 8005 |
+| Dashboard | 8003 | 8003 |
+| Explore | 8006 | 8007 |
+| Insights | 8008 | 8009 |
+| Extractor | — | 8000 |
+| Graphinator | — | 8001 |
+| Tableinator | — | 8002 |
+| Neo4j | 7474 (browser), 7687 (bolt) | — |
+| PostgreSQL | 5433 (mapped from 5432) | — |
+| RabbitMQ | 5672 (AMQP), 15672 (management) | — |
+
+## Environment Variables
+
+- `NEO4J_URI` — Neo4j connection string
+- `POSTGRES_URL` — PostgreSQL connection string
+- `RABBITMQ_URL` — RabbitMQ connection string
+- `LOG_LEVEL` — Logging level (defaults to INFO)
+
+## Code Style
+
+- Type hints on all function parameters and returns
+- PEP 8 with **150-character line length** (Ruff formatter)
+- Descriptive variable names, docstrings on public APIs
+- Logging format: `%(asctime)s - {service_name} - %(name)s - %(levelname)s - %(message)s`
+- Services log to `/logs/{service_name}.log`
+- Each service displays ASCII art on startup (pure text, no emojis)
+- Never log sensitive data (passwords, tokens, PII)
+- Run containers as non-root users
+- Maintain >80% code coverage
