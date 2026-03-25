@@ -2,6 +2,8 @@
 
 Model Context Protocol (MCP) server that exposes the Discogsography knowledge graph to AI assistants like Claude, Cursor, and Zed.
 
+All data is fetched via the Discogsography API — the MCP server has no direct database dependencies.
+
 ## Tools
 
 | Tool | Description |
@@ -39,13 +41,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "uvx",
       "args": ["discogsography-mcp"],
       "env": {
-        "NEO4J_HOST": "localhost",
-        "NEO4J_USERNAME": "neo4j",
-        "NEO4J_PASSWORD": "your-password",
-        "POSTGRES_HOST": "localhost",
-        "POSTGRES_USER": "discogsography",
-        "POSTGRES_PASS": "discogsography",
-        "POSTGRES_DB": "discogsography"
+        "API_BASE_URL": "http://localhost:8004"
       }
     }
   }
@@ -63,13 +59,7 @@ Add to `.mcp.json`:
       "command": "uvx",
       "args": ["discogsography-mcp"],
       "env": {
-        "NEO4J_HOST": "localhost",
-        "NEO4J_USERNAME": "neo4j",
-        "NEO4J_PASSWORD": "your-password",
-        "POSTGRES_HOST": "localhost",
-        "POSTGRES_USER": "discogsography",
-        "POSTGRES_PASS": "discogsography",
-        "POSTGRES_DB": "discogsography"
+        "API_BASE_URL": "http://localhost:8004"
       }
     }
   }
@@ -84,13 +74,7 @@ Use the same `command` and `args` in your editor's MCP server configuration.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `NEO4J_HOST` | `localhost` | Neo4j hostname |
-| `NEO4J_USERNAME` | `neo4j` | Neo4j username |
-| `NEO4J_PASSWORD` | `neo4j` | Neo4j password |
-| `POSTGRES_HOST` | `localhost` | PostgreSQL hostname |
-| `POSTGRES_USER` | `discogsography` | PostgreSQL username |
-| `POSTGRES_PASS` | `discogsography` | PostgreSQL password |
-| `POSTGRES_DB` | `discogsography` | PostgreSQL database name |
+| `API_BASE_URL` | `http://localhost:8004` | Base URL for the Discogsography API |
 
 ## Transport
 
