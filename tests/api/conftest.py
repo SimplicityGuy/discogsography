@@ -195,7 +195,7 @@ def test_client(
     _search_router.configure(mock_pool, mock_redis)
     _recommend_router.configure(mock_neo4j, test_api_config.jwt_secret_key, mock_redis)
     _insights_compute_router.configure(mock_neo4j, mock_pool, mock_redis)
-    _admin_router.configure(mock_pool, mock_redis, test_api_config)
+    _admin_router.configure(mock_pool, mock_redis, test_api_config, neo4j_driver=mock_neo4j)
 
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client

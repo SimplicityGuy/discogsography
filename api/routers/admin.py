@@ -24,6 +24,13 @@ from api.models import (
     ExtractionListResponse,
     ExtractionTriggerResponse,
 )
+from api.queries.admin_queries import (
+    get_neo4j_storage,
+    get_postgres_storage,
+    get_redis_storage,
+    get_sync_activity,
+    get_user_stats,
+)
 from common.config import DATA_TYPES, ApiConfig
 
 
@@ -35,6 +42,7 @@ router = APIRouter()
 _pool: Any = None
 _redis: Any = None
 _config: ApiConfig | None = None
+_neo4j_driver: Any = None
 
 # Background tracking tasks keyed by extraction_id
 _tracking_tasks: dict[str, asyncio.Task[Any]] = {}
@@ -46,12 +54,13 @@ for _dt in DATA_TYPES:
     _VALID_DLQ_NAMES.add(f"tableinator-{_dt}-dlq")
 
 
-def configure(pool: Any, redis: Any, config: ApiConfig) -> None:
+def configure(pool: Any, redis: Any, config: ApiConfig, neo4j_driver: Any = None) -> None:
     """Initialise module state — called once during app lifespan startup."""
-    global _pool, _redis, _config
+    global _pool, _redis, _config, _neo4j_driver
     _pool = pool
     _redis = redis
     _config = config
+    _neo4j_driver = neo4j_driver
 
 
 # ---------------------------------------------------------------------------
@@ -197,6 +206,60 @@ async def get_extraction(
             extractor_version=row.get("extractor_version"),
             created_at=row["created_at"],
         ).model_dump(mode="json"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2 — User Activity & Storage endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/admin/users/stats")
+async def admin_user_stats(
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """User registration stats, active users, and OAuth connection rate."""
+    if _pool is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
+    data = await get_user_stats(_pool)
+    return JSONResponse(content=data)
+
+
+@router.get("/api/admin/users/sync-activity")
+async def admin_sync_activity(
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """Sync activity stats for 7d and 30d windows."""
+    if _pool is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
+    data = await get_sync_activity(_pool)
+    return JSONResponse(content=data)
+
+
+@router.get("/api/admin/storage")
+async def admin_storage(
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+) -> JSONResponse:
+    """Storage utilization for Neo4j, PostgreSQL, and Redis."""
+    results = await asyncio.gather(
+        get_neo4j_storage(_neo4j_driver),
+        get_postgres_storage(_pool),
+        get_redis_storage(_redis),
+        return_exceptions=True,
+    )
+
+    def _wrap(result: Any, name: str) -> dict[str, Any]:
+        if isinstance(result, BaseException):
+            logger.warning("⚠️ Storage query failed", source=name, error=str(result))
+            return {"status": "error", "error": str(result)}
+        return dict(result)
+
+    return JSONResponse(
+        content={
+            "neo4j": _wrap(results[0], "neo4j"),
+            "postgresql": _wrap(results[1], "postgresql"),
+            "redis": _wrap(results[2], "redis"),
+        }
     )
 
 
