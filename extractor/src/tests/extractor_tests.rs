@@ -934,11 +934,11 @@ rules:
 
 #[tokio::test(start_paused = true)]
 async fn test_wait_for_trigger_returns_when_triggered() {
-    let trigger = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let trigger = Arc::new(std::sync::Mutex::new(None::<bool>));
     let trigger_clone = trigger.clone();
 
     let handle = tokio::spawn(async move {
-        wait_for_trigger(&trigger_clone).await;
+        wait_for_trigger(&trigger_clone).await
     });
 
     // Advance past a few polling intervals — should NOT return yet
@@ -946,50 +946,62 @@ async fn test_wait_for_trigger_returns_when_triggered() {
     tokio::task::yield_now().await;
     assert!(!handle.is_finished(), "should still be waiting");
 
-    // Set the trigger flag
-    trigger.store(true, std::sync::atomic::Ordering::SeqCst);
+    // Set the trigger with force_reprocess = true
+    {
+        let mut t = trigger.lock().unwrap();
+        *t = Some(true);
+    }
 
     // Advance past one polling interval (500ms) and yield
     tokio::time::advance(Duration::from_millis(600)).await;
     tokio::task::yield_now().await;
 
-    // Should have returned
-    handle.await.unwrap();
+    // Should have returned with the force_reprocess value
+    let result = handle.await.unwrap();
+    assert!(result, "should return true (force_reprocess)");
 }
 
 #[tokio::test(start_paused = true)]
 async fn test_wait_for_trigger_clears_flag() {
-    let trigger = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let trigger = Arc::new(std::sync::Mutex::new(Some(false)));
 
-    wait_for_trigger(&trigger).await;
+    let result = wait_for_trigger(&trigger).await;
 
-    // Flag should be cleared after returning
-    assert!(!trigger.load(std::sync::atomic::Ordering::SeqCst));
+    // Should return false (the force_reprocess value)
+    assert!(!result, "should return false (force_reprocess)");
+
+    // Mutex should be None after taking
+    assert_eq!(*trigger.lock().unwrap(), None);
 }
 
 #[tokio::test(start_paused = true)]
 async fn test_wait_for_trigger_only_fires_once() {
-    let trigger = Arc::new(std::sync::atomic::AtomicBool::new(true));
+    let trigger = Arc::new(std::sync::Mutex::new(Some(false)));
 
-    // First call should return immediately (flag is already set)
-    wait_for_trigger(&trigger).await;
-    assert!(!trigger.load(std::sync::atomic::Ordering::SeqCst));
+    // First call should return immediately (trigger is already set)
+    let result = wait_for_trigger(&trigger).await;
+    assert!(!result, "first call should return false");
+    assert_eq!(*trigger.lock().unwrap(), None);
 
     // Second call should block — spawn it and verify it doesn't complete
     let trigger_clone = trigger.clone();
     let handle = tokio::spawn(async move {
-        wait_for_trigger(&trigger_clone).await;
+        wait_for_trigger(&trigger_clone).await
     });
 
     tokio::time::advance(Duration::from_secs(2)).await;
     tokio::task::yield_now().await;
     assert!(!handle.is_finished(), "second wait should block until re-triggered");
 
-    // Re-trigger
-    trigger.store(true, std::sync::atomic::Ordering::SeqCst);
+    // Re-trigger with force_reprocess = true
+    {
+        let mut t = trigger.lock().unwrap();
+        *t = Some(true);
+    }
     tokio::time::advance(Duration::from_millis(600)).await;
     tokio::task::yield_now().await;
-    handle.await.unwrap();
+    let result = handle.await.unwrap();
+    assert!(result, "second call should return true");
 }
 
 // ── extraction_status field in ExtractorState ────────────────────────

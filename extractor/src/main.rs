@@ -1,7 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
+use std::sync::Mutex;
 use tokio::signal;
 use tokio::sync::RwLock;
 use tracing::{error, info};
@@ -98,7 +98,7 @@ async fn main() -> Result<()> {
 
     // Initialize shared state
     let state = Arc::new(RwLock::new(extractor::ExtractorState::default()));
-    let trigger = Arc::new(AtomicBool::new(false));
+    let trigger = Arc::new(Mutex::new(None::<bool>));
 
     // Start health server
     let health_server = HealthServer::new(config.health_port, state.clone(), trigger.clone());

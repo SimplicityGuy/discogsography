@@ -9,7 +9,7 @@ use chrono::Utc;
 use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
 use tokio::sync::RwLock;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
@@ -17,14 +17,23 @@ use tracing::{error, info};
 
 use crate::extractor::{ExtractionStatus, ExtractorState};
 
+/// Shared state type for all health server handlers
+type AppState = (Arc<RwLock<ExtractorState>>, Arc<Mutex<Option<bool>>>);
+
+#[derive(serde::Deserialize)]
+pub struct TriggerRequest {
+    #[serde(default)]
+    pub force_reprocess: bool,
+}
+
 pub struct HealthServer {
     port: u16,
     state: Arc<RwLock<ExtractorState>>,
-    trigger: Arc<AtomicBool>,
+    trigger: Arc<Mutex<Option<bool>>>,
 }
 
 impl HealthServer {
-    pub fn new(port: u16, state: Arc<RwLock<ExtractorState>>, trigger: Arc<AtomicBool>) -> Self {
+    pub fn new(port: u16, state: Arc<RwLock<ExtractorState>>, trigger: Arc<Mutex<Option<bool>>>) -> Self {
         Self { port, state, trigger }
     }
 
@@ -49,7 +58,7 @@ impl HealthServer {
     }
 }
 
-async fn health_handler(State((state, _)): State<(Arc<RwLock<ExtractorState>>, Arc<AtomicBool>)>) -> (StatusCode, Json<serde_json::Value>) {
+async fn health_handler(State((state, _)): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
     let state = state.read().await;
 
     let health = json!({
@@ -75,7 +84,7 @@ async fn health_handler(State((state, _)): State<(Arc<RwLock<ExtractorState>>, A
     (StatusCode::OK, Json(health))
 }
 
-async fn metrics_handler(State((state, _)): State<(Arc<RwLock<ExtractorState>>, Arc<AtomicBool>)>) -> (StatusCode, Json<serde_json::Value>) {
+async fn metrics_handler(State((state, _)): State<AppState>) -> (StatusCode, Json<serde_json::Value>) {
     let state = state.read().await;
 
     let metrics = json!({
@@ -92,7 +101,7 @@ async fn metrics_handler(State((state, _)): State<(Arc<RwLock<ExtractorState>>, 
     (StatusCode::OK, Json(metrics))
 }
 
-async fn ready_handler(State((state, _)): State<(Arc<RwLock<ExtractorState>>, Arc<AtomicBool>)>) -> StatusCode {
+async fn ready_handler(State((state, _)): State<AppState>) -> StatusCode {
     let state = state.read().await;
 
     // Service is ready if it has initialized (has connections or has completed files)
@@ -103,17 +112,25 @@ async fn ready_handler(State((state, _)): State<(Arc<RwLock<ExtractorState>>, Ar
     }
 }
 
-async fn trigger_handler(State((state, trigger)): State<(Arc<RwLock<ExtractorState>>, Arc<AtomicBool>)>) -> (StatusCode, Json<serde_json::Value>) {
+pub async fn trigger_handler(
+    State((state, trigger)): State<AppState>,
+    body: Option<Json<TriggerRequest>>,
+) -> (StatusCode, Json<serde_json::Value>) {
     let state = state.read().await;
     if state.extraction_status == ExtractionStatus::Running {
         return (StatusCode::CONFLICT, Json(json!({"status": "already_running"})));
     }
     drop(state);
 
-    trigger.store(true, Ordering::SeqCst);
-    info!("🔄 Extraction triggered via API");
+    let force_reprocess = body.map(|b| b.force_reprocess).unwrap_or(false);
 
-    (StatusCode::ACCEPTED, Json(json!({"status": "started"})))
+    {
+        let mut t = trigger.lock().unwrap();
+        *t = Some(force_reprocess);
+    }
+    info!("🔄 Extraction triggered via API (force_reprocess={})", force_reprocess);
+
+    (StatusCode::ACCEPTED, Json(json!({"status": "started", "force_reprocess": force_reprocess})))
 }
 
 #[cfg(test)]

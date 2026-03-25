@@ -660,11 +660,14 @@ fn extract_version_from_filename(filename: &str) -> Option<String> {
     if parts.len() >= 2 { Some(parts[1].to_string()) } else { None }
 }
 
-/// Wait for the trigger flag to be set, then clear it and return
-async fn wait_for_trigger(trigger: &Arc<std::sync::atomic::AtomicBool>) {
+/// Wait for the trigger to be set, then take the value and return the force_reprocess flag
+async fn wait_for_trigger(trigger: &Arc<std::sync::Mutex<Option<bool>>>) -> bool {
     loop {
-        if trigger.compare_exchange(true, false, std::sync::atomic::Ordering::SeqCst, std::sync::atomic::Ordering::SeqCst).is_ok() {
-            return;
+        {
+            let mut t = trigger.lock().unwrap();
+            if let Some(force_reprocess) = t.take() {
+                return force_reprocess;
+            }
         }
         tokio::time::sleep(Duration::from_millis(500)).await;
     }
@@ -677,7 +680,7 @@ pub async fn run_extraction_loop(
     shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
     mq_factory: Arc<dyn MessageQueueFactory>,
-    trigger: Arc<std::sync::atomic::AtomicBool>,
+    trigger: Arc<std::sync::Mutex<Option<bool>>>,
     compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<()> {
     info!("📥 Starting initial data processing...");
@@ -731,8 +734,8 @@ pub async fn run_extraction_loop(
                     }
                 }
             }
-            _ = wait_for_trigger(&trigger) => {
-                info!("🔄 Extraction triggered via API...");
+            trigger_force_reprocess = wait_for_trigger(&trigger) => {
+                info!("🔄 Extraction triggered via API (force_reprocess={})...", trigger_force_reprocess);
                 let start = Instant::now();
                 let mut downloader = match Downloader::new(config.discogs_root.clone()).await {
                     Ok(dl) => dl,
@@ -741,7 +744,7 @@ pub async fn run_extraction_loop(
                         continue;
                     }
                 };
-                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), false, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
+                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), trigger_force_reprocess, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => info!("✅ Triggered extraction completed successfully in {:?}", start.elapsed()),
                     Ok(false) => error!("❌ Triggered extraction completed with errors"),
                     Err(e) => error!("❌ Triggered extraction failed: {}", e),
