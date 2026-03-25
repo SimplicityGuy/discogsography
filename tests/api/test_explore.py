@@ -891,10 +891,13 @@ class TestGenreTreeEndpoint:
             explore_module._genre_tree_cache = None
 
     def test_genre_tree_cache_expired(self, test_client: TestClient) -> None:
+        import time
+
         import api.routers.explore as explore_module
 
         explore_module._genre_tree_cache = {"genres": []}
-        explore_module._genre_tree_cache_time = 0  # expired (monotonic epoch)
+        # Set cache time far enough in the past to guarantee expiry (TTL is 300s)
+        explore_module._genre_tree_cache_time = time.monotonic() - 600
 
         fresh = [{"name": "Electronic", "release_count": 800, "styles": []}]
         try:
