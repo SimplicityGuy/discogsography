@@ -197,20 +197,6 @@ exclude = "^tests/"
 [[tool.mypy.overrides]]
 module = [
     "pika.*",
-    "psycopg.*",
-    "redis.*",
-    "scipy.*",
-    "tqdm",
-    "xmltodict",
-    "pandas.*",
-    "plotly.*",
-    "sklearn.*",
-    "networkx.*",
-    "sentence_transformers.*",
-    "fastapi.*",
-    "mcp.*",
-    "uvicorn.*",
-    "pydantic.*",
 ]
 ignore_missing_imports = true
 
