@@ -41,6 +41,7 @@ The extractor's `/trigger` endpoint (`health.rs`) accepts no body and sets an `A
 **`extractor.rs` — `run_extraction_loop` trigger branch:**
 
 - Pass the returned `force_reprocess` bool to `process_discogs_data` instead of hardcoded `false`
+- The initial extraction call continues using the CLI `force_reprocess` arg; only the trigger branch uses the new value
 
 **`main.rs`:**
 
@@ -87,8 +88,9 @@ The proxy:
 
 - Forwards `Authorization` header as-is to the API service
 - Returns the API response status and body unchanged
-- Uses `httpx.AsyncClient` with a 30-second timeout (extractions can take time)
+- Uses `httpx.AsyncClient` with a 30-second timeout for proxy requests
 - Reads `API_HOST` and `API_PORT` from environment (defaults: `api`, `8004`)
+- Note: The API service's own timeout to the extractor `/trigger` is 10 seconds, which is fine — the extractor returns 202 immediately and processes asynchronously
 
 ### Dashboard Service Changes (`dashboard.py`)
 
