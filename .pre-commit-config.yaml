@@ -83,7 +83,7 @@ repos:
         args: ["--severity=warning"]  # Show warnings and errors
 
   - repo: https://github.com/scop/pre-commit-shfmt
-    rev: 2a30809d16bc7a60d9b97353c797f42b510d3368  # frozen: v3.12.0-2
+    rev: e26a818fd47b4f33cefa99035d1265b0849f4b47  # frozen: v3.13.0-1
     hooks:
       - id: shfmt
         args: ["-i", "2", "-ci", "-bn", "-sr"]  # 2 space indent, indent case, binary next line, redirect operators

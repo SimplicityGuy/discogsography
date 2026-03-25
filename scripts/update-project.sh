@@ -164,6 +164,10 @@ FILE_CHANGES=()
 UV_VERSION_CHANGE=""
 PYTHON_VERSION_CHANGE=""
 WORKFLOW_CHANGES=()
+SECURITY_PIP_RESOLVED=0
+SECURITY_PIP_REMAINING=0
+SECURITY_OSV_RESOLVED=0
+SECURITY_OSV_REMAINING=0
 
 # Helper function to safely get array length
 # Works with set -u by handling unbound variables
@@ -640,7 +644,7 @@ update_python_packages() {
         backup_file "pyproject.toml"
 
         # Backup all pyproject.toml files including nested ones
-        for service in api common dashboard explore graphinator insights schema-init tableinator; do
+        for service in api common dashboard explore graphinator insights mcp-server schema-init tableinator; do
             if [[ -f "$service/pyproject.toml" ]]; then
                 backup_file "$service/pyproject.toml"
             fi
@@ -779,6 +783,10 @@ sweep_pip_audit_ignores() {
         fi
     done
 
+    # Track results for summary
+    SECURITY_PIP_RESOLVED=${#resolved[@]}
+    SECURITY_PIP_REMAINING=${#still_needed[@]}
+
     # Rewrite the ignore file without resolved entries
     if [[ ${#resolved[@]} -gt 0 ]]; then
         CHANGES_MADE=true
@@ -879,6 +887,10 @@ sweep_osv_scanner_ignores() {
         fi
         rm -f "$tmp_config"
     done
+
+    # Track results for summary
+    SECURITY_OSV_RESOLVED=${#resolved[@]}
+    SECURITY_OSV_REMAINING=${#still_needed[@]}
 
     # Rewrite the config file without resolved entries
     if [[ ${#resolved[@]} -gt 0 ]]; then
@@ -1007,6 +1019,30 @@ generate_summary() {
         done
     fi
 
+    # Security sweep results
+    local total_resolved=$((SECURITY_PIP_RESOLVED + SECURITY_OSV_RESOLVED))
+    local total_remaining=$((SECURITY_PIP_REMAINING + SECURITY_OSV_REMAINING))
+    if [[ $total_resolved -gt 0 ]] || [[ $total_remaining -gt 0 ]]; then
+        echo ""
+        echo "🔒 Security (CVE Sweep):"
+        if [[ $total_resolved -gt 0 ]]; then
+            echo "  • $total_resolved CVE ignore$([ $total_resolved -eq 1 ] && echo "" || echo "s") resolved and removed"
+        fi
+        if [[ $total_remaining -gt 0 ]]; then
+            echo "  • $total_remaining CVE$([ $total_remaining -eq 1 ] && echo "" || echo "s") still awaiting upstream fixes"
+        fi
+        if [[ $SECURITY_PIP_RESOLVED -gt 0 ]] || [[ $SECURITY_PIP_REMAINING -gt 0 ]]; then
+            echo "    pip-audit: $SECURITY_PIP_RESOLVED resolved, $SECURITY_PIP_REMAINING remaining"
+        fi
+        if [[ $SECURITY_OSV_RESOLVED -gt 0 ]] || [[ $SECURITY_OSV_REMAINING -gt 0 ]]; then
+            echo "    osv-scanner: $SECURITY_OSV_RESOLVED resolved, $SECURITY_OSV_REMAINING remaining"
+        fi
+    elif [[ -f ".pip-audit-ignores" ]] || [[ -f "osv-scanner.toml" ]]; then
+        echo ""
+        echo "🔒 Security (CVE Sweep):"
+        echo "  • No ignored CVEs to sweep"
+    fi
+
     # Git instructions
     echo ""
     print_section "$EMOJI_GIT" "Next Steps"
@@ -1039,6 +1075,14 @@ generate_summary() {
 
     if [[ $(array_length WORKFLOW_CHANGES) -gt 0 ]]; then
         echo "   git add .github/workflows/*.yml"
+    fi
+
+    if [[ $SECURITY_PIP_RESOLVED -gt 0 ]]; then
+        echo "   git add .pip-audit-ignores"
+    fi
+
+    if [[ $SECURITY_OSV_RESOLVED -gt 0 ]]; then
+        echo "   git add osv-scanner.toml"
     fi
 
     echo ""
@@ -1115,6 +1159,7 @@ show_file_report() {
     echo "  ✓ explore/pyproject.toml"
     echo "  ✓ graphinator/pyproject.toml"
     echo "  ✓ insights/pyproject.toml"
+    echo "  ✓ mcp-server/pyproject.toml"
     echo "  ✓ schema-init/pyproject.toml"
     echo "  ✓ tableinator/pyproject.toml"
     echo "  ✓ uv.lock (root)"
@@ -1193,6 +1238,7 @@ verify_components() {
         "explore/pyproject.toml"
         "graphinator/pyproject.toml"
         "insights/pyproject.toml"
+        "mcp-server/pyproject.toml"
         "schema-init/pyproject.toml"
         "tableinator/pyproject.toml"
     )
