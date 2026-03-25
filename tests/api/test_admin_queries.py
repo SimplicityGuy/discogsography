@@ -200,3 +200,141 @@ class TestGetSyncActivity:
         assert result["period_7d"]["syncs_per_day"] == 0.0
         assert result["period_7d"]["failure_rate"] == 0.0
         assert result["period_7d"]["avg_items_synced"] == 0.0
+
+
+class TestGetNeo4jStorage:
+    """Tests for get_neo4j_storage query function."""
+
+    @pytest.mark.asyncio
+    async def test_basic_neo4j_storage(self):
+        from api.queries.admin_queries import get_neo4j_storage
+
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(
+            return_value={
+                "labels": {"Artist": 245000, "Label": 5000},
+                "relTypesCount": {"RELEASED_ON": 890000, "BY": 600000},
+            }
+        )
+
+        # First session: apoc.meta.stats succeeds
+        mock_session1 = AsyncMock()
+        mock_session1.run = AsyncMock(return_value=mock_result)
+        mock_session1.__aenter__ = AsyncMock(return_value=mock_session1)
+        mock_session1.__aexit__ = AsyncMock(return_value=False)
+
+        # Second session: JMX query raises so store_sizes stays None
+        mock_session2 = AsyncMock()
+        mock_session2.run = AsyncMock(side_effect=Exception("JMX not available"))
+        mock_session2.__aenter__ = AsyncMock(return_value=mock_session2)
+        mock_session2.__aexit__ = AsyncMock(return_value=False)
+
+        mock_driver = MagicMock()
+        mock_driver.session = MagicMock(side_effect=[mock_session1, mock_session2])
+
+        result = await get_neo4j_storage(mock_driver)
+
+        assert result["status"] == "ok"
+        assert {"label": "Artist", "count": 245000} in result["nodes"]
+        assert {"type": "RELEASED_ON", "count": 890000} in result["relationships"]
+        assert result["store_sizes"] is None
+
+    @pytest.mark.asyncio
+    async def test_neo4j_driver_none(self):
+        from api.queries.admin_queries import get_neo4j_storage
+
+        result = await get_neo4j_storage(None)
+        assert result["status"] == "error"
+        assert "not configured" in result["error"]
+
+
+class TestGetPostgresStorage:
+    """Tests for get_postgres_storage query function."""
+
+    @pytest.mark.asyncio
+    async def test_basic_postgres_storage(self):
+        from api.queries.admin_queries import get_postgres_storage
+
+        pool, execute_side_effect = _mock_pool_with_rows(
+            [{"table_name": "users", "row_estimate": 150, "total_size": "48 kB", "index_size": "32 kB"}],
+            [{"total_size": "156 MB"}],
+        )
+
+        with patch("api.queries.admin_queries.execute_sql", side_effect=execute_side_effect):
+            result = await get_postgres_storage(pool)
+
+        assert result["status"] == "ok"
+        assert result["tables"][0]["name"] == "users"
+        assert result["tables"][0]["row_count"] == 150
+        assert result["tables"][0]["size"] == "48 kB"
+        assert result["tables"][0]["index_size"] == "32 kB"
+        assert result["total_size"] == "156 MB"
+
+    @pytest.mark.asyncio
+    async def test_empty_tables(self):
+        from api.queries.admin_queries import get_postgres_storage
+
+        pool, execute_side_effect = _mock_pool_with_rows(
+            [],
+            [{"total_size": "8192 bytes"}],
+        )
+
+        with patch("api.queries.admin_queries.execute_sql", side_effect=execute_side_effect):
+            result = await get_postgres_storage(pool)
+
+        assert result["status"] == "ok"
+        assert result["tables"] == []
+        assert result["total_size"] == "8192 bytes"
+
+
+class TestGetRedisStorage:
+    """Tests for get_redis_storage query function."""
+
+    @pytest.mark.asyncio
+    async def test_basic_redis_storage(self):
+        from api.queries.admin_queries import get_redis_storage
+
+        mock_redis = AsyncMock()
+        mock_redis.info = AsyncMock(
+            side_effect=lambda section: {
+                "memory": {"used_memory_human": "12.5M", "used_memory_peak_human": "15.2M"},
+                "keyspace": {"db0": {"keys": 342}},
+            }.get(section, {})
+        )
+        mock_redis.scan = AsyncMock(return_value=(0, [b"cache:foo", b"cache:bar", b"revoked:jti:abc"]))
+
+        result = await get_redis_storage(mock_redis)
+
+        assert result["status"] == "ok"
+        assert result["memory_used"] == "12.5M"
+        assert result["memory_peak"] == "15.2M"
+        assert result["total_keys"] == 342
+        assert any(entry["prefix"] == "cache:" for entry in result["keys_by_prefix"])
+        assert any(entry["prefix"] == "revoked:" for entry in result["keys_by_prefix"])
+
+    @pytest.mark.asyncio
+    async def test_redis_none(self):
+        from api.queries.admin_queries import get_redis_storage
+
+        result = await get_redis_storage(None)
+        assert result["status"] == "error"
+        assert "not configured" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_redis_no_keys(self):
+        from api.queries.admin_queries import get_redis_storage
+
+        mock_redis = AsyncMock()
+        mock_redis.info = AsyncMock(
+            side_effect=lambda section: {
+                "memory": {"used_memory_human": "1.2M", "used_memory_peak_human": "1.5M"},
+                "keyspace": {},
+            }.get(section, {})
+        )
+        mock_redis.scan = AsyncMock(return_value=(0, []))
+
+        result = await get_redis_storage(mock_redis)
+
+        assert result["status"] == "ok"
+        assert result["total_keys"] == 0
+        assert result["keys_by_prefix"] == []

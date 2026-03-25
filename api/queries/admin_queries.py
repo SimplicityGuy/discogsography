@@ -120,3 +120,119 @@ async def get_sync_activity(pool: Any) -> dict[str, Any]:
         period_30d = await _query_period(cur, 30)
 
     return {"period_7d": period_7d, "period_30d": period_30d}
+
+
+async def get_neo4j_storage(driver: Any) -> dict[str, Any]:
+    """Fetch Neo4j node/relationship counts and best-effort store sizes via JMX."""
+    if driver is None:
+        return {"status": "error", "error": "Neo4j driver not configured"}
+
+    async with driver.session() as session:
+        result = await session.run("CALL apoc.meta.stats() YIELD labels, relTypesCount")
+        record = await result.single()
+
+        nodes = [{"label": label, "count": count} for label, count in sorted(record["labels"].items())]
+        relationships = [{"type": rel_type, "count": count} for rel_type, count in sorted(record["relTypesCount"].items())]
+
+    store_sizes = None
+    try:
+        async with driver.session() as session:
+            result = await session.run("CALL dbms.queryJmx('org.neo4j:instance=kernel#0,name=Store sizes') YIELD attributes RETURN attributes")
+            record = await result.single()
+            if record and record.get("attributes"):
+                attrs = record["attributes"]
+
+                def _fmt(key: str) -> str:
+                    val = attrs.get(key, {})
+                    bytes_val = val.get("value", 0) if isinstance(val, dict) else 0
+                    if bytes_val >= 1_073_741_824:
+                        return f"{bytes_val / 1_073_741_824:.1f} GB"
+                    if bytes_val >= 1_048_576:
+                        return f"{bytes_val / 1_048_576:.0f} MB"
+                    return f"{bytes_val / 1024:.0f} kB"
+
+                store_sizes = {
+                    "total": _fmt("TotalStoreSize"),
+                    "nodes": _fmt("NodeStoreSize"),
+                    "relationships": _fmt("RelationshipStoreSize"),
+                    "strings": _fmt("StringStoreSize"),
+                }
+    except Exception:
+        logger.debug("⚙️ Neo4j JMX store sizes not available — skipping")
+
+    return {
+        "status": "ok",
+        "nodes": nodes,
+        "relationships": relationships,
+        "store_sizes": store_sizes,
+    }
+
+
+async def get_postgres_storage(pool: Any) -> dict[str, Any]:
+    """Fetch PostgreSQL table sizes, row estimates, and total database size."""
+    async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await execute_sql(
+            cur,
+            """
+            SELECT
+                relname AS table_name,
+                n_live_tup AS row_estimate,
+                pg_size_pretty(pg_total_relation_size(relid)) AS total_size,
+                pg_size_pretty(pg_indexes_size(relid)) AS index_size
+            FROM pg_stat_user_tables
+            ORDER BY pg_total_relation_size(relid) DESC
+            """,
+        )
+        tables = [
+            {
+                "name": row["table_name"],
+                "row_count": row["row_estimate"],
+                "size": row["total_size"],
+                "index_size": row["index_size"],
+            }
+            for row in await cur.fetchall()
+        ]
+
+        await execute_sql(
+            cur,
+            "SELECT pg_size_pretty(pg_database_size(current_database())) AS total_size",
+        )
+        db_size_row = await cur.fetchone()
+        total_size = db_size_row["total_size"] if db_size_row else "0 bytes"
+
+    return {"status": "ok", "tables": tables, "total_size": total_size}
+
+
+async def get_redis_storage(redis: Any) -> dict[str, Any]:
+    """Fetch Redis memory usage and key distribution grouped by prefix."""
+    if redis is None:
+        return {"status": "error", "error": "Redis not configured"}
+
+    memory_info = await redis.info("memory")
+    keyspace_info = await redis.info("keyspace")
+
+    total_keys = 0
+    for db_info in keyspace_info.values():
+        if isinstance(db_info, dict) and "keys" in db_info:
+            total_keys += db_info["keys"]
+
+    prefix_counts: dict[str, int] = {}
+    cursor = 0
+    while True:
+        cursor, keys = await redis.scan(cursor=cursor, count=500)
+        for key in keys:
+            key_str = key if isinstance(key, str) else key.decode("utf-8", errors="replace")
+            prefix = key_str.split(":")[0] + ":" if ":" in key_str else key_str
+            prefix_counts[prefix] = prefix_counts.get(prefix, 0) + 1
+        if cursor == 0:
+            break
+
+    keys_by_prefix = [{"prefix": prefix, "count": count} for prefix, count in sorted(prefix_counts.items(), key=lambda x: -x[1])]
+
+    return {
+        "status": "ok",
+        "memory_used": memory_info.get("used_memory_human", ""),
+        "memory_peak": memory_info.get("used_memory_peak_human", ""),
+        "total_keys": total_keys,
+        "keys_by_prefix": keys_by_prefix,
+    }
