@@ -55,8 +55,8 @@ jobs:
         run: |
           # Check that services have correct dependencies
           deps=$(docker-compose config | yq eval '.services.dashboard.depends_on | keys | sort | join(" ")' -)
-          if [ "$deps" != "neo4j postgres rabbitmq redis schema-init" ]; then
-            echo "❌ Dashboard should depend on neo4j, postgres, rabbitmq, redis, and schema-init"
+          if [ "$deps" != "api neo4j postgres rabbitmq redis schema-init" ]; then
+            echo "❌ Dashboard should depend on api, neo4j, postgres, rabbitmq, redis, and schema-init"
             exit 1
           fi
 
