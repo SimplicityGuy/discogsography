@@ -71,6 +71,10 @@ flags:
     paths:
       - "insights/**"
     carryforward: true
+  mcp-server:
+    paths:
+      - "mcp-server/**"
+    carryforward: true
   extractor:
     paths:
       - "extractor/**"
@@ -117,6 +121,10 @@ component_management:
       name: API
       paths:
         - "api/**"
+    - component_id: common
+      name: Common
+      paths:
+        - "common/**"
     - component_id: dashboard
       name: Dashboard
       paths:
@@ -133,6 +141,14 @@ component_management:
       name: Graphinator
       paths:
         - "graphinator/**"
+    - component_id: insights
+      name: Insights
+      paths:
+        - "insights/**"
+    - component_id: mcp-server
+      name: MCP Server
+      paths:
+        - "mcp-server/**"
     - component_id: schema-init
       name: Schema-Init
       paths:
@@ -141,14 +157,6 @@ component_management:
       name: Tableinator
       paths:
         - "tableinator/**"
-    - component_id: insights
-      name: Insights
-      paths:
-        - "insights/**"
-    - component_id: common
-      name: Common
-      paths:
-        - "common/**"
 
 # Ignore patterns
 ignore:
