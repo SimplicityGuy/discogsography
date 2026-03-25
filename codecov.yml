@@ -71,6 +71,10 @@ flags:
     paths:
       - "insights/**"
     carryforward: true
+  mcp-server:
+    paths:
+      - "mcp-server/**"
+    carryforward: true
   extractor:
     paths:
       - "extractor/**"
@@ -145,6 +149,10 @@ component_management:
       name: Insights
       paths:
         - "insights/**"
+    - component_id: mcp-server
+      name: MCP Server
+      paths:
+        - "mcp-server/**"
     - component_id: common
       name: Common
       paths:
