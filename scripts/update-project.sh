@@ -644,7 +644,7 @@ update_python_packages() {
         backup_file "pyproject.toml"
 
         # Backup all pyproject.toml files including nested ones
-        for service in api common dashboard explore graphinator insights schema-init tableinator; do
+        for service in api common dashboard explore graphinator insights mcp-server schema-init tableinator; do
             if [[ -f "$service/pyproject.toml" ]]; then
                 backup_file "$service/pyproject.toml"
             fi
@@ -1159,6 +1159,7 @@ show_file_report() {
     echo "  ✓ explore/pyproject.toml"
     echo "  ✓ graphinator/pyproject.toml"
     echo "  ✓ insights/pyproject.toml"
+    echo "  ✓ mcp-server/pyproject.toml"
     echo "  ✓ schema-init/pyproject.toml"
     echo "  ✓ tableinator/pyproject.toml"
     echo "  ✓ uv.lock (root)"
@@ -1237,6 +1238,7 @@ verify_components() {
         "explore/pyproject.toml"
         "graphinator/pyproject.toml"
         "insights/pyproject.toml"
+        "mcp-server/pyproject.toml"
         "schema-init/pyproject.toml"
         "tableinator/pyproject.toml"
     )
