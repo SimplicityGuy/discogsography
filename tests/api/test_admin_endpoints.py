@@ -167,6 +167,10 @@ class TestExtractionTrigger:
         data = resp.json()
         assert data["status"] == "running"
         assert data["id"] == extraction_id
+        # Verify force_reprocess was sent in request body
+        mock_client_instance.post.assert_called_once()
+        call_kwargs = mock_client_instance.post.call_args
+        assert call_kwargs.kwargs.get("json") == {"force_reprocess": True}
 
     @patch("api.routers.admin.httpx.AsyncClient")
     def test_already_running(self, mock_client_cls: Any, test_client: TestClient, mock_cur: AsyncMock) -> None:

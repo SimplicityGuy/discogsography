@@ -305,7 +305,7 @@ async def trigger_extraction(
     # Call extractor /trigger
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.post(trigger_url)
+            resp = await client.post(trigger_url, json={"force_reprocess": True})
 
         if resp.status_code == 202:
             # Update to running
