@@ -189,8 +189,11 @@ def test_client(
     _taste_router.configure(mock_neo4j, test_api_config.jwt_secret_key)
     _collection_router.configure(mock_neo4j, mock_pool, test_api_config.jwt_secret_key)
     _snapshot_router.configure(jwt_secret=TEST_JWT_SECRET, redis_client=fake_redis)
+    import api.routers.insights_compute as _insights_compute_router
+
     _search_router.configure(mock_pool, mock_redis)
     _recommend_router.configure(mock_neo4j, test_api_config.jwt_secret_key, mock_redis)
+    _insights_compute_router.configure(mock_neo4j, mock_pool, mock_redis)
 
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client

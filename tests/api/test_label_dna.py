@@ -5,6 +5,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
+import pytest
 
 
 # --- Helpers ---
@@ -240,30 +241,24 @@ class TestBuildDnaInternal:
 
     @patch("api.routers.label_dna.get_label_format_profile")
     @patch("api.routers.label_dna.get_label_active_years")
-    @patch("api.routers.label_dna.get_label_decade_profile")
-    @patch("api.routers.label_dna.get_label_style_profile")
-    @patch("api.routers.label_dna.get_label_genre_profile")
-    @patch("api.routers.label_dna.get_label_identity")
+    @patch("api.routers.label_dna.get_label_full_profile")
     def test_build_dna_success(
         self,
-        mock_identity: AsyncMock,
-        mock_genres: AsyncMock,
-        mock_styles: AsyncMock,
-        mock_decades: AsyncMock,
+        mock_full_profile: AsyncMock,
         mock_active_years: AsyncMock,
         mock_formats: AsyncMock,
         test_client: TestClient,
     ) -> None:
-        """Lines 64-91: _build_dna full success path via /api/label/{id}/dna."""
-        mock_identity.return_value = {
+        """_build_dna full success path via /api/label/{id}/dna."""
+        mock_full_profile.return_value = {
             "label_id": "42",
             "label_name": "ECM Records",
             "release_count": 200,
             "artist_count": 80,
+            "genres": [{"name": "Jazz", "count": 150}, {"name": "Classical", "count": 50}],
+            "styles": [{"name": "Avant-garde", "count": 100}],
+            "decades": [{"decade": 1970, "count": 80}, {"decade": 1980, "count": 120}],
         }
-        mock_genres.return_value = [{"name": "Jazz", "count": 150}, {"name": "Classical", "count": 50}]
-        mock_styles.return_value = [{"name": "Avant-garde", "count": 100}]
-        mock_decades.return_value = [{"decade": 1970, "count": 80}, {"decade": 1980, "count": 120}]
         mock_active_years.return_value = [1970, 1975, 1980, 1985, 1990]
         mock_formats.return_value = [{"name": "Vinyl", "count": 100}, {"name": "CD", "count": 100}]
 
@@ -283,30 +278,24 @@ class TestBuildDnaInternal:
 
     @patch("api.routers.label_dna.get_label_format_profile")
     @patch("api.routers.label_dna.get_label_active_years")
-    @patch("api.routers.label_dna.get_label_decade_profile")
-    @patch("api.routers.label_dna.get_label_style_profile")
-    @patch("api.routers.label_dna.get_label_genre_profile")
-    @patch("api.routers.label_dna.get_label_identity")
+    @patch("api.routers.label_dna.get_label_full_profile")
     def test_build_dna_no_decades_peak_none(
         self,
-        mock_identity: AsyncMock,
-        mock_genres: AsyncMock,
-        mock_styles: AsyncMock,
-        mock_decades: AsyncMock,
+        mock_full_profile: AsyncMock,
         mock_active_years: AsyncMock,
         mock_formats: AsyncMock,
         test_client: TestClient,
     ) -> None:
-        """Line 79: peak_decade is None when decades list is empty."""
-        mock_identity.return_value = {
+        """peak_decade is None when decades list is empty."""
+        mock_full_profile.return_value = {
             "label_id": "99",
             "label_name": "Empty Label",
             "release_count": 10,
             "artist_count": 5,
+            "genres": [],
+            "styles": [],
+            "decades": [],
         }
-        mock_genres.return_value = []
-        mock_styles.return_value = []
-        mock_decades.return_value = []
         mock_active_years.return_value = []
         mock_formats.return_value = []
 
@@ -316,6 +305,79 @@ class TestBuildDnaInternal:
         assert data["peak_decade"] is None
         # prolificacy: num_active_years=0 → 0.0
         assert data["prolificacy"] == 0.0
+
+
+class TestGetLabelFullProfile:
+    """Tests for get_label_full_profile query function."""
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.get_label_decade_profile")
+    @patch("api.queries.label_dna_queries.get_label_style_profile")
+    @patch("api.queries.label_dna_queries.get_label_genre_profile")
+    @patch("api.queries.label_dna_queries.get_label_identity")
+    async def test_full_profile_with_sufficient_releases(
+        self,
+        mock_identity: AsyncMock,
+        mock_genres: AsyncMock,
+        mock_styles: AsyncMock,
+        mock_decades: AsyncMock,
+    ) -> None:
+        """Labels with >= MIN_RELEASES run parallel genre/style/decade queries."""
+        from api.queries.label_dna_queries import get_label_full_profile
+
+        mock_identity.return_value = {
+            "label_id": "42",
+            "label_name": "ECM Records",
+            "release_count": 200,
+            "artist_count": 80,
+        }
+        mock_genres.return_value = [{"name": "Jazz", "count": 150}]
+        mock_styles.return_value = [{"name": "Avant-garde", "count": 100}]
+        mock_decades.return_value = [{"decade": 1970, "count": 80}]
+
+        result = await get_label_full_profile(AsyncMock(), "42")
+        assert result is not None
+        assert result["release_count"] == 200
+        assert result["genres"] == [{"name": "Jazz", "count": 150}]
+        assert result["styles"] == [{"name": "Avant-garde", "count": 100}]
+        assert result["decades"] == [{"decade": 1970, "count": 80}]
+        mock_genres.assert_called_once()
+        mock_styles.assert_called_once()
+        mock_decades.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.get_label_identity")
+    async def test_full_profile_not_found(self, mock_identity: AsyncMock) -> None:
+        """Returns None when label identity is not found."""
+        from api.queries.label_dna_queries import get_label_full_profile
+
+        mock_identity.return_value = None
+        result = await get_label_full_profile(AsyncMock(), "999")
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.get_label_genre_profile")
+    @patch("api.queries.label_dna_queries.get_label_identity")
+    async def test_full_profile_below_min_releases_skips_profiles(
+        self,
+        mock_identity: AsyncMock,
+        mock_genres: AsyncMock,
+    ) -> None:
+        """Labels below MIN_RELEASES return early without profile queries."""
+        from api.queries.label_dna_queries import get_label_full_profile
+
+        mock_identity.return_value = {
+            "label_id": "1",
+            "label_name": "Tiny Label",
+            "release_count": 3,
+            "artist_count": 1,
+        }
+
+        result = await get_label_full_profile(AsyncMock(), "1")
+        assert result is not None
+        assert result["release_count"] == 3
+        assert result["genres"] == []
+        mock_genres.assert_not_called()
 
 
 class TestSimilarLabelsEndpointNotReady:
@@ -552,3 +614,92 @@ class TestLabelDnaCaching:
             response = test_client.get("/api/label/157/similar")
 
         assert response.status_code == 200
+
+
+class TestBuildDnaCaching:
+    """Tests for Redis caching inside _build_dna."""
+
+    def test_build_dna_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """_build_dna returns cached LabelDNA without running queries."""
+        from api.models import DecadeCount, FormatWeight, GenreWeight, LabelDNA, StyleWeight
+
+        dna = LabelDNA(
+            label_id="42",
+            label_name="ECM",
+            release_count=200,
+            artist_count=80,
+            artist_diversity=0.4,
+            active_years=[1970],
+            peak_decade=1970,
+            prolificacy=200.0,
+            genres=[GenreWeight(name="Jazz", count=200, percentage=100.0)],
+            styles=[StyleWeight(name="Avant", count=100, percentage=100.0)],
+            formats=[FormatWeight(name="Vinyl", count=100, percentage=100.0)],
+            decades=[DecadeCount(decade=1970, count=200, percentage=100.0)],
+        )
+        mock_redis.get = AsyncMock(return_value=json.dumps(dna.model_dump(), default=str))
+
+        response = test_client.get("/api/label/42/dna")
+        assert response.status_code == 200
+        assert response.json()["label_id"] == "42"
+
+    @patch("api.routers.label_dna.get_label_format_profile")
+    @patch("api.routers.label_dna.get_label_active_years")
+    @patch("api.routers.label_dna.get_label_full_profile")
+    def test_build_dna_cache_miss_stores(
+        self,
+        mock_full_profile: AsyncMock,
+        mock_active_years: AsyncMock,
+        mock_formats: AsyncMock,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """_build_dna caches computed DNA on miss."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_full_profile.return_value = {
+            "label_id": "42",
+            "label_name": "ECM",
+            "release_count": 200,
+            "artist_count": 80,
+            "genres": [{"name": "Jazz", "count": 200}],
+            "styles": [],
+            "decades": [{"decade": 1970, "count": 200}],
+        }
+        mock_active_years.return_value = [1970]
+        mock_formats.return_value = []
+
+        response = test_client.get("/api/label/42/dna")
+        assert response.status_code == 200
+        assert mock_redis.setex.call_count >= 1
+        cache_keys = [call[0][0] for call in mock_redis.setex.call_args_list]
+        assert "label-dna:42" in cache_keys
+
+    @patch("api.routers.label_dna.get_label_format_profile")
+    @patch("api.routers.label_dna.get_label_active_years")
+    @patch("api.routers.label_dna.get_label_full_profile")
+    def test_build_dna_cache_set_failure(
+        self,
+        mock_full_profile: AsyncMock,
+        mock_active_years: AsyncMock,
+        mock_formats: AsyncMock,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """_build_dna still returns DNA even if cache set fails."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=Exception("write failed"))
+        mock_full_profile.return_value = {
+            "label_id": "42",
+            "label_name": "ECM",
+            "release_count": 200,
+            "artist_count": 80,
+            "genres": [],
+            "styles": [],
+            "decades": [],
+        }
+        mock_active_years.return_value = []
+        mock_formats.return_value = []
+
+        response = test_client.get("/api/label/42/dna")
+        assert response.status_code == 200
+        assert response.json()["label_id"] == "42"

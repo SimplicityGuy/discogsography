@@ -25,11 +25,10 @@ from api.queries.label_dna_queries import (
     compute_similar_labels,
     get_candidate_labels_genre_vectors,
     get_label_active_years,
-    get_label_decade_profile,
     get_label_format_profile,
+    get_label_full_profile,
     get_label_genre_profile,
     get_label_identity,
-    get_label_style_profile,
 )
 
 
@@ -59,24 +58,38 @@ async def _build_dna(label_id: str) -> tuple[LabelDNA | None, str]:
     """Build a full LabelDNA fingerprint for a label.
 
     Returns (dna, reason) — reason is "ok", "not_found", or "too_few".
+
+    Checks Redis cache first (same key as ``/api/label/{id}/dna``).
+    On miss, runs profile queries and caches the result so that
+    subsequent calls (e.g. from ``/api/label/dna/compare``) are instant.
     """
-    identity = await get_label_identity(_neo4j_driver, label_id)
-    if not identity:
+    # Check cache first — reuses the same key as the /dna endpoint
+    cache_key = f"label-dna:{label_id}"
+    if _redis:
+        try:
+            cached = await _redis.get(cache_key)
+            if cached:
+                return LabelDNA(**json.loads(cached)), "ok"
+        except Exception:
+            logger.debug("⚠️ Label DNA _build_dna cache get failed", key=cache_key)
+
+    profile = await get_label_full_profile(_neo4j_driver, label_id)
+    if not profile:
         return None, "not_found"
 
-    if identity["release_count"] < MIN_RELEASES:
+    release_count = profile["release_count"]
+    if release_count < MIN_RELEASES:
         return None, "too_few"
 
-    genres, styles, decades, active_years, formats = await asyncio.gather(
-        get_label_genre_profile(_neo4j_driver, label_id),
-        get_label_style_profile(_neo4j_driver, label_id),
-        get_label_decade_profile(_neo4j_driver, label_id),
+    artist_count = profile["artist_count"]
+    genres = profile["genres"]
+    styles = profile["styles"]
+    decades = profile["decades"]
+
+    active_years, formats = await asyncio.gather(
         get_label_active_years(_neo4j_driver, label_id),
         get_label_format_profile(_neo4j_driver, label_id),
     )
-
-    release_count = identity["release_count"]
-    artist_count = identity["artist_count"]
 
     # Artist diversity: unique artists / total releases (capped at 1.0)
     artist_diversity = round(min(artist_count / release_count, 1.0), 4) if release_count else 0.0
@@ -94,9 +107,9 @@ async def _build_dna(label_id: str) -> tuple[LabelDNA | None, str]:
     decade_total = sum(d["count"] for d in decades)
     format_total = sum(f["count"] for f in formats)
 
-    return LabelDNA(
-        label_id=identity["label_id"],
-        label_name=identity["label_name"],
+    dna = LabelDNA(
+        label_id=profile["label_id"],
+        label_name=profile["label_name"],
         release_count=release_count,
         artist_count=artist_count,
         artist_diversity=artist_diversity,
@@ -107,7 +120,16 @@ async def _build_dna(label_id: str) -> tuple[LabelDNA | None, str]:
         styles=[StyleWeight(**s) for s in _add_percentages(styles, style_total)],
         formats=[FormatWeight(**f) for f in _add_percentages(formats, format_total)],
         decades=[DecadeCount(**d) for d in _add_percentages(decades, decade_total)],
-    ), "ok"
+    )
+
+    # Cache the result so compare and subsequent /dna calls are instant
+    if _redis:
+        try:
+            await _redis.setex(cache_key, _LABEL_DNA_CACHE_TTL, json.dumps(dna.model_dump(), default=str))
+        except Exception:
+            logger.debug("⚠️ Label DNA _build_dna cache set failed", key=cache_key)
+
+    return dna, "ok"
 
 
 @router.get("/api/label/{label_id}/dna")

@@ -276,6 +276,31 @@ class TestExploreQueries:
         assert result == record
 
     @pytest.mark.asyncio
+    async def test_explore_label_not_found(self) -> None:
+        """Label not found returns None."""
+        from api.queries.neo4j_queries import explore_label
+
+        driver = _make_driver(single=None)
+        result = await explore_label(driver, "Nonexistent Label")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_explore_label_fallback_no_precomputed(self) -> None:
+        """Label without pre-computed stats falls back to live traversal."""
+        from api.queries.neo4j_queries import explore_label
+
+        # First call: pre-computed query returns record with release_count=None
+        first_result = _MockResult(single={"id": "200", "name": "New Label", "release_count": None, "artist_count": None, "genre_count": None})
+        # Second call: fallback live traversal returns actual counts
+        fallback_result = _MockResult(single={"id": "200", "name": "New Label", "release_count": 50, "artist_count": 10, "genre_count": 3})
+        driver = _make_driver_with_side_effects([first_result, fallback_result])
+        result = await explore_label(driver, "New Label")
+        assert result is not None
+        assert result["release_count"] == 50
+        assert result["artist_count"] == 10
+        assert result["genre_count"] == 3
+
+    @pytest.mark.asyncio
     async def test_explore_style(self) -> None:
         from api.queries.neo4j_queries import explore_style
 

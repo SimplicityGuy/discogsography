@@ -242,10 +242,18 @@ class TestExecuteSql:
 
     @pytest.mark.asyncio
     async def test_profiles_sql_when_enabled(self, tmp_path: Path) -> None:
-        """execute_sql runs EXPLAIN (ANALYZE, BUFFERS, VERBOSE) when profiling enabled."""
+        """execute_sql runs EXPLAIN (ANALYZE, BUFFERS, VERBOSE) on a separate cursor."""
         log_file = tmp_path / "profiling.log"
+
+        # Set up the explain cursor (used by _try_sql_profile via cursor.connection.cursor())
+        explain_cursor = AsyncMock()
+        explain_cursor.fetchall = AsyncMock(return_value=[("Seq Scan on artists",), ("  rows=100",)])
+        explain_cursor.__aenter__ = AsyncMock(return_value=explain_cursor)
+        explain_cursor.__aexit__ = AsyncMock(return_value=False)
+
+        # Main cursor — its results must NOT be overwritten by profiling
         cursor = AsyncMock()
-        cursor.fetchall = AsyncMock(return_value=[("Seq Scan on artists",), ("  rows=100",)])
+        cursor.connection.cursor = MagicMock(return_value=explain_cursor)
 
         with (
             patch("common.query_debug.is_db_profiling", return_value=True),
@@ -259,8 +267,10 @@ class TestExecuteSql:
 
             await execute_sql(cursor, "SELECT * FROM artists", {"id": 1})
 
-        # Should have called execute twice: once for the query, once for EXPLAIN
-        assert cursor.execute.await_count == 2
+        # Original cursor should only be called once (the main query)
+        assert cursor.execute.await_count == 1
+        # EXPLAIN should run on the separate cursor
+        assert explain_cursor.execute.await_count == 1
 
         content = log_file.read_text()
         assert "EXPLAIN (ANALYZE, BUFFERS, VERBOSE) result for SQL query:" in content
@@ -269,20 +279,19 @@ class TestExecuteSql:
 
     @pytest.mark.asyncio
     async def test_explain_on_sql_error(self, tmp_path: Path) -> None:
-        """execute_sql runs EXPLAIN (without ANALYZE) on query failure."""
+        """execute_sql runs EXPLAIN (without ANALYZE) on a separate cursor after failure."""
         log_file = tmp_path / "profiling.log"
 
-        call_count = 0
+        # Set up the explain cursor (used by _try_sql_explain_on_error)
+        explain_cursor = AsyncMock()
+        explain_cursor.fetchall = AsyncMock(return_value=[("Seq Scan",)])
+        explain_cursor.__aenter__ = AsyncMock(return_value=explain_cursor)
+        explain_cursor.__aexit__ = AsyncMock(return_value=False)
 
-        async def side_effect(*_args: object, **_kwargs: object) -> None:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 1:
-                raise RuntimeError("relation does not exist")
-
+        # Main cursor — execute raises on first call
         cursor = AsyncMock()
-        cursor.execute = AsyncMock(side_effect=side_effect)
-        cursor.fetchall = AsyncMock(return_value=[("Seq Scan",)])
+        cursor.execute = AsyncMock(side_effect=RuntimeError("relation does not exist"))
+        cursor.connection.cursor = MagicMock(return_value=explain_cursor)
 
         with (
             patch("common.query_debug.is_db_profiling", return_value=True),
@@ -319,16 +328,14 @@ class TestExecuteSql:
         """execute_sql swallows errors when EXPLAIN ANALYZE itself fails."""
         log_file = tmp_path / "profiling.log"
 
-        call_count = 0
-
-        async def side_effect(*_args: object, **_kwargs: object) -> None:
-            nonlocal call_count
-            call_count += 1
-            if call_count == 2:
-                raise RuntimeError("EXPLAIN not supported")
+        # Set up explain cursor that raises on execute
+        explain_cursor = AsyncMock()
+        explain_cursor.execute = AsyncMock(side_effect=RuntimeError("EXPLAIN not supported"))
+        explain_cursor.__aenter__ = AsyncMock(return_value=explain_cursor)
+        explain_cursor.__aexit__ = AsyncMock(return_value=False)
 
         cursor = AsyncMock()
-        cursor.execute = AsyncMock(side_effect=side_effect)
+        cursor.connection.cursor = MagicMock(return_value=explain_cursor)
 
         with (
             patch("common.query_debug.is_db_profiling", return_value=True),
@@ -343,18 +350,24 @@ class TestExecuteSql:
             # Should not raise — the EXPLAIN failure is swallowed
             await execute_sql(cursor, "SELECT 1")
 
-        assert call_count == 2
+        # Main cursor executed once, explain cursor attempted once (and failed)
+        assert cursor.execute.await_count == 1
+        assert explain_cursor.execute.await_count == 1
 
     @pytest.mark.asyncio
     async def test_explain_on_error_failure_swallowed(self, tmp_path: Path) -> None:
         """execute_sql swallows errors when EXPLAIN (on error path) itself fails."""
         log_file = tmp_path / "profiling.log"
 
-        async def always_fail(*_args: object, **_kwargs: object) -> None:
-            raise RuntimeError("DB unreachable")
+        # Set up explain cursor that also fails
+        explain_cursor = AsyncMock()
+        explain_cursor.execute = AsyncMock(side_effect=RuntimeError("DB unreachable"))
+        explain_cursor.__aenter__ = AsyncMock(return_value=explain_cursor)
+        explain_cursor.__aexit__ = AsyncMock(return_value=False)
 
         cursor = AsyncMock()
-        cursor.execute = AsyncMock(side_effect=always_fail)
+        cursor.execute = AsyncMock(side_effect=RuntimeError("DB unreachable"))
+        cursor.connection.cursor = MagicMock(return_value=explain_cursor)
 
         with (
             patch("common.query_debug.is_db_profiling", return_value=True),

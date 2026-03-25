@@ -104,11 +104,11 @@ tests/
 │   ├── test_computations.py             # Computation orchestration tests
 │   ├── test_insights.py                 # Main service tests
 │   ├── test_models.py                   # Response model tests
-│   ├── test_neo4j_queries.py            # Neo4j query tests
-│   ├── test_pg_queries.py               # PostgreSQL query tests
+│   ├── test_neo4j_queries.py            # Query function tests (via API internal endpoints)
+│   ├── test_pg_queries.py               # PostgreSQL query tests (via API internal endpoints)
 │   └── test_scheduler.py               # Scheduler tests
 │
-├── mcp-server/                          # MCP server tests
+├── mcp-server/                          # MCP server tests (placeholder, no tests yet)
 │
 ├── perftest/                            # Performance testing suite
 │   ├── config.yaml                      # Test configuration (entities, iterations)

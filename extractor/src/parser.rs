@@ -101,15 +101,22 @@ impl ElementContext {
 pub struct XmlParser {
     data_type: DataType,
     sender: mpsc::Sender<DataMessage>,
+    capture_raw_xml: bool,
 }
 
 impl XmlParser {
     pub fn new(data_type: DataType, sender: mpsc::Sender<DataMessage>) -> Self {
-        Self { data_type, sender }
+        Self { data_type, sender, capture_raw_xml: false }
+    }
+
+    #[allow(dead_code)]
+    pub fn with_options(data_type: DataType, sender: mpsc::Sender<DataMessage>, capture_raw_xml: bool) -> Self {
+        Self { data_type, sender, capture_raw_xml }
     }
 
     pub async fn parse_file(&self, file_path: &Path) -> Result<u64> {
-        let file = File::open(file_path).context(format!("Failed to open file: {:?}", file_path))?;
+        // `file_path` comes from operator-controlled config (CLI/config file), not HTTP input.
+        let file = File::open(file_path).context(format!("Failed to open file: {:?}", file_path))?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 
         let decoder = GzDecoder::new(file);
         let buf_reader = BufReader::new(decoder);
@@ -164,7 +171,12 @@ impl XmlParser {
                         if let Value::Object(ref obj) = record {
                             let id = obj.get("@id").or_else(|| obj.get("id")).and_then(|v| v.as_str()).unwrap_or("unknown").to_string();
                             let sha256 = calculate_record_hash(&record);
-                            let message = DataMessage { id, sha256, data: record.clone() };
+                            let raw_xml = if self.capture_raw_xml {
+                                Some(reconstruct_xml(target_element, &record))
+                            } else {
+                                None
+                            };
+                            let message = DataMessage { id, sha256, data: record.clone(), raw_xml };
 
                             if self.sender.send(message).await.is_err() {
                                 warn!("⚠️ Receiver dropped, stopping parsing");
@@ -211,7 +223,12 @@ impl XmlParser {
 
                                 let final_value = Value::Object(final_obj);
                                 let sha256 = calculate_record_hash(&final_value);
-                                let message = DataMessage { id: id.clone(), sha256, data: final_value };
+                                let raw_xml = if self.capture_raw_xml {
+                                    Some(reconstruct_xml(target_element, &final_value))
+                                } else {
+                                    None
+                                };
+                                let message = DataMessage { id: id.clone(), sha256, data: final_value, raw_xml };
 
                                 if self.sender.send(message).await.is_err() {
                                     warn!("⚠️ Receiver dropped, stopping parsing");
@@ -237,7 +254,8 @@ impl XmlParser {
                 }
 
                 Ok(Event::Text(e)) => {
-                    if in_target_element && let Some(context) = element_stack.last_mut()
+                    if in_target_element
+                        && let Some(context) = element_stack.last_mut()
                         && let Ok(text) = e.decode()
                     {
                         context.text_content.push_str(&text);
@@ -286,6 +304,71 @@ impl XmlParser {
 
         debug!("✅ Finished parsing {} records from {:?}", record_count, file_path);
         Ok(record_count)
+    }
+}
+
+/// Reconstruct an XML fragment from a parsed JSON Value using quick-xml::Writer.
+fn reconstruct_xml(element_name: &str, value: &Value) -> Vec<u8> {
+    use quick_xml::Writer;
+    use std::io::Cursor;
+    let mut writer = Writer::new(Cursor::new(Vec::new()));
+    write_element(&mut writer, element_name, value);
+    writer.into_inner().into_inner()
+}
+
+fn write_element<W: std::io::Write>(writer: &mut quick_xml::Writer<W>, name: &str, value: &Value) {
+    use quick_xml::events::{BytesEnd, BytesStart, BytesText};
+
+    match value {
+        Value::Object(map) => {
+            let mut start = BytesStart::new(name);
+            for (key, val) in map {
+                if let Some(attr_name) = key.strip_prefix('@')
+                    && let Value::String(s) = val
+                {
+                    start.push_attribute((attr_name, s.as_str()));
+                }
+            }
+            writer.write_event(Event::Start(start)).unwrap();
+
+            if let Some(Value::String(text)) = map.get("#text") {
+                writer.write_event(Event::Text(BytesText::new(text))).unwrap();
+            }
+
+            let has_at_id = map.contains_key("@id");
+            for (key, val) in map {
+                if key.starts_with('@') || key == "#text" {
+                    continue;
+                }
+                if key == "id" && has_at_id {
+                    continue;
+                }
+                match val {
+                    Value::Array(arr) => {
+                        for item in arr {
+                            write_element(writer, key, item);
+                        }
+                    }
+                    _ => write_element(writer, key, val),
+                }
+            }
+            writer.write_event(Event::End(BytesEnd::new(name))).unwrap();
+        }
+        Value::String(s) => {
+            writer.write_event(Event::Start(BytesStart::new(name))).unwrap();
+            writer.write_event(Event::Text(BytesText::new(s))).unwrap();
+            writer.write_event(Event::End(BytesEnd::new(name))).unwrap();
+        }
+        Value::Number(n) => {
+            let s = n.to_string();
+            writer.write_event(Event::Start(BytesStart::new(name))).unwrap();
+            writer.write_event(Event::Text(BytesText::new(&s))).unwrap();
+            writer.write_event(Event::End(BytesEnd::new(name))).unwrap();
+        }
+        Value::Null => {
+            writer.write_event(Event::Empty(BytesStart::new(name))).unwrap();
+        }
+        _ => {}
     }
 }
 

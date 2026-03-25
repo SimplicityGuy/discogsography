@@ -117,8 +117,10 @@ netstat -an | grep 5672
 1. **✅ Verify credentials in `.env`**
 
    ```bash
-   # Check AMQP_CONNECTION
-   echo $AMQP_CONNECTION
+   # Check RabbitMQ connection variables
+   echo $RABBITMQ_HOST
+   echo $RABBITMQ_USERNAME
+   echo $RABBITMQ_PASSWORD
 
    # Should match RabbitMQ configuration
    ```

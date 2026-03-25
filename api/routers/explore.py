@@ -35,8 +35,10 @@ router = APIRouter()
 _neo4j_driver: Any = None
 _redis: Any = None
 
-# Redis cache TTL for trends/genre and trends/style (24 hours — data changes only on import)
+# Redis cache TTL for trends (genre/style/label) and explore (artist/label)
+# 24 hours — data changes only on import
 _TRENDS_CACHE_TTL = 86400
+_EXPLORE_CACHE_TTL = 86400
 
 
 def configure(neo4j: Any, jwt_secret: str | None, redis: Any = None) -> None:
@@ -125,12 +127,32 @@ async def explore(
     entity_type = type.lower()
     if entity_type not in EXPLORE_DISPATCH:
         return JSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
+
+    # Cache artist and label explore results in Redis (expensive COUNT traversals)
+    if _redis and entity_type in ("artist", "label"):
+        cache_key = f"explore:{entity_type}:{name}"
+        try:
+            cached = await _redis.get(cache_key)
+            if cached:
+                return JSONResponse(content=json.loads(cached))
+        except Exception:
+            logger.debug("⚠️ Explore cache get failed", key=cache_key)
+
     query_func = EXPLORE_DISPATCH[entity_type]
     result = await query_func(_neo4j_driver, name)
     if not result:
         return JSONResponse(content={"error": f"{type.capitalize()} '{name}' not found"}, status_code=404)
     categories = _build_categories(entity_type, result)
-    return JSONResponse(content={"center": {"id": str(result["id"]), "name": result["name"], "type": entity_type}, "categories": categories})
+    response = {"center": {"id": str(result["id"]), "name": result["name"], "type": entity_type}, "categories": categories}
+
+    if _redis and entity_type in ("artist", "label"):
+        cache_key = f"explore:{entity_type}:{name}"
+        try:
+            await _redis.setex(cache_key, _EXPLORE_CACHE_TTL, json.dumps(response))
+        except Exception:
+            logger.debug("⚠️ Explore cache set failed", key=cache_key)
+
+    return JSONResponse(content=response)
 
 
 @router.get("/api/expand")
@@ -282,8 +304,8 @@ async def get_trends(
     if entity_type not in TRENDS_DISPATCH:
         return JSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
 
-    # Cache genre and style trends in Redis (data changes only on import)
-    if _redis and entity_type in ("genre", "style"):
+    # Cache genre, style, and label trends in Redis (data changes only on import)
+    if _redis and entity_type in ("genre", "style", "label"):
         cache_key = f"trends:{entity_type}:{name}"
         try:
             cached = await _redis.get(cache_key)
@@ -296,7 +318,7 @@ async def get_trends(
     results = await query_func(_neo4j_driver, name)
     response = {"name": name, "type": entity_type, "data": results}
 
-    if _redis and entity_type in ("genre", "style"):
+    if _redis and entity_type in ("genre", "style", "label"):
         cache_key = f"trends:{entity_type}:{name}"
         try:
             await _redis.setex(cache_key, _TRENDS_CACHE_TTL, json.dumps(response))

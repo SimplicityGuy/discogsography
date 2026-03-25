@@ -499,16 +499,19 @@ async def check_file_completion(
 
 
 async def compute_genre_style_stats() -> None:
-    """Pre-compute aggregate counts and first_year on Genre and Style nodes.
+    """Pre-compute aggregate counts and first_year on Genre, Style, and Label nodes.
 
     Sets release_count, artist_count, label_count, style_count/genre_count,
-    and first_year properties on each Genre and Style node.
+    and first_year properties on each Genre and Style node.  Also sets
+    release_count, artist_count, genre_count on Label nodes.
 
-    - Aggregate counts are read by the explore/genre and explore/style API
-      endpoints, replacing 4 expensive traversal queries (~200M DB hits for
-      Rock) with a single property read (~3 DB hits).
-    - first_year is read by the genre-emergence query, replacing a full IS
-      edge scan (~184M DB hits) with an index seek (~100 DB hits).
+    - Genre/Style counts are read by explore/genre and explore/style endpoints,
+      replacing 4 expensive traversal queries (~200M DB hits for Rock)
+      with a single property read (~3 DB hits).
+    - first_year is read by genre-emergence, replacing a full IS edge scan
+      (~184M DB hits) with an index seek (~100 DB hits).
+    - Label counts are read by explore/label, replacing a 1.2M DB-hit
+      traversal (for Reprise Records with 55K releases) with ~3 DB hits.
 
     Should be called after all releases have been imported.
     """
@@ -591,6 +594,33 @@ async def compute_genre_style_stats() -> None:
     } IN TRANSACTIONS OF 1 ROWS
     """
 
+    # Label stats: release_count, artist_count, genre_count.
+    # Labels have higher cardinality (~2.3M) than genres (16) or styles (757),
+    # but most labels have <100 releases so each batch computes quickly.
+    # Use IN TRANSACTIONS OF 100 ROWS for throughput.
+    label_cypher = """
+    CALL {
+        MATCH (l:Label)
+        CALL {
+            WITH l
+            MATCH (l)<-[:ON]-(r:Release)
+            RETURN count(DISTINCT r) AS rc
+        }
+        CALL {
+            WITH l
+            MATCH (l)<-[:ON]-(r:Release)-[:BY]->(a:Artist)
+            RETURN count(DISTINCT a) AS ac
+        }
+        CALL {
+            WITH l
+            MATCH (l)<-[:ON]-(r:Release)-[:IS]->(g:Genre)
+            RETURN count(DISTINCT g) AS gc
+        }
+        SET l.release_count = rc, l.artist_count = ac,
+            l.genre_count = gc
+    } IN TRANSACTIONS OF 100 ROWS
+    """
+
     try:
         logger.info("📊 Computing aggregate stats on Genre nodes...")
         async with graph.session(database="neo4j") as session:
@@ -609,9 +639,18 @@ async def compute_genre_style_stats() -> None:
                 "✅ Style stats computed",
                 counters=str(summary.counters),
             )
+
+        logger.info("📊 Computing aggregate stats on Label nodes...")
+        async with graph.session(database="neo4j") as session:
+            result = await session.run(label_cypher)
+            summary = await result.consume()
+            logger.info(
+                "✅ Label stats computed",
+                counters=str(summary.counters),
+            )
     except Exception as e:
         logger.error(
-            "❌ Failed to compute genre/style stats",
+            "❌ Failed to compute genre/style/label stats",
             error=str(e),
         )
 

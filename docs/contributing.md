@@ -155,8 +155,8 @@ just lint
 # Format code
 just format
 
-# Type check
-just typecheck
+# Type check (ruff + mypy)
+just lint-python
 
 # Security scan
 just security

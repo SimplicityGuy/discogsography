@@ -26,7 +26,7 @@ Environment variables:
 
 ```bash
 # Neo4j connection
-NEO4J_HOST=neo4j:7687
+NEO4J_HOST=neo4j
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=discogsography
 
@@ -44,6 +44,9 @@ STUCK_CHECK_INTERVAL=30             # Seconds between stuck-state checks (defaul
 # Idle Mode
 STARTUP_IDLE_TIMEOUT=30             # Seconds after startup with no messages before idle mode (default: 30)
 IDLE_LOG_INTERVAL=300               # Seconds between idle status logs (default: 300)
+
+# Logging
+LOG_LEVEL=INFO                      # Logging level (default: INFO)
 
 # Batch Processing (Enabled by Default)
 NEO4J_BATCH_MODE=true               # Enable batch processing (default: true)
@@ -101,8 +104,9 @@ See the [Configuration Guide](../docs/configuration.md#batch-processing-configur
 
 1. **Label** - Record labels
 
-   - Properties: id, name, sha256
+   - Properties: id, name, sha256, release_count\*, artist_count\*, genre_count\*
    - Relationships: SUBLABEL_OF (to parent label)
+   - \*Pre-computed by `compute_genre_style_stats()` (see [Pre-Computed Node Properties](#-pre-computed-node-properties))
 
 1. **Release** - Album/single releases
 
@@ -116,12 +120,14 @@ See the [Configuration Guide](../docs/configuration.md#batch-processing-configur
 
 1. **Genre** - Musical genres
 
-   - Properties: name
+   - Properties: name, release_count\*, artist_count\*, label_count\*, style_count\*, first_year\*
+   - \*Pre-computed by `compute_genre_style_stats()` (see [Pre-Computed Node Properties](#-pre-computed-node-properties))
 
 1. **Style** - Musical styles (sub-genres)
 
-   - Properties: name
+   - Properties: name, release_count\*, artist_count\*, label_count\*, genre_count\*, first_year\*
    - Relationships: PART_OF (to Genre)
+   - \*Pre-computed by `compute_genre_style_stats()` (see [Pre-Computed Node Properties](#-pre-computed-node-properties))
 
 1. **User** - Authenticated Discogs users (created by API syncer, not graphinator)
 
@@ -167,6 +173,46 @@ queues = ["labels", "artists", "releases", "masters"]
 - SHA256 hash stored on each node
 - Skip processing if hash already exists
 - Ensures idempotent operations
+
+### 🧹 Post-Extraction Cleanup
+
+After all queues have been consumed, the graphinator performs cleanup and enrichment steps:
+
+1. **Batch Queue Flushing** — Any remaining messages in batch queues are flushed to ensure no data is left unprocessed
+1. **Stub Node Cleanup** — Removes nodes that have no `sha256` property, which are created as side effects of `MERGE` operations when referenced entities (e.g., artists, labels) haven't been ingested yet
+1. **Aggregate Stats Computation** — Runs `compute_genre_style_stats()` to pre-compute node properties (see below)
+
+### 📊 Pre-Computed Node Properties
+
+After graph import of releases, the graphinator runs `compute_genre_style_stats()` to set aggregate properties directly on nodes. These pre-computed stats avoid expensive traversal queries at API request time.
+
+**Genre nodes:**
+
+| Property        | Description                                            |
+| --------------- | ------------------------------------------------------ |
+| `release_count` | Number of releases classified as this genre            |
+| `artist_count`  | Number of distinct artists with releases in this genre |
+| `label_count`   | Number of distinct labels with releases in this genre  |
+| `style_count`   | Number of styles associated with this genre            |
+| `first_year`    | Earliest release year for this genre                   |
+
+**Style nodes:**
+
+| Property        | Description                                            |
+| --------------- | ------------------------------------------------------ |
+| `release_count` | Number of releases classified as this style            |
+| `artist_count`  | Number of distinct artists with releases in this style |
+| `label_count`   | Number of distinct labels with releases in this style  |
+| `genre_count`   | Number of genres associated with this style            |
+| `first_year`    | Earliest release year for this style                   |
+
+**Label nodes:**
+
+| Property        | Description                                            |
+| --------------- | ------------------------------------------------------ |
+| `release_count` | Number of releases on this label                       |
+| `artist_count`  | Number of distinct artists on this label               |
+| `genre_count`   | Number of distinct genres across this label's releases |
 
 ## Development
 

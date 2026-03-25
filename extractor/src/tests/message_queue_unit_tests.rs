@@ -3,7 +3,7 @@ use serde_json::json;
 
 // Helper to create test messages
 fn create_test_data_message(id: &str) -> DataMessage {
-    DataMessage { id: id.to_string(), sha256: format!("sha_{}", id), data: json!({"name": format!("Test {}", id)}) }
+    DataMessage { id: id.to_string(), sha256: format!("sha_{}", id), data: json!({"name": format!("Test {}", id)}), raw_xml: None }
 }
 
 fn create_test_file_complete() -> FileCompleteMessage {
@@ -78,7 +78,7 @@ fn test_message_file_complete_variant_round_trip() {
 
 #[test]
 fn test_data_message_with_empty_data() {
-    let msg = DataMessage { id: "empty".to_string(), sha256: "hash".to_string(), data: json!({}) };
+    let msg = DataMessage { id: "empty".to_string(), sha256: "hash".to_string(), data: json!({}), raw_xml: None };
 
     let serialized = serde_json::to_string(&msg).unwrap();
     assert!(serialized.contains("\"id\":\"empty\""));
@@ -95,6 +95,7 @@ fn test_data_message_with_nested_data() {
                 "field": "value"
             }
         }),
+        raw_xml: None,
     };
 
     let serialized = serde_json::to_string(&msg).unwrap();
@@ -165,7 +166,7 @@ fn test_large_data_message() {
         }
     });
 
-    let msg = DataMessage { id: "large".to_string(), sha256: "hash".to_string(), data: large_data };
+    let msg = DataMessage { id: "large".to_string(), sha256: "hash".to_string(), data: large_data, raw_xml: None };
 
     let serialized = serde_json::to_string(&msg).unwrap();
     assert!(serialized.len() > 5000); // Should be large

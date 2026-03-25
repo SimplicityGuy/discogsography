@@ -92,6 +92,51 @@ async def get_label_format_profile(driver: AsyncResilientNeo4jDriver, label_id: 
     return await run_query(driver, cypher, label_id=label_id)
 
 
+async def get_label_full_profile(
+    driver: AsyncResilientNeo4jDriver,
+    label_id: str,
+) -> dict[str, Any] | None:
+    """Get identity, genre, style, and decade profiles in parallel.
+
+    Runs 4 lightweight queries concurrently instead of 6 sequential ones.
+    The identity query includes artist counts; genre, style, and decade
+    profiles are fetched in parallel with asyncio.gather.
+    """
+    identity = await get_label_identity(driver, label_id)
+    if not identity:
+        return None
+
+    # Return identity early if release count is below threshold —
+    # avoids running 3 parallel profile queries for labels that will
+    # be rejected by _build_dna anyway.
+    if identity["release_count"] < MIN_RELEASES:
+        return {
+            "label_id": identity["label_id"],
+            "label_name": identity["label_name"],
+            "release_count": identity["release_count"],
+            "artist_count": identity["artist_count"],
+            "genres": [],
+            "styles": [],
+            "decades": [],
+        }
+
+    genres, styles, decades = await asyncio.gather(
+        get_label_genre_profile(driver, label_id),
+        get_label_style_profile(driver, label_id),
+        get_label_decade_profile(driver, label_id),
+    )
+
+    return {
+        "label_id": identity["label_id"],
+        "label_name": identity["label_name"],
+        "release_count": identity["release_count"],
+        "artist_count": identity["artist_count"],
+        "genres": genres,
+        "styles": styles,
+        "decades": decades,
+    }
+
+
 async def get_candidate_labels_genre_vectors(driver: AsyncResilientNeo4jDriver, label_id: str) -> list[dict[str, Any]]:
     """Get genre vectors for labels sharing styles with the target label.
 

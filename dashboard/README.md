@@ -25,18 +25,22 @@ Environment variables:
 
 ```bash
 # Database connections
-NEO4J_HOST=neo4j:7687
+NEO4J_HOST=neo4j
 NEO4J_USERNAME=neo4j
 NEO4J_PASSWORD=discogsography
 
-POSTGRES_HOST=postgres:5432
+POSTGRES_HOST=postgres
 POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography
 
 # RabbitMQ (also supports _FILE variants for Docker secrets)
+RABBITMQ_HOST=rabbitmq
 RABBITMQ_USERNAME=discogsography
 RABBITMQ_PASSWORD=discogsography
+
+# Redis
+REDIS_HOST=redis
 
 # Optional
 CORS_ORIGINS="http://localhost:3000,http://localhost:8003"

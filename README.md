@@ -57,49 +57,37 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 
 ```mermaid
 graph TD
-    S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~11.3GB XML")]
-    SCHEMA[["🔧 Schema-Init<br/>One-shot DDL<br/>Initialiser"]]
-    EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
-    RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>4 Fanout Exchanges"}}
-    NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
-    PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
-    REDIS[("🔴 Redis<br/>Cache Layer<br/>Query Cache")]
-    GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
-    TABLE[["🐘 Tableinator<br/>Table Builder"]]
-    DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
-    EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
-    API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
-    INSIGHTS[["📈 Insights<br/>Precomputed Analytics<br/>Music Trends"]]
+    S3[("🌐 Discogs S3<br/>Data Dumps")]
 
-    SCHEMA -->|0. Create Indexes & Constraints| NEO4J
-    SCHEMA -->|0. Create Tables & Indexes| PG
-    S3 -->|1. Download & Parse| EXT
-    EXT -->|2. Publish Messages| RMQ
-    RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
-    RMQ -->|3b. Artists/Labels/Releases/Masters| TABLE
-    GRAPH -->|4a. Build Graph| NEO4J
-    TABLE -->|4b. Store Data| PG
+    subgraph Pipeline ["Data Pipeline"]
+        EXT[["⚡ Extractor"]]
+        RMQ{{"🐰 RabbitMQ"}}
+        GRAPH[["🔗 Graphinator"]]
+        TABLE[["🐘 Tableinator"]]
+    end
 
-    EXPLORE -.->|Proxy /api/*| API
-    API -.->|Proxy /api/insights/*| INSIGHTS
-    INSIGHTS -.->|Fetch /api/internal/*| API
-    INSIGHTS -.->|Store Results| PG
+    subgraph Storage ["Storage"]
+        NEO4J[("🔗 Neo4j")]
+        PG[("🐘 PostgreSQL")]
+        REDIS[("🔴 Redis")]
+    end
 
-    API -.->|User Accounts| PG
-    API -.->|Graph Queries & Sync| NEO4J
-    API -.->|OAuth State & Cache| REDIS
+    subgraph Services ["User-Facing Services"]
+        API[["🔐 API"]]
+        EXPLORE[["🔍 Explore"]]
+        DASH[["📊 Dashboard"]]
+        INSIGHTS[["📈 Insights"]]
+    end
 
-    DASH -.->|Monitor| EXT
-    DASH -.->|Monitor| GRAPH
-    DASH -.->|Monitor| TABLE
-    DASH -.->|Monitor| EXPLORE
-    DASH -.->|Cache| REDIS
-    DASH -.->|Stats| RMQ
-    DASH -.->|Stats| NEO4J
-    DASH -.->|Stats| PG
+    S3 --> EXT --> RMQ
+    RMQ --> GRAPH --> NEO4J
+    RMQ --> TABLE --> PG
+
+    API --- NEO4J & PG & REDIS
+    INSIGHTS --- PG & REDIS
+    DASH -.- RMQ & NEO4J & PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
-    style SCHEMA fill:#f9fbe7,stroke:#827717,stroke-width:2px
     style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
@@ -107,11 +95,13 @@ graph TD
     style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
     style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
     style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
+    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style INSIGHTS fill:#fff9c4,stroke:#f57f17,stroke-width:2px
 ```
+
+See [Architecture Overview](docs/architecture.md) for detailed diagrams covering data pipeline, service communication, and message queue structure.
 
 ## 🌟 Key Features
 
@@ -122,6 +112,7 @@ graph TD
 - **🐋 Container Security**: Non-root users, read-only filesystems, dropped capabilities
 - **📝 Type Safety**: Full type hints with strict mypy validation and Bandit security scanning
 - **✅ Comprehensive Testing**: Unit, integration, and E2E tests with Playwright
+- **🚀 Query Performance**: 249x overall query performance optimization across 88 endpoints (PRs #175–#189), plus configurable data quality rules for extraction validation (#187) — see [Recent Improvements](docs/recent-improvements.md)
 
 ## 🚀 Quick Start
 
@@ -217,15 +208,24 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 
 This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
 
+## Other Discogs Projects
+
+Some other projects working with the monthly Discogs data dump.
+
+- [DiscoDOS](https://github.com/JOJ0/discodo)
+- [disco-quick](https://github.com/sublipri/disco-quick)
+- [discogs-load](https://github.com/DylanBartels/discogs-load)
+
 ## 🙏 Acknowledgments
 
 - 🎵 [Discogs](https://www.discogs.com/) for providing the monthly data dumps
 - 🚀 [uv](https://github.com/astral-sh/uv) for blazing-fast package management
 - 🔥 [Ruff](https://github.com/astral-sh/ruff) for lightning-fast linting
 - 🐍 The Python community for excellent libraries and tools
+- 🦀 The Rust community for excellent libraries and amazing performance
 
 ______________________________________________________________________
 
 <div align="center">
-Made with ❤️ by the Discogsography community
+Made with ❤️ in the Pacific Northwest
 </div>

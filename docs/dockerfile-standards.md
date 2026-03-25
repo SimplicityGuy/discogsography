@@ -242,7 +242,9 @@ ENV HOME=/home/discogsography \
     UV_SYSTEM_PYTHON=1 \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
-    AMQP_CONNECTION=""
+    RABBITMQ_HOST="" \
+    RABBITMQ_USERNAME="" \
+    RABBITMQ_PASSWORD=""
 ```
 
 Service-specific additions:

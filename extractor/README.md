@@ -53,6 +53,7 @@ Extractor is configured via environment variables.
 - `MAX_WORKERS`: Number of worker threads (default: CPU count)
 - `BATCH_SIZE`: Message batch size for AMQP (default: `100`)
 - `FORCE_REPROCESS`: Force reprocessing of all files (default: `false`; CLI argument with env override)
+- `DATA_QUALITY_RULES`: Path to YAML rules file for data quality validation (optional; also available as `--data-quality-rules` CLI arg)
 
 The health server port is fixed at **8000**.
 
@@ -155,15 +156,189 @@ When the extractor restarts, it checks the state marker and decides:
 
 See **[State Marker System](../docs/state-marker-system.md)** for complete documentation.
 
+## Data Quality Rules
+
+Extractor includes a configurable rule engine that validates parsed records against YAML-defined quality rules. The validator runs as an observation-only pipeline stage — all records pass through regardless of violations, so rules never block extraction.
+
+### Enabling Rules
+
+Provide a path to a YAML rules file via environment variable or CLI argument:
+
+```bash
+# Environment variable
+DATA_QUALITY_RULES=/path/to/extraction-rules.yaml cargo run
+
+# CLI argument
+cargo run -- --data-quality-rules /path/to/extraction-rules.yaml
+```
+
+In Docker, the default `extraction-rules.yaml` is mounted read-only into the container via docker-compose.
+
+### Rule File Format
+
+Rules are grouped by data type (`releases`, `artists`, `labels`, `masters`). Each rule specifies a `name`, `description`, `field`, `condition`, and `severity`:
+
+```yaml
+rules:
+  releases:
+    - name: year-out-of-range
+      description: "Release year is before 1860 or after current year + 1"
+      field: year
+      condition:
+        type: range
+        min: 1860
+        max: 2027
+      severity: warning
+
+    - name: genre-is-numeric
+      description: "Genre value is purely numeric — likely a parsing error"
+      field: genres.genre
+      condition:
+        type: regex
+        pattern: "^\\d+$"
+      severity: error
+```
+
+### Condition Types
+
+| Type         | Parameters              | Description                                                                         |
+| ------------ | ----------------------- | ----------------------------------------------------------------------------------- |
+| **required** | *(none)*                | Field must exist and not be empty/null                                              |
+| **range**    | `min`, `max` (optional) | Numeric value must fall within bounds                                               |
+| **regex**    | `pattern`               | Field value must match (or *not* match, depending on rule intent) the regex pattern |
+| **length**   | `min`, `max` (optional) | String length must fall within bounds                                               |
+| **enum**     | `values` (list)         | Field value must be one of the listed values                                        |
+
+### Severity Levels
+
+| Level       | Description                                                         |
+| ----------- | ------------------------------------------------------------------- |
+| **error**   | Definite data problem (e.g., missing required field, numeric genre) |
+| **warning** | Likely data problem (e.g., year out of expected range)              |
+| **info**    | Informational flag for review                                       |
+
+### Dot-Notation Field Paths
+
+Fields support dot-notation for nested access. When a path traverses an array, each element is evaluated individually:
+
+- `title` — top-level field
+- `genres.genre` — accesses the `genre` field inside each element of the `genres` array
+- `artists.name` — accesses `name` inside each element of `artists`
+
+### Output
+
+When rules are configured, the validator produces:
+
+- **Flagged record files**: Per-record XML, JSON, and JSONL files organized by `<version>/<data_type>/` for manual inspection
+- **Quality report**: Summary of per-rule violation counts printed at extraction completion
+
+### Default Rules
+
+The shipped `extraction-rules.yaml` includes:
+
+| Data Type | Rule                 | Condition                      | Severity |
+| --------- | -------------------- | ------------------------------ | -------- |
+| releases  | year-out-of-range    | range 1860–2027                | warning  |
+| releases  | missing-title        | required                       | error    |
+| releases  | genre-not-recognized | enum (15 known Discogs genres) | warning  |
+| releases  | genre-is-numeric     | regex `^\d+$`                  | error    |
+| artists   | empty-artist-name    | required                       | error    |
+| labels    | empty-label-name     | required                       | error    |
+| masters   | year-out-of-range    | range 1860–2027                | warning  |
+
+> **Note**: The `max` value in year-range rules is static and should be bumped to `current_year + 1` at the start of each year.
+
 ## Architecture
 
-Extractor uses a streaming pipeline architecture:
+Extractor uses a streaming pipeline architecture with trait-based dependency injection for testability:
+
+### Pipeline Stages
 
 1. **Downloader**: Fetches latest Discogs dumps from S3
-1. **Parser**: Streams XML using quick-xml, extracting records
+1. **Parser**: Streams XML using quick-xml, extracting records (with optional raw XML reconstruction)
+1. **Validator** *(optional)*: Evaluates records against YAML-defined quality rules, writes flagged records — observation-only, non-blocking
 1. **Batcher**: Groups records for efficient AMQP publishing
-1. **Publisher**: Sends batched messages to RabbitMQ exchanges
+1. **Publisher**: Sends batched messages to RabbitMQ fanout exchanges
 1. **State Tracker**: Updates progress markers at each phase
+
+### Trait-Based Dependency Injection
+
+The extractor uses three core traits to decouple components and enable comprehensive mocking in tests:
+
+```mermaid
+classDiagram
+    class DataSource {
+        <<trait>>
+        +list_s3_files() Vec~S3FileInfo~
+        +get_latest_monthly_files(files) Vec~S3FileInfo~
+        +download_discogs_data() Vec~String~
+        +set_state_marker(marker, path)
+        +take_state_marker() Option~StateMarker~
+    }
+
+    class MessagePublisher {
+        <<trait>>
+        +setup_exchange(data_type)
+        +publish(message, data_type)
+        +publish_batch(messages, data_type)
+        +send_file_complete(data_type, file, count)
+        +send_extraction_complete(version, started_at, counts)
+        +close()
+    }
+
+    class MessageQueueFactory {
+        <<trait>>
+        +create(url) Arc~MessagePublisher~
+    }
+
+    class Downloader {
+        +output_directory: PathBuf
+        +metadata: HashMap
+        +state_marker: Option~StateMarker~
+    }
+
+    class MessageQueue {
+        +connection: Arc~RwLock~
+        +channel: Arc~RwLock~
+    }
+
+    class DefaultMessageQueueFactory
+
+    DataSource <|.. Downloader : implements
+    MessagePublisher <|.. MessageQueue : implements
+    MessageQueueFactory <|.. DefaultMessageQueueFactory : implements
+    MessageQueueFactory ..> MessagePublisher : creates
+
+    note for DataSource "Mockable via #[cfg_attr(feature = 'test-support', mockall::automock)]"
+    note for MessagePublisher "Mockable via mockall::automock"
+    note for MessageQueueFactory "Mockable via mockall::automock"
+```
+
+| Trait                     | Purpose                                                                  | Production Impl              | Test Mock                           |
+| ------------------------- | ------------------------------------------------------------------------ | ---------------------------- | ----------------------------------- |
+| **`DataSource`**          | S3 file listing, downloading, state marker management                    | `Downloader`                 | `MockDataSource` (mockall)          |
+| **`MessagePublisher`**    | AMQP exchange setup, message publishing, completion signals              | `MessageQueue`               | `MockMessagePublisher` (mockall)    |
+| **`MessageQueueFactory`** | Creates `MessagePublisher` instances (enables per-data-type connections) | `DefaultMessageQueueFactory` | `MockMessageQueueFactory` (mockall) |
+
+All traits use the `#[async_trait]` attribute for async method support and `#[cfg_attr(feature = "test-support", mockall::automock)]` for conditional mock generation. The `test-support` feature flag ensures mock code is only compiled during testing.
+
+The main entry point `process_discogs_data()` accepts trait objects (`&mut dyn DataSource`, `Arc<dyn MessageQueueFactory>`) rather than concrete types, allowing tests to inject mocks for S3, RabbitMQ, and state marker operations without any network dependencies.
+
+### Module Structure
+
+| Module             | Responsibility                                                                                                      |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| `lib.rs`           | Library crate root — re-exports all public modules for integration testing                                           |
+| `main.rs`          | Entry point, CLI args, health server, periodic check loop                                                           |
+| `extractor.rs`     | Core orchestration: download → parse → publish pipeline                                                             |
+| `downloader.rs`    | S3 file discovery, download with retry, checksum validation                                                         |
+| `parser.rs`        | Streaming XML parser using quick-xml (artists, labels, masters, releases)                                           |
+| `message_queue.rs` | AMQP connection management, exchange declaration, batch publishing                                                  |
+| `state_marker.rs`  | Version-specific progress tracking, resume decisions                                                                |
+| `rules.rs`         | Data quality rule engine — YAML loading, compilation, condition evaluation, flagged record writing, quality reports |
+| `types.rs`         | Data types (DataType, DataMessage, Message, S3FileInfo, etc.)                                                       |
+| `config.rs`        | Environment variable configuration                                                                                  |
+| `health.rs`        | HTTP health/metrics/readiness endpoints                                                                             |
 
 ## Logging
 

@@ -84,7 +84,7 @@ fn test_normalize_amqp_url_with_query_params() {
 
 #[test]
 fn test_message_serialization_data() {
-    let data_msg = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: serde_json::json!({"key": "value"}) };
+    let data_msg = DataMessage { id: "123".to_string(), sha256: "abc".to_string(), data: serde_json::json!({"key": "value"}), raw_xml: None };
 
     let message = Message::Data(data_msg);
     let serialized = serde_json::to_vec(&message).unwrap();
@@ -101,12 +101,8 @@ fn test_message_serialization_data() {
 
 #[test]
 fn test_message_serialization_file_complete() {
-    let file_complete_msg = FileCompleteMessage {
-        data_type: "artists".to_string(),
-        timestamp: chrono::Utc::now(),
-        total_processed: 100,
-        file: "test.xml".to_string(),
-    };
+    let file_complete_msg =
+        FileCompleteMessage { data_type: "artists".to_string(), timestamp: chrono::Utc::now(), total_processed: 100, file: "test.xml".to_string() };
 
     let message = Message::FileComplete(file_complete_msg.clone());
     let serialized = serde_json::to_vec(&message).unwrap();
@@ -137,7 +133,6 @@ fn test_message_properties_persistent_delivery() {
     let encoding = props.content_encoding().as_ref().expect("content_encoding should be set");
     assert_eq!(encoding.as_str(), "UTF-8", "content_encoding should be UTF-8");
 }
-
 
 #[tokio::test]
 async fn test_new_connection_failure() {
@@ -217,11 +212,8 @@ fn test_file_complete_message_serialization_format() {
 
 #[test]
 fn test_data_message_serialization_format() {
-    let data_msg = DataMessage {
-        id: "456".to_string(),
-        sha256: "deadbeef".to_string(),
-        data: serde_json::json!({"name": "Test Artist"}),
-    };
+    let data_msg =
+        DataMessage { id: "456".to_string(), sha256: "deadbeef".to_string(), data: serde_json::json!({"name": "Test Artist"}), raw_xml: None };
 
     let message = Message::Data(data_msg);
     let json_str = serde_json::to_string(&message).unwrap();

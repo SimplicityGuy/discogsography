@@ -20,12 +20,14 @@ This document describes the caching strategy used across all GitHub workflows to
 **Key Pattern**: `${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}`
 **Paths**:
 
-- `.pytest_cache` - Pytest cache
-- `.coverage` - Coverage data
-- `htmlcov` - Coverage HTML report
+- `~/.cargo/bin/`
+- `~/.cargo/registry/index/`
+- `~/.cargo/registry/cache/`
+- `~/.cargo/git/db/`
+- `extractor/target/`
 
 **Used in**: test.yml
-**Rationale**: Rust compilation is slow; caching test artifacts avoids redundant work
+**Rationale**: Rust compilation is slow; caching Cargo directories and build artifacts avoids full rebuilds during tests
 
 > **Note**: E2E test results (`.pytest_cache`, `.coverage`, `test-results`) are **not cached** — they are ephemeral outputs already uploaded as artifacts via `actions/upload-artifact`. Caching them with `github.sha` keys caused excessive cache proliferation with no meaningful speedup.
 
@@ -45,7 +47,7 @@ This document describes the caching strategy used across all GitHub workflows to
 
 ### 5. Rust Dependencies Cache
 
-**Key Pattern**: `${{ runner.os }}-cargo-{workflow}-${{ hashFiles('**/Cargo.lock') }}`
+**Key Pattern**: `${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}` (some workflows add a workflow-specific segment, e.g., `-cargo-test-`, while others like code-quality.yml use just `-cargo-`)
 **Paths**:
 
 - `~/.cargo/bin/`
@@ -54,7 +56,7 @@ This document describes the caching strategy used across all GitHub workflows to
 - `~/.cargo/git/db/`
 - `extractor/target/`
 
-**Used in**: code-quality.yml, test.yml, security.yml (each with a workflow-specific key prefix)
+**Used in**: code-quality.yml, test.yml, security.yml
 **Rationale**: Rust compilation is slow; caching avoids full rebuilds
 
 ### 6. Playwright Browsers Cache

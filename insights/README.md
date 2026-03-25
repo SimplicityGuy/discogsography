@@ -16,13 +16,13 @@ The Insights service runs scheduled batch analytics, stores precomputed results 
 
 ## Computation Types
 
-| Type                      | Description                                                           | Source     |
-| ------------------------- | --------------------------------------------------------------------- | ---------- |
+| Type                      | Description                                                           | Source               |
+| ------------------------- | --------------------------------------------------------------------- | -------------------- |
 | **Artist Centrality**     | Top artists ranked by graph edge count                                | API (Neo4j via HTTP) |
-| **Genre Trends**          | Release count per decade for each genre                               | PostgreSQL |
-| **Label Longevity**       | Labels ranked by years active                                         | PostgreSQL |
-| **Monthly Anniversaries** | Releases with 25/30/40/50/75/100-year milestones                      | PostgreSQL |
-| **Data Completeness**     | Quality scores per entity type (image, year, country, genre coverage) | PostgreSQL |
+| **Genre Trends**          | Release count per decade for each genre                               | PostgreSQL           |
+| **Label Longevity**       | Labels ranked by years active                                         | PostgreSQL           |
+| **Monthly Anniversaries** | Releases with 25/30/40/50/75/100-year milestones                      | PostgreSQL           |
+| **Data Completeness**     | Quality scores per entity type (image, year, country, genre coverage) | PostgreSQL           |
 
 ## API Endpoints
 
