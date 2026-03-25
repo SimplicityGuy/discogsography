@@ -163,3 +163,40 @@ class TestGetUserStats:
         assert result["total_users"] == 200
         assert result["active_7d"] == 30
         assert result["active_30d"] == 80
+
+
+class TestGetSyncActivity:
+    """Tests for get_sync_activity query function."""
+
+    @pytest.mark.asyncio
+    async def test_basic_sync_activity(self):
+        from api.queries.admin_queries import get_sync_activity
+
+        pool, execute_side_effect = _mock_pool_with_rows(
+            [{"total_syncs": 28, "total_failures": 2, "avg_items": 142.5}],
+            [{"total_syncs": 95, "total_failures": 5, "avg_items": 138.2}],
+        )
+
+        with patch("api.queries.admin_queries.execute_sql", side_effect=execute_side_effect):
+            result = await get_sync_activity(pool)
+
+        assert result["period_7d"]["total_syncs"] == 28
+        assert result["period_7d"]["syncs_per_day"] == pytest.approx(4.0)
+        assert result["period_7d"]["failure_rate"] == pytest.approx(round(2 / 28, 4))
+        assert result["period_30d"]["total_syncs"] == 95
+
+    @pytest.mark.asyncio
+    async def test_zero_syncs(self):
+        from api.queries.admin_queries import get_sync_activity
+
+        pool, execute_side_effect = _mock_pool_with_rows(
+            [{"total_syncs": 0, "total_failures": 0, "avg_items": None}],
+            [{"total_syncs": 0, "total_failures": 0, "avg_items": None}],
+        )
+
+        with patch("api.queries.admin_queries.execute_sql", side_effect=execute_side_effect):
+            result = await get_sync_activity(pool)
+
+        assert result["period_7d"]["syncs_per_day"] == 0.0
+        assert result["period_7d"]["failure_rate"] == 0.0
+        assert result["period_7d"]["avg_items_synced"] == 0.0

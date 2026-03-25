@@ -87,3 +87,36 @@ async def get_user_stats(pool: Any) -> dict[str, Any]:
             "monthly": monthly,
         },
     }
+
+
+async def get_sync_activity(pool: Any) -> dict[str, Any]:
+    """Fetch sync activity stats for 7d and 30d windows."""
+
+    async def _query_period(cur: Any, days: int) -> dict[str, Any]:
+        await execute_sql(
+            cur,
+            """
+            SELECT
+                COUNT(*) AS total_syncs,
+                COUNT(*) FILTER (WHERE status = 'failed') AS total_failures,
+                AVG(COALESCE(items_synced, 0)) AS avg_items
+            FROM sync_history
+            WHERE started_at >= NOW() - make_interval(days => %s)
+            """,
+            (days,),
+        )
+        row = await cur.fetchone()
+        total = row["total_syncs"]
+        return {
+            "total_syncs": total,
+            "syncs_per_day": round(total / days, 2) if total > 0 else 0.0,
+            "avg_items_synced": round(float(row["avg_items"]), 1) if row["avg_items"] is not None else 0.0,
+            "failure_rate": round(row["total_failures"] / total, 4) if total > 0 else 0.0,
+            "total_failures": row["total_failures"],
+        }
+
+    async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        period_7d = await _query_period(cur, 7)
+        period_30d = await _query_period(cur, 30)
+
+    return {"period_7d": period_7d, "period_30d": period_30d}
