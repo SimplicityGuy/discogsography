@@ -24,7 +24,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🔗](emoji-guide.md#service-identifiers) Graphinator** | Builds Neo4j knowledge graphs               | `neo4j-driver`, graph algorithms                             | 8001 (health)         |
 | **[🐘](emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables         | `psycopg3`, JSONB, full-text search                          | 8002 (health)         |
 | **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check      | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (internal) |
-| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring                 | `FastAPI`, WebSocket, reactive UI                            | 8003 (ext)            |
+| **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time monitoring and admin panel        | `FastAPI`, WebSocket, reactive UI, `httpx`                   | 8003 (ext)            |
 | **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends      | `FastAPI`, `psycopg3`, `httpx`                               | 8008, 8009 (internal) |
 | **[🤖](emoji-guide.md#service-identifiers) MCP Server**  | Exposes knowledge graph to AI assistants    | `FastMCP`, `httpx`                                           | stdio / streamable-http |
 
@@ -418,6 +418,7 @@ See [Explore README](../explore/README.md) for details.
 - WebSocket-based live updates
 - Service health checks
 - Queue metrics visualization
+- Admin panel (login-gated) for extraction management and DLQ operations
 
 **Key Features**:
 
@@ -425,12 +426,16 @@ See [Explore README](../explore/README.md) for details.
 - WebSocket for real-time data
 - Responsive HTML/CSS/JS frontend
 - Activity log and event tracking
+- Admin proxy router — forwards authenticated admin requests to the API service
+- Extraction trigger (forces full reprocessing) and history table
+- Dead-letter queue purge interface
 
 **Configuration**:
 
 - Service health endpoint URLs
 - Database connection strings
 - RabbitMQ management API access
+- `API_HOST` / `API_PORT` — API service connection for admin proxy
 
 See [Dashboard README](../dashboard/README.md) for details.
 

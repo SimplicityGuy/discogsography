@@ -77,6 +77,33 @@ open http://localhost:8003
 - **Filterable by service** and log level
 - **Auto-scroll** for live updates
 
+### Admin Panel
+
+The dashboard includes a login-gated admin panel at `/admin` for managing extractions and dead-letter queues. The monitoring dashboard at `/` remains public.
+
+#### Accessing the Admin Panel
+
+```bash
+# Create an admin account (one-time setup)
+docker exec -it discogsography-api-1 admin-setup \
+  --email admin@example.com --password <min-8-chars>
+
+# Access admin panel
+open http://localhost:8003/admin
+```
+
+See [Admin Guide](admin-guide.md) for full details.
+
+#### Admin Features
+
+- **Extraction Control** — Trigger a full reprocessing of Discogs data. Manual triggers always force reprocessing regardless of existing state markers.
+- **Extraction History** — View past extractions with status, duration, record counts, and error messages. Auto-refreshes every 30 seconds.
+- **DLQ Management** — Purge dead-letter queues when messages are known-bad or after fixing the root cause of processing failures.
+
+#### Architecture
+
+The admin panel frontend (`/admin`) is served from the dashboard service. Admin API calls are proxied through the dashboard to the API service — the dashboard's `admin_proxy` router forwards requests with the JWT Authorization header and returns responses unchanged. Authentication and authorization are handled entirely by the API service.
+
 ### WebSocket API
 
 The dashboard uses WebSocket for real-time updates:
