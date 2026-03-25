@@ -40,9 +40,19 @@ async def _log_computation(
         )
 
 
-async def _fetch_from_api(client: httpx.AsyncClient, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+async def _fetch_from_api(
+    client: httpx.AsyncClient,
+    path: str,
+    params: dict[str, Any] | None = None,
+    timeout: float | None = None,
+) -> list[dict[str, Any]]:
     """Fetch computation data from the API service."""
-    response = await client.get(path, params=params)
+    kwargs: dict[str, Any] = {}
+    if params:
+        kwargs["params"] = params
+    if timeout is not None:
+        kwargs["timeout"] = timeout
+    response = await client.get(path, **kwargs)
     response.raise_for_status()
     data: dict[str, Any] = response.json()
     items: list[dict[str, Any]] = data.get("items", [])
@@ -220,7 +230,9 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
     """Compute data completeness and store results."""
     started_at = datetime.now(UTC)
     try:
-        results = await _fetch_from_api(client, "/api/internal/insights/data-completeness")
+        # Data completeness does full sequential scans (~400s for releases table alone);
+        # use a longer timeout than the client default to avoid ReadTimeout errors.
+        results = await _fetch_from_api(client, "/api/internal/insights/data-completeness", timeout=600.0)
         if not results:
             await _log_computation(pool, "data_completeness", "completed", started_at, 0)
             return 0
