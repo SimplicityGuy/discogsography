@@ -1126,3 +1126,34 @@ class TestGenreEmergenceQuery:
 
         result = await get_genre_emergence(mock_driver, 2000)
         assert result == {"genres": [], "styles": []}
+
+
+# ---------------------------------------------------------------------------
+# get_graph_stats
+# ---------------------------------------------------------------------------
+
+
+class TestGraphStatsQuery:
+    @pytest.mark.asyncio
+    async def test_graph_stats_returns_counts(self) -> None:
+        from api.queries.neo4j_queries import get_graph_stats
+
+        records = [
+            {"label": "artists", "cnt": 1000},
+            {"label": "labels", "cnt": 500},
+            {"label": "releases", "cnt": 5000},
+            {"label": "masters", "cnt": 2000},
+            {"label": "genres", "cnt": 15},
+            {"label": "styles", "cnt": 300},
+        ]
+        driver = _make_driver(records=records)
+        result = await get_graph_stats(driver)
+        assert result == {"artists": 1000, "labels": 500, "releases": 5000, "masters": 2000, "genres": 15, "styles": 300}
+
+    @pytest.mark.asyncio
+    async def test_graph_stats_empty_graph(self) -> None:
+        from api.queries.neo4j_queries import get_graph_stats
+
+        driver = _make_driver(records=[])
+        result = await get_graph_stats(driver)
+        assert result == {}

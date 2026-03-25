@@ -969,3 +969,25 @@ TRENDS_DISPATCH: dict[str, Any] = {
     "label": trends_label,
     "style": trends_style,
 }
+
+
+async def get_graph_stats(driver: AsyncResilientNeo4jDriver) -> dict[str, int]:
+    """Return aggregate node counts for each entity type in the graph."""
+    cypher = """
+    CALL {
+        MATCH (a:Artist) RETURN 'artists' AS label, count(a) AS cnt
+        UNION ALL
+        MATCH (l:Label) RETURN 'labels' AS label, count(l) AS cnt
+        UNION ALL
+        MATCH (r:Release) RETURN 'releases' AS label, count(r) AS cnt
+        UNION ALL
+        MATCH (m:Master) RETURN 'masters' AS label, count(m) AS cnt
+        UNION ALL
+        MATCH (g:Genre) RETURN 'genres' AS label, count(g) AS cnt
+        UNION ALL
+        MATCH (s:Style) RETURN 'styles' AS label, count(s) AS cnt
+    }
+    RETURN label, cnt
+    """
+    records = await run_query(driver, cypher)
+    return {r["label"]: int(r["cnt"]) for r in records}

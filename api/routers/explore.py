@@ -24,6 +24,7 @@ from api.queries.neo4j_queries import (
     TRENDS_DISPATCH,
     find_shortest_path,
     get_genre_emergence,
+    get_graph_stats,
     get_year_range,
 )
 
@@ -427,3 +428,12 @@ async def find_path(
             path=path_nodes,
         ).model_dump()
     )
+
+
+@router.get("/api/graph/stats")
+async def graph_stats() -> JSONResponse:
+    """Return aggregate node counts for each entity type in the knowledge graph."""
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+    counts = await get_graph_stats(_neo4j_driver)
+    return JSONResponse(content={"total_entities": sum(counts.values()), "counts": counts})
