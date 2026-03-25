@@ -28,6 +28,7 @@ from common import (
     get_config,
     setup_logging,
 )
+from dashboard.admin_proxy import configure as configure_admin_proxy, router as admin_router
 
 
 logger = logging.getLogger(__name__)
@@ -556,6 +557,12 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
             dashboard.websocket_connections.discard(websocket)
             WEBSOCKET_CONNECTIONS.set(len(dashboard.websocket_connections))
 
+
+# Admin proxy routes (must be before StaticFiles catch-all)
+admin_api_host = os.getenv("API_HOST", "api")
+admin_api_port = int(os.getenv("API_PORT", "8004"))
+configure_admin_proxy(admin_api_host, admin_api_port)
+app.include_router(admin_router)
 
 # Mount static files for the UI
 static_dir = Path(__file__).parent / "static"

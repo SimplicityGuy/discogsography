@@ -1,6 +1,7 @@
 use anyhow::Result;
 use clap::Parser;
 use std::sync::Arc;
+use std::sync::Mutex;
 use tokio::signal;
 use tokio::sync::RwLock;
 use tracing::{error, info};
@@ -97,9 +98,10 @@ async fn main() -> Result<()> {
 
     // Initialize shared state
     let state = Arc::new(RwLock::new(extractor::ExtractorState::default()));
+    let trigger = Arc::new(Mutex::new(None::<bool>));
 
     // Start health server
-    let health_server = HealthServer::new(config.health_port, state.clone());
+    let health_server = HealthServer::new(config.health_port, state.clone(), trigger.clone());
     let health_handle = tokio::spawn(async move {
         if let Err(e) = health_server.run().await {
             error!("❌ Health server error: {}", e);
@@ -114,7 +116,7 @@ async fn main() -> Result<()> {
 
     // Run the main extraction loop
     let extraction_result =
-        extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, compiled_rules).await;
+        extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, trigger.clone(), compiled_rules).await;
 
     // Cleanup
     info!("🛑 Shutting down rust-extractor...");

@@ -449,6 +449,8 @@ services:
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_USERNAME: discogsography
       REDIS_HOST: redis
+      API_HOST: api
+      API_PORT: "8004"
       UV_CACHE_DIR: "/tmp/.cache/uv"
     ports:
       - "8003:8003"
@@ -462,6 +464,8 @@ services:
       neo4j:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      api:
         condition: service_healthy
     networks:
       - discogsography

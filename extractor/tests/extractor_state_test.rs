@@ -1,6 +1,6 @@
 //! Tests for ExtractorState functionality
 
-use extractor::extractor::ExtractorState;
+use extractor::extractor::{ExtractionStatus, ExtractorState};
 use extractor::types::DataType;
 use std::sync::Arc;
 use std::time::Instant;
@@ -271,4 +271,76 @@ async fn test_extractor_state_error_tracking() {
 
     let s = state.read().await;
     assert_eq!(s.error_count, 5);
+}
+
+#[tokio::test]
+async fn test_extraction_status_default() {
+    let state = ExtractorState::default();
+    assert_eq!(state.extraction_status, ExtractionStatus::Idle);
+    assert_eq!(state.extraction_status.as_str(), "idle");
+}
+
+#[tokio::test]
+async fn test_extraction_status_as_str() {
+    assert_eq!(ExtractionStatus::Idle.as_str(), "idle");
+    assert_eq!(ExtractionStatus::Running.as_str(), "running");
+    assert_eq!(ExtractionStatus::Completed.as_str(), "completed");
+    assert_eq!(ExtractionStatus::Failed.as_str(), "failed");
+}
+
+#[tokio::test]
+async fn test_extraction_status_transitions() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    // Idle -> Running
+    {
+        let mut s = state.write().await;
+        assert_eq!(s.extraction_status, ExtractionStatus::Idle);
+        s.extraction_status = ExtractionStatus::Running;
+    }
+    {
+        let s = state.read().await;
+        assert_eq!(s.extraction_status, ExtractionStatus::Running);
+    }
+
+    // Running -> Completed
+    {
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Completed;
+    }
+    {
+        let s = state.read().await;
+        assert_eq!(s.extraction_status, ExtractionStatus::Completed);
+    }
+
+    // Reset -> Idle -> Running -> Failed
+    {
+        let mut s = state.write().await;
+        *s = ExtractorState::default();
+        s.extraction_status = ExtractionStatus::Running;
+    }
+    {
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Failed;
+    }
+    {
+        let s = state.read().await;
+        assert_eq!(s.extraction_status, ExtractionStatus::Failed);
+    }
+}
+
+#[tokio::test]
+async fn test_extraction_status_equality() {
+    assert_eq!(ExtractionStatus::Idle, ExtractionStatus::Idle);
+    assert_ne!(ExtractionStatus::Idle, ExtractionStatus::Running);
+    assert_ne!(ExtractionStatus::Completed, ExtractionStatus::Failed);
+}
+
+#[tokio::test]
+async fn test_extraction_status_clone_copy() {
+    let status = ExtractionStatus::Running;
+    let cloned = status.clone();
+    let copied = status;
+    assert_eq!(status, cloned);
+    assert_eq!(status, copied);
 }

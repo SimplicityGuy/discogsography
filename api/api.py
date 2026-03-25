@@ -37,6 +37,7 @@ import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.models import LoginRequest, RegisterRequest
 from api.queries.search_queries import ALL_TYPES, execute_search
+import api.routers.admin as _admin_router
 import api.routers.collection as _collection_router
 import api.routers.explore as _explore_router
 import api.routers.insights as _insights_router
@@ -127,6 +128,12 @@ async def _get_current_user(
         )
     try:
         payload = decode_token(credentials.credentials, _config.jwt_secret_key)
+        # Reject admin tokens — they must not be used as regular user tokens
+        if payload.get("type") == "admin":
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
         user_id: str | None = payload.get("sub")
         if user_id is None:
             raise HTTPException(
@@ -217,7 +224,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         )
         logger.info("🔗 Neo4j driver initialized")
     jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_host else None
-    _dependencies.configure(jwt_secret_for_neo4j)
+    _dependencies.configure(jwt_secret_for_neo4j, _redis)
     _sync_router.configure(_pool, _neo4j, _config, _running_syncs, _redis)
     _explore_router.configure(_neo4j, jwt_secret_for_neo4j, _redis)
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
@@ -227,6 +234,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _recommend_router.configure(_neo4j, jwt_secret_for_neo4j, _redis)
     _search_router.configure(_pool, _redis)
     _insights_compute_router.configure(_neo4j, _pool, _redis)
+    _admin_router.configure(_pool, _redis, _config)
     _snapshot_router.configure(
         jwt_secret=_config.jwt_secret_key,
         redis_client=_redis,
@@ -246,6 +254,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         task.cancel()
     if _running_syncs:
         await asyncio.gather(*_running_syncs.values(), return_exceptions=True)
+    for task in _admin_router._tracking_tasks.values():
+        task.cancel()
+    if _admin_router._tracking_tasks:
+        await asyncio.gather(*_admin_router._tracking_tasks.values(), return_exceptions=True)
     if _neo4j:
         await _neo4j.close()
     if _pool:
@@ -301,6 +313,7 @@ app.include_router(_user_router.router)
 app.include_router(_taste_router.router)
 app.include_router(_collection_router.router)
 app.include_router(_recommend_router.router)
+app.include_router(_admin_router.router)
 
 
 @app.get("/health")

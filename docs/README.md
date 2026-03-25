@@ -25,6 +25,7 @@
 | **[Database Schema](database-schema.md)**       | 🗄️ Complete Neo4j and PostgreSQL schema documentation |
 | **[Usage Examples](usage-examples.md)**         | 💡 Query examples for Neo4j and PostgreSQL            |
 | **[Monitoring Guide](monitoring.md)**           | 📊 Real-time monitoring, debugging, and operations    |
+| **[Admin Guide](admin-guide.md)**               | 🔐 Admin account setup, extraction triggers, DLQ ops  |
 | **[Troubleshooting Guide](troubleshooting.md)** | 🔧 Common issues and solutions                        |
 
 ### 👨‍💻 Development
@@ -98,6 +99,7 @@ Deploy and maintain Discogsography in production:
 1. **[Dockerfile Standards](dockerfile-standards.md)** - Build optimization
 1. **[Configuration Guide](configuration.md)** - Production settings
 1. **[Monitoring Guide](monitoring.md)** - Observe and debug
+1. **[Admin Guide](admin-guide.md)** - Admin accounts and extraction management
 1. **[Performance Guide](performance-guide.md)** - Optimize performance
 1. **[Maintenance Guide](maintenance.md)** - Keep systems healthy
 

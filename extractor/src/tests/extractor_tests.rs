@@ -929,3 +929,142 @@ rules:
     assert!(!report.has_violations());
     assert_eq!(report.total_records["artists"], 1);
 }
+
+// ── wait_for_trigger tests ──────────────────────────────────────────
+
+#[tokio::test(start_paused = true)]
+async fn test_wait_for_trigger_returns_when_triggered() {
+    let trigger = Arc::new(std::sync::Mutex::new(None::<bool>));
+    let trigger_clone = trigger.clone();
+
+    let handle = tokio::spawn(async move {
+        wait_for_trigger(&trigger_clone).await
+    });
+
+    // Advance past a few polling intervals — should NOT return yet
+    tokio::time::advance(Duration::from_secs(2)).await;
+    tokio::task::yield_now().await;
+    assert!(!handle.is_finished(), "should still be waiting");
+
+    // Set the trigger with force_reprocess = true
+    {
+        let mut t = trigger.lock().unwrap();
+        *t = Some(true);
+    }
+
+    // Advance past one polling interval (500ms) and yield
+    tokio::time::advance(Duration::from_millis(600)).await;
+    tokio::task::yield_now().await;
+
+    // Should have returned with the force_reprocess value
+    let result = handle.await.unwrap();
+    assert!(result, "should return true (force_reprocess)");
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_wait_for_trigger_clears_flag() {
+    let trigger = Arc::new(std::sync::Mutex::new(Some(false)));
+
+    let result = wait_for_trigger(&trigger).await;
+
+    // Should return false (the force_reprocess value)
+    assert!(!result, "should return false (force_reprocess)");
+
+    // Mutex should be None after taking
+    assert_eq!(*trigger.lock().unwrap(), None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_wait_for_trigger_only_fires_once() {
+    let trigger = Arc::new(std::sync::Mutex::new(Some(false)));
+
+    // First call should return immediately (trigger is already set)
+    let result = wait_for_trigger(&trigger).await;
+    assert!(!result, "first call should return false");
+    assert_eq!(*trigger.lock().unwrap(), None);
+
+    // Second call should block — spawn it and verify it doesn't complete
+    let trigger_clone = trigger.clone();
+    let handle = tokio::spawn(async move {
+        wait_for_trigger(&trigger_clone).await
+    });
+
+    tokio::time::advance(Duration::from_secs(2)).await;
+    tokio::task::yield_now().await;
+    assert!(!handle.is_finished(), "second wait should block until re-triggered");
+
+    // Re-trigger with force_reprocess = true
+    {
+        let mut t = trigger.lock().unwrap();
+        *t = Some(true);
+    }
+    tokio::time::advance(Duration::from_millis(600)).await;
+    tokio::task::yield_now().await;
+    let result = handle.await.unwrap();
+    assert!(result, "second call should return true");
+}
+
+// ── extraction_status field in ExtractorState ────────────────────────
+
+#[test]
+fn test_extractor_state_default_extraction_status() {
+    let state = ExtractorState::default();
+    assert_eq!(state.extraction_status, ExtractionStatus::Idle);
+}
+
+#[tokio::test]
+async fn test_extraction_status_set_to_running() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    // Simulate what process_discogs_data does at startup
+    {
+        let mut s = state.write().await;
+        s.extraction_progress = ExtractionProgress::default();
+        s.last_extraction_time.clear();
+        s.completed_files.clear();
+        s.active_connections.clear();
+        s.error_count = 0;
+        s.extraction_status = ExtractionStatus::Running;
+    }
+
+    let s = state.read().await;
+    assert_eq!(s.extraction_status, ExtractionStatus::Running);
+}
+
+#[tokio::test]
+async fn test_extraction_status_set_completed_on_success() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    // Simulate what process_discogs_data does on success
+    {
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Running;
+    }
+    {
+        let mut s = state.write().await;
+        let success = true;
+        s.extraction_status = if success { ExtractionStatus::Completed } else { ExtractionStatus::Failed };
+    }
+
+    let s = state.read().await;
+    assert_eq!(s.extraction_status, ExtractionStatus::Completed);
+}
+
+#[tokio::test]
+async fn test_extraction_status_set_failed_on_error() {
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+
+    // Simulate what process_discogs_data does on failure
+    {
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Running;
+    }
+    {
+        let mut s = state.write().await;
+        let success = false;
+        s.extraction_status = if success { ExtractionStatus::Completed } else { ExtractionStatus::Failed };
+    }
+
+    let s = state.read().await;
+    assert_eq!(s.extraction_status, ExtractionStatus::Failed);
+}

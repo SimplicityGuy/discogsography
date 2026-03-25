@@ -77,6 +77,7 @@ docker-compose logs -f
 Open your browser and visit:
 
 - **Dashboard**: http://localhost:8003 (System monitoring)
+- **Admin Panel**: http://localhost:8003/admin (Extraction management — requires admin account)
 - **API**: http://localhost:8004 (User auth, graph queries, sync)
 - **Neo4j Browser**: http://localhost:7474 (Graph database UI)
 - **RabbitMQ Management**: http://localhost:15672 (Queue monitoring)
@@ -86,7 +87,7 @@ Open your browser and visit:
 | Service           | URL                    | Default Credentials                 | Purpose                               |
 | ----------------- | ---------------------- | ----------------------------------- | ------------------------------------- |
 | 🔐 **API**        | http://localhost:8004  | Register via `/api/auth/register`   | User auth, graph queries, sync, OAuth |
-| 📊 **Dashboard**  | http://localhost:8003  | None                                | System monitoring                     |
+| 📊 **Dashboard**  | http://localhost:8003  | None (monitoring) / admin-setup CLI (admin panel) | System monitoring + admin panel |
 | 🐰 **RabbitMQ**   | http://localhost:15672 | `discogsography` / `discogsography` | Queue management                      |
 | 🔗 **Neo4j**      | http://localhost:7474  | `neo4j` / `discogsography`          | Graph database UI                     |
 | 🐘 **PostgreSQL** | `localhost:5433`       | `discogsography` / `discogsography` | Database access                       |

@@ -43,6 +43,28 @@ pub struct ExtractorState {
     pub completed_files: HashSet<String>,
     pub active_connections: HashMap<DataType, String>,
     pub error_count: u64,
+    pub extraction_status: ExtractionStatus,
+}
+
+/// Lifecycle status of the extraction process
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ExtractionStatus {
+    #[default]
+    Idle,
+    Running,
+    Completed,
+    Failed,
+}
+
+impl ExtractionStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            ExtractionStatus::Idle => "idle",
+            ExtractionStatus::Running => "running",
+            ExtractionStatus::Completed => "completed",
+            ExtractionStatus::Failed => "failed",
+        }
+    }
 }
 
 /// Process Discogs data files
@@ -66,6 +88,7 @@ pub async fn process_discogs_data(
         s.completed_files.clear();
         s.active_connections.clear();
         s.error_count = 0;
+        s.extraction_status = ExtractionStatus::Running;
     }
 
     // Get file list to determine version
@@ -264,6 +287,12 @@ pub async fn process_discogs_data(
                 success = false;
             }
         }
+    }
+
+    // Update extraction status based on result
+    {
+        let mut s = state.write().await;
+        s.extraction_status = if success { ExtractionStatus::Completed } else { ExtractionStatus::Failed };
     }
 
     Ok(success)
@@ -631,6 +660,19 @@ fn extract_version_from_filename(filename: &str) -> Option<String> {
     if parts.len() >= 2 { Some(parts[1].to_string()) } else { None }
 }
 
+/// Wait for the trigger to be set, then take the value and return the force_reprocess flag
+async fn wait_for_trigger(trigger: &Arc<std::sync::Mutex<Option<bool>>>) -> bool {
+    loop {
+        {
+            let mut t = trigger.lock().unwrap();
+            if let Some(force_reprocess) = t.take() {
+                return force_reprocess;
+            }
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+}
+
 /// Main extraction loop with periodic checks
 pub async fn run_extraction_loop(
     config: Arc<ExtractorConfig>,
@@ -638,6 +680,7 @@ pub async fn run_extraction_loop(
     shutdown: Arc<tokio::sync::Notify>,
     force_reprocess: bool,
     mq_factory: Arc<dyn MessageQueueFactory>,
+    trigger: Arc<std::sync::Mutex<Option<bool>>>,
     compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<()> {
     info!("📥 Starting initial data processing...");
@@ -689,6 +732,22 @@ pub async fn run_extraction_loop(
                     Err(e) => {
                         error!("❌ Periodic check failed: {}", e);
                     }
+                }
+            }
+            trigger_force_reprocess = wait_for_trigger(&trigger) => {
+                info!("🔄 Extraction triggered via API (force_reprocess={})...", trigger_force_reprocess);
+                let start = Instant::now();
+                let mut downloader = match Downloader::new(config.discogs_root.clone()).await {
+                    Ok(dl) => dl,
+                    Err(e) => {
+                        error!("❌ Failed to create downloader for triggered extraction: {}", e);
+                        continue;
+                    }
+                };
+                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), trigger_force_reprocess, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
+                    Ok(true) => info!("✅ Triggered extraction completed successfully in {:?}", start.elapsed()),
+                    Ok(false) => error!("❌ Triggered extraction completed with errors"),
+                    Err(e) => error!("❌ Triggered extraction failed: {}", e),
                 }
             }
             _ = shutdown.notified() => {

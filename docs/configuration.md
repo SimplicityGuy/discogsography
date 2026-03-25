@@ -479,14 +479,17 @@ See [Performance Guide](performance-guide.md) for detailed optimization strategi
 | `CORS_ORIGINS`                 | Comma-separated list of allowed CORS origins | (none — disabled) | No       |
 | `CACHE_WARMING_ENABLED`        | Pre-warm cache on startup                    | `true`            | No       |
 | `CACHE_WEBHOOK_SECRET`         | Secret for cache invalidation webhooks       | (none — disabled) | No       |
+| `API_HOST`                     | API service hostname for admin proxy         | `api`             | No       |
+| `API_PORT`                     | API service port for admin proxy             | `8004`            | No       |
 
-**Used By**: Dashboard only (for `RABBITMQ_MANAGEMENT_USER`, `CACHE_WARMING_ENABLED`, `CACHE_WEBHOOK_SECRET`); `CORS_ORIGINS` is also supported by the API service — see the [API](#api) section above.
+**Used By**: Dashboard only (for `RABBITMQ_MANAGEMENT_USER`, `CACHE_WARMING_ENABLED`, `CACHE_WEBHOOK_SECRET`); `CORS_ORIGINS` is also supported by the API service — see the [API](#api) section above. `API_HOST` / `API_PORT` are used by the admin proxy router to forward authenticated admin requests to the API service.
 
 **Notes**:
 
 - `RABBITMQ_MANAGEMENT_USER` / `RABBITMQ_MANAGEMENT_PASSWORD` must match the credentials set in RabbitMQ for the management plugin. In production these are supplied via `RABBITMQ_MANAGEMENT_USER_FILE` / `RABBITMQ_MANAGEMENT_PASSWORD_FILE` (Docker secrets)
 - `CORS_ORIGINS` is optional; omit it to restrict cross-origin access
 - `CACHE_WEBHOOK_SECRET` enables an authenticated endpoint to invalidate cached queries
+- `API_HOST` / `API_PORT` configure the admin proxy — the dashboard forwards admin panel requests (login, extraction trigger, DLQ purge) to the API service at `http://{API_HOST}:{API_PORT}`
 
 ## Python Version
 
