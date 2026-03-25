@@ -2,10 +2,12 @@
 
 import json
 from typing import Any
-from unittest.mock import ANY, AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 import pytest
+
+from api.queries import collaborator_queries, genre_tree_queries
 
 
 class TestAutocompleteEndpoint:
@@ -791,3 +793,201 @@ class TestExpandBeforeYearEndpoint:
     def test_expand_before_year_validation_too_high(self, test_client: TestClient) -> None:
         response = test_client.get("/api/expand?node_id=x&type=artist&category=releases&before_year=2031")
         assert response.status_code == 422
+
+
+class TestCollaboratorsEndpoint:
+    """Tests for GET /api/collaborators/{artist_id}."""
+
+    def test_collaborators_success(self, test_client: TestClient) -> None:
+        identity = {"artist_id": "a1", "artist_name": "Miles Davis"}
+        collabs = [{"artist_id": "a2", "artist_name": "John Coltrane", "release_count": 5}]
+        total = 10
+
+        with (
+            patch("api.routers.explore.collaborator_queries.get_artist_identity", AsyncMock(return_value=identity)),
+            patch("api.routers.explore.collaborator_queries.get_collaborators", AsyncMock(return_value=collabs)),
+            patch("api.routers.explore.collaborator_queries.count_collaborators", AsyncMock(return_value=total)),
+        ):
+            response = test_client.get("/api/collaborators/a1?limit=20")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["artist_id"] == "a1"
+        assert data["artist_name"] == "Miles Davis"
+        assert data["collaborators"] == collabs
+        assert data["total"] == 10
+
+    def test_collaborators_not_found_404(self, test_client: TestClient) -> None:
+        with patch("api.routers.explore.collaborator_queries.get_artist_identity", AsyncMock(return_value=None)):
+            response = test_client.get("/api/collaborators/unknown")
+
+        assert response.status_code == 404
+        assert "not found" in response.json()["error"]
+
+    def test_collaborators_no_driver_503(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        original = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/collaborators/a1")
+            assert response.status_code == 503
+        finally:
+            explore_module._neo4j_driver = original
+
+    def test_collaborators_timeout_504(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        exc = Neo4jClientError("TransactionTimedOut")
+        with patch("api.routers.explore.collaborator_queries.get_artist_identity", AsyncMock(side_effect=exc)):
+            response = test_client.get("/api/collaborators/a1")
+
+        assert response.status_code == 504
+        assert "timed out" in response.json()["error"]
+
+    def test_collaborators_other_neo4j_error_returns_500(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        exc = Neo4jClientError("SomeOtherError")
+        with patch("api.routers.explore.collaborator_queries.get_artist_identity", AsyncMock(side_effect=exc)):
+            response = test_client.get("/api/collaborators/a1")
+        assert response.status_code == 500
+
+
+class TestGenreTreeEndpoint:
+    """Tests for GET /api/genre-tree."""
+
+    def test_genre_tree_success(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        # Ensure cache is empty
+        explore_module._genre_tree_cache = None
+
+        genres = [{"name": "Rock", "release_count": 1000, "styles": [{"name": "Punk", "release_count": 200}]}]
+        with patch("api.routers.explore.genre_tree_queries.get_genre_tree", AsyncMock(return_value=genres)):
+            response = test_client.get("/api/genre-tree")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["genres"] == genres
+
+        # Clean up
+        explore_module._genre_tree_cache = None
+
+    def test_genre_tree_cache_hit(self, test_client: TestClient) -> None:
+        import time
+
+        import api.routers.explore as explore_module
+
+        cached = {"genres": [{"name": "Jazz", "release_count": 500, "styles": []}]}
+        explore_module._genre_tree_cache = cached
+        explore_module._genre_tree_cache_time = time.monotonic()  # fresh
+
+        try:
+            response = test_client.get("/api/genre-tree")
+            assert response.status_code == 200
+            assert response.json() == cached
+        finally:
+            explore_module._genre_tree_cache = None
+
+    def test_genre_tree_cache_expired(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        explore_module._genre_tree_cache = {"genres": []}
+        explore_module._genre_tree_cache_time = 0  # expired (monotonic epoch)
+
+        fresh = [{"name": "Electronic", "release_count": 800, "styles": []}]
+        try:
+            with patch("api.routers.explore.genre_tree_queries.get_genre_tree", AsyncMock(return_value=fresh)):
+                response = test_client.get("/api/genre-tree")
+            assert response.status_code == 200
+            assert response.json()["genres"] == fresh
+        finally:
+            explore_module._genre_tree_cache = None
+
+    def test_genre_tree_no_driver_503(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        original = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/genre-tree")
+            assert response.status_code == 503
+        finally:
+            explore_module._neo4j_driver = original
+
+    def test_genre_tree_timeout_504(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        import api.routers.explore as explore_module
+
+        explore_module._genre_tree_cache = None
+
+        exc = Neo4jClientError("TransactionTimedOut")
+        with patch("api.routers.explore.genre_tree_queries.get_genre_tree", AsyncMock(side_effect=exc)):
+            response = test_client.get("/api/genre-tree")
+
+        assert response.status_code == 504
+        assert "timed out" in response.json()["error"]
+
+    def test_genre_tree_other_neo4j_error_returns_500(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        import api.routers.explore as explore_module
+
+        explore_module._genre_tree_cache = None
+
+        exc = Neo4jClientError("SomeOtherError")
+        with patch("api.routers.explore.genre_tree_queries.get_genre_tree", AsyncMock(side_effect=exc)):
+            response = test_client.get("/api/genre-tree")
+        assert response.status_code == 500
+
+
+class TestCollaboratorQueries:
+    """Tests for api/queries/collaborator_queries.py functions."""
+
+    @pytest.mark.asyncio
+    async def test_get_artist_identity(self) -> None:
+        expected = {"artist_id": "a1", "artist_name": "Miles Davis"}
+        with patch("api.queries.collaborator_queries.run_single", AsyncMock(return_value=expected)) as mock_run:
+            result = await collaborator_queries.get_artist_identity(MagicMock(), "a1")
+        assert result == expected
+        mock_run.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_artist_identity_not_found(self) -> None:
+        with patch("api.queries.collaborator_queries.run_single", AsyncMock(return_value=None)):
+            result = await collaborator_queries.get_artist_identity(MagicMock(), "unknown")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_collaborators(self) -> None:
+        expected = [{"artist_id": "a2", "artist_name": "Coltrane", "release_count": 5}]
+        with patch("api.queries.collaborator_queries.run_query", AsyncMock(return_value=expected)) as mock_run:
+            result = await collaborator_queries.get_collaborators(MagicMock(), "a1", limit=10)
+        assert result == expected
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["artist_id"] == "a1"
+        assert kwargs["limit"] == 10
+
+    @pytest.mark.asyncio
+    async def test_count_collaborators(self) -> None:
+        with patch("api.queries.collaborator_queries.run_count", AsyncMock(return_value=42)) as mock_run:
+            result = await collaborator_queries.count_collaborators(MagicMock(), "a1")
+        assert result == 42
+        mock_run.assert_called_once()
+
+
+class TestGenreTreeQueries:
+    """Tests for api/queries/genre_tree_queries.py functions."""
+
+    @pytest.mark.asyncio
+    async def test_get_genre_tree(self) -> None:
+        expected = [{"name": "Rock", "release_count": 1000, "styles": []}]
+        with patch("api.queries.genre_tree_queries.run_query", AsyncMock(return_value=expected)) as mock_run:
+            result = await genre_tree_queries.get_genre_tree(MagicMock())
+        assert result == expected
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["timeout"] == 30.0
