@@ -1,8 +1,9 @@
 """MCP server exposing the Discogsography knowledge graph to AI assistants.
 
-Provides 9 tools for searching, exploring, and analyzing music data:
+Provides 11 tools for searching, exploring, and analyzing music data:
   search, get_artist_details, get_label_details, get_release_details,
-  get_genre_details, get_style_details, find_path, get_trends, get_graph_stats
+  get_genre_details, get_style_details, find_path, get_trends,
+  get_graph_stats, get_collaborators, get_genre_tree
 
 All data is fetched via the Discogsography API — no direct database access.
 
@@ -64,7 +65,9 @@ mcp = FastMCP(
     instructions=(
         "Music knowledge graph server. Use 'search' to find entities, "
         "'get_*_details' for deep info, 'find_path' for connections, "
-        "'get_trends' for timelines, and 'get_graph_stats' for an overview."
+        "'get_trends' for timelines, 'get_graph_stats' for an overview, "
+        "'get_collaborators' for artist collaboration networks, and "
+        "'get_genre_tree' for the full genre/style hierarchy."
     ),
 )
 
@@ -330,6 +333,57 @@ async def get_graph_stats(
     """
     app = _ctx(ctx)
     resp = await _api_get(app, "/api/graph/stats")
+    return resp.json()  # type: ignore[no-any-return]
+
+
+# ---------------------------------------------------------------------------
+# Tool 10: get_collaborators
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def get_collaborators(
+    artist_id: str,
+    limit: int = 20,
+    ctx: Context = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    """Find artists who collaborate with a given artist through shared releases.
+
+    Returns collaborators ranked by number of shared releases, with temporal
+    data showing when collaborations occurred.
+
+    Args:
+        artist_id: The Discogs artist ID (numeric string). Use 'search' to find it.
+        limit: Maximum collaborators to return (1-100, default 20).
+    """
+    app = _ctx(ctx)
+    resp = await _api_get(
+        app,
+        f"/api/collaborators/{artist_id}",
+        {"limit": min(max(limit, 1), 100)},
+    )
+    if resp.status_code == 404:
+        return {"error": f"Artist '{artist_id}' not found"}
+    return resp.json()  # type: ignore[no-any-return]
+
+
+# ---------------------------------------------------------------------------
+# Tool 11: get_genre_tree
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def get_genre_tree(
+    ctx: Context = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    """Get the full genre/style hierarchy from the knowledge graph.
+
+    Returns all genres with their nested styles and release counts,
+    derived from release co-occurrence. Useful for understanding the
+    taxonomy of music in the database.
+    """
+    app = _ctx(ctx)
+    resp = await _api_get(app, "/api/genre-tree")
     return resp.json()  # type: ignore[no-any-return]
 
 

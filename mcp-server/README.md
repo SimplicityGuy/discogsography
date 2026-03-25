@@ -17,6 +17,8 @@ All data is fetched via the Discogsography API — the MCP server has no direct 
 | `find_path` | Shortest path between any two entities in the graph |
 | `get_trends` | Release count by year for any entity |
 | `get_graph_stats` | Database-wide node counts |
+| `get_collaborators` | Artists who share releases with a given artist |
+| `get_genre_tree` | Full genre/style hierarchy with release counts |
 
 ## Installation
 
@@ -98,3 +100,5 @@ With the MCP server connected, AI assistants can answer questions like:
 - "Show me the genre distribution of releases on Blue Note"
 - "Which artists have the most releases in the Electronic genre?"
 - "What are the release trends for Warp Records over time?"
+- "Who did Miles Davis collaborate with most often?"
+- "Show me the complete genre hierarchy — what styles belong to Electronic?"

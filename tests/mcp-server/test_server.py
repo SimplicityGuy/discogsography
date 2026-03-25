@@ -347,6 +347,81 @@ class TestGetGraphStats:
 
 
 # ---------------------------------------------------------------------------
+# Tool: get_collaborators
+# ---------------------------------------------------------------------------
+
+
+class TestGetCollaborators:
+    @pytest.mark.asyncio
+    async def test_returns_collaborators(self, mock_context, app_ctx):
+        from mcp_server.server import get_collaborators
+
+        fake_response = {
+            "artist_id": "1",
+            "artist_name": "Miles Davis",
+            "collaborators": [
+                {"artist_id": "2", "artist_name": "John Coltrane", "release_count": 5},
+            ],
+            "total": 42,
+        }
+
+        app_ctx.client.get = AsyncMock(return_value=_mock_response(fake_response))
+
+        result = await get_collaborators(artist_id="1", ctx=mock_context)
+
+        assert result["artist_name"] == "Miles Davis"
+        assert result["total"] == 42
+        assert len(result["collaborators"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_not_found(self, mock_context, app_ctx):
+        from mcp_server.server import get_collaborators
+
+        app_ctx.client.get = AsyncMock(return_value=_mock_response({"error": "not found"}, status_code=404))
+
+        result = await get_collaborators(artist_id="999", ctx=mock_context)
+
+        assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_clamps_limit(self, mock_context, app_ctx):
+        from mcp_server.server import get_collaborators
+
+        app_ctx.client.get = AsyncMock(return_value=_mock_response({"collaborators": [], "total": 0}))
+
+        await get_collaborators(artist_id="1", limit=999, ctx=mock_context)
+
+        call_params = app_ctx.client.get.call_args.kwargs["params"]
+        assert call_params["limit"] == 100
+
+
+# ---------------------------------------------------------------------------
+# Tool: get_genre_tree
+# ---------------------------------------------------------------------------
+
+
+class TestGetGenreTree:
+    @pytest.mark.asyncio
+    async def test_returns_tree(self, mock_context, app_ctx):
+        from mcp_server.server import get_genre_tree
+
+        fake_response = {
+            "genres": [
+                {"name": "Rock", "release_count": 1000, "styles": [{"name": "Punk", "release_count": 200}]},
+                {"name": "Jazz", "release_count": 500, "styles": []},
+            ],
+        }
+
+        app_ctx.client.get = AsyncMock(return_value=_mock_response(fake_response))
+
+        result = await get_genre_tree(ctx=mock_context)
+
+        assert len(result["genres"]) == 2
+        assert result["genres"][0]["name"] == "Rock"
+        assert result["genres"][0]["styles"][0]["name"] == "Punk"
+
+
+# ---------------------------------------------------------------------------
 # Helper: _api_get
 # ---------------------------------------------------------------------------
 

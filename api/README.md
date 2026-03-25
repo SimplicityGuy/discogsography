@@ -249,6 +249,14 @@ Full genre/style hierarchy derived from release co-occurrence in the knowledge g
 
 The genre tree is cached in-memory for 5 minutes since the hierarchy changes only on data import.
 
+### Graph Statistics
+
+Aggregate node counts across the knowledge graph.
+
+| Method | Path               | Auth Required | Description                                 |
+| ------ | ------------------ | ------------- | ------------------------------------------- |
+| GET    | `/api/graph/stats` | No            | Total entity counts (artists, labels, releases, masters, genres, styles) |
+
 ### Vinyl Archaeology
 
 Time-travel through the knowledge graph with year-range and genre-emergence queries.

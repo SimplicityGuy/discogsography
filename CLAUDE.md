@@ -29,6 +29,7 @@ explore/          Explore service — static file serving for graph exploration 
 extractor/        Rust-based extractor — high-performance Discogs XML data ingestion
 graphinator/      Graphinator service — consumes messages, builds Neo4j graph
 insights/         Insights service — precomputed analytics (proxied via API at /api/insights/*)
+mcp-server/       MCP server — exposes knowledge graph to AI assistants via API (no direct DB access)
 schema-init/      Schema initialization — one-time Neo4j and PostgreSQL schema setup
 tableinator/      Tableinator service — consumes messages, builds PostgreSQL tables
 utilities/        Monitoring utilities — queue monitor, error checker, system monitor

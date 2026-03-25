@@ -26,6 +26,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check      | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (internal) |
 | **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring                 | `FastAPI`, WebSocket, reactive UI                            | 8003 (ext)            |
 | **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends      | `FastAPI`, `psycopg3`, `httpx`                               | 8008, 8009 (internal) |
+| **[🤖](emoji-guide.md#service-identifiers) MCP Server**  | Exposes knowledge graph to AI assistants    | `FastMCP`, `httpx`                                           | stdio / streamable-http |
 
 ### Infrastructure Components
 
@@ -149,6 +150,32 @@ graph TD
     style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
 ```
 
+### MCP Server Integration
+
+Shows how the MCP server connects AI assistants to the knowledge graph through the API service.
+
+```mermaid
+graph LR
+    AI["🤖 AI Assistant<br/>(Claude, Cursor, Zed)"]
+    MCP[["🤖 MCP Server<br/>11 tools<br/>stdio / HTTP"]]
+    API[["🔐 API<br/>FastAPI"]]
+
+    NEO4J[("🔗 Neo4j")]
+    PG[("🐘 PostgreSQL")]
+    REDIS[("🔴 Redis")]
+
+    AI <-->|MCP Protocol| MCP
+    MCP -->|httpx| API
+    API --- NEO4J & PG & REDIS
+
+    style AI fill:#e8eaf6,stroke:#283593,stroke-width:2px
+    style MCP fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+    style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+```
+
 ## Data Flow
 
 ### 1. Data Extraction Phase
@@ -229,6 +256,13 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 - Recommendation engine (`/api/recommend/similar/artist/{artist_id}` — find similar artists via shared genres/styles, `/api/recommend/explore/{entity_type}/{entity_id}` — explore-from-here discovery)
 - Collaborator network (`/api/collaborators/{artist_id}` — artists sharing releases, with temporal breakdown)
 - Genre tree hierarchy (`/api/genre-tree` — genre/style tree derived from release co-occurrence)
+- Graph statistics (`/api/graph/stats` — aggregate node counts across all entity types)
+
+**MCP Server** (AI assistant integration):
+
+- Thin HTTP client that proxies all 11 tools through the API service — no direct database access
+- Tools: search, entity details (artist/label/release/genre/style), path finder, trends, graph stats, collaborators, genre tree
+- Transports: stdio (Claude Desktop, Cursor, Zed) or streamable-http (hosted)
 
 **Insights Service** (precomputed analytics):
 

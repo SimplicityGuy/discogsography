@@ -52,6 +52,7 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 | **[🔧](docs/emoji-guide.md#service-identifiers) Schema-Init** | One-shot database schema initializer             | `neo4j-driver`, `psycopg3`                                   |
 | **[🐘](docs/emoji-guide.md#service-identifiers) Tableinator** | Creates PostgreSQL analytics tables              | `psycopg3`, JSONB, full-text search                          |
 | **[📈](docs/emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends           | `FastAPI`, `psycopg3`, `httpx`                               |
+| **[🤖](docs/emoji-guide.md#service-identifiers) MCP Server** | Exposes knowledge graph to AI assistants         | `FastMCP`, `httpx`                                           |
 
 ### 📐 System Architecture
 
