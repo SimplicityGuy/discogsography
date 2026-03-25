@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>Discogsography Admin</title>
+    <link href="/tailwind.css" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+    <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
+    <style>
+        :root {
+            --bg-deep: #F5F6F8;
+            --card-bg: #FFFFFF;
+            --border-color: #E2E8F0;
+            --text-high: #1A202C;
+            --text-mid: #4A5568;
+            --text-dim: #718096;
+            --text-muted: #A0AEC0;
+            --gauge-track: #E2E8F0;
+            --inner-bg: #F7FAFC;
+            --inner-border: #E2E8F0;
+            --scrollbar-thumb: #CBD5E0;
+            --purple-accent: #7C3AED;
+            --blue-accent: #3B82F6;
+            --card-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+            --log-msg: #4A5568;
+            --row-border: rgba(0,0,0,0.06);
+        }
+        .dark {
+            --bg-deep: #121212;
+            --card-bg: #1E1E1E;
+            --border-color: #2D2D2D;
+            --text-high: #F5F5F5;
+            --text-mid: #B0B0B0;
+            --text-dim: #A0A0A0;
+            --text-muted: #6B7280;
+            --gauge-track: #2D2D2D;
+            --inner-bg: rgba(24,24,27,0.5);
+            --inner-border: #2D2D2D;
+            --scrollbar-thumb: #333;
+            --purple-accent: #A78BFA;
+            --blue-accent: #60A5FA;
+            --card-shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+            --log-msg: #D1D5DB;
+            --row-border: rgba(255,255,255,0.05);
+        }
+        body {
+            background-color: var(--bg-deep);
+            color: var(--text-high);
+            font-family: 'Inter', sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+        .dashboard-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            box-shadow: var(--card-shadow);
+        }
+        .mono { font-family: 'JetBrains Mono', monospace; }
+        .t-high { color: var(--text-high); }
+        .t-mid { color: var(--text-mid); }
+        .t-dim { color: var(--text-dim); }
+        .t-muted { color: var(--text-muted); }
+        .b-theme { border-color: var(--border-color); }
+        .b-row { border-color: var(--row-border); }
+        .bg-inner { background: var(--inner-bg); border-color: var(--inner-border); }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: var(--bg-deep); }
+        ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 10px; }
+
+        .badge-completed {
+            background: rgba(16,185,129,0.1); color: #10B981; border: 1px solid rgba(16,185,129,0.2);
+        }
+        .badge-failed {
+            background: rgba(239,68,68,0.1); color: #EF4444; border: 1px solid rgba(239,68,68,0.2);
+        }
+        .badge-running, .badge-pending {
+            background: rgba(234,179,8,0.1); color: #EAB308; border: 1px solid rgba(234,179,8,0.2);
+        }
+        .badge-idle {
+            background: rgba(107,114,128,0.1); color: #6B7280; border: 1px solid rgba(107,114,128,0.2);
+        }
+        .btn-purple {
+            background: var(--purple-accent);
+            color: #fff;
+            border: none;
+            cursor: pointer;
+            transition: opacity 0.15s;
+        }
+        .btn-purple:hover { opacity: 0.85; }
+        .btn-purple:disabled { opacity: 0.5; cursor: not-allowed; }
+    </style>
+    <script>
+        // Apply theme before first paint to prevent flash
+        (function() {
+            const saved = localStorage.getItem('theme');
+            if (saved === 'dark' || (!saved && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+</head>
+<body class="p-8">
+<div class="max-w-[1440px] mx-auto space-y-8">
+
+    <!-- ================================================================
+         LOGIN FORM
+         ================================================================ -->
+    <div id="login-view" class="flex items-center justify-center min-h-[80vh]" style="display:none">
+        <div class="dashboard-card p-8 w-full max-w-md space-y-6">
+            <div class="text-center space-y-2">
+                <span class="material-symbols-outlined text-4xl" style="color:var(--purple-accent)">admin_panel_settings</span>
+                <h2 class="text-xl font-semibold">Discogsography Admin</h2>
+                <p class="text-xs t-muted">Sign in to manage extractions and queues</p>
+            </div>
+
+            <div id="login-error" class="text-xs text-red-500 text-center" style="display:none"></div>
+
+            <div class="space-y-4">
+                <div>
+                    <label for="login-email" class="block text-[10px] font-bold uppercase tracking-wider t-dim mb-1">Email</label>
+                    <input id="login-email" type="email" autocomplete="email"
+                           class="w-full px-3 py-2 rounded-lg text-sm mono bg-inner border b-theme t-high focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                           placeholder="admin@example.com"/>
+                </div>
+                <div>
+                    <label for="login-password" class="block text-[10px] font-bold uppercase tracking-wider t-dim mb-1">Password</label>
+                    <input id="login-password" type="password" autocomplete="current-password"
+                           class="w-full px-3 py-2 rounded-lg text-sm mono bg-inner border b-theme t-high focus:outline-none focus:ring-2 focus:ring-purple-500/50"
+                           placeholder="&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;&#8226;"/>
+                </div>
+                <button id="login-btn"
+                        class="btn-purple w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2">
+                    <span class="material-symbols-outlined text-sm">login</span> Sign In
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         ADMIN PANEL
+         ================================================================ -->
+    <div id="admin-view" style="display:none">
+
+        <!-- Header -->
+        <header class="flex items-center justify-between mb-8">
+            <div class="flex items-center space-x-5">
+                <!-- Logo -->
+                <div aria-label="Discogsography logo">
+                    <div style="
+                        position: relative;
+                        width: 40px; height: 40px;
+                        border-radius: 50%; overflow: hidden;
+                        border: 2px solid #1A2840;
+                        box-sizing: border-box;
+                    ">
+                        <div style="
+                            position: absolute; inset: 0;
+                            display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr;
+                        ">
+                            <div style="background:#AA7272;"></div>
+                            <div style="background:#4A70A3;"></div>
+                            <div style="background:#3C7068;"></div>
+                            <div style="background:#7B8E57;"></div>
+                        </div>
+                        <div style="
+                            position: absolute; inset: 0;
+                            background: radial-gradient(circle at center, rgba(15,25,45,0.5) 18%, transparent 52%);
+                        "></div>
+                        <div style="
+                            position: absolute;
+                            top: 50%; left: 50%;
+                            width: 44%; height: 44%;
+                            background: #F0F1F3;
+                            transform: translate(-50%, -50%) rotate(45deg);
+                        "></div>
+                    </div>
+                </div>
+                <div>
+                    <h1 class="text-xl font-semibold tracking-tight">Discogsography Admin</h1>
+                    <p class="text-[10px] t-muted uppercase tracking-widest font-bold mt-0.5">Extraction &amp; Queue Management</p>
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-4">
+                <span id="admin-email" class="text-xs mono t-dim"></span>
+                <a href="/" class="text-xs font-bold uppercase tracking-wider t-dim hover:t-high transition-colors" style="text-decoration:none">Monitoring</a>
+                <button id="logout-btn" class="text-xs font-bold uppercase tracking-wider text-red-400 hover:text-red-300 transition-colors flex items-center gap-1">
+                    <span class="material-symbols-outlined text-sm">logout</span> Logout
+                </button>
+                <button id="theme-toggle" class="p-2 rounded-full transition-colors dashboard-card flex items-center justify-center" style="border-radius:9999px" title="Toggle theme">
+                    <span id="theme-icon-auto" class="material-symbols-outlined text-lg t-dim hidden">brightness_auto</span>
+                    <span id="theme-icon-sun" class="material-symbols-outlined text-lg t-dim hidden">light_mode</span>
+                    <span id="theme-icon-moon" class="material-symbols-outlined text-lg t-dim hidden">dark_mode</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Extraction Control -->
+        <section class="dashboard-card p-6 mb-6">
+            <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <h3 class="text-sm font-semibold flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm t-dim">rocket_launch</span> Extraction Control
+                </h3>
+                <span id="extraction-status" class="text-[10px] px-2 py-0.5 rounded uppercase font-bold badge-idle">Idle</span>
+            </div>
+            <div class="flex items-center gap-4">
+                <button id="trigger-btn"
+                        class="btn-purple px-6 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm">play_arrow</span> Trigger Extraction
+                </button>
+                <span id="trigger-spinner" class="material-symbols-outlined text-lg animate-spin" style="display:none;color:var(--purple-accent)">progress_activity</span>
+            </div>
+        </section>
+
+        <!-- Extraction History -->
+        <section class="dashboard-card p-6 mb-6">
+            <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <h3 class="text-sm font-semibold flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm t-dim">history</span> Extraction History
+                </h3>
+            </div>
+            <div id="extraction-history">
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
+                            <th class="text-left py-2 pr-4">Date</th>
+                            <th class="text-left py-2 pr-4">Status</th>
+                            <th class="text-left py-2 pr-4">Duration</th>
+                            <th class="text-right py-2 pr-4">Records</th>
+                            <th class="text-left py-2">Error</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history-body"></tbody>
+                </table>
+                <p id="history-empty" class="text-xs t-muted text-center py-6" style="display:none">No extraction history available</p>
+            </div>
+        </section>
+
+        <!-- DLQ Management -->
+        <section class="dashboard-card p-6">
+            <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                <h3 class="text-sm font-semibold flex items-center gap-2">
+                    <span class="material-symbols-outlined text-sm t-dim">delete_sweep</span> Dead Letter Queue Management
+                </h3>
+            </div>
+            <div class="space-y-2" id="dlq-list"></div>
+        </section>
+
+    </div><!-- /admin-view -->
+
+</div><!-- /max-w container -->
+
+<!-- Toast notification -->
+<div id="toast" class="fixed bottom-6 right-6 px-5 py-3 rounded-lg text-sm font-semibold shadow-lg transition-all duration-300 opacity-0 translate-y-2" style="display:none; z-index:9999"></div>
+
+<script src="/admin.js"></script>
+</body>
+</html>
