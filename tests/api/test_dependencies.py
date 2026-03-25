@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from api.dependencies import configure, get_optional_user, require_user
+from api.dependencies import configure, get_optional_user, require_admin, require_user
 
 
 # Use a known JWT secret for tests
@@ -148,3 +148,16 @@ class TestRequireUser:
         with pytest.raises(HTTPException) as exc_info:
             await require_user(creds)
         assert exc_info.value.status_code == 401
+
+
+class TestRequireAdmin:
+    """Tests for the require_admin dependency."""
+
+    @pytest.mark.asyncio
+    async def test_raises_503_when_no_secret(self) -> None:
+        configure(None)
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(_make_credentials("some-token"))
+        assert exc_info.value.status_code == 503
