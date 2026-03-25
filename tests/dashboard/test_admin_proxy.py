@@ -288,6 +288,98 @@ class TestDlqPurgeProxy:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 — User Activity & Storage proxy routes
+# ---------------------------------------------------------------------------
+
+
+class TestUserStatsProxy:
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_user_stats(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("get", 200, b'{"total_users":5,"active_users":3}')
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.get("/admin/api/users/stats", headers={"Authorization": "Bearer tok"})
+        assert resp.status_code == 200
+        assert resp.json()["total_users"] == 5
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_user_stats_forwards_auth_header(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("get", 200, b'{"total_users":1}')
+        mock_cls_patch.return_value = mock_instance
+
+        proxy_client.get("/admin/api/users/stats", headers={"Authorization": "Bearer mytoken"})
+        call_kwargs = mock_instance.get.call_args
+        assert "Bearer mytoken" in str(call_kwargs)
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_user_stats_unreachable(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx_error("get")
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.get("/admin/api/users/stats")
+        assert resp.status_code == 502
+        assert "unavailable" in resp.json()["detail"]
+
+
+class TestSyncActivityProxy:
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_sync_activity(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("get", 200, b'{"activity":[]}')
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.get("/admin/api/users/sync-activity", headers={"Authorization": "Bearer tok"})
+        assert resp.status_code == 200
+        assert "activity" in resp.json()
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_sync_activity_forwards_auth_header(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("get", 200, b'{"activity":[]}')
+        mock_cls_patch.return_value = mock_instance
+
+        proxy_client.get("/admin/api/users/sync-activity", headers={"Authorization": "Bearer mytoken"})
+        call_kwargs = mock_instance.get.call_args
+        assert "Bearer mytoken" in str(call_kwargs)
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_sync_activity_unreachable(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx_error("get")
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.get("/admin/api/users/sync-activity")
+        assert resp.status_code == 502
+        assert "unavailable" in resp.json()["detail"]
+
+
+class TestStorageProxy:
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_storage(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("get", 200, b'{"neo4j":{"size_bytes":1024},"postgres":{"size_bytes":2048}}')
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.get("/admin/api/storage", headers={"Authorization": "Bearer tok"})
+        assert resp.status_code == 200
+        assert "neo4j" in resp.json()
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_storage_forwards_auth_header(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("get", 200, b'{"neo4j":{},"postgres":{}}')
+        mock_cls_patch.return_value = mock_instance
+
+        proxy_client.get("/admin/api/storage", headers={"Authorization": "Bearer mytoken"})
+        call_kwargs = mock_instance.get.call_args
+        assert "Bearer mytoken" in str(call_kwargs)
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_storage_unreachable(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx_error("get")
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.get("/admin/api/storage")
+        assert resp.status_code == 502
+        assert "unavailable" in resp.json()["detail"]
+
+
 class TestAuthHeaderForwarding:
     @patch("dashboard.admin_proxy.httpx.AsyncClient")
     def test_no_auth_header_sent_when_absent(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:

@@ -168,6 +168,53 @@ async def proxy_trigger(request: Request) -> Response:
     return _ok_response(resp)
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 — User Activity & Storage proxy routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/admin/api/users/stats")
+async def proxy_user_stats(request: Request) -> Response:
+    """Proxy user stats requests to the API service."""
+    url = _build_url("/api/admin/users/stats")
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+@router.get("/admin/api/users/sync-activity")
+async def proxy_sync_activity(request: Request) -> Response:
+    """Proxy sync activity requests to the API service."""
+    url = _build_url("/api/admin/users/sync-activity")
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+@router.get("/admin/api/storage")
+async def proxy_storage(request: Request) -> Response:
+    """Proxy storage utilization requests to the API service."""
+    url = _build_url("/api/admin/storage")
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
 @router.post("/admin/api/dlq/purge/{queue}")
 async def proxy_dlq_purge(queue: str, request: Request) -> Response:
     """Proxy DLQ purge requests to the API service."""
