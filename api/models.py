@@ -510,3 +510,28 @@ class StorageResponse(BaseModel):
     neo4j: dict[str, Any]
     postgresql: dict[str, Any]
     redis: dict[str, Any]
+
+
+# --- Metrics History models (Phase 3) ---
+
+
+class QueueHistoryResponse(BaseModel):
+    """Response for GET /api/admin/queues/history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    range: str
+    granularity: str
+    queues: dict[str, Any]
+    dlq_summary: dict[str, Any]
+
+
+class HealthHistoryResponse(BaseModel):
+    """Response for GET /api/admin/health/history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    range: str
+    granularity: str
+    services: dict[str, Any]
+    api_endpoints: dict[str, Any]
