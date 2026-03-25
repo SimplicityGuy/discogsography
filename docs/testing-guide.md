@@ -87,9 +87,11 @@ tests/
 │
 ├── explore/
 │   ├── conftest.py
+│   ├── test_collaborators_api.py        # Collaborator endpoint tests
 │   ├── test_explore_api.py              # API unit tests
 │   ├── test_explore_auth_ui.py          # Auth UI tests
 │   ├── test_explore_ui.py               # E2E tests (playwright, @pytest.mark.e2e)
+│   ├── test_genre_tree_api.py           # Genre tree endpoint tests
 │   └── test_snapshot.py
 │
 ├── graphinator/

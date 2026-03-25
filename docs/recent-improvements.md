@@ -4,11 +4,24 @@
 
 **Summary of recent enhancements to the Discogsography platform**
 
-Last Updated: 2026-03-22
+Last Updated: 2026-03-25
 
 </div>
 
 ## 🆕 Latest Improvements (March 2026)
+
+### 🤝 Collaborator Network and Genre Tree (#169)
+
+**Overview**: Added two new graph-powered features — a collaborator network endpoint that finds artists sharing releases with temporal breakdown, and a genre tree endpoint that derives a full genre/style hierarchy from release co-occurrence.
+
+#### Features
+
+- **Collaborator Network** (`GET /api/collaborators/{artist_id}`): Finds artists who share releases with a given artist, returning yearly collaboration counts, first/last year, and total release overlap. Rate limited to 30/min with Neo4j timeout protection.
+- **Genre Tree** (`GET /api/genre-tree`): Returns the complete genre/style hierarchy derived from release co-occurrence. Cached in-memory for 5 minutes. Rate limited to 30/min with timeout protection.
+- **Explore Frontend**: New Collaborators and Genre Tree panes integrated into the Explore UI with dedicated JavaScript modules (`collaborators.js`, `genre-tree.js`).
+- **Security Ignore System**: Added `.pip-audit-ignores` and `osv-scanner.toml` for managing known upstream vulnerabilities with no available fix. The `update-project.sh` script automatically sweeps these after dependency upgrades and removes entries that have been resolved.
+
+---
 
 ### ⚡ Comprehensive Query Performance Optimization — 249x Overall Improvement (#175-#184)
 

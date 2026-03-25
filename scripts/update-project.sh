@@ -723,6 +723,189 @@ update_python_packages() {
     fi
 }
 
+# Sweep pip-audit ignores — remove entries whose vulnerabilities are now fixed
+sweep_pip_audit_ignores() {
+    local ignore_file=".pip-audit-ignores"
+    if [[ ! -f "$ignore_file" ]]; then
+        return
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY RUN] Would sweep $ignore_file for resolved vulnerabilities"
+        return
+    fi
+
+    print_section "$EMOJI_VERIFY" "Sweeping pip-audit Ignores"
+
+    # Collect vulnerability IDs from the ignore file
+    local vuln_ids=()
+    while IFS= read -r line; do
+        local vuln_id
+        vuln_id=$(echo "$line" | sed 's/#.*//' | tr -d '[:space:]')
+        [[ -z "$vuln_id" ]] && continue
+        vuln_ids+=("$vuln_id")
+    done < "$ignore_file"
+
+    if [[ ${#vuln_ids[@]} -eq 0 ]]; then
+        print_success "No vulnerability ignores to sweep"
+        return
+    fi
+
+    print_info "Testing ${#vuln_ids[@]} ignored vulnerabilit$([ ${#vuln_ids[@]} -eq 1 ] && echo "y" || echo "ies")..."
+
+    # Build --ignore-vuln args for ALL entries (baseline)
+    local all_ignore_args=""
+    for vid in "${vuln_ids[@]}"; do
+        all_ignore_args="$all_ignore_args --ignore-vuln $vid"
+    done
+
+    # Test each entry: run pip-audit with all OTHER ignores but NOT this one.
+    # If pip-audit passes, the vulnerability is fixed and the ignore can go.
+    local resolved=()
+    local still_needed=()
+    for test_vid in "${vuln_ids[@]}"; do
+        local other_args=""
+        for vid in "${vuln_ids[@]}"; do
+            [[ "$vid" == "$test_vid" ]] && continue
+            other_args="$other_args --ignore-vuln $vid"
+        done
+
+        if uv run pip-audit --desc $other_args > /dev/null 2>&1; then
+            resolved+=("$test_vid")
+            print_success "✓ $test_vid — fixed! Removing from ignore list"
+        else
+            still_needed+=("$test_vid")
+            print_warning "✗ $test_vid — still needed (no fix available)"
+        fi
+    done
+
+    # Rewrite the ignore file without resolved entries
+    if [[ ${#resolved[@]} -gt 0 ]]; then
+        CHANGES_MADE=true
+        for rid in "${resolved[@]}"; do
+            # Remove the line containing this CVE (works for both bare ID and commented lines)
+            sed -i.bak "/^${rid}[[:space:]]/d;/^${rid}$/d" "$ignore_file"
+        done
+        rm -f "${ignore_file}.bak"
+        print_success "Removed ${#resolved[@]} resolved vulnerabilit$([ ${#resolved[@]} -eq 1 ] && echo "y" || echo "ies") from $ignore_file"
+    fi
+
+    if [[ ${#still_needed[@]} -gt 0 ]]; then
+        print_info "${#still_needed[@]} vulnerabilit$([ ${#still_needed[@]} -eq 1 ] && echo "y" || echo "ies") still awaiting upstream fixes"
+    else
+        # Check if only comments/blanks remain
+        local remaining
+        remaining=$(grep -cv '^\s*#\|^\s*$' "$ignore_file" 2>/dev/null || echo "0")
+        if [[ "$remaining" -eq 0 ]]; then
+            print_success "All vulnerabilities resolved! $ignore_file has no active ignores"
+        fi
+    fi
+}
+
+# Sweep osv-scanner ignores — remove entries whose vulnerabilities are now fixed
+sweep_osv_scanner_ignores() {
+    local config_file="osv-scanner.toml"
+    if [[ ! -f "$config_file" ]]; then
+        return
+    fi
+
+    if ! command -v osv-scanner > /dev/null 2>&1; then
+        print_info "osv-scanner not installed locally, skipping osv-scanner ignore sweep"
+        return
+    fi
+
+    if [[ "$DRY_RUN" == true ]]; then
+        print_info "[DRY RUN] Would sweep $config_file for resolved vulnerabilities"
+        return
+    fi
+
+    # Extract vulnerability IDs from [[IgnoredVulns]] blocks
+    local vuln_ids=()
+    while IFS= read -r vid; do
+        [[ -n "$vid" ]] && vuln_ids+=("$vid")
+    done < <(grep '^id = ' "$config_file" | sed 's/^id = "\(.*\)"/\1/')
+
+    if [[ ${#vuln_ids[@]} -eq 0 ]]; then
+        return
+    fi
+
+    print_info "Testing ${#vuln_ids[@]} osv-scanner ignored vulnerabilit$([ ${#vuln_ids[@]} -eq 1 ] && echo "y" || echo "ies")..."
+
+    # For each ignored vuln, run osv-scanner with a temp config excluding that entry.
+    # If it passes, the vuln is resolved and the entry can be removed.
+    local resolved=()
+    local still_needed=()
+    for test_vid in "${vuln_ids[@]}"; do
+        local tmp_config
+        tmp_config=$(mktemp)
+
+        # Build a temp config with all ignores EXCEPT the one being tested
+        echo "# Temporary osv-scanner config for sweep testing" > "$tmp_config"
+        local in_target_block=false
+        local skip_until_next_block=false
+        while IFS= read -r line; do
+            # Detect start of an IgnoredVulns block
+            if [[ "$line" == "[[IgnoredVulns]]" ]]; then
+                in_target_block=false
+                skip_until_next_block=false
+            fi
+            # Check if this block's id matches the one we're testing
+            if [[ "$line" =~ ^id\ =\ \"${test_vid}\" ]]; then
+                in_target_block=true
+                skip_until_next_block=true
+                # Remove the preceding [[IgnoredVulns]] header we already wrote
+                sed -i.bak '$ { /\[\[IgnoredVulns\]\]/d; }' "$tmp_config"
+                rm -f "${tmp_config}.bak"
+                continue
+            fi
+            if [[ "$skip_until_next_block" == true ]]; then
+                # Skip lines until next block or end
+                if [[ "$line" == "[[IgnoredVulns]]" ]] || [[ -z "$line" && "$in_target_block" == true ]]; then
+                    skip_until_next_block=false
+                    in_target_block=false
+                    [[ "$line" == "[[IgnoredVulns]]" ]] && echo "$line" >> "$tmp_config"
+                fi
+                continue
+            fi
+            echo "$line" >> "$tmp_config"
+        done < "$config_file"
+
+        if osv-scanner --config="$tmp_config" --recursive ./ > /dev/null 2>&1; then
+            resolved+=("$test_vid")
+            print_success "✓ $test_vid — fixed! Removing from osv-scanner config"
+        else
+            still_needed+=("$test_vid")
+            print_warning "✗ $test_vid — still needed (no fix available)"
+        fi
+        rm -f "$tmp_config"
+    done
+
+    # Rewrite the config file without resolved entries
+    if [[ ${#resolved[@]} -gt 0 ]]; then
+        CHANGES_MADE=true
+        for rid in "${resolved[@]}"; do
+            # Remove the [[IgnoredVulns]] block for this ID
+            # Use awk to remove the block: from [[IgnoredVulns]] through the blank line after the matching id
+            awk -v id="$rid" '
+                /^\[\[IgnoredVulns\]\]/ { block = $0; in_block = 1; next }
+                in_block && /^id = "/ {
+                    if (index($0, id) > 0) { skip = 1; in_block = 0; next }
+                    else { print block; skip = 0; in_block = 0 }
+                }
+                in_block { block = block "\n" $0; next }
+                skip && /^$/ { skip = 0; next }
+                skip { next }
+                { print }
+            ' "$config_file" > "${config_file}.tmp" && mv "${config_file}.tmp" "$config_file"
+        done
+        print_success "Removed ${#resolved[@]} resolved vulnerabilit$([ ${#resolved[@]} -eq 1 ] && echo "y" || echo "ies") from $config_file"
+    fi
+
+    if [[ ${#still_needed[@]} -gt 0 ]]; then
+        print_info "${#still_needed[@]} osv-scanner vulnerabilit$([ ${#still_needed[@]} -eq 1 ] && echo "y" || echo "ies") still awaiting upstream fixes"
+    fi
+}
+
 # Run tests
 run_tests() {
     if [[ "$SKIP_TESTS" == true ]] || [[ "$DRY_RUN" == true ]]; then
@@ -903,7 +1086,7 @@ show_verification_steps() {
     echo ""
     echo "4. 📊 Review dependency changes:"
     echo "   # Check for security advisories"
-    echo "   uv pip audit"
+    echo "   uv run pip-audit --desc"
     echo "   # Review major version changes"
     echo "   git diff uv.lock | grep -E \"^[+-]version\""
     echo ""
@@ -1111,6 +1294,10 @@ main() {
 
     # Verify all dependencies were updated
     verify_dependency_updates
+
+    # Sweep security ignores — remove entries fixed by dependency upgrades
+    sweep_pip_audit_ignores
+    sweep_osv_scanner_ignores
 
     # Run tests
     run_tests

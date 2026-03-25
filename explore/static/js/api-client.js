@@ -387,6 +387,33 @@ class ApiClient {
         if (!response.ok) return null;
         return response.blob();
     }
+    // --- Collaborators ---
+
+    /**
+     * Get collaborators for an artist.
+     * @param {string} artistId - Artist ID
+     * @param {number} limit - Max collaborators to return
+     * @returns {Promise<Object|null>} Collaborator data or null on error
+     */
+    async getCollaborators(artistId, limit = 20) {
+        const params = new URLSearchParams({ limit: String(limit) });
+        const response = await fetch(`/api/collaborators/${encodeURIComponent(artistId)}?${params}`);
+        if (!response.ok) return null;
+        return response.json();
+    }
+
+    // --- Genre Tree ---
+
+    /**
+     * Get the full genre/style hierarchy.
+     * @returns {Promise<Object|null>} Genre tree data or null on error
+     */
+    async getGenreTree() {
+        const response = await fetch('/api/genre-tree');
+        if (!response.ok) return null;
+        return response.json();
+    }
+
     // --- Insights ---
 
     async getInsightsTopArtists(limit = 10) {

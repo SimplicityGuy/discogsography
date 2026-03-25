@@ -672,6 +672,8 @@ class ExploreApp {
             this.userPanes.loadWantlist(true);
         } else if (pane === 'recommendations' && window.authManager.isLoggedIn()) {
             this.userPanes.loadRecommendations();
+        } else if (pane === 'genres' && window.genreTreeView) {
+            window.genreTreeView.load();
         }
     }
 
@@ -987,6 +989,23 @@ class ExploreApp {
             if (details.groups?.length) nodes.push(this._detailTags('Groups', details.groups));
             if (window.authManager.isLoggedIn() && details.id) {
                 nodes.push(this._gapAnalysisButton('artist', details.id, details.name));
+            }
+            // Collaborators section
+            const collabSection = document.createElement('div');
+            collabSection.className = 'detail-section mt-3';
+            const collabHeading = document.createElement('h6');
+            collabHeading.textContent = 'Collaborators';
+            const collabContainer = document.createElement('div');
+            collabContainer.id = 'collaboratorsContainer';
+            const collabLoading = document.createElement('p');
+            collabLoading.className = 'text-text-mid text-sm';
+            collabLoading.textContent = 'Loading...';
+            collabContainer.appendChild(collabLoading);
+            collabSection.append(collabHeading, collabContainer);
+            nodes.push(collabSection);
+            // Trigger async load
+            if (window.collaboratorsPanel && details.id) {
+                window.collaboratorsPanel.load(details.id);
             }
         } else if (type === 'release') {
             if (details.year) nodes.push(this._detailStat('Year', details.year));
