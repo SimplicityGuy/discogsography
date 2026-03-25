@@ -778,6 +778,17 @@ class TestUserStatsEndpoint:
         )
         assert resp.status_code in (401, 403)
 
+    def test_user_stats_not_ready(self, test_client: TestClient) -> None:
+        import api.routers.admin as admin_mod
+
+        original_pool = admin_mod._pool
+        admin_mod._pool = None
+        try:
+            resp = test_client.get("/api/admin/users/stats", headers=_admin_auth_headers())
+            assert resp.status_code == 503
+        finally:
+            admin_mod._pool = original_pool
+
 
 class TestSyncActivityEndpoint:
     """Tests for GET /api/admin/users/sync-activity."""
@@ -798,6 +809,17 @@ class TestSyncActivityEndpoint:
     def test_rejects_without_token(self, test_client: TestClient) -> None:
         resp = test_client.get("/api/admin/users/sync-activity")
         assert resp.status_code == 401
+
+    def test_sync_activity_not_ready(self, test_client: TestClient) -> None:
+        import api.routers.admin as admin_mod
+
+        original_pool = admin_mod._pool
+        admin_mod._pool = None
+        try:
+            resp = test_client.get("/api/admin/users/sync-activity", headers=_admin_auth_headers())
+            assert resp.status_code == 503
+        finally:
+            admin_mod._pool = original_pool
 
 
 class TestStorageEndpoint:
