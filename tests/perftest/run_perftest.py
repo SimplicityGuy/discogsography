@@ -275,6 +275,7 @@ def build_test_plan(
         ("explore/year-range", f"{base}/api/explore/year-range", None),
         ("explore/genre-emergence", f"{base}/api/explore/genre-emergence", {"before_year": "2025"}),
         ("genre-tree", f"{base}/api/genre-tree", None),
+        ("graph/stats", f"{base}/api/graph/stats", None),
         ("insights/top-artists", f"{base}/api/insights/top-artists", None),
         ("insights/label-longevity", f"{base}/api/insights/label-longevity", None),
         ("insights/this-month", f"{base}/api/insights/this-month", None),

@@ -110,7 +110,9 @@ tests/
 │   ├── test_pg_queries.py               # PostgreSQL query tests (via API internal endpoints)
 │   └── test_scheduler.py               # Scheduler tests
 │
-├── mcp-server/                          # MCP server tests (placeholder, no tests yet)
+├── mcp-server/                          # MCP server tests
+│   ├── __init__.py
+│   └── test_server.py                  # All 11 MCP tools + entry point tests
 │
 ├── perftest/                            # Performance testing suite
 │   ├── config.yaml                      # Test configuration (entities, iterations)

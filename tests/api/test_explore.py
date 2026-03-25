@@ -946,6 +946,39 @@ class TestGenreTreeEndpoint:
         assert response.status_code == 500
 
 
+class TestGraphStatsEndpoint:
+    """Tests for GET /api/graph/stats."""
+
+    def test_graph_stats_success(self, test_client: TestClient) -> None:
+        fake_counts = {"artists": 1000, "labels": 500, "releases": 5000, "masters": 2000, "genres": 15, "styles": 300}
+        with patch("api.routers.explore.get_graph_stats", AsyncMock(return_value=fake_counts)):
+            response = test_client.get("/api/graph/stats")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_entities"] == 8815
+        assert data["counts"]["artists"] == 1000
+        assert data["counts"]["genres"] == 15
+
+    def test_graph_stats_empty_graph(self, test_client: TestClient) -> None:
+        with patch("api.routers.explore.get_graph_stats", AsyncMock(return_value={})):
+            response = test_client.get("/api/graph/stats")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_entities"] == 0
+        assert data["counts"] == {}
+
+    def test_graph_stats_no_driver_503(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        original = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/graph/stats")
+            assert response.status_code == 503
+        finally:
+            explore_module._neo4j_driver = original
+
+
 class TestCollaboratorQueries:
     """Tests for api/queries/collaborator_queries.py functions."""
 
