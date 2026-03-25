@@ -2,6 +2,7 @@
 
 from datetime import datetime
 import re
+from typing import Any
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
@@ -367,3 +368,145 @@ class ExtractionTriggerResponse(BaseModel):
 class DlqPurgeResponse(BaseModel):
     queue: str
     messages_purged: int
+
+
+# --- Admin Phase 2 Response Models ---
+
+
+class DailyRegistration(BaseModel):
+    """User registration counts per day."""
+
+    date: str
+    count: int
+
+
+class WeeklyRegistration(BaseModel):
+    """User registration counts per week."""
+
+    week_start: str
+    count: int
+
+
+class MonthlyRegistration(BaseModel):
+    """User registration counts per month."""
+
+    month: str
+    count: int
+
+
+class RegistrationTimeSeries(BaseModel):
+    """Time series of user registrations at multiple granularities."""
+
+    daily: list[DailyRegistration]
+    weekly: list[WeeklyRegistration]
+    monthly: list[MonthlyRegistration]
+
+
+class UserStatsResponse(BaseModel):
+    """Response model for admin user statistics endpoint."""
+
+    total_users: int
+    active_7d: int
+    active_30d: int
+    oauth_connection_rate: float
+    registrations: dict[str, Any]
+
+
+class SyncPeriodStats(BaseModel):
+    """Sync activity statistics for a time period."""
+
+    total_syncs: int
+    syncs_per_day: float
+    avg_items_synced: float
+    failure_rate: float
+    total_failures: int
+
+
+class SyncActivityResponse(BaseModel):
+    """Response model for admin sync activity endpoint."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    period_7d: SyncPeriodStats
+    period_30d: SyncPeriodStats
+
+
+class NodeCount(BaseModel):
+    """Neo4j node label with count."""
+
+    label: str
+    count: int
+
+
+class RelationshipCount(BaseModel):
+    """Neo4j relationship type with count."""
+
+    type: str
+    count: int
+
+
+class StoreSizes(BaseModel):
+    """Neo4j store size breakdown."""
+
+    total: str
+    nodes: str
+    relationships: str
+    strings: str
+
+
+class Neo4jStorage(BaseModel):
+    """Neo4j storage utilization details."""
+
+    status: str
+    nodes: list[NodeCount]
+    relationships: list[RelationshipCount]
+    store_sizes: StoreSizes | None
+
+
+class TableSize(BaseModel):
+    """PostgreSQL table size details."""
+
+    name: str
+    row_count: int
+    size: str
+    index_size: str
+
+
+class PostgresStorage(BaseModel):
+    """PostgreSQL storage utilization details."""
+
+    status: str
+    tables: list[TableSize]
+    total_size: str
+
+
+class RedisKeyPrefix(BaseModel):
+    """Redis key prefix with count."""
+
+    prefix: str
+    count: int
+
+
+class RedisStorage(BaseModel):
+    """Redis storage utilization details."""
+
+    status: str
+    memory_used: str
+    memory_peak: str
+    total_keys: int
+    keys_by_prefix: list[RedisKeyPrefix]
+
+
+class StorageSourceError(BaseModel):
+    """Error response for a storage source that could not be queried."""
+
+    status: str = "error"
+    error: str
+
+
+class StorageResponse(BaseModel):
+    """Response model for admin storage utilization endpoint."""
+
+    neo4j: dict[str, Any]
+    postgresql: dict[str, Any]
+    redis: dict[str, Any]
