@@ -745,6 +745,122 @@ class TestTrackExtraction:
         admin_mod._pool = original_pool
 
 
+# ---------------------------------------------------------------------------
+# Phase 2 endpoint tests — User Stats, Sync Activity, Storage
+# ---------------------------------------------------------------------------
+
+
+class TestUserStatsEndpoint:
+    """Tests for GET /api/admin/users/stats."""
+
+    def test_returns_200_with_admin_token(self, test_client: TestClient) -> None:
+        with patch("api.routers.admin.get_user_stats", new_callable=AsyncMock) as mock_fn:
+            mock_fn.return_value = {
+                "total_users": 10,
+                "active_7d": 5,
+                "active_30d": 8,
+                "oauth_connection_rate": 0.5,
+                "registrations": {"daily": [], "weekly": [], "monthly": []},
+            }
+            resp = test_client.get("/api/admin/users/stats", headers=_admin_auth_headers())
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total_users"] == 10
+
+    def test_rejects_without_token(self, test_client: TestClient) -> None:
+        resp = test_client.get("/api/admin/users/stats")
+        assert resp.status_code == 401
+
+    def test_rejects_user_token(self, test_client: TestClient, valid_token: str) -> None:
+        resp = test_client.get(
+            "/api/admin/users/stats",
+            headers={"Authorization": f"Bearer {valid_token}"},
+        )
+        assert resp.status_code in (401, 403)
+
+    def test_user_stats_not_ready(self, test_client: TestClient) -> None:
+        import api.routers.admin as admin_mod
+
+        original_pool = admin_mod._pool
+        admin_mod._pool = None
+        try:
+            resp = test_client.get("/api/admin/users/stats", headers=_admin_auth_headers())
+            assert resp.status_code == 503
+        finally:
+            admin_mod._pool = original_pool
+
+
+class TestSyncActivityEndpoint:
+    """Tests for GET /api/admin/users/sync-activity."""
+
+    def test_returns_200_with_admin_token(self, test_client: TestClient) -> None:
+        with patch("api.routers.admin.get_sync_activity", new_callable=AsyncMock) as mock_fn:
+            period = {
+                "total_syncs": 10,
+                "syncs_per_day": 1.4,
+                "avg_items_synced": 50.0,
+                "failure_rate": 0.1,
+                "total_failures": 1,
+            }
+            mock_fn.return_value = {"period_7d": period, "period_30d": period}
+            resp = test_client.get("/api/admin/users/sync-activity", headers=_admin_auth_headers())
+            assert resp.status_code == 200
+
+    def test_rejects_without_token(self, test_client: TestClient) -> None:
+        resp = test_client.get("/api/admin/users/sync-activity")
+        assert resp.status_code == 401
+
+    def test_sync_activity_not_ready(self, test_client: TestClient) -> None:
+        import api.routers.admin as admin_mod
+
+        original_pool = admin_mod._pool
+        admin_mod._pool = None
+        try:
+            resp = test_client.get("/api/admin/users/sync-activity", headers=_admin_auth_headers())
+            assert resp.status_code == 503
+        finally:
+            admin_mod._pool = original_pool
+
+
+class TestStorageEndpoint:
+    """Tests for GET /api/admin/storage."""
+
+    def test_returns_200_with_all_sources(self, test_client: TestClient) -> None:
+        with (
+            patch("api.routers.admin.get_neo4j_storage", new_callable=AsyncMock) as mock_neo4j,
+            patch("api.routers.admin.get_postgres_storage", new_callable=AsyncMock) as mock_pg,
+            patch("api.routers.admin.get_redis_storage", new_callable=AsyncMock) as mock_redis,
+        ):
+            mock_neo4j.return_value = {"status": "ok", "nodes": [], "relationships": [], "store_sizes": None}
+            mock_pg.return_value = {"status": "ok", "tables": [], "total_size": "10 MB"}
+            mock_redis.return_value = {"status": "ok", "memory_used": "1M", "memory_peak": "2M", "total_keys": 5, "keys_by_prefix": []}
+            resp = test_client.get("/api/admin/storage", headers=_admin_auth_headers())
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["neo4j"]["status"] == "ok"
+            assert data["postgresql"]["status"] == "ok"
+            assert data["redis"]["status"] == "ok"
+
+    def test_partial_failure(self, test_client: TestClient) -> None:
+        with (
+            patch("api.routers.admin.get_neo4j_storage", new_callable=AsyncMock) as mock_neo4j,
+            patch("api.routers.admin.get_postgres_storage", new_callable=AsyncMock) as mock_pg,
+            patch("api.routers.admin.get_redis_storage", new_callable=AsyncMock) as mock_redis,
+        ):
+            mock_neo4j.side_effect = Exception("connection refused")
+            mock_pg.return_value = {"status": "ok", "tables": [], "total_size": "10 MB"}
+            mock_redis.return_value = {"status": "ok", "memory_used": "1M", "memory_peak": "2M", "total_keys": 0, "keys_by_prefix": []}
+            resp = test_client.get("/api/admin/storage", headers=_admin_auth_headers())
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["neo4j"]["status"] == "error"
+            assert data["postgresql"]["status"] == "ok"
+
+    def test_rejects_without_token(self, test_client: TestClient) -> None:
+        resp = test_client.get("/api/admin/storage")
+        assert resp.status_code == 401
+
+
 class TestAdminTokenIsolation:
     def test_admin_token_rejected_on_user_endpoint(self, test_client: TestClient) -> None:
         """Admin tokens must not work on user endpoints."""

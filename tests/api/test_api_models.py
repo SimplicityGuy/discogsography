@@ -169,3 +169,102 @@ class TestTasteModels:
         assert fp.peak_decade == 1990
         assert len(fp.heatmap) == 1
         assert fp.obscurity.score == 0.5
+
+
+# --- Admin Phase 2 Models ---
+
+
+class TestAdminUserStatsModels:
+    """Tests for user stats response models."""
+
+    def test_daily_registration(self):
+        from api.models import DailyRegistration
+
+        obj = DailyRegistration(date="2026-03-18", count=5)
+        assert obj.date == "2026-03-18"
+        assert obj.count == 5
+
+    def test_weekly_registration(self):
+        from api.models import WeeklyRegistration
+
+        obj = WeeklyRegistration(week_start="2026-03-17", count=12)
+        assert obj.week_start == "2026-03-17"
+        assert obj.count == 12
+
+    def test_monthly_registration(self):
+        from api.models import MonthlyRegistration
+
+        obj = MonthlyRegistration(month="2026-03", count=34)
+        assert obj.month == "2026-03"
+        assert obj.count == 34
+
+    def test_registration_time_series(self):
+        from api.models import RegistrationTimeSeries
+
+        obj = RegistrationTimeSeries(daily=[], weekly=[], monthly=[])
+        assert obj.daily == []
+
+    def test_user_stats_response(self):
+        from api.models import UserStatsResponse
+
+        obj = UserStatsResponse(
+            total_users=150,
+            active_7d=42,
+            active_30d=89,
+            oauth_connection_rate=0.63,
+            registrations={"daily": [], "weekly": [], "monthly": []},
+        )
+        assert obj.total_users == 150
+        assert obj.oauth_connection_rate == 0.63
+
+
+class TestSyncActivityModels:
+    """Tests for sync activity response models."""
+
+    def test_sync_period_stats(self):
+        from api.models import SyncPeriodStats
+
+        obj = SyncPeriodStats(
+            total_syncs=28,
+            syncs_per_day=4.0,
+            avg_items_synced=142.5,
+            failure_rate=0.07,
+            total_failures=2,
+        )
+        assert obj.syncs_per_day == 4.0
+
+    def test_sync_activity_response(self):
+        from api.models import SyncActivityResponse, SyncPeriodStats
+
+        period = SyncPeriodStats(
+            total_syncs=0,
+            syncs_per_day=0.0,
+            avg_items_synced=0.0,
+            failure_rate=0.0,
+            total_failures=0,
+        )
+        obj = SyncActivityResponse(period_7d=period, period_30d=period)
+        assert obj.period_7d.total_syncs == 0
+
+
+class TestStorageModels:
+    """Tests for storage utilization response models."""
+
+    def test_storage_source_ok(self):
+        from api.models import Neo4jStorage
+
+        obj = Neo4jStorage(status="ok", nodes=[], relationships=[], store_sizes=None)
+        assert obj.status == "ok"
+
+    def test_storage_source_error(self):
+        from api.models import StorageSourceError
+
+        obj = StorageSourceError(status="error", error="connection failed")
+        assert obj.status == "error"
+
+    def test_storage_response(self):
+        from api.models import StorageResponse, StorageSourceError
+
+        err = StorageSourceError(status="error", error="down")
+        obj = StorageResponse(neo4j=err.model_dump(), postgresql=err.model_dump(), redis=err.model_dump())
+        assert obj.neo4j["status"] == "error"
