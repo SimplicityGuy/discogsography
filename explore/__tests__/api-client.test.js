@@ -271,6 +271,71 @@ describe('ApiClient', () => {
         });
     });
 
+    describe('getCollaborators', () => {
+        it('should return collaborator data on success', async () => {
+            const collabData = {
+                artist_id: '123',
+                artist_name: 'Radiohead',
+                collaborators: [{ artist_id: '456', artist_name: 'Thom Yorke', release_count: 5 }],
+                total: 1,
+            };
+            const mockFetch = createMockFetch({
+                '/api/collaborators/': { data: collabData },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getCollaborators('123');
+            expect(result).toEqual(collabData);
+        });
+
+        it('should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/collaborators/': { status: 404 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getCollaborators('999');
+            expect(result).toBeNull();
+        });
+
+        it('should include limit param and URL-encode artist ID', async () => {
+            let capturedUrl;
+            vi.stubGlobal('fetch', async (url) => {
+                capturedUrl = url;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            await window.apiClient.getCollaborators('A/B', 5);
+            expect(capturedUrl).toContain('/api/collaborators/A%2FB');
+            expect(capturedUrl).toContain('limit=5');
+        });
+    });
+
+    describe('getGenreTree', () => {
+        it('should return genre tree data on success', async () => {
+            const treeData = {
+                genres: [{ name: 'Rock', release_count: 98000, styles: [] }],
+            };
+            const mockFetch = createMockFetch({
+                '/api/genre-tree': { data: treeData },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getGenreTree();
+            expect(result).toEqual(treeData);
+        });
+
+        it('should return null on HTTP error', async () => {
+            const mockFetch = createMockFetch({
+                '/api/genre-tree': { status: 503 },
+            });
+            vi.stubGlobal('fetch', mockFetch);
+
+            const result = await window.apiClient.getGenreTree();
+            expect(result).toBeNull();
+        });
+    });
+
     describe('insights methods', () => {
         it('getInsightsTopArtists should include limit param', async () => {
             let capturedUrl;

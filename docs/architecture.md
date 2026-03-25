@@ -227,6 +227,8 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 - Vinyl Archaeology time-travel filtering (`/api/explore/year-range`, `/api/explore/genre-emergence`, `before_year` parameter on `/api/expand`)
 - Collection timeline evolution (`/api/user/collection/timeline`, `/api/user/collection/evolution`)
 - Recommendation engine (`/api/recommend/similar/artist/{artist_id}` — find similar artists via shared genres/styles, `/api/recommend/explore/{entity_type}/{entity_id}` — explore-from-here discovery)
+- Collaborator network (`/api/collaborators/{artist_id}` — artists sharing releases, with temporal breakdown)
+- Genre tree hierarchy (`/api/genre-tree` — genre/style tree derived from release co-occurrence)
 
 **Insights Service** (precomputed analytics):
 

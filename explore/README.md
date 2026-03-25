@@ -20,6 +20,8 @@ The Explore frontend organizes functionality into tabbed panes:
 | **collection**      | User's synced Discogs collection with stats and taste fingerprint        | Yes           |
 | **wantlist**        | User's synced Discogs wantlist                                           | Yes           |
 | **recommendations** | Personalized release recommendations based on collection                 | Yes           |
+| **collaborators**   | Collaborator network for an artist — shared releases and timelines       | No            |
+| **genre-tree**      | Interactive genre/style hierarchy browser                                 | No            |
 | **gaps**            | Collection gap finder — missing releases for an artist, label, or master | Yes           |
 
 ### 🔍 Interactive Graph Explorer
@@ -135,6 +137,18 @@ Find releases you are missing from an artist, label, or master:
 - **Format Filters**: Filter missing releases by format (vinyl, CD, cassette, etc.)
 - **Exclude Wantlist**: Optionally hide releases already on your wantlist
 - **Paginated Results**: Browse missing releases with pagination
+
+### 🤝 Collaborator Network
+
+- **Shared Releases**: Find all artists who share releases with a given artist
+- **Temporal Data**: Yearly collaboration counts, first/last collaboration year
+- **Rate Limited**: 30 requests/minute with Neo4j timeout protection
+
+### 🌳 Genre Tree
+
+- **Hierarchy Browser**: Full genre/style tree derived from release co-occurrence
+- **Release Counts**: Each genre and style includes its release count
+- **Cached**: In-memory cache with 5-minute TTL since hierarchy changes only on import
 
 ### 🎨 Artist Similarity and Graph Discovery
 
@@ -302,6 +316,18 @@ The Explore service exposes only a health endpoint. All data endpoints are serve
 | GET    | `/api/collection/gaps/artist/{artist_id}` | Missing releases from an artist        |
 | GET    | `/api/collection/gaps/label/{label_id}`   | Missing releases from a label          |
 | GET    | `/api/collection/gaps/master/{master_id}` | Missing releases from a master         |
+
+### Collaborators
+
+| Method | Path                              | Description                                          |
+| ------ | --------------------------------- | ---------------------------------------------------- |
+| GET    | `/api/collaborators/{artist_id}` | Collaborating artists with release overlap and years |
+
+### Genre Tree
+
+| Method | Path              | Description                                   |
+| ------ | ----------------- | --------------------------------------------- |
+| GET    | `/api/genre-tree` | Genre hierarchy with nested styles and counts |
 
 ### Artist Similarity and Discovery
 

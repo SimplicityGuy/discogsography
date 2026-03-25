@@ -232,6 +232,32 @@ def sample_artist_details() -> dict[str, Any]:
 
 
 @pytest.fixture
+def sample_collaborators_data() -> dict[str, Any]:
+    """Sample collaborators response data."""
+    return {
+        "collaborators": [
+            {
+                "artist_id": "456",
+                "artist_name": "Thom Yorke",
+                "release_count": 5,
+                "first_year": 1993,
+                "last_year": 2011,
+                "yearly_counts": [{"year": 1993, "count": 1}, {"year": 2011, "count": 1}],
+            },
+            {
+                "artist_id": "789",
+                "artist_name": "Jonny Greenwood",
+                "release_count": 3,
+                "first_year": 1997,
+                "last_year": 2007,
+                "yearly_counts": [{"year": 1997, "count": 2}, {"year": 2007, "count": 1}],
+            },
+        ],
+        "total": 42,
+    }
+
+
+@pytest.fixture
 def sample_trends_data() -> list[dict[str, Any]]:
     """Sample trends time-series data."""
     return [
