@@ -169,11 +169,7 @@ fn test_from_env_reads_secret_from_file() {
     }
 
     let config = ExtractorConfig::from_env().unwrap();
-    assert!(
-        config.amqp_connection.contains("file_secret_password"),
-        "Expected password from file in AMQP URL, got: {}",
-        config.amqp_connection
-    );
+    assert!(config.amqp_connection.contains("file_secret_password"), "Expected password from file in AMQP URL, got: {}", config.amqp_connection);
 
     unsafe {
         env::remove_var("RABBITMQ_PASSWORD_FILE");
@@ -192,11 +188,7 @@ fn test_from_env_secret_file_not_found() {
     assert!(result.is_err(), "Expected error when secret file does not exist");
 
     let err_msg = format!("{:#}", result.unwrap_err());
-    assert!(
-        err_msg.contains("Cannot read secret file"),
-        "Expected 'Cannot read secret file' in error, got: {}",
-        err_msg
-    );
+    assert!(err_msg.contains("Cannot read secret file"), "Expected 'Cannot read secret file' in error, got: {}", err_msg);
 
     unsafe {
         env::remove_var("RABBITMQ_PASSWORD_FILE");
@@ -206,10 +198,7 @@ fn test_from_env_secret_file_not_found() {
 #[test]
 fn test_build_amqp_url_special_characters() {
     let url = build_amqp_url("user@host", "p@ss:w/rd#1", "localhost", "5672");
-    assert_eq!(
-        url,
-        "amqp://user%40host:p%40ss%3Aw%2Frd%231@localhost:5672/%2F"
-    );
+    assert_eq!(url, "amqp://user%40host:p%40ss%3Aw%2Frd%231@localhost:5672/%2F");
 }
 
 #[test]
@@ -228,15 +217,8 @@ fn test_from_env_secret_file_with_whitespace() {
     }
 
     let config = ExtractorConfig::from_env().unwrap();
-    assert!(
-        config.amqp_connection.contains("trimmed_password"),
-        "Expected trimmed password in AMQP URL, got: {}",
-        config.amqp_connection
-    );
-    assert!(
-        !config.amqp_connection.contains("  trimmed_password"),
-        "Password should be trimmed of leading whitespace"
-    );
+    assert!(config.amqp_connection.contains("trimmed_password"), "Expected trimmed password in AMQP URL, got: {}", config.amqp_connection);
+    assert!(!config.amqp_connection.contains("  trimmed_password"), "Password should be trimmed of leading whitespace");
 
     unsafe {
         env::remove_var("RABBITMQ_PASSWORD_FILE");

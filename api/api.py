@@ -36,6 +36,7 @@ from api.auth import (
 import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.models import LoginRequest, RegisterRequest
+from api.queries.search_queries import ALL_TYPES, execute_search
 import api.routers.admin as _admin_router
 import api.routers.collection as _collection_router
 import api.routers.explore as _explore_router
@@ -59,6 +60,7 @@ from api.services.discogs import (
 )
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver, HealthServer, setup_logging
 from common.config import ApiConfig
+from common.query_debug import execute_sql
 
 
 logger = structlog.get_logger(__name__)
@@ -157,6 +159,28 @@ async def _get_current_user(
         ) from exc
 
 
+# Common search terms that produce high-cardinality FTS results (~9s for "Rock").
+# Pre-warming the Redis cache on startup ensures users never wait for cold cache.
+_PREWARM_SEARCH_TERMS = ["Rock", "Electronic", "Jazz", "Pop", "Punk", "Hip Hop", "Trance", "Blues", "Country", "Metal"]
+
+
+async def _prewarm_search_cache() -> None:  # pragma: no cover
+    """Pre-warm Redis search cache for common high-cardinality terms.
+
+    Runs as a background task after startup. Each term is searched with
+    default parameters, populating the Redis cache (1h TTL). Errors are
+    logged and swallowed — pre-warming is best-effort.
+    """
+    if not _pool or not _redis:
+        return
+    for term in _PREWARM_SEARCH_TERMS:
+        try:
+            await execute_search(_pool, _redis, term, ALL_TYPES, [], None, None, 20, 0)
+            logger.debug("🔥 Search cache pre-warmed", term=term)
+        except Exception:
+            logger.debug("⚠️ Search pre-warm failed", term=term)
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     """Manage API service lifecycle."""
@@ -202,14 +226,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_host else None
     _dependencies.configure(jwt_secret_for_neo4j, _redis)
     _sync_router.configure(_pool, _neo4j, _config, _running_syncs, _redis)
-    _explore_router.configure(_neo4j, jwt_secret_for_neo4j)
+    _explore_router.configure(_neo4j, jwt_secret_for_neo4j, _redis)
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
     _taste_router.configure(_neo4j, jwt_secret_for_neo4j)
     _collection_router.configure(_neo4j, _pool, jwt_secret_for_neo4j)
-    _label_dna_router.configure(_neo4j)
+    _label_dna_router.configure(_neo4j, _redis)
     _recommend_router.configure(_neo4j, jwt_secret_for_neo4j, _redis)
     _search_router.configure(_pool, _redis)
-    _insights_compute_router.configure(_neo4j, _pool)
+    _insights_compute_router.configure(_neo4j, _pool, _redis)
     _admin_router.configure(_pool, _redis, _config)
     _snapshot_router.configure(
         jwt_secret=_config.jwt_secret_key,
@@ -218,6 +242,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         max_nodes=_config.snapshot_max_nodes,
     )
     logger.info("✅ API service ready", port=API_PORT)
+
+    # Pre-warm search cache for common high-cardinality terms in background.
+    # Store reference on app.state to prevent garbage collection (RUF006).
+    _app.state.prewarm_task = asyncio.create_task(_prewarm_search_cache())
 
     yield
 
@@ -308,7 +336,8 @@ async def register(request: Request, body: RegisterRequest) -> JSONResponse:  # 
 
     try:
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
+            await execute_sql(
+                cur,
                 """
                     INSERT INTO users (email, hashed_password)
                     VALUES (%s, %s)
@@ -356,7 +385,8 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: 
         )
 
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(
+        await execute_sql(
+            cur,
             "SELECT id, email, hashed_password, is_active FROM users WHERE email = %s",
             (body.email,),
         )
@@ -425,7 +455,8 @@ async def get_me(
         )
 
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(
+        await execute_sql(
+            cur,
             "SELECT id, email, is_active, created_at FROM users WHERE id = %s::uuid",
             (user_id,),
         )
@@ -452,7 +483,7 @@ async def _get_app_config(key: str) -> str | None:
     if _pool is None:
         return None
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute("SELECT value FROM app_config WHERE key = %s", (key,))
+        await execute_sql(cur, "SELECT value FROM app_config WHERE key = %s", (key,))
         row = await cur.fetchone()
     return row["value"] if row else None
 
@@ -462,7 +493,7 @@ async def _get_discogs_app_config() -> tuple[str | None, str | None]:
     if _pool is None:
         return None, None
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute("SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
+        await execute_sql(cur, "SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
         rows = await cur.fetchall()
     config = {row["key"]: row["value"] for row in rows}
     return config.get("discogs_consumer_key"), config.get("discogs_consumer_secret")
@@ -613,7 +644,8 @@ async def verify_discogs(
 
     # Upsert oauth_tokens record
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(
+        await execute_sql(
+            cur,
             """
                 INSERT INTO oauth_tokens (user_id, provider, access_token, access_secret,
                                           provider_username, provider_user_id, updated_at)
@@ -668,7 +700,8 @@ async def discogs_status(
 
     user_id = current_user.get("sub")
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(
+        await execute_sql(
+            cur,
             """
                 SELECT provider_username, provider_user_id, updated_at
                 FROM oauth_tokens
@@ -704,7 +737,8 @@ async def revoke_discogs(
 
     user_id = current_user.get("sub")
     async with _pool.connection() as conn, conn.cursor() as cur:
-        await cur.execute(
+        await execute_sql(
+            cur,
             "DELETE FROM oauth_tokens WHERE user_id = %s::uuid AND provider = 'discogs'",
             (user_id,),
         )

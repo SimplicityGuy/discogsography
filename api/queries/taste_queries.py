@@ -7,22 +7,8 @@ obscurity scores, taste drift timelines, blind spots, and top labels.
 import asyncio
 from typing import Any
 
+from api.queries.helpers import run_count, run_query
 from common import AsyncResilientNeo4jDriver
-
-
-async def _run_query(driver: AsyncResilientNeo4jDriver, cypher: str, **params: Any) -> list[dict[str, Any]]:
-    """Execute a Cypher query and return all results as a list of dicts."""
-    async with driver.session() as session:
-        result = await session.run(cypher, params)
-        return [dict(record) async for record in result]
-
-
-async def _run_count(driver: AsyncResilientNeo4jDriver, cypher: str, **params: Any) -> int:
-    """Execute a count Cypher query and return the integer result."""
-    async with driver.session() as session:
-        result = await session.run(cypher, params)
-        record = await result.single()
-        return int(record["total"]) if record else 0
 
 
 async def get_collection_count(driver: AsyncResilientNeo4jDriver, user_id: str) -> int:
@@ -31,7 +17,7 @@ async def get_collection_count(driver: AsyncResilientNeo4jDriver, user_id: str) 
     MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)
     RETURN count(r) AS total
     """
-    return await _run_count(driver, cypher, user_id=user_id)
+    return await run_count(driver, cypher, timeout=120, user_id=user_id)
 
 
 async def get_taste_heatmap(
@@ -54,8 +40,8 @@ async def get_taste_heatmap(
     RETURN count(r) AS total
     """
     cells, total = await asyncio.gather(
-        _run_query(driver, cypher, user_id=user_id),
-        _run_count(driver, count_cypher, user_id=user_id),
+        run_query(driver, cypher, timeout=120, user_id=user_id),
+        run_count(driver, count_cypher, timeout=120, user_id=user_id),
     )
     return cells, total
 
@@ -83,8 +69,8 @@ async def get_obscurity_score(
     RETURN count(r) AS total
     """
     rows, total = await asyncio.gather(
-        _run_query(driver, cypher, user_id=user_id),
-        _run_count(driver, count_cypher, user_id=user_id),
+        run_query(driver, cypher, timeout=120, user_id=user_id),
+        run_count(driver, count_cypher, timeout=120, user_id=user_id),
     )
 
     if not rows:
@@ -118,7 +104,7 @@ async def get_taste_drift(
     RETURN year, top.genre AS top_genre, top.count AS count
     ORDER BY year
     """
-    return await _run_query(driver, cypher, user_id=user_id)
+    return await run_query(driver, cypher, timeout=120, user_id=user_id)
 
 
 async def get_blind_spots(
@@ -147,7 +133,7 @@ async def get_blind_spots(
     ORDER BY artist_overlap DESC
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, user_id=user_id, limit=limit)
+    return await run_query(driver, cypher, timeout=120, user_id=user_id, limit=limit)
 
 
 async def get_top_labels(
@@ -162,4 +148,4 @@ async def get_top_labels(
     ORDER BY count DESC
     LIMIT $limit
     """
-    return await _run_query(driver, cypher, user_id=user_id, limit=limit)
+    return await run_query(driver, cypher, timeout=120, user_id=user_id, limit=limit)

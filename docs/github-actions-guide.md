@@ -16,8 +16,8 @@ consistent patterns with emojis for visual clarity and optimal performance throu
 
 ### 🏗️ Build Workflow (`build.yml`)
 
-**Trigger**: Push to main, PRs, weekly schedule **Purpose**: Main CI pipeline that orchestrates all quality checks and
-Docker builds
+**Trigger**: Push to main, PRs, two scheduled crons, manual dispatch **Purpose**: Main CI pipeline that orchestrates all
+quality checks and Docker builds
 
 ```yaml
 on:
@@ -26,14 +26,22 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "0 1 * * 6"  # Weekly on Saturday
+    - cron: "0 1 * * 6"  # Saturday 01:00 UTC — full build
+    - cron: "0 4 * * 1"  # Monday 04:00 UTC — security-focused build
+  workflow_dispatch:
 ```
 
 **Jobs**:
 
+1. **Detect Changes** 🔍 - Determines which files changed for conditional execution
+1. **List Sub-Projects** 📋 - Provides service matrix for downstream jobs
 1. **Code Quality** ✅ - Runs linting and formatting checks
+1. **Security** 🛡️ - Comprehensive security scanning
+1. **Docker Compose Validate** 🐳 - Validates docker-compose syntax
+1. **Docker Validate** 🐳 - Dockerfile linting and build testing
 1. **Tests** 🧪 - Executes unit and integration tests (parallel with E2E)
 1. **E2E Tests** 🎭 - Browser-based testing (parallel with unit tests)
+1. **Aggregate Results** 📊 - Collects and summarizes job outcomes
 1. **Docker Build** 🐳 - Builds and pushes images to GitHub Container Registry
 
 **Key Features**:
@@ -45,7 +53,7 @@ on:
 
 ### 🧹 Code Quality Workflow (`code-quality.yml`)
 
-**Trigger**: Push/PR on Python files, configs, or Dockerfiles **Purpose**: Ensures code quality standards are met
+**Trigger**: Called by `build.yml` via `workflow_call` **Purpose**: Ensures code quality standards are met
 
 **Checks**:
 
@@ -57,7 +65,7 @@ on:
 
 ### 🧪 Test Workflow (`test.yml`)
 
-**Trigger**: Push/PR on Python files **Purpose**: Runs comprehensive test suite
+**Trigger**: Called by `build.yml` via `workflow_call` **Purpose**: Runs comprehensive test suite
 
 **Features**:
 
@@ -68,7 +76,7 @@ on:
 
 ### 🎭 E2E Test Workflow (`e2e-test.yml`)
 
-**Trigger**: Dashboard or test changes **Purpose**: Cross-browser end-to-end testing
+**Trigger**: Called by `build.yml` via `workflow_call` **Purpose**: Cross-browser end-to-end testing
 
 **Test Matrix**:
 
@@ -128,20 +136,44 @@ security scanning across Python, Rust, secrets, and containers
 
 #### Docker Image Cleanup (`cleanup-images.yml`)
 
-- **Trigger**: Monthly schedule
+- **Trigger**: Monthly schedule, manual dispatch (`workflow_dispatch`)
 - **Purpose**: Removes old Docker images
 - **Retention**: Keeps 2 most recent tagged versions
 
 ### 🐳 Docker Validation (`docker-validate.yml`)
 
-**Trigger**: Docker-related file changes **Purpose**: Validates Docker configurations
+**Trigger**: Called by `build.yml` via `workflow_call` **Purpose**: Validates Dockerfiles
 
 **Checks**:
 
-- 📋 docker-compose syntax validation
 - 🔍 Dockerfile linting with Hadolint
-- 🔒 Security best practices verification
-- 🏗️ Build testing for all services
+- 🏗️ Builder-stage Docker build test for all services
+
+### 🤖 Claude Code (`claude.yml`)
+
+**Trigger**: `issue_comment` (when mentioning @claude) **Purpose**: Enables AI-assisted development on issues and PRs
+
+**Features**:
+
+- 💬 Responds to @claude mentions in issue and PR comments
+- 🤖 Provides AI assistance for code questions and tasks
+
+### 🔍 Claude Code Review (`claude-code-review.yml`)
+
+**Trigger**: `pull_request` (open, synchronize, reopened) **Purpose**: Automated AI code review on pull requests
+
+**Features**:
+
+- 📝 Performs automated code review on new and updated PRs
+- 🔍 Analyzes code changes for quality, bugs, and best practices
+
+### 🐳 Docker Compose Validation (`docker-compose-validate.yml`)
+
+**Trigger**: Called by `build.yml` via `workflow_call` **Purpose**: Validates docker-compose syntax
+
+**Checks**:
+
+- 📋 docker-compose configuration syntax validation
 
 ### 📋 List Sub-Projects (`list-sub-projects.yml`)
 
@@ -189,25 +221,6 @@ Advanced Docker layer caching for faster builds.
 - 🔄 Cache hit detection
 - 📊 Performance metrics
 - 🎯 Service-specific caching
-
-### 🔄 `retry-step`
-
-Retry mechanism with exponential backoff for flaky operations.
-
-```yaml
-- uses: ./.github/actions/retry-step
-  with:
-    command: npm install
-    max-attempts: 3
-    retry-delay: 10
-```
-
-**Features**:
-
-- ⏱️ Configurable timeouts
-- 📈 Exponential backoff
-- 🎯 Detailed attempt logging
-- ❌ Graceful failure handling
 
 ## ⚡ Performance Optimizations
 
@@ -260,6 +273,7 @@ permissions:
 
 - Non-root user execution (1000:1000)
 - No-new-privileges security option
+- Trivy container and filesystem scanning for HIGH/CRITICAL CVEs
 - Anchore security scanning for images
 - Hadolint validation for Dockerfiles
 

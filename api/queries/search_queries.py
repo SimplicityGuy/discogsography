@@ -27,11 +27,16 @@ from psycopg.rows import dict_row
 import structlog
 
 from common import AsyncPostgreSQLPool
+from common.query_debug import execute_sql
 
 
 logger = structlog.get_logger(__name__)
 
 ALL_TYPES: list[str] = ["artist", "label", "master", "release"]
+
+# Search cache TTL (1 hour — longer than the old 5 min to reduce cold cache
+# frequency for high-cardinality terms like "Rock" that take ~9s to compute)
+_SEARCH_CACHE_TTL = 3600
 
 # Maps entity type → (table, name_field, has_year, has_genres)
 _ENTITY_CONFIG: dict[str, tuple[str, str, bool, bool]] = {
@@ -57,36 +62,48 @@ def cache_key(q: str, types: list[str], genres: list[str], year_min: int | None,
     return f"search:{digest}"
 
 
-def _entity_select(entity_type: str, name_field: str, has_year: bool, has_genres: bool) -> sql.Composable:
-    """Return a SELECT fragment for one entity type in the UNION ALL."""
+def _entity_select(entity_type: str, name_field: str, has_year: bool, has_genres: bool, *, per_table_limit: int | None = None) -> sql.Composable:
+    """Return a SELECT fragment for one entity type in the UNION ALL.
+
+    When per_table_limit is set, each entity type returns at most that many
+    rows (ordered by ts_rank DESC).  This prevents high-cardinality terms
+    like "Rock" from materializing 100K+ rows in the UNION ALL CTE.
+    """
     year_col = sql.SQL("(data->>'year')") if has_year else sql.SQL("NULL::text")
     genres_col = sql.SQL("(data->'genres')") if has_genres else sql.SQL("NULL::jsonb")
     table = sql.Identifier(_ENTITY_CONFIG[entity_type][0])
     name_lit = sql.Literal(name_field)
+    limit_clause = sql.SQL(" ORDER BY rank DESC LIMIT {n}").format(n=sql.Literal(per_table_limit)) if per_table_limit else sql.SQL("")
     return sql.SQL(
-        "SELECT {entity_type}::text AS type, data_id AS id, data->>{name} AS name,"
+        "(SELECT {entity_type}::text AS type, data_id AS id, data->>{name} AS name,"
         " ts_rank(to_tsvector('english', COALESCE(data->>{name}, '')), q.tsq) AS rank,"
         " ts_headline('english', COALESCE(data->>{name}, ''), q.tsq) AS highlight,"
         " {year_col} AS year, {genres_col} AS genres"
         " FROM {table}, q"
         " WHERE to_tsvector('english', COALESCE(data->>{name}, '')) @@ q.tsq"
+        "{limit_clause})"
     ).format(
         entity_type=sql.Literal(entity_type),
         name=name_lit,
         year_col=year_col,
         genres_col=genres_col,
         table=table,
+        limit_clause=limit_clause,
     )
 
 
-def _build_union(types: list[str]) -> sql.Composable:
-    """Build UNION ALL of SELECT fragments for the requested entity types."""
+def _build_union(types: list[str], *, per_table_limit: int | None = None) -> sql.Composable:
+    """Build UNION ALL of SELECT fragments for the requested entity types.
+
+    When per_table_limit is set, each entity type returns at most that many
+    rows (pre-sorted by rank), preventing high-cardinality term explosion.
+    """
     if not types:  # would produce invalid SQL
         raise ValueError("types must not be empty")
     parts = []
     for t in types:
         _table, name_field, has_year, has_genres = _ENTITY_CONFIG[t]
-        parts.append(_entity_select(t, name_field, has_year, has_genres))
+        parts.append(_entity_select(t, name_field, has_year, has_genres, per_table_limit=per_table_limit))
     return sql.SQL(" UNION ALL ").join(parts)
 
 
@@ -129,8 +146,14 @@ async def _run_results(
     limit: int,
     offset: int,
 ) -> list[dict[str, Any]]:
-    """Fetch paginated search results."""
-    union_sql = _build_union(types)
+    """Fetch paginated search results.
+
+    Uses per-table LIMIT in the UNION ALL to prevent high-cardinality terms
+    like "Rock" from materializing 100K+ rows before outer LIMIT/OFFSET.
+    Each table returns at most (limit + offset) rows pre-sorted by rank.
+    """
+    per_table_limit = limit + offset
+    union_sql = _build_union(types, per_table_limit=per_table_limit)
     year_clause, year_params = _year_filter_clause(year_min, year_max)
     genre_clause, genre_params = _genre_filter_clause(genres)
 
@@ -149,9 +172,12 @@ async def _run_results(
     )
     params = [q, *year_params, *genre_params, limit, offset]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(query, params)  # nosemgrep
+        await execute_sql(cur, query, params)  # nosemgrep
         rows = await cur.fetchall()
     return [dict(r) for r in rows]
+
+
+_TOTAL_COUNT_CAP = 10000
 
 
 async def _run_total(
@@ -162,8 +188,13 @@ async def _run_total(
     year_min: int | None,
     year_max: int | None,
 ) -> int:
-    """Count total matching results (ignoring pagination)."""
-    union_sql = _build_union(types)
+    """Count total matching results (ignoring pagination).
+
+    Each table is capped at _TOTAL_COUNT_CAP rows to prevent full scans
+    on high-cardinality terms like "Rock" (18.9M releases).  The reported
+    total is an approximate lower bound when capped.
+    """
+    union_sql = _build_union(types, per_table_limit=_TOTAL_COUNT_CAP)
     year_clause, year_params = _year_filter_clause(year_min, year_max)
     genre_clause, genre_params = _genre_filter_clause(genres)
 
@@ -179,75 +210,90 @@ async def _run_total(
     )
     params = [q, *year_params, *genre_params]
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(query, params)  # nosemgrep
+        await execute_sql(cur, query, params)  # nosemgrep
         row = await cur.fetchone()
     return int(row["total"]) if row else 0
 
 
 async def _run_type_counts(pool: AsyncPostgreSQLPool, q: str, types: list[str]) -> dict[str, int]:
-    """Count matching records per entity type (for type facet)."""
+    """Count matching records per entity type (for type facet).
+
+    Each table count is capped at _TOTAL_COUNT_CAP to prevent full scans
+    on common terms.  Reported counts are approximate when capped.
+    """
     union_parts = []
     for t in types:
         table, name_field, _, _ = _ENTITY_CONFIG[t]
         union_parts.append(
             sql.SQL(
-                "SELECT {type}::text AS type, COUNT(*) AS cnt"
-                " FROM {table}, q"
+                "SELECT {type}::text AS type,"
+                " (SELECT COUNT(*) FROM (SELECT 1 FROM {table}, q"
                 " WHERE to_tsvector('english', COALESCE(data->>{name}, '')) @@ q.tsq"
-                " GROUP BY type"
+                " LIMIT {cap}) sub) AS cnt"
             ).format(
                 type=sql.Literal(t),
                 table=sql.Identifier(table),
                 name=sql.Literal(name_field),
+                cap=sql.Literal(_TOTAL_COUNT_CAP),
             )
         )
     union_sql = sql.SQL(" UNION ALL ").join(union_parts)
     query = sql.SQL("WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq) {union_sql}").format(union_sql=union_sql)
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(query, [q])  # nosemgrep
+        await execute_sql(cur, query, [q])  # nosemgrep
         rows = await cur.fetchall()
     return {row["type"]: int(row["cnt"]) for row in rows}
 
 
 async def _run_genre_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int]:
-    """Count matching releases per genre (for genre facet)."""
+    """Count matching releases per genre (for genre facet).
+
+    Caps the release scan to prevent full table traversal on common terms.
+    """
     query = sql.SQL(
-        "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq)"
-        " SELECT genre, COUNT(*) AS cnt"
-        " FROM releases, q,"
-        " jsonb_array_elements_text(data->'genres') AS genre"
+        "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),"
+        " matched AS ("
+        " SELECT data->'genres' AS genres FROM releases, q"
         " WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq"
+        " LIMIT {cap})"
+        " SELECT genre, COUNT(*) AS cnt"
+        " FROM matched,"
+        " jsonb_array_elements_text(genres) AS genre"
         " GROUP BY genre"
         " ORDER BY cnt DESC"
         " LIMIT 20"
-    )
+    ).format(cap=sql.Literal(_TOTAL_COUNT_CAP))
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(query, [q])
+        await execute_sql(cur, query, [q])
         rows = await cur.fetchall()
     return {row["genre"]: int(row["cnt"]) for row in rows}
 
 
 async def _run_decade_facets(pool: AsyncPostgreSQLPool, q: str) -> dict[str, int]:
-    """Count matching masters+releases per decade (for decade facet)."""
+    """Count matching masters+releases per decade (for decade facet).
+
+    Caps each table scan to prevent full traversal on common terms.
+    """
     query = sql.SQL(
         "WITH q AS (SELECT plainto_tsquery('english', %s) AS tsq),"
         " matches AS ("
-        " SELECT data->>'year' AS year FROM masters, q"
+        " (SELECT data->>'year' AS year FROM masters, q"
         " WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq"
         " AND data->>'year' IS NOT NULL"
+        " LIMIT {cap})"
         " UNION ALL"
-        " SELECT data->>'year' FROM releases, q"
+        " (SELECT data->>'year' FROM releases, q"
         " WHERE to_tsvector('english', COALESCE(data->>'title', '')) @@ q.tsq"
         " AND data->>'year' IS NOT NULL"
-        ")"
+        " LIMIT {cap}))"
         " SELECT (year::int / 10 * 10)::text || 's' AS decade, COUNT(*) AS cnt"
         " FROM matches"
         " WHERE year ~ '^[0-9]{{4}}$'"
         " GROUP BY decade"
         " ORDER BY decade"
-    )
+    ).format(cap=sql.Literal(_TOTAL_COUNT_CAP))
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(query, [q])
+        await execute_sql(cur, query, [q])
         rows = await cur.fetchall()
     return {row["decade"]: int(row["cnt"]) for row in rows}
 
@@ -325,6 +371,6 @@ async def execute_search(
     }
 
     if redis is not None:
-        await redis.setex(key, 300, json.dumps(response))
+        await redis.setex(key, _SEARCH_CACHE_TTL, json.dumps(response))
 
     return response

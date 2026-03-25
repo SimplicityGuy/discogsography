@@ -4,11 +4,170 @@
 
 **Summary of recent enhancements to the Discogsography platform**
 
-Last Updated: March 2026
+Last Updated: 2026-03-25
 
 </div>
 
 ## 🆕 Latest Improvements (March 2026)
+
+### 🤝 Collaborator Network and Genre Tree (#169)
+
+**Overview**: Added two new graph-powered features — a collaborator network endpoint that finds artists sharing releases with temporal breakdown, and a genre tree endpoint that derives a full genre/style hierarchy from release co-occurrence.
+
+#### Features
+
+- **Collaborator Network** (`GET /api/collaborators/{artist_id}`): Finds artists who share releases with a given artist, returning yearly collaboration counts, first/last year, and total release overlap. Rate limited to 30/min with Neo4j timeout protection.
+- **Genre Tree** (`GET /api/genre-tree`): Returns the complete genre/style hierarchy derived from release co-occurrence. Cached in-memory for 5 minutes. Rate limited to 30/min with timeout protection.
+- **Explore Frontend**: New Collaborators and Genre Tree panes integrated into the Explore UI with dedicated JavaScript modules (`collaborators.js`, `genre-tree.js`).
+- **Security Ignore System**: Added `.pip-audit-ignores` and `osv-scanner.toml` for managing known upstream vulnerabilities with no available fix. The `update-project.sh` script automatically sweeps these after dependency upgrades and removes entries that have been resolved.
+
+---
+
+### ⚡ Comprehensive Query Performance Optimization — 249x Overall Improvement (#175-#184)
+
+**Overview**: Over 11 optimization rounds across PRs #175-#184, the entire API query layer was systematically profiled and optimized, achieving a **249x reduction in overall average latency** (10.95s → 0.044s) across 88 endpoints. See the full [Query Performance Optimizations](query-performance-optimizations.md) report for detailed analysis.
+
+#### Optimization Rounds
+
+| PR       | Focus                                                                       | Key Impact                                                          |
+| -------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| **#175** | Initial Cypher optimization of 6 slowest queries                            | 10-100x fewer DB hits per query                                     |
+| **#176** | 7 query families: CALL {} barriers, streaming aggregation, batch similarity | Path finder: 58s → 0.2s, trends: CartesianProduct eliminated        |
+| **#177** | Cardinality management with per-genre LIMITs, parallel genre-emergence      | artist-similar: top-5-genre cap prevents mega-genre explosion       |
+| **#179** | asyncio.gather() concurrency, pattern comprehension for planner control     | explore/genre: 4 concurrent queries vs chained OPTIONAL MATCHes     |
+| **#180** | Per-genre CALL {} barriers for similarity queries                           | label-similar: 206M → 60-80M DB hits, 1GB → 200MB memory            |
+| **#181** | Pre-computed Genre/Style/Label node properties at import time               | explore/genre: 200M → 6 DB hits; genre-emergence: 410M → 33 DB hits |
+| **#184** | Style-based similarity, Redis caching (24h TTL), search per-table LIMIT     | trends/genre: 28s → 0.001s; artist-similar: 112s → 0.002s           |
+
+#### Techniques Applied
+
+- **Pre-computed node properties**: Aggregate counts (release_count, artist_count, label_count, style_count, first_year) computed during graphinator post-import step and stored on Genre/Style/Label nodes
+- **CALL {} subqueries**: Prevent Neo4j planner CartesianProduct plans by creating strong barriers for traversal order
+- **Pattern comprehension**: Force specific node-first traversal when even CALL {} doesn't control the planner
+- **Redis cache-aside**: 24h TTL for trends, similarity, and label-DNA; 5m TTL for search results
+- **Batch queries**: N+1 query patterns (800 queries → 4 queries) replaced with UNWIND-based batching
+- **Per-dimension LIMIT**: Cap high-cardinality genre expansions (Rock: 6M+ releases → LIMIT 500 per genre)
+- **asyncio.gather()**: Execute independent Neo4j/PostgreSQL queries concurrently
+- **Relationship type filtering**: shortestPath with explicit type list eliminates unbounded BFS
+
+#### Results by Category
+
+| Category                   | Before     | After      | Speedup     |
+| -------------------------- | ---------- | ---------- | ----------- |
+| Path finder (6 endpoints)  | 58.5s      | 0.21s      | **279x**    |
+| Explore genre (2)          | 24.1s      | 0.014s     | **1,721x**  |
+| Trends genre (2)           | 28.6s      | 0.001s     | **28,600x** |
+| Trends style (3)           | 13.2s      | 0.001s     | **13,200x** |
+| Genre emergence            | 64.3s      | 0.10s      | **630x**    |
+| Artist similarity (4)      | 64s        | 0.002s     | **32,000x** |
+| Label similarity (3)       | 86s        | 0.001s     | **86,000x** |
+| **Overall (88 endpoints)** | **10.95s** | **0.044s** | **249x**    |
+
+______________________________________________________________________
+
+### ⚡ Cache Label-DNA Compare, Pre-Warm Search, Increase Search TTL (#189)
+
+**Overview**: Eliminated cold-cache penalties for label-DNA compare and common search terms by reusing Redis caches and pre-warming on startup.
+
+#### Features
+
+- **Label-DNA compare cache reuse**: `_build_dna` now checks and populates the same Redis cache as the `/dna` endpoint — compare was doing 15.1s cold cache because it bypassed the label DNA cache
+- **Search pre-warming**: Pre-warm Redis search cache on startup for 10 common high-cardinality terms (Rock, Electronic, Jazz, etc.) that take ~9s cold
+- **Increased search TTL**: Search cache TTL increased from 300s (5 min) to 3600s (1 hour) to reduce cold cache frequency
+
+______________________________________________________________________
+
+### ⚡ Pre-Compute Label Stats, Cache Explore/Trends, Fix Label-DNA-Compare 500 (#188)
+
+**Overview**: Pre-compute label statistics during import, add Redis caching for explore and trends endpoints, and fix label-DNA compare 500 errors.
+
+#### Features
+
+- **Pre-computed label stats**: Extend `compute_genre_style_stats` to set `release_count`, `artist_count`, `genre_count` on Label nodes (batched in transactions of 100 rows)
+- **Redis caching**: Cache `trends/label` (24h TTL) and `explore/artist`/`explore/label` (24h TTL) to avoid expensive COUNT traversals
+- **Label-DNA compare fix**: Replace broken single-traversal Cypher with parallel `asyncio.gather` of 4 individual queries; add early return for labels below MIN_RELEASES
+- **Migration script**: One-time `scripts/compute-label-stats.sh` for existing databases
+
+______________________________________________________________________
+
+### 🔧 Configurable Data Quality Rules for Extraction Validation (#187)
+
+**Overview**: A configurable rule engine in the Rust extractor that validates parsed records against YAML-defined quality rules, flagging bad data without blocking the pipeline.
+
+#### Features
+
+- **YAML rule configuration**: Define rules per data type with 5 condition types — Required, Range, Regex, Length, and Enum
+- **Observation-only pipeline stage**: Validator evaluates records between parser and batcher; all messages pass through regardless of violations
+- **Raw XML reconstruction**: Parser reconstructs XML fragments from parsed element trees for comparing against parsed JSON to diagnose data vs parsing errors
+- **Flagged record storage**: Writes separate XML, JSON, and JSONL files per flagged record organized by version/data_type
+- **Quality report**: Tracks per-rule violation counts with deterministic output for automated analysis
+- **Default rules**: Ships with `extraction-rules.yaml` covering numeric genre detection, year-out-of-range checks, missing title/name validation across all 4 data types
+- **Docker integration**: Rules file mounted read-only into extractor container via docker-compose
+
+#### Documentation
+
+- Design spec: `docs/superpowers/specs/2026-03-21-data-quality-rules-design.md`
+- Implementation plan: `docs/superpowers/plans/2026-03-21-data-quality-rules.md`
+
+______________________________________________________________________
+
+### ⚡ Optimize 6 Query Families for Fewer DB Hits and Faster Cold Cache (#186)
+
+**Overview**: Targeted optimization of 6 query families — genre-emergence, artist-similar, label-DNA, search, and data-completeness — for dramatic reductions in DB hits and cold cache latency.
+
+#### Features
+
+- **Genre-emergence**: Read pre-computed `first_year` from Genre/Style nodes instead of live traversal (183.5M → ~50 DB accesses)
+- **Artist-similar**: Cap inner release scan at 100K per genre to prevent full traversal of mega-genres like Rock (7M releases → 100K sampled)
+- **Label-DNA**: Batch 4 separate identity/genre/style/decade queries into a single `get_label_full_profile` traversal (6 queries → 3 for cold cache)
+- **Search**: Cap total count, type counts, genre facets, and decade facets at 10K rows per table to prevent full scans on common terms
+- **Data-completeness**: Add Redis caching (6h TTL) to prevent repeated full table scans of the releases table
+
+______________________________________________________________________
+
+### 🔄 CI: Skip Heavy Jobs for Markdown-Only Changes (#185)
+
+**Overview**: GitHub Actions workflows now detect when a PR only changes markdown files and skip heavy jobs (build, test, lint) to save CI minutes.
+
+______________________________________________________________________
+
+### ⚡ Cypher Query Optimization — 10-100x Fewer DB Hits (#175)
+
+**Overview**: Optimized the 6 slowest Cypher queries identified by the query profiling infrastructure, achieving 10-100x fewer database hits per query.
+
+#### Features
+
+- **Targeted optimization**: Profiling data from #174 identified the exact bottleneck queries
+- **Better index usage**: Rewrote queries to leverage existing indexes more effectively
+- **Reduced traversals**: Minimized relationship traversals and node lookups
+- **Measurable impact**: Before/after perftest results stored in `perftest-results/`
+
+______________________________________________________________________
+
+### 🔬 Query Debug Profiling for SQL and Perftest Coverage (#174)
+
+**Overview**: Expanded the query profiling infrastructure to cover SQL queries alongside Cypher, and broadened the perftest suite to cover additional API endpoints.
+
+#### Features
+
+- **SQL profiling**: Added `EXPLAIN ANALYZE` profiling for PostgreSQL queries alongside existing Cypher `PROFILE`
+- **Perftest expansion**: Additional API endpoints covered in `tests/perftest/config.yaml`
+- **Latency reports**: p50, p95, p99 latency measurements with statistical accuracy
+- **Query plan inspection**: Automated query plan analysis for identifying performance regressions
+
+______________________________________________________________________
+
+### 🦀 Neo4j Rust Driver Extension — Up to 10x Driver Performance (#173)
+
+**Overview**: Switched to `neo4j-rust-ext`, a Rust-backed extension for the Neo4j Python driver that accelerates Bolt protocol serialization/deserialization.
+
+#### Features
+
+- **Drop-in replacement**: No code changes required — the Rust extension transparently accelerates the existing `neo4j` Python driver
+- **Up to 10x faster**: Bolt protocol handling moved from Python to compiled Rust code
+- **All services benefit**: API, Graphinator, Dashboard, and Schema-Init all use the Neo4j driver
+
+______________________________________________________________________
 
 ### 🧪 JavaScript Testing Framework with Vitest (#147)
 
@@ -129,8 +288,9 @@ ______________________________________________________________________
 
 #### Features
 
-- **Label identity**: `/api/label-dna/{id}` returns a label's identity profile (genres, styles, formats, decades active)
-- **Label comparison**: `/api/label-dna/compare` compares two labels and returns a similarity score
+- **Label identity**: `/api/label/{label_id}/dna` returns a label's identity profile (genres, styles, formats, decades active)
+- **Similar labels**: `/api/label/{label_id}/similar` returns labels with similar DNA profiles
+- **Label comparison**: `/api/label/dna/compare` compares two labels and returns a similarity score
 - **Genre/style profiles**: Percentage breakdown of a label's releases by genre and style
 
 ______________________________________________________________________

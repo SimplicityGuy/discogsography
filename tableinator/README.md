@@ -26,7 +26,7 @@ Environment variables:
 
 ```bash
 # PostgreSQL connection
-POSTGRES_HOST=postgres:5432
+POSTGRES_HOST=postgres
 POSTGRES_USERNAME=discogsography
 POSTGRES_PASSWORD=discogsography
 POSTGRES_DATABASE=discogsography

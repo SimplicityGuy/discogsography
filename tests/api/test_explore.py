@@ -1,10 +1,13 @@
 """Tests for explore endpoints in the API service (api/routers/explore.py)."""
 
+import json
 from typing import Any
-from unittest.mock import ANY, AsyncMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 import pytest
+
+from api.queries import collaborator_queries, genre_tree_queries
 
 
 class TestAutocompleteEndpoint:
@@ -88,6 +91,31 @@ class TestExploreEndpoint:
             explore_module._neo4j_driver = original
 
 
+class TestExploreLabelFallback:
+    """Tests for explore_label pre-computed vs fallback paths."""
+
+    def test_explore_label_with_precomputed_stats(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Label with pre-computed stats reads properties directly."""
+        mock_redis.get = AsyncMock(return_value=None)
+        result: dict[str, Any] = {"id": "1", "name": "Hooj Choons", "release_count": 500, "artist_count": 80, "genre_count": 5}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"label": mock_func}):
+            response = test_client.get("/api/explore?name=Hooj Choons&type=label")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["center"]["name"] == "Hooj Choons"
+
+    def test_explore_label_fallback_no_precomputed(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Label without pre-computed stats falls back to live traversal."""
+        mock_redis.get = AsyncMock(return_value=None)
+        # Simulate label without pre-computed stats (release_count=None)
+        result: dict[str, Any] = {"id": "1", "name": "New Label", "release_count": 50, "artist_count": 10, "genre_count": 3}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"label": mock_func}):
+            response = test_client.get("/api/explore?name=New Label&type=label")
+        assert response.status_code == 200
+
+
 class TestExpandEndpoint:
     """Tests for GET /api/expand."""
 
@@ -148,6 +176,142 @@ class TestTrendsEndpoint:
             assert response.status_code == 503
         finally:
             explore_module._neo4j_driver = original
+
+
+class TestTrendsCaching:
+    """Tests for Redis caching on genre/style trends."""
+
+    def test_trends_genre_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Cached genre trends should be returned without calling the query function."""
+
+        cached = {"name": "Electronic", "type": "genre", "data": [{"year": 2000, "count": 5}]}
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        response = test_client.get("/api/trends?name=Electronic&type=genre")
+        assert response.status_code == 200
+        assert response.json() == cached
+
+    def test_trends_genre_cache_miss_stores_result(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """On cache miss, query result should be stored in Redis."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_func = AsyncMock(return_value=[{"year": 2000, "count": 5}])
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"genre": mock_func}):
+            response = test_client.get("/api/trends?name=Electronic&type=genre")
+        assert response.status_code == 200
+        mock_redis.setex.assert_called_once()
+        call_args = mock_redis.setex.call_args
+        assert call_args[0][0] == "trends:genre:Electronic"
+
+    def test_trends_artist_skips_cache(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Artist trends should NOT be cached (only genre/style)."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_func = AsyncMock(return_value=[{"year": 2000, "count": 5}])
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"artist": mock_func}):
+            response = test_client.get("/api/trends?name=Radiohead&type=artist")
+        assert response.status_code == 200
+        mock_redis.get.assert_not_called()
+        mock_redis.setex.assert_not_called()
+
+    def test_trends_cache_get_failure_falls_through(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis get failure should fall through to query."""
+        mock_redis.get = AsyncMock(side_effect=Exception("connection lost"))
+        mock_func = AsyncMock(return_value=[{"year": 2000, "count": 5}])
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"genre": mock_func}):
+            response = test_client.get("/api/trends?name=Electronic&type=genre")
+        assert response.status_code == 200
+        mock_func.assert_called_once()
+
+    def test_trends_cache_set_failure_still_returns(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis set failure should not prevent response."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=Exception("connection lost"))
+        mock_func = AsyncMock(return_value=[{"year": 2000, "count": 5}])
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"genre": mock_func}):
+            response = test_client.get("/api/trends?name=Electronic&type=genre")
+        assert response.status_code == 200
+
+    def test_trends_label_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Cached label trends should be returned without calling the query function."""
+        cached = {"name": "Reprise Records", "type": "label", "data": [{"year": 1970, "count": 100}]}
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        response = test_client.get("/api/trends?name=Reprise Records&type=label")
+        assert response.status_code == 200
+        assert response.json() == cached
+
+    def test_trends_label_cache_miss_stores_result(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """On label cache miss, query result should be stored in Redis."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_func = AsyncMock(return_value=[{"year": 1970, "count": 100}])
+        with patch.dict("api.routers.explore.TRENDS_DISPATCH", {"label": mock_func}):
+            response = test_client.get("/api/trends?name=Reprise Records&type=label")
+        assert response.status_code == 200
+        mock_redis.setex.assert_called_once()
+        assert mock_redis.setex.call_args[0][0] == "trends:label:Reprise Records"
+
+
+class TestExploreCaching:
+    """Tests for Redis caching on artist/label explore endpoints."""
+
+    def test_explore_artist_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Cached artist explore should be returned without Neo4j query."""
+        cached = {"center": {"id": "1", "name": "Radiohead", "type": "artist"}, "categories": []}
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        response = test_client.get("/api/explore?name=Radiohead&type=artist")
+        assert response.status_code == 200
+        assert response.json() == cached
+
+    def test_explore_label_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Cached label explore should be returned without Neo4j query."""
+        cached = {"center": {"id": "1", "name": "Hooj Choons", "type": "label"}, "categories": []}
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+
+        response = test_client.get("/api/explore?name=Hooj Choons&type=label")
+        assert response.status_code == 200
+        assert response.json() == cached
+
+    def test_explore_artist_cache_miss_stores(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """On cache miss, explore result should be stored in Redis."""
+        mock_redis.get = AsyncMock(return_value=None)
+        result: dict[str, Any] = {"id": "1", "name": "Radiohead", "release_count": 50, "label_count": 5, "alias_count": 2}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
+            response = test_client.get("/api/explore?name=Radiohead&type=artist")
+        assert response.status_code == 200
+        mock_redis.setex.assert_called_once()
+        assert mock_redis.setex.call_args[0][0] == "explore:artist:Radiohead"
+
+    def test_explore_genre_skips_cache(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Genre explore should NOT be cached (already uses pre-computed properties)."""
+        mock_redis.get = AsyncMock(return_value=None)
+        result: dict[str, Any] = {"id": "Rock", "name": "Rock", "release_count": 100, "artist_count": 50, "label_count": 20, "style_count": 10}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"genre": mock_func}):
+            response = test_client.get("/api/explore?name=Rock&type=genre")
+        assert response.status_code == 200
+        mock_redis.get.assert_not_called()
+        mock_redis.setex.assert_not_called()
+
+    def test_explore_cache_get_failure_falls_through(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis get failure should fall through to Neo4j query."""
+        mock_redis.get = AsyncMock(side_effect=Exception("connection lost"))
+        result: dict[str, Any] = {"id": "1", "name": "Radiohead", "release_count": 50, "label_count": 5, "alias_count": 2}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
+            response = test_client.get("/api/explore?name=Radiohead&type=artist")
+        assert response.status_code == 200
+        mock_func.assert_called_once()
+
+    def test_explore_cache_set_failure_still_returns(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis set failure should not prevent response."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=Exception("write failed"))
+        result: dict[str, Any] = {"id": "1", "name": "Radiohead", "release_count": 50, "label_count": 5, "alias_count": 2}
+        mock_func = AsyncMock(return_value=result)
+        with patch.dict("api.routers.explore.EXPLORE_DISPATCH", {"artist": mock_func}):
+            response = test_client.get("/api/explore?name=Radiohead&type=artist")
+        assert response.status_code == 200
 
 
 class TestNodeDetailsEndpoint:
@@ -629,3 +793,237 @@ class TestExpandBeforeYearEndpoint:
     def test_expand_before_year_validation_too_high(self, test_client: TestClient) -> None:
         response = test_client.get("/api/expand?node_id=x&type=artist&category=releases&before_year=2031")
         assert response.status_code == 422
+
+
+class TestCollaboratorsEndpoint:
+    """Tests for GET /api/collaborators/{artist_id}."""
+
+    def test_collaborators_success(self, test_client: TestClient) -> None:
+        identity = {"artist_id": "a1", "artist_name": "Miles Davis"}
+        collabs = [{"artist_id": "a2", "artist_name": "John Coltrane", "release_count": 5}]
+        total = 10
+
+        with (
+            patch("api.routers.explore.collaborator_queries.get_artist_identity", AsyncMock(return_value=identity)),
+            patch("api.routers.explore.collaborator_queries.get_collaborators", AsyncMock(return_value=collabs)),
+            patch("api.routers.explore.collaborator_queries.count_collaborators", AsyncMock(return_value=total)),
+        ):
+            response = test_client.get("/api/collaborators/a1?limit=20")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["artist_id"] == "a1"
+        assert data["artist_name"] == "Miles Davis"
+        assert data["collaborators"] == collabs
+        assert data["total"] == 10
+
+    def test_collaborators_not_found_404(self, test_client: TestClient) -> None:
+        with patch("api.routers.explore.collaborator_queries.get_artist_identity", AsyncMock(return_value=None)):
+            response = test_client.get("/api/collaborators/unknown")
+
+        assert response.status_code == 404
+        assert "not found" in response.json()["error"]
+
+    def test_collaborators_no_driver_503(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        original = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/collaborators/a1")
+            assert response.status_code == 503
+        finally:
+            explore_module._neo4j_driver = original
+
+    def test_collaborators_timeout_504(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        exc = Neo4jClientError("TransactionTimedOut")
+        with patch("api.routers.explore.collaborator_queries.get_artist_identity", AsyncMock(side_effect=exc)):
+            response = test_client.get("/api/collaborators/a1")
+
+        assert response.status_code == 504
+        assert "timed out" in response.json()["error"]
+
+    def test_collaborators_other_neo4j_error_returns_500(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        exc = Neo4jClientError("SomeOtherError")
+        with patch("api.routers.explore.collaborator_queries.get_artist_identity", AsyncMock(side_effect=exc)):
+            response = test_client.get("/api/collaborators/a1")
+        assert response.status_code == 500
+
+
+class TestGenreTreeEndpoint:
+    """Tests for GET /api/genre-tree."""
+
+    def test_genre_tree_success(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        # Ensure cache is empty
+        explore_module._genre_tree_cache = None
+
+        genres = [{"name": "Rock", "release_count": 1000, "styles": [{"name": "Punk", "release_count": 200}]}]
+        with patch("api.routers.explore.genre_tree_queries.get_genre_tree", AsyncMock(return_value=genres)):
+            response = test_client.get("/api/genre-tree")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["genres"] == genres
+
+        # Clean up
+        explore_module._genre_tree_cache = None
+
+    def test_genre_tree_cache_hit(self, test_client: TestClient) -> None:
+        import time
+
+        import api.routers.explore as explore_module
+
+        cached = {"genres": [{"name": "Jazz", "release_count": 500, "styles": []}]}
+        explore_module._genre_tree_cache = cached
+        explore_module._genre_tree_cache_time = time.monotonic()  # fresh
+
+        try:
+            response = test_client.get("/api/genre-tree")
+            assert response.status_code == 200
+            assert response.json() == cached
+        finally:
+            explore_module._genre_tree_cache = None
+
+    def test_genre_tree_cache_expired(self, test_client: TestClient) -> None:
+        import time
+
+        import api.routers.explore as explore_module
+
+        explore_module._genre_tree_cache = {"genres": []}
+        # Set cache time far enough in the past to guarantee expiry (TTL is 300s)
+        explore_module._genre_tree_cache_time = time.monotonic() - 600
+
+        fresh = [{"name": "Electronic", "release_count": 800, "styles": []}]
+        try:
+            with patch("api.routers.explore.genre_tree_queries.get_genre_tree", AsyncMock(return_value=fresh)):
+                response = test_client.get("/api/genre-tree")
+            assert response.status_code == 200
+            assert response.json()["genres"] == fresh
+        finally:
+            explore_module._genre_tree_cache = None
+
+    def test_genre_tree_no_driver_503(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        original = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/genre-tree")
+            assert response.status_code == 503
+        finally:
+            explore_module._neo4j_driver = original
+
+    def test_genre_tree_timeout_504(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        import api.routers.explore as explore_module
+
+        explore_module._genre_tree_cache = None
+
+        exc = Neo4jClientError("TransactionTimedOut")
+        with patch("api.routers.explore.genre_tree_queries.get_genre_tree", AsyncMock(side_effect=exc)):
+            response = test_client.get("/api/genre-tree")
+
+        assert response.status_code == 504
+        assert "timed out" in response.json()["error"]
+
+    def test_genre_tree_other_neo4j_error_returns_500(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        import api.routers.explore as explore_module
+
+        explore_module._genre_tree_cache = None
+
+        exc = Neo4jClientError("SomeOtherError")
+        with patch("api.routers.explore.genre_tree_queries.get_genre_tree", AsyncMock(side_effect=exc)):
+            response = test_client.get("/api/genre-tree")
+        assert response.status_code == 500
+
+
+class TestGraphStatsEndpoint:
+    """Tests for GET /api/graph/stats."""
+
+    def test_graph_stats_success(self, test_client: TestClient) -> None:
+        fake_counts = {"artists": 1000, "labels": 500, "releases": 5000, "masters": 2000, "genres": 15, "styles": 300}
+        with patch("api.routers.explore.get_graph_stats", AsyncMock(return_value=fake_counts)):
+            response = test_client.get("/api/graph/stats")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_entities"] == 8815
+        assert data["counts"]["artists"] == 1000
+        assert data["counts"]["genres"] == 15
+
+    def test_graph_stats_empty_graph(self, test_client: TestClient) -> None:
+        with patch("api.routers.explore.get_graph_stats", AsyncMock(return_value={})):
+            response = test_client.get("/api/graph/stats")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_entities"] == 0
+        assert data["counts"] == {}
+
+    def test_graph_stats_no_driver_503(self, test_client: TestClient) -> None:
+        import api.routers.explore as explore_module
+
+        original = explore_module._neo4j_driver
+        explore_module._neo4j_driver = None
+        try:
+            response = test_client.get("/api/graph/stats")
+            assert response.status_code == 503
+        finally:
+            explore_module._neo4j_driver = original
+
+
+class TestCollaboratorQueries:
+    """Tests for api/queries/collaborator_queries.py functions."""
+
+    @pytest.mark.asyncio
+    async def test_get_artist_identity(self) -> None:
+        expected = {"artist_id": "a1", "artist_name": "Miles Davis"}
+        with patch("api.queries.collaborator_queries.run_single", AsyncMock(return_value=expected)) as mock_run:
+            result = await collaborator_queries.get_artist_identity(MagicMock(), "a1")
+        assert result == expected
+        mock_run.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_artist_identity_not_found(self) -> None:
+        with patch("api.queries.collaborator_queries.run_single", AsyncMock(return_value=None)):
+            result = await collaborator_queries.get_artist_identity(MagicMock(), "unknown")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_collaborators(self) -> None:
+        expected = [{"artist_id": "a2", "artist_name": "Coltrane", "release_count": 5}]
+        with patch("api.queries.collaborator_queries.run_query", AsyncMock(return_value=expected)) as mock_run:
+            result = await collaborator_queries.get_collaborators(MagicMock(), "a1", limit=10)
+        assert result == expected
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["artist_id"] == "a1"
+        assert kwargs["limit"] == 10
+
+    @pytest.mark.asyncio
+    async def test_count_collaborators(self) -> None:
+        with patch("api.queries.collaborator_queries.run_count", AsyncMock(return_value=42)) as mock_run:
+            result = await collaborator_queries.count_collaborators(MagicMock(), "a1")
+        assert result == 42
+        mock_run.assert_called_once()
+
+
+class TestGenreTreeQueries:
+    """Tests for api/queries/genre_tree_queries.py functions."""
+
+    @pytest.mark.asyncio
+    async def test_get_genre_tree(self) -> None:
+        expected = [{"name": "Rock", "release_count": 1000, "styles": []}]
+        with patch("api.queries.genre_tree_queries.run_query", AsyncMock(return_value=expected)) as mock_run:
+            result = await genre_tree_queries.get_genre_tree(MagicMock())
+        assert result == expected
+        mock_run.assert_called_once()
+        _, kwargs = mock_run.call_args
+        assert kwargs["timeout"] == 30.0

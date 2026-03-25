@@ -14,6 +14,7 @@ from api.auth import decode_token
 from api.limiter import limiter
 from api.syncer import run_full_sync
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
+from common.query_debug import execute_sql
 
 
 logger = structlog.get_logger(__name__)
@@ -104,7 +105,8 @@ async def trigger_sync(
 
     if user_id in _running_syncs and not _running_syncs[user_id].done():
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(
+            await execute_sql(
+                cur,
                 "SELECT id, status FROM sync_history WHERE user_id = %s::uuid AND status = 'running' ORDER BY started_at DESC LIMIT 1",
                 (user_id,),
             )
@@ -115,7 +117,8 @@ async def trigger_sync(
                 status_code=status.HTTP_202_ACCEPTED,
             )
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(
+        await execute_sql(
+            cur,
             "INSERT INTO sync_history (user_id, sync_type, status) VALUES (%s::uuid, 'full', 'running') RETURNING id",
             (user_id,),
         )
@@ -152,7 +155,8 @@ async def sync_status(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
     user_id = current_user.get("sub")
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(
+        await execute_sql(
+            cur,
             """SELECT id, sync_type, status, items_synced, error_message, started_at, completed_at
                FROM sync_history WHERE user_id = %s::uuid ORDER BY started_at DESC LIMIT 10""",
             (user_id,),

@@ -2,15 +2,19 @@
 
 import asyncio
 from collections import OrderedDict
+import json
+import time
 from typing import Any
 
 from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
+from neo4j.exceptions import ClientError as Neo4jClientError
 import structlog
 
 import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.models import PathNode, PathResponse
+from api.queries import collaborator_queries, genre_tree_queries
 from api.queries.neo4j_queries import (
     AUTOCOMPLETE_DISPATCH,
     COUNT_DISPATCH,
@@ -20,6 +24,7 @@ from api.queries.neo4j_queries import (
     TRENDS_DISPATCH,
     find_shortest_path,
     get_genre_emergence,
+    get_graph_stats,
     get_year_range,
 )
 
@@ -29,16 +34,28 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 _neo4j_driver: Any = None
+_redis: Any = None
+
+# Redis cache TTL for trends (genre/style/label) and explore (artist/label)
+# 24 hours — data changes only on import
+_TRENDS_CACHE_TTL = 86400
+_EXPLORE_CACHE_TTL = 86400
 
 
-def configure(neo4j: Any, jwt_secret: str | None) -> None:
-    global _neo4j_driver
+def configure(neo4j: Any, jwt_secret: str | None, redis: Any = None) -> None:
+    global _neo4j_driver, _redis
     _neo4j_driver = neo4j
+    _redis = redis
     _dependencies.configure(jwt_secret)
 
 
 _autocomplete_cache: OrderedDict[tuple[str, str, int], list[dict[str, Any]]] = OrderedDict()
 _AUTOCOMPLETE_CACHE_MAX = 512
+
+# Genre tree cache — refreshed every 5 minutes since the tree changes rarely
+_genre_tree_cache: dict | None = None
+_genre_tree_cache_time: float = 0
+_GENRE_TREE_TTL = 300  # 5 minutes
 
 
 def _get_cache_key(query: str, entity_type: str, limit: int) -> tuple[str, str, int]:
@@ -111,12 +128,32 @@ async def explore(
     entity_type = type.lower()
     if entity_type not in EXPLORE_DISPATCH:
         return JSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
+
+    # Cache artist and label explore results in Redis (expensive COUNT traversals)
+    if _redis and entity_type in ("artist", "label"):
+        cache_key = f"explore:{entity_type}:{name}"
+        try:
+            cached = await _redis.get(cache_key)
+            if cached:
+                return JSONResponse(content=json.loads(cached))
+        except Exception:
+            logger.debug("⚠️ Explore cache get failed", key=cache_key)
+
     query_func = EXPLORE_DISPATCH[entity_type]
     result = await query_func(_neo4j_driver, name)
     if not result:
         return JSONResponse(content={"error": f"{type.capitalize()} '{name}' not found"}, status_code=404)
     categories = _build_categories(entity_type, result)
-    return JSONResponse(content={"center": {"id": str(result["id"]), "name": result["name"], "type": entity_type}, "categories": categories})
+    response = {"center": {"id": str(result["id"]), "name": result["name"], "type": entity_type}, "categories": categories}
+
+    if _redis and entity_type in ("artist", "label"):
+        cache_key = f"explore:{entity_type}:{name}"
+        try:
+            await _redis.setex(cache_key, _EXPLORE_CACHE_TTL, json.dumps(response))
+        except Exception:
+            logger.debug("⚠️ Explore cache set failed", key=cache_key)
+
+    return JSONResponse(content=response)
 
 
 @router.get("/api/expand")
@@ -171,6 +208,75 @@ async def genre_emergence(
     return JSONResponse(content=result)
 
 
+@router.get("/api/collaborators/{artist_id}")
+@limiter.limit("30/minute")
+async def get_collaborators(
+    request: Request,  # noqa: ARG001
+    artist_id: str,
+    limit: int = Query(20, ge=1, le=100),
+) -> JSONResponse:
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    try:
+        identity = await collaborator_queries.get_artist_identity(_neo4j_driver, artist_id)
+        if not identity:
+            return JSONResponse(content={"error": f"Artist '{artist_id}' not found"}, status_code=404)
+
+        collaborators, total = await asyncio.gather(
+            collaborator_queries.get_collaborators(_neo4j_driver, artist_id, limit=limit),
+            collaborator_queries.count_collaborators(_neo4j_driver, artist_id),
+        )
+    except Neo4jClientError as exc:
+        if "TransactionTimedOut" in str(exc):
+            logger.warning("⏱️ Collaborators query timed out", artist_id=artist_id)
+            return JSONResponse(
+                content={"error": "Collaborators query timed out — try again later"},
+                status_code=504,
+            )
+        raise
+
+    return JSONResponse(
+        content={
+            "artist_id": identity["artist_id"],
+            "artist_name": identity["artist_name"],
+            "collaborators": collaborators,
+            "total": total,
+        }
+    )
+
+
+@router.get("/api/genre-tree")
+@limiter.limit("30/minute")
+async def genre_tree(
+    request: Request,  # noqa: ARG001
+) -> JSONResponse:
+    """Return the full genre/style hierarchy derived from release co-occurrence."""
+    global _genre_tree_cache, _genre_tree_cache_time
+
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+
+    now = time.monotonic()
+    if _genre_tree_cache is not None and (now - _genre_tree_cache_time) < _GENRE_TREE_TTL:
+        return JSONResponse(content=_genre_tree_cache)
+
+    try:
+        genres = await genre_tree_queries.get_genre_tree(_neo4j_driver)
+    except Neo4jClientError as exc:
+        if "TransactionTimedOut" in str(exc):
+            logger.warning("⏱️ Genre tree query timed out")
+            return JSONResponse(
+                content={"error": "Genre tree query timed out — try again later"},
+                status_code=504,
+            )
+        raise
+
+    _genre_tree_cache = {"genres": genres}
+    _genre_tree_cache_time = time.monotonic()
+    return JSONResponse(content=_genre_tree_cache)
+
+
 @router.get("/api/node/{node_id}")
 async def get_node_details(
     node_id: str,
@@ -198,14 +304,34 @@ async def get_trends(
     entity_type = type.lower()
     if entity_type not in TRENDS_DISPATCH:
         return JSONResponse(content={"error": f"Invalid type: {type}. Must be artist, genre, label, or style"}, status_code=400)
+
+    # Cache genre, style, and label trends in Redis (data changes only on import)
+    if _redis and entity_type in ("genre", "style", "label"):
+        cache_key = f"trends:{entity_type}:{name}"
+        try:
+            cached = await _redis.get(cache_key)
+            if cached:
+                return JSONResponse(content=json.loads(cached))
+        except Exception:
+            logger.debug("⚠️ Trends cache get failed", key=cache_key)
+
     query_func = TRENDS_DISPATCH[entity_type]
     results = await query_func(_neo4j_driver, name)
-    return JSONResponse(content={"name": name, "type": entity_type, "data": results})
+    response = {"name": name, "type": entity_type, "data": results}
+
+    if _redis and entity_type in ("genre", "style", "label"):
+        cache_key = f"trends:{entity_type}:{name}"
+        try:
+            await _redis.setex(cache_key, _TRENDS_CACHE_TTL, json.dumps(response))
+        except Exception:
+            logger.debug("⚠️ Trends cache set failed", key=cache_key)
+
+    return JSONResponse(content=response)
 
 
 _VALID_PATH_TYPES = frozenset(EXPLORE_DISPATCH.keys())
-_MAX_PATH_DEPTH = 15
-_DEFAULT_PATH_DEPTH = 10
+_MAX_PATH_DEPTH = 10
+_DEFAULT_PATH_DEPTH = 6
 
 
 def _node_label_to_type(labels: list[str]) -> str:
@@ -261,12 +387,23 @@ async def find_path(
             status_code=404,
         )
 
-    raw = await find_shortest_path(
-        _neo4j_driver,
-        str(from_node["id"]),
-        str(to_node["id"]),
-        max_depth=max_depth,
-    )
+    try:
+        raw = await find_shortest_path(
+            _neo4j_driver,
+            str(from_node["id"]),
+            str(to_node["id"]),
+            max_depth=max_depth,
+            from_type=from_type_lower,
+            to_type=to_type_lower,
+        )
+    except Neo4jClientError as exc:
+        if "TransactionTimedOut" in str(exc):
+            logger.warning("⏱️ Path query timed out", from_name=from_name, to_name=to_name, max_depth=max_depth)
+            return JSONResponse(
+                content={"error": "Path query timed out — try reducing max_depth or searching closer nodes"},
+                status_code=504,
+            )
+        raise
 
     if raw is None:
         return JSONResponse(content=PathResponse(found=False, length=None, path=[]).model_dump())
@@ -291,3 +428,12 @@ async def find_path(
             path=path_nodes,
         ).model_dump()
     )
+
+
+@router.get("/api/graph/stats")
+async def graph_stats() -> JSONResponse:
+    """Return aggregate node counts for each entity type in the knowledge graph."""
+    if not _neo4j_driver:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+    counts = await get_graph_stats(_neo4j_driver)
+    return JSONResponse(content={"total_entities": sum(counts.values()), "counts": counts})

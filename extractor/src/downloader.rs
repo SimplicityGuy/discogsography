@@ -253,10 +253,7 @@ impl Downloader {
 
         for file in files {
             // Extract basename before splitting — the full S3 key may contain path separators
-            let basename = std::path::Path::new(&file.name)
-                .file_name()
-                .and_then(|f| f.to_str())
-                .unwrap_or(&file.name);
+            let basename = std::path::Path::new(&file.name).file_name().and_then(|f| f.to_str()).unwrap_or(&file.name);
             let parts: Vec<&str> = basename.split('_').collect();
             if parts.len() >= 2 {
                 let id = parts[1].to_string();
@@ -409,7 +406,11 @@ impl Downloader {
                         let now = std::time::Instant::now();
                         if now.duration_since(last_progress_log).as_secs() >= 10 {
                             let elapsed_secs = download_start.elapsed().as_secs_f64();
-                            let speed = if elapsed_secs > 0.0 { (downloaded as f64 / 1_048_576.0) / elapsed_secs } else { 0.0 };
+                            let speed = if elapsed_secs > 0.0 {
+                                (downloaded as f64 / 1_048_576.0) / elapsed_secs
+                            } else {
+                                0.0
+                            };
                             info!("📥 {} — {:.1} MB received ({:.1} MB/s)", filename, downloaded as f64 / 1_048_576.0, speed);
                             last_progress_log = now;
                         }
@@ -838,10 +839,7 @@ mod _remove_old_tests {
         let marker = StateMarker::new("20260101".to_string());
         let marker_path = temp_dir.path().join(".extraction_status_20260101.json");
 
-        let downloader = Downloader::new(temp_dir.path().to_path_buf())
-            .await
-            .unwrap()
-            .with_state_marker(marker, marker_path.clone());
+        let downloader = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap().with_state_marker(marker, marker_path.clone());
 
         assert!(downloader.state_marker.is_some());
         assert!(downloader.marker_path.is_some());
@@ -857,10 +855,7 @@ mod _remove_old_tests {
         let marker = StateMarker::new("20260101".to_string());
         let marker_path = temp_dir.path().join(".extraction_status_20260101.json");
 
-        let mut downloader = Downloader::new(temp_dir.path().to_path_buf())
-            .await
-            .unwrap()
-            .with_state_marker(marker, marker_path.clone());
+        let mut downloader = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap().with_state_marker(marker, marker_path.clone());
 
         downloader.save_state_marker().await;
 
@@ -936,12 +931,7 @@ mod _remove_old_tests {
             <a href="?prefix=data%2F2026%2F">2026/</a>
         </body></html>"#;
 
-        let _main_mock = server
-            .mock("GET", "/")
-            .with_status(200)
-            .with_body(main_page_html)
-            .create_async()
-            .await;
+        let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
 
         // Year page listing files (5 files = 4 data + 1 checksum for a complete set)
         let year_page_html = r#"<html><body>
@@ -950,23 +940,16 @@ mod _remove_old_tests {
             <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
-        </body></html>"#.to_string();
+        </body></html>"#
+            .to_string();
 
-        let _year_mock = server
-            .mock("GET", "/?prefix=data%2F2026%2F")
-            .with_status(200)
-            .with_body(&year_page_html)
-            .create_async()
-            .await;
+        let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(&year_page_html).create_async().await;
 
         // Mock download endpoints for each file
         let file_types = ["artists", "labels", "masters", "releases"];
         let mut _download_mocks = Vec::new();
         for file_type in &file_types {
-            let download_path = format!(
-                "/?download=data%2F2026%2Fdiscogs_20260101_{}.xml.gz",
-                file_type
-            );
+            let download_path = format!("/?download=data%2F2026%2Fdiscogs_20260101_{}.xml.gz", file_type);
             let mock = server
                 .mock("GET", download_path.as_str())
                 .with_status(200)
@@ -1013,12 +996,7 @@ mod _remove_old_tests {
             <a href="?prefix=data%2F2026%2F">2026/</a>
         </body></html>"#;
 
-        let _main_mock = server
-            .mock("GET", "/")
-            .with_status(200)
-            .with_body(main_page_html)
-            .create_async()
-            .await;
+        let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
 
         // Year page with complete 5-file set
         let year_page_html = r#"<html><body>
@@ -1029,18 +1007,11 @@ mod _remove_old_tests {
             <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
         </body></html>"#;
 
-        let _year_mock = server
-            .mock("GET", "/?prefix=data%2F2026%2F")
-            .with_status(200)
-            .with_body(year_page_html)
-            .create_async()
-            .await;
+        let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_page_html).create_async().await;
 
         // Pre-create all 4 data files locally with known content and matching checksums
         let file_types = ["artists", "labels", "masters", "releases"];
-        let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
-            .await
-            .unwrap();
+        let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
 
         for file_type in &file_types {
             let filename = format!("discogs_20260101_{}.xml.gz", file_type);
@@ -1056,12 +1027,7 @@ mod _remove_old_tests {
             // Pre-populate metadata with correct checksum
             downloader.metadata.insert(
                 filename,
-                LocalFileInfo {
-                    path: local_path.to_string_lossy().to_string(),
-                    checksum,
-                    version: "202601".to_string(),
-                    size: content.len() as u64,
-                },
+                LocalFileInfo { path: local_path.to_string_lossy().to_string(), checksum, version: "202601".to_string(), size: content.len() as u64 },
             );
         }
 
@@ -1090,13 +1056,7 @@ mod _remove_old_tests {
         </body></html>"#;
 
         // Expect the main page to be called exactly once
-        let _main_mock = server
-            .mock("GET", "/")
-            .with_status(200)
-            .with_body(main_page_html)
-            .expect(1)
-            .create_async()
-            .await;
+        let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).expect(1).create_async().await;
 
         let year_page_html = r#"<html><body>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
@@ -1106,17 +1066,9 @@ mod _remove_old_tests {
             <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
         </body></html>"#;
 
-        let _year_mock = server
-            .mock("GET", "/?prefix=data%2F2026%2F")
-            .with_status(200)
-            .with_body(year_page_html)
-            .expect(1)
-            .create_async()
-            .await;
+        let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_page_html).expect(1).create_async().await;
 
-        let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
-            .await
-            .unwrap();
+        let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
 
         // First call — fetches from server
         let first_result = downloader.list_s3_files().await.unwrap();
@@ -1144,12 +1096,7 @@ mod _remove_old_tests {
             <a href="?prefix=data%2F2026%2F">2026/</a>
         </body></html>"#;
 
-        let _main_mock = server
-            .mock("GET", "/")
-            .with_status(200)
-            .with_body(main_page_html)
-            .create_async()
-            .await;
+        let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_page_html).create_async().await;
 
         let year_page_html = r#"<html><body>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
@@ -1159,18 +1106,11 @@ mod _remove_old_tests {
             <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
         </body></html>"#;
 
-        let _year_mock = server
-            .mock("GET", "/?prefix=data%2F2026%2F")
-            .with_status(200)
-            .with_body(year_page_html)
-            .create_async()
-            .await;
+        let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_page_html).create_async().await;
 
         // Pre-create all 4 data files with matching checksums
         let file_types = ["artists", "labels", "masters", "releases"];
-        let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
-            .await
-            .unwrap();
+        let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
 
         let mut expected_sizes: HashMap<String, u64> = HashMap::new();
 
@@ -1188,12 +1128,7 @@ mod _remove_old_tests {
 
             downloader.metadata.insert(
                 filename,
-                LocalFileInfo {
-                    path: local_path.to_string_lossy().to_string(),
-                    checksum,
-                    version: "202601".to_string(),
-                    size: content.len() as u64,
-                },
+                LocalFileInfo { path: local_path.to_string_lossy().to_string(), checksum, version: "202601".to_string(), size: content.len() as u64 },
             );
         }
 
@@ -1233,11 +1168,8 @@ mod _remove_old_tests {
         use crate::state_marker::StateMarker;
 
         let temp_dir = TempDir::new().unwrap();
-        let mut downloader: Box<dyn DataSource> = Box::new(
-            Downloader::new_with_base_url(temp_dir.path().to_path_buf(), "http://unused".to_string())
-                .await
-                .unwrap(),
-        );
+        let mut downloader: Box<dyn DataSource> =
+            Box::new(Downloader::new_with_base_url(temp_dir.path().to_path_buf(), "http://unused".to_string()).await.unwrap());
 
         // Initially no state marker
         assert!(downloader.take_state_marker().is_none());
@@ -1274,18 +1206,9 @@ mod _remove_old_tests {
             <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
             <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">checksum</a>
         </body></html>"#;
-        let _year_mock = server
-            .mock("GET", "/?prefix=data%2F2026%2F")
-            .with_status(200)
-            .with_body(year_page_html)
-            .create_async()
-            .await;
+        let _year_mock = server.mock("GET", "/?prefix=data%2F2026%2F").with_status(200).with_body(year_page_html).create_async().await;
 
-        let mut downloader: Box<dyn DataSource> = Box::new(
-            Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url)
-                .await
-                .unwrap(),
-        );
+        let mut downloader: Box<dyn DataSource> = Box::new(Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap());
 
         // Call through the DataSource trait
         let files = downloader.list_s3_files().await.unwrap();
@@ -1295,11 +1218,8 @@ mod _remove_old_tests {
     #[tokio::test]
     async fn test_datasource_get_latest_monthly_files_via_trait() {
         let temp_dir = TempDir::new().unwrap();
-        let downloader: Box<dyn DataSource> = Box::new(
-            Downloader::new_with_base_url(temp_dir.path().to_path_buf(), "http://unused".to_string())
-                .await
-                .unwrap(),
-        );
+        let downloader: Box<dyn DataSource> =
+            Box::new(Downloader::new_with_base_url(temp_dir.path().to_path_buf(), "http://unused".to_string()).await.unwrap());
 
         let files = vec![
             S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
@@ -1353,10 +1273,7 @@ mod _remove_old_tests {
         // Path with non-existent parent directory so save() fails
         let bad_path = PathBuf::from("/nonexistent/dir/marker.json");
 
-        let mut downloader = Downloader::new(temp_dir.path().to_path_buf())
-            .await
-            .unwrap()
-            .with_state_marker(marker, bad_path.clone());
+        let mut downloader = Downloader::new(temp_dir.path().to_path_buf()).await.unwrap().with_state_marker(marker, bad_path.clone());
 
         // Should not panic — just warns internally
         downloader.save_state_marker().await;

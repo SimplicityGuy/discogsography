@@ -1,0 +1,83 @@
+---
+# Data Quality Rules for Discogs Extraction
+# Configure via: DATA_QUALITY_RULES env var or --data-quality-rules CLI arg
+#
+# NOTE: The 'max' value in year-range rules is static and should be updated
+# periodically (e.g., bump to current_year + 1 at the start of each year).
+
+rules:
+  releases:
+    - name: year-out-of-range
+      description: "Release year is before 1860 or after current year + 1"
+      field: year
+      condition:
+        type: range
+        min: 1860
+        max: 2027
+      severity: warning
+
+    - name: missing-title
+      description: "Release has no title"
+      field: title
+      condition:
+        type: required
+      severity: error
+
+    - name: genre-not-recognized
+      description: "Genre value is not in the known Discogs genre list"
+      field: genres.genre
+      condition:
+        type: enum
+        values:
+          - Blues
+          - Brass & Military
+          - "Children's"
+          - Classical
+          - Electronic
+          - "Folk, World, & Country"
+          - Funk / Soul
+          - Hip Hop
+          - Jazz
+          - Latin
+          - Non-Music
+          - Pop
+          - Reggae
+          - Rock
+          - Stage & Screen
+      severity: warning
+
+    - name: genre-is-numeric
+      description: "Genre value is purely numeric — likely a parsing error"
+      field: genres.genre
+      condition:
+        type: regex
+        pattern: "^\\d+$"
+      severity: error
+
+    # Note: years like 197 and 338 are already caught by year-out-of-range (< min 1860).
+
+  artists:
+    - name: empty-artist-name
+      description: "Artist has no name"
+      field: name
+      condition:
+        type: required
+      severity: error
+
+  labels:
+    - name: empty-label-name
+      description: "Label has no name"
+      field: name
+      condition:
+        type: required
+      severity: error
+
+  masters:
+    - name: year-out-of-range
+      description: "Master year is before 1860 or after current year + 1"
+      field: year
+      condition:
+        type: range
+        min: 1860
+        max: 2027
+      severity: warning

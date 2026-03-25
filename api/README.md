@@ -227,6 +227,36 @@ Find the shortest path between any two entities in the knowledge graph.
 - `to_type` — Target entity type (default: `artist`)
 - `max_depth` — Maximum path depth (1–15, default: 10)
 
+### Collaborators
+
+Find artists who share releases with a given artist, with temporal collaboration data (yearly counts, first/last year).
+
+| Method | Path                              | Auth Required | Rate Limit | Description                                          |
+| ------ | --------------------------------- | ------------- | ---------- | ---------------------------------------------------- |
+| GET    | `/api/collaborators/{artist_id}` | No            | 30/min     | Get collaborating artists with release overlap stats |
+
+**Query parameters:**
+
+- `limit` — Maximum collaborators to return (1–100, default: 20)
+
+### Genre Tree
+
+Full genre/style hierarchy derived from release co-occurrence in the knowledge graph.
+
+| Method | Path              | Auth Required | Rate Limit | Description                                   |
+| ------ | ----------------- | ------------- | ---------- | --------------------------------------------- |
+| GET    | `/api/genre-tree` | No            | 30/min     | Genre hierarchy with nested styles and counts |
+
+The genre tree is cached in-memory for 5 minutes since the hierarchy changes only on data import.
+
+### Graph Statistics
+
+Aggregate node counts across the knowledge graph.
+
+| Method | Path               | Auth Required | Description                                 |
+| ------ | ------------------ | ------------- | ------------------------------------------- |
+| GET    | `/api/graph/stats` | No            | Total entity counts (artists, labels, releases, masters, genres, styles) |
+
 ### Vinyl Archaeology
 
 Time-travel through the knowledge graph with year-range and genre-emergence queries.

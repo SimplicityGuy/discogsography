@@ -508,6 +508,77 @@ describe('UserPanes', () => {
             const score = container.querySelector('.recommendation-score');
             expect(score.textContent).toBe('95% match');
         });
+
+        it('should render clickable link when artist is present', () => {
+            const container = document.createElement('div');
+            userPanes._renderRecommendations(container, {
+                recommendations: [
+                    { title: 'OK Computer', artist: 'Radiohead', year: 1997, score: 0.8 },
+                ],
+            });
+
+            const link = container.querySelector('.release-list-title a');
+            expect(link).not.toBeNull();
+            expect(link.textContent).toBe('OK Computer');
+            expect(link.href).toContain('#');
+        });
+
+        it('should navigate to artist explore on link click', () => {
+            const container = document.createElement('div');
+            window.exploreApp = {
+                _setSearchType: vi.fn(),
+                currentQuery: '',
+                _switchPane: vi.fn(),
+                _loadExplore: vi.fn(),
+            };
+            const searchInput = document.createElement('input');
+            searchInput.id = 'searchInput';
+            document.body.appendChild(searchInput);
+
+            userPanes._renderRecommendations(container, {
+                recommendations: [
+                    { title: 'OK Computer', artist: 'Radiohead', year: 1997, score: 0.8 },
+                ],
+            });
+
+            const link = container.querySelector('.release-list-title a');
+            link.click();
+
+            expect(window.exploreApp._setSearchType).toHaveBeenCalledWith('artist');
+            expect(window.exploreApp.currentQuery).toBe('Radiohead');
+            expect(window.exploreApp._switchPane).toHaveBeenCalledWith('explore');
+            expect(window.exploreApp._loadExplore).toHaveBeenCalledWith('Radiohead', 'artist');
+            expect(document.getElementById('searchInput').value).toBe('Radiohead');
+
+            searchInput.remove();
+            delete window.exploreApp;
+        });
+
+        it('should render plain text when artist is absent', () => {
+            const container = document.createElement('div');
+            userPanes._renderRecommendations(container, {
+                recommendations: [
+                    { title: 'Mystery Album', year: 2020, score: 0.5 },
+                ],
+            });
+
+            const titleDiv = container.querySelector('.release-list-title');
+            expect(titleDiv.querySelector('a')).toBeNull();
+            expect(titleDiv.textContent).toBe('Mystery Album');
+        });
+
+        it('should show unknown title for missing title with artist link', () => {
+            const container = document.createElement('div');
+            userPanes._renderRecommendations(container, {
+                recommendations: [
+                    { artist: 'Some Artist', score: 0.3 },
+                ],
+            });
+
+            const link = container.querySelector('.release-list-title a');
+            expect(link).not.toBeNull();
+            expect(link.textContent).toBe('(Unknown title)');
+        });
     });
 
     describe('_renderCollectionEmpty', () => {

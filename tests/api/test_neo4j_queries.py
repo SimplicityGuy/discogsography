@@ -132,52 +132,52 @@ class TestBuildAutocompleteQuery:
 class TestRunHelpers:
     @pytest.mark.asyncio
     async def test_run_query_returns_list(self) -> None:
-        from api.queries.neo4j_queries import _run_query
+        from api.queries.helpers import run_query
 
         records = [{"id": "1", "name": "Rock"}, {"id": "2", "name": "Jazz"}]
         driver = _make_driver(records=records)
-        result = await _run_query(driver, "MATCH (n) RETURN n")
+        result = await run_query(driver, "MATCH (n) RETURN n")
         assert result == records
 
     @pytest.mark.asyncio
     async def test_run_query_empty(self) -> None:
-        from api.queries.neo4j_queries import _run_query
+        from api.queries.helpers import run_query
 
         driver = _make_driver(records=[])
-        result = await _run_query(driver, "MATCH (n) RETURN n")
+        result = await run_query(driver, "MATCH (n) RETURN n")
         assert result == []
 
     @pytest.mark.asyncio
     async def test_run_single_with_record(self) -> None:
-        from api.queries.neo4j_queries import _run_single
+        from api.queries.helpers import run_single
 
         record = {"id": "1", "name": "Radiohead"}
         driver = _make_driver(single=record)
-        result = await _run_single(driver, "MATCH (a) RETURN a LIMIT 1")
+        result = await run_single(driver, "MATCH (a) RETURN a LIMIT 1")
         assert result == record
 
     @pytest.mark.asyncio
     async def test_run_single_none(self) -> None:
-        from api.queries.neo4j_queries import _run_single
+        from api.queries.helpers import run_single
 
         driver = _make_driver(single=None)
-        result = await _run_single(driver, "MATCH (a) RETURN a LIMIT 1")
+        result = await run_single(driver, "MATCH (a) RETURN a LIMIT 1")
         assert result is None
 
     @pytest.mark.asyncio
     async def test_run_count_with_total(self) -> None:
-        from api.queries.neo4j_queries import _run_count
+        from api.queries.helpers import run_count
 
         driver = _make_driver(single={"total": 42})
-        result = await _run_count(driver, "RETURN count(*) AS total")
+        result = await run_count(driver, "RETURN count(*) AS total")
         assert result == 42
 
     @pytest.mark.asyncio
     async def test_run_count_no_record(self) -> None:
-        from api.queries.neo4j_queries import _run_count
+        from api.queries.helpers import run_count
 
         driver = _make_driver(single=None)
-        result = await _run_count(driver, "RETURN count(*) AS total")
+        result = await run_count(driver, "RETURN count(*) AS total")
         assert result == 0
 
 
@@ -274,6 +274,31 @@ class TestExploreQueries:
         driver = _make_driver(single=record)
         result = await explore_label(driver, "Warp Records")
         assert result == record
+
+    @pytest.mark.asyncio
+    async def test_explore_label_not_found(self) -> None:
+        """Label not found returns None."""
+        from api.queries.neo4j_queries import explore_label
+
+        driver = _make_driver(single=None)
+        result = await explore_label(driver, "Nonexistent Label")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_explore_label_fallback_no_precomputed(self) -> None:
+        """Label without pre-computed stats falls back to live traversal."""
+        from api.queries.neo4j_queries import explore_label
+
+        # First call: pre-computed query returns record with release_count=None
+        first_result = _MockResult(single={"id": "200", "name": "New Label", "release_count": None, "artist_count": None, "genre_count": None})
+        # Second call: fallback live traversal returns actual counts
+        fallback_result = _MockResult(single={"id": "200", "name": "New Label", "release_count": 50, "artist_count": 10, "genre_count": 3})
+        driver = _make_driver_with_side_effects([first_result, fallback_result])
+        result = await explore_label(driver, "New Label")
+        assert result is not None
+        assert result["release_count"] == 50
+        assert result["artist_count"] == 10
+        assert result["genre_count"] == 3
 
     @pytest.mark.asyncio
     async def test_explore_style(self) -> None:
@@ -1088,7 +1113,47 @@ class TestGenreEmergenceQuery:
     async def test_genre_emergence_empty_results(self) -> None:
         from api.queries.neo4j_queries import get_genre_emergence
 
-        mock_driver = _make_driver_with_side_effects([_MockResult(), _MockResult()])
+        # Fast path returns empty (no pre-computed first_year), then
+        # fallback slow path also returns empty.
+        mock_driver = _make_driver_with_side_effects(
+            [
+                _MockResult(),
+                _MockResult(),  # fast path (empty)
+                _MockResult(),
+                _MockResult(),  # slow fallback (empty)
+            ]
+        )
 
         result = await get_genre_emergence(mock_driver, 2000)
         assert result == {"genres": [], "styles": []}
+
+
+# ---------------------------------------------------------------------------
+# get_graph_stats
+# ---------------------------------------------------------------------------
+
+
+class TestGraphStatsQuery:
+    @pytest.mark.asyncio
+    async def test_graph_stats_returns_counts(self) -> None:
+        from api.queries.neo4j_queries import get_graph_stats
+
+        records = [
+            {"label": "artists", "cnt": 1000},
+            {"label": "labels", "cnt": 500},
+            {"label": "releases", "cnt": 5000},
+            {"label": "masters", "cnt": 2000},
+            {"label": "genres", "cnt": 15},
+            {"label": "styles", "cnt": 300},
+        ]
+        driver = _make_driver(records=records)
+        result = await get_graph_stats(driver)
+        assert result == {"artists": 1000, "labels": 500, "releases": 5000, "masters": 2000, "genres": 15, "styles": 300}
+
+    @pytest.mark.asyncio
+    async def test_graph_stats_empty_graph(self) -> None:
+        from api.queries.neo4j_queries import get_graph_stats
+
+        driver = _make_driver(records=[])
+        result = await get_graph_stats(driver)
+        assert result == {}

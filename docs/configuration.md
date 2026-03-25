@@ -33,7 +33,9 @@ nano .env
 Export variables in your shell:
 
 ```bash
-export AMQP_CONNECTION="amqp://discogsography:discogsography@localhost:5672/"
+export RABBITMQ_HOST="localhost"
+export RABBITMQ_USERNAME="discogsography"
+export RABBITMQ_PASSWORD="discogsography"
 export NEO4J_HOST="localhost"
 # ... other variables
 ```
@@ -68,7 +70,7 @@ services:
 
 ### RabbitMQ Configuration
 
-The AMQP connection URL is built automatically from component variables — do **not** set `AMQP_CONNECTION` directly.
+RabbitMQ connections are configured using individual component variables.
 
 | Variable            | Description        | Default          | Required |
 | ------------------- | ------------------ | ---------------- | -------- |
@@ -400,14 +402,14 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 
 ## Batch Processing Configuration
 
-| Variable                        | Description                              | Default | Range      |
-| ------------------------------- | ---------------------------------------- | ------- | ---------- |
-| `NEO4J_BATCH_MODE`              | Enable batch processing for Neo4j writes | `true`  | true/false |
-| `NEO4J_BATCH_SIZE`              | Records per batch for Neo4j              | `100`   | 10-1000    |
-| `NEO4J_BATCH_FLUSH_INTERVAL`    | Seconds between automatic flushes        | `5.0`   | 1.0-60.0   |
-| `POSTGRES_BATCH_MODE`           | Enable batch processing for PostgreSQL   | `true`  | true/false |
-| `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL         | `100`   | 10-1000    |
-| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes        | `5.0`   | 1.0-60.0   |
+| Variable                        | Description                              | Code Default | Docker Compose | Range      |
+| ------------------------------- | ---------------------------------------- | ------------ | -------------- | ---------- |
+| `NEO4J_BATCH_MODE`              | Enable batch processing for Neo4j writes | `true`       | `true`         | true/false |
+| `NEO4J_BATCH_SIZE`              | Records per batch for Neo4j              | `100`        | `500`          | 10-1000    |
+| `NEO4J_BATCH_FLUSH_INTERVAL`    | Seconds between automatic flushes        | `5.0`        | `2.0`          | 1.0-60.0   |
+| `POSTGRES_BATCH_MODE`           | Enable batch processing for PostgreSQL   | `true`       | `true`         | true/false |
+| `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL         | `100`        | `500`          | 10-1000    |
+| `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes        | `5.0`        | `2.0`          | 1.0-60.0   |
 
 **Used By**: Graphinator (Neo4j), Tableinator (PostgreSQL)
 
@@ -572,7 +574,7 @@ LOG_LEVEL=INFO
 # Required
 DISCOGS_ROOT="/discogs-data"
 
-# RabbitMQ (built from components — do not set AMQP_CONNECTION)
+# RabbitMQ
 RABBITMQ_HOST=rabbitmq           # default: rabbitmq
 RABBITMQ_USERNAME=discogsography # default: discogsography
 RABBITMQ_PASSWORD=discogsography # default: discogsography
@@ -594,7 +596,7 @@ NEO4J_HOST="localhost"
 NEO4J_USERNAME="neo4j"
 NEO4J_PASSWORD="discogsography"
 
-# RabbitMQ (built from components — do not set AMQP_CONNECTION)
+# RabbitMQ
 RABBITMQ_HOST=rabbitmq           # default: rabbitmq
 RABBITMQ_USERNAME=discogsography # default: discogsography
 RABBITMQ_PASSWORD=discogsography # default: discogsography
@@ -624,7 +626,7 @@ POSTGRES_USERNAME="discogsography"
 POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
 
-# RabbitMQ (built from components — do not set AMQP_CONNECTION)
+# RabbitMQ
 RABBITMQ_HOST=rabbitmq           # default: rabbitmq
 RABBITMQ_USERNAME=discogsography # default: discogsography
 RABBITMQ_PASSWORD=discogsography # default: discogsography
@@ -671,7 +673,7 @@ POSTGRES_PASSWORD="discogsography"
 POSTGRES_DATABASE="discogsography"
 REDIS_HOST="localhost"
 
-# RabbitMQ (built from components — do not set AMQP_CONNECTION)
+# RabbitMQ
 RABBITMQ_HOST=rabbitmq           # default: rabbitmq
 RABBITMQ_USERNAME=discogsography # default: discogsography
 RABBITMQ_PASSWORD=discogsography # default: discogsography
@@ -882,16 +884,6 @@ POSTGRES_USERNAME=discogsography_app
 
 ## Validation and Testing
 
-### Validate Configuration
-
-```bash
-# Check if all required variables are set
-./scripts/check-config.sh
-
-# Test database connections
-./scripts/test-connections.sh
-```
-
 ### Health Checks
 
 Verify all services are configured correctly:
@@ -956,4 +948,4 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-18
+**Last Updated**: 2026-03-20

@@ -50,6 +50,8 @@ flowchart TD
 
 > **Note**: ✅ indicates optimizations that are implemented and enabled by default.
 
+> 📖 **For detailed Neo4j Cypher query optimization results**, see the [Query Performance Optimizations](query-performance-optimizations.md) report — documenting 11 optimization rounds that achieved a **249x overall improvement** (10.95s → 0.044s average across 88 endpoints).
+
 ## 🔍 Profiling & Monitoring
 
 ### Performance Profiling
@@ -123,6 +125,114 @@ async def monitor_resources():
         await asyncio.sleep(30)  # Log every 30 seconds
 ```
 
+## 🗄️ Neo4j Cypher Query Optimization
+
+The API service executes Cypher queries against a Neo4j graph with ~33.8M nodes and ~134M relationships. Optimization was critical — the original queries averaged 10.95s; after 11 rounds they average 0.044s (249x improvement).
+
+### Key Techniques
+
+```mermaid
+flowchart TD
+    Problem[Slow Cypher Query]
+    Profile[PROFILE the query]
+
+    Problem --> Profile
+
+    Profile --> Check{Check execution plan}
+
+    Check -->|CartesianProduct| Fix1["Use CALL {} subquery<br/>or pattern comprehension<br/>to force traversal order"]
+    Check -->|AllNodesScan| Fix2["Add index on<br/>filtered property"]
+    Check -->|High DB Hits<br/>on aggregation| Fix3["Pre-compute aggregates<br/>as node properties<br/>at import time"]
+    Check -->|N+1 pattern<br/>many Apply ops| Fix4["Batch with UNWIND<br/>or asyncio.gather()"]
+    Check -->|Acceptable plan<br/>but slow| Fix5["Add Redis caching<br/>(cache-aside pattern)"]
+
+    Fix1 --> Verify[PROFILE again]
+    Fix2 --> Verify
+    Fix3 --> Verify
+    Fix4 --> Verify
+    Fix5 --> Verify
+
+    Verify --> Done{DB Hits reduced?}
+    Done -->|Yes| Monitor[Deploy & monitor]
+    Done -->|No| Profile
+
+    style Problem fill:#fce4ec,stroke:#e91e63
+    style Monitor fill:#e8f5e9,stroke:#4caf50
+    style Verify fill:#e3f2fd,stroke:#2196f3
+```
+
+#### 1. CALL {} Subqueries to Control the Planner
+
+The Neo4j planner can see through `WITH` barriers and choose unexpected plans (e.g., CartesianProduct scanning 16M releases instead of expanding from 1 genre node). CALL {} subqueries create stronger barriers:
+
+```cypher
+-- GOOD: forces genre-first expansion
+MATCH (g:Genre {name: $name})
+CALL {
+    WITH g
+    MATCH (g)<-[:IS]-(r:Release)
+    WHERE r.year > 0
+    RETURN r.year AS year, count(DISTINCT r) AS count
+}
+RETURN year, count ORDER BY year
+```
+
+#### 2. Pre-Computed Node Properties
+
+For expensive aggregate queries that only change on data import, compute results during the graphinator post-import step and store as node properties:
+
+```cypher
+-- At import time: compute once
+SET g.release_count = count, g.artist_count = count, ...
+
+-- At query time: read properties (6 DB hits vs 200M)
+MATCH (g:Genre {name: $name})
+RETURN g.release_count, g.artist_count, g.label_count, g.style_count
+```
+
+#### 3. Relationship Type Filtering on shortestPath
+
+Always specify explicit relationship types to limit BFS scope:
+
+```cypher
+-- 70s → 0.3s by excluding irrelevant relationship types
+MATCH p = shortestPath((a)-[:BY|ON|IS|ALIAS_OF|MEMBER_OF|MASTER_OF|DERIVED_FROM*..6]-(b))
+```
+
+#### 4. Redis Cache-Aside Pattern
+
+For queries that are expensive on first call but stable between data imports:
+
+```python
+# Check cache → query DB → store → return
+cached = await redis.get(cache_key)
+if cached:
+    return json.loads(cached)
+result = await run_query(...)
+await redis.setex(cache_key, TTL_24H, json.dumps(result))
+return result
+```
+
+#### 5. Batch Queries with asyncio.gather()
+
+Replace N+1 query patterns with concurrent batch queries:
+
+```python
+# BAD: 200 sequential queries
+for candidate in candidates:
+    profile = await get_profile(candidate.id)
+
+# GOOD: 4 concurrent dimension queries
+genres, styles, labels, collabs = await asyncio.gather(
+    batch_genre_query(candidate_ids),
+    batch_style_query(candidate_ids),
+    batch_label_query(candidate_ids),
+    batch_collab_query(candidate_ids),
+)
+```
+
+> 📖 See [Query Performance Optimizations](query-performance-optimizations.md) for the complete optimization report with per-endpoint measurements.
+
 ## 🚀 Optimization Strategies
 
 ### 1. XML Parsing Optimization
@@ -153,13 +263,14 @@ The extractor publishes to 4 fanout exchanges (one per data type). Each consumer
 
 ```python
 # Configured via environment variables (enabled by default)
+# Code defaults shown; docker-compose.yml overrides to 500/2.0 for production
 NEO4J_BATCH_MODE=true           # Enable batch processing
-NEO4J_BATCH_SIZE=100            # Records per batch
-NEO4J_BATCH_FLUSH_INTERVAL=5.0  # Seconds between flushes
+NEO4J_BATCH_SIZE=500            # Records per batch (docker-compose default)
+NEO4J_BATCH_FLUSH_INTERVAL=2.0  # Seconds between flushes (docker-compose default)
 
 POSTGRES_BATCH_MODE=true           # Enable batch processing
-POSTGRES_BATCH_SIZE=100            # Records per batch
-POSTGRES_BATCH_FLUSH_INTERVAL=5.0  # Seconds between flushes
+POSTGRES_BATCH_SIZE=500            # Records per batch (docker-compose default)
+POSTGRES_BATCH_FLUSH_INTERVAL=2.0  # Seconds between flushes (docker-compose default)
 ```
 
 **How it works:**
@@ -191,7 +302,7 @@ NEO4J_BATCH_FLUSH_INTERVAL=1.0
 POSTGRES_BATCH_SIZE=10
 POSTGRES_BATCH_FLUSH_INTERVAL=1.0
 
-# Balanced (default - good for most use cases)
+# Balanced (docker-compose default - good for most use cases)
 NEO4J_BATCH_SIZE=500
 NEO4J_BATCH_FLUSH_INTERVAL=2.0
 POSTGRES_BATCH_SIZE=500
@@ -378,6 +489,31 @@ class AsyncCache:
             return value
 ```
 
+## 🏎️ Recent Performance Improvements
+
+### Neo4j Rust Driver Extension (#173)
+
+Switched to `neo4j-rust-ext`, a Rust-backed extension for the Neo4j Python driver, delivering up to 10x faster Bolt protocol handling. This is a drop-in replacement that accelerates serialization/deserialization between Python and the Neo4j wire protocol.
+
+### Query Debug Profiling (#174)
+
+Added query profiling infrastructure for both Cypher and SQL queries. The perftest suite now covers additional API endpoints and generates detailed latency reports (p50, p95, p99) with query plan inspection via `EXPLAIN`/`PROFILE`.
+
+### Cypher Query Optimization (#175)
+
+Optimized the 6 slowest Cypher queries identified by the profiling infrastructure, achieving 10-100x fewer database hits per query through better index usage, reduced relationship traversals, and more targeted `MATCH` patterns.
+
+### Performance Testing
+
+The `tests/perftest/` suite provides automated performance regression testing:
+
+- **Configurable endpoints**: `tests/perftest/config.yaml` defines test entities and parameters
+- **Statistical accuracy**: Each endpoint is called multiple times for reliable measurements
+- **Containerized**: `tests/perftest/Dockerfile` for isolated test runs
+- **Results tracking**: Historical results stored in `perftest-results/`
+
+When adding new API endpoints that query Neo4j or PostgreSQL, add corresponding entries to the perftest configuration.
+
 ## 📊 Performance Metrics
 
 ### Key Metrics to Track
@@ -528,4 +664,4 @@ ______________________________________________________________________
 
 Remember: Measure first, optimize second. Focus on bottlenecks that matter! 🚀
 
-**Last Updated**: 2026-03-07
+**Last Updated**: 2026-03-20

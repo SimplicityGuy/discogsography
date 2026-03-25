@@ -56,7 +56,7 @@ ARG GID=1000
 FROM python:${PYTHON_VERSION}-slim AS builder
 
 # Install uv
-COPY --from=ghcr.io/astral-sh/uv:0.10.11 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.1 /uv /bin/uv
 
 # Set environment for build
 ENV UV_SYSTEM_PYTHON=1 \
@@ -104,7 +104,7 @@ WORKDIR /app
 COPY --from=builder --chown=discogsography:discogsography /app /app
 
 # Install uv for runtime
-COPY --from=ghcr.io/astral-sh/uv:0.10.11 /uv /bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.1 /uv /bin/uv
 
 # Create startup script
 # [Startup script section - see below]
@@ -242,7 +242,9 @@ ENV HOME=/home/discogsography \
     UV_SYSTEM_PYTHON=1 \
     UV_NO_CACHE=1 \
     PATH="/app/.venv/bin:$PATH" \
-    AMQP_CONNECTION=""
+    RABBITMQ_HOST="" \
+    RABBITMQ_USERNAME="" \
+    RABBITMQ_PASSWORD=""
 ```
 
 Service-specific additions:

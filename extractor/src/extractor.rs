@@ -14,6 +14,7 @@ use crate::config::ExtractorConfig;
 use crate::downloader::{DataSource, Downloader};
 use crate::message_queue::{MessagePublisher, MessageQueue};
 use crate::parser::XmlParser;
+use crate::rules::{CompiledRulesConfig, FlaggedRecordWriter, QualityReport, Severity, evaluate_rules};
 use crate::state_marker::{PhaseStatus, ProcessingDecision, StateMarker};
 use crate::types::{DataMessage, DataType, ExtractionProgress};
 
@@ -74,6 +75,7 @@ pub async fn process_discogs_data(
     force_reprocess: bool,
     downloader: &mut dyn DataSource,
     mq_factory: Arc<dyn MessageQueueFactory>,
+    compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<bool> {
     // Record extraction start time for consumer cleanup coordination
     let extraction_started_at = chrono::Utc::now();
@@ -99,7 +101,8 @@ pub async fn process_discogs_data(
     }
 
     // Extract version from first filename
-    let first_filename = Path::new(&latest_files[0].name)
+    // `latest_files[0].name` is an S3 object key from the Discogs public bucket — operator-controlled, not user input.
+    let first_filename = Path::new(&latest_files[0].name) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
         .file_name()
         .and_then(|n| n.to_str())
         .ok_or_else(|| anyhow::anyhow!("Invalid filename"))?;
@@ -201,12 +204,13 @@ pub async fn process_discogs_data(
         let marker_path = marker_path.clone();
         let state_marker_arc = state_marker_arc.clone();
         let mq_factory = mq_factory.clone();
+        let compiled_rules = compiled_rules.clone();
 
         let task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
             let mq = mq_factory.create(&config.amqp_connection).await.context("Failed to connect to message queue")?;
 
-            process_single_file(&file, config, state, state_marker_arc.clone(), marker_path.clone(), mq).await?;
+            process_single_file(&file, config, state, state_marker_arc.clone(), marker_path.clone(), mq, compiled_rules).await?;
 
             info!("✅ Completed processing: {}", file);
             Ok(())
@@ -302,6 +306,7 @@ pub async fn process_single_file(
     state_marker: Arc<tokio::sync::Mutex<StateMarker>>,
     marker_path: PathBuf,
     mq: Arc<dyn MessagePublisher>,
+    compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<()> {
     // Extract data type from filename
     let data_type = extract_data_type(file_name).ok_or_else(|| anyhow::anyhow!("Invalid file format: {}", file_name))?;
@@ -329,16 +334,22 @@ pub async fn process_single_file(
     let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
     let (batch_sender, batch_receiver) = mpsc::channel::<Vec<DataMessage>>(100);
 
-    // Start workers
-    let parser_handle = tokio::spawn({
-        let file_path = config.discogs_root.join(file_name);
-        async move {
-            let parser = XmlParser::new(data_type, parse_sender);
-            parser.parse_file(&file_path).await
-        }
-    });
+    // Start workers — with optional validator stage between parser and batcher
+    let file_base_name = Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or(file_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+    let version = extract_version_from_filename(file_base_name).unwrap_or_else(|| "unknown".to_string());
 
-    let batcher_handle = tokio::spawn({
+    let validator_handle = if let Some(rules) = compiled_rules {
+        let (validated_sender, validated_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
+        let rules = rules.clone();
+        let discogs_root = config.discogs_root.clone();
+        let version_clone = version.clone();
+        let data_type_str = data_type.as_str().to_string();
+
+        let handle =
+            tokio::spawn(
+                async move { message_validator(parse_receiver, validated_sender, rules, &data_type_str, &discogs_root, &version_clone).await },
+            );
+
         let batcher_config = BatcherConfig {
             batch_size: config.batch_size,
             data_type,
@@ -348,19 +359,71 @@ pub async fn process_single_file(
             file_name: file_name.to_string(),
             state_save_interval: config.state_save_interval,
         };
-        async move { message_batcher(parse_receiver, batch_sender, batcher_config).await }
-    });
+        let batcher_handle = tokio::spawn(async move { message_batcher(validated_receiver, batch_sender, batcher_config).await });
 
-    let publisher_handle = tokio::spawn({
-        let mq = mq.clone();
-        let state = state.clone();
-        async move { message_publisher(batch_receiver, mq, data_type, state).await }
-    });
+        let parser_handle = tokio::spawn({
+            let file_path = config.discogs_root.join(file_name); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            async move {
+                let parser = XmlParser::with_options(data_type, parse_sender, true);
+                parser.parse_file(&file_path).await
+            }
+        });
 
-    // Wait for all workers to complete
-    let total_count = parser_handle.await??;
-    batcher_handle.await??;
-    publisher_handle.await??;
+        let publisher_handle = tokio::spawn({
+            let mq = mq.clone();
+            let state = state.clone();
+            async move { message_publisher(batch_receiver, mq, data_type, state).await }
+        });
+
+        let total_count = parser_handle.await??;
+        let report: QualityReport = handle.await??;
+        batcher_handle.await??;
+        publisher_handle.await??;
+
+        if report.has_violations() {
+            // file_name comes from S3 file listing (operator-controlled, not user input)
+            let version_for_report = extract_version_from_filename(
+                Path::new(file_name).file_name().and_then(|n| n.to_str()).unwrap_or(""), // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            )
+            .unwrap_or_default();
+            info!("{}", report.format_summary(&version_for_report));
+        }
+
+        Some(total_count)
+    } else {
+        let parser_handle = tokio::spawn({
+            let file_path = config.discogs_root.join(file_name);
+            async move {
+                let parser = XmlParser::new(data_type, parse_sender);
+                parser.parse_file(&file_path).await
+            }
+        });
+
+        let batcher_config = BatcherConfig {
+            batch_size: config.batch_size,
+            data_type,
+            state: state.clone(),
+            state_marker: state_marker.clone(),
+            marker_path: marker_path.clone(),
+            file_name: file_name.to_string(),
+            state_save_interval: config.state_save_interval,
+        };
+        let batcher_handle = tokio::spawn(async move { message_batcher(parse_receiver, batch_sender, batcher_config).await });
+
+        let publisher_handle = tokio::spawn({
+            let mq = mq.clone();
+            let state = state.clone();
+            async move { message_publisher(batch_receiver, mq, data_type, state).await }
+        });
+
+        let total_count = parser_handle.await??;
+        batcher_handle.await??;
+        publisher_handle.await??;
+
+        Some(total_count)
+    };
+
+    let total_count = validator_handle.unwrap_or(0);
 
     // Mark file as completed in state marker FIRST (consistent with Python)
     {
@@ -473,6 +536,38 @@ pub async fn message_batcher(mut receiver: mpsc::Receiver<DataMessage>, sender: 
     Ok(())
 }
 
+/// Validate messages against data quality rules.
+/// All messages are forwarded downstream regardless of violations.
+pub async fn message_validator(
+    mut receiver: mpsc::Receiver<DataMessage>,
+    sender: mpsc::Sender<DataMessage>,
+    rules: Arc<CompiledRulesConfig>,
+    data_type: &str,
+    discogs_root: &Path,
+    version: &str,
+) -> Result<QualityReport> {
+    let mut report = QualityReport::new();
+    let mut writer = FlaggedRecordWriter::new(discogs_root, version);
+
+    while let Some(message) = receiver.recv().await {
+        report.increment_total(data_type);
+        let violations = evaluate_rules(&rules, data_type, &message.data);
+        for violation in &violations {
+            report.record_violation(data_type, &violation.rule_name, &violation.severity);
+            let capture_files = matches!(violation.severity, Severity::Error | Severity::Warning);
+            writer.write_violation(data_type, &message.id, violation, message.raw_xml.as_deref(), &message.data, capture_files);
+        }
+        if sender.send(message).await.is_err() {
+            warn!("⚠️ Validator: downstream receiver dropped");
+            break;
+        }
+    }
+
+    writer.flush();
+    writer.write_report(&report, version);
+    Ok(report)
+}
+
 /// Publish batched messages to AMQP
 pub async fn message_publisher(
     mut receiver: mpsc::Receiver<Vec<DataMessage>>,
@@ -583,12 +678,22 @@ pub async fn run_extraction_loop(
     force_reprocess: bool,
     mq_factory: Arc<dyn MessageQueueFactory>,
     trigger: Arc<std::sync::atomic::AtomicBool>,
+    compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<()> {
     info!("📥 Starting initial data processing...");
 
     // Process initial data
     let mut downloader = Downloader::new(config.discogs_root.clone()).await?;
-    let success = process_discogs_data(config.clone(), state.clone(), shutdown.clone(), force_reprocess, &mut downloader, mq_factory.clone()).await?;
+    let success = process_discogs_data(
+        config.clone(),
+        state.clone(),
+        shutdown.clone(),
+        force_reprocess,
+        &mut downloader,
+        mq_factory.clone(),
+        compiled_rules.clone(),
+    )
+    .await?;
 
     if !success {
         error!("❌ Initial data processing failed");
@@ -614,7 +719,7 @@ pub async fn run_extraction_loop(
                         continue;
                     }
                 };
-                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), false, &mut downloader, mq_factory.clone()).await {
+                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), false, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => {
                         info!("✅ Periodic check completed successfully in {:?}", start.elapsed());
                     }
@@ -636,7 +741,7 @@ pub async fn run_extraction_loop(
                         continue;
                     }
                 };
-                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), false, &mut downloader, mq_factory.clone()).await {
+                match process_discogs_data(config.clone(), state.clone(), shutdown.clone(), false, &mut downloader, mq_factory.clone(), compiled_rules.clone()).await {
                     Ok(true) => info!("✅ Triggered extraction completed successfully in {:?}", start.elapsed()),
                     Ok(false) => error!("❌ Triggered extraction completed with errors"),
                     Err(e) => error!("❌ Triggered extraction failed: {}", e),

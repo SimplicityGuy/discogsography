@@ -26,6 +26,7 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🔍](emoji-guide.md#service-identifiers) Explore**     | Static frontend files and health check      | `FastAPI`, `Tailwind CSS`, `Alpine.js`, `D3.js`, `Plotly.js` | 8006, 8007 (internal) |
 | **[📊](emoji-guide.md#service-identifiers) Dashboard**   | Real-time system monitoring                 | `FastAPI`, WebSocket, reactive UI                            | 8003 (ext)            |
 | **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends      | `FastAPI`, `psycopg3`, `httpx`                               | 8008, 8009 (internal) |
+| **[🤖](emoji-guide.md#service-identifiers) MCP Server**  | Exposes knowledge graph to AI assistants    | `FastMCP`, `httpx`                                           | stdio / streamable-http |
 
 ### Infrastructure Components
 
@@ -34,25 +35,24 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[🐰](emoji-guide.md#service-identifiers) RabbitMQ**   | Message broker and queue management   | 5672, 15672   |
 | **[🔗](emoji-guide.md#service-identifiers) Neo4j**      | Graph database for relationships      | 7474, 7687    |
 | **[🐘](emoji-guide.md#service-identifiers) PostgreSQL** | Relational database for analytics     | 5433 (mapped) |
-| **[🔴](emoji-guide.md#service-identifiers) Redis**      | Cache layer for queries and ML models | 6379          |
+| **[🔴](emoji-guide.md#service-identifiers) Redis**      | Cache layer for queries, sessions, and analytics | 6379          |
 
-## System Architecture Diagram
+## System Architecture Diagrams
+
+### Data Pipeline
+
+Shows the ingestion flow from Discogs data dumps through extraction, message distribution, and persistence into both databases.
 
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~11.3GB XML")]
-    EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     SCHEMA[["🔧 Schema-Init<br/>One-Shot DB<br/>Schema Initialiser"]]
+    EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
     RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>4 Fanout Exchanges"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
-    REDIS[("🔴 Redis<br/>Cache Layer<br/>Query Cache")]
     GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
-    DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
-    EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
-    API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
-    INSIGHTS[["📈 Insights<br/>Precomputed Analytics<br/>Music Trends"]]
 
     SCHEMA -->|0. Create schemas| NEO4J
     SCHEMA -->|0. Create schemas| PG
@@ -63,38 +63,117 @@ graph TD
     GRAPH -->|4a. Build Graph| NEO4J
     TABLE -->|4b. Store Data| PG
 
+    style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style SCHEMA fill:#f9fbe7,stroke:#827717,stroke-width:2px
+    style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
+    style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```
+
+### Service Communication
+
+Shows how user-facing services interact with each other and with the storage layer at runtime.
+
+```mermaid
+graph TD
+    NEO4J[("🔗 Neo4j 2026<br/>Graph Database")]
+    PG[("🐘 PostgreSQL 18<br/>Analytics DB")]
+    REDIS[("🔴 Redis<br/>Cache Layer")]
+
+    EXPLORE[["🔍 Explore<br/>Graph Explorer<br/>Trends & Paths"]]
+    API[["🔐 API<br/>User Auth<br/>JWT & OAuth"]]
+    INSIGHTS[["📈 Insights<br/>Precomputed Analytics<br/>Music Trends"]]
+    DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
+
     EXPLORE -.->|Proxy /api/*| API
 
     API -.->|User Accounts| PG
     API -.->|Graph Queries| NEO4J
     API -.->|OAuth State + Snapshots| REDIS
 
+    API -.->|Proxy /api/insights/*| INSIGHTS
+    INSIGHTS -.->|Fetch /api/internal/*| API
+    INSIGHTS -.->|Store Results| PG
+    INSIGHTS -.->|Cache Results| REDIS
+
+    DASH -.->|Cache| REDIS
+    DASH -.->|Stats| NEO4J
+    DASH -.->|Stats| PG
+
+    style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
+    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
+    style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+    style INSIGHTS fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```
+
+### Dashboard Monitoring
+
+Shows the Dashboard service's monitoring connections to all pipeline services and infrastructure.
+
+```mermaid
+graph TD
+    DASH[["📊 Dashboard<br/>Real-time Monitor<br/>WebSocket"]]
+
+    EXT[["⚡ Extractor"]]
+    GRAPH[["🔗 Graphinator"]]
+    TABLE[["🐘 Tableinator"]]
+    EXPLORE[["🔍 Explore"]]
+
+    RMQ{{"🐰 RabbitMQ"}}
+    NEO4J[("🔗 Neo4j")]
+    PG[("🐘 PostgreSQL")]
+    REDIS[("🔴 Redis")]
+
     DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
     DASH -.->|Monitor| EXPLORE
-    DASH -.->|Cache| REDIS
     DASH -.->|Stats| RMQ
     DASH -.->|Stats| NEO4J
     DASH -.->|Stats| PG
+    DASH -.->|Cache| REDIS
 
-    API -.->|Proxy /api/insights/*| INSIGHTS
-    INSIGHTS -.->|Fetch /api/internal/*| API
-    INSIGHTS -.->|Store Results| PG
-
-    style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
-    style SCHEMA fill:#f9fbe7,stroke:#827717,stroke-width:2px
+    style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
     style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
-    style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
-    style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
-    style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
-    style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+```
+
+### MCP Server Integration
+
+Shows how the MCP server connects AI assistants to the knowledge graph through the API service.
+
+```mermaid
+graph LR
+    AI["🤖 AI Assistant<br/>(Claude, Cursor, Zed)"]
+    MCP[["🤖 MCP Server<br/>11 tools<br/>stdio / HTTP"]]
+    API[["🔐 API<br/>FastAPI"]]
+
+    NEO4J[("🔗 Neo4j")]
+    PG[("🐘 PostgreSQL")]
+    REDIS[("🔴 Redis")]
+
+    AI <-->|MCP Protocol| MCP
+    MCP -->|httpx| API
+    API --- NEO4J & PG & REDIS
+
+    style AI fill:#e8eaf6,stroke:#283593,stroke-width:2px
+    style MCP fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
     style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
-    style INSIGHTS fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
+    style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
 ```
 
 ## Data Flow
@@ -144,6 +223,7 @@ See [Database Schema — Extractor Message Format](database-schema.md#extractor-
 - Creates nodes: Artist, Label, Release, Master, Genre, Style
 - Builds relationships: BY, ON, MEMBER_OF, DERIVED_FROM, etc.
 - On `extraction_complete`: deletes stub nodes (no `sha256` property) created by cross-type MERGE operations
+- **Post-import computation** (after releases complete): Runs `compute_genre_style_stats()` to pre-compute aggregate properties on Genre and Style nodes (release_count, artist_count, label_count, style_count/genre_count, first_year). Uses `CALL {} IN TRANSACTIONS OF 1 ROWS` to process each node in its own transaction (avoids 120s timeout for mega-genres like Rock/Electronic). These properties replace expensive runtime traversals (~200M DB hits → 6 DB hits per query).
 
 **Tableinator** (PostgreSQL):
 
@@ -167,12 +247,22 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 
 **API Service** (new feature endpoints):
 
-- Path finder (`/api/explore/path`)
+- Path finder (`/api/path`)
 - Unified full-text search (`/api/search`)
-- Label DNA fingerprinting and comparison (`/api/label-dna/*`)
+- Label DNA fingerprinting and comparison (`/api/label/{label_id}/dna`, `/api/label/{label_id}/similar`, `/api/label/dna/compare`)
 - Taste fingerprint analytics (`/api/user/taste/*`)
 - Vinyl Archaeology time-travel filtering (`/api/explore/year-range`, `/api/explore/genre-emergence`, `before_year` parameter on `/api/expand`)
 - Collection timeline evolution (`/api/user/collection/timeline`, `/api/user/collection/evolution`)
+- Recommendation engine (`/api/recommend/similar/artist/{artist_id}` — find similar artists via shared genres/styles, `/api/recommend/explore/{entity_type}/{entity_id}` — explore-from-here discovery)
+- Collaborator network (`/api/collaborators/{artist_id}` — artists sharing releases, with temporal breakdown)
+- Genre tree hierarchy (`/api/genre-tree` — genre/style tree derived from release co-occurrence)
+- Graph statistics (`/api/graph/stats` — aggregate node counts across all entity types)
+
+**MCP Server** (AI assistant integration):
+
+- Thin HTTP client that proxies all 11 tools through the API service — no direct database access
+- Tools: search, entity details (artist/label/release/genre/style), path finder, trends, graph stats, collaborators, genre tree
+- Transports: stdio (Claude Desktop, Cursor, Zed) or streamable-http (hosted)
 
 **Insights Service** (precomputed analytics):
 
@@ -221,7 +311,8 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 
 - `DISCOGS_ROOT`: Data storage directory
 - `PERIODIC_CHECK_DAYS`: Update check interval
-- `AMQP_CONNECTION`: RabbitMQ connection string
+- `RABBITMQ_HOST`: RabbitMQ hostname
+- `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`: RabbitMQ auth credentials
 
 See [Extractor README](../extractor/README.md) for details.
 
@@ -255,6 +346,7 @@ See [Extractor README](../extractor/README.md) for details.
 - Create nodes and relationships
 - Maintain graph indexes
 - Handle schema evolution
+- Pre-compute aggregate statistics on Genre/Style nodes after release import
 
 **Key Features**:
 
@@ -262,6 +354,7 @@ See [Extractor README](../extractor/README.md) for details.
 - Batch transaction processing
 - Connection resilience with retry logic
 - Smart consumer lifecycle management
+- **Post-import aggregation**: `compute_genre_style_stats()` sets 5 pre-computed properties (release_count, artist_count, label_count, style_count/genre_count, first_year) on each Genre and Style node using `CALL {} IN TRANSACTIONS OF 1 ROWS`
 
 **Configuration**:
 
@@ -382,6 +475,13 @@ See [Insights README](../insights/README.md) for details.
 - Collection gap analysis (`/api/collection/gaps/{type}/{id}`, `/api/collection/formats`)
 - Collection and wantlist sync (`/api/sync`, `/api/sync/status`)
 - Graph snapshot save/restore (`/api/snapshot`, `/api/snapshot/{token}`)
+- Recommendation endpoints (`/api/recommend/similar/artist/{artist_id}`, `/api/recommend/explore/{entity_type}/{entity_id}`)
+- Label DNA endpoints (`/api/label/{id}/dna`, `/api/label/{id}/similar`, `/api/label/dna/compare`)
+- Taste fingerprint endpoints (`/api/user/taste/*`)
+- Unified full-text search (`/api/search`)
+- Collection timeline and evolution (`/api/user/collection/timeline`, `/api/user/collection/evolution`)
+- Vinyl Archaeology endpoints (`/api/explore/year-range`, `/api/explore/genre-emergence`)
+- Path finder (`/api/path`)
 - Reads Discogs app credentials from `app_config` table (set via `discogs-setup` CLI)
 
 **Key Features**:
@@ -554,10 +654,21 @@ See [Database Schema](database-schema.md) for details.
 - Insights computation results (Insights — TTL matches schedule interval, invalidated after each run)
 - Query result caching (Dashboard)
 - Dashboard metrics
+- **API query result caching** (cache-aside pattern):
+
+| Cache Key Pattern                    | TTL | Endpoints Covered               |
+| ------------------------------------ | --- | ------------------------------- |
+| `trends:{type}:{name}`               | 24h | `/api/trends?type=genre\|style` |
+| `label-dna:{label_id}`               | 24h | `/api/label/{id}/dna`           |
+| `label-similar:{label_id}:{limit}`   | 24h | `/api/label/{id}/similar`       |
+| `recommend:similar:artist:{artist_id}` | 24h | `/api/recommend/similar/artist/{artist_id}` |
+| `explore-artist:{name}`              | 24h | `/api/explore?type=artist`      |
+| `trends-label:{label_id}`            | 24h | `/api/trends?type=label`        |
+| `search:{md5_digest}`                | 5m  | `/api/search`                   |
 
 **Configuration**:
 
-- Default TTL: 1 hour
+- Default TTL: varies by cache type (see table above)
 - Max memory: Configurable
 - Eviction policy: LRU
 
@@ -668,7 +779,7 @@ See [Monitoring](monitoring.md) for details.
 |   **ALIAS_OF**    | ~4.9 million  | Artist → Artist (aliases)          |
 |   **MEMBER_OF**   | ~2.3 million  | Artist → Artist (group membership) |
 |  **SUBLABEL_OF**  |     ~278K     | Label → Label (parent/child)       |
-|    **PART_OF**    |     ~10K      | Series relationships               |
+|    **PART_OF**    |     ~10K      | Style → Genre membership           |
 
 </div>
 
@@ -699,9 +810,11 @@ See [Monitoring](monitoring.md) for details.
 - Prefetch count tuning
 - Connection pool sizing
 - Index optimization
-- Query caching strategies
+- Query caching strategies (Redis cache-aside pattern)
+- Pre-computed aggregate properties on graph nodes
+- Neo4j Cypher query plan optimization (CALL {} barriers, pattern comprehension)
 
-See [Performance Guide](performance-guide.md) for details.
+See [Performance Guide](performance-guide.md) for general strategies and [Query Performance Optimizations](query-performance-optimizations.md) for the detailed Cypher optimization report (249x overall improvement).
 
 ## Deployment Options
 
@@ -749,4 +862,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-18
+**Last Updated**: 2026-03-23

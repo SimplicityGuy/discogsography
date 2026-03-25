@@ -46,7 +46,17 @@ jobs:
           uv pip install -e schema-init
 
       - name: 🔍 Run pip-audit (Python dependency vulnerability scan)
-        run: uv run pip-audit --desc
+        run: |
+          IGNORE_ARGS=""
+          if [[ -f .pip-audit-ignores ]]; then
+            while IFS= read -r line; do
+              vuln_id=$(echo "$line" | sed 's/#.*//' | tr -d '[:space:]')
+              [[ -z "$vuln_id" ]] && continue
+              IGNORE_ARGS="$IGNORE_ARGS --ignore-vuln $vuln_id"
+            done < .pip-audit-ignores
+          fi
+          # shellcheck disable=SC2086
+          uv run pip-audit --desc $IGNORE_ARGS
 
       - name: 🛡️ Run bandit (Python SAST)
         run: uv run bandit -r . -c pyproject.toml
@@ -146,7 +156,7 @@ jobs:
           fetch-depth: 0 # Full history required for comprehensive secret scanning
 
       - name: 🔑 Run TruffleHog (secret detection)
-        uses: trufflesecurity/trufflehog@v3.93.8
+        uses: trufflesecurity/trufflehog@v3.94.0
         with:
           path: ./
           extra_args: --only-verified

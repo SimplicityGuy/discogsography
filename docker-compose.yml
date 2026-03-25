@@ -98,6 +98,7 @@ services:
         soft: 65536
         hard: 65536
     environment:
+      JAVA_TOOL_OPTIONS: '--enable-native-access=ALL-UNNAMED'
       NEO4J_ACCEPT_LICENSE_AGREEMENT: 'yes'
       NEO4J_apoc_export_file_enabled: 'true'
       NEO4J_apoc_import_file_enabled: 'true'
@@ -287,9 +288,11 @@ services:
       RABBITMQ_PASSWORD: discogsography
       RABBITMQ_USERNAME: discogsography
       STARTUP_DELAY: "30"
+      DATA_QUALITY_RULES: /discogs-data/extraction-rules.yaml
     volumes:
       - discogs_data:/discogs-data
       - extractor_logs:/logs
+      - ./extractor/extraction-rules.yaml:/discogs-data/extraction-rules.yaml:ro
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -497,6 +500,9 @@ services:
     environment:
       API_BASE_URL: "http://api:8004"
       LOG_LEVEL: INFO
+      NEO4J_HOST: neo4j
+      NEO4J_PASSWORD: discogsography
+      NEO4J_USERNAME: neo4j
       PYTHONUNBUFFERED: "1"
     depends_on:
       schema-init:

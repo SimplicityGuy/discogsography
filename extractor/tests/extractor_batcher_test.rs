@@ -59,7 +59,7 @@ async fn test_message_batcher_single_message() {
     };
 
     // Send one message
-    let message = DataMessage { id: "1".to_string(), sha256: "hash1".to_string(), data: json!({"name": "Test Artist"}) };
+    let message = DataMessage { id: "1".to_string(), sha256: "hash1".to_string(), data: json!({"name": "Test Artist"}), raw_xml: None };
     tx.send(message).await.unwrap();
     drop(tx);
 
@@ -95,7 +95,7 @@ async fn test_message_batcher_multiple_batches() {
 
     // Send 7 messages (should create 2 full batches + 1 partial)
     for i in 1..=7 {
-        let message = DataMessage { id: i.to_string(), sha256: format!("hash{}", i), data: json!({"name": format!("Artist {}", i)}) };
+        let message = DataMessage { id: i.to_string(), sha256: format!("hash{}", i), data: json!({"name": format!("Artist {}", i)}), raw_xml: None };
         tx.send(message).await.unwrap();
     }
     drop(tx);
@@ -139,7 +139,7 @@ async fn test_message_batcher_saves_final_state_marker() {
 
     // Send 5 messages
     for i in 1..=5 {
-        let message = DataMessage { id: i.to_string(), sha256: format!("hash{}", i), data: json!({"name": format!("Artist {}", i)}) };
+        let message = DataMessage { id: i.to_string(), sha256: format!("hash{}", i), data: json!({"name": format!("Artist {}", i)}), raw_xml: None };
         tx.send(message).await.unwrap();
     }
     drop(tx);
@@ -161,10 +161,7 @@ async fn test_message_batcher_saves_final_state_marker() {
     assert!(loaded.is_some(), "Should be able to load the saved state marker");
     let loaded = loaded.unwrap();
 
-    let file_progress = loaded
-        .processing_phase
-        .progress_by_file
-        .get("discogs_20260101_artists.xml.gz");
+    let file_progress = loaded.processing_phase.progress_by_file.get("discogs_20260101_artists.xml.gz");
     assert!(file_progress.is_some(), "State marker should have progress for the file");
     let progress = file_progress.unwrap();
     assert_eq!(progress.records_extracted, 5, "Should track all 5 records");
@@ -198,7 +195,7 @@ async fn test_message_batcher_final_batch_increments_total_batches() {
 
     // Send 3 messages (less than batch_size=10, so only a final partial batch)
     for i in 1..=3 {
-        let message = DataMessage { id: i.to_string(), sha256: format!("hash{}", i), data: json!({"name": format!("Artist {}", i)}) };
+        let message = DataMessage { id: i.to_string(), sha256: format!("hash{}", i), data: json!({"name": format!("Artist {}", i)}), raw_xml: None };
         tx.send(message).await.unwrap();
     }
     drop(tx);
@@ -217,11 +214,7 @@ async fn test_message_batcher_final_batch_increments_total_batches() {
 
     // Verify the state marker records the correct batch count
     let loaded = StateMarker::load(&marker_path).await.unwrap().unwrap();
-    let progress = loaded
-        .processing_phase
-        .progress_by_file
-        .get("discogs_20260101_artists.xml.gz")
-        .unwrap();
+    let progress = loaded.processing_phase.progress_by_file.get("discogs_20260101_artists.xml.gz").unwrap();
     assert_eq!(progress.batches_sent, 1, "State marker should reflect 1 batch from final flush");
 }
 
@@ -247,7 +240,7 @@ async fn test_message_batcher_saves_marker_on_read_only_path_warns() {
     };
 
     // Send one message so the batcher has work to do
-    let message = DataMessage { id: "1".to_string(), sha256: "hash1".to_string(), data: json!({"name": "Test"}) };
+    let message = DataMessage { id: "1".to_string(), sha256: "hash1".to_string(), data: json!({"name": "Test"}), raw_xml: None };
     tx.send(message).await.unwrap();
     drop(tx);
 
@@ -287,7 +280,7 @@ async fn test_message_batcher_periodic_state_save() {
 
     // Send 15 messages — should trigger periodic save at record 10
     for i in 1..=15 {
-        let message = DataMessage { id: i.to_string(), sha256: format!("hash{}", i), data: json!({"name": format!("Artist {}", i)}) };
+        let message = DataMessage { id: i.to_string(), sha256: format!("hash{}", i), data: json!({"name": format!("Artist {}", i)}), raw_xml: None };
         tx.send(message).await.unwrap();
     }
     drop(tx);

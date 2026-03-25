@@ -16,6 +16,8 @@ if TYPE_CHECKING:
 import orjson
 import structlog
 
+from common import query_debug
+
 
 logger = structlog.get_logger(__name__)
 
@@ -333,6 +335,13 @@ def setup_logging(
     # Get structured logger
     log = structlog.get_logger()
     log.info("✅ Logging configured for service", service=service_name)
+
+    # Warn if database profiling is active
+    if query_debug.is_db_profiling():
+        log.warning(
+            "⚠️ Database profiling enabled — PROFILE/EXPLAIN plans will be logged for Cypher and SQL queries",
+            db_profiling=True,
+        )
 
 
 @dataclass(frozen=True)

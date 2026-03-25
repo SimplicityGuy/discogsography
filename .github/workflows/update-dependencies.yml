@@ -132,6 +132,21 @@ jobs:
             echo "ENDOFSUMMARY"
           } >> "$GITHUB_OUTPUT"
 
+      - name: 📤 Upload update logs
+        if: always() && steps.update.outputs.no_changes != 'true'
+        uses: actions/upload-artifact@v7
+        with:
+          name: update-logs
+          path: |
+            update-output.txt
+            summary.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: 🧹 Clean up temporary files
+        if: steps.update.outputs.no_changes != 'true'
+        run: rm -f update-output.txt summary.txt
+
       - name: 📝 Create Pull Request
         if: steps.update.outputs.no_changes != 'true'
         id: create-pr
@@ -206,15 +221,20 @@ jobs:
 
       - name: 📊 Summary
         if: always()
+        env:
+          NO_CHANGES: ${{ steps.update.outputs.no_changes }}
+          UPDATE_OUTCOME: ${{ steps.update.outcome }}
+          PR_URL: ${{ steps.create-pr.outputs.pull-request-url }}
+          UPDATE_OUTPUT: ${{ steps.update.outputs.output }}
         run: |
-          if [[ "${{ steps.update.outputs.no_changes }}" == "true" ]]; then
+          if [[ "$NO_CHANGES" == "true" ]]; then
             echo "✅ All dependencies are already up to date!"
-          elif [[ "${{ steps.update.outcome }}" == "success" ]]; then
+          elif [[ "$UPDATE_OUTCOME" == "success" ]]; then
             echo "✅ Successfully created PR with dependency updates"
-            echo "🔗 Review the PR: ${{ steps.create-pr.outputs.pull-request-url }}"
+            echo "🔗 Review the PR: $PR_URL"
           else
             echo "❌ Failed to update dependencies"
-            cat update-output.txt
+            echo "$UPDATE_OUTPUT"
           fi
 
       - name: 📢 Send notification to Discord
