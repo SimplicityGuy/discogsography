@@ -40,6 +40,80 @@ def _make_mock_pool() -> AsyncMock:
     return mock_pool
 
 
+class TestFetchFromApi:
+    @pytest.mark.asyncio
+    async def test_basic_call_without_params_or_timeout(self) -> None:
+        from insights.computations import _fetch_from_api
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"items": [{"id": 1}]}
+        mock_response.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+
+        result = await _fetch_from_api(mock_client, "/api/test")
+
+        mock_client.get.assert_called_once_with("/api/test")
+        assert result == [{"id": 1}]
+
+    @pytest.mark.asyncio
+    async def test_passes_params_when_provided(self) -> None:
+        from insights.computations import _fetch_from_api
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"items": []}
+        mock_response.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+
+        await _fetch_from_api(mock_client, "/api/test", params={"limit": 10})
+
+        mock_client.get.assert_called_once_with("/api/test", params={"limit": 10})
+
+    @pytest.mark.asyncio
+    async def test_passes_timeout_when_provided(self) -> None:
+        from insights.computations import _fetch_from_api
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"items": []}
+        mock_response.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+
+        await _fetch_from_api(mock_client, "/api/test", timeout=600.0)
+
+        mock_client.get.assert_called_once_with("/api/test", timeout=600.0)
+
+    @pytest.mark.asyncio
+    async def test_passes_both_params_and_timeout(self) -> None:
+        from insights.computations import _fetch_from_api
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"items": [{"id": 1}]}
+        mock_response.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+
+        result = await _fetch_from_api(mock_client, "/api/test", params={"limit": 5}, timeout=600.0)
+
+        mock_client.get.assert_called_once_with("/api/test", params={"limit": 5}, timeout=600.0)
+        assert result == [{"id": 1}]
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_list_when_no_items_key(self) -> None:
+        from insights.computations import _fetch_from_api
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"data": "something"}
+        mock_response.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+
+        result = await _fetch_from_api(mock_client, "/api/test")
+
+        assert result == []
+
+
 class TestComputeAndStoreArtistCentrality:
     @pytest.mark.asyncio
     async def test_fetches_from_api_and_stores_results(self) -> None:
