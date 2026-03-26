@@ -261,11 +261,11 @@ async def get_audit_log(
         entries_params = [page_size, offset]
 
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await cur.execute(count_sql, count_params)
+        await execute_sql(cur, count_sql, count_params)
         total_row = await cur.fetchone()
         total = total_row["total"] if total_row else 0
 
-        await cur.execute(entries_sql, entries_params)
+        await execute_sql(cur, entries_sql, entries_params)
         entries = await cur.fetchall()
 
     return {

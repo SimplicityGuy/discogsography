@@ -997,7 +997,7 @@ class TestAuditLog:
         mock_get_audit_log.return_value = {
             "entries": [
                 {
-                    "id": "uuid-1",
+                    "id": "00000000-0000-0000-0000-000000000001",
                     "admin_id": TEST_ADMIN_ID,
                     "admin_email": TEST_ADMIN_EMAIL,
                     "action": "admin.login",

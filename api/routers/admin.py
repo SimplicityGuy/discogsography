@@ -20,6 +20,8 @@ from api.limiter import limiter
 from api.models import (
     AdminLoginRequest,
     AdminLoginResponse,
+    AuditLogEntry,
+    AuditLogResponse,
     DlqPurgeResponse,
     ExtractionHistoryResponse,
     ExtractionListResponse,
@@ -541,4 +543,6 @@ async def list_audit_log(
     page_size = min(max(page_size, 1), 100)
 
     data = await get_audit_log(_pool, page=page, page_size=page_size, action_filter=action, admin_id_filter=admin_id)
-    return JSONResponse(content=data)
+    entries = [AuditLogEntry(**e) for e in data["entries"]]
+    response = AuditLogResponse(entries=entries, total=data["total"], page=data["page"], page_size=data["page_size"])
+    return JSONResponse(content=response.model_dump(mode="json"))
