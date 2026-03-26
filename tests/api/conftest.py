@@ -202,6 +202,10 @@ def test_client(
 
     _nlq_router.configure(NLQConfig(), None, mock_redis)
 
+    import api.routers.rarity as _rarity_router
+
+    _rarity_router.configure(mock_neo4j, mock_pool, mock_redis)
+
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
 
