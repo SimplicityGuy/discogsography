@@ -434,6 +434,30 @@ class TestHealthHistoryProxy:
         assert resp.status_code == 200
 
 
+# ---------------------------------------------------------------------------
+# Phase 4 — Audit Log proxy route
+# ---------------------------------------------------------------------------
+
+
+class TestAuditLogProxy:
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_proxy_audit_log(self, mock_client_cls: AsyncMock, proxy_client: TestClient) -> None:
+        mock_resp = MagicMock()
+        mock_resp.content = b'{"entries":[],"total":0,"page":1,"page_size":50}'
+        mock_resp.status_code = 200
+        mock_instance = AsyncMock()
+        mock_instance.get = AsyncMock(return_value=mock_resp)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_instance
+
+        resp = proxy_client.get(
+            "/admin/api/audit-log",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert resp.status_code == 200
+
+
 class TestAuthHeaderForwarding:
     @patch("dashboard.admin_proxy.httpx.AsyncClient")
     def test_no_auth_header_sent_when_absent(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
