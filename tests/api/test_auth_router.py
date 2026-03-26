@@ -97,9 +97,21 @@ class TestTwoFactorSetup:
         mock_cur: AsyncMock,
         mock_redis: AsyncMock,
     ) -> None:
+        import base64
+        from dataclasses import replace
+
+        import api.routers.auth as auth_router
+
         mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
         mock_redis.get = AsyncMock(return_value=None)
-        response = test_client.post("/api/auth/2fa/setup", headers=auth_headers)
+        # Temporarily set encryption master key for 2FA setup
+        test_key = base64.urlsafe_b64encode(b"test-master-key-padded-to-32!!").decode("ascii")
+        original_config = auth_router._config
+        auth_router._config = replace(original_config, encryption_master_key=test_key)
+        try:
+            response = test_client.post("/api/auth/2fa/setup", headers=auth_headers)
+        finally:
+            auth_router._config = original_config
         assert response.status_code == 200
         data = response.json()
         assert "secret" in data

@@ -130,7 +130,6 @@ def test_api_config() -> ApiConfig:
         neo4j_host="bolt://localhost:7687",
         neo4j_username="neo4j",
         neo4j_password="testpassword",  # noqa: S106
-        encryption_master_key=_TEST_MASTER_KEY,
     )
 
 
