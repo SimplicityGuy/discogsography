@@ -367,8 +367,27 @@ def test_extract_entities_from_path(runner: NLQToolRunner) -> None:
     assert len(entities) == 2
 
 
+def test_extract_entities_autocomplete_with_type_key(runner: NLQToolRunner) -> None:
+    """Autocomplete items that include a 'type' key should use it."""
+    result: dict[str, Any] = {
+        "results": [
+            {"id": "a1", "name": "Radiohead", "type": "artist"},
+        ],
+    }
+    entities = runner.extract_entities("autocomplete", result)
+    assert len(entities) == 1
+    assert entities[0]["type"] == "artist"
+
+
 def test_extract_entities_returns_empty_on_error(runner: NLQToolRunner) -> None:
     """Error results should produce an empty entity list."""
     result: dict[str, Any] = {"error": "Something went wrong"}
     entities = runner.extract_entities("search", result)
     assert entities == []
+
+
+@pytest.mark.asyncio
+async def test_autocomplete_unknown_type(runner: NLQToolRunner) -> None:
+    """Autocomplete with invalid entity type returns error."""
+    result = await runner.execute("autocomplete", {"type": "invalid_type", "query": "test"})
+    assert "error" in result

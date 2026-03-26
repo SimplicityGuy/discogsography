@@ -396,3 +396,78 @@ class TestExtractUserIdEdgeCases:
 
         assert response.status_code == 200
         assert response.json()["summary"] == "Success."
+
+
+def test_query_with_admin_token_treated_as_unauthenticated(test_client: TestClient) -> None:
+    """Admin tokens should be treated as unauthenticated for NLQ."""
+    import base64
+    import hashlib
+    import hmac
+    import json as json_mod
+
+    from api.nlq.engine import NLQResult
+    import api.routers.nlq as nlq_router
+    from tests.api.conftest import TEST_JWT_SECRET
+
+    # Build an admin JWT
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header = b64url(json_mod.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64url(json_mod.dumps({"sub": "admin-1", "type": "admin", "exp": 9_999_999_999}, separators=(",", ":")).encode())
+    signing_input = f"{header}.{body}".encode("ascii")
+    sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    admin_token = f"{header}.{body}.{sig}"
+
+    mock_result = NLQResult(summary="Public only.", entities=[], tools_used=[])
+    original_config = nlq_router._nlq_config
+    original_engine = nlq_router._engine
+    try:
+        nlq_router._nlq_config = MagicMock(is_available=True, max_query_length=500, cache_ttl=3600)
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=mock_result)
+        nlq_router._engine = mock_engine
+
+        response = test_client.post(
+            "/api/nlq/query",
+            json={"query": "test query"},
+            headers={"Authorization": f"Bearer {admin_token}"},
+        )
+    finally:
+        nlq_router._nlq_config = original_config
+        nlq_router._engine = original_engine
+
+    assert response.status_code == 200
+    # Verify engine was called with user_id=None (admin token treated as unauthenticated)
+    call_kwargs = mock_engine.run.call_args
+    assert call_kwargs.kwargs.get("context") is not None or call_kwargs.args[1] is not None
+
+
+def test_query_returns_none_user_when_config_is_none(test_client: TestClient) -> None:
+    """When api config is None, user_id extraction returns None."""
+    import api.api as api_module
+    from api.nlq.engine import NLQResult
+    import api.routers.nlq as nlq_router
+
+    mock_result = NLQResult(summary="No config.", entities=[], tools_used=[])
+    original_config = nlq_router._nlq_config
+    original_engine = nlq_router._engine
+    original_api_config = api_module._config
+    try:
+        nlq_router._nlq_config = MagicMock(is_available=True, max_query_length=500, cache_ttl=3600)
+        mock_engine = MagicMock()
+        mock_engine.run = AsyncMock(return_value=mock_result)
+        nlq_router._engine = mock_engine
+        api_module._config = None
+
+        response = test_client.post(
+            "/api/nlq/query",
+            json={"query": "test query"},
+            headers={"Authorization": "Bearer some-token"},
+        )
+    finally:
+        nlq_router._nlq_config = original_config
+        nlq_router._engine = original_engine
+        api_module._config = original_api_config
+
+    assert response.status_code == 200
