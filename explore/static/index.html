@@ -280,6 +280,9 @@ body {
                         <label for="loginPassword" class="mb-1 block text-sm text-text-mid">Password</label>
                         <input type="password" class="form-input-dark" id="loginPassword" autocomplete="current-password" placeholder="Password">
                     </div>
+                    <div class="mb-2 text-right">
+                        <a href="#" class="text-sm text-blue-accent hover:underline" id="forgotPasswordLink">Forgot password?</a>
+                    </div>
                     <div class="mb-2 min-h-[1.2rem] text-sm text-accent-red" id="loginError"></div>
                     <button class="btn-primary w-full" id="loginSubmitBtn" type="button">
                         <span class="material-symbols-outlined mr-1" style="font-size:18px">login</span>Login
@@ -300,6 +303,74 @@ body {
                     <button class="btn-success w-full" id="registerSubmitBtn" type="button">
                         <span class="material-symbols-outlined mr-1" style="font-size:18px">person_add</span>Create Account
                     </button>
+                </div>
+                <!-- Reset request pane -->
+                <div x-show="tab === 'reset-request'" id="resetRequestPane">
+                    <p class="mb-3 text-sm text-text-mid">Enter your email and we'll send you a reset link.</p>
+                    <div class="mb-3">
+                        <label for="resetEmail" class="mb-1 block text-sm text-text-mid">Email</label>
+                        <input type="email" class="form-input-dark" id="resetEmail" autocomplete="email" placeholder="you@example.com">
+                    </div>
+                    <div class="mb-2 min-h-[1.2rem] text-sm text-accent-red" id="resetRequestError"></div>
+                    <div class="mb-2 min-h-[1.2rem] text-sm text-accent-green hidden" id="resetRequestSuccess"></div>
+                    <button class="btn-primary w-full mb-2" id="resetRequestBtn" type="button">
+                        <span class="material-symbols-outlined mr-1" style="font-size:18px">mail</span>Send Reset Link
+                    </button>
+                    <div class="text-center">
+                        <a href="#" class="text-sm text-blue-accent hover:underline" id="backToLoginFromReset">← Back to login</a>
+                    </div>
+                </div>
+                <!-- Reset confirm pane (shown via URL param) -->
+                <div x-show="tab === 'reset-confirm'" id="resetConfirmPane">
+                    <p class="mb-3 text-sm text-text-mid">Enter your new password.</p>
+                    <div class="mb-3">
+                        <label for="newPassword" class="mb-1 block text-sm text-text-mid">New Password</label>
+                        <input type="password" class="form-input-dark" id="newPassword" autocomplete="new-password" placeholder="Minimum 8 characters">
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirmNewPassword" class="mb-1 block text-sm text-text-mid">Confirm Password</label>
+                        <input type="password" class="form-input-dark" id="confirmNewPassword" autocomplete="new-password" placeholder="Repeat password">
+                    </div>
+                    <div class="mb-2 min-h-[1.2rem] text-sm text-accent-red" id="resetConfirmError"></div>
+                    <div class="mb-2 min-h-[1.2rem] text-sm text-accent-green hidden" id="resetConfirmSuccess"></div>
+                    <button class="btn-primary w-full" id="resetConfirmBtn" type="button">
+                        <span class="material-symbols-outlined mr-1" style="font-size:18px">lock_reset</span>Reset Password
+                    </button>
+                </div>
+                <!-- 2FA code entry (after login when 2FA enabled) -->
+                <div x-show="tab === '2fa-verify'" id="twoFactorVerifyPane">
+                    <div class="text-center mb-4">
+                        <span class="material-symbols-outlined text-4xl text-blue-accent">lock</span>
+                        <p class="mt-2 text-sm text-text-mid">Enter the 6-digit code from your authenticator app</p>
+                    </div>
+                    <div class="flex justify-center gap-2 mb-4" id="totpInputGroup">
+                        <input type="text" class="form-input-dark w-10 text-center text-xl font-mono" maxlength="1" data-totp-index="0" inputmode="numeric">
+                        <input type="text" class="form-input-dark w-10 text-center text-xl font-mono" maxlength="1" data-totp-index="1" inputmode="numeric">
+                        <input type="text" class="form-input-dark w-10 text-center text-xl font-mono" maxlength="1" data-totp-index="2" inputmode="numeric">
+                        <input type="text" class="form-input-dark w-10 text-center text-xl font-mono" maxlength="1" data-totp-index="3" inputmode="numeric">
+                        <input type="text" class="form-input-dark w-10 text-center text-xl font-mono" maxlength="1" data-totp-index="4" inputmode="numeric">
+                        <input type="text" class="form-input-dark w-10 text-center text-xl font-mono" maxlength="1" data-totp-index="5" inputmode="numeric">
+                    </div>
+                    <div class="mb-2 min-h-[1.2rem] text-sm text-accent-red text-center" id="twoFactorVerifyError"></div>
+                    <button class="btn-primary w-full mb-2" id="twoFactorVerifyBtn" type="button">Verify</button>
+                    <div class="text-center">
+                        <a href="#" class="text-sm text-blue-accent hover:underline" id="useRecoveryCodeLink">Use a recovery code instead</a>
+                    </div>
+                </div>
+                <!-- Recovery code entry -->
+                <div x-show="tab === '2fa-recovery'" id="twoFactorRecoveryPane">
+                    <div class="text-center mb-4">
+                        <span class="material-symbols-outlined text-4xl text-amber-400">key</span>
+                        <p class="mt-2 text-sm text-text-mid">Enter one of your recovery codes</p>
+                    </div>
+                    <div class="mb-4">
+                        <input type="text" class="form-input-dark text-center font-mono text-lg" id="recoveryCodeInput" placeholder="e.g. a8Kd3mPx9qLw">
+                    </div>
+                    <div class="mb-2 min-h-[1.2rem] text-sm text-accent-red text-center" id="twoFactorRecoveryError"></div>
+                    <button class="btn-primary w-full mb-2" id="twoFactorRecoveryBtn" type="button">Use Recovery Code</button>
+                    <div class="text-center">
+                        <a href="#" class="text-sm text-blue-accent hover:underline" id="backToTotpLink">← Back to code entry</a>
+                    </div>
                 </div>
             </div>
         </div>
@@ -976,6 +1047,7 @@ body {
 
     </div><!-- /.main-content -->
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
     <script src="js/api-client.js"></script>
     <script src="js/auth.js"></script>
     <script src="js/autocomplete.js"></script>

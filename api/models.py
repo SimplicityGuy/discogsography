@@ -340,6 +340,72 @@ class AdminLoginResponse(BaseModel):
     expires_in: int
 
 
+# --- Password Reset Models ---
+
+
+class ResetRequestModel(BaseModel):
+    """Request to initiate a password reset."""
+
+    email: str
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, v: str) -> str:
+        return v.strip().lower()
+
+
+class ResetConfirmModel(BaseModel):
+    """Request to confirm a password reset with a new password."""
+
+    token: str
+    new_password: str = Field(min_length=8, description="New password (minimum 8 characters)")
+
+
+# --- Two-Factor Authentication Models ---
+
+
+class TwoFactorSetupResponse(BaseModel):
+    """Response from 2FA setup — contains secret, QR URI, and recovery codes."""
+
+    secret: str
+    otpauth_uri: str
+    recovery_codes: list[str]
+
+
+class TwoFactorCodeModel(BaseModel):
+    """Request containing a 6-digit TOTP code."""
+
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class TwoFactorVerifyModel(BaseModel):
+    """Request to verify a TOTP code during login."""
+
+    challenge_token: str
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class TwoFactorRecoveryModel(BaseModel):
+    """Request to use a recovery code during login."""
+
+    challenge_token: str
+    code: str
+
+
+class TwoFactorDisableModel(BaseModel):
+    """Request to disable 2FA — requires current TOTP code and password."""
+
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+    password: str
+
+
+class ChallengeResponse(BaseModel):
+    """Response when login requires 2FA — contains a challenge token."""
+
+    requires_2fa: bool = True
+    challenge_token: str
+
+
 class ExtractionHistoryResponse(BaseModel):
     id: UUID
     triggered_by: UUID

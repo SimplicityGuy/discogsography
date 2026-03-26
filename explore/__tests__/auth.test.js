@@ -109,6 +109,32 @@ describe('AuthManager', () => {
         });
     });
 
+    describe('challenge token', () => {
+        it('should initialize _challengeToken as null', () => {
+            expect(window.authManager._challengeToken).toBeNull();
+        });
+
+        it('setChallengeToken should store the token', () => {
+            window.authManager.setChallengeToken('challenge-abc-123');
+            expect(window.authManager.getChallengeToken()).toBe('challenge-abc-123');
+        });
+
+        it('getChallengeToken should return null when not set', () => {
+            expect(window.authManager.getChallengeToken()).toBeNull();
+        });
+
+        it('clearChallenge should set _challengeToken back to null', () => {
+            window.authManager.setChallengeToken('challenge-abc-123');
+            window.authManager.clearChallenge();
+            expect(window.authManager.getChallengeToken()).toBeNull();
+        });
+
+        it('clearChallenge should be safe to call when already null', () => {
+            window.authManager.clearChallenge();
+            expect(window.authManager.getChallengeToken()).toBeNull();
+        });
+    });
+
     describe('init', () => {
         it('should return false and stay logged out when no token', async () => {
             const result = await window.authManager.init();

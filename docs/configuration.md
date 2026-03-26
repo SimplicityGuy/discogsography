@@ -521,10 +521,18 @@ REDIS_HOST="localhost"
 JWT_SECRET_KEY="your-secret-key-here"
 DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
-# Required — Discogs OAuth token encryption (Fernet symmetric key)
-# Generate with: uv run python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())'
-# In production, supply via OAUTH_ENCRYPTION_KEY_FILE (Docker secret)
-OAUTH_ENCRYPTION_KEY="your-fernet-key-here"
+# Optional — HKDF master encryption key (derives OAuth + TOTP encryption keys)
+# Required for TOTP 2FA. Without it, OAuth tokens are stored unencrypted and 2FA is disabled.
+# Generate with: uv run python -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+# In production, supply via ENCRYPTION_MASTER_KEY_FILE (Docker secret)
+ENCRYPTION_MASTER_KEY="your-master-key-here"
+
+# Optional — Brevo transactional email for password reset notifications
+# When not set, password reset links are logged to stdout instead of emailed.
+# Get your API key from https://app.brevo.com/settings/keys/api
+# BREVO_API_KEY="your-brevo-api-key"
+# BREVO_SENDER_EMAIL="noreply@yourdomain.com"   # Must be verified in Brevo
+# BREVO_SENDER_NAME="Discogsography"
 
 # Optional — CORS origins (comma-separated; omit to disable CORS)
 CORS_ORIGINS="http://localhost:8003,http://localhost:8006"
@@ -783,9 +791,10 @@ This creates `secrets/` with these files (all `chmod 600`, directory `chmod 700`
 
 ```
 secrets/
+├── brevo_api_key.txt         # Optional — Brevo API key
+├── encryption_master_key.txt # base64(urandom(32))
 ├── jwt_secret_key.txt        # openssl rand -hex 32
 ├── neo4j_password.txt        # openssl rand -base64 24
-├── oauth_encryption_key.txt  # Fernet.generate_key()
 ├── postgres_password.txt     # openssl rand -base64 24
 ├── postgres_username.txt         # discogsography
 ├── rabbitmq_password.txt     # openssl rand -base64 24

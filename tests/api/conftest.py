@@ -32,6 +32,8 @@ import pytest
 from common.config import ApiConfig
 
 
+_TEST_MASTER_KEY = base64.urlsafe_b64encode(b"test-master-key-padded-to-32!!").decode("ascii")
+
 TEST_JWT_SECRET = "test-jwt-secret-for-unit-tests"
 TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 TEST_USER_EMAIL = "test@example.com"
@@ -231,6 +233,18 @@ def test_client(
     from api.metrics_collector import MetricsBuffer
 
     app.state.metrics_buffer = MetricsBuffer()
+
+    from api.notifications import LogNotificationChannel
+    import api.routers.auth as _auth_router
+
+    _auth_router.configure(
+        mock_pool,
+        mock_redis,
+        test_api_config,
+        api_module._get_current_user,
+        api_module._create_access_token,
+        notification_channel=LogNotificationChannel(),
+    )
 
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client

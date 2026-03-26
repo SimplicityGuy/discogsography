@@ -57,7 +57,7 @@ fi
 echo "Updating password for: ${EMAIL}"
 
 RESULT=$(docker exec "${CONTAINER}" env PGPASSWORD="${PG_PASSWORD}" psql -U discogsography -d discogsography -t -A -c \
-  "UPDATE users SET hashed_password = '${HASHED}', updated_at = NOW() WHERE email = '${EMAIL}' RETURNING email;")
+  "UPDATE users SET hashed_password = '${HASHED}', password_changed_at = NOW(), updated_at = NOW() WHERE email = '${EMAIL}' RETURNING email;")
 
 if [ -z "$RESULT" ]; then
   echo "Error: No user found with email '${EMAIL}'."

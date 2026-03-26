@@ -120,14 +120,18 @@ class TestShowConfig:
         assert "mysecret678" not in captured.out
 
     def test_show_decrypts_encrypted_values(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+        import base64
+
         from cryptography.fernet import Fernet
 
+        from api.auth import get_oauth_encryption_key
         from api.setup import show_config
 
-        encryption_key = Fernet.generate_key().decode("ascii")
-        monkeypatch.setenv("OAUTH_ENCRYPTION_KEY", encryption_key)
+        master_key = base64.urlsafe_b64encode(b"test-master-key-padded-to-32!!").decode("ascii")
+        monkeypatch.setenv("ENCRYPTION_MASTER_KEY", master_key)
 
-        f = Fernet(encryption_key.encode("ascii"))
+        derived_key = get_oauth_encryption_key(master_key)
+        f = Fernet(derived_key.encode("ascii"))
         encrypted_key = f.encrypt(b"mykey12345").decode("ascii")
         encrypted_secret = f.encrypt(b"mysecret678").decode("ascii")
 
@@ -183,7 +187,7 @@ class TestSetConfig:
     def test_upserts_both_keys(self, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
         from api.setup import set_config
 
-        monkeypatch.delenv("OAUTH_ENCRYPTION_KEY", raising=False)
+        monkeypatch.delenv("ENCRYPTION_MASTER_KEY", raising=False)
 
         mock_cur = MagicMock()
         mock_cur.__enter__ = MagicMock(return_value=mock_cur)
@@ -214,12 +218,12 @@ class TestSetConfig:
         assert "updated successfully" in captured.out
 
     def test_encrypts_values_when_key_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        from cryptography.fernet import Fernet
+        import base64
 
         from api.setup import set_config
 
-        encryption_key = Fernet.generate_key().decode("ascii")
-        monkeypatch.setenv("OAUTH_ENCRYPTION_KEY", encryption_key)
+        master_key = base64.urlsafe_b64encode(b"test-master-key-padded-to-32!!").decode("ascii")
+        monkeypatch.setenv("ENCRYPTION_MASTER_KEY", master_key)
 
         mock_cur = MagicMock()
         mock_cur.__enter__ = MagicMock(return_value=mock_cur)
@@ -241,8 +245,13 @@ class TestSetConfig:
         assert stored_key_val != "mykey"
         assert stored_secret_val != "mysecret"
 
-        # Stored values must decrypt back to originals
-        f = Fernet(encryption_key.encode("ascii"))
+        # Stored values must decrypt back to originals using derived key
+        from cryptography.fernet import Fernet
+
+        from api.auth import get_oauth_encryption_key
+
+        derived_key = get_oauth_encryption_key(master_key)
+        f = Fernet(derived_key.encode("ascii"))
         assert f.decrypt(stored_key_val.encode("ascii")).decode("utf-8") == "mykey"
         assert f.decrypt(stored_secret_val.encode("ascii")).decode("utf-8") == "mysecret"
 

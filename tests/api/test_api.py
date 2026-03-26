@@ -54,7 +54,7 @@ class TestPasswordHashing:
     """Tests for _hash_password and _verify_password."""
 
     def test_hash_produces_colon_separated_hex(self) -> None:
-        from api.api import _hash_password
+        from api.auth import _hash_password
 
         hashed = _hash_password("mypassword")
         assert ":" in hashed
@@ -65,27 +65,27 @@ class TestPasswordHashing:
         bytes.fromhex(parts[1])
 
     def test_hash_is_different_each_time(self) -> None:
-        from api.api import _hash_password
+        from api.auth import _hash_password
 
         h1 = _hash_password("same")
         h2 = _hash_password("same")
         assert h1 != h2  # different salts
 
     def test_verify_correct_password(self) -> None:
-        from api.api import _hash_password, _verify_password
+        from api.auth import _hash_password, _verify_password
 
         password = "correct-horse-battery-staple"
         hashed = _hash_password(password)
         assert _verify_password(password, hashed) is True
 
     def test_verify_wrong_password(self) -> None:
-        from api.api import _hash_password, _verify_password
+        from api.auth import _hash_password, _verify_password
 
         hashed = _hash_password("correct")
         assert _verify_password("wrong", hashed) is False
 
     def test_verify_malformed_hash_returns_false(self) -> None:
-        from api.api import _verify_password
+        from api.auth import _verify_password
 
         assert _verify_password("password", "not-a-valid-hash") is False
         assert _verify_password("password", "") is False
@@ -244,6 +244,7 @@ class TestRegisterEndpoint:
 
         import api.api as api_module
         from api.api import app
+        import api.routers.auth as auth_router
 
         @asynccontextmanager
         async def mock_lifespan(_app: FastAPI) -> AsyncGenerator[None]:
@@ -251,8 +252,10 @@ class TestRegisterEndpoint:
 
         original_lifespan = app.router.lifespan_context
         original_pool = api_module._pool
+        original_auth_pool = auth_router._pool
         app.router.lifespan_context = mock_lifespan
         api_module._pool = None
+        auth_router._pool = None
 
         try:
             with TestClient(app, raise_server_exceptions=False) as client:
@@ -263,6 +266,7 @@ class TestRegisterEndpoint:
             assert response.status_code == 503
         finally:
             api_module._pool = original_pool
+            auth_router._pool = original_auth_pool
             app.router.lifespan_context = original_lifespan
 
     def test_register_fetchone_none_500(
@@ -287,7 +291,7 @@ class TestLoginEndpoint:
         test_client: TestClient,
         mock_cur: AsyncMock,
     ) -> None:
-        from api.api import _hash_password
+        from api.auth import _hash_password
 
         hashed = _hash_password("correctpassword")
         mock_cur.fetchone.return_value = {
@@ -311,7 +315,7 @@ class TestLoginEndpoint:
         test_client: TestClient,
         mock_cur: AsyncMock,
     ) -> None:
-        from api.api import _hash_password
+        from api.auth import _hash_password
 
         hashed = _hash_password("correctpassword")
         mock_cur.fetchone.return_value = {
@@ -345,7 +349,7 @@ class TestLoginEndpoint:
         test_client: TestClient,
         mock_cur: AsyncMock,
     ) -> None:
-        from api.api import _hash_password
+        from api.auth import _hash_password
 
         hashed = _hash_password("password")
         mock_cur.fetchone.return_value = {
@@ -727,6 +731,7 @@ class TestLoginServiceNotReady:
 
         import api.api as api_module
         from api.api import app
+        import api.routers.auth as auth_router
 
         @asynccontextmanager
         async def mock_lifespan(_app: FastAPI) -> AsyncGenerator[None]:
@@ -734,8 +739,10 @@ class TestLoginServiceNotReady:
 
         original_lifespan = app.router.lifespan_context
         original_pool = api_module._pool
+        original_auth_pool = auth_router._pool
         app.router.lifespan_context = mock_lifespan
         api_module._pool = None
+        auth_router._pool = None
         try:
             with TestClient(app, raise_server_exceptions=False) as client:
                 response = client.post(
@@ -745,6 +752,7 @@ class TestLoginServiceNotReady:
             assert response.status_code == 503
         finally:
             api_module._pool = original_pool
+            auth_router._pool = original_auth_pool
             app.router.lifespan_context = original_lifespan
 
 
@@ -791,17 +799,18 @@ class TestGetMeNoSub:
 
     def test_get_me_no_sub_401(self, test_client: TestClient) -> None:
         """Line 373: get_me raises 401 when current_user lacks 'sub'."""
-        from api.api import _get_current_user, app
+        from api.api import app
+        from api.routers.auth import _require_user
 
         async def override_no_sub() -> dict[str, str]:
             return {"email": "x@y.com"}
 
-        app.dependency_overrides[_get_current_user] = override_no_sub
+        app.dependency_overrides[_require_user] = override_no_sub
         try:
             response = test_client.get("/api/auth/me")
             assert response.status_code == 401
         finally:
-            del app.dependency_overrides[_get_current_user]
+            del app.dependency_overrides[_require_user]
 
 
 class TestGetMeServiceEdgeCases:
@@ -813,14 +822,18 @@ class TestGetMeServiceEdgeCases:
         auth_headers: dict[str, str],
     ) -> None:
         import api.api as api_module
+        import api.routers.auth as auth_router
 
         original_pool = api_module._pool
+        original_auth_pool = auth_router._pool
         api_module._pool = None
+        auth_router._pool = None
         try:
             response = test_client.get("/api/auth/me", headers=auth_headers)
             assert response.status_code == 503
         finally:
             api_module._pool = original_pool
+            auth_router._pool = original_auth_pool
 
     def test_get_me_no_sub_in_valid_token_401(
         self,

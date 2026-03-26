@@ -90,15 +90,45 @@ _USER_TABLES: list[tuple[str, str]] = [
         "users table",
         """
         CREATE TABLE IF NOT EXISTS users (
-            id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email           VARCHAR(255) UNIQUE NOT NULL,
-            hashed_password VARCHAR(255) NOT NULL,
-            is_active       BOOLEAN NOT NULL DEFAULT TRUE,
-            is_admin        BOOLEAN NOT NULL DEFAULT FALSE,
-            created_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            updated_at      TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+            id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            email                VARCHAR(255) UNIQUE NOT NULL,
+            hashed_password      VARCHAR(255) NOT NULL,
+            is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+            is_admin             BOOLEAN NOT NULL DEFAULT FALSE,
+            password_changed_at  TIMESTAMP WITH TIME ZONE,
+            totp_secret          VARCHAR,
+            totp_enabled         BOOLEAN NOT NULL DEFAULT FALSE,
+            totp_recovery_codes  JSONB,
+            totp_failed_attempts INTEGER NOT NULL DEFAULT 0,
+            totp_locked_until    TIMESTAMP WITH TIME ZONE,
+            created_at           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+            updated_at           TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
         )
         """,
+    ),
+    (
+        "users.password_changed_at column",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS password_changed_at TIMESTAMP WITH TIME ZONE",
+    ),
+    (
+        "users.totp_secret column",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_secret VARCHAR",
+    ),
+    (
+        "users.totp_enabled column",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_enabled BOOLEAN NOT NULL DEFAULT FALSE",
+    ),
+    (
+        "users.totp_recovery_codes column",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_recovery_codes JSONB",
+    ),
+    (
+        "users.totp_failed_attempts column",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_failed_attempts INTEGER NOT NULL DEFAULT 0",
+    ),
+    (
+        "users.totp_locked_until column",
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS totp_locked_until TIMESTAMP WITH TIME ZONE",
     ),
     (
         "oauth_tokens table",

@@ -42,9 +42,15 @@ JWT_SECRET_KEY=your-secret-key-here
 # Discogs API
 DISCOGS_USER_AGENT="Discogsography/1.0 +https://github.com/SimplicityGuy/discogsography"
 
-# OAuth token encryption (Fernet symmetric key — generate with:
-# python -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())')
-OAUTH_ENCRYPTION_KEY=your-fernet-key-here
+# HKDF master encryption key (derives OAuth + TOTP keys; generate with:
+# python -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')
+# Required for TOTP 2FA. Without it, OAuth tokens are stored unencrypted and 2FA is disabled.
+ENCRYPTION_MASTER_KEY=your-base64-master-key-here
+
+# Optional — Brevo email for password reset notifications (when not set, reset links are logged)
+# BREVO_API_KEY=your-brevo-api-key
+# BREVO_SENDER_EMAIL=noreply@yourdomain.com
+# BREVO_SENDER_NAME=Discogsography
 
 # Optional — CORS
 CORS_ORIGINS="http://localhost:8003,http://localhost:8006"  # Comma-separated allowed origins
@@ -388,7 +394,9 @@ The API service uses the following tables (created by schema-init):
 - **Constant-time auth**: Login and registration use constant-time comparison to prevent user enumeration via timing attacks
 - **Blind registration**: Duplicate email registration returns the same 201 response to prevent enumeration
 - **JWT revocation**: Logout blacklists the JWT's `jti` claim in Redis with TTL matching the token expiry
-- **OAuth tokens encrypted at rest**: Discogs OAuth access tokens are encrypted with Fernet symmetric encryption before database storage (`OAUTH_ENCRYPTION_KEY`)
+- **OAuth tokens encrypted at rest**: Discogs OAuth access tokens are encrypted with Fernet symmetric encryption using an HKDF-derived key from `ENCRYPTION_MASTER_KEY`
+- **TOTP 2FA**: Optional time-based one-time password with `pyotp`, Fernet-encrypted secrets, SHA-256 hashed recovery codes, brute-force lockout
+- **Password reset**: Redis-backed tokens (15min TTL), anti-enumeration responses, session revocation on password change
 - **Rate limiting**: register (3/min), login (5/min), sync (2/10min), autocomplete (30/min) via slowapi; per-user sync cooldown (600s) in Redis
 - **Security response headers**: `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy`, `Permissions-Policy`
 - **CORS**: Configurable via `CORS_ORIGINS` env var (disabled by default)
