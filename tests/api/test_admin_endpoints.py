@@ -70,9 +70,10 @@ def _make_admin_row(
     admin_id: str = TEST_ADMIN_ID,
     email: str = TEST_ADMIN_EMAIL,
     is_active: bool = True,
+    is_admin: bool = True,
     password: str | None = None,
 ) -> dict[str, Any]:
-    """Create a sample dashboard_admins DB row."""
+    """Create a sample users DB row."""
     if password is None:
         password = "adminpassword123"
     return {
@@ -80,6 +81,7 @@ def _make_admin_row(
         "email": email,
         "hashed_password": _hash_password(password),
         "is_active": is_active,
+        "is_admin": is_admin,
         "created_at": datetime.now(UTC),
     }
 
@@ -127,6 +129,16 @@ class TestAdminLogin:
             json={"email": TEST_ADMIN_EMAIL, "password": "adminpassword123"},
         )
         assert resp.status_code == 401
+
+    def test_non_admin_user_gets_403(self, test_client: TestClient, mock_cur: AsyncMock) -> None:
+        admin_row = _make_admin_row(is_admin=False)
+        mock_cur.fetchone = AsyncMock(return_value=admin_row)
+
+        resp = test_client.post(
+            "/api/admin/auth/login",
+            json={"email": TEST_ADMIN_EMAIL, "password": "adminpassword123"},
+        )
+        assert resp.status_code == 403
 
 
 class TestAdminLogout:
@@ -972,3 +984,43 @@ class TestRequireAdminRevocation:
             await deps.require_admin(creds)
         assert exc_info.value.status_code == 401
         assert "revoked" in exc_info.value.detail.lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Audit Log endpoint tests
+# ---------------------------------------------------------------------------
+
+
+class TestAuditLog:
+    @patch("api.routers.admin.get_audit_log")
+    def test_list_audit_log(self, mock_get_audit_log: Any, test_client: TestClient) -> None:
+        mock_get_audit_log.return_value = {
+            "entries": [
+                {
+                    "id": "uuid-1",
+                    "admin_id": TEST_ADMIN_ID,
+                    "admin_email": TEST_ADMIN_EMAIL,
+                    "action": "admin.login",
+                    "target": TEST_ADMIN_EMAIL,
+                    "details": {"success": True},
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
+            ],
+            "total": 1,
+            "page": 1,
+            "page_size": 50,
+        }
+
+        resp = test_client.get(
+            "/api/admin/audit-log",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert len(data["entries"]) == 1
+        assert data["entries"][0]["action"] == "admin.login"
+
+    def test_audit_log_requires_admin(self, test_client: TestClient) -> None:
+        resp = test_client.get("/api/admin/audit-log")
+        assert resp.status_code in (401, 403)
