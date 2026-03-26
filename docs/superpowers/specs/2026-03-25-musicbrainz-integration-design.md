@@ -238,7 +238,8 @@ CREATE TABLE IF NOT EXISTS musicbrainz.relationships (
     end_date TEXT,
     ended BOOLEAN DEFAULT FALSE,
     attributes JSONB,                  -- instrument, vocal type, etc.
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (source_mbid, target_mbid, relationship_type)
 );
 
 -- External links (Wikipedia, Wikidata, AllMusic, etc.)
@@ -248,7 +249,8 @@ CREATE TABLE IF NOT EXISTS musicbrainz.external_links (
     entity_type TEXT NOT NULL,          -- 'artist', 'label', 'release'
     service_name TEXT NOT NULL,         -- 'wikipedia', 'wikidata', 'allmusic', 'lastfm', 'imdb'
     url TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (mbid, entity_type, service_name)
 );
 ```
 
