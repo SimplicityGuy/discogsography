@@ -335,6 +335,38 @@ _INSIGHTS_TABLES: list[tuple[str, str]] = [
         """,
     ),
     (
+        "insights.release_rarity table",
+        """
+        CREATE TABLE IF NOT EXISTS insights.release_rarity (
+            release_id      BIGINT PRIMARY KEY,
+            title           TEXT,
+            artist_name     TEXT,
+            year            INTEGER,
+            rarity_score    REAL NOT NULL,
+            tier            TEXT NOT NULL,
+            hidden_gem_score REAL,
+            pressing_scarcity REAL,
+            label_catalog   REAL,
+            format_rarity   REAL,
+            temporal_scarcity REAL,
+            graph_isolation REAL,
+            computed_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+        """,
+    ),
+    (
+        "idx_release_rarity_score",
+        "CREATE INDEX IF NOT EXISTS idx_release_rarity_score ON insights.release_rarity (rarity_score DESC)",
+    ),
+    (
+        "idx_release_rarity_tier",
+        "CREATE INDEX IF NOT EXISTS idx_release_rarity_tier ON insights.release_rarity (tier)",
+    ),
+    (
+        "idx_release_rarity_gem",
+        "CREATE INDEX IF NOT EXISTS idx_release_rarity_gem ON insights.release_rarity (hidden_gem_score DESC NULLS LAST)",
+    ),
+    (
         "insights.computation_log table",
         """
         CREATE TABLE IF NOT EXISTS insights.computation_log (
