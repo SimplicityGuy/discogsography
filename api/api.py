@@ -227,7 +227,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         )
         logger.info("🔗 Neo4j driver initialized")
     jwt_secret_for_neo4j = _config.jwt_secret_key if _config.neo4j_host else None
-    _dependencies.configure(jwt_secret_for_neo4j, _redis)
+    _dependencies.configure(jwt_secret_for_neo4j, _redis, pool=_pool)
     _sync_router.configure(_pool, _neo4j, _config, _running_syncs, _redis)
     _explore_router.configure(_neo4j, jwt_secret_for_neo4j, _redis)
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
