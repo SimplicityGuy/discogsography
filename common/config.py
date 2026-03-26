@@ -429,6 +429,11 @@ class ApiConfig:
     snapshot_max_nodes: int = 100
     encryption_master_key: str | None = None
 
+    # Brevo email notifications
+    brevo_api_key: str | None = None
+    brevo_sender_email: str = "noreply@discogsography.com"
+    brevo_sender_name: str = "Discogsography"
+
     # Admin dashboard — extractor connection
     extractor_host: str = "extractor"
     extractor_health_port: int = 8000
@@ -505,6 +510,9 @@ class ApiConfig:
             snapshot_max_nodes = 100
 
         encryption_master_key = get_secret("ENCRYPTION_MASTER_KEY") or None
+        brevo_api_key = get_secret("BREVO_API_KEY") or None
+        brevo_sender_email = getenv("BREVO_SENDER_EMAIL", "noreply@discogsography.com")
+        brevo_sender_name = getenv("BREVO_SENDER_NAME", "Discogsography")
 
         metrics_retention_days_str = getenv("METRICS_RETENTION_DAYS", "366")
         try:
@@ -535,6 +543,9 @@ class ApiConfig:
             snapshot_ttl_days=snapshot_ttl_days,
             snapshot_max_nodes=snapshot_max_nodes,
             encryption_master_key=encryption_master_key,
+            brevo_api_key=brevo_api_key,
+            brevo_sender_email=brevo_sender_email,
+            brevo_sender_name=brevo_sender_name,
             extractor_host=getenv("EXTRACTOR_HOST", "extractor"),
             extractor_health_port=int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),
             rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),
