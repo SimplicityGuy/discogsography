@@ -267,6 +267,52 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
         raise
 
 
+async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
+    """Compute release rarity scores and store results."""
+    started_at = datetime.now(UTC)
+    try:
+        results = await _fetch_from_api(client, "/api/internal/insights/rarity-scores", timeout=600.0)
+        if not results:
+            logger.info("📊 No rarity score results to store")
+            await _log_computation(pool, "release_rarity", "completed", started_at, 0)
+            return 0
+
+        async with pool.connection() as conn, conn.cursor() as cursor:
+            cursor = cast("Any", cursor)
+            await cursor.execute("DELETE FROM insights.release_rarity")
+            for row in results:
+                await cursor.execute(
+                    """
+                    INSERT INTO insights.release_rarity
+                        (release_id, title, artist_name, year, rarity_score, tier,
+                         hidden_gem_score, pressing_scarcity, label_catalog,
+                         format_rarity, temporal_scarcity, graph_isolation)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        row["release_id"],
+                        row.get("title", ""),
+                        row.get("artist_name", ""),
+                        row.get("year"),
+                        row["rarity_score"],
+                        row["tier"],
+                        row.get("hidden_gem_score"),
+                        row.get("pressing_scarcity"),
+                        row.get("label_catalog"),
+                        row.get("format_rarity"),
+                        row.get("temporal_scarcity"),
+                        row.get("graph_isolation"),
+                    ),
+                )
+        logger.info("💾 Release rarity scores stored", count=len(results))
+        await _log_computation(pool, "release_rarity", "completed", started_at, len(results))
+        return len(results)
+    except Exception as e:
+        logger.error("❌ Release rarity computation failed", error=str(e))
+        await _log_computation(pool, "release_rarity", "failed", started_at, error_message=str(e))
+        raise
+
+
 async def run_all_computations(
     client: httpx.AsyncClient,
     pool: Any,
@@ -286,6 +332,7 @@ async def run_all_computations(
         milestone_years=milestone_years,
     )
     results["data_completeness"] = await compute_and_store_data_completeness(client, pool)
+    results["release_rarity"] = await compute_and_store_rarity(client, pool)
 
     total = sum(results.values())
     logger.info("✅ All insight computations complete", total_rows=total, breakdown=results)
