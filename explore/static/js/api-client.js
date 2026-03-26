@@ -209,6 +209,61 @@ class ApiClient {
         });
     }
 
+    async resetRequest(email) {
+        const response = await fetch('/api/auth/reset-request', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ email }),
+        });
+        return response;
+    }
+
+    async resetConfirm(token, newPassword) {
+        const response = await fetch('/api/auth/reset-confirm', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ token, new_password: newPassword }),
+        });
+        return response;
+    }
+
+    async twoFactorSetup(token) {
+        const response = await fetch('/api/auth/2fa/setup', {
+            method: 'POST', headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
+        });
+        return response;
+    }
+
+    async twoFactorConfirm(token, code) {
+        const response = await fetch('/api/auth/2fa/confirm', {
+            method: 'POST', headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
+            body: JSON.stringify({ code }),
+        });
+        return response;
+    }
+
+    async twoFactorVerify(challengeToken, code) {
+        const response = await fetch('/api/auth/2fa/verify', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ challenge_token: challengeToken, code }),
+        });
+        return response;
+    }
+
+    async twoFactorRecovery(challengeToken, code) {
+        const response = await fetch('/api/auth/2fa/recovery', {
+            method: 'POST', headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ challenge_token: challengeToken, code }),
+        });
+        return response;
+    }
+
+    async twoFactorDisable(token, code, password) {
+        const response = await fetch('/api/auth/2fa/disable', {
+            method: 'POST', headers: {'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json'},
+            body: JSON.stringify({ code, password }),
+        });
+        return response;
+    }
+
     async getMe(token) {
         if (!token) return null;
         const response = await fetch('/api/auth/me', {
