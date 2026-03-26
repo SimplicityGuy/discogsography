@@ -1,0 +1,3 @@
+# Generate with: python -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())'
+# Derives per-purpose keys via HKDF: OAuth token encryption + TOTP secret encryption
+your-base64-master-key-here

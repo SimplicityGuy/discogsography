@@ -107,7 +107,8 @@ These secrets are **never passed as plain environment variables in production**.
 | PostgreSQL username    | `POSTGRES_USERNAME_FILE`            | `POSTGRES_USERNAME`            |
 | Neo4j password         | (via entrypoint wrapper)            | `NEO4J_AUTH`                   |
 | JWT secret key         | `JWT_SECRET_KEY_FILE`               | `JWT_SECRET_KEY`               |
-| OAuth encryption key   | `OAUTH_ENCRYPTION_KEY_FILE`         | `OAUTH_ENCRYPTION_KEY`         |
+| Encryption master key  | `ENCRYPTION_MASTER_KEY_FILE`        | `ENCRYPTION_MASTER_KEY`        |
+| Brevo API key          | `BREVO_API_KEY_FILE`                | `BREVO_API_KEY`                |
 | RabbitMQ mgmt user     | `RABBITMQ_MANAGEMENT_USER_FILE`     | `RABBITMQ_MANAGEMENT_USER`     |
 | RabbitMQ mgmt password | `RABBITMQ_MANAGEMENT_PASSWORD_FILE` | `RABBITMQ_MANAGEMENT_PASSWORD` |
 

@@ -641,19 +641,19 @@ class TestApiConfigNewFields:
         monkeypatch.setenv("SNAPSHOT_MAX_NODES", "bad")
         assert ApiConfig.from_env().snapshot_max_nodes == 100
 
-    def test_oauth_encryption_key_none_when_not_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_encryption_master_key_none_when_not_set(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from common.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
-        monkeypatch.delenv("OAUTH_ENCRYPTION_KEY", raising=False)
-        assert ApiConfig.from_env().oauth_encryption_key is None
+        monkeypatch.delenv("ENCRYPTION_MASTER_KEY", raising=False)
+        assert ApiConfig.from_env().encryption_master_key is None
 
-    def test_oauth_encryption_key_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_encryption_master_key_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from common.config import ApiConfig
 
         monkeypatch.setenv("JWT_SECRET_KEY", "secret")
-        monkeypatch.setenv("OAUTH_ENCRYPTION_KEY", "my-fernet-key")
-        assert ApiConfig.from_env().oauth_encryption_key == "my-fernet-key"
+        monkeypatch.setenv("ENCRYPTION_MASTER_KEY", "my-master-key")
+        assert ApiConfig.from_env().encryption_master_key == "my-master-key"
 
     def test_jwt_algorithm_non_hs256_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
         from common.config import ApiConfig
@@ -798,26 +798,26 @@ class TestGetSecretViaFromEnv:
         assert config.postgres_password == "table_pass"
 
     def test_api_config_reads_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-        """ApiConfig reads POSTGRES_PASSWORD, JWT_SECRET_KEY, and OAUTH_ENCRYPTION_KEY via _FILE."""
+        """ApiConfig reads POSTGRES_PASSWORD, JWT_SECRET_KEY, and ENCRYPTION_MASTER_KEY via _FILE."""
         pass_file = tmp_path / "pg_pass.txt"
         jwt_file = tmp_path / "jwt.txt"
-        oauth_file = tmp_path / "oauth.txt"
+        master_key_file = tmp_path / "master_key.txt"
         pass_file.write_text("api_pass\n")
         jwt_file.write_text("api_jwt_secret\n")
-        oauth_file.write_text("api_fernet_key\n")
+        master_key_file.write_text("api_master_key\n")
 
         monkeypatch.setenv("POSTGRES_HOST", "localhost")
         monkeypatch.setenv("POSTGRES_USERNAME", "api_user")
         monkeypatch.setenv("POSTGRES_PASSWORD_FILE", str(pass_file))
         monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
         monkeypatch.setenv("JWT_SECRET_KEY_FILE", str(jwt_file))
-        monkeypatch.setenv("OAUTH_ENCRYPTION_KEY_FILE", str(oauth_file))
+        monkeypatch.setenv("ENCRYPTION_MASTER_KEY_FILE", str(master_key_file))
         monkeypatch.setenv("NEO4J_HOST", "localhost")
         monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
         monkeypatch.setenv("NEO4J_PASSWORD", "neo4jpass")
         monkeypatch.delenv("POSTGRES_PASSWORD", raising=False)
         monkeypatch.delenv("JWT_SECRET_KEY", raising=False)
-        monkeypatch.delenv("OAUTH_ENCRYPTION_KEY", raising=False)
+        monkeypatch.delenv("ENCRYPTION_MASTER_KEY", raising=False)
 
         from common.config import ApiConfig
 
@@ -825,7 +825,7 @@ class TestGetSecretViaFromEnv:
         assert config.postgres_username == "api_user"
         assert config.postgres_password == "api_pass"
         assert config.jwt_secret_key == "api_jwt_secret"
-        assert config.oauth_encryption_key == "api_fernet_key"
+        assert config.encryption_master_key == "api_master_key"
 
     def test_explore_config_reads_credentials_from_files(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         """ExploreConfig reads NEO4J_PASSWORD and JWT key via _FILE."""

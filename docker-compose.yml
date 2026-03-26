@@ -242,6 +242,12 @@ services:
       NLQ_ENABLED: "${NLQ_ENABLED:-false}"
       NLQ_API_KEY: "${NLQ_API_KEY:-}"
       NLQ_MODEL: "${NLQ_MODEL:-claude-sonnet-4-20250514}"
+      # Email notifications (optional — when not set, reset links are logged instead)
+      # BREVO_API_KEY: "${BREVO_API_KEY:-}"
+      # BREVO_SENDER_EMAIL: "${BREVO_SENDER_EMAIL:-noreply@discogsography.com}"
+      # BREVO_SENDER_NAME: "${BREVO_SENDER_NAME:-Discogsography}"
+      # Encryption master key (optional — required for TOTP 2FA, derives OAuth + TOTP keys via HKDF)
+      # ENCRYPTION_MASTER_KEY: "${ENCRYPTION_MASTER_KEY:-}"
     ports:
       - "8004:8004"      # Auth API
       - "8005:8005"      # Health check

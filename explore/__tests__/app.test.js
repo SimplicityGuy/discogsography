@@ -82,6 +82,10 @@ function setupAppDOM() {
         // NLQ
         'nlqPanel', 'nlqInput', 'nlqSubmit', 'nlqStatus', 'nlqResult', 'nlqExamples',
         'searchAskToggle', 'searchModeBtn', 'askModeBtn',
+        // Password reset
+        'resetEmail', 'resetRequestError', 'resetRequestSuccess',
+        // 2FA verify
+        'twoFactorVerifyError', 'twoFactorRecoveryError', 'recoveryCodeInput',
     ];
 
     const inputIds = new Set([
@@ -89,6 +93,7 @@ function setupAppDOM() {
         'registerEmail', 'registerPassword',
         'timelineSlider', 'compareSliderA', 'compareSliderB',
         'nlqInput',
+        'resetEmail', 'recoveryCodeInput',
     ]);
 
     allIds.forEach(id => {
@@ -113,6 +118,76 @@ function setupAppDOM() {
         }
         document.body.appendChild(el);
     });
+
+    // Auth modal with Alpine-style __x data for tab switching
+    const authModal = document.createElement('div');
+    authModal.id = 'authModal';
+    authModal.__x = { $data: { tab: 'login' } };
+    document.body.appendChild(authModal);
+
+    // Anchor/button elements used in auth flows
+    const forgotLink = document.createElement('a');
+    forgotLink.id = 'forgotPasswordLink';
+    forgotLink.href = '#';
+    document.body.appendChild(forgotLink);
+
+    const backToLoginLink = document.createElement('a');
+    backToLoginLink.id = 'backToLoginFromReset';
+    backToLoginLink.href = '#';
+    document.body.appendChild(backToLoginLink);
+
+    const resetRequestBtn = document.createElement('button');
+    resetRequestBtn.id = 'resetRequestBtn';
+    document.body.appendChild(resetRequestBtn);
+
+    // TOTP input group with 6 individual digit inputs
+    const totpGroup = document.createElement('div');
+    totpGroup.id = 'totpInputGroup';
+    for (let i = 0; i < 6; i++) {
+        const inp = document.createElement('input');
+        inp.type = 'text';
+        inp.maxLength = 1;
+        totpGroup.appendChild(inp);
+    }
+    document.body.appendChild(totpGroup);
+
+    const twoFactorVerifyBtn = document.createElement('button');
+    twoFactorVerifyBtn.id = 'twoFactorVerifyBtn';
+    document.body.appendChild(twoFactorVerifyBtn);
+
+    // Reset confirm elements
+    const resetConfirmBtn = document.createElement('button');
+    resetConfirmBtn.id = 'resetConfirmBtn';
+    document.body.appendChild(resetConfirmBtn);
+
+    for (const id of ['newPassword', 'confirmNewPassword']) {
+        const inp = document.createElement('input');
+        inp.id = id;
+        inp.type = 'password';
+        document.body.appendChild(inp);
+    }
+
+    for (const id of ['resetConfirmError', 'resetConfirmSuccess']) {
+        const el = document.createElement('div');
+        el.id = id;
+        el.classList.add('hidden');
+        document.body.appendChild(el);
+    }
+
+    // Recovery flow elements
+    const useRecoveryLink = document.createElement('a');
+    useRecoveryLink.id = 'useRecoveryCodeLink';
+    useRecoveryLink.href = '#';
+    document.body.appendChild(useRecoveryLink);
+
+    const backToTotpLink = document.createElement('a');
+    backToTotpLink.id = 'backToTotpLink';
+    backToTotpLink.href = '#';
+    document.body.appendChild(backToTotpLink);
+
+    const twoFactorRecoveryBtn = document.createElement('button');
+    twoFactorRecoveryBtn.id = 'twoFactorRecoveryBtn';
+    document.body.appendChild(twoFactorRecoveryBtn);
 }
 
 /**
@@ -186,6 +261,13 @@ function setupGlobalMocks() {
         getYearRange: vi.fn().mockResolvedValue({ min_year: 1950, max_year: 2023 }),
         getGenreEmergence: vi.fn().mockResolvedValue({ genres: [], styles: [] }),
         checkNlqStatus: vi.fn().mockResolvedValue({ enabled: false }),
+        resetRequest: vi.fn().mockResolvedValue({ ok: true }),
+        resetConfirm: vi.fn().mockResolvedValue({ ok: true }),
+        twoFactorSetup: vi.fn().mockResolvedValue({ ok: true }),
+        twoFactorConfirm: vi.fn().mockResolvedValue({ ok: true }),
+        twoFactorVerify: vi.fn().mockResolvedValue({ ok: true, json: async () => ({ access_token: 'jwt' }) }),
+        twoFactorRecovery: vi.fn().mockResolvedValue({ ok: true, json: async () => ({ access_token: 'jwt' }) }),
+        twoFactorDisable: vi.fn().mockResolvedValue({ ok: true }),
     };
 
     window.authManager = {
@@ -197,6 +279,9 @@ function setupGlobalMocks() {
         setToken: vi.fn(),
         setUser: vi.fn(),
         setDiscogsStatus: vi.fn(),
+        setChallengeToken: vi.fn(),
+        getChallengeToken: vi.fn().mockReturnValue(null),
+        clearChallenge: vi.fn(),
         clear: vi.fn(),
         notify: vi.fn(),
         onChange: vi.fn(),
@@ -2114,5 +2199,342 @@ describe('app.js NLQ wiring (inline simulation)', () => {
         if (enabled) toggle.style.display = '';
 
         expect(toggle.style.display).toBe('none');
+    });
+});
+
+describe('ExploreApp - password reset and 2FA UI handlers', () => {
+    beforeEach(() => {
+        setupAppDOM();
+        setupGlobalMocks();
+        globalThis.d3 = createD3Mock();
+    });
+
+    describe('forgotPasswordLink click', () => {
+        it('should switch authModal tab to reset-request', () => {
+            new ExploreApp();
+            const modal = document.getElementById('authModal');
+            modal.__x.$data.tab = 'login';
+
+            document.getElementById('forgotPasswordLink').click();
+
+            expect(modal.__x.$data.tab).toBe('reset-request');
+        });
+    });
+
+    describe('backToLoginFromReset click', () => {
+        it('should switch authModal tab to login', () => {
+            new ExploreApp();
+            const modal = document.getElementById('authModal');
+            modal.__x.$data.tab = 'reset-request';
+
+            document.getElementById('backToLoginFromReset').click();
+
+            expect(modal.__x.$data.tab).toBe('login');
+        });
+    });
+
+    describe('resetRequestBtn click', () => {
+        it('should call apiClient.resetRequest with the entered email', async () => {
+            new ExploreApp();
+            document.getElementById('resetEmail').value = 'user@example.com';
+            window.apiClient.resetRequest = vi.fn().mockResolvedValue({ ok: true });
+
+            document.getElementById('resetRequestBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.resetRequest).toHaveBeenCalledWith('user@example.com');
+        });
+
+        it('should show error when email is empty', async () => {
+            new ExploreApp();
+            document.getElementById('resetEmail').value = '';
+            window.apiClient.resetRequest = vi.fn();
+
+            document.getElementById('resetRequestBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.resetRequest).not.toHaveBeenCalled();
+            expect(document.getElementById('resetRequestError').textContent).toBeTruthy();
+        });
+
+        it('should show success message when response is ok', async () => {
+            new ExploreApp();
+            document.getElementById('resetEmail').value = 'user@example.com';
+            window.apiClient.resetRequest = vi.fn().mockResolvedValue({ ok: true });
+
+            document.getElementById('resetRequestBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            const successEl = document.getElementById('resetRequestSuccess');
+            expect(successEl.classList.contains('hidden')).toBe(false);
+        });
+
+        it('should show error message when response is not ok', async () => {
+            new ExploreApp();
+            document.getElementById('resetEmail').value = 'user@example.com';
+            window.apiClient.resetRequest = vi.fn().mockResolvedValue({ ok: false });
+
+            document.getElementById('resetRequestBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('resetRequestError').textContent).toBeTruthy();
+        });
+    });
+
+    describe('login with 2FA challenge response', () => {
+        it('should switch to 2fa-verify tab and store challenge token when requires_2fa is true', async () => {
+            new ExploreApp();
+            document.getElementById('loginEmail').value = 'user@example.com';
+            document.getElementById('loginPassword').value = 'password123';
+
+            window.apiClient.login = vi.fn().mockResolvedValue({
+                requires_2fa: true,
+                challenge_token: 'challenge-abc',
+            });
+            const modal = document.getElementById('authModal');
+            modal.__x.$data.tab = 'login';
+
+            const app = new ExploreApp();
+            await app._handleLogin();
+
+            expect(window.authManager.setChallengeToken).toHaveBeenCalledWith('challenge-abc');
+            expect(modal.__x.$data.tab).toBe('2fa-verify');
+        });
+    });
+
+    describe('TOTP input auto-advance', () => {
+        it('should advance focus to next input when a digit is typed', () => {
+            new ExploreApp();
+            const inputs = document.querySelectorAll('#totpInputGroup input');
+            expect(inputs.length).toBe(6);
+
+            inputs[0].value = '1';
+            inputs[0].dispatchEvent(new Event('input'));
+            expect(inputs[0].value).toBe('1');
+        });
+
+        it('should handle backspace to go to previous input', () => {
+            new ExploreApp();
+            const inputs = document.querySelectorAll('#totpInputGroup input');
+
+            inputs[1].value = '';
+            inputs[1].dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace' }));
+            // Should not throw
+            expect(inputs[1].value).toBe('');
+        });
+    });
+
+    describe('resetConfirmBtn click', () => {
+        it('should show error when password is too short', async () => {
+            new ExploreApp();
+            document.getElementById('newPassword').value = 'short';
+            document.getElementById('confirmNewPassword').value = 'short';
+
+            document.getElementById('resetConfirmBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('resetConfirmError').textContent).toContain('8 characters');
+        });
+
+        it('should show error when passwords do not match', async () => {
+            new ExploreApp();
+            document.getElementById('newPassword').value = 'longpassword1';
+            document.getElementById('confirmNewPassword').value = 'longpassword2';
+
+            document.getElementById('resetConfirmBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('resetConfirmError').textContent).toContain('do not match');
+        });
+
+        it('should show error when no reset_token in URL', async () => {
+            new ExploreApp();
+            document.getElementById('newPassword').value = 'longpassword1';
+            document.getElementById('confirmNewPassword').value = 'longpassword1';
+            // No reset_token in URL
+            delete window.location;
+            window.location = { search: '', pathname: '/', href: '' };
+
+            document.getElementById('resetConfirmBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('resetConfirmError').textContent).toContain('Invalid reset link');
+        });
+
+        it('should call resetConfirm and show success on valid submission', async () => {
+            new ExploreApp();
+            document.getElementById('newPassword').value = 'newpassword123';
+            document.getElementById('confirmNewPassword').value = 'newpassword123';
+            delete window.location;
+            window.location = { search: '?reset_token=abc123', pathname: '/', href: '' };
+            history.replaceState = vi.fn();
+            window.apiClient.resetConfirm = vi.fn().mockResolvedValue({ ok: true });
+
+            document.getElementById('resetConfirmBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.resetConfirm).toHaveBeenCalledWith('abc123', 'newpassword123');
+            const successEl = document.getElementById('resetConfirmSuccess');
+            expect(successEl.classList.contains('hidden')).toBe(false);
+        });
+
+        it('should show error on failed reset confirm', async () => {
+            new ExploreApp();
+            document.getElementById('newPassword').value = 'newpassword123';
+            document.getElementById('confirmNewPassword').value = 'newpassword123';
+            delete window.location;
+            window.location = { search: '?reset_token=abc123', pathname: '/', href: '' };
+            window.apiClient.resetConfirm = vi.fn().mockResolvedValue({
+                ok: false,
+                json: async () => ({ detail: 'Token expired' }),
+            });
+
+            document.getElementById('resetConfirmBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('resetConfirmError').textContent).toContain('Token expired');
+        });
+    });
+
+    describe('twoFactorVerifyBtn click', () => {
+        it('should show error for incomplete code', async () => {
+            new ExploreApp();
+            const inputs = document.querySelectorAll('#totpInputGroup input');
+            inputs[0].value = '1';
+            inputs[1].value = '2';
+            // Only 2 digits entered
+
+            document.getElementById('twoFactorVerifyBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('twoFactorVerifyError').textContent).toContain('6-digit');
+        });
+
+        it('should show error when no challenge token', async () => {
+            new ExploreApp();
+            const inputs = document.querySelectorAll('#totpInputGroup input');
+            '123456'.split('').forEach((d, i) => { inputs[i].value = d; });
+            window.authManager.getChallengeToken = vi.fn().mockReturnValue(null);
+
+            document.getElementById('twoFactorVerifyBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('twoFactorVerifyError').textContent).toContain('Session expired');
+        });
+
+        it('should call twoFactorVerify and complete login on success', async () => {
+            new ExploreApp();
+            const inputs = document.querySelectorAll('#totpInputGroup input');
+            '123456'.split('').forEach((d, i) => { inputs[i].value = d; });
+            window.authManager.getChallengeToken = vi.fn().mockReturnValue('challenge-token');
+            window.apiClient.twoFactorVerify = vi.fn().mockResolvedValue({
+                ok: true,
+                json: async () => ({ access_token: 'new-jwt' }),
+            });
+
+            document.getElementById('twoFactorVerifyBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.twoFactorVerify).toHaveBeenCalledWith('challenge-token', '123456');
+            expect(window.authManager.setToken).toHaveBeenCalledWith('new-jwt');
+            expect(window.authManager.clearChallenge).toHaveBeenCalled();
+        });
+
+        it('should show error and clear inputs on failed verify', async () => {
+            new ExploreApp();
+            const inputs = document.querySelectorAll('#totpInputGroup input');
+            '123456'.split('').forEach((d, i) => { inputs[i].value = d; });
+            window.authManager.getChallengeToken = vi.fn().mockReturnValue('challenge-token');
+            window.apiClient.twoFactorVerify = vi.fn().mockResolvedValue({
+                ok: false,
+                json: async () => ({ detail: 'Invalid code' }),
+            });
+
+            document.getElementById('twoFactorVerifyBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('twoFactorVerifyError').textContent).toContain('Invalid code');
+            // Inputs should be cleared
+            inputs.forEach(inp => expect(inp.value).toBe(''));
+        });
+    });
+
+    describe('useRecoveryCodeLink click', () => {
+        it('should switch tab to 2fa-recovery', () => {
+            new ExploreApp();
+            const modal = document.getElementById('authModal');
+            modal.__x.$data.tab = '2fa-verify';
+
+            document.getElementById('useRecoveryCodeLink').click();
+
+            expect(modal.__x.$data.tab).toBe('2fa-recovery');
+        });
+    });
+
+    describe('backToTotpLink click', () => {
+        it('should switch tab to 2fa-verify', () => {
+            new ExploreApp();
+            const modal = document.getElementById('authModal');
+            modal.__x.$data.tab = '2fa-recovery';
+
+            document.getElementById('backToTotpLink').click();
+
+            expect(modal.__x.$data.tab).toBe('2fa-verify');
+        });
+    });
+
+    describe('twoFactorRecoveryBtn click', () => {
+        it('should show error when code is empty', async () => {
+            new ExploreApp();
+            document.getElementById('recoveryCodeInput').value = '';
+
+            document.getElementById('twoFactorRecoveryBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('twoFactorRecoveryError').textContent).toContain('enter a recovery code');
+        });
+
+        it('should show error when no challenge token', async () => {
+            new ExploreApp();
+            document.getElementById('recoveryCodeInput').value = 'my-recovery-code';
+            window.authManager.getChallengeToken = vi.fn().mockReturnValue(null);
+
+            document.getElementById('twoFactorRecoveryBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('twoFactorRecoveryError').textContent).toContain('Session expired');
+        });
+
+        it('should call twoFactorRecovery and complete login on success', async () => {
+            new ExploreApp();
+            document.getElementById('recoveryCodeInput').value = 'my-recovery-code';
+            window.authManager.getChallengeToken = vi.fn().mockReturnValue('challenge-token');
+            window.apiClient.twoFactorRecovery = vi.fn().mockResolvedValue({
+                ok: true,
+                json: async () => ({ access_token: 'new-jwt' }),
+            });
+
+            document.getElementById('twoFactorRecoveryBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(window.apiClient.twoFactorRecovery).toHaveBeenCalledWith('challenge-token', 'my-recovery-code');
+            expect(window.authManager.setToken).toHaveBeenCalledWith('new-jwt');
+            expect(window.authManager.clearChallenge).toHaveBeenCalled();
+        });
+
+        it('should show error on failed recovery', async () => {
+            new ExploreApp();
+            document.getElementById('recoveryCodeInput').value = 'bad-code';
+            window.authManager.getChallengeToken = vi.fn().mockReturnValue('challenge-token');
+            window.apiClient.twoFactorRecovery = vi.fn().mockResolvedValue({
+                ok: false,
+                json: async () => ({ detail: 'Invalid recovery code' }),
+            });
+
+            document.getElementById('twoFactorRecoveryBtn').click();
+            await new Promise(resolve => setTimeout(resolve, 0));
+
+            expect(document.getElementById('twoFactorRecoveryError').textContent).toContain('Invalid recovery code');
+        });
     });
 });

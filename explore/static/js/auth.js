@@ -8,6 +8,7 @@ class AuthManager {
         this._user = null;
         this._discogsStatus = null;
         this._listeners = [];
+        this._challengeToken = null;
     }
 
     /** Whether the user is currently logged in. */
@@ -49,6 +50,10 @@ class AuthManager {
     setDiscogsStatus(status) {
         this._discogsStatus = status;
     }
+
+    setChallengeToken(token) { this._challengeToken = token; }
+    getChallengeToken() { return this._challengeToken; }
+    clearChallenge() { this._challengeToken = null; }
 
     /** Clear all auth state (logout). */
     clear() {

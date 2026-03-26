@@ -540,6 +540,143 @@ class ExploreApp {
             document.getElementById('registerError').textContent = '';
             document.getElementById('registerSuccess')?.classList.add('hidden');
         });
+
+        // Password reset flow
+        document.getElementById('forgotPasswordLink')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            const modal = document.getElementById('authModal');
+            modal.__x.$data.tab = 'reset-request';
+        });
+
+        document.getElementById('backToLoginFromReset')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            const modal = document.getElementById('authModal');
+            modal.__x.$data.tab = 'login';
+        });
+
+        document.getElementById('resetRequestBtn')?.addEventListener('click', async () => {
+            const email = document.getElementById('resetEmail').value.trim();
+            const errorEl = document.getElementById('resetRequestError');
+            const successEl = document.getElementById('resetRequestSuccess');
+            errorEl.textContent = '';
+            successEl.classList.add('hidden');
+            if (!email) { errorEl.textContent = 'Please enter your email'; return; }
+            const response = await window.apiClient.resetRequest(email);
+            if (response.ok) {
+                successEl.textContent = 'If an account exists for that email, a reset link has been sent.';
+                successEl.classList.remove('hidden');
+            } else {
+                errorEl.textContent = 'Something went wrong. Please try again.';
+            }
+        });
+
+        document.getElementById('resetConfirmBtn')?.addEventListener('click', async () => {
+            const password = document.getElementById('newPassword').value;
+            const confirm = document.getElementById('confirmNewPassword').value;
+            const errorEl = document.getElementById('resetConfirmError');
+            const successEl = document.getElementById('resetConfirmSuccess');
+            errorEl.textContent = '';
+            successEl.classList.add('hidden');
+            if (password.length < 8) { errorEl.textContent = 'Password must be at least 8 characters'; return; }
+            if (password !== confirm) { errorEl.textContent = 'Passwords do not match'; return; }
+            const params = new URLSearchParams(window.location.search);
+            const token = params.get('reset_token');
+            if (!token) { errorEl.textContent = 'Invalid reset link'; return; }
+            const response = await window.apiClient.resetConfirm(token, password);
+            if (response.ok) {
+                successEl.textContent = 'Password has been reset! You can now log in.';
+                successEl.classList.remove('hidden');
+                history.replaceState(null, '', window.location.pathname);
+                setTimeout(() => {
+                    const modal = document.getElementById('authModal');
+                    modal.__x.$data.tab = 'login';
+                }, 2000);
+            } else {
+                const data = await response.json().catch(() => ({}));
+                errorEl.textContent = data.detail || 'Reset failed. The link may have expired.';
+            }
+        });
+
+        // Check for reset_token in URL on page load
+        (function checkResetToken() {
+            const params = new URLSearchParams(window.location.search);
+            if (params.has('reset_token')) {
+                Alpine.store('modals').authOpen = true;
+                // Wait for Alpine to process
+                requestAnimationFrame(() => {
+                    const modal = document.getElementById('authModal');
+                    if (modal && modal.__x) modal.__x.$data.tab = 'reset-confirm';
+                });
+            }
+        })();
+
+        // 2FA verification flow
+        document.getElementById('twoFactorVerifyBtn')?.addEventListener('click', async () => {
+            const inputs = document.querySelectorAll('#totpInputGroup input');
+            const code = Array.from(inputs).map(i => i.value).join('');
+            const errorEl = document.getElementById('twoFactorVerifyError');
+            errorEl.textContent = '';
+            if (code.length !== 6 || !/^\d{6}$/.test(code)) { errorEl.textContent = 'Please enter a 6-digit code'; return; }
+            const challengeToken = window.authManager.getChallengeToken();
+            if (!challengeToken) { errorEl.textContent = 'Session expired, please log in again'; return; }
+            const response = await window.apiClient.twoFactorVerify(challengeToken, code);
+            if (response.ok) {
+                const data = await response.json();
+                window.authManager.setToken(data.access_token);
+                window.authManager.clearChallenge();
+                await window.authManager.init();
+                window.authManager.notify();
+                Alpine.store('modals').authOpen = false;
+            } else {
+                const data = await response.json().catch(() => ({}));
+                errorEl.textContent = data.detail || 'Invalid code';
+                inputs.forEach(i => { i.value = ''; });
+                inputs[0]?.focus();
+            }
+        });
+
+        // TOTP input auto-advance
+        document.querySelectorAll('#totpInputGroup input').forEach((input, idx, arr) => {
+            input.addEventListener('input', () => {
+                if (input.value.length === 1 && idx < arr.length - 1) arr[idx + 1].focus();
+            });
+            input.addEventListener('keydown', (e) => {
+                if (e.key === 'Backspace' && !input.value && idx > 0) arr[idx - 1].focus();
+            });
+        });
+
+        document.getElementById('useRecoveryCodeLink')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            const modal = document.getElementById('authModal');
+            modal.__x.$data.tab = '2fa-recovery';
+        });
+
+        document.getElementById('backToTotpLink')?.addEventListener('click', (e) => {
+            e.preventDefault();
+            const modal = document.getElementById('authModal');
+            modal.__x.$data.tab = '2fa-verify';
+        });
+
+        document.getElementById('twoFactorRecoveryBtn')?.addEventListener('click', async () => {
+            const code = document.getElementById('recoveryCodeInput').value.trim();
+            const errorEl = document.getElementById('twoFactorRecoveryError');
+            errorEl.textContent = '';
+            if (!code) { errorEl.textContent = 'Please enter a recovery code'; return; }
+            const challengeToken = window.authManager.getChallengeToken();
+            if (!challengeToken) { errorEl.textContent = 'Session expired, please log in again'; return; }
+            const response = await window.apiClient.twoFactorRecovery(challengeToken, code);
+            if (response.ok) {
+                const data = await response.json();
+                window.authManager.setToken(data.access_token);
+                window.authManager.clearChallenge();
+                await window.authManager.init();
+                window.authManager.notify();
+                Alpine.store('modals').authOpen = false;
+            } else {
+                const data = await response.json().catch(() => ({}));
+                errorEl.textContent = data.detail || 'Invalid recovery code';
+            }
+        });
     }
 
     // ------------------------------------------------------------------ //
@@ -563,7 +700,21 @@ class ExploreApp {
 
         try {
             const result = await window.apiClient.login(email, password);
-            if (!result || !result.access_token) {
+            if (!result) {
+                if (errorEl) errorEl.textContent = 'Invalid email or password.';
+                return;
+            }
+
+            if (result.requires_2fa) {
+                window.authManager.setChallengeToken(result.challenge_token);
+                const modal = document.getElementById('authModal');
+                modal.__x.$data.tab = '2fa-verify';
+                document.querySelectorAll('#totpInputGroup input').forEach(i => { i.value = ''; });
+                document.querySelector('#totpInputGroup input')?.focus();
+                return;
+            }
+
+            if (!result.access_token) {
                 if (errorEl) errorEl.textContent = 'Invalid email or password.';
                 return;
             }

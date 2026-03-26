@@ -472,6 +472,8 @@ See [Insights README](../insights/README.md) for details.
 **Responsibilities**:
 
 - User registration and authentication (`/api/auth/*`)
+- Self-service password reset with Redis-backed tokens (`/api/auth/reset-*`)
+- Optional TOTP two-factor authentication (`/api/auth/2fa/*`)
 - JWT token generation and validation (HS256)
 - Discogs OAuth 1.0a OOB flow management (`/api/oauth/*`)
 - Discogs OAuth token storage and retrieval
@@ -496,6 +498,10 @@ See [Insights README](../insights/README.md) for details.
 - Stateless JWT authentication using shared `JWT_SECRET_KEY`
 - Redis-backed OAuth state storage with TTL
 - Token-protected endpoints for all user operations
+- Self-service password reset (Redis tokens, 15min TTL, anti-enumeration)
+- Optional TOTP 2FA with pyotp (QR code setup, recovery codes, brute-force lockout)
+- HKDF-SHA256 key derivation for per-purpose encryption (OAuth tokens, TOTP secrets)
+- Brevo transactional email integration (optional — falls back to log output)
 
 **Configuration**:
 
