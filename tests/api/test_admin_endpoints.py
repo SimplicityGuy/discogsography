@@ -861,6 +861,60 @@ class TestStorageEndpoint:
         assert resp.status_code == 401
 
 
+# ---------------------------------------------------------------------------
+# Phase 3 endpoint tests — Queue History, Health History
+# ---------------------------------------------------------------------------
+
+
+class TestQueueHistory:
+    @patch("api.routers.admin.get_queue_history")
+    def test_success(self, mock_query: Any, test_client: TestClient) -> None:
+        mock_query.return_value = {"range": "24h", "granularity": "15min", "queues": {}, "dlq_summary": {}}
+        resp = test_client.get("/api/admin/queues/history?range=24h", headers=_admin_auth_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["range"] == "24h"
+
+    def test_no_token_returns_401_or_403(self, test_client: TestClient) -> None:
+        resp = test_client.get("/api/admin/queues/history")
+        assert resp.status_code in (401, 403)
+
+    @patch("api.routers.admin.get_queue_history")
+    def test_invalid_range_returns_422(self, mock_query: Any, test_client: TestClient) -> None:
+        mock_query.side_effect = ValueError("Invalid range: 2h")
+        resp = test_client.get("/api/admin/queues/history?range=2h", headers=_admin_auth_headers())
+        assert resp.status_code == 422
+
+    @patch("api.routers.admin.get_queue_history")
+    def test_default_range_is_24h(self, mock_query: Any, test_client: TestClient) -> None:
+        mock_query.return_value = {"range": "24h", "granularity": "15min", "queues": {}, "dlq_summary": {}}
+        resp = test_client.get("/api/admin/queues/history", headers=_admin_auth_headers())
+        assert resp.status_code == 200
+        mock_query.assert_called_once()
+        call_args = mock_query.call_args
+        assert call_args[0][1] == "24h"
+
+
+class TestHealthHistory:
+    @patch("api.routers.admin.get_health_history")
+    def test_success(self, mock_query: Any, test_client: TestClient) -> None:
+        mock_query.return_value = {"range": "7d", "granularity": "1hour", "services": {}, "api_endpoints": {}}
+        resp = test_client.get("/api/admin/health/history?range=7d", headers=_admin_auth_headers())
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["range"] == "7d"
+
+    def test_no_token_returns_401_or_403(self, test_client: TestClient) -> None:
+        resp = test_client.get("/api/admin/health/history")
+        assert resp.status_code in (401, 403)
+
+    @patch("api.routers.admin.get_health_history")
+    def test_invalid_range_returns_422(self, mock_query: Any, test_client: TestClient) -> None:
+        mock_query.side_effect = ValueError("Invalid range: bad")
+        resp = test_client.get("/api/admin/health/history?range=bad", headers=_admin_auth_headers())
+        assert resp.status_code == 422
+
+
 class TestAdminTokenIsolation:
     def test_admin_token_rejected_on_user_endpoint(self, test_client: TestClient) -> None:
         """Admin tokens must not work on user endpoints."""
