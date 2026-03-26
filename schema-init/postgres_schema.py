@@ -471,6 +471,145 @@ _INSIGHTS_TABLES: list[tuple[str, str]] = [
 ]
 
 
+# MusicBrainz tables — external music metadata and relationships
+# Stores artist, label, and release data from MusicBrainz with cross-references to Discogs IDs.
+_MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
+    (
+        "musicbrainz schema",
+        "CREATE SCHEMA IF NOT EXISTS musicbrainz",
+    ),
+    (
+        "musicbrainz.artists table",
+        """CREATE TABLE IF NOT EXISTS musicbrainz.artists (
+            mbid UUID PRIMARY KEY,
+            name TEXT NOT NULL,
+            sort_name TEXT,
+            type TEXT,
+            gender TEXT,
+            begin_date TEXT,
+            end_date TEXT,
+            ended BOOLEAN DEFAULT FALSE,
+            area TEXT,
+            begin_area TEXT,
+            end_area TEXT,
+            disambiguation TEXT,
+            discogs_artist_id INTEGER,
+            aliases JSONB,
+            tags JSONB,
+            data JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+    ),
+    (
+        "musicbrainz.labels table",
+        """CREATE TABLE IF NOT EXISTS musicbrainz.labels (
+            mbid UUID PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT,
+            label_code INTEGER,
+            begin_date TEXT,
+            end_date TEXT,
+            ended BOOLEAN DEFAULT FALSE,
+            area TEXT,
+            disambiguation TEXT,
+            discogs_label_id INTEGER,
+            data JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+    ),
+    (
+        "musicbrainz.releases table",
+        """CREATE TABLE IF NOT EXISTS musicbrainz.releases (
+            mbid UUID PRIMARY KEY,
+            name TEXT NOT NULL,
+            barcode TEXT,
+            status TEXT,
+            release_group_mbid UUID,
+            discogs_release_id INTEGER,
+            data JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+    ),
+    (
+        "musicbrainz.relationships table",
+        """CREATE TABLE IF NOT EXISTS musicbrainz.relationships (
+            id SERIAL PRIMARY KEY,
+            source_mbid UUID NOT NULL,
+            target_mbid UUID NOT NULL,
+            source_entity_type TEXT NOT NULL,
+            target_entity_type TEXT NOT NULL,
+            relationship_type TEXT NOT NULL,
+            begin_date TEXT,
+            end_date TEXT,
+            ended BOOLEAN DEFAULT FALSE,
+            attributes JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (source_mbid, target_mbid, relationship_type)
+        )""",
+    ),
+    (
+        "musicbrainz.external_links table",
+        """CREATE TABLE IF NOT EXISTS musicbrainz.external_links (
+            id SERIAL PRIMARY KEY,
+            mbid UUID NOT NULL,
+            entity_type TEXT NOT NULL,
+            service_name TEXT NOT NULL,
+            url TEXT NOT NULL,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            UNIQUE (mbid, entity_type, service_name)
+        )""",
+    ),
+]
+
+
+# MusicBrainz indexes — optimized queries for cross-database lookups
+_MUSICBRAINZ_INDEXES: list[tuple[str, str]] = [
+    (
+        "idx_mb_artists_discogs_id",
+        "CREATE INDEX IF NOT EXISTS idx_mb_artists_discogs_id ON musicbrainz.artists (discogs_artist_id) WHERE discogs_artist_id IS NOT NULL",
+    ),
+    (
+        "idx_mb_labels_discogs_id",
+        "CREATE INDEX IF NOT EXISTS idx_mb_labels_discogs_id ON musicbrainz.labels (discogs_label_id) WHERE discogs_label_id IS NOT NULL",
+    ),
+    (
+        "idx_mb_releases_discogs_id",
+        "CREATE INDEX IF NOT EXISTS idx_mb_releases_discogs_id ON musicbrainz.releases (discogs_release_id) WHERE discogs_release_id IS NOT NULL",
+    ),
+    (
+        "idx_mb_artists_name",
+        "CREATE INDEX IF NOT EXISTS idx_mb_artists_name ON musicbrainz.artists (name)",
+    ),
+    (
+        "idx_mb_labels_name",
+        "CREATE INDEX IF NOT EXISTS idx_mb_labels_name ON musicbrainz.labels (name)",
+    ),
+    (
+        "idx_mb_rels_source",
+        "CREATE INDEX IF NOT EXISTS idx_mb_rels_source ON musicbrainz.relationships (source_mbid)",
+    ),
+    (
+        "idx_mb_rels_target",
+        "CREATE INDEX IF NOT EXISTS idx_mb_rels_target ON musicbrainz.relationships (target_mbid)",
+    ),
+    (
+        "idx_mb_rels_type",
+        "CREATE INDEX IF NOT EXISTS idx_mb_rels_type ON musicbrainz.relationships (relationship_type)",
+    ),
+    (
+        "idx_mb_links_mbid",
+        "CREATE INDEX IF NOT EXISTS idx_mb_links_mbid ON musicbrainz.external_links (mbid)",
+    ),
+    (
+        "idx_mb_links_service",
+        "CREATE INDEX IF NOT EXISTS idx_mb_links_service ON musicbrainz.external_links (service_name)",
+    ),
+]
+
+
 async def create_postgres_schema(pool: Any) -> int:
     """Create all PostgreSQL tables and indexes.
 
@@ -567,11 +706,23 @@ async def create_postgres_schema(pool: Any) -> int:
                     logger.error(f"❌ Failed to create schema object '{name}': {e}")
                     failure_count += 1
 
+            # ── MusicBrainz tables ────────────────────────────────────────
+            for name, stmt in _MUSICBRAINZ_TABLES + _MUSICBRAINZ_INDEXES:
+                try:
+                    await cursor.execute(stmt)
+                    logger.info(f"✅ Schema: {name}")
+                    success_count += 1
+                except Exception as e:
+                    logger.error(f"❌ Failed to create schema object '{name}': {e}")
+                    failure_count += 1
+
     total = (
         len(_ENTITY_TABLES) * 3
         + len(_SPECIFIC_INDEXES)
         + len(_USER_TABLES)
         + len(_INSIGHTS_TABLES)
+        + len(_MUSICBRAINZ_TABLES)
+        + len(_MUSICBRAINZ_INDEXES)
     )
     logger.info(
         f"✅ PostgreSQL schema creation complete: "
