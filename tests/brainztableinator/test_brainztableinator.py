@@ -1616,6 +1616,7 @@ class TestMain:
     @patch("brainztableinator.brainztableinator.AsyncResilientRabbitMQ")
     @patch("brainztableinator.brainztableinator.AsyncPostgreSQLPool")
     @patch("brainztableinator.brainztableinator.shutdown_requested", False)
+    @patch.dict("os.environ", {"STARTUP_DELAY": "0"})
     async def test_main_execution(
         self,
         mock_pool_class: Mock,
@@ -1690,6 +1691,7 @@ class TestMain:
     @patch("brainztableinator.brainztableinator.setup_logging")
     @patch("brainztableinator.brainztableinator.HealthServer")
     @patch("brainztableinator.brainztableinator.AsyncPostgreSQLPool")
+    @patch.dict("os.environ", {"STARTUP_DELAY": "0"})
     async def test_main_pool_initialization_failure(
         self,
         mock_pool_class: Mock,
@@ -1705,6 +1707,7 @@ class TestMain:
         await main()
 
     @pytest.mark.asyncio
+    @patch.dict("os.environ", {"STARTUP_DELAY": "0"})
     @patch("brainztableinator.brainztableinator.setup_logging")
     @patch("brainztableinator.brainztableinator.HealthServer")
     async def test_main_config_load_failure(
@@ -1750,8 +1753,17 @@ class TestMain:
         mock_rabbitmq_class.return_value = mock_rabbitmq_instance
         mock_rabbitmq_instance.connect.side_effect = Exception("Cannot connect to AMQP")
 
-        # Should handle the exception and return after max retries
-        await main()
+        # Patch asyncio.sleep to avoid actual delays in retry loop
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(delay: float) -> None:  # noqa: ARG001
+            await original_sleep(0)
+
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+        ):
+            await main()
 
     @pytest.mark.asyncio
     @patch("brainztableinator.brainztableinator.setup_logging")
@@ -1783,7 +1795,15 @@ class TestMain:
         mock_rabbitmq_class.return_value = mock_rabbitmq_instance
         mock_rabbitmq_instance.connect.side_effect = Exception("Cannot connect")
 
-        with patch.dict("os.environ", {"STARTUP_DELAY": "0"}):
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(delay: float) -> None:  # noqa: ARG001
+            await original_sleep(0)
+
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+        ):
             await main()
 
 
