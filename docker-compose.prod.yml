@@ -13,6 +13,7 @@ secrets:
     file: ./secrets/neo4j_password.txt
   encryption_master_key:
     file: ./secrets/encryption_master_key.txt
+  # Required for email delivery — create with: scripts/create-secrets.sh or manually
   brevo_api_key:
     file: ./secrets/brevo_api_key.txt
   postgres_password:
