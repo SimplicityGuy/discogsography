@@ -1,16 +1,18 @@
 """Shared JWT authentication utilities."""
 
 import base64
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import hashlib
 import hmac
 import json
 import os
+import secrets
 from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes as _hashes
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _HKDF
+import pyotp
 
 
 def b64url_encode(data: bytes) -> str:
@@ -112,3 +114,59 @@ def get_totp_encryption_key(master_key: str | None) -> str | None:
     if not master_key:
         return None
     return derive_encryption_key(master_key, b"totp-secrets")
+
+
+def generate_totp_secret() -> str:
+    """Generate a random TOTP secret in base32 format."""
+    return pyotp.random_base32()
+
+
+def encrypt_totp_secret(secret: str, key: str) -> str:
+    """Encrypt a TOTP secret using Fernet symmetric encryption."""
+    f = Fernet(key.encode("ascii"))
+    return f.encrypt(secret.encode("utf-8")).decode("ascii")
+
+
+def decrypt_totp_secret(encrypted: str, key: str) -> str:
+    """Decrypt a TOTP secret."""
+    f = Fernet(key.encode("ascii"))
+    return f.decrypt(encrypted.encode("ascii")).decode("utf-8")
+
+
+def verify_totp_code(secret: str, code: str) -> bool:
+    """Verify a TOTP code against a secret. Accepts ±1 time window."""
+    totp = pyotp.TOTP(secret)
+    return totp.verify(code, valid_window=1)
+
+
+def generate_recovery_codes() -> tuple[list[str], list[str]]:
+    """Generate 8 recovery codes. Returns (plaintext_codes, sha256_hashes)."""
+    plaintext = [secrets.token_urlsafe(12) for _ in range(8)]
+    hashes = [hash_recovery_code(code) for code in plaintext]
+    return plaintext, hashes
+
+
+def hash_recovery_code(code: str) -> str:
+    """SHA-256 hash a recovery code."""
+    return hashlib.sha256(code.encode("utf-8")).hexdigest()
+
+
+def create_challenge_token(user_id: str, email: str, secret_key: str) -> str:
+    """Create a short-lived 2FA challenge JWT (5 min TTL).
+
+    This token proves the password was correct but is NOT a full access token.
+    """
+    expire = datetime.now(UTC) + timedelta(minutes=5)
+    payload: dict[str, Any] = {
+        "sub": user_id,
+        "email": email,
+        "type": "2fa_challenge",
+        "exp": int(expire.timestamp()),
+        "iat": int(datetime.now(UTC).timestamp()),
+        "jti": secrets.token_hex(16),
+    }
+    header = b64url_encode(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
+    signing_input = f"{header}.{body}".encode("ascii")
+    signature = b64url_encode(hmac.new(secret_key.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    return f"{header}.{body}.{signature}"
