@@ -1056,4 +1056,137 @@ describe('ApiClient', () => {
             expect(capturedOptions.headers['Authorization']).toBe('Bearer my-token');
         });
     });
+
+    describe('password reset methods', () => {
+        it('resetRequest should POST to /api/auth/reset-request with email', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            const response = await window.apiClient.resetRequest('user@test.com');
+            expect(capturedUrl).toBe('/api/auth/reset-request');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Content-Type']).toBe('application/json');
+            expect(JSON.parse(capturedOptions.body)).toEqual({ email: 'user@test.com' });
+            expect(response.ok).toBe(true);
+        });
+
+        it('resetRequest should return the raw response', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 429, json: async () => ({}) }));
+
+            const response = await window.apiClient.resetRequest('user@test.com');
+            expect(response.ok).toBe(false);
+            expect(response.status).toBe(429);
+        });
+
+        it('resetConfirm should POST to /api/auth/reset-confirm with token and new_password', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            const response = await window.apiClient.resetConfirm('reset-token-abc', 'newpass123');
+            expect(capturedUrl).toBe('/api/auth/reset-confirm');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Content-Type']).toBe('application/json');
+            expect(JSON.parse(capturedOptions.body)).toEqual({ token: 'reset-token-abc', new_password: 'newpass123' });
+            expect(response.ok).toBe(true);
+        });
+    });
+
+    describe('2FA methods', () => {
+        it('twoFactorSetup should POST to /api/auth/2fa/setup with Authorization header', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, json: async () => ({ secret: 'ABCDEF', qr_uri: 'otpauth://...' }) };
+            });
+
+            const response = await window.apiClient.twoFactorSetup('my-jwt');
+            expect(capturedUrl).toBe('/api/auth/2fa/setup');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-jwt');
+            expect(response.ok).toBe(true);
+        });
+
+        it('twoFactorConfirm should POST to /api/auth/2fa/confirm with Authorization header and code', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            await window.apiClient.twoFactorConfirm('my-jwt', '123456');
+            expect(capturedUrl).toBe('/api/auth/2fa/confirm');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-jwt');
+            expect(JSON.parse(capturedOptions.body)).toEqual({ code: '123456' });
+        });
+
+        it('twoFactorVerify should POST to /api/auth/2fa/verify with challenge_token and code', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, json: async () => ({ access_token: 'jwt' }) };
+            });
+
+            await window.apiClient.twoFactorVerify('challenge-xyz', '654321');
+            expect(capturedUrl).toBe('/api/auth/2fa/verify');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Content-Type']).toBe('application/json');
+            expect(JSON.parse(capturedOptions.body)).toEqual({ challenge_token: 'challenge-xyz', code: '654321' });
+        });
+
+        it('twoFactorVerify should return the raw response', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 401, json: async () => ({}) }));
+
+            const response = await window.apiClient.twoFactorVerify('bad-token', '000000');
+            expect(response.ok).toBe(false);
+        });
+
+        it('twoFactorRecovery should POST to /api/auth/2fa/recovery with challenge_token and code', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, json: async () => ({ access_token: 'jwt' }) };
+            });
+
+            await window.apiClient.twoFactorRecovery('challenge-xyz', 'RECOVERY-CODE-001');
+            expect(capturedUrl).toBe('/api/auth/2fa/recovery');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Content-Type']).toBe('application/json');
+            expect(JSON.parse(capturedOptions.body)).toEqual({ challenge_token: 'challenge-xyz', code: 'RECOVERY-CODE-001' });
+        });
+
+        it('twoFactorDisable should POST to /api/auth/2fa/disable with Authorization header, code, and password', async () => {
+            let capturedUrl, capturedOptions;
+            vi.stubGlobal('fetch', async (url, options) => {
+                capturedUrl = url;
+                capturedOptions = options;
+                return { ok: true, json: async () => ({}) };
+            });
+
+            await window.apiClient.twoFactorDisable('my-jwt', '123456', 'mypassword');
+            expect(capturedUrl).toBe('/api/auth/2fa/disable');
+            expect(capturedOptions.method).toBe('POST');
+            expect(capturedOptions.headers['Authorization']).toBe('Bearer my-jwt');
+            expect(JSON.parse(capturedOptions.body)).toEqual({ code: '123456', password: 'mypassword' });
+        });
+
+        it('twoFactorDisable should return the raw response', async () => {
+            vi.stubGlobal('fetch', async () => ({ ok: false, status: 400, json: async () => ({}) }));
+
+            const response = await window.apiClient.twoFactorDisable('my-jwt', 'wrong', 'pass');
+            expect(response.ok).toBe(false);
+        });
+    });
 });

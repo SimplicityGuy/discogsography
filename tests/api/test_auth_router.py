@@ -934,3 +934,85 @@ class TestTwoFactorDisableFull:
             json={"code": "123456", "password": "testpassword"},
         )
         assert response.status_code == 400
+
+
+class TestTwoFactorVerifyEdgeCases:
+    """Edge cases for 2FA verify that aren't covered."""
+
+    def test_verify_challenge_missing_from_redis(
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """Challenge token is valid JWT but not in Redis (expired/used)."""
+
+        token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET)
+
+        # Redis returns None for the challenge key (expired)
+        mock_redis.get = AsyncMock(return_value=None)
+
+        response = test_client.post(
+            "/api/auth/2fa/verify",
+            json={
+                "challenge_token": token,
+                "code": "123456",
+            },
+        )
+        assert response.status_code == 401
+
+    def test_verify_user_2fa_not_configured(
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """User found but totp_enabled is False."""
+        import json
+
+        token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET)
+
+        async def redis_get(redis_key: str) -> str | None:
+            if "2fa_challenge:" in redis_key:
+                return json.dumps({"user_id": TEST_USER_ID})
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=redis_get)
+        mock_cur.fetchone = AsyncMock(
+            return_value={
+                "totp_secret": None,
+                "totp_enabled": False,
+                "totp_failed_attempts": 0,
+                "totp_locked_until": None,
+            }
+        )
+
+        response = test_client.post(
+            "/api/auth/2fa/verify",
+            json={
+                "challenge_token": token,
+                "code": "123456",
+            },
+        )
+        assert response.status_code in (400, 401)
+
+
+class TestTwoFactorRecoveryEdgeCases:
+    """Edge cases for 2FA recovery."""
+
+    def test_recovery_challenge_missing_from_redis(
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+    ) -> None:
+        """Challenge token valid but expired in Redis."""
+        token = create_challenge_token(TEST_USER_ID, TEST_USER_EMAIL, TEST_JWT_SECRET)
+        mock_redis.get = AsyncMock(return_value=None)
+
+        response = test_client.post(
+            "/api/auth/2fa/recovery",
+            json={
+                "challenge_token": token,
+                "code": "some-code",
+            },
+        )
+        assert response.status_code == 401
