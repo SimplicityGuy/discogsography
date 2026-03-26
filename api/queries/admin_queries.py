@@ -203,6 +203,79 @@ async def get_postgres_storage(pool: Any) -> dict[str, Any]:
     return {"status": "ok", "tables": tables, "total_size": total_size}
 
 
+_AUDIT_LOG_BASE_WINDOW = "a.created_at >= NOW() - INTERVAL '90 days'"
+
+# Four fixed query variants — one per filter combination.  All SQL structure is
+# hardcoded; user-supplied values are always bound as %s parameters, never
+# interpolated into the query string.
+_AUDIT_COUNT_UNFILTERED = f"SELECT count(*) AS total FROM admin_audit_log a WHERE {_AUDIT_LOG_BASE_WINDOW}"  # noqa: S608
+_AUDIT_COUNT_ACTION = f"SELECT count(*) AS total FROM admin_audit_log a WHERE {_AUDIT_LOG_BASE_WINDOW} AND a.action = %s"  # noqa: S608
+_AUDIT_COUNT_ADMIN = f"SELECT count(*) AS total FROM admin_audit_log a WHERE {_AUDIT_LOG_BASE_WINDOW} AND a.admin_id = %s::uuid"  # noqa: S608
+_AUDIT_COUNT_BOTH = f"SELECT count(*) AS total FROM admin_audit_log a WHERE {_AUDIT_LOG_BASE_WINDOW} AND a.action = %s AND a.admin_id = %s::uuid"  # noqa: S608
+
+_AUDIT_SELECT = (
+    "SELECT a.id, a.admin_id, u.email AS admin_email,"
+    " a.action, a.target, a.details, a.created_at"
+    " FROM admin_audit_log a JOIN users u ON u.id = a.admin_id"
+    " WHERE"
+)
+_AUDIT_ENTRIES_UNFILTERED = f"{_AUDIT_SELECT} {_AUDIT_LOG_BASE_WINDOW} ORDER BY a.created_at DESC LIMIT %s OFFSET %s"
+_AUDIT_ENTRIES_ACTION = f"{_AUDIT_SELECT} {_AUDIT_LOG_BASE_WINDOW} AND a.action = %s ORDER BY a.created_at DESC LIMIT %s OFFSET %s"
+_AUDIT_ENTRIES_ADMIN = f"{_AUDIT_SELECT} {_AUDIT_LOG_BASE_WINDOW} AND a.admin_id = %s::uuid ORDER BY a.created_at DESC LIMIT %s OFFSET %s"
+_AUDIT_ENTRIES_BOTH = (
+    f"{_AUDIT_SELECT} {_AUDIT_LOG_BASE_WINDOW} AND a.action = %s AND a.admin_id = %s::uuid ORDER BY a.created_at DESC LIMIT %s OFFSET %s"
+)
+
+
+async def get_audit_log(
+    pool: Any,
+    page: int = 1,
+    page_size: int = 50,
+    action_filter: str | None = None,
+    admin_id_filter: str | None = None,
+) -> dict[str, Any]:
+    """Fetch paginated audit log entries (last 90 days by default)."""
+    offset = (page - 1) * page_size
+
+    # Select the appropriate pre-built query string and parameter list based on
+    # which filters are active.  No runtime string construction occurs here.
+    if action_filter and admin_id_filter:
+        count_sql = _AUDIT_COUNT_BOTH
+        count_params: list[Any] = [action_filter, admin_id_filter]
+        entries_sql = _AUDIT_ENTRIES_BOTH
+        entries_params: list[Any] = [action_filter, admin_id_filter, page_size, offset]
+    elif action_filter:
+        count_sql = _AUDIT_COUNT_ACTION
+        count_params = [action_filter]
+        entries_sql = _AUDIT_ENTRIES_ACTION
+        entries_params = [action_filter, page_size, offset]
+    elif admin_id_filter:
+        count_sql = _AUDIT_COUNT_ADMIN
+        count_params = [admin_id_filter]
+        entries_sql = _AUDIT_ENTRIES_ADMIN
+        entries_params = [admin_id_filter, page_size, offset]
+    else:
+        count_sql = _AUDIT_COUNT_UNFILTERED
+        count_params = []
+        entries_sql = _AUDIT_ENTRIES_UNFILTERED
+        entries_params = [page_size, offset]
+
+    async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(count_sql, count_params)
+        total_row = await cur.fetchone()
+        total = total_row["total"] if total_row else 0
+
+        await cur.execute(entries_sql, entries_params)
+        entries = await cur.fetchall()
+
+    return {
+        "entries": entries,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
 async def get_redis_storage(redis: Any) -> dict[str, Any]:
     """Fetch Redis memory usage and key distribution grouped by prefix."""
     if redis is None:
