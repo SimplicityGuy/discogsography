@@ -199,6 +199,27 @@ def test_client(
     _insights_compute_router.configure(mock_neo4j, mock_pool, mock_redis)
     _admin_router.configure(mock_pool, mock_redis, test_api_config, neo4j_driver=mock_neo4j)
 
+    # Build a dedicated pool for require_admin DB verification that always returns
+    # {"is_admin": True} so admin-token tests pass without conflicting with
+    # per-test mock_cur.fetchone configuration.
+    _admin_verify_cur = AsyncMock()
+    _admin_verify_cur.execute = AsyncMock()
+    _admin_verify_cur.fetchone = AsyncMock(return_value={"is_admin": True})
+    _admin_verify_cur_ctx = AsyncMock()
+    _admin_verify_cur_ctx.__aenter__ = AsyncMock(return_value=_admin_verify_cur)
+    _admin_verify_cur_ctx.__aexit__ = AsyncMock(return_value=False)
+    _admin_verify_conn = AsyncMock()
+    _admin_verify_conn.cursor = MagicMock(return_value=_admin_verify_cur_ctx)
+    _admin_verify_conn_ctx = AsyncMock()
+    _admin_verify_conn_ctx.__aenter__ = AsyncMock(return_value=_admin_verify_conn)
+    _admin_verify_conn_ctx.__aexit__ = AsyncMock(return_value=False)
+    _admin_verify_pool = MagicMock()
+    _admin_verify_pool.connection = MagicMock(return_value=_admin_verify_conn_ctx)
+
+    import api.dependencies as _deps
+
+    _deps.configure(TEST_JWT_SECRET, mock_redis, pool=_admin_verify_pool)
+
     from api.nlq.config import NLQConfig
     import api.routers.nlq as _nlq_router
 

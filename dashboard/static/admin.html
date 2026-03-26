@@ -277,6 +277,9 @@
             <button class="tab-btn" data-tab="system-health" id="tab-btn-system-health">
                 <span class="material-symbols-outlined text-sm">monitor_heart</span> System Health
             </button>
+            <button class="tab-btn" data-tab="audit-log" id="tab-btn-audit-log">
+                <span class="material-symbols-outlined text-sm">history</span> Audit Log
+            </button>
         </nav>
 
         <!-- ============================================================
@@ -716,6 +719,58 @@
             </section>
 
         </div><!-- /tab-system-health -->
+
+        <!-- Audit Log Tab -->
+        <div id="tab-audit-log" class="space-y-6" style="display:none">
+            <section class="dashboard-card p-6">
+                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm t-dim">history</span> Admin Audit Log
+                    </h3>
+                    <div class="flex items-center gap-3">
+                        <select id="al-action-filter" class="text-xs bg-transparent border b-theme rounded px-2 py-1">
+                            <option value="">All Actions</option>
+                            <option value="admin.login">Login</option>
+                            <option value="admin.logout">Logout</option>
+                            <option value="extraction.trigger">Extraction Trigger</option>
+                            <option value="dlq.purge">DLQ Purge</option>
+                        </select>
+                        <span class="text-[10px] t-muted">Auto-refresh 60s</span>
+                        <span id="al-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="al-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
+                            <span class="material-symbols-outlined text-xs">warning</span>
+                            <span id="al-error-msg"></span>
+                        </span>
+                        <button id="al-refresh-btn" class="text-xs font-bold uppercase tracking-wider t-dim hover:t-primary transition-colors flex items-center gap-1">
+                            <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs">
+                        <thead>
+                            <tr class="border-b b-theme">
+                                <th class="text-left py-2 px-3 t-muted font-medium">Timestamp</th>
+                                <th class="text-left py-2 px-3 t-muted font-medium">Admin</th>
+                                <th class="text-left py-2 px-3 t-muted font-medium">Action</th>
+                                <th class="text-left py-2 px-3 t-muted font-medium">Target</th>
+                                <th class="text-left py-2 px-3 t-muted font-medium">Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="al-table-body">
+                            <tr><td colspan="5" class="text-center py-8 t-muted">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div id="al-pagination" class="flex items-center justify-between mt-4 pt-4 border-t b-theme" style="display:none">
+                    <span id="al-page-info" class="text-xs t-muted"></span>
+                    <div class="flex gap-2">
+                        <button id="al-prev-btn" class="text-xs font-bold uppercase tracking-wider t-dim hover:t-primary transition-colors px-3 py-1 border b-theme rounded" disabled>Previous</button>
+                        <button id="al-next-btn" class="text-xs font-bold uppercase tracking-wider t-dim hover:t-primary transition-colors px-3 py-1 border b-theme rounded" disabled>Next</button>
+                    </div>
+                </div>
+            </section>
+        </div>
 
     </div><!-- /admin-view -->
 

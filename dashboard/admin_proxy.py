@@ -280,3 +280,37 @@ async def proxy_health_history(
         logger.error("❌ API service unreachable", url=url, error=str(exc))
         return _unavailable_response()
     return _ok_response(resp)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Audit Log proxy route
+# ---------------------------------------------------------------------------
+
+
+@router.get("/admin/api/audit-log")
+async def proxy_audit_log(
+    request: Request,
+    page: int | None = Query(default=None, ge=1),
+    page_size: int | None = Query(default=None, ge=1, le=100),
+    action: str | None = Query(default=None, pattern=r"^[a-z][a-z0-9_.]+$"),
+    admin_id: str | None = Query(default=None, pattern=r"^[a-f0-9-]+$"),
+) -> Response:
+    """Proxy audit log requests to the API service."""
+    url = _build_url("/api/admin/audit-log")
+    params: dict[str, str] = {}
+    if page is not None:
+        params["page"] = str(page)
+    if page_size is not None:
+        params["page_size"] = str(page_size)
+    if action is not None:
+        params["action"] = action
+    if admin_id is not None:
+        params["admin_id"] = admin_id
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers, params=params)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)

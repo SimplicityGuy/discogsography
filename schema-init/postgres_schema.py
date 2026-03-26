@@ -94,6 +94,7 @@ _USER_TABLES: list[tuple[str, str]] = [
             email                VARCHAR(255) UNIQUE NOT NULL,
             hashed_password      VARCHAR(255) NOT NULL,
             is_active            BOOLEAN NOT NULL DEFAULT TRUE,
+            is_admin             BOOLEAN NOT NULL DEFAULT FALSE,
             password_changed_at  TIMESTAMP WITH TIME ZONE,
             totp_secret          VARCHAR,
             totp_enabled         BOOLEAN NOT NULL DEFAULT FALSE,
@@ -243,24 +244,11 @@ _USER_TABLES: list[tuple[str, str]] = [
         "CREATE INDEX IF NOT EXISTS idx_sync_history_running ON sync_history (user_id) WHERE status = 'running'",
     ),
     (
-        "dashboard_admins",
-        """
-        CREATE TABLE IF NOT EXISTS dashboard_admins (
-            id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            email VARCHAR(255) UNIQUE NOT NULL,
-            hashed_password VARCHAR(255) NOT NULL,
-            is_active BOOLEAN DEFAULT TRUE,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-        )
-        """,
-    ),
-    (
         "extraction_history",
         """
         CREATE TABLE IF NOT EXISTS extraction_history (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-            triggered_by UUID NOT NULL REFERENCES dashboard_admins(id),
+            triggered_by UUID NOT NULL REFERENCES users(id),
             status VARCHAR(20) NOT NULL DEFAULT 'pending',
             started_at TIMESTAMP WITH TIME ZONE,
             completed_at TIMESTAMP WITH TIME ZONE,
@@ -314,6 +302,27 @@ _USER_TABLES: list[tuple[str, str]] = [
     (
         "idx_service_health_recorded_service",
         "CREATE INDEX IF NOT EXISTS idx_service_health_recorded_service ON service_health_metrics (recorded_at, service_name)",
+    ),
+    (
+        "admin_audit_log table",
+        """
+        CREATE TABLE IF NOT EXISTS admin_audit_log (
+            id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            admin_id   UUID NOT NULL REFERENCES users(id),
+            action     VARCHAR(100) NOT NULL,
+            target     VARCHAR(255),
+            details    JSONB,
+            created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+        )
+        """,
+    ),
+    (
+        "idx_admin_audit_log_created_at",
+        "CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created_at ON admin_audit_log (created_at DESC)",
+    ),
+    (
+        "idx_admin_audit_log_admin_id",
+        "CREATE INDEX IF NOT EXISTS idx_admin_audit_log_admin_id ON admin_audit_log (admin_id)",
     ),
 ]
 

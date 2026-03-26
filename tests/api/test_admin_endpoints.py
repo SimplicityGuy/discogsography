@@ -70,9 +70,10 @@ def _make_admin_row(
     admin_id: str = TEST_ADMIN_ID,
     email: str = TEST_ADMIN_EMAIL,
     is_active: bool = True,
+    is_admin: bool = True,
     password: str | None = None,
 ) -> dict[str, Any]:
-    """Create a sample dashboard_admins DB row."""
+    """Create a sample users DB row."""
     if password is None:
         password = "adminpassword123"
     return {
@@ -80,6 +81,7 @@ def _make_admin_row(
         "email": email,
         "hashed_password": _hash_password(password),
         "is_active": is_active,
+        "is_admin": is_admin,
         "created_at": datetime.now(UTC),
     }
 
@@ -127,6 +129,16 @@ class TestAdminLogin:
             json={"email": TEST_ADMIN_EMAIL, "password": "adminpassword123"},
         )
         assert resp.status_code == 401
+
+    def test_non_admin_user_gets_403(self, test_client: TestClient, mock_cur: AsyncMock) -> None:
+        admin_row = _make_admin_row(is_admin=False)
+        mock_cur.fetchone = AsyncMock(return_value=admin_row)
+
+        resp = test_client.post(
+            "/api/admin/auth/login",
+            json={"email": TEST_ADMIN_EMAIL, "password": "adminpassword123"},
+        )
+        assert resp.status_code == 403
 
 
 class TestAdminLogout:
@@ -972,3 +984,234 @@ class TestRequireAdminRevocation:
             await deps.require_admin(creds)
         assert exc_info.value.status_code == 401
         assert "revoked" in exc_info.value.detail.lower()
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Audit Log endpoint tests
+# ---------------------------------------------------------------------------
+
+
+class TestAuditLog:
+    @patch("api.routers.admin.get_audit_log")
+    def test_list_audit_log(self, mock_get_audit_log: Any, test_client: TestClient) -> None:
+        mock_get_audit_log.return_value = {
+            "entries": [
+                {
+                    "id": "00000000-0000-0000-0000-000000000001",
+                    "admin_id": TEST_ADMIN_ID,
+                    "admin_email": TEST_ADMIN_EMAIL,
+                    "action": "admin.login",
+                    "target": TEST_ADMIN_EMAIL,
+                    "details": {"success": True},
+                    "created_at": datetime.now(UTC).isoformat(),
+                },
+            ],
+            "total": 1,
+            "page": 1,
+            "page_size": 50,
+        }
+
+        resp = test_client.get(
+            "/api/admin/audit-log",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert len(data["entries"]) == 1
+        assert data["entries"][0]["action"] == "admin.login"
+
+    def test_audit_log_requires_admin(self, test_client: TestClient) -> None:
+        resp = test_client.get("/api/admin/audit-log")
+        assert resp.status_code in (401, 403)
+
+    @patch("api.routers.admin._pool", None)
+    def test_audit_log_503_when_pool_none(self, test_client: TestClient) -> None:
+        resp = test_client.get(
+            "/api/admin/audit-log",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 503
+
+    @patch("api.routers.admin.get_audit_log")
+    def test_audit_log_passes_pagination_params(self, mock_get_audit_log: Any, test_client: TestClient) -> None:
+        """Verify page and page_size are forwarded to the query function."""
+        mock_get_audit_log.return_value = {"entries": [], "total": 0, "page": 3, "page_size": 25}
+
+        resp = test_client.get(
+            "/api/admin/audit-log?page=3&page_size=25",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 200
+        mock_get_audit_log.assert_called_once()
+        call_kwargs = mock_get_audit_log.call_args
+        assert call_kwargs.kwargs.get("page") == 3 or call_kwargs[1].get("page") == 3
+        assert call_kwargs.kwargs.get("page_size") == 25 or call_kwargs[1].get("page_size") == 25
+
+    @patch("api.routers.admin.get_audit_log")
+    def test_audit_log_passes_action_filter(self, mock_get_audit_log: Any, test_client: TestClient) -> None:
+        """Verify action filter is forwarded to the query function."""
+        mock_get_audit_log.return_value = {"entries": [], "total": 0, "page": 1, "page_size": 50}
+
+        resp = test_client.get(
+            "/api/admin/audit-log?action=dlq.purge",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_get_audit_log.call_args
+        assert call_kwargs.kwargs.get("action_filter") == "dlq.purge" or call_kwargs[1].get("action_filter") == "dlq.purge"
+
+    @patch("api.routers.admin.get_audit_log")
+    def test_audit_log_clamps_page_size(self, mock_get_audit_log: Any, test_client: TestClient) -> None:
+        """Verify page_size is clamped to max 100."""
+        mock_get_audit_log.return_value = {"entries": [], "total": 0, "page": 1, "page_size": 100}
+
+        resp = test_client.get(
+            "/api/admin/audit-log?page_size=500",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_get_audit_log.call_args
+        page_size = call_kwargs.kwargs.get("page_size") or call_kwargs[1].get("page_size")
+        assert page_size == 100
+
+
+class TestAuditLogging:
+    """Verify audit entries are recorded for all admin write actions."""
+
+    @patch("api.routers.admin.record_audit_entry", new_callable=AsyncMock)
+    def test_login_success_records_audit(self, mock_audit: AsyncMock, test_client: TestClient, mock_cur: AsyncMock) -> None:
+        admin_row = _make_admin_row()
+        mock_cur.fetchone = AsyncMock(return_value=admin_row)
+
+        resp = test_client.post(
+            "/api/admin/auth/login",
+            json={"email": TEST_ADMIN_EMAIL, "password": "adminpassword123"},
+        )
+        assert resp.status_code == 200
+        # Verify audit entry was recorded for successful login
+        mock_audit.assert_called()
+        # Find the success=True call (there may be multiple calls)
+        calls = mock_audit.call_args_list
+        success_call = [c for c in calls if c.kwargs.get("details", {}).get("success") is True]
+        assert len(success_call) == 1
+        assert success_call[0].kwargs["action"] == "admin.login"
+        assert success_call[0].kwargs["target"] == TEST_ADMIN_EMAIL
+
+    @patch("api.routers.admin.record_audit_entry", new_callable=AsyncMock)
+    def test_login_failure_records_audit(self, mock_audit: AsyncMock, test_client: TestClient, mock_cur: AsyncMock) -> None:
+        admin_row = _make_admin_row()
+        mock_cur.fetchone = AsyncMock(return_value=admin_row)
+
+        resp = test_client.post(
+            "/api/admin/auth/login",
+            json={"email": TEST_ADMIN_EMAIL, "password": "wrongpassword"},
+        )
+        assert resp.status_code == 401
+        mock_audit.assert_called_once()
+        assert mock_audit.call_args.kwargs["action"] == "admin.login"
+        assert mock_audit.call_args.kwargs["details"]["success"] is False
+
+    @patch("api.routers.admin.record_audit_entry", new_callable=AsyncMock)
+    def test_login_non_admin_records_audit(self, mock_audit: AsyncMock, test_client: TestClient, mock_cur: AsyncMock) -> None:
+        admin_row = _make_admin_row(is_admin=False)
+        mock_cur.fetchone = AsyncMock(return_value=admin_row)
+
+        resp = test_client.post(
+            "/api/admin/auth/login",
+            json={"email": TEST_ADMIN_EMAIL, "password": "adminpassword123"},
+        )
+        assert resp.status_code == 403
+        mock_audit.assert_called_once()
+        assert mock_audit.call_args.kwargs["action"] == "admin.login"
+        assert mock_audit.call_args.kwargs["details"]["reason"] == "not_admin"
+
+    @patch("api.routers.admin.record_audit_entry", new_callable=AsyncMock)
+    def test_logout_records_audit(self, mock_audit: AsyncMock, test_client: TestClient) -> None:
+        resp = test_client.post(
+            "/api/admin/auth/logout",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 200
+        mock_audit.assert_called_once()
+        assert mock_audit.call_args.kwargs["action"] == "admin.logout"
+        assert mock_audit.call_args.kwargs["target"] == TEST_ADMIN_EMAIL
+
+    @patch("api.routers.admin.httpx.AsyncClient")
+    @patch("api.routers.admin.record_audit_entry", new_callable=AsyncMock)
+    def test_extraction_trigger_records_audit(
+        self, mock_audit: AsyncMock, mock_client_cls: Any, test_client: TestClient, mock_cur: AsyncMock
+    ) -> None:
+        extraction_id = str(uuid4())
+        mock_cur.fetchone = AsyncMock(return_value={"id": extraction_id})
+
+        mock_response = AsyncMock()
+        mock_response.status_code = 202
+        mock_client_instance = AsyncMock()
+        mock_client_instance.post = AsyncMock(return_value=mock_response)
+        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client_instance
+
+        resp = test_client.post(
+            "/api/admin/extractions/trigger",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 202
+        mock_audit.assert_called_once()
+        assert mock_audit.call_args.kwargs["action"] == "extraction.trigger"
+        assert mock_audit.call_args.kwargs["details"]["extraction_id"] == extraction_id
+
+    @patch("api.routers.admin.httpx.AsyncClient")
+    @patch("api.routers.admin.record_audit_entry", new_callable=AsyncMock)
+    def test_dlq_purge_records_audit(self, mock_audit: AsyncMock, mock_client_cls: Any, test_client: TestClient) -> None:
+        mock_response = AsyncMock()
+        mock_response.status_code = 204
+        mock_client_instance = AsyncMock()
+        mock_client_instance.delete = AsyncMock(return_value=mock_response)
+        mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+        mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client_instance
+
+        resp = test_client.post(
+            "/api/admin/dlq/purge/graphinator-artists-dlq",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 200
+        mock_audit.assert_called_once()
+        assert mock_audit.call_args.kwargs["action"] == "dlq.purge"
+        assert mock_audit.call_args.kwargs["target"] == "graphinator-artists-dlq"
+
+
+class TestAdminAuthSecurity:
+    """Security tests for admin authentication."""
+
+    def test_forged_admin_jwt_rejected_by_db_verification(self, test_client: TestClient) -> None:
+        """A token with type=admin is rejected when DB says user is not an admin."""
+        import api.dependencies as deps
+
+        # Create a mock pool that returns is_admin=False
+        reject_pool = MagicMock()
+        reject_cur = AsyncMock()
+        reject_cur.fetchone = AsyncMock(return_value={"is_admin": False})
+        reject_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=reject_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        reject_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=reject_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        reject_pool.connection = MagicMock(return_value=conn_ctx)
+
+        original_pool = deps._pool
+        deps._pool = reject_pool
+        try:
+            token = _make_admin_jwt()
+            resp = test_client.get(
+                "/api/admin/audit-log",
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            assert resp.status_code == 403
+        finally:
+            deps._pool = original_pool

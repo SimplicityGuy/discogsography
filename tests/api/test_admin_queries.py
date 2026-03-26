@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -387,3 +388,150 @@ class TestGetRedisStorage:
         assert result["status"] == "ok"
         assert result["total_keys"] == 0
         assert result["keys_by_prefix"] == []
+
+
+class TestGetAuditLog:
+    @pytest.mark.asyncio
+    async def test_returns_paginated_entries(self) -> None:
+        from api.queries.admin_queries import get_audit_log
+
+        mock_cur = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value={"total": 2})
+        mock_cur.fetchall = AsyncMock(
+            return_value=[
+                {
+                    "id": "uuid-1",
+                    "admin_id": "admin-uuid",
+                    "admin_email": "admin@test.com",
+                    "action": "admin.login",
+                    "target": "admin@test.com",
+                    "details": {"success": True},
+                    "created_at": datetime.now(UTC),
+                },
+                {
+                    "id": "uuid-2",
+                    "admin_id": "admin-uuid",
+                    "admin_email": "admin@test.com",
+                    "action": "dlq.purge",
+                    "target": "graphinator-artists-dlq",
+                    "details": {"purged_count": 3},
+                    "created_at": datetime.now(UTC),
+                },
+            ]
+        )
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.connection = MagicMock(return_value=conn_ctx)
+
+        result = await get_audit_log(pool, page=1, page_size=50)
+        assert result["total"] == 2
+        assert len(result["entries"]) == 2
+        assert result["page"] == 1
+        assert result["page_size"] == 50
+
+    @pytest.mark.asyncio
+    async def test_filters_by_action(self) -> None:
+        from api.queries.admin_queries import get_audit_log
+
+        mock_cur = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value={"total": 0})
+        mock_cur.fetchall = AsyncMock(return_value=[])
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.connection = MagicMock(return_value=conn_ctx)
+
+        await get_audit_log(pool, page=1, page_size=50, action_filter="dlq.purge")
+
+        count_call = mock_cur.execute.call_args_list[0]
+        assert "action = %s" in count_call[0][0]
+
+    @pytest.mark.asyncio
+    async def test_filters_by_admin_id(self) -> None:
+        from api.queries.admin_queries import get_audit_log
+
+        mock_cur = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value={"total": 0})
+        mock_cur.fetchall = AsyncMock(return_value=[])
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.connection = MagicMock(return_value=conn_ctx)
+
+        result = await get_audit_log(pool, page=1, page_size=50, admin_id_filter="admin-uuid-123")
+        assert result["total"] == 0
+        assert result["entries"] == []
+        # Verify SQL was called with admin_id parameter
+        count_call = mock_cur.execute.call_args_list[0]
+        assert "admin_id" in count_call[0][0]
+
+    @pytest.mark.asyncio
+    async def test_filters_by_both_action_and_admin_id(self) -> None:
+        from api.queries.admin_queries import get_audit_log
+
+        mock_cur = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value={"total": 0})
+        mock_cur.fetchall = AsyncMock(return_value=[])
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        pool = MagicMock()
+        pool.connection = MagicMock(return_value=conn_ctx)
+
+        result = await get_audit_log(pool, page=1, page_size=50, action_filter="dlq.purge", admin_id_filter="admin-uuid-123")
+        assert result["total"] == 0
+        # Verify SQL was called with both parameters
+        count_call = mock_cur.execute.call_args_list[0]
+        sql = count_call[0][0]
+        assert "action" in sql
+        assert "admin_id" in sql
+
+    @pytest.mark.asyncio
+    async def test_enforces_90_day_window(self) -> None:
+        """Verify all queries include the 90-day window constraint."""
+        from api.queries.admin_queries import (
+            _AUDIT_COUNT_ACTION,
+            _AUDIT_COUNT_ADMIN,
+            _AUDIT_COUNT_BOTH,
+            _AUDIT_COUNT_UNFILTERED,
+            _AUDIT_ENTRIES_ACTION,
+            _AUDIT_ENTRIES_ADMIN,
+            _AUDIT_ENTRIES_BOTH,
+            _AUDIT_ENTRIES_UNFILTERED,
+        )
+
+        for sql in [
+            _AUDIT_COUNT_UNFILTERED,
+            _AUDIT_COUNT_ACTION,
+            _AUDIT_COUNT_ADMIN,
+            _AUDIT_COUNT_BOTH,
+            _AUDIT_ENTRIES_UNFILTERED,
+            _AUDIT_ENTRIES_ACTION,
+            _AUDIT_ENTRIES_ADMIN,
+            _AUDIT_ENTRIES_BOTH,
+        ]:
+            assert "90 days" in sql, f"90-day window missing from: {sql[:80]}..."

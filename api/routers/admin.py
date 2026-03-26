@@ -13,18 +13,22 @@ from psycopg.rows import dict_row
 import structlog
 
 from api.admin_auth import create_admin_token, verify_admin_password
+from api.audit_log import record_audit_entry
 from api.auth import _DUMMY_HASH, _verify_password
 from api.dependencies import require_admin
 from api.limiter import limiter
 from api.models import (
     AdminLoginRequest,
     AdminLoginResponse,
+    AuditLogEntry,
+    AuditLogResponse,
     DlqPurgeResponse,
     ExtractionHistoryResponse,
     ExtractionListResponse,
     ExtractionTriggerResponse,
 )
 from api.queries.admin_queries import (
+    get_audit_log,
     get_neo4j_storage,
     get_postgres_storage,
     get_redis_storage,
@@ -78,7 +82,7 @@ async def admin_login(request: Request, body: AdminLoginRequest) -> JSONResponse
 
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await cur.execute(
-            "SELECT id, email, hashed_password, is_active FROM dashboard_admins WHERE email = %s",
+            "SELECT id, email, hashed_password, is_active, is_admin FROM users WHERE email = %s",
             (body.email,),
         )
         admin = await cur.fetchone()
@@ -90,10 +94,18 @@ async def admin_login(request: Request, body: AdminLoginRequest) -> JSONResponse
 
     password_ok = verify_admin_password(body.password, admin["hashed_password"])
     if not admin["is_active"] or not password_ok:
+        await record_audit_entry(pool=_pool, admin_id=str(admin["id"]), action="admin.login", target=body.email, details={"success": False})
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect email or password")
+
+    if not admin.get("is_admin"):
+        await record_audit_entry(
+            pool=_pool, admin_id=str(admin["id"]), action="admin.login", target=body.email, details={"success": False, "reason": "not_admin"}
+        )
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required")
 
     access_token, expires_in = create_admin_token(str(admin["id"]), admin["email"], _config.jwt_secret_key)
     logger.info("✅ Admin logged in", email=body.email)
+    await record_audit_entry(pool=_pool, admin_id=str(admin["id"]), action="admin.login", target=body.email, details={"success": True})
 
     return JSONResponse(
         content=AdminLoginResponse(access_token=access_token, expires_in=expires_in).model_dump(),
@@ -112,6 +124,8 @@ async def admin_logout(
             now = int(datetime.now(UTC).timestamp())
             ttl = max((exp - now), 60) if exp else 3600
             await _redis.setex(f"revoked:jti:{jti}", ttl, "1")
+    admin_email = current_admin.get("email", "unknown")
+    await record_audit_entry(pool=_pool, admin_id=current_admin["sub"], action="admin.logout", target=admin_email)
     return JSONResponse(content={"logged_out": True})
 
 
@@ -418,6 +432,7 @@ async def trigger_extraction(
             _tracking_tasks[extraction_id] = task
 
             logger.info("🚀 Extraction triggered", extraction_id=extraction_id, admin_id=admin_id)
+            await record_audit_entry(pool=_pool, admin_id=str(admin_id), action="extraction.trigger", details={"extraction_id": extraction_id})
             return JSONResponse(
                 content=ExtractionTriggerResponse(id=UUID(extraction_id), status="running").model_dump(mode="json"),
                 status_code=status.HTTP_202_ACCEPTED,
@@ -500,7 +515,34 @@ async def purge_dlq(
 
     admin_email = current_admin.get("email", "unknown")
     logger.info("🗑️ DLQ purged", queue=queue, messages_purged=messages_purged, admin_email=admin_email)
+    await record_audit_entry(pool=_pool, admin_id=current_admin["sub"], action="dlq.purge", target=queue, details={"purged_count": messages_purged})
 
     return JSONResponse(
         content=DlqPurgeResponse(queue=queue, messages_purged=messages_purged).model_dump(),
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 — Audit Log
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/admin/audit-log")
+async def list_audit_log(
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+    page: int = 1,
+    page_size: int = 50,
+    action: str | None = None,
+    admin_id: str | None = None,
+) -> JSONResponse:
+    """Paginated admin audit log (last 90 days by default)."""
+    if _pool is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
+
+    page = max(page, 1)
+    page_size = min(max(page_size, 1), 100)
+
+    data = await get_audit_log(_pool, page=page, page_size=page_size, action_filter=action, admin_id_filter=admin_id)
+    entries = [AuditLogEntry(**e) for e in data["entries"]]
+    response = AuditLogResponse(entries=entries, total=data["total"], page=data["page"], page_size=data["page_size"])
+    return JSONResponse(content=response.model_dump(mode="json"))
