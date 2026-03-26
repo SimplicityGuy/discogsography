@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock
 
 from fastapi.testclient import TestClient
 
-from tests.api.conftest import TEST_USER_EMAIL, TEST_USER_ID, make_sample_user_row
+from tests.api.conftest import TEST_USER_EMAIL, TEST_USER_ID, make_sample_user_row, make_test_jwt
 
 
 class TestResetRequest:
@@ -141,6 +141,75 @@ class TestTwoFactorDisable:
             json={"code": "123456", "password": "testpassword"},
         )
         assert response.status_code in (401, 403)
+
+
+class TestPasswordChangedRevocation:
+    """Tests for password_changed_at session revocation in _get_current_user."""
+
+    def test_token_revoked_after_password_change(
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """Token issued before password change should be rejected."""
+        import base64
+        import hashlib
+        import hmac
+        import time
+
+        from tests.api.conftest import TEST_JWT_SECRET, TEST_USER_ID
+
+        # Create a JWT with an explicit iat in the past
+        old_iat = int(time.time()) - 120
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body = b64url(
+            json.dumps(
+                {
+                    "sub": TEST_USER_ID,
+                    "email": "test@example.com",
+                    "exp": int(time.time()) + 3600,
+                    "iat": old_iat,
+                },
+                separators=(",", ":"),
+            ).encode()
+        )
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode(), f"{header}.{body}".encode(), hashlib.sha256).digest())
+        token = f"{header}.{body}.{sig}"
+
+        # password_changed timestamp is AFTER iat
+        pw_changed_ts = str(int(time.time()) - 60)
+
+        async def redis_get_side_effect(key: str) -> str | None:
+            if "password_changed:" in key:
+                return pw_changed_ts
+            return None  # jti not revoked
+
+        mock_redis.get = AsyncMock(side_effect=redis_get_side_effect)
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+
+        response = test_client.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
+
+    def test_token_valid_when_no_password_change(
+        self,
+        test_client: TestClient,
+        mock_redis: AsyncMock,
+        mock_cur: AsyncMock,
+    ) -> None:
+        """Token should work when no password change recorded."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+
+        response = test_client.get(
+            "/api/auth/me",
+            headers={"Authorization": f"Bearer {make_test_jwt()}"},
+        )
+        assert response.status_code == 200
 
 
 class TestTwoFactorRecovery:
