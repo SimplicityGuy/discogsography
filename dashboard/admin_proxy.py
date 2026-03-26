@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import re
 
-from fastapi import APIRouter, Request, Response
+from fastapi import APIRouter, Query, Request, Response
 import httpx
 import structlog
 
@@ -225,6 +225,57 @@ async def proxy_dlq_purge(queue: str, request: Request) -> Response:
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(url, headers=headers)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Queue Health Trends & System Health proxy routes
+# ---------------------------------------------------------------------------
+
+
+@router.get("/admin/api/queues/history")
+async def proxy_queue_history(
+    request: Request,
+    range: str | None = Query(default=None, pattern=r"^[0-9]+[hdwm]$"),
+    granularity: str | None = Query(default=None, pattern=r"^[0-9]+(min|hour|day)$"),
+) -> Response:
+    """Proxy queue history requests to the API service."""
+    url = _build_url("/api/admin/queues/history")
+    params: dict[str, str] = {}
+    if range is not None:
+        params["range"] = range
+    if granularity is not None:
+        params["granularity"] = granularity
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers, params=params)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
+@router.get("/admin/api/health/history")
+async def proxy_health_history(
+    request: Request,
+    range: str | None = Query(default=None, pattern=r"^[0-9]+[hdwm]$"),
+    granularity: str | None = Query(default=None, pattern=r"^[0-9]+(min|hour|day)$"),
+) -> Response:
+    """Proxy health history requests to the API service."""
+    url = _build_url("/api/admin/health/history")
+    params: dict[str, str] = {}
+    if range is not None:
+        params["range"] = range
+    if granularity is not None:
+        params["granularity"] = granularity
+    headers = _auth_headers(request)
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.get(url, headers=headers, params=params)
     except (httpx.ConnectError, httpx.RequestError) as exc:
         logger.error("❌ API service unreachable", url=url, error=str(exc))
         return _unavailable_response()
