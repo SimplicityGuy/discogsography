@@ -888,7 +888,11 @@ pub async fn process_musicbrainz_data(
         // Spawn parser on blocking thread — pass MBID→Discogs map for artist relationship enrichment
         let parser_path = file_path.clone();
         let parser_dt = *data_type;
-        let parser_map = if parser_dt == DataType::Artists { Some(artist_discogs_map.clone()) } else { None };
+        let parser_map = if parser_dt == DataType::Artists {
+            Some(artist_discogs_map.clone())
+        } else {
+            None
+        };
         let parser_handle = tokio::task::spawn_blocking(move || parse_mb_jsonl_file(&parser_path, parser_dt, parse_sender, parser_map.as_ref()));
 
         // Spawn batcher

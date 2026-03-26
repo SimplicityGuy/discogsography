@@ -228,12 +228,8 @@ pub fn enrich_relations(relations: Vec<Value>, discogs_map: &HashMap<String, i64
         .into_iter()
         .map(|mut rel| {
             let target_mbid = rel["target"]["id"].as_str().map(|s| s.to_string());
-            let target_discogs_id: Value = target_mbid
-                .as_deref()
-                .and_then(|mbid| discogs_map.get(mbid))
-                .copied()
-                .map(Value::from)
-                .unwrap_or(Value::Null);
+            let target_discogs_id: Value =
+                target_mbid.as_deref().and_then(|mbid| discogs_map.get(mbid)).copied().map(Value::from).unwrap_or(Value::Null);
             if let Some(obj) = rel.as_object_mut() {
                 obj.insert("target_discogs_artist_id".to_string(), target_discogs_id);
             }

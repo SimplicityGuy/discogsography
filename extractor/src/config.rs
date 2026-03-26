@@ -82,16 +82,24 @@ impl ExtractorConfig {
 
         let data_quality_rules = std::env::var("DATA_QUALITY_RULES").ok().map(PathBuf::from);
 
-        let source = std::env::var("EXTRACTOR_SOURCE")
-            .unwrap_or_else(|_| "discogs".to_string())
-            .parse::<Source>()
-            .unwrap_or(Source::Discogs);
+        let source = std::env::var("EXTRACTOR_SOURCE").unwrap_or_else(|_| "discogs".to_string()).parse::<Source>().unwrap_or(Source::Discogs);
 
         let musicbrainz_root = PathBuf::from(std::env::var("MUSICBRAINZ_ROOT").unwrap_or_else(|_| "/musicbrainz-data".to_string()));
 
         let amqp_exchange_prefix = std::env::var("AMQP_EXCHANGE_PREFIX").unwrap_or_else(|_| "discogsography".to_string());
 
-        Ok(Self { amqp_connection, discogs_root, periodic_check_days, max_workers, batch_size, data_quality_rules, source, musicbrainz_root, amqp_exchange_prefix, ..Default::default() })
+        Ok(Self {
+            amqp_connection,
+            discogs_root,
+            periodic_check_days,
+            max_workers,
+            batch_size,
+            data_quality_rules,
+            source,
+            musicbrainz_root,
+            amqp_exchange_prefix,
+            ..Default::default()
+        })
     }
 }
 
