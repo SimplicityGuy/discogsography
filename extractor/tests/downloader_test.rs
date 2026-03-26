@@ -1,7 +1,7 @@
-// Additional integration tests for downloader module
+// Additional integration tests for discogs_downloader module
 // Tests S3 file listing, metadata handling, and download logic
 
-use extractor::downloader::Downloader;
+use extractor::discogs_downloader::Downloader;
 use extractor::types::{LocalFileInfo, S3FileInfo};
 use std::collections::HashMap;
 use tempfile::TempDir;

@@ -11,7 +11,7 @@ use tracing::{debug, error, info, warn};
 use async_trait::async_trait;
 
 use crate::config::ExtractorConfig;
-use crate::downloader::{DataSource, Downloader};
+use crate::discogs_downloader::{DataSource, Downloader};
 use crate::message_queue::{MessagePublisher, MessageQueue};
 use crate::parser::XmlParser;
 use crate::rules::{CompiledRulesConfig, FlaggedRecordWriter, QualityReport, Severity, evaluate_rules};
@@ -22,7 +22,7 @@ use crate::types::{DataMessage, DataType, ExtractionProgress};
 #[cfg_attr(feature = "test-support", mockall::automock)]
 #[async_trait]
 pub trait MessageQueueFactory: Send + Sync {
-    async fn create(&self, url: &str) -> Result<Arc<dyn MessagePublisher>>;
+    async fn create(&self, url: &str, exchange_prefix: &str) -> Result<Arc<dyn MessagePublisher>>;
 }
 
 /// Default factory that creates real MessageQueue connections
@@ -30,8 +30,8 @@ pub struct DefaultMessageQueueFactory;
 
 #[async_trait]
 impl MessageQueueFactory for DefaultMessageQueueFactory {
-    async fn create(&self, url: &str) -> Result<Arc<dyn MessagePublisher>> {
-        Ok(Arc::new(MessageQueue::new(url, 3).await?))
+    async fn create(&self, url: &str, exchange_prefix: &str) -> Result<Arc<dyn MessagePublisher>> {
+        Ok(Arc::new(MessageQueue::new(url, 3, exchange_prefix).await?))
     }
 }
 
@@ -171,7 +171,7 @@ pub async fn process_discogs_data(
 
         // Send extraction_complete so consumers know this run is done
         let record_counts = HashMap::new();
-        match mq_factory.create(&config.amqp_connection).await {
+        match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
             Ok(mq) => {
                 if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts).await {
                     error!("❌ Failed to send extraction_complete message: {}", e);
@@ -208,7 +208,10 @@ pub async fn process_discogs_data(
 
         let task: tokio::task::JoinHandle<Result<()>> = tokio::spawn(async move {
             let _permit = semaphore.acquire().await?;
-            let mq = mq_factory.create(&config.amqp_connection).await.context("Failed to connect to message queue")?;
+            let mq = mq_factory
+                .create(&config.amqp_connection, &config.amqp_exchange_prefix)
+                .await
+                .context("Failed to connect to message queue")?;
 
             process_single_file(&file, config, state, state_marker_arc.clone(), marker_path.clone(), mq, compiled_rules).await?;
 
@@ -274,7 +277,7 @@ pub async fn process_discogs_data(
 
         // Send extraction_complete to all consumer queues
         drop(s); // Release read lock before async MQ operations
-        match mq_factory.create(&config.amqp_connection).await {
+        match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
             Ok(mq) => {
                 if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts).await {
                     error!("❌ Failed to send extraction_complete message: {}", e);
@@ -758,6 +761,233 @@ pub async fn run_extraction_loop(
     }
 
     Ok(())
+}
+
+/// Process MusicBrainz JSONL dump files and publish records to AMQP.
+///
+/// Pipeline per file: blocking JSONL parser -> async batcher -> async publisher
+pub async fn process_musicbrainz_data(
+    config: Arc<ExtractorConfig>,
+    state: Arc<RwLock<ExtractorState>>,
+    _shutdown: Arc<tokio::sync::Notify>,
+    force_reprocess: bool,
+    mq_factory: Arc<dyn MessageQueueFactory>,
+    _compiled_rules: Option<Arc<CompiledRulesConfig>>,
+) -> Result<bool> {
+    use crate::jsonl_parser::{build_mbid_discogs_map_from_file, parse_mb_jsonl_file};
+    use crate::musicbrainz_downloader::{detect_mb_dump_version, discover_mb_dump_files};
+
+    let extraction_started_at = chrono::Utc::now();
+
+    // Reset progress for new run
+    {
+        let mut s = state.write().await;
+        s.extraction_progress = ExtractionProgress::default();
+        s.last_extraction_time.clear();
+        s.completed_files.clear();
+        s.active_connections.clear();
+        s.error_count = 0;
+        s.extraction_status = ExtractionStatus::Running;
+    }
+
+    // Discover dump files
+    let dump_files = discover_mb_dump_files(&config.musicbrainz_root)?;
+
+    if dump_files.is_empty() {
+        warn!("⚠️ No MusicBrainz dump files found");
+        let mut s = state.write().await;
+        s.extraction_status = ExtractionStatus::Completed;
+        return Ok(true);
+    }
+
+    // Detect version
+    let version = detect_mb_dump_version(&config.musicbrainz_root);
+    info!("📋 Detected MusicBrainz dump version: {}", version);
+
+    // Check state marker — skip if already completed and not force_reprocess
+    let marker_path = config.musicbrainz_root.join(format!(".mb_extraction_status_{}.json", version));
+    let mut state_marker = if force_reprocess {
+        info!("🔄 Force reprocess requested, creating new state marker");
+        StateMarker::new(version.clone())
+    } else {
+        StateMarker::load(&marker_path).await?.unwrap_or_else(|| StateMarker::new(version.clone()))
+    };
+
+    let decision = state_marker.should_process();
+    match decision {
+        ProcessingDecision::Skip => {
+            info!("✅ MusicBrainz version {} already processed, skipping", version);
+            let mut s = state.write().await;
+            s.extraction_status = ExtractionStatus::Completed;
+            return Ok(true);
+        }
+        ProcessingDecision::Reprocess => {
+            warn!("⚠️ Will re-process MusicBrainz version {}", version);
+            state_marker = StateMarker::new(version.clone());
+        }
+        ProcessingDecision::Continue => {
+            info!("🔄 Will continue processing MusicBrainz version {}", version);
+        }
+    }
+
+    // Create message queue connection with MusicBrainz exchange prefix
+    let mq = mq_factory
+        .create(&config.amqp_connection, &config.amqp_exchange_prefix)
+        .await
+        .context("Failed to connect to message queue for MusicBrainz")?;
+
+    // Declare exchanges for MusicBrainz data types
+    for data_type in DataType::musicbrainz_types() {
+        mq.setup_exchange(data_type).await?;
+    }
+
+    // Start processing phase
+    let file_count = dump_files.len();
+    state_marker.start_processing(file_count);
+    state_marker.save(&marker_path).await?;
+    info!("🚀 Starting MusicBrainz processing phase: {} dump file(s)", file_count);
+
+    // First pass: build MBID→Discogs ID map for artist relationship target resolution
+    let artist_discogs_map = if let Some(artist_path) = dump_files.get(&DataType::Artists) {
+        info!("🔍 First pass: building MBID→Discogs ID map for artists...");
+        let path = artist_path.clone();
+        tokio::task::spawn_blocking(move || build_mbid_discogs_map_from_file(&path, "artist")).await??
+    } else {
+        HashMap::new()
+    };
+    info!("📊 Built MBID→Discogs map: {} entries", artist_discogs_map.len());
+
+    let mut record_counts: HashMap<String, u64> = HashMap::new();
+    let mut success = true;
+
+    for (data_type, file_path) in &dump_files {
+        let file_name = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("unknown");
+
+        // Skip files already completed in state marker
+        if let Some(status) = state_marker.processing_phase.progress_by_file.get(file_name)
+            && status.status == PhaseStatus::Completed
+        {
+            info!("✅ Skipping already-completed file: {}", file_name);
+            continue;
+        }
+
+        info!("🚀 Starting MusicBrainz extraction of {} from {:?}", data_type, file_path);
+        state_marker.start_file_processing(file_name);
+        state_marker.save(&marker_path).await?;
+
+        // Track active connection
+        {
+            let mut s = state.write().await;
+            s.active_connections.insert(*data_type, file_name.to_string());
+        }
+
+        // Create channel for parser -> batcher -> publisher pipeline
+        let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
+        let (batch_sender, batch_receiver) = mpsc::channel::<Vec<DataMessage>>(100);
+
+        // Spawn parser on blocking thread — pass MBID→Discogs map for artist relationship enrichment
+        let parser_path = file_path.clone();
+        let parser_dt = *data_type;
+        let parser_map = if parser_dt == DataType::Artists {
+            Some(artist_discogs_map.clone())
+        } else {
+            None
+        };
+        let parser_handle = tokio::task::spawn_blocking(move || parse_mb_jsonl_file(&parser_path, parser_dt, parse_sender, parser_map.as_ref()));
+
+        // Spawn batcher
+        let batcher_state_marker = Arc::new(tokio::sync::Mutex::new(state_marker.clone()));
+        let batcher_config = BatcherConfig {
+            batch_size: config.batch_size,
+            data_type: *data_type,
+            state: state.clone(),
+            state_marker: batcher_state_marker.clone(),
+            marker_path: marker_path.clone(),
+            file_name: file_name.to_string(),
+            state_save_interval: config.state_save_interval,
+        };
+        let batcher_handle = tokio::spawn(async move { message_batcher(parse_receiver, batch_sender, batcher_config).await });
+
+        // Spawn publisher
+        let pub_mq = mq.clone();
+        let pub_dt = *data_type;
+        let pub_state = state.clone();
+        let publisher_handle = tokio::spawn(async move { message_publisher(batch_receiver, pub_mq, pub_dt, pub_state).await });
+
+        // Wait for all stages
+        let total_count = match parser_handle.await {
+            Ok(Ok(count)) => count,
+            Ok(Err(e)) => {
+                error!("❌ MusicBrainz parser failed for {}: {}", data_type, e);
+                success = false;
+                0
+            }
+            Err(e) => {
+                error!("❌ MusicBrainz parser task panicked for {}: {}", data_type, e);
+                success = false;
+                0
+            }
+        };
+
+        if let Err(e) = batcher_handle.await {
+            error!("❌ MusicBrainz batcher task failed for {}: {}", data_type, e);
+            success = false;
+        }
+
+        if let Err(e) = publisher_handle.await {
+            error!("❌ MusicBrainz publisher task failed for {}: {}", data_type, e);
+            success = false;
+        }
+
+        // Update state marker with results from batcher
+        state_marker = batcher_state_marker.lock().await.clone();
+
+        // Mark file complete
+        state_marker.complete_file_processing(file_name, total_count);
+        state_marker.save(&marker_path).await?;
+
+        // Update shared state
+        {
+            let mut s = state.write().await;
+            s.completed_files.insert(file_name.to_string());
+            s.active_connections.remove(data_type);
+        }
+
+        // Send file_complete message
+        if let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
+            error!("❌ Failed to send file_complete for {}: {}", data_type, e);
+            success = false;
+        }
+
+        record_counts.insert(data_type.to_string(), total_count);
+        info!("✅ Completed MusicBrainz {} extraction: {} records", data_type, total_count);
+    }
+
+    // Send extraction_complete to all MusicBrainz exchanges
+    if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts).await {
+        error!("❌ Failed to send extraction_complete: {}", e);
+        success = false;
+    }
+    let _ = mq.close().await;
+
+    // Finalize state marker
+    if success {
+        state_marker.complete_processing();
+        state_marker.complete_extraction();
+        state_marker.save(&marker_path).await?;
+        info!("✅ MusicBrainz processing completed: version {}", version);
+    } else {
+        state_marker.save(&marker_path).await?;
+        error!("❌ MusicBrainz processing finished with errors — not marking complete");
+    }
+
+    // Update extraction status
+    {
+        let mut s = state.write().await;
+        s.extraction_status = if success { ExtractionStatus::Completed } else { ExtractionStatus::Failed };
+    }
+
+    Ok(success)
 }
 
 #[cfg(test)]

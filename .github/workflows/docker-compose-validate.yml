@@ -41,7 +41,7 @@ jobs:
       - name: 🔍 Check docker-compose services
         run: |
           services=$(docker-compose config --services | sort | tr "\n" " " | sed "s/ $//")
-          expected="api dashboard explore extractor graphinator insights neo4j postgres rabbitmq redis schema-init tableinator"
+          expected="api dashboard explore extractor-discogs extractor-musicbrainz graphinator insights neo4j postgres rabbitmq redis schema-init tableinator"
 
           if [ "$services" != "$expected" ]; then
             echo "❌ Service mismatch!"
@@ -60,9 +60,15 @@ jobs:
             exit 1
           fi
 
-          deps=$(docker-compose config | yq eval '.services.extractor.depends_on | keys | .[]' -)
+          deps=$(docker-compose config | yq eval '.services.extractor-discogs.depends_on | keys | .[]' -)
           if [ "$deps" != "rabbitmq" ]; then
-            echo "❌ Extractor should only depend on rabbitmq"
+            echo "❌ Extractor-discogs should only depend on rabbitmq"
+            exit 1
+          fi
+
+          deps=$(docker-compose config | yq eval '.services.extractor-musicbrainz.depends_on | keys | .[]' -)
+          if [ "$deps" != "rabbitmq" ]; then
+            echo "❌ Extractor-musicbrainz should only depend on rabbitmq"
             exit 1
           fi
 
@@ -107,7 +113,7 @@ jobs:
       - name: 🛡️ Check for security best practices
         run: |
           # Check that services run as non-root user
-          for service in api dashboard explore extractor graphinator insights schema-init tableinator; do
+          for service in api dashboard explore extractor-discogs extractor-musicbrainz graphinator insights schema-init tableinator; do
             user=$(docker-compose config | yq eval ".services.$service.user" -)
             if [ -z "$user" ] || [ "$user" = "null" ]; then
               echo "❌ $service should have a user configured"
@@ -117,7 +123,7 @@ jobs:
           echo "✅ All services run as non-root user"
 
           # Check security options
-          for service in api dashboard explore extractor graphinator insights schema-init tableinator; do
+          for service in api dashboard explore extractor-discogs extractor-musicbrainz graphinator insights schema-init tableinator; do
             security_opt=$(docker-compose config | yq eval ".services.$service.security_opt[]" - | grep "no-new-privileges:true" || true)
             if [ -z "$security_opt" ]; then
               echo "❌ $service should have no-new-privileges security option"

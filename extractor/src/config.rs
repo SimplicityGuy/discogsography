@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::types::Source;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExtractorConfig {
     pub amqp_connection: String,
@@ -14,6 +16,9 @@ pub struct ExtractorConfig {
     pub progress_log_interval: usize,
     pub state_save_interval: usize,
     pub data_quality_rules: Option<PathBuf>,
+    pub source: Source,
+    pub musicbrainz_root: PathBuf,
+    pub amqp_exchange_prefix: String,
 }
 
 impl Default for ExtractorConfig {
@@ -29,6 +34,9 @@ impl Default for ExtractorConfig {
             progress_log_interval: 1000,
             state_save_interval: 5000,
             data_quality_rules: None,
+            source: Source::Discogs,
+            musicbrainz_root: PathBuf::from("/musicbrainz-data"),
+            amqp_exchange_prefix: "discogsography".to_string(),
         }
     }
 }
@@ -74,7 +82,24 @@ impl ExtractorConfig {
 
         let data_quality_rules = std::env::var("DATA_QUALITY_RULES").ok().map(PathBuf::from);
 
-        Ok(Self { amqp_connection, discogs_root, periodic_check_days, max_workers, batch_size, data_quality_rules, ..Default::default() })
+        let source = std::env::var("EXTRACTOR_SOURCE").unwrap_or_else(|_| "discogs".to_string()).parse::<Source>().unwrap_or(Source::Discogs);
+
+        let musicbrainz_root = PathBuf::from(std::env::var("MUSICBRAINZ_ROOT").unwrap_or_else(|_| "/musicbrainz-data".to_string()));
+
+        let amqp_exchange_prefix = std::env::var("AMQP_EXCHANGE_PREFIX").unwrap_or_else(|_| "discogsography".to_string());
+
+        Ok(Self {
+            amqp_connection,
+            discogs_root,
+            periodic_check_days,
+            max_workers,
+            batch_size,
+            data_quality_rules,
+            source,
+            musicbrainz_root,
+            amqp_exchange_prefix,
+            ..Default::default()
+        })
     }
 }
 
