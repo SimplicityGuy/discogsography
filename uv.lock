@@ -18,6 +18,7 @@ supported-markers = [
 members = [
     "discogsography",
     "discogsography-api",
+    "discogsography-brainzgraphinator",
     "discogsography-common",
     "discogsography-dashboard",
     "discogsography-explore",
@@ -466,6 +467,9 @@ api = [
     { name = "structlog", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "uvicorn", extra = ["standard"], marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
+brainzgraphinator = [
+    { name = "neo4j-rust-ext", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+]
 dashboard = [
     { name = "fastapi", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "httpx", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -561,7 +565,7 @@ requires-dist = [
     { name = "brevo-python", marker = "extra == 'api'", specifier = ">=1.0.0" },
     { name = "cryptography", marker = "extra == 'api'", specifier = ">=43.0.0" },
     { name = "dict-hash", specifier = ">=1.1.0" },
-    { name = "discogsography", extras = ["api", "dashboard", "explore", "graphinator", "mcp-server", "schema-init", "tableinator", "dev", "utilities"], marker = "extra == 'all'" },
+    { name = "discogsography", extras = ["api", "brainzgraphinator", "dashboard", "explore", "graphinator", "mcp-server", "schema-init", "tableinator", "dev", "utilities"], marker = "extra == 'all'" },
     { name = "fastapi", marker = "extra == 'api'", specifier = ">=0.115.6" },
     { name = "fastapi", marker = "extra == 'dashboard'", specifier = ">=0.115.6" },
     { name = "fastapi", marker = "extra == 'explore'", specifier = ">=0.115.6" },
@@ -577,6 +581,7 @@ requires-dist = [
     { name = "neo4j", marker = "extra == 'mcp-server'", specifier = ">=6.1.0" },
     { name = "neo4j-rust-ext", specifier = ">=6.1.0" },
     { name = "neo4j-rust-ext", marker = "extra == 'api'", specifier = ">=6.1.0" },
+    { name = "neo4j-rust-ext", marker = "extra == 'brainzgraphinator'", specifier = ">=6.1.0" },
     { name = "neo4j-rust-ext", marker = "extra == 'dashboard'", specifier = ">=6.1.0" },
     { name = "neo4j-rust-ext", marker = "extra == 'explore'", specifier = ">=6.1.0" },
     { name = "neo4j-rust-ext", marker = "extra == 'graphinator'", specifier = ">=6.1.0" },
@@ -626,7 +631,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'insights'", specifier = ">=0.32.0" },
     { name = "websockets", marker = "extra == 'dashboard'", specifier = ">=14.2" },
 ]
-provides-extras = ["api", "dashboard", "graphinator", "insights", "tableinator", "dev", "utilities", "explore", "schema-init", "mcp-server", "all"]
+provides-extras = ["api", "dashboard", "brainzgraphinator", "graphinator", "insights", "tableinator", "dev", "utilities", "explore", "schema-init", "mcp-server", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -685,6 +690,25 @@ requires-dist = [
     { name = "slowapi", specifier = ">=0.1.9" },
     { name = "structlog", specifier = ">=24.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.34.0" },
+]
+
+[[package]]
+name = "discogsography-brainzgraphinator"
+version = "0.1.0"
+source = { editable = "brainzgraphinator" }
+dependencies = [
+    { name = "aio-pika", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "neo4j-rust-ext", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "orjson", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "structlog", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aio-pika", specifier = ">=9.0.0" },
+    { name = "neo4j-rust-ext", specifier = ">=6.1.0" },
+    { name = "orjson", specifier = ">=3.0.0" },
+    { name = "structlog", specifier = ">=24.0.0" },
 ]
 
 [[package]]

@@ -376,6 +376,61 @@ services:
     volumes:
       - graphinator_logs:/logs
 
+  # Brainzgraphinator service — MusicBrainz Neo4j enrichment
+  brainzgraphinator:
+    build:
+      context: .
+      dockerfile: brainzgraphinator/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: discogsography/brainzgraphinator:latest
+    container_name: discogsography-brainzgraphinator
+    hostname: brainzgraphinator
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      CONSUMER_CANCEL_DELAY: "300"
+      LOG_LEVEL: INFO
+      NEO4J_BATCH_FLUSH_INTERVAL: "2.0"
+      NEO4J_BATCH_MODE: "true"
+      NEO4J_BATCH_SIZE: "500"
+      NEO4J_HOST: neo4j
+      NEO4J_PASSWORD: discogsography
+      NEO4J_USERNAME: neo4j
+      PYTHONUNBUFFERED: "1"
+      QUEUE_CHECK_INTERVAL: "3600"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PASSWORD: discogsography
+      RABBITMQ_USERNAME: discogsography
+      STARTUP_DELAY: "20"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - brainzgraphinator_logs:/logs
+
   # Tableinator service
   tableinator:
     build:
@@ -610,6 +665,7 @@ volumes:
   schema_init_logs:
   api_logs:
   graphinator_logs:
+  brainzgraphinator_logs:
   tableinator_logs:
   dashboard_logs:
   explore_logs:
