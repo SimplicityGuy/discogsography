@@ -14,6 +14,8 @@ from api.queries.rarity_queries import (
     compute_rarity_tier,
     compute_temporal_scarcity_score,
     fetch_all_rarity_signals,
+    get_rarity_by_artist,
+    get_rarity_by_label,
     get_rarity_for_release,
     get_rarity_hidden_gems,
     get_rarity_leaderboard,
@@ -264,6 +266,148 @@ class TestGetRarityHiddenGems:
         items, total = await get_rarity_hidden_gems(mock_pool, page=1, page_size=20, min_rarity=41.0)
         assert len(items) == 1
         assert total == 50
+
+
+class TestGetRarityByArtist:
+    @pytest.mark.asyncio
+    async def test_artist_not_found(self) -> None:
+        mock_driver = MagicMock()
+        mock_pool = MagicMock()
+        with patch("api.queries.rarity_queries.run_query", new=AsyncMock(return_value=[])):
+            result = await get_rarity_by_artist(mock_driver, mock_pool, "nonexistent")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_artist_with_no_releases(self) -> None:
+        mock_driver = MagicMock()
+        mock_pool = MagicMock()
+        with patch(
+            "api.queries.rarity_queries.run_query",
+            new=AsyncMock(
+                side_effect=[
+                    [{"id": "123", "name": "Artist"}],  # artist exists
+                    [],  # no releases
+                ]
+            ),
+        ):
+            result = await get_rarity_by_artist(mock_driver, mock_pool, "123")
+        assert result is not None
+        items, total = result
+        assert items == []
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_artist_with_releases(self) -> None:
+        mock_driver = MagicMock()
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_cur.fetchall = AsyncMock(
+            return_value=[
+                {
+                    "release_id": 1,
+                    "title": "R1",
+                    "artist_name": "A1",
+                    "year": 1970,
+                    "rarity_score": 85.0,
+                    "tier": "ultra-rare",
+                    "hidden_gem_score": 60.0,
+                }
+            ]
+        )
+        mock_cur.fetchone = AsyncMock(return_value={"total": 1})
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        with patch(
+            "api.queries.rarity_queries.run_query",
+            new=AsyncMock(
+                side_effect=[
+                    [{"id": "123", "name": "Artist"}],  # artist exists
+                    [{"release_id": "1"}],  # release ids
+                ]
+            ),
+        ):
+            result = await get_rarity_by_artist(mock_driver, mock_pool, "123")
+        assert result is not None
+        items, total = result
+        assert len(items) == 1
+        assert total == 1
+
+
+class TestGetRarityByLabel:
+    @pytest.mark.asyncio
+    async def test_label_not_found(self) -> None:
+        mock_driver = MagicMock()
+        mock_pool = MagicMock()
+        with patch("api.queries.rarity_queries.run_query", new=AsyncMock(return_value=[])):
+            result = await get_rarity_by_label(mock_driver, mock_pool, "nonexistent")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_label_with_no_releases(self) -> None:
+        mock_driver = MagicMock()
+        mock_pool = MagicMock()
+        with patch(
+            "api.queries.rarity_queries.run_query",
+            new=AsyncMock(
+                side_effect=[
+                    [{"id": "456", "name": "Label"}],  # label exists
+                    [],  # no releases
+                ]
+            ),
+        ):
+            result = await get_rarity_by_label(mock_driver, mock_pool, "456")
+        assert result is not None
+        items, total = result
+        assert items == []
+        assert total == 0
+
+    @pytest.mark.asyncio
+    async def test_label_with_releases(self) -> None:
+        mock_driver = MagicMock()
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_cur.fetchall = AsyncMock(
+            return_value=[
+                {
+                    "release_id": 1,
+                    "title": "R1",
+                    "artist_name": "A1",
+                    "year": 1970,
+                    "rarity_score": 85.0,
+                    "tier": "ultra-rare",
+                    "hidden_gem_score": 60.0,
+                }
+            ]
+        )
+        mock_cur.fetchone = AsyncMock(return_value={"total": 1})
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        with patch(
+            "api.queries.rarity_queries.run_query",
+            new=AsyncMock(
+                side_effect=[
+                    [{"id": "456", "name": "Label"}],  # label exists
+                    [{"release_id": "1"}],  # release ids
+                ]
+            ),
+        ):
+            result = await get_rarity_by_label(mock_driver, mock_pool, "456")
+        assert result is not None
+        items, total = result
+        assert len(items) == 1
+        assert total == 1
 
 
 # ── Neo4j batch query tests ──────────────────────────────────────────
