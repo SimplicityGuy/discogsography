@@ -312,7 +312,8 @@ async fn test_message_validator_forwards_all_messages() {
     use extractor::extractor::message_validator;
     use tokio::sync::mpsc;
 
-    let rules = compile_rules(r#"
+    let rules = compile_rules(
+        r#"
 rules:
   artists:
     - name: name-required
@@ -320,7 +321,8 @@ rules:
       condition:
         type: required
       severity: error
-"#);
+"#,
+    );
 
     let temp_dir = TempDir::new().unwrap();
     let (in_tx, in_rx) = mpsc::channel::<DataMessage>(10);
@@ -330,9 +332,7 @@ rules:
     let handle = tokio::spawn({
         let rules = rules.clone();
         let root = temp_dir.path().to_path_buf();
-        async move {
-            message_validator(in_rx, out_tx, rules, "artists", &root, "20260301").await
-        }
+        async move { message_validator(in_rx, out_tx, rules, "artists", &root, "20260301").await }
     });
 
     // Send 3 messages: 1 bad (missing name), 2 clean
@@ -348,12 +348,7 @@ rules:
         data: json!({"@id": "2", "name": "Artist Two"}),
         raw_xml: Some(b"<artist id=\"2\"><name>Artist Two</name></artist>".to_vec()),
     };
-    let good2 = DataMessage {
-        id: "3".to_string(),
-        sha256: "ccc".to_string(),
-        data: json!({"@id": "3", "name": "Artist Three"}),
-        raw_xml: None,
-    };
+    let good2 = DataMessage { id: "3".to_string(), sha256: "ccc".to_string(), data: json!({"@id": "3", "name": "Artist Three"}), raw_xml: None };
 
     in_tx.send(bad).await.unwrap();
     in_tx.send(good1).await.unwrap();
@@ -391,7 +386,8 @@ async fn test_message_validator_no_violations_clean_report() {
     use extractor::extractor::message_validator;
     use tokio::sync::mpsc;
 
-    let rules = compile_rules(r#"
+    let rules = compile_rules(
+        r#"
 rules:
   releases:
     - name: year-check
@@ -401,7 +397,8 @@ rules:
         min: 1860
         max: 2027
       severity: warning
-"#);
+"#,
+    );
 
     let temp_dir = TempDir::new().unwrap();
     let (in_tx, in_rx) = mpsc::channel::<DataMessage>(10);
@@ -410,17 +407,10 @@ rules:
     let handle = tokio::spawn({
         let rules = rules.clone();
         let root = temp_dir.path().to_path_buf();
-        async move {
-            message_validator(in_rx, out_tx, rules, "releases", &root, "20260301").await
-        }
+        async move { message_validator(in_rx, out_tx, rules, "releases", &root, "20260301").await }
     });
 
-    let msg = DataMessage {
-        id: "1".to_string(),
-        sha256: "aaa".to_string(),
-        data: json!({"@id": "1", "year": "1990"}),
-        raw_xml: None,
-    };
+    let msg = DataMessage { id: "1".to_string(), sha256: "aaa".to_string(), data: json!({"@id": "1", "year": "1990"}), raw_xml: None };
     in_tx.send(msg).await.unwrap();
     drop(in_tx);
 
@@ -439,7 +429,8 @@ async fn test_message_validator_downstream_dropped() {
     use extractor::extractor::message_validator;
     use tokio::sync::mpsc;
 
-    let rules = compile_rules(r#"
+    let rules = compile_rules(
+        r#"
 rules:
   artists:
     - name: test
@@ -447,7 +438,8 @@ rules:
       condition:
         type: required
       severity: error
-"#);
+"#,
+    );
 
     let temp_dir = TempDir::new().unwrap();
     let (in_tx, in_rx) = mpsc::channel::<DataMessage>(10);
@@ -459,17 +451,10 @@ rules:
     let handle = tokio::spawn({
         let rules = rules.clone();
         let root = temp_dir.path().to_path_buf();
-        async move {
-            message_validator(in_rx, out_tx, rules, "artists", &root, "20260301").await
-        }
+        async move { message_validator(in_rx, out_tx, rules, "artists", &root, "20260301").await }
     });
 
-    let msg = DataMessage {
-        id: "1".to_string(),
-        sha256: "aaa".to_string(),
-        data: json!({"@id": "1", "name": "Test"}),
-        raw_xml: None,
-    };
+    let msg = DataMessage { id: "1".to_string(), sha256: "aaa".to_string(), data: json!({"@id": "1", "name": "Test"}), raw_xml: None };
     in_tx.send(msg).await.unwrap();
     drop(in_tx);
 
