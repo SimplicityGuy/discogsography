@@ -861,15 +861,169 @@ describe('NLQPanel', () => {
             expect(globalThis.apiClient.askNlqStream).not.toHaveBeenCalled();
         });
     });
+
+    describe('_clearResult — child removal loop', () => {
+        it('should remove all children from resultEl', () => {
+            const panel = new window.NLQPanel();
+            // Simulate resultEl having children: firstChild returns a value twice, then null
+            let childCount = 2;
+            const fakeChild = { nodeType: 1 };
+            Object.defineProperty(elements.nlqResult, 'firstChild', {
+                get: () => (childCount > 0 ? fakeChild : null),
+                configurable: true,
+            });
+            elements.nlqResult.removeChild = vi.fn(() => { childCount--; });
+
+            panel._clearResult();
+
+            expect(elements.nlqResult.removeChild).toHaveBeenCalledTimes(2);
+        });
+    });
+
+    describe('_showResult — clears existing children before rendering', () => {
+        it('should remove existing children from resultEl before appending new content', () => {
+            const panel = new window.NLQPanel();
+            let childCount = 1;
+            const fakeChild = { nodeType: 1 };
+            Object.defineProperty(elements.nlqResult, 'firstChild', {
+                get: () => (childCount > 0 ? fakeChild : null),
+                configurable: true,
+            });
+            elements.nlqResult.removeChild = vi.fn(() => { childCount--; });
+
+            panel._showResult({ summary: 'Test result.', entities: [], tools_used: [] });
+
+            expect(elements.nlqResult.removeChild).toHaveBeenCalledWith(fakeChild);
+        });
+    });
+
+    describe('_showError — clears existing children', () => {
+        it('should remove existing children from resultEl before showing error', () => {
+            const panel = new window.NLQPanel();
+            let childCount = 1;
+            const fakeChild = { nodeType: 1 };
+            Object.defineProperty(elements.nlqResult, 'firstChild', {
+                get: () => (childCount > 0 ? fakeChild : null),
+                configurable: true,
+            });
+            elements.nlqResult.removeChild = vi.fn(() => { childCount--; });
+
+            panel._showError(500);
+
+            expect(elements.nlqResult.removeChild).toHaveBeenCalledWith(fakeChild);
+        });
+    });
+
+    describe('_showStatus — null guard', () => {
+        it('should not throw when statusEl is null', () => {
+            // Rebuild DOM without statusEl
+            globalThis.document.getElementById = vi.fn((id) => {
+                if (id === 'nlqStatus') return null;
+                return elements[id] ?? null;
+            });
+            const panel = new window.NLQPanel();
+            expect(() => panel._showStatus({ step: 'testing' })).not.toThrow();
+        });
+    });
+
+    describe('_showResult — null guards', () => {
+        it('should not throw when resultEl is null', () => {
+            globalThis.document.getElementById = vi.fn((id) => {
+                if (id === 'nlqResult') return null;
+                return elements[id] ?? null;
+            });
+            const panel = new window.NLQPanel();
+            expect(() => panel._showResult({ summary: 'test', entities: [], tools_used: [] })).not.toThrow();
+        });
+    });
+
+    describe('_showError — null guards', () => {
+        it('should not throw when resultEl is null', () => {
+            globalThis.document.getElementById = vi.fn((id) => {
+                if (id === 'nlqResult') return null;
+                return elements[id] ?? null;
+            });
+            const panel = new window.NLQPanel();
+            expect(() => panel._showError(503)).not.toThrow();
+        });
+    });
+
+    describe('_buildEntityLinkedText — multiple occurrences', () => {
+        it('should link all occurrences of the same entity name', () => {
+            const panel = new window.NLQPanel();
+            const createdNodes = [];
+            globalThis.document.createElement = vi.fn((tag) => {
+                const el = {
+                    tagName: tag.toUpperCase(), textContent: '', className: '', style: {},
+                    setAttribute: vi.fn(), addEventListener: vi.fn(), appendChild: vi.fn(),
+                };
+                createdNodes.push(el);
+                return el;
+            });
+            globalThis.document.createTextNode = vi.fn((text) => ({ textContent: text, nodeType: 3 }));
+
+            const nodes = panel._buildEntityLinkedText(
+                'Miles Davis and Miles Davis again.',
+                [{ name: 'Miles Davis', type: 'artist' }],
+            );
+
+            const links = nodes.filter(n => n.tagName === 'A');
+            expect(links.length).toBe(2);
+        });
+    });
+
+    describe('_buildEntityLinkedText — entity with empty name', () => {
+        it('should skip entities with no name', () => {
+            const panel = new window.NLQPanel();
+            globalThis.document.createTextNode = vi.fn((text) => ({ textContent: text, nodeType: 3 }));
+            globalThis.document.createElement = vi.fn((tag) => ({
+                tagName: tag.toUpperCase(), textContent: '', className: '', style: {},
+                setAttribute: vi.fn(), addEventListener: vi.fn(), appendChild: vi.fn(),
+            }));
+
+            const nodes = panel._buildEntityLinkedText(
+                'Some text.',
+                [{ name: '', type: 'artist' }, { type: 'label' }],
+            );
+
+            const links = nodes.filter(n => n.tagName === 'A');
+            expect(links.length).toBe(0);
+        });
+    });
+
+    describe('_setLoading — null guards', () => {
+        it('should not throw when submitBtn is null', () => {
+            globalThis.document.getElementById = vi.fn((id) => {
+                if (id === 'nlqSubmit') return null;
+                return elements[id] ?? null;
+            });
+            const panel = new window.NLQPanel();
+            expect(() => panel._setLoading(true)).not.toThrow();
+        });
+
+        it('should not throw when input is null', () => {
+            globalThis.document.getElementById = vi.fn((id) => {
+                if (id === 'nlqInput') return null;
+                return elements[id] ?? null;
+            });
+            const panel = new window.NLQPanel();
+            expect(() => panel._setLoading(true)).not.toThrow();
+        });
+    });
+
+    describe('_submit — null input guard', () => {
+        it('should not throw when input is null', () => {
+            globalThis.document.getElementById = vi.fn((id) => {
+                if (id === 'nlqInput') return null;
+                return elements[id] ?? null;
+            });
+            const panel = new window.NLQPanel();
+            panel._submit();
+            expect(globalThis.apiClient.askNlqStream).not.toHaveBeenCalled();
+        });
+    });
 });
 
-// ---------------------------------------------------------------------------
-// app.js NLQ wiring — tested via jsdom DOM interactions
-// ---------------------------------------------------------------------------
-
-/**
- * Build the minimal DOM required for NLQ toggle tests using safe DOM APIs.
- */
 // Note: app.js NLQ wiring tests (toggle, keyboard shortcut) require a full
 // jsdom environment with document.body. These behaviors are covered by E2E
-// tests. The 57 unit tests above cover NLQPanel and ApiClient NLQ methods.
+// tests. The unit tests above cover NLQPanel and ApiClient NLQ methods.
