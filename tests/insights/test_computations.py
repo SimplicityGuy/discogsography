@@ -425,6 +425,7 @@ class TestRunAllComputations:
             patch("insights.computations.compute_and_store_label_longevity", return_value=5),
             patch("insights.computations.compute_and_store_anniversaries", return_value=3),
             patch("insights.computations.compute_and_store_data_completeness", return_value=4),
+            patch("insights.computations.compute_and_store_rarity", return_value=7),
         ):
             results = await run_all_computations(mock_client, mock_pool)
 
@@ -433,6 +434,7 @@ class TestRunAllComputations:
         assert results["label_longevity"] == 5
         assert results["anniversaries"] == 3
         assert results["data_completeness"] == 4
+        assert results["release_rarity"] == 7
 
     @pytest.mark.asyncio
     async def test_passes_milestone_years_to_anniversaries(self) -> None:
@@ -448,6 +450,7 @@ class TestRunAllComputations:
             patch("insights.computations.compute_and_store_label_longevity", return_value=0),
             patch("insights.computations.compute_and_store_anniversaries", return_value=0) as mock_anniv,
             patch("insights.computations.compute_and_store_data_completeness", return_value=0),
+            patch("insights.computations.compute_and_store_rarity", return_value=0),
         ):
             await run_all_computations(mock_client, mock_pool, milestone_years=custom_milestones)
 

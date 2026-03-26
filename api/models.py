@@ -512,6 +512,47 @@ class StorageResponse(BaseModel):
     redis: dict[str, Any]
 
 
+class RaritySignal(BaseModel):
+    """A single rarity signal score and its weight."""
+
+    score: float
+    weight: float
+
+
+class RarityResponse(BaseModel):
+    """Full rarity breakdown for a single release."""
+
+    release_id: int
+    title: str
+    artist: str
+    year: int | None
+    rarity_score: float
+    tier: str
+    hidden_gem_score: float | None
+    breakdown: dict[str, RaritySignal]
+
+
+class RarityListItem(BaseModel):
+    """A release in a rarity list (leaderboard, artist, label)."""
+
+    release_id: int
+    title: str
+    artist: str
+    year: int | None
+    rarity_score: float
+    tier: str
+    hidden_gem_score: float | None = None
+
+
+class RarityListResponse(BaseModel):
+    """Paginated list of rarity-scored releases."""
+
+    items: list[RarityListItem]
+    total: int
+    page: int
+    page_size: int
+
+
 # --- Metrics History models (Phase 3) ---
 
 

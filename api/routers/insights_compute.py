@@ -18,6 +18,7 @@ from api.queries.insights_neo4j_queries import (
     query_monthly_anniversaries,
 )
 from api.queries.insights_pg_queries import query_data_completeness
+from api.queries.rarity_queries import fetch_all_rarity_signals
 
 
 logger = structlog.get_logger(__name__)
@@ -110,3 +111,12 @@ async def data_completeness() -> JSONResponse:
             logger.debug("⚠️ Data completeness cache set failed")
 
     return JSONResponse(content=response)
+
+
+@router.get("/rarity-scores")
+async def rarity_scores() -> JSONResponse:
+    """Return computed rarity scores for all releases from Neo4j."""
+    if not _neo4j:
+        return JSONResponse(content={"error": "Service not ready"}, status_code=503)
+    results = await fetch_all_rarity_signals(_neo4j)
+    return JSONResponse(content={"items": results})

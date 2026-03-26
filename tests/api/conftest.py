@@ -197,6 +197,10 @@ def test_client(
     _insights_compute_router.configure(mock_neo4j, mock_pool, mock_redis)
     _admin_router.configure(mock_pool, mock_redis, test_api_config, neo4j_driver=mock_neo4j)
 
+    import api.routers.rarity as _rarity_router
+
+    _rarity_router.configure(mock_neo4j, mock_pool, mock_redis)
+
     # Set up metrics buffer so the metrics middleware records requests
     from api.metrics_collector import MetricsBuffer
 

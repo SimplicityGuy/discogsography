@@ -44,6 +44,7 @@ import api.routers.explore as _explore_router
 import api.routers.insights as _insights_router
 import api.routers.insights_compute as _insights_compute_router
 import api.routers.label_dna as _label_dna_router
+import api.routers.rarity as _rarity_router
 import api.routers.recommend as _recommend_router
 import api.routers.search as _search_router
 import api.routers.snapshot as _snapshot_router
@@ -236,6 +237,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _search_router.configure(_pool, _redis)
     _insights_compute_router.configure(_neo4j, _pool, _redis)
     _admin_router.configure(_pool, _redis, _config, neo4j_driver=_neo4j)
+    _rarity_router.configure(_neo4j, _pool, _redis)
     _snapshot_router.configure(
         jwt_secret=_config.jwt_secret_key,
         redis_client=_redis,
@@ -338,6 +340,7 @@ app.include_router(_taste_router.router)
 app.include_router(_collection_router.router)
 app.include_router(_recommend_router.router)
 app.include_router(_admin_router.router)
+app.include_router(_rarity_router.router)
 
 
 @app.get("/health")
