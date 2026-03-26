@@ -104,6 +104,201 @@ async def test_execute_autocomplete(runner: NLQToolRunner) -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_explore_entity(runner: NLQToolRunner) -> None:
+    """Explore entity tool should delegate to EXPLORE_DISPATCH and return the dict."""
+    fake_result: dict[str, Any] = {"center": {"id": "a1", "name": "Radiohead", "type": "artist"}, "connections": []}
+    with patch(
+        "api.queries.neo4j_queries.EXPLORE_DISPATCH",
+        {"artist": AsyncMock(return_value=fake_result)},
+    ):
+        result = await runner.execute("explore_entity", {"type": "artist", "name": "Radiohead"})
+    assert result.get("center", {}).get("name") == "Radiohead"
+
+
+@pytest.mark.asyncio
+async def test_execute_explore_entity_not_found(runner: NLQToolRunner) -> None:
+    """Explore entity returns error when entity not found (None result)."""
+    with patch(
+        "api.queries.neo4j_queries.EXPLORE_DISPATCH",
+        {"artist": AsyncMock(return_value=None)},
+    ):
+        result = await runner.execute("explore_entity", {"type": "artist", "name": "Nobody"})
+    assert "error" in result
+    assert "not found" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_execute_explore_entity_unknown_type(runner: NLQToolRunner) -> None:
+    """Explore entity returns error for unknown entity type."""
+    with patch("api.queries.neo4j_queries.EXPLORE_DISPATCH", {}):
+        result = await runner.execute("explore_entity", {"type": "unknown_type", "name": "X"})
+    assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_execute_find_path(runner: NLQToolRunner) -> None:
+    """Find path tool should return nodes and rels."""
+    fake_result: dict[str, Any] = {
+        "nodes": [{"id": "a1", "name": "Radiohead", "type": "artist"}],
+        "rels": ["RELEASED_ON"],
+    }
+    with patch("api.queries.neo4j_queries.find_shortest_path", new_callable=AsyncMock, return_value=fake_result):
+        result = await runner.execute("find_path", {"from_id": "a1", "to_id": "l1"})
+    assert "nodes" in result
+
+
+@pytest.mark.asyncio
+async def test_execute_find_path_no_path(runner: NLQToolRunner) -> None:
+    """Find path returns error when no path found (None result)."""
+    with patch("api.queries.neo4j_queries.find_shortest_path", new_callable=AsyncMock, return_value=None):
+        result = await runner.execute("find_path", {"from_id": "a1", "to_id": "l1"})
+    assert "error" in result
+    assert "No path found" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_execute_get_collaborators(runner: NLQToolRunner) -> None:
+    """Get collaborators tool should return collaborators list."""
+    fake_collabs = [{"id": "a2", "name": "Thom Yorke", "shared_releases": 5}]
+    with patch("api.queries.collaborator_queries.get_collaborators", new_callable=AsyncMock, return_value=fake_collabs):
+        result = await runner.execute("get_collaborators", {"artist_id": "a1"})
+    assert result["collaborators"] == fake_collabs
+
+
+@pytest.mark.asyncio
+async def test_execute_get_similar_artists(runner: NLQToolRunner) -> None:
+    """Get similar artists tool should gather profile + candidates and rank."""
+    fake_profile = {"genres": {"rock": 1.0}}
+    fake_candidates = [{"id": "a2", "genres": {"rock": 0.9}}]
+    fake_ranked = [{"id": "a2", "name": "Muse", "similarity": 0.95}]
+    with (
+        patch("api.queries.recommend_queries.get_artist_profile", new_callable=AsyncMock, return_value=fake_profile),
+        patch("api.queries.recommend_queries.get_candidate_artists", new_callable=AsyncMock, return_value=fake_candidates),
+        patch("api.queries.recommend_queries.compute_similar_artists", return_value=fake_ranked),
+    ):
+        result = await runner.execute("get_similar_artists", {"artist_id": "a1"})
+    assert result["artist_id"] == "a1"
+    assert result["similar"] == fake_ranked
+
+
+@pytest.mark.asyncio
+async def test_execute_get_label_dna(runner: NLQToolRunner) -> None:
+    """Get label DNA tool should return the label profile."""
+    fake_dna: dict[str, Any] = {"label_id": "l1", "genres": {"electronic": 0.8}, "eras": {}}
+    with patch("api.queries.label_dna_queries.get_label_full_profile", new_callable=AsyncMock, return_value=fake_dna):
+        result = await runner.execute("get_label_dna", {"label_id": "l1"})
+    assert result["label_id"] == "l1"
+
+
+@pytest.mark.asyncio
+async def test_execute_get_label_dna_not_found(runner: NLQToolRunner) -> None:
+    """Get label DNA returns error when label not found."""
+    with patch("api.queries.label_dna_queries.get_label_full_profile", new_callable=AsyncMock, return_value=None):
+        result = await runner.execute("get_label_dna", {"label_id": "l999"})
+    assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_execute_get_trends(runner: NLQToolRunner) -> None:
+    """Get trends tool should delegate to TRENDS_DISPATCH and wrap results."""
+    fake_trends = [{"year": 2020, "count": 5}]
+    with patch(
+        "api.queries.neo4j_queries.TRENDS_DISPATCH",
+        {"artist": AsyncMock(return_value=fake_trends)},
+    ):
+        result = await runner.execute("get_trends", {"type": "artist", "name": "Radiohead"})
+    assert result["trends"] == fake_trends
+
+
+@pytest.mark.asyncio
+async def test_execute_get_trends_unknown_type(runner: NLQToolRunner) -> None:
+    """Get trends returns error for unknown entity type."""
+    with patch("api.queries.neo4j_queries.TRENDS_DISPATCH", {}):
+        result = await runner.execute("get_trends", {"type": "unknown", "name": "X"})
+    assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_execute_get_genre_tree(runner: NLQToolRunner) -> None:
+    """Get genre tree tool should return the genre hierarchy."""
+    fake_tree = [{"name": "Electronic", "children": ["Techno", "House"]}]
+    with patch("api.queries.genre_tree_queries.get_genre_tree", new_callable=AsyncMock, return_value=fake_tree):
+        result = await runner.execute("get_genre_tree", {})
+    assert result["genres"] == fake_tree
+
+
+@pytest.mark.asyncio
+async def test_execute_get_graph_stats(runner: NLQToolRunner) -> None:
+    """Get graph stats tool should return node counts."""
+    fake_stats: dict[str, Any] = {"artists": 100, "labels": 50, "releases": 500}
+    with patch("api.queries.neo4j_queries.get_graph_stats", new_callable=AsyncMock, return_value=fake_stats):
+        result = await runner.execute("get_graph_stats", {})
+    assert result["artists"] == 100
+
+
+@pytest.mark.asyncio
+async def test_execute_get_collection_gaps(runner: NLQToolRunner) -> None:
+    """Get collection gaps tool (label) should return gaps and total."""
+    fake_gaps = [{"id": "r1", "title": "OK Computer"}]
+    with patch("api.queries.gap_queries.get_label_gaps", new_callable=AsyncMock, return_value=(fake_gaps, 1)):
+        result = await runner.execute("get_collection_gaps", {"entity_type": "label", "entity_id": "l1"}, user_id="u1")
+    assert result["gaps"] == fake_gaps
+    assert result["total"] == 1
+
+
+@pytest.mark.asyncio
+async def test_execute_get_collection_gaps_artist(runner: NLQToolRunner) -> None:
+    """Get collection gaps tool (artist) should delegate to get_artist_gaps."""
+    fake_gaps = [{"id": "r2", "title": "In Rainbows"}]
+    with patch("api.queries.gap_queries.get_artist_gaps", new_callable=AsyncMock, return_value=(fake_gaps, 1)):
+        result = await runner.execute("get_collection_gaps", {"entity_type": "artist", "entity_id": "a1"}, user_id="u1")
+    assert result["gaps"] == fake_gaps
+
+
+@pytest.mark.asyncio
+async def test_execute_get_collection_gaps_unknown_type(runner: NLQToolRunner) -> None:
+    """Get collection gaps returns error for unknown entity type."""
+    result = await runner.execute("get_collection_gaps", {"entity_type": "master", "entity_id": "m1"}, user_id="u1")
+    assert "error" in result
+
+
+@pytest.mark.asyncio
+async def test_execute_get_taste_fingerprint(runner: NLQToolRunner) -> None:
+    """Get taste fingerprint returns heatmap cells and total."""
+    fake_cells = [{"genre": "Rock", "decade": "2000s", "count": 10}]
+    with patch("api.queries.taste_queries.get_taste_heatmap", new_callable=AsyncMock, return_value=(fake_cells, 42)):
+        result = await runner.execute("get_taste_fingerprint", {}, user_id="u1")
+    assert result["heatmap"] == fake_cells
+    assert result["total"] == 42
+
+
+@pytest.mark.asyncio
+async def test_execute_get_taste_blindspots(runner: NLQToolRunner) -> None:
+    """Get taste blindspots returns blind_spots list."""
+    fake_spots = [{"genre": "Jazz", "score": 0.8}]
+    with patch("api.queries.taste_queries.get_blind_spots", new_callable=AsyncMock, return_value=fake_spots):
+        result = await runner.execute("get_taste_blindspots", {"limit": 3}, user_id="u1")
+    assert result["blind_spots"] == fake_spots
+
+
+@pytest.mark.asyncio
+async def test_execute_get_collection_stats(runner: NLQToolRunner) -> None:
+    """Get collection stats returns collection_count."""
+    with patch("api.queries.taste_queries.get_collection_count", new_callable=AsyncMock, return_value=123):
+        result = await runner.execute("get_collection_stats", {}, user_id="u1")
+    assert result["collection_count"] == 123
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_exception_returns_error(runner: NLQToolRunner) -> None:
+    """When a tool handler raises an exception, execute returns an error dict."""
+    with patch("api.queries.search_queries.execute_search", new_callable=AsyncMock, side_effect=RuntimeError("boom")):
+        result = await runner.execute("search", {"q": "test"})
+    assert "error" in result
+    assert "failed" in result["error"]
+
+
+@pytest.mark.asyncio
 async def test_execute_unknown_tool_returns_error(runner: NLQToolRunner) -> None:
     """Unknown tool names should return an error dict."""
     result = await runner.execute("nonexistent_tool", {})
