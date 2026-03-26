@@ -447,6 +447,97 @@ class ApiClient {
         if (!response.ok) return null;
         return response.json();
     }
+    // --- NLQ (Natural Language Query) ---
+
+    /**
+     * Check if NLQ feature is enabled.
+     * @returns {Promise<{enabled: boolean}>} NLQ status
+     */
+    async checkNlqStatus() {
+        try {
+            const response = await fetch('/api/nlq/status');
+            if (!response.ok) return { enabled: false };
+            return response.json();
+        } catch {
+            return { enabled: false };
+        }
+    }
+
+    /**
+     * Send a natural language query (non-streaming).
+     * @param {string} query - Natural language question
+     * @param {Object|null} context - Optional context (current_entity_id, current_entity_type)
+     * @returns {Promise<Object|null>} Query result or null on failure
+     */
+    async askNlq(query, context = null) {
+        try {
+            const body = { query };
+            if (context) body.context = context;
+            const response = await fetch('/api/nlq/query', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!response.ok) return null;
+            return response.json();
+        } catch {
+            return null;
+        }
+    }
+
+    /**
+     * Send a natural language query with SSE streaming.
+     * @param {string} query - Natural language question
+     * @param {Object|null} context - Optional context
+     * @param {Function} onStatus - Called with status events
+     * @param {Function} onResult - Called with the final result
+     * @param {Function} onError - Called on error
+     */
+    askNlqStream(query, context = null, onStatus, onResult, onError) {
+        const body = { query };
+        if (context) body.context = context;
+        fetch('/api/nlq/query', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'text/event-stream',
+            },
+            body: JSON.stringify(body),
+        }).then(response => {
+            if (!response.ok) {
+                if (onError) onError(response.status);
+                return;
+            }
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            function processChunk() {
+                reader.read().then(({ done, value }) => {
+                    if (done) return;
+                    buffer += decoder.decode(value, { stream: true });
+                    const lines = buffer.split('\n');
+                    buffer = lines.pop() || '';
+                    let eventType = null;
+                    for (const line of lines) {
+                        if (line.startsWith('event: ')) {
+                            eventType = line.slice(7).trim();
+                        } else if (line.startsWith('data: ') && eventType) {
+                            try {
+                                const data = JSON.parse(line.slice(6));
+                                if (eventType === 'status' && onStatus) onStatus(data);
+                                if (eventType === 'result' && onResult) onResult(data);
+                            } catch { /* ignore parse errors */ }
+                            eventType = null;
+                        }
+                    }
+                    processChunk();
+                });
+            }
+            processChunk();
+        }).catch(err => {
+            if (onError) onError(err);
+        });
+    }
 }
 
 // Global instance
