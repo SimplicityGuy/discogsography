@@ -27,17 +27,13 @@ router = APIRouter(prefix="/api/rarity", tags=["rarity"])
 
 _neo4j_driver: Any = None
 _pg_pool: Any = None
-_redis: Any = None
-
-_CACHE_TTL = 3600  # 1 hour
 
 
-def configure(neo4j: Any, pg_pool: Any, redis: Any = None) -> None:
+def configure(neo4j: Any, pg_pool: Any, *_args: Any, **_kwargs: Any) -> None:
     """Configure the rarity router with database connections."""
-    global _neo4j_driver, _pg_pool, _redis
+    global _neo4j_driver, _pg_pool
     _neo4j_driver = neo4j
     _pg_pool = pg_pool
-    _redis = redis
 
 
 def _format_breakdown(row: dict[str, Any]) -> dict[str, dict[str, float]]:

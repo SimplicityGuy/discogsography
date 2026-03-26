@@ -11,6 +11,7 @@ Graph model:
   (Release)-[:DERIVED_FROM]->(Master)
 """
 
+import bisect
 from datetime import UTC, datetime
 from typing import Any
 
@@ -156,6 +157,7 @@ async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
     pressing_query = """
     MATCH (r:Release)
     OPTIONAL MATCH (r)-[:DERIVED_FROM]->(m:Master)<-[:DERIVED_FROM]-(sibling:Release)
+    WHERE sibling <> r
     WITH r, count(DISTINCT sibling) + 1 AS pressing_count
     OPTIONAL MATCH (r)-[:BY]->(a:Artist)
     WITH r, pressing_count, collect(DISTINCT a.name)[0] AS artist_name
@@ -252,8 +254,7 @@ async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
         """Return percentile rank (0.0 to 1.0) of value in sorted list."""
         if not sorted_values or value <= 0:
             return 0.0
-        count_below = sum(1 for v in sorted_values if v < value)
-        return count_below / len(sorted_values)
+        return bisect.bisect_left(sorted_values, value) / len(sorted_values)
 
     # Score each release
     results: list[dict[str, Any]] = []

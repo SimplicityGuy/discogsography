@@ -92,17 +92,20 @@ class TestTemporalScarcityScore:
     def test_old_no_reissue(self) -> None:
         current_year = datetime.now(UTC).year
         score = compute_temporal_scarcity_score(1960, None, current_year)
-        assert score == 99.0  # min(100, (2026-1960)*1.5) = 99.0
+        expected = min(100.0, (current_year - 1960) * 1.5)
+        assert score == expected
 
     def test_old_with_recent_reissue(self) -> None:
         current_year = datetime.now(UTC).year
         score = compute_temporal_scarcity_score(1960, current_year - 5, current_year)
-        assert score == 59.0  # 99.0 - 40 = 59.0
+        expected = max(0.0, min(100.0, (current_year - 1960) * 1.5) - 40.0)
+        assert score == expected
 
     def test_recent_release(self) -> None:
         current_year = datetime.now(UTC).year
         score = compute_temporal_scarcity_score(current_year - 2, None, current_year)
-        assert score == 3.0  # 2 * 1.5 = 3.0
+        expected = min(100.0, 2 * 1.5)
+        assert score == expected
 
     def test_no_year(self) -> None:
         current_year = datetime.now(UTC).year
