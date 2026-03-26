@@ -288,6 +288,7 @@ services:
     image: discogsography/extractor:latest
     container_name: discogsography-extractor
     hostname: extractor
+    command: ["--source", "discogs"]
     user: "1000:1000"
     environment:
       DISCOGS_ROOT: /discogs-data
@@ -329,9 +330,9 @@ services:
     image: discogsography/extractor:latest
     container_name: discogsography-extractor-musicbrainz
     hostname: extractor-musicbrainz
+    command: ["--source", "musicbrainz"]
     user: "1000:1000"
     environment:
-      EXTRACTOR_SOURCE: musicbrainz
       LOG_LEVEL: info
       MUSICBRAINZ_ROOT: /musicbrainz-data
       AMQP_EXCHANGE_PREFIX: musicbrainz
