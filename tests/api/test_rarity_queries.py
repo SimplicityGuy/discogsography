@@ -155,6 +155,9 @@ class TestRarityTier:
     def test_boundary_21(self) -> None:
         assert compute_rarity_tier(21.0) == "uncommon"
 
+    def test_zero_score(self) -> None:
+        assert compute_rarity_tier(0.0) == "common"
+
 
 class TestSignalWeights:
     def test_weights_sum_to_one(self) -> None:
@@ -245,6 +248,36 @@ class TestGetRarityLeaderboard:
         items, total = await get_rarity_leaderboard(mock_pool, page=1, page_size=20)
         assert len(items) == 1
         assert total == 100
+
+    @pytest.mark.asyncio
+    async def test_with_tier_filter(self) -> None:
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_cur.fetchall = AsyncMock(
+            return_value=[
+                {
+                    "release_id": 1,
+                    "title": "R1",
+                    "artist_name": "A1",
+                    "year": 1970,
+                    "rarity_score": 95.0,
+                    "tier": "ultra-rare",
+                    "hidden_gem_score": 80.0,
+                }
+            ]
+        )
+        mock_cur.fetchone = AsyncMock(return_value={"total": 1})
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cur)
+        mock_cur.__aenter__ = AsyncMock(return_value=mock_cur)
+        mock_cur.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        items, total = await get_rarity_leaderboard(mock_pool, page=1, page_size=20, tier="ultra-rare")
+        assert len(items) == 1
+        assert total == 1
 
 
 class TestGetRarityHiddenGems:
@@ -453,3 +486,33 @@ class TestFetchAllRaritySignals:
         assert r["pressing_scarcity"] == 100.0  # 1 pressing
         assert r["format_rarity"] == 95.0  # Flexi-disc max
         assert "hidden_gem_score" in r
+
+    @pytest.mark.asyncio
+    async def test_handles_zero_quality_signals(self) -> None:
+        """Test that releases with zero quality signals get hidden_gem_score of 0."""
+        mock_driver = MagicMock()
+
+        pressing_data = [{"release_id": "1", "pressing_count": 1, "title": "R1", "artist_name": "A1", "year": 1970}]
+        label_data = [{"release_id": "1", "label_catalog_size": 5}]
+        format_data = [{"release_id": "1", "formats": ["LP"]}]
+        temporal_data = [{"release_id": "1", "year": 1970, "latest_sibling_year": None}]
+        degree_data = [{"release_id": "1", "degree": 2}]
+        artist_degree_data = [{"release_id": "1", "artist_max_degree": 0}]
+        label_size_data = [{"release_id": "1", "label_max_catalog": 0}]
+        genre_count_data = [{"release_id": "1", "genre_max_release_count": 0}]
+
+        with patch("api.queries.rarity_queries.run_query") as mock_run:
+            mock_run.side_effect = [
+                pressing_data,
+                label_data,
+                format_data,
+                temporal_data,
+                degree_data,
+                artist_degree_data,
+                label_size_data,
+                genre_count_data,
+            ]
+            results = await fetch_all_rarity_signals(mock_driver)
+
+        assert len(results) == 1
+        assert results[0]["hidden_gem_score"] == 0.0

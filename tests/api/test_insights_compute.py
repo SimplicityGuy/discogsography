@@ -216,3 +216,31 @@ class TestConfigureWithRedis:
             assert mod._redis is None
         finally:
             mod._redis = original
+
+
+class TestRarityScoresEndpoint:
+    """Tests for GET /api/internal/insights/rarity-scores."""
+
+    def test_success(self, test_client: TestClient) -> None:
+        """Returns 200 with rarity score results."""
+        mock_results = [{"release_id": "1", "rarity_score": 85.0, "tier": "ultra-rare"}]
+        with patch(
+            "api.routers.insights_compute.fetch_all_rarity_signals",
+            new=AsyncMock(return_value=mock_results),
+        ):
+            response = test_client.get("/api/internal/insights/rarity-scores")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["items"] == mock_results
+
+    def test_503_when_not_ready(self, test_client: TestClient) -> None:
+        """Returns 503 when Neo4j is not configured."""
+        import api.routers.insights_compute as ic_router
+
+        original = ic_router._neo4j
+        ic_router._neo4j = None
+        try:
+            response = test_client.get("/api/internal/insights/rarity-scores")
+            assert response.status_code == 503
+        finally:
+            ic_router._neo4j = original

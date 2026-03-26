@@ -93,6 +93,17 @@ class TestRarityLeaderboard:
             response = test_client.get("/api/rarity/leaderboard?tier=ultra-rare")
         assert response.status_code == 200
 
+    def test_503_when_not_ready(self, test_client: TestClient) -> None:
+        import api.routers.rarity as rarity_router
+
+        original = rarity_router._pg_pool
+        rarity_router._pg_pool = None
+        try:
+            response = test_client.get("/api/rarity/leaderboard")
+            assert response.status_code == 503
+        finally:
+            rarity_router._pg_pool = original
+
 
 class TestHiddenGems:
     def test_success(self, test_client: TestClient) -> None:
@@ -112,6 +123,17 @@ class TestHiddenGems:
         ):
             response = test_client.get("/api/rarity/hidden-gems?min_rarity=61")
         assert response.status_code == 200
+
+    def test_503_when_not_ready(self, test_client: TestClient) -> None:
+        import api.routers.rarity as rarity_router
+
+        original = rarity_router._pg_pool
+        rarity_router._pg_pool = None
+        try:
+            response = test_client.get("/api/rarity/hidden-gems")
+            assert response.status_code == 503
+        finally:
+            rarity_router._pg_pool = original
 
 
 class TestArtistRarity:
@@ -133,6 +155,17 @@ class TestArtistRarity:
             response = test_client.get("/api/rarity/artist/nonexistent")
         assert response.status_code == 404
 
+    def test_503_when_not_ready(self, test_client: TestClient) -> None:
+        import api.routers.rarity as rarity_router
+
+        original_pool = rarity_router._pg_pool
+        rarity_router._pg_pool = None
+        try:
+            response = test_client.get("/api/rarity/artist/123")
+            assert response.status_code == 503
+        finally:
+            rarity_router._pg_pool = original_pool
+
 
 class TestLabelRarity:
     def test_success(self, test_client: TestClient) -> None:
@@ -152,3 +185,14 @@ class TestLabelRarity:
         ):
             response = test_client.get("/api/rarity/label/nonexistent")
         assert response.status_code == 404
+
+    def test_503_when_not_ready(self, test_client: TestClient) -> None:
+        import api.routers.rarity as rarity_router
+
+        original_pool = rarity_router._pg_pool
+        rarity_router._pg_pool = None
+        try:
+            response = test_client.get("/api/rarity/label/456")
+            assert response.status_code == 503
+        finally:
+            rarity_router._pg_pool = original_pool
