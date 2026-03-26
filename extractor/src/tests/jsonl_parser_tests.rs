@@ -368,3 +368,169 @@ fn test_parse_mb_jsonl_file_with_discogs_map_enriches_relations() {
     assert_eq!(relations.len(), 1);
     assert_eq!(relations[0]["target_discogs_artist_id"], 777);
 }
+
+// ─── find_discogs_id edge case: discogs type but no url resource ─────────────
+
+#[test]
+fn test_find_discogs_id_discogs_type_but_no_url() {
+    let url_rels = vec![serde_json::json!({"type": "discogs", "url": {}})];
+    let result = find_discogs_id(&url_rels, "artist");
+    assert!(result.is_null());
+}
+
+#[test]
+fn test_find_discogs_id_discogs_type_but_empty_resource() {
+    let url_rels = vec![serde_json::json!({"type": "discogs", "url": {"resource": ""}})];
+    let result = find_discogs_id(&url_rels, "artist");
+    assert!(result.is_null());
+}
+
+// ─── parse_mb_jsonl_file: Labels and Releases branches ──────────────────────
+
+#[test]
+fn test_parse_mb_jsonl_file_labels() {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    use tokio::sync::mpsc;
+    use xz2::write::XzEncoder;
+
+    let line = r#"{"id":"label-mbid-1","name":"Test Label","type":"Original Production","label-code":100,"life-span":{"begin":"1950","end":null,"ended":false},"area":{"name":"Germany"},"disambiguation":"","relations":[],"url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/label/9999"}}]}"#;
+    let content = format!("{}\n", line);
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let (sender, mut receiver) = mpsc::channel(10);
+    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Labels, sender, None).unwrap();
+    assert_eq!(count, 1);
+
+    let msg = rt.block_on(receiver.recv()).unwrap();
+    assert_eq!(msg.id, "label-mbid-1");
+    assert_eq!(msg.data["discogs_label_id"], 9999);
+    assert_eq!(msg.data["name"], "Test Label");
+}
+
+#[test]
+fn test_parse_mb_jsonl_file_releases() {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    use tokio::sync::mpsc;
+    use xz2::write::XzEncoder;
+
+    let line = r#"{"id":"release-mbid-1","title":"Test Album","barcode":"1234567890","status":"Official","release-group":{"id":"rg-mbid-1"},"relations":[],"url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/release/55555"}}]}"#;
+    let content = format!("{}\n", line);
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let (sender, mut receiver) = mpsc::channel(10);
+    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Releases, sender, None).unwrap();
+    assert_eq!(count, 1);
+
+    let msg = rt.block_on(receiver.recv()).unwrap();
+    assert_eq!(msg.id, "release-mbid-1");
+    assert_eq!(msg.data["discogs_release_id"], 55555);
+    assert_eq!(msg.data["name"], "Test Album");
+}
+
+// ─── parse_mb_jsonl_file: empty lines mixed with valid data ─────────────────
+
+#[test]
+fn test_parse_mb_jsonl_file_with_empty_lines() {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    use tokio::sync::mpsc;
+    use xz2::write::XzEncoder;
+
+    let good = r#"{"id":"ok-id","name":"Good Artist","sort-name":"Artist, Good","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[]}"#;
+    // Mix empty lines, whitespace-only lines, and valid data
+    let content = format!("\n\n{}\n   \n\n", good);
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let (sender, mut receiver) = mpsc::channel(10);
+    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Artists, sender, None).unwrap();
+    assert_eq!(count, 1);
+
+    let msg = rt.block_on(receiver.recv()).unwrap();
+    assert_eq!(msg.id, "ok-id");
+}
+
+// ─── build_mbid_discogs_map_from_file: malformed lines ──────────────────────
+
+#[test]
+fn test_build_mbid_discogs_map_with_malformed_lines() {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    use xz2::write::XzEncoder;
+
+    let valid_line = r#"{"id":"mbid-good","url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/artist/42"}}]}"#;
+    let no_id_line = r#"{"name":"no id field","url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/artist/99"}}]}"#;
+    let invalid_json = "not json at all";
+    // Mix: valid, invalid JSON, empty line, line with no id, valid again
+    let content = format!("{}\n{}\n\n{}\n{}\n", valid_line, invalid_json, no_id_line, valid_line);
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let map = build_mbid_discogs_map_from_file(temp_file.path(), "artist").unwrap();
+    // Only the valid line with id should appear (duplicated = 1 entry)
+    assert_eq!(map.len(), 1);
+    assert_eq!(map.get("mbid-good"), Some(&42i64));
+}
+
+#[test]
+fn test_build_mbid_discogs_map_nonexistent_file() {
+    let result = build_mbid_discogs_map_from_file(std::path::Path::new("/tmp/nonexistent-file.jsonl.xz"), "artist");
+    assert!(result.is_err());
+}
+
+// ─── parse_mb_jsonl_file: receiver dropped ──────────────────────────────────
+
+#[test]
+fn test_parse_mb_jsonl_file_receiver_dropped() {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    use tokio::sync::mpsc;
+    use xz2::write::XzEncoder;
+
+    // Create a file with multiple valid lines
+    let line = r#"{"id":"mbid-1","name":"Artist","sort-name":"Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[]}"#;
+    let content = format!("{}\n{}\n{}\n{}\n{}\n", line, line, line, line, line);
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    // Create channel and immediately drop receiver
+    let (sender, receiver) = mpsc::channel(1);
+    drop(receiver);
+
+    // Should stop gracefully without error — returns count of records sent before drop
+    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Artists, sender, None).unwrap();
+    // Count should be 0 since the very first blocking_send should fail (receiver dropped)
+    assert_eq!(count, 0);
+}
