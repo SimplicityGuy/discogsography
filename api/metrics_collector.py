@@ -233,8 +233,8 @@ async def persist_metrics(
             await cur.executemany(_INSERT_HEALTH_SQL, health_rows)
 
 
-_DELETE_QUEUE_SQL = "DELETE FROM queue_metrics WHERE recorded_at < NOW() - INTERVAL '%s days'"
-_DELETE_HEALTH_SQL = "DELETE FROM service_health_metrics WHERE recorded_at < NOW() - INTERVAL '%s days'"
+_DELETE_QUEUE_SQL = "DELETE FROM queue_metrics WHERE recorded_at < NOW() - make_interval(days => %s)"
+_DELETE_HEALTH_SQL = "DELETE FROM service_health_metrics WHERE recorded_at < NOW() - make_interval(days => %s)"
 
 
 async def prune_old_metrics(pool: Any, retention_days: int) -> None:

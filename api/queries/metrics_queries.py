@@ -60,29 +60,29 @@ async def get_queue_history(pool: Any, range_value: str) -> dict[str, Any]:
     if is_raw:
         query = """
             SELECT queue_name,
-                   collected_at::text AS ts,
-                   ready_messages AS ready,
-                   unacked_messages AS unacked,
-                   total_messages AS total,
+                   recorded_at::text AS ts,
+                   messages_ready AS ready,
+                   messages_unacknowledged AS unacked,
+                   consumers,
                    publish_rate,
-                   deliver_rate
+                   ack_rate AS deliver_rate
             FROM queue_metrics
-            WHERE collected_at >= NOW() - %s::interval
-            ORDER BY queue_name, collected_at
+            WHERE recorded_at >= NOW() - %s::interval
+            ORDER BY queue_name, recorded_at
         """
     else:
         trunc_unit = _bucket_to_trunc_unit(spec["bucket"])
         query = f"""
             SELECT queue_name,
-                   date_trunc('{trunc_unit}', collected_at)::text AS ts,
-                   AVG(ready_messages) AS ready,
-                   AVG(unacked_messages) AS unacked,
-                   AVG(total_messages) AS total,
+                   date_trunc('{trunc_unit}', recorded_at)::text AS ts,
+                   AVG(messages_ready) AS ready,
+                   AVG(messages_unacknowledged) AS unacked,
+                   AVG(consumers) AS consumers,
                    AVG(publish_rate) AS publish_rate,
-                   AVG(deliver_rate) AS deliver_rate
+                   AVG(ack_rate) AS deliver_rate
             FROM queue_metrics
-            WHERE collected_at >= NOW() - %s::interval
-            GROUP BY queue_name, date_trunc('{trunc_unit}', collected_at)
+            WHERE recorded_at >= NOW() - %s::interval
+            GROUP BY queue_name, date_trunc('{trunc_unit}', recorded_at)
             ORDER BY queue_name, ts
         """
 
@@ -132,13 +132,13 @@ async def get_health_history(pool: Any, range_value: str) -> dict[str, Any]:
 
     query = """
         SELECT service_name,
-               collected_at::text AS ts,
+               recorded_at::text AS ts,
                status,
                response_time_ms,
                endpoint_stats
         FROM service_health_metrics
-        WHERE collected_at >= NOW() - %s::interval
-        ORDER BY service_name, collected_at
+        WHERE recorded_at >= NOW() - %s::interval
+        ORDER BY service_name, recorded_at
     """
 
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
@@ -171,8 +171,7 @@ async def get_health_history(pool: Any, range_value: str) -> dict[str, Any]:
                 stats = row["endpoint_stats"]
                 if isinstance(stats, str):
                     stats = json.loads(stats)
-                endpoints = stats.get("endpoints", {})
-                for ep_path, ep_data in endpoints.items():
+                for ep_path, ep_data in stats.items():
                     if ep_path not in api_endpoints:
                         api_endpoints[ep_path] = {"history": []}
                     api_endpoints[ep_path]["history"].append(

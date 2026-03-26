@@ -110,23 +110,27 @@ Metrics are stored in two PostgreSQL tables:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | serial | Primary key |
-| `queue_name` | text | Name of the RabbitMQ queue |
-| `message_count` | integer | Number of messages in the queue at sample time |
-| `consumer_count` | integer | Number of active consumers at sample time |
-| `collected_at` | timestamptz | When the sample was taken |
+| `id` | bigint | Primary key (generated always as identity) |
+| `recorded_at` | timestamptz | When the sample was taken |
+| `queue_name` | varchar(100) | Name of the RabbitMQ queue |
+| `messages_ready` | integer | Number of ready messages at sample time |
+| `messages_unacknowledged` | integer | Number of unacknowledged messages at sample time |
+| `consumers` | integer | Number of active consumers at sample time |
+| `publish_rate` | real | Message publish rate |
+| `ack_rate` | real | Message acknowledgement rate |
 
 **`service_health_metrics`** — Per-service health check results:
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | serial | Primary key |
-| `service_name` | text | Name of the service (e.g. `graphinator`, `tableinator`) |
-| `status` | text | Health status (`healthy`, `unhealthy`, `unknown`) |
-| `response_time_ms` | integer | Health check response time in milliseconds |
-| `collected_at` | timestamptz | When the sample was taken |
+| `id` | bigint | Primary key (generated always as identity) |
+| `recorded_at` | timestamptz | When the sample was taken |
+| `service_name` | varchar(50) | Name of the service (e.g. `graphinator`, `tableinator`) |
+| `status` | varchar(20) | Health status (`healthy`, `unhealthy`, `unknown`) |
+| `response_time_ms` | real | Health check response time in milliseconds |
+| `endpoint_stats` | jsonb | Per-endpoint latency statistics (API service only) |
 
-Both tables are indexed on `collected_at` for efficient range queries. Rows older than `METRICS_RETENTION_DAYS` are pruned automatically.
+Both tables are indexed on `recorded_at` for efficient range queries. Rows older than `METRICS_RETENTION_DAYS` are pruned automatically.
 
 ### Dashboard: Queue Trends and System Health Tabs
 

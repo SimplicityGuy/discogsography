@@ -223,7 +223,7 @@ class TestGetHealthHistory:
                 "ts": "2026-03-25T10:05:00",
                 "status": "healthy",
                 "response_time_ms": 38,
-                "endpoint_stats": '{"endpoints": {"/api/explore": {"avg_latency_ms": 40.1}}}',
+                "endpoint_stats": '{"/api/explore": {"avg_latency_ms": 40.1}}',
             },
             {"service_name": "api", "ts": "2026-03-25T10:10:00", "status": "unhealthy", "response_time_ms": 500, "endpoint_stats": None},
         ]
@@ -272,14 +272,14 @@ class TestGetHealthHistory:
                 "ts": "2026-03-25T10:00:00",
                 "status": "healthy",
                 "response_time_ms": 30,
-                "endpoint_stats": '{"endpoints": {"/api/explore": {"avg_latency_ms": 40.1, "p99_ms": 120}}}',
+                "endpoint_stats": '{"/api/explore": {"avg_latency_ms": 40.1, "p99_ms": 120}}',
             },
             {
                 "service_name": "api",
                 "ts": "2026-03-25T10:05:00",
                 "status": "healthy",
                 "response_time_ms": 32,
-                "endpoint_stats": '{"endpoints": {"/api/explore": {"avg_latency_ms": 45.2, "p99_ms": 130}}}',
+                "endpoint_stats": '{"/api/explore": {"avg_latency_ms": 45.2, "p99_ms": 130}}',
             },
         ]
         pool, execute_side_effect = _mock_pool_with_rows(rows)
