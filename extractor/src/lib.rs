@@ -4,6 +4,7 @@ pub mod config;
 pub mod downloader;
 pub mod extractor;
 pub mod health;
+pub mod jsonl_parser;
 pub mod message_queue;
 pub mod parser;
 pub mod rules;
