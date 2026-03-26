@@ -32,6 +32,7 @@ class AdminDashboard {
         this.activeTab = 'extractions';
         this.queueDepthChart = null;
         this.responseTimeChart = null;
+        this._auditLogPage = 1;
         this.initTheme();
         this.bindEvents();
         if (this.token) {
@@ -169,6 +170,19 @@ class AdminDashboard {
             shRefreshBtn.addEventListener('click', () => this.fetchHealthHistory(this._getRange('system-health')));
         }
 
+        // Audit Log refresh and controls
+        const alRefreshBtn = document.getElementById('al-refresh-btn');
+        if (alRefreshBtn) alRefreshBtn.addEventListener('click', () => this.fetchAuditLog());
+
+        const alActionFilter = document.getElementById('al-action-filter');
+        if (alActionFilter) alActionFilter.addEventListener('change', () => { this._auditLogPage = 1; this.fetchAuditLog(); });
+
+        const alPrevBtn = document.getElementById('al-prev-btn');
+        if (alPrevBtn) alPrevBtn.addEventListener('click', () => { if (this._auditLogPage > 1) { this._auditLogPage--; this.fetchAuditLog(); } });
+
+        const alNextBtn = document.getElementById('al-next-btn');
+        if (alNextBtn) alNextBtn.addEventListener('click', () => { this._auditLogPage++; this.fetchAuditLog(); });
+
         // Range selector buttons
         document.querySelectorAll('.range-btn').forEach(btn => {
             btn.addEventListener('click', () => {
@@ -208,7 +222,7 @@ class AdminDashboard {
         });
 
         // Show/hide panels
-        const panels = ['extractions', 'dlq', 'users', 'storage', 'queue-trends', 'system-health'];
+        const panels = ['extractions', 'dlq', 'users', 'storage', 'queue-trends', 'system-health', 'audit-log'];
         panels.forEach(name => {
             const el = document.getElementById(`tab-${name}`);
             if (el) el.style.display = name === tabName ? 'block' : 'none';
@@ -224,6 +238,8 @@ class AdminDashboard {
             this.fetchQueueHistory(this._getRange('queue-trends'));
         } else if (tabName === 'system-health') {
             this.fetchHealthHistory(this._getRange('system-health'));
+        } else if (tabName === 'audit-log') {
+            this.fetchAuditLog();
         }
     }
 
@@ -819,6 +835,8 @@ class AdminDashboard {
                 this.fetchQueueHistory(this._getRange('queue-trends'));
             } else if (this.activeTab === 'system-health') {
                 this.fetchHealthHistory(this._getRange('system-health'));
+            } else if (this.activeTab === 'audit-log') {
+                this.fetchAuditLog();
             }
         }, 60000);
     }
@@ -1331,6 +1349,102 @@ class AdminDashboard {
         svg.appendChild(polyline);
 
         return svg;
+    }
+
+    // ─── Audit Log ───────────────────────────────────────────────────────────
+
+    async fetchAuditLog() {
+        const loading = document.getElementById('al-loading');
+        const error = document.getElementById('al-error');
+        const errorMsg = document.getElementById('al-error-msg');
+
+        if (loading) loading.style.display = '';
+        if (error) error.style.display = 'none';
+
+        const actionFilter = document.getElementById('al-action-filter')?.value || '';
+        let url = `/admin/api/audit-log?page=${this._auditLogPage}&page_size=50`;
+        if (actionFilter) url += `&action=${encodeURIComponent(actionFilter)}`;
+
+        try {
+            const resp = await this.authFetch(url);
+            if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+            const data = await resp.json();
+            this.renderAuditLog(data);
+        } catch (err) {
+            if (errorMsg) errorMsg.textContent = err.message;
+            if (error) error.style.display = '';
+        } finally {
+            if (loading) loading.style.display = 'none';
+        }
+    }
+
+    renderAuditLog(data) {
+        const tbody = document.getElementById('al-table-body');
+        if (!tbody) return;
+
+        while (tbody.firstChild) tbody.removeChild(tbody.firstChild);
+
+        if (!data.entries || data.entries.length === 0) {
+            const tr = document.createElement('tr');
+            const td = document.createElement('td');
+            td.setAttribute('colspan', '5');
+            td.className = 'text-center py-8 t-muted';
+            td.textContent = 'No audit log entries';
+            tr.appendChild(td);
+            tbody.appendChild(tr);
+        } else {
+            for (const entry of data.entries) {
+                const tr = document.createElement('tr');
+                tr.className = 'border-b b-theme hover:bg-white/5 transition-colors';
+
+                const tdTs = document.createElement('td');
+                tdTs.className = 'py-2 px-3 t-muted whitespace-nowrap';
+                tdTs.textContent = new Date(entry.created_at).toLocaleString();
+                tr.appendChild(tdTs);
+
+                const tdAdmin = document.createElement('td');
+                tdAdmin.className = 'py-2 px-3';
+                tdAdmin.textContent = entry.admin_email;
+                tr.appendChild(tdAdmin);
+
+                const tdAction = document.createElement('td');
+                tdAction.className = 'py-2 px-3';
+                const badge = document.createElement('span');
+                badge.className = 'inline-block px-2 py-0.5 rounded text-[10px] font-medium bg-blue-500/10 text-blue-400';
+                badge.textContent = entry.action;
+                tdAction.appendChild(badge);
+                tr.appendChild(tdAction);
+
+                const tdTarget = document.createElement('td');
+                tdTarget.className = 'py-2 px-3 t-muted';
+                tdTarget.textContent = entry.target || '\u2014';
+                tr.appendChild(tdTarget);
+
+                const tdDetails = document.createElement('td');
+                tdDetails.className = 'py-2 px-3 t-muted text-[10px] font-mono max-w-[200px] truncate';
+                const detailsText = entry.details ? JSON.stringify(entry.details) : '\u2014';
+                tdDetails.textContent = detailsText;
+                tdDetails.title = detailsText;
+                tr.appendChild(tdDetails);
+
+                tbody.appendChild(tr);
+            }
+        }
+
+        const pagination = document.getElementById('al-pagination');
+        const pageInfo = document.getElementById('al-page-info');
+        const prevBtn = document.getElementById('al-prev-btn');
+        const nextBtn = document.getElementById('al-next-btn');
+
+        if (pagination && data.total > 0) {
+            pagination.style.display = '';
+            const totalPages = Math.ceil(data.total / data.page_size);
+            if (pageInfo) pageInfo.textContent = `Page ${data.page} of ${totalPages} (${data.total} entries)`;
+            if (prevBtn) prevBtn.disabled = data.page <= 1;
+            if (nextBtn) nextBtn.disabled = data.page >= totalPages;
+        } else if (pagination) {
+            pagination.style.display = 'none';
+        }
     }
 }
 
