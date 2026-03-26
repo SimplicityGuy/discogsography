@@ -169,3 +169,52 @@ fn test_extraction_complete_serialization_format() {
     assert!(json_str.contains(r#""started_at""#), "Expected started_at field, got: {}", json_str);
     assert!(json_str.contains(r#""record_counts""#), "Expected record_counts field, got: {}", json_str);
 }
+
+#[test]
+fn test_source_display() {
+    assert_eq!(format!("{}", Source::Discogs), "discogs");
+    assert_eq!(format!("{}", Source::MusicBrainz), "musicbrainz");
+}
+
+#[test]
+fn test_source_from_str() {
+    assert_eq!(Source::from_str("discogs"), Ok(Source::Discogs));
+    assert_eq!(Source::from_str("musicbrainz"), Ok(Source::MusicBrainz));
+    assert_eq!(Source::from_str("DISCOGS"), Ok(Source::Discogs));
+    assert_eq!(Source::from_str("MUSICBRAINZ"), Ok(Source::MusicBrainz));
+    assert_eq!(Source::from_str("Discogs"), Ok(Source::Discogs));
+    assert_eq!(Source::from_str("MusicBrainz"), Ok(Source::MusicBrainz));
+}
+
+#[test]
+fn test_source_from_str_invalid() {
+    assert!(Source::from_str("invalid").is_err());
+    assert!(Source::from_str("").is_err());
+    assert!(Source::from_str("spotify").is_err());
+}
+
+#[test]
+fn test_source_serialize_deserialize() {
+    let discogs = Source::Discogs;
+    let json = serde_json::to_string(&discogs).unwrap();
+    assert_eq!(json, r#""Discogs""#);
+    let deserialized: Source = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized, Source::Discogs);
+
+    let mb = Source::MusicBrainz;
+    let json = serde_json::to_string(&mb).unwrap();
+    assert_eq!(json, r#""MusicBrainz""#);
+    let deserialized: Source = serde_json::from_str(&json).unwrap();
+    assert_eq!(deserialized, Source::MusicBrainz);
+}
+
+#[test]
+fn test_musicbrainz_types() {
+    let mb_types = DataType::musicbrainz_types();
+    assert_eq!(mb_types.len(), 3);
+    assert!(mb_types.contains(&DataType::Artists));
+    assert!(mb_types.contains(&DataType::Labels));
+    assert!(mb_types.contains(&DataType::Releases));
+    // MusicBrainz does not have Masters
+    assert!(!mb_types.contains(&DataType::Masters));
+}
