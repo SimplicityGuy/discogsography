@@ -105,5 +105,5 @@ pub fn detect_mb_dump_version(root: &Path) -> String {
 }
 
 #[cfg(test)]
-#[path = "tests/mb_downloader_tests.rs"]
+#[path = "tests/musicbrainz_downloader_tests.rs"]
 mod tests;

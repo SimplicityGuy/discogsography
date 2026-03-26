@@ -1,5 +1,5 @@
 use extractor::config::ExtractorConfig;
-use extractor::downloader::MockDataSource;
+use extractor::discogs_downloader::MockDataSource;
 use extractor::extractor::DefaultMessageQueueFactory;
 use extractor::extractor::{ExtractionStatus, ExtractorState, message_publisher, process_musicbrainz_data, process_single_file};
 use extractor::message_queue::MockMessagePublisher;

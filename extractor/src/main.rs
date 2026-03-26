@@ -9,11 +9,11 @@ use tracing::{error, info};
 use rules::RulesConfig;
 
 mod config;
-mod downloader;
+mod discogs_downloader;
 mod extractor;
 mod health;
 mod jsonl_parser;
-mod mb_downloader;
+mod musicbrainz_downloader;
 mod message_queue;
 mod parser;
 mod rules;

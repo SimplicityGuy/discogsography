@@ -11,7 +11,7 @@ use tracing::{debug, error, info, warn};
 use async_trait::async_trait;
 
 use crate::config::ExtractorConfig;
-use crate::downloader::{DataSource, Downloader};
+use crate::discogs_downloader::{DataSource, Downloader};
 use crate::message_queue::{MessagePublisher, MessageQueue};
 use crate::parser::XmlParser;
 use crate::rules::{CompiledRulesConfig, FlaggedRecordWriter, QualityReport, Severity, evaluate_rules};
@@ -775,7 +775,7 @@ pub async fn process_musicbrainz_data(
     _compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<bool> {
     use crate::jsonl_parser::{build_mbid_discogs_map_from_file, parse_mb_jsonl_file};
-    use crate::mb_downloader::{detect_mb_dump_version, discover_mb_dump_files};
+    use crate::musicbrainz_downloader::{detect_mb_dump_version, discover_mb_dump_files};
 
     let extraction_started_at = chrono::Utc::now();
 
