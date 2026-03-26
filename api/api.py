@@ -25,9 +25,6 @@ import structlog
 import uvicorn
 
 from api.auth import (
-    _DUMMY_HASH,
-    _hash_password,
-    _verify_password,
     b64url_encode,
     decode_token,
     decrypt_oauth_token,
@@ -37,9 +34,10 @@ from api.auth import (
 import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.metrics_collector import MetricsBuffer, normalize_path, run_collector
-from api.models import LoginRequest, RegisterRequest
+from api.notifications import LogNotificationChannel
 from api.queries.search_queries import ALL_TYPES, execute_search
 import api.routers.admin as _admin_router
+import api.routers.auth as _auth_router
 import api.routers.collection as _collection_router
 import api.routers.explore as _explore_router
 import api.routers.insights as _insights_router
@@ -154,6 +152,17 @@ async def _get_current_user(
                     detail="Token has been revoked",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+        # Check if password was changed after token was issued
+        if user_id and _redis:
+            pw_changed = await _redis.get(f"password_changed:{user_id}")
+            if pw_changed:
+                iat = payload.get("iat")
+                if iat and int(iat) < int(pw_changed):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Token has been revoked",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
         return payload
     except ValueError as exc:
         raise HTTPException(
@@ -240,6 +249,14 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _insights_compute_router.configure(_neo4j, _pool, _redis)
     _admin_router.configure(_pool, _redis, _config, neo4j_driver=_neo4j)
     _rarity_router.configure(_neo4j, _pool, _redis)
+    _auth_router.configure(
+        _pool,
+        _redis,
+        _config,
+        _get_current_user,
+        _create_access_token,
+        notification_channel=LogNotificationChannel(),
+    )
     _snapshot_router.configure(
         jwt_secret=_config.jwt_secret_key,
         redis_client=_redis,
@@ -345,6 +362,7 @@ async def metrics_middleware(request: Request, call_next: Any) -> Any:
     return response
 
 
+app.include_router(_auth_router.router)
 app.include_router(_sync_router.router)
 app.include_router(_explore_router.router)
 app.include_router(_insights_router.router)
@@ -365,162 +383,6 @@ app.include_router(_rarity_router.router)
 async def health_check() -> JSONResponse:
     """Service health check endpoint."""
     return JSONResponse(content=get_health_data())
-
-
-@app.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
-@limiter.limit("3/minute")
-async def register(request: Request, body: RegisterRequest) -> JSONResponse:  # noqa: ARG001
-    """Register a new user account."""
-    if _pool is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service not ready",
-        )
-
-    hashed_password = _hash_password(body.password)
-
-    try:
-        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-            await execute_sql(
-                cur,
-                """
-                    INSERT INTO users (email, hashed_password)
-                    VALUES (%s, %s)
-                    RETURNING id, email, is_active, created_at
-                    """,
-                (body.email, hashed_password),
-            )
-            row = await cur.fetchone()
-    except Exception as exc:
-        exc_str = str(exc).lower()
-        if "unique" in exc_str or "duplicate" in exc_str:
-            # L1: Return same response for duplicate email to prevent user enumeration
-            logger.info("📋 Registration attempt for existing email (blind)")
-            return JSONResponse(
-                content={"message": "Registration processed"},
-                status_code=status.HTTP_201_CREATED,
-            )
-        logger.error("❌ Registration failed", error=str(exc))
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Registration failed",
-        ) from exc
-
-    if row is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Registration failed",
-        )
-
-    logger.info("✅ User registered", email=body.email)
-    return JSONResponse(
-        content={"message": "Registration processed"},
-        status_code=status.HTTP_201_CREATED,
-    )
-
-
-@app.post("/api/auth/login")
-@limiter.limit("5/minute")
-async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: ARG001
-    """Authenticate and receive a JWT access token."""
-    if _pool is None or _config is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service not ready",
-        )
-
-    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await execute_sql(
-            cur,
-            "SELECT id, email, hashed_password, is_active FROM users WHERE email = %s",
-            (body.email,),
-        )
-        user = await cur.fetchone()
-
-    # H4: Constant-time check to prevent user enumeration via timing
-    if user is None:
-        _verify_password(body.password, _DUMMY_HASH)  # consume same time as real verify
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    password_ok = _verify_password(body.password, user["hashed_password"])
-    if not user["is_active"] or not password_ok:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    access_token, expires_in = _create_access_token(str(user["id"]), user["email"])
-    logger.info("✅ User logged in", email=body.email)
-
-    return JSONResponse(
-        content={
-            "access_token": access_token,
-            "token_type": "bearer",  # nosec B105
-            "expires_in": expires_in,
-        }
-    )
-
-
-@app.post("/api/auth/logout")
-async def logout(
-    current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> JSONResponse:
-    """Logout and revoke the current JWT token."""
-    if _redis:
-        jti: str | None = current_user.get("jti")
-        exp: int | None = current_user.get("exp")
-        if jti:
-            now = int(datetime.now(UTC).timestamp())
-            ttl = max((exp - now), 60) if exp else 3600
-            await _redis.setex(f"revoked:jti:{jti}", ttl, "1")
-    return JSONResponse(content={"logged_out": True})
-
-
-@app.get("/api/auth/me")
-async def get_me(
-    current_user: Annotated[dict[str, Any], Depends(_get_current_user)],
-) -> JSONResponse:
-    """Get the current authenticated user's information."""
-    if _pool is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Service not ready",
-        )
-
-    user_id = current_user.get("sub")
-    if not user_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
-        )
-
-    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
-        await execute_sql(
-            cur,
-            "SELECT id, email, is_active, created_at FROM users WHERE id = %s::uuid",
-            (user_id,),
-        )
-        user = await cur.fetchone()
-
-    if user is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User not found",
-        )
-
-    return JSONResponse(
-        content={
-            "id": str(user["id"]),
-            "email": user["email"],
-            "is_active": user["is_active"],
-            "created_at": user["created_at"].isoformat(),
-        }
-    )
 
 
 async def _get_app_config(key: str) -> str | None:

@@ -211,6 +211,18 @@ def test_client(
 
     app.state.metrics_buffer = MetricsBuffer()
 
+    from api.notifications import LogNotificationChannel
+    import api.routers.auth as _auth_router
+
+    _auth_router.configure(
+        mock_pool,
+        mock_redis,
+        test_api_config,
+        api_module._get_current_user,
+        api_module._create_access_token,
+        notification_channel=LogNotificationChannel(),
+    )
+
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
 
