@@ -1,5 +1,8 @@
 """Tests for api/auth.py — shared JWT and OAuth encryption utilities."""
 
+import base64
+import os
+
 
 class TestB64UrlEncode:
     """Tests for b64url_encode."""
@@ -96,3 +99,77 @@ class TestDecryptOauthToken:
         encrypted = encrypt_oauth_token("secret", key1)
         with pytest.raises(ValueError, match="Failed to decrypt OAuth token"):
             decrypt_oauth_token(encrypted, key2)
+
+
+class TestHkdfKeyDerivation:
+    """Tests for derive_encryption_key, get_oauth_encryption_key, get_totp_encryption_key."""
+
+    def _make_master_key(self) -> str:
+        """Generate a random 32-byte master key encoded as urlsafe base64."""
+        return base64.urlsafe_b64encode(os.urandom(32)).decode("ascii")
+
+    def test_derive_key_returns_valid_fernet_key(self) -> None:
+        """Derived key must be accepted by Fernet without error."""
+        from cryptography.fernet import Fernet
+
+        from api.auth import derive_encryption_key
+
+        master_key = self._make_master_key()
+        derived = derive_encryption_key(master_key, b"test-purpose")
+        # Fernet expects a 32-byte url-safe base64 key (44 chars with padding)
+        Fernet(derived.encode("ascii"))  # raises if invalid
+
+    def test_different_purposes_produce_different_keys(self) -> None:
+        """Same master key with different info strings must produce different keys."""
+        from api.auth import derive_encryption_key
+
+        master_key = self._make_master_key()
+        key_oauth = derive_encryption_key(master_key, b"oauth-tokens")
+        key_totp = derive_encryption_key(master_key, b"totp-secrets")
+        assert key_oauth != key_totp
+
+    def test_same_inputs_produce_same_key(self) -> None:
+        """Key derivation must be deterministic."""
+        from api.auth import derive_encryption_key
+
+        master_key = self._make_master_key()
+        key_a = derive_encryption_key(master_key, b"oauth-tokens")
+        key_b = derive_encryption_key(master_key, b"oauth-tokens")
+        assert key_a == key_b
+
+    def test_get_oauth_encryption_key_none_master(self) -> None:
+        """get_oauth_encryption_key returns None when master key is None."""
+        from api.auth import get_oauth_encryption_key
+
+        assert get_oauth_encryption_key(None) is None
+
+    def test_get_oauth_encryption_key_with_master(self) -> None:
+        """get_oauth_encryption_key returns a non-None string when master key is provided."""
+        from api.auth import get_oauth_encryption_key
+
+        master_key = self._make_master_key()
+        result = get_oauth_encryption_key(master_key)
+        assert result is not None
+        assert isinstance(result, str)
+
+    def test_get_totp_encryption_key_none_master(self) -> None:
+        """get_totp_encryption_key returns None when master key is None."""
+        from api.auth import get_totp_encryption_key
+
+        assert get_totp_encryption_key(None) is None
+
+    def test_get_totp_encryption_key_with_master(self) -> None:
+        """get_totp_encryption_key returns a non-None string when master key is provided."""
+        from api.auth import get_totp_encryption_key
+
+        master_key = self._make_master_key()
+        result = get_totp_encryption_key(master_key)
+        assert result is not None
+        assert isinstance(result, str)
+
+    def test_oauth_and_totp_keys_differ_for_same_master(self) -> None:
+        """OAuth and TOTP derived keys must be different for the same master key."""
+        from api.auth import get_oauth_encryption_key, get_totp_encryption_key
+
+        master_key = self._make_master_key()
+        assert get_oauth_encryption_key(master_key) != get_totp_encryption_key(master_key)

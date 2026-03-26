@@ -32,6 +32,7 @@ from api.auth import (
     decode_token,
     decrypt_oauth_token,
     encrypt_oauth_token,
+    get_oauth_encryption_key,
 )
 import api.dependencies as _dependencies
 from api.limiter import limiter
@@ -562,9 +563,9 @@ async def authorize_discogs(
     consumer_key, consumer_secret = await _get_discogs_app_config()
     try:
         if consumer_key:
-            consumer_key = decrypt_oauth_token(consumer_key, _config.oauth_encryption_key)
+            consumer_key = decrypt_oauth_token(consumer_key, get_oauth_encryption_key(_config.encryption_master_key))
         if consumer_secret:
-            consumer_secret = decrypt_oauth_token(consumer_secret, _config.oauth_encryption_key)
+            consumer_secret = decrypt_oauth_token(consumer_secret, get_oauth_encryption_key(_config.encryption_master_key))
     except ValueError:
         logger.error("❌ Failed to decrypt Discogs app credentials — re-run discogs-setup")
         raise HTTPException(
@@ -628,9 +629,9 @@ async def verify_discogs(
     consumer_key, consumer_secret = await _get_discogs_app_config()
     try:
         if consumer_key:
-            consumer_key = decrypt_oauth_token(consumer_key, _config.oauth_encryption_key)
+            consumer_key = decrypt_oauth_token(consumer_key, get_oauth_encryption_key(_config.encryption_master_key))
         if consumer_secret:
-            consumer_secret = decrypt_oauth_token(consumer_secret, _config.oauth_encryption_key)
+            consumer_secret = decrypt_oauth_token(consumer_secret, get_oauth_encryption_key(_config.encryption_master_key))
     except ValueError:
         logger.error("❌ Failed to decrypt Discogs app credentials — re-run discogs-setup")
         raise HTTPException(
@@ -686,6 +687,8 @@ async def verify_discogs(
     discogs_username = identity.get("username", "")
     discogs_user_id = str(identity.get("id", ""))
 
+    _oauth_key = get_oauth_encryption_key(_config.encryption_master_key)
+
     # Upsert oauth_tokens record
     async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(
@@ -704,12 +707,8 @@ async def verify_discogs(
                 """,
             (
                 user_id,
-                encrypt_oauth_token(access_data["oauth_token"], _config.oauth_encryption_key)
-                if _config.oauth_encryption_key
-                else access_data["oauth_token"],
-                encrypt_oauth_token(access_data["oauth_token_secret"], _config.oauth_encryption_key)
-                if _config.oauth_encryption_key
-                else access_data["oauth_token_secret"],
+                encrypt_oauth_token(access_data["oauth_token"], _oauth_key) if _oauth_key else access_data["oauth_token"],
+                encrypt_oauth_token(access_data["oauth_token_secret"], _oauth_key) if _oauth_key else access_data["oauth_token_secret"],
                 discogs_username,
                 discogs_user_id,
             ),

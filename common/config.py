@@ -427,7 +427,7 @@ class ApiConfig:
     cors_origins: list[str] | None = None
     snapshot_ttl_days: int = 28
     snapshot_max_nodes: int = 100
-    oauth_encryption_key: str | None = None
+    encryption_master_key: str | None = None
 
     # Admin dashboard — extractor connection
     extractor_host: str = "extractor"
@@ -504,7 +504,7 @@ class ApiConfig:
         except ValueError:
             snapshot_max_nodes = 100
 
-        oauth_encryption_key = get_secret("OAUTH_ENCRYPTION_KEY") or None
+        encryption_master_key = get_secret("ENCRYPTION_MASTER_KEY") or None
 
         metrics_retention_days_str = getenv("METRICS_RETENTION_DAYS", "366")
         try:
@@ -534,7 +534,7 @@ class ApiConfig:
             cors_origins=cors_origins,
             snapshot_ttl_days=snapshot_ttl_days,
             snapshot_max_nodes=snapshot_max_nodes,
-            oauth_encryption_key=oauth_encryption_key,
+            encryption_master_key=encryption_master_key,
             extractor_host=getenv("EXTRACTOR_HOST", "extractor"),
             extractor_health_port=int(getenv("EXTRACTOR_HEALTH_PORT", "8000")),
             rabbitmq_management_host=getenv("RABBITMQ_MANAGEMENT_HOST", getenv("RABBITMQ_HOST", "rabbitmq")),

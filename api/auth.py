@@ -9,6 +9,8 @@ import os
 from typing import Any
 
 from cryptography.fernet import Fernet, InvalidToken
+from cryptography.hazmat.primitives import hashes as _hashes
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF as _HKDF
 
 
 def b64url_encode(data: bytes) -> str:
@@ -88,3 +90,25 @@ def decrypt_oauth_token(token: str, key: str | None) -> str:
         return f.decrypt(token.encode("ascii")).decode("utf-8")
     except (InvalidToken, ValueError, UnicodeDecodeError) as exc:
         raise ValueError(f"Failed to decrypt OAuth token: {exc}") from exc
+
+
+def derive_encryption_key(master_key: str, info: bytes) -> str:
+    """Derive a Fernet-compatible key from a master key using HKDF-SHA256."""
+    master_bytes = base64.urlsafe_b64decode(master_key)
+    hkdf = _HKDF(algorithm=_hashes.SHA256(), length=32, salt=None, info=info)
+    derived = hkdf.derive(master_bytes)
+    return base64.urlsafe_b64encode(derived).decode("ascii")
+
+
+def get_oauth_encryption_key(master_key: str | None) -> str | None:
+    """Derive the OAuth token encryption key from the master key."""
+    if not master_key:
+        return None
+    return derive_encryption_key(master_key, b"oauth-tokens")
+
+
+def get_totp_encryption_key(master_key: str | None) -> str | None:
+    """Derive the TOTP secret encryption key from the master key."""
+    if not master_key:
+        return None
+    return derive_encryption_key(master_key, b"totp-secrets")
