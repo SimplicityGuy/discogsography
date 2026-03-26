@@ -432,6 +432,62 @@ services:
     volumes:
       - tableinator_logs:/logs
 
+  # Brainztableinator service (MusicBrainz data to PostgreSQL)
+  brainztableinator:
+    build:
+      context: .
+      dockerfile: brainztableinator/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: discogsography/brainztableinator:latest
+    container_name: discogsography-brainztableinator
+    hostname: brainztableinator
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
+      LOG_LEVEL: INFO
+      POSTGRES_BATCH_FLUSH_INTERVAL: "2.0"  # Reduced from 5.0 for faster flushing
+      POSTGRES_BATCH_MODE: "true"
+      POSTGRES_BATCH_SIZE: "500"          # Increased from 100 to 500
+      POSTGRES_DATABASE: discogsography
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: discogsography
+      POSTGRES_USERNAME: discogsography
+      PYTHONUNBUFFERED: "1"
+      QUEUE_CHECK_INTERVAL: "3600"      # 1 hour between queue checks when idle
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PASSWORD: discogsography
+      RABBITMQ_USERNAME: discogsography
+      STARTUP_DELAY: "25"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - brainztableinator_logs:/logs
+
   # Dashboard service
   dashboard:
     build:
@@ -613,4 +669,5 @@ volumes:
   tableinator_logs:
   dashboard_logs:
   explore_logs:
+  brainztableinator_logs:
   insights_logs:
