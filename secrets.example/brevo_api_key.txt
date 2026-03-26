@@ -1,0 +1,3 @@
+# Optional — get your API key from https://app.brevo.com/settings/keys/api
+# When not set, password reset links are logged to stdout instead of emailed.
+your-brevo-api-key-here
