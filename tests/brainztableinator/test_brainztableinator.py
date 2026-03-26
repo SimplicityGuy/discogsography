@@ -5,9 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from brainztableinator.brainztableinator import (
+    PROCESSORS,
     _insert_external_link,
     _insert_relationship,
+    check_all_consumers_idle,
     get_health_data,
+    make_data_handler,
+    on_data_message,
     process_artist,
     process_label,
     process_release,
@@ -331,8 +335,6 @@ class TestOnDataMessage:
     @pytest.mark.asyncio
     async def test_extraction_complete_message(self):
         """extraction_complete message should be acked."""
-        from brainztableinator.brainztableinator import on_data_message
-
         mock_message = AsyncMock()
         mock_message.body = b'{"type": "extraction_complete", "version": "2026-01-01"}'
 
@@ -344,3 +346,337 @@ class TestOnDataMessage:
             await on_data_message(mock_message, "artists")
 
             mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_valid_data_message_calls_processor(self):
+        """A valid data message with 'id' should call the appropriate processor."""
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "artist-mbid-1", "name": "Test Artist"}'
+
+        mock_pool = MagicMock()
+        mock_conn = AsyncMock()
+        mock_conn_cm = AsyncMock()
+        mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_conn_cm)
+
+        mock_processor = AsyncMock()
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
+            patch(
+                "brainztableinator.brainztableinator.message_counts",
+                {"artists": 0, "labels": 0, "releases": 0},
+            ),
+            patch(
+                "brainztableinator.brainztableinator.last_message_time",
+                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+            ),
+            patch.dict(
+                "brainztableinator.brainztableinator.PROCESSORS",
+                {"artists": mock_processor},
+            ),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_processor.assert_called_once_with(mock_conn, {"id": "artist-mbid-1", "name": "Test Artist"})
+            mock_message.ack.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_shutdown_requested_nacks_with_requeue(self):
+        """When shutdown_requested is True, message should be nacked with requeue."""
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "artist-mbid-1", "name": "Test Artist"}'
+
+        with patch("brainztableinator.brainztableinator.shutdown_requested", True):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.nack.assert_called_once_with(requeue=True)
+            mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_unparseable_message_nacks_without_requeue(self):
+        """An unparseable message body should be nacked without requeue."""
+        mock_message = AsyncMock()
+        mock_message.body = b"not valid json {"
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.nack.assert_called_once_with(requeue=False)
+            mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_message_missing_id_nacks_without_requeue(self):
+        """A message with no 'id' field should be nacked without requeue."""
+        mock_message = AsyncMock()
+        mock_message.body = b'{"name": "No ID Artist"}'
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", MagicMock()),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.nack.assert_called_once_with(requeue=False)
+            mock_message.ack.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_no_processor_for_data_type_nacks(self):
+        """Unknown data type with no processor should nack without requeue."""
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "mbid-1", "name": "Test"}'
+
+        mock_pool = MagicMock()
+        mock_conn = AsyncMock()
+        mock_conn_cm = AsyncMock()
+        mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_conn_cm)
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
+            patch(
+                "brainztableinator.brainztableinator.message_counts",
+                {"artists": 0, "labels": 0, "releases": 0, "unknown_type": 0},
+            ),
+            patch(
+                "brainztableinator.brainztableinator.last_message_time",
+                {"artists": 0.0, "labels": 0.0, "releases": 0.0, "unknown_type": 0.0},
+            ),
+        ):
+            await on_data_message(mock_message, "unknown_type")
+
+            mock_message.nack.assert_called_once_with(requeue=False)
+
+    @pytest.mark.asyncio
+    async def test_connection_pool_none_nacks_with_requeue(self):
+        """When connection_pool is None, message should be nacked with requeue."""
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "mbid-1", "name": "Test"}'
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", None),
+            patch(
+                "brainztableinator.brainztableinator.message_counts",
+                {"artists": 0, "labels": 0, "releases": 0},
+            ),
+            patch(
+                "brainztableinator.brainztableinator.last_message_time",
+                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+            ),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            # RuntimeError triggers the nack with requeue=True path
+            mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    async def test_database_error_nacks_with_requeue(self):
+        """Database connection errors should nack with requeue."""
+        from psycopg.errors import OperationalError
+
+        mock_message = AsyncMock()
+        mock_message.body = b'{"id": "mbid-1", "name": "Test"}'
+
+        mock_pool = MagicMock()
+        mock_conn = AsyncMock()
+        mock_conn_cm = AsyncMock()
+        mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_conn_cm)
+
+        mock_processor = AsyncMock(side_effect=OperationalError("connection lost"))
+
+        with (
+            patch("brainztableinator.brainztableinator.shutdown_requested", False),
+            patch("brainztableinator.brainztableinator.completed_files", set()),
+            patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
+            patch(
+                "brainztableinator.brainztableinator.message_counts",
+                {"artists": 0, "labels": 0, "releases": 0},
+            ),
+            patch(
+                "brainztableinator.brainztableinator.last_message_time",
+                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+            ),
+            patch.dict(
+                "brainztableinator.brainztableinator.PROCESSORS",
+                {"artists": mock_processor},
+            ),
+        ):
+            await on_data_message(mock_message, "artists")
+
+            mock_message.nack.assert_called_once_with(requeue=True)
+
+
+# ===========================================================================
+# make_data_handler tests
+# ===========================================================================
+
+
+class TestMakeDataHandler:
+    """Tests for make_data_handler."""
+
+    def test_returns_callable(self):
+        """make_data_handler should return a callable."""
+        handler = make_data_handler("artists")
+        assert callable(handler)
+
+    def test_returns_different_handlers_per_type(self):
+        """Each data type should produce a distinct handler."""
+        handler_a = make_data_handler("artists")
+        handler_l = make_data_handler("labels")
+        handler_r = make_data_handler("releases")
+
+        assert handler_a is not handler_l
+        assert handler_l is not handler_r
+
+    @pytest.mark.asyncio
+    async def test_handler_calls_on_data_message_with_correct_type(self):
+        """The handler returned should call on_data_message with the right data_type."""
+        mock_message = AsyncMock()
+
+        with patch("brainztableinator.brainztableinator.on_data_message", new_callable=AsyncMock) as mock_on_data:
+            handler = make_data_handler("labels")
+            await handler(mock_message)
+
+            mock_on_data.assert_called_once_with(mock_message, "labels")
+
+
+# ===========================================================================
+# Config tests
+# ===========================================================================
+
+
+class TestBrainztableinatorConfig:
+    """Tests for BrainztableinatorConfig.from_env."""
+
+    def test_from_env_with_all_vars(self):
+        """Config should load successfully when all required env vars are set."""
+        from common.config import BrainztableinatorConfig
+
+        env_vars = {
+            "RABBITMQ_USERNAME": "guest",
+            "RABBITMQ_HOST": "localhost",
+            "RABBITMQ_PORT": "5672",
+            "POSTGRES_HOST": "localhost",
+            "POSTGRES_USERNAME": "user",
+            "POSTGRES_PASSWORD": "secret",
+            "POSTGRES_DATABASE": "testdb",
+        }
+
+        with patch.dict("os.environ", env_vars, clear=False):
+            cfg = BrainztableinatorConfig.from_env()
+
+            assert cfg.postgres_username == "user"
+            assert cfg.postgres_password == "secret"
+            assert cfg.postgres_database == "testdb"
+            assert "localhost:5432" in cfg.postgres_host
+
+    def test_from_env_missing_vars_raises(self):
+        """Config should raise ValueError when required env vars are missing."""
+        from common.config import BrainztableinatorConfig
+
+        env_vars = {
+            "RABBITMQ_USERNAME": "guest",
+            "RABBITMQ_HOST": "localhost",
+            "RABBITMQ_PORT": "5672",
+            # POSTGRES_HOST intentionally missing
+            # POSTGRES_USERNAME intentionally missing
+            # POSTGRES_PASSWORD intentionally missing
+            # POSTGRES_DATABASE intentionally missing
+        }
+
+        with (
+            patch.dict("os.environ", env_vars, clear=True),
+            pytest.raises(ValueError, match="Missing required environment variables"),
+        ):
+            BrainztableinatorConfig.from_env()
+
+
+# ===========================================================================
+# Consumer management tests
+# ===========================================================================
+
+
+class TestConsumerManagement:
+    """Tests for consumer management functions."""
+
+    @pytest.mark.asyncio
+    async def test_check_all_consumers_idle_true(self):
+        """Returns True when no consumer tags and all files completed."""
+        with (
+            patch("brainztableinator.brainztableinator.consumer_tags", {}),
+            patch(
+                "brainztableinator.brainztableinator.completed_files",
+                {"artists", "labels", "releases"},
+            ),
+        ):
+            result = await check_all_consumers_idle()
+            assert result is True
+
+    @pytest.mark.asyncio
+    async def test_check_all_consumers_idle_false_consumers_active(self):
+        """Returns False when consumers are still active."""
+        with (
+            patch(
+                "brainztableinator.brainztableinator.consumer_tags",
+                {"artists": "tag-1"},
+            ),
+            patch(
+                "brainztableinator.brainztableinator.completed_files",
+                {"artists", "labels", "releases"},
+            ),
+        ):
+            result = await check_all_consumers_idle()
+            assert result is False
+
+    @pytest.mark.asyncio
+    async def test_check_all_consumers_idle_false_files_incomplete(self):
+        """Returns False when not all files are completed."""
+        with (
+            patch("brainztableinator.brainztableinator.consumer_tags", {}),
+            patch(
+                "brainztableinator.brainztableinator.completed_files",
+                {"artists"},
+            ),
+        ):
+            result = await check_all_consumers_idle()
+            assert result is False
+
+
+# ===========================================================================
+# PROCESSORS map tests
+# ===========================================================================
+
+
+class TestProcessors:
+    """Tests for the PROCESSORS mapping."""
+
+    def test_processors_maps_artists(self):
+        """PROCESSORS should map 'artists' to process_artist."""
+        assert PROCESSORS["artists"] is process_artist
+
+    def test_processors_maps_labels(self):
+        """PROCESSORS should map 'labels' to process_label."""
+        assert PROCESSORS["labels"] is process_label
+
+    def test_processors_maps_releases(self):
+        """PROCESSORS should map 'releases' to process_release."""
+        assert PROCESSORS["releases"] is process_release
+
+    def test_processors_has_exactly_three_entries(self):
+        """PROCESSORS should have exactly 3 data types."""
+        assert len(PROCESSORS) == 3
