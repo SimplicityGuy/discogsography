@@ -108,6 +108,7 @@ Emojis in Discogsography serve to:
 | 🔧    | Setup/Config    | Configuration steps   |
 | 📊    | Metrics         | Performance tracking  |
 | 🔒    | Security        | Login, permissions    |
+| 🔑    | Password Reset  | Password reset links  |
 | 🛡️    | Scanning        | Security scanning     |
 | 🚀    | Build/Deploy    | Build and deployment  |
 | 📢    | Notifications   | Discord, alerts       |
