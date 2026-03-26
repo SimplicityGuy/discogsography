@@ -197,6 +197,11 @@ def test_client(
     _insights_compute_router.configure(mock_neo4j, mock_pool, mock_redis)
     _admin_router.configure(mock_pool, mock_redis, test_api_config, neo4j_driver=mock_neo4j)
 
+    from api.nlq.config import NLQConfig
+    import api.routers.nlq as _nlq_router
+
+    _nlq_router.configure(NLQConfig(), None, mock_redis)
+
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
 
