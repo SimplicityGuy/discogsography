@@ -11,8 +11,10 @@ secrets:
     file: ./secrets/jwt_secret_key.txt
   neo4j_password:
     file: ./secrets/neo4j_password.txt
-  oauth_encryption_key:
-    file: ./secrets/oauth_encryption_key.txt
+  encryption_master_key:
+    file: ./secrets/encryption_master_key.txt
+  brevo_api_key:
+    file: ./secrets/brevo_api_key.txt
   postgres_password:
     file: ./secrets/postgres_password.txt
   postgres_username:
@@ -172,13 +174,18 @@ services:
     environment:
       JWT_SECRET_KEY_FILE: /run/secrets/jwt_secret_key
       NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
-      OAUTH_ENCRYPTION_KEY_FILE: /run/secrets/oauth_encryption_key
+      ENCRYPTION_MASTER_KEY_FILE: /run/secrets/encryption_master_key
+      # Optional — Brevo email (when not set, password reset links are logged)
+      BREVO_API_KEY_FILE: /run/secrets/brevo_api_key
+      BREVO_SENDER_EMAIL: "${BREVO_SENDER_EMAIL:-noreply@discogsography.com}"
+      BREVO_SENDER_NAME: "${BREVO_SENDER_NAME:-Discogsography}"
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
       POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
     secrets:
       - jwt_secret_key
       - neo4j_password
-      - oauth_encryption_key
+      - encryption_master_key
+      - brevo_api_key
       - postgres_username
       - postgres_password
     deploy:

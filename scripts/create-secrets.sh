@@ -31,8 +31,11 @@ write_secret() {
 # JWT secret key (hex, 32 bytes = 64 hex chars)
 write_secret "jwt_secret_key.txt" "$(openssl rand -hex 32)"
 
-# Fernet encryption key for OAuth tokens
-write_secret "oauth_encryption_key.txt" "$(python3 -c 'from cryptography.fernet import Fernet; print(Fernet.generate_key().decode(), end="")')"
+# HKDF master encryption key (derives OAuth + TOTP keys)
+write_secret "encryption_master_key.txt" "$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode(), end="")')"
+
+# Brevo API key (optional — leave empty or set via Brevo dashboard)
+# write_secret "brevo_api_key.txt" "your-brevo-api-key-here"
 
 # PostgreSQL credentials
 write_secret "postgres_username.txt" "discogsography"
