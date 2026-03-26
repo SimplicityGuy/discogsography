@@ -1024,3 +1024,11 @@ class TestAuditLog:
     def test_audit_log_requires_admin(self, test_client: TestClient) -> None:
         resp = test_client.get("/api/admin/audit-log")
         assert resp.status_code in (401, 403)
+
+    @patch("api.routers.admin._pool", None)
+    def test_audit_log_503_when_pool_none(self, test_client: TestClient) -> None:
+        resp = test_client.get(
+            "/api/admin/audit-log",
+            headers=_admin_auth_headers(),
+        )
+        assert resp.status_code == 503

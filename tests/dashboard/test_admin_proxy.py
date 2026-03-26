@@ -433,6 +433,40 @@ class TestHealthHistoryProxy:
         )
         assert resp.status_code == 200
 
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_with_range_and_granularity(self, mock_client_cls: AsyncMock, proxy_client: TestClient) -> None:
+        """Test that range and granularity params are forwarded."""
+        mock_response = MagicMock()
+        mock_response.content = b'{"range":"7d","granularity":"1hour","services":{},"api_endpoints":{}}'
+        mock_response.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        resp = proxy_client.get(
+            "/admin/api/health/history?range=7d&granularity=1hour",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert resp.status_code == 200
+        call_args = mock_client.get.call_args
+        params = call_args[1].get("params", {})
+        assert params.get("range") == "7d"
+        assert params.get("granularity") == "1hour"
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_api_unavailable(self, mock_client_cls: AsyncMock, proxy_client: TestClient) -> None:
+        """Test error handling when API is unreachable."""
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=httpx_mod.ConnectError("refused"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        resp = proxy_client.get("/admin/api/health/history")
+        assert resp.status_code == 502
+
 
 # ---------------------------------------------------------------------------
 # Phase 4 — Audit Log proxy route
@@ -456,6 +490,46 @@ class TestAuditLogProxy:
             headers={"Authorization": "Bearer test-token"},
         )
         assert resp.status_code == 200
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_proxy_audit_log_with_params(self, mock_client_cls: AsyncMock, proxy_client: TestClient) -> None:
+        """Test that query parameters are forwarded."""
+        mock_resp = MagicMock()
+        mock_resp.content = b'{"entries":[],"total":0,"page":2,"page_size":25}'
+        mock_resp.status_code = 200
+        mock_instance = AsyncMock()
+        mock_instance.get = AsyncMock(return_value=mock_resp)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_instance
+
+        resp = proxy_client.get(
+            "/admin/api/audit-log?page=2&page_size=25&action=dlq.purge&admin_id=abc-123",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert resp.status_code == 200
+        # Verify params were forwarded
+        call_args = mock_instance.get.call_args
+        params = call_args[1].get("params", {})
+        assert params.get("page") == "2"
+        assert params.get("page_size") == "25"
+        assert params.get("action") == "dlq.purge"
+        assert params.get("admin_id") == "abc-123"
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_proxy_audit_log_api_unreachable(self, mock_client_cls: AsyncMock, proxy_client: TestClient) -> None:
+        """Test error handling when API is unreachable."""
+        mock_instance = AsyncMock()
+        mock_instance.get = AsyncMock(side_effect=httpx_mod.ConnectError("Connection refused"))
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_instance
+
+        resp = proxy_client.get(
+            "/admin/api/audit-log",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert resp.status_code == 502
 
 
 class TestAuthHeaderForwarding:
