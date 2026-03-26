@@ -321,6 +321,46 @@ services:
     cap_drop:
       - ALL
 
+  # Rust-based extractor service for MusicBrainz data
+  extractor-musicbrainz:
+    build:
+      context: .
+      dockerfile: extractor/Dockerfile
+    image: discogsography/extractor:latest
+    container_name: discogsography-extractor-musicbrainz
+    hostname: extractor-musicbrainz
+    user: "1000:1000"
+    environment:
+      EXTRACTOR_SOURCE: musicbrainz
+      LOG_LEVEL: info
+      MUSICBRAINZ_ROOT: /musicbrainz-data
+      AMQP_EXCHANGE_PREFIX: musicbrainz
+      PERIODIC_CHECK_DAYS: "7"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PASSWORD: discogsography
+      RABBITMQ_USERNAME: discogsography
+      STARTUP_DELAY: "30"
+    volumes:
+      - musicbrainz_data:/musicbrainz-data
+      - extractor_mb_logs:/logs
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
   # Graphinator service
   graphinator:
     build:
@@ -607,6 +647,7 @@ volumes:
   redis_data:
   discogs_data:
   extractor_logs:
+  extractor_mb_logs:
   schema_init_logs:
   api_logs:
   graphinator_logs:
@@ -614,3 +655,4 @@ volumes:
   dashboard_logs:
   explore_logs:
   insights_logs:
+  musicbrainz_data:
