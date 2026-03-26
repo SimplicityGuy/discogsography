@@ -12,6 +12,8 @@ mod config;
 mod downloader;
 mod extractor;
 mod health;
+mod jsonl_parser;
+mod mb_downloader;
 mod message_queue;
 mod parser;
 mod rules;
@@ -35,8 +37,8 @@ struct Args {
     data_quality_rules: Option<std::path::PathBuf>,
 
     /// Data source to extract from (discogs or musicbrainz)
-    #[arg(long, env = "EXTRACTOR_SOURCE", default_value = "discogs")]
-    source: Source,
+    #[arg(long, env = "EXTRACTOR_SOURCE")]
+    source: Option<Source>,
 }
 
 #[tokio::main]
@@ -75,8 +77,10 @@ async fn main() -> Result<()> {
         config.data_quality_rules = args.data_quality_rules;
     }
 
-    // CLI arg takes precedence over env var for source
-    config.source = args.source;
+    // CLI arg takes precedence over env var for source (only if explicitly provided)
+    if let Some(s) = args.source {
+        config.source = s;
+    }
 
     // Load and compile data quality rules if configured
     let compiled_rules = if let Some(ref rules_path) = config.data_quality_rules {
@@ -124,7 +128,18 @@ async fn main() -> Result<()> {
 
     // Run the main extraction loop, branching on source
     let extraction_result = match config.source {
-        Source::Discogs => extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, trigger.clone(), compiled_rules).await,
+        Source::Discogs => {
+            extractor::run_extraction_loop(
+                config.clone(),
+                state.clone(),
+                shutdown.clone(),
+                args.force_reprocess,
+                mq_factory,
+                trigger.clone(),
+                compiled_rules,
+            )
+            .await
+        }
         Source::MusicBrainz => {
             info!("🎵 Starting MusicBrainz extraction");
             extractor::process_musicbrainz_data(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, compiled_rules)
