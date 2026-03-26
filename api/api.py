@@ -43,6 +43,7 @@ import api.routers.explore as _explore_router
 import api.routers.insights as _insights_router
 import api.routers.insights_compute as _insights_compute_router
 import api.routers.label_dna as _label_dna_router
+import api.routers.nlq as _nlq_router
 import api.routers.rarity as _rarity_router
 import api.routers.recommend as _recommend_router
 import api.routers.search as _search_router
@@ -243,6 +244,21 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         ttl_days=_config.snapshot_ttl_days,
         max_nodes=_config.snapshot_max_nodes,
     )
+    from api.nlq.config import NLQConfig as _NLQConfig  # noqa: PLC0415
+
+    nlq_config = _NLQConfig.from_env()
+    nlq_engine = None
+    if nlq_config.is_available:
+        from anthropic import AsyncAnthropic  # noqa: PLC0415
+
+        from api.nlq.engine import NLQEngine  # noqa: PLC0415
+        from api.nlq.tools import NLQToolRunner  # noqa: PLC0415
+
+        anthropic_client = AsyncAnthropic(api_key=nlq_config.api_key)
+        tool_runner = NLQToolRunner(neo4j_driver=_neo4j, pg_pool=_pool, redis=_redis)
+        nlq_engine = NLQEngine(config=nlq_config, client=anthropic_client, tool_runner=tool_runner)
+        logger.info("🧠 NLQ engine initialized", model=nlq_config.model)
+    _nlq_router.configure(nlq_config, nlq_engine, _redis)
     logger.info("✅ API service ready", port=API_PORT)
 
     # Pre-warm search cache for common high-cardinality terms in background.
@@ -316,6 +332,7 @@ app.include_router(_taste_router.router)
 app.include_router(_collection_router.router)
 app.include_router(_recommend_router.router)
 app.include_router(_admin_router.router)
+app.include_router(_nlq_router.router)
 app.include_router(_rarity_router.router)
 
 

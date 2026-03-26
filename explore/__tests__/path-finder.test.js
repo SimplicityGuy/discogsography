@@ -119,6 +119,7 @@ describe('initPathFinder', () => {
             getUserStatus: vi.fn().mockResolvedValue(null),
             getYearRange: vi.fn().mockResolvedValue({ min_year: 1950, max_year: 2023 }),
             getGenreEmergence: vi.fn().mockResolvedValue({ genres: [], styles: [] }),
+            checkNlqStatus: vi.fn().mockResolvedValue({ enabled: false }),
         };
         window.authManager = {
             init: vi.fn().mockResolvedValue(false), isLoggedIn: vi.fn().mockReturnValue(false),
@@ -140,6 +141,7 @@ describe('initPathFinder', () => {
         loadScriptDirect('graph.js');
         loadScriptDirect('trends.js');
         loadScriptDirect('user-panes.js');
+        loadScriptDirect('nlq.js');
         loadScriptDirect('app.js');
     });
 

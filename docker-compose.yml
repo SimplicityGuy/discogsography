@@ -238,6 +238,10 @@ services:
       PYTHONUNBUFFERED: "1"
       REDIS_HOST: redis
       STARTUP_DELAY: "5"
+      # NLQ (Natural Language Queries) — disabled by default
+      NLQ_ENABLED: "${NLQ_ENABLED:-false}"
+      NLQ_API_KEY: "${NLQ_API_KEY:-}"
+      NLQ_MODEL: "${NLQ_MODEL:-claude-sonnet-4-20250514}"
     ports:
       - "8004:8004"      # Auth API
       - "8005:8005"      # Health check

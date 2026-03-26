@@ -1293,3 +1293,52 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 })();
+
+// ---------------------------------------------------------------------------
+// NLQ panel setup
+// ---------------------------------------------------------------------------
+(function initNlqPanel() {
+    const nlqPanel = new NLQPanel();
+    nlqPanel.onExploreEntity = (name, type) => {
+        document.getElementById('askModeBtn')?.classList.remove('bg-purple-accent', 'text-white');
+        document.getElementById('askModeBtn')?.classList.add('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
+        document.getElementById('searchModeBtn')?.classList.add('bg-purple-accent', 'text-white');
+        document.getElementById('searchModeBtn')?.classList.remove('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
+        nlqPanel.hide();
+        // Trigger explore
+        if (window.graphController) {
+            window.graphController.loadEntity(name, type);
+        }
+    };
+
+    nlqPanel.checkEnabled().then(enabled => {
+        if (enabled) {
+            const toggle = document.getElementById('searchAskToggle');
+            if (toggle) toggle.style.display = '';
+        }
+    });
+
+    document.getElementById('searchModeBtn')?.addEventListener('click', () => {
+        document.getElementById('searchModeBtn')?.classList.add('bg-purple-accent', 'text-white');
+        document.getElementById('searchModeBtn')?.classList.remove('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
+        document.getElementById('askModeBtn')?.classList.remove('bg-purple-accent', 'text-white');
+        document.getElementById('askModeBtn')?.classList.add('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
+        nlqPanel.hide();
+    });
+
+    document.getElementById('askModeBtn')?.addEventListener('click', () => {
+        document.getElementById('askModeBtn')?.classList.add('bg-purple-accent', 'text-white');
+        document.getElementById('askModeBtn')?.classList.remove('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
+        document.getElementById('searchModeBtn')?.classList.remove('bg-purple-accent', 'text-white');
+        document.getElementById('searchModeBtn')?.classList.add('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
+        nlqPanel.show();
+        nlqPanel.input?.focus();
+    });
+
+    document.addEventListener('keydown', (e) => {
+        if (e.key === '?' && !e.target.matches('input, textarea, [contenteditable]')) {
+            e.preventDefault();
+            document.getElementById('askModeBtn')?.click();
+        }
+    });
+})();
