@@ -1,6 +1,8 @@
 """Auth router — register, login, logout, and current-user endpoints."""
 
 from datetime import UTC, datetime
+import json
+import secrets
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -11,7 +13,7 @@ import structlog
 
 from api.auth import _DUMMY_HASH, _hash_password, _verify_password
 from api.limiter import limiter
-from api.models import LoginRequest, RegisterRequest
+from api.models import LoginRequest, RegisterRequest, ResetConfirmModel, ResetRequestModel
 from common.config import ApiConfig
 from common.query_debug import execute_sql
 
@@ -229,3 +231,65 @@ async def get_me(
             "totp_enabled": bool(user.get("totp_enabled", False)),
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Password reset endpoints
+# ---------------------------------------------------------------------------
+
+
+@router.post("/api/auth/reset-request")
+@limiter.limit("3/minute")
+async def reset_request(request: Request, body: ResetRequestModel) -> JSONResponse:  # noqa: ARG001
+    """Request a password reset. Same response whether email exists or not."""
+    if _pool is None or _redis is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
+
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await execute_sql(cur, "SELECT id, email FROM users WHERE email = %s", (body.email,))
+        user = await cur.fetchone()
+
+    if user:
+        token = secrets.token_urlsafe(32)
+        await _redis.setex(
+            f"reset:{token}",
+            900,  # 15 min TTL
+            json.dumps({"user_id": str(user["id"]), "email": user["email"]}),
+        )
+        reset_url = f"/reset?token={token}"
+        if _notification_channel:
+            await _notification_channel.send_password_reset(user["email"], reset_url)
+
+    return JSONResponse(content={"message": "If an account exists for that email, a reset link has been sent"})
+
+
+@router.post("/api/auth/reset-confirm")
+@limiter.limit("5/minute")
+async def reset_confirm(request: Request, body: ResetConfirmModel) -> JSONResponse:  # noqa: ARG001
+    """Confirm a password reset with a valid token and new password."""
+    if _pool is None or _redis is None or _config is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
+
+    raw = await _redis.get(f"reset:{body.token}")
+    if not raw:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired reset token")
+
+    token_data = json.loads(raw)
+    user_id = token_data["user_id"]
+    hashed_password = _hash_password(body.new_password)
+    now_ts = int(datetime.now(UTC).timestamp())
+
+    async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await execute_sql(
+            cur,
+            "UPDATE users SET hashed_password = %s, password_changed_at = NOW(), updated_at = NOW() WHERE id = %s::uuid",
+            (hashed_password, user_id),
+        )
+
+    # Invalidate all existing sessions
+    await _redis.setex(f"password_changed:{user_id}", _config.jwt_expire_minutes * 60, str(now_ts))
+    # Delete the used reset token (single-use)
+    await _redis.delete(f"reset:{body.token}")
+
+    logger.info("✅ Password reset completed", user_id=user_id)
+    return JSONResponse(content={"message": "Password has been reset"})
