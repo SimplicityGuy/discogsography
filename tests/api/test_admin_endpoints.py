@@ -915,6 +915,34 @@ class TestHealthHistory:
         assert resp.status_code == 422
 
 
+class TestQueueHistoryServiceUnavailable:
+    def test_returns_503_when_pool_is_none(self, test_client: TestClient) -> None:
+        """Queue history returns 503 when _pool is not configured."""
+        import api.routers.admin as admin_mod
+
+        original = admin_mod._pool
+        admin_mod._pool = None
+        try:
+            resp = test_client.get("/api/admin/queues/history", headers=_admin_auth_headers())
+            assert resp.status_code == 503
+        finally:
+            admin_mod._pool = original
+
+
+class TestHealthHistoryServiceUnavailable:
+    def test_returns_503_when_pool_is_none(self, test_client: TestClient) -> None:
+        """Health history returns 503 when _pool is not configured."""
+        import api.routers.admin as admin_mod
+
+        original = admin_mod._pool
+        admin_mod._pool = None
+        try:
+            resp = test_client.get("/api/admin/health/history", headers=_admin_auth_headers())
+            assert resp.status_code == 503
+        finally:
+            admin_mod._pool = original
+
+
 class TestAdminTokenIsolation:
     def test_admin_token_rejected_on_user_endpoint(self, test_client: TestClient) -> None:
         """Admin tokens must not work on user endpoints."""

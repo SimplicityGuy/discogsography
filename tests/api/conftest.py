@@ -197,10 +197,17 @@ def test_client(
     _insights_compute_router.configure(mock_neo4j, mock_pool, mock_redis)
     _admin_router.configure(mock_pool, mock_redis, test_api_config, neo4j_driver=mock_neo4j)
 
+    # Set up metrics buffer so the metrics middleware records requests
+    from api.metrics_collector import MetricsBuffer
+
+    app.state.metrics_buffer = MetricsBuffer()
+
     with TestClient(app, raise_server_exceptions=False) as client:
         yield client
 
     # Restore original state
+    if hasattr(app.state, "metrics_buffer"):
+        del app.state.metrics_buffer
     api_module._pool = original_pool
     api_module._config = original_config
     api_module._redis = original_redis
