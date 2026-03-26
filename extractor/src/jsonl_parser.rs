@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -166,16 +167,99 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
     Ok(DataMessage { id: mbid, sha256, data, raw_xml: None })
 }
 
+/// First pass: build a map of MBID → Discogs ID by scanning all url-rels in an xz-compressed JSONL file.
+///
+/// **Blocking:** This function performs synchronous I/O and must be run on a
+/// blocking thread via `tokio::task::spawn_blocking`.
+///
+/// Only lines that contain a Discogs url-rel are added to the map.
+/// Malformed lines are silently skipped.
+pub fn build_mbid_discogs_map_from_file(path: &Path, entity_type: &str) -> Result<HashMap<String, i64>> {
+    // `path` comes from operator-controlled config (CLI/config file), not HTTP input.
+    let file = File::open(path).context(format!("Failed to open file for MBID map: {:?}", path))?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+    let decoder = XzDecoder::new(file);
+    let reader = BufReader::new(decoder);
+
+    let mut map = HashMap::new();
+
+    for line_result in reader.lines() {
+        let line = match line_result {
+            Ok(l) => l,
+            Err(e) => {
+                debug!("⚠️ Failed to read line during MBID map build: {e}");
+                continue;
+            }
+        };
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let v: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let mbid = match v["id"].as_str() {
+            Some(id) => id.to_string(),
+            None => continue,
+        };
+        let url_rels = v["url-rels"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+        if let Some(discogs_id) = url_rels.iter().find_map(|rel| {
+            if rel["type"].as_str() == Some("discogs") {
+                extract_discogs_id(rel["url"]["resource"].as_str()?, entity_type)
+            } else {
+                None
+            }
+        }) {
+            map.insert(mbid, discogs_id);
+        }
+    }
+
+    info!("📊 Built MBID→Discogs map: {} entries from {:?}", map.len(), path);
+    Ok(map)
+}
+
+/// Enrich relationship target entries with Discogs IDs from a lookup map.
+///
+/// For each relation, looks up the target's MBID in `discogs_map`. If found,
+/// adds `"target_discogs_artist_id": <id>` to the relation object. If not
+/// found, adds `"target_discogs_artist_id": null`.
+pub fn enrich_relations(relations: Vec<Value>, discogs_map: &HashMap<String, i64>) -> Vec<Value> {
+    relations
+        .into_iter()
+        .map(|mut rel| {
+            let target_mbid = rel["target"]["id"].as_str().map(|s| s.to_string());
+            let target_discogs_id: Value = target_mbid
+                .as_deref()
+                .and_then(|mbid| discogs_map.get(mbid))
+                .copied()
+                .map(Value::from)
+                .unwrap_or(Value::Null);
+            if let Some(obj) = rel.as_object_mut() {
+                obj.insert("target_discogs_artist_id".to_string(), target_discogs_id);
+            }
+            rel
+        })
+        .collect()
+}
+
 /// Parse an xz-compressed MusicBrainz JSONL file line by line.
 ///
 /// **Blocking:** This function performs synchronous I/O and must be run on a
 /// blocking thread via `tokio::task::spawn_blocking`. Calling it directly from
 /// an async context will panic.
 ///
+/// When `discogs_map` is `Some`, artist relation targets are enriched with
+/// `target_discogs_artist_id` using the provided MBID→Discogs ID lookup map.
+///
 /// Sends each successfully parsed [`DataMessage`] through `sender`.
 /// Malformed lines are skipped with a debug log.
 /// Returns the total count of records successfully parsed and sent.
-pub fn parse_mb_jsonl_file(path: &Path, data_type: DataType, sender: mpsc::Sender<DataMessage>) -> Result<u64> {
+pub fn parse_mb_jsonl_file(
+    path: &Path,
+    data_type: DataType,
+    sender: mpsc::Sender<DataMessage>,
+    discogs_map: Option<&HashMap<String, i64>>,
+) -> Result<u64> {
     // `path` comes from operator-controlled config (CLI/config file), not HTTP input.
     let file = File::open(path).context(format!("Failed to open file: {:?}", path))?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
     let decoder = XzDecoder::new(file);
@@ -205,7 +289,16 @@ pub fn parse_mb_jsonl_file(path: &Path, data_type: DataType, sender: mpsc::Sende
             continue;
         }
         match parse_fn(trimmed) {
-            Ok(msg) => {
+            Ok(mut msg) => {
+                // Enrich relations with target Discogs IDs when a map is provided
+                if let Some(map) = discogs_map
+                    && let Some(relations) = msg.data.get("relations").and_then(|r| r.as_array()).cloned()
+                {
+                    let enriched = enrich_relations(relations, map);
+                    if let Some(obj) = msg.data.as_object_mut() {
+                        obj.insert("relations".to_string(), Value::Array(enriched));
+                    }
+                }
                 if sender.blocking_send(msg).is_err() {
                     warn!("⚠️ Receiver dropped, stopping JSONL parsing");
                     break;

@@ -774,7 +774,7 @@ pub async fn process_musicbrainz_data(
     mq_factory: Arc<dyn MessageQueueFactory>,
     _compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<bool> {
-    use crate::jsonl_parser::parse_mb_jsonl_file;
+    use crate::jsonl_parser::{build_mbid_discogs_map_from_file, parse_mb_jsonl_file};
     use crate::mb_downloader::{detect_mb_dump_version, discover_mb_dump_files};
 
     let extraction_started_at = chrono::Utc::now();
@@ -847,6 +847,16 @@ pub async fn process_musicbrainz_data(
     state_marker.save(&marker_path).await?;
     info!("🚀 Starting MusicBrainz processing phase: {} dump file(s)", file_count);
 
+    // First pass: build MBID→Discogs ID map for artist relationship target resolution
+    let artist_discogs_map = if let Some(artist_path) = dump_files.get(&DataType::Artists) {
+        info!("🔍 First pass: building MBID→Discogs ID map for artists...");
+        let path = artist_path.clone();
+        tokio::task::spawn_blocking(move || build_mbid_discogs_map_from_file(&path, "artist")).await??
+    } else {
+        HashMap::new()
+    };
+    info!("📊 Built MBID→Discogs map: {} entries", artist_discogs_map.len());
+
     let mut record_counts: HashMap<String, u64> = HashMap::new();
     let mut success = true;
 
@@ -875,10 +885,11 @@ pub async fn process_musicbrainz_data(
         let (parse_sender, parse_receiver) = mpsc::channel::<DataMessage>(config.queue_size);
         let (batch_sender, batch_receiver) = mpsc::channel::<Vec<DataMessage>>(100);
 
-        // Spawn parser on blocking thread
+        // Spawn parser on blocking thread — pass MBID→Discogs map for artist relationship enrichment
         let parser_path = file_path.clone();
         let parser_dt = *data_type;
-        let parser_handle = tokio::task::spawn_blocking(move || parse_mb_jsonl_file(&parser_path, parser_dt, parse_sender));
+        let parser_map = if parser_dt == DataType::Artists { Some(artist_discogs_map.clone()) } else { None };
+        let parser_handle = tokio::task::spawn_blocking(move || parse_mb_jsonl_file(&parser_path, parser_dt, parse_sender, parser_map.as_ref()));
 
         // Spawn batcher
         let batcher_state_marker = Arc::new(tokio::sync::Mutex::new(state_marker.clone()));

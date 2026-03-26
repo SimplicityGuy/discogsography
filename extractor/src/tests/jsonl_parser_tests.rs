@@ -202,7 +202,7 @@ fn test_parse_mb_jsonl_file_artists() {
 
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
     let (sender, mut receiver) = mpsc::channel(10);
-    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Artists, sender).unwrap();
+    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Artists, sender, None).unwrap();
     assert_eq!(count, 2);
 
     let msg1 = rt.block_on(receiver.recv()).unwrap();
@@ -232,7 +232,7 @@ fn test_parse_mb_jsonl_file_skips_malformed_lines() {
 
     let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
     let (sender, mut receiver) = mpsc::channel(10);
-    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Artists, sender).unwrap();
+    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Artists, sender, None).unwrap();
     // Only the good line should be counted
     assert_eq!(count, 1);
     let msg = rt.block_on(receiver.recv()).unwrap();
@@ -254,6 +254,117 @@ fn test_parse_mb_jsonl_file_masters_returns_zero() {
     temp_file.flush().unwrap();
 
     let (sender, _receiver) = mpsc::channel(10);
-    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Masters, sender).unwrap();
+    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Masters, sender, None).unwrap();
     assert_eq!(count, 0);
+}
+
+// ─── build_mbid_discogs_map_from_file ─────────────────────────────────────────
+
+#[test]
+fn test_build_mbid_discogs_map() {
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    use xz2::write::XzEncoder;
+
+    // Line 1: has a Discogs url-rel → should appear in map
+    let line_with_discogs = r#"{"id":"artist-mbid-1","name":"Artist With Discogs","sort-name":"With Discogs, Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/artist/12345"}}]}"#;
+    // Line 2: no Discogs url-rel → should NOT appear in map
+    let line_without_discogs = r#"{"id":"artist-mbid-2","name":"Artist Without Discogs","sort-name":"Without Discogs, Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[{"type":"wikipedia","url":{"resource":"https://en.wikipedia.org/wiki/Some_Artist"}}]}"#;
+    let content = format!("{}\n{}\n", line_with_discogs, line_without_discogs);
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let map = build_mbid_discogs_map_from_file(temp_file.path(), "artist").unwrap();
+    assert_eq!(map.len(), 1);
+    assert_eq!(map.get("artist-mbid-1"), Some(&12345i64));
+    assert!(!map.contains_key("artist-mbid-2"));
+}
+
+// ─── enrich_relations ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_enrich_relations_with_map() {
+    use std::collections::HashMap;
+
+    let mut map = HashMap::new();
+    map.insert("target-mbid-1".to_string(), 200i64);
+
+    let relations = vec![
+        serde_json::json!({
+            "type": "collaboration",
+            "target": {"id": "target-mbid-1", "name": "Artist B"}
+        }),
+        serde_json::json!({
+            "type": "tribute",
+            "target": {"id": "target-mbid-2", "name": "Artist C"}
+        }),
+    ];
+
+    let enriched = enrich_relations(relations, &map);
+    assert_eq!(enriched.len(), 2);
+    assert_eq!(enriched[0]["target_discogs_artist_id"], 200);
+    assert!(enriched[1]["target_discogs_artist_id"].is_null());
+    // Original fields preserved
+    assert_eq!(enriched[0]["type"], "collaboration");
+    assert_eq!(enriched[1]["type"], "tribute");
+}
+
+#[test]
+fn test_enrich_relations_empty() {
+    use std::collections::HashMap;
+    let map: HashMap<String, i64> = HashMap::new();
+    let enriched = enrich_relations(vec![], &map);
+    assert!(enriched.is_empty());
+}
+
+#[test]
+fn test_enrich_relations_no_target_id() {
+    use std::collections::HashMap;
+    let mut map = HashMap::new();
+    map.insert("some-mbid".to_string(), 999i64);
+
+    // Relation with no "target" field at all — should get null
+    let relations = vec![serde_json::json!({"type": "misc"})];
+    let enriched = enrich_relations(relations, &map);
+    assert_eq!(enriched.len(), 1);
+    assert!(enriched[0]["target_discogs_artist_id"].is_null());
+}
+
+// ─── parse_mb_jsonl_file with discogs_map ─────────────────────────────────────
+
+#[test]
+fn test_parse_mb_jsonl_file_with_discogs_map_enriches_relations() {
+    use std::collections::HashMap;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+    use tokio::sync::mpsc;
+    use xz2::write::XzEncoder;
+
+    let line = r#"{"id":"mbid-artist","name":"Test Artist","sort-name":"Artist, Test","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[{"type":"collaboration","target":{"id":"target-mbid-A","name":"Collab Artist"}}],"url-rels":[]}"#;
+    let content = format!("{}\n", line);
+
+    let mut temp_file = NamedTempFile::new().unwrap();
+    let mut encoder = XzEncoder::new(Vec::new(), 1);
+    encoder.write_all(content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    temp_file.write_all(&compressed).unwrap();
+    temp_file.flush().unwrap();
+
+    let mut map = HashMap::new();
+    map.insert("target-mbid-A".to_string(), 777i64);
+
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let (sender, mut receiver) = mpsc::channel(10);
+    let count = parse_mb_jsonl_file(temp_file.path(), DataType::Artists, sender, Some(&map)).unwrap();
+    assert_eq!(count, 1);
+
+    let msg = rt.block_on(receiver.recv()).unwrap();
+    let relations = msg.data["relations"].as_array().unwrap();
+    assert_eq!(relations.len(), 1);
+    assert_eq!(relations[0]["target_discogs_artist_id"], 777);
 }
