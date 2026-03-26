@@ -58,3 +58,81 @@ Dead-letter queues (DLQs) collect messages that consumers failed to process. Eac
 - After fixing the root cause and retriggering an extraction
 
 Purging cannot be undone.
+
+## Phase 3: Metrics History and Trend Analysis
+
+### Queue and Health History Endpoints
+
+Two new endpoints expose time-series metrics for queue depths and service health:
+
+    GET /api/admin/queues/history?range=<range>
+    GET /api/admin/health/history?range=<range>
+
+Both endpoints require admin authentication (Bearer token).
+
+**Valid range values:**
+
+| Range | Description | Data Granularity |
+|-------|-------------|-----------------|
+| `1h` | Last 1 hour | 5-minute buckets |
+| `6h` | Last 6 hours | 5-minute buckets |
+| `24h` | Last 24 hours (default) | 15-minute buckets |
+| `7d` | Last 7 days | 1-hour buckets |
+| `30d` | Last 30 days | 6-hour buckets |
+| `90d` | Last 90 days | 1-day buckets |
+| `365d` | Last 365 days | 1-day buckets |
+
+Granularity is selected automatically based on the requested range. Omitting the `range` parameter defaults to `24h`.
+
+### Background Metrics Collector
+
+A background collector runs inside the API service and periodically samples queue depths and service health. Collected data is stored in PostgreSQL for historical querying.
+
+The collector interval is controlled by the `METRICS_COLLECTION_INTERVAL` environment variable (default: 300 seconds / 5 minutes).
+
+### New Environment Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `METRICS_RETENTION_DAYS` | `366` | How many days of metrics to retain in the database. Older rows are pruned automatically. |
+| `METRICS_COLLECTION_INTERVAL` | `300` | Seconds between each metrics collection cycle in the background collector. |
+
+Set these in your `docker-compose.yml` or environment file:
+
+    METRICS_RETENTION_DAYS=366
+    METRICS_COLLECTION_INTERVAL=300
+
+### New Database Tables
+
+Metrics are stored in two PostgreSQL tables:
+
+**`queue_metrics`** — RabbitMQ queue depth snapshots:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | serial | Primary key |
+| `queue_name` | text | Name of the RabbitMQ queue |
+| `message_count` | integer | Number of messages in the queue at sample time |
+| `consumer_count` | integer | Number of active consumers at sample time |
+| `collected_at` | timestamptz | When the sample was taken |
+
+**`service_health_metrics`** — Per-service health check results:
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | serial | Primary key |
+| `service_name` | text | Name of the service (e.g. `graphinator`, `tableinator`) |
+| `status` | text | Health status (`healthy`, `unhealthy`, `unknown`) |
+| `response_time_ms` | integer | Health check response time in milliseconds |
+| `collected_at` | timestamptz | When the sample was taken |
+
+Both tables are indexed on `collected_at` for efficient range queries. Rows older than `METRICS_RETENTION_DAYS` are pruned automatically.
+
+### Dashboard: Queue Trends and System Health Tabs
+
+The admin panel (`http://<host>:8003/admin`) exposes two new tabs backed by the history endpoints:
+
+- **Queue Trends** — Line charts showing message depth over time for each RabbitMQ queue. Use the range selector (1h / 6h / 24h / 7d / 30d / 90d / 365d) to zoom in or out.
+- **System Health** — Status timeline showing per-service health over the selected range. Unhealthy periods are highlighted in red; response time is shown as a secondary series.
+
+Both tabs auto-refresh every 60 seconds and respect the currently selected time range.
