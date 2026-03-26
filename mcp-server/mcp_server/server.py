@@ -87,6 +87,12 @@ async def _api_get(app: AppContext, path: str, params: dict[str, Any] | None = N
     return await app.client.get(url, params=params)
 
 
+async def _api_post(app: AppContext, path: str, json_data: dict[str, Any] | None = None) -> httpx.Response:
+    """Make a POST request to the Discogsography API."""
+    url = f"{app.base_url}{path}"
+    return await app.client.post(url, json=json_data)
+
+
 # ---------------------------------------------------------------------------
 # Tool 1: search
 # ---------------------------------------------------------------------------
@@ -384,6 +390,32 @@ async def get_genre_tree(
     """
     app = _ctx(ctx)
     resp = await _api_get(app, "/api/genre-tree")
+    return resp.json()  # type: ignore[no-any-return]
+
+
+# ---------------------------------------------------------------------------
+# Tool 12: nlq_query
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def nlq_query(
+    query: str,
+    ctx: Context = None,  # type: ignore[assignment]
+) -> dict[str, Any]:
+    """Ask a natural language question about the music knowledge graph.
+
+    The system interprets your question, queries the graph using appropriate
+    tools, and returns a natural language answer with referenced entities.
+    Use this for complex questions that span multiple entities or relationships.
+
+    Examples:
+    - "Find artists who recorded for both Factory Records and Rough Trade"
+    - "What's the most prolific electronic music label?"
+    - "How are Kraftwerk and Afrika Bambaataa connected?"
+    """
+    app = _ctx(ctx)
+    resp = await _api_post(app, "/api/nlq/query", json_data={"query": query})
     return resp.json()  # type: ignore[no-any-return]
 
 
