@@ -35,6 +35,7 @@ from api.auth import (
 )
 import api.dependencies as _dependencies
 from api.limiter import limiter
+from api.metrics_collector import MetricsBuffer, normalize_path, run_collector
 from api.models import LoginRequest, RegisterRequest
 from api.queries.search_queries import ALL_TYPES, execute_search
 import api.routers.admin as _admin_router
@@ -265,6 +266,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     # Store reference on app.state to prevent garbage collection (RUF006).
     _app.state.prewarm_task = asyncio.create_task(_prewarm_search_cache())
 
+    # Start background metrics collector
+    metrics_buffer = MetricsBuffer()
+    _app.state.metrics_buffer = metrics_buffer
+    _app.state.collector_task = asyncio.create_task(run_collector(_pool, _config, metrics_buffer))
+    logger.info("📊 Metrics collector started", interval=_config.metrics_collection_interval)
+
     yield
 
     logger.info("🔧 API service shutting down...")
@@ -276,6 +283,9 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
         task.cancel()
     if _admin_router._tracking_tasks:
         await asyncio.gather(*_admin_router._tracking_tasks.values(), return_exceptions=True)
+    if hasattr(_app.state, "collector_task"):
+        _app.state.collector_task.cancel()
+        await asyncio.gather(_app.state.collector_task, return_exceptions=True)
     if _neo4j:
         await _neo4j.close()
     if _pool:
@@ -317,6 +327,20 @@ async def security_headers(request: Request, call_next: Any) -> Any:
     response.headers["X-Frame-Options"] = "DENY"
     response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
     response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
+    return response
+
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next: Any) -> Any:
+    """Record per-request timing for endpoint performance metrics."""
+    import time as _time  # noqa: PLC0415
+
+    path = normalize_path(request.url.path)
+    start = _time.monotonic()
+    response = await call_next(request)
+    elapsed_ms = (_time.monotonic() - start) * 1000
+    if hasattr(app.state, "metrics_buffer"):
+        app.state.metrics_buffer.record(path, response.status_code, elapsed_ms)
     return response
 
 

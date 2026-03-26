@@ -177,6 +177,7 @@ ignore = [
 "utilities/*.py" = ["T201"]                 # Utility scripts use print for output
 "tests/**/*.py" = ["PLC", "S105", "T201"]   # Test files: pylint conventions, hardcoded passwords, print statements
 "*/queries/search_queries.py" = ["S608"]    # SQL uses parameterized %s for all user input; interpolated values are internal constants
+"*/queries/metrics_queries.py" = ["S608"]   # date_trunc unit from internal GRANULARITY_MAP, not user input
 
 [tool.mypy]
 python_version = "3.13"

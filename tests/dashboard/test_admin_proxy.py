@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -378,6 +378,60 @@ class TestStorageProxy:
         resp = proxy_client.get("/admin/api/storage")
         assert resp.status_code == 502
         assert "unavailable" in resp.json()["detail"]
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Queue Health Trends & System Health proxy routes
+# ---------------------------------------------------------------------------
+
+
+class TestQueueHistoryProxy:
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_with_query_params(self, mock_client_cls: AsyncMock, proxy_client: TestClient) -> None:
+        mock_response = MagicMock()
+        mock_response.content = b'{"range":"7d","granularity":"1hour","queues":{},"dlq_summary":{}}'
+        mock_response.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        resp = proxy_client.get(
+            "/admin/api/queues/history?range=7d",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert resp.status_code == 200
+        call_url = mock_client.get.call_args[0][0]
+        assert "/api/admin/queues/history" in call_url
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_api_unavailable(self, mock_client_cls: AsyncMock, proxy_client: TestClient) -> None:
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(side_effect=httpx_mod.ConnectError("refused"))
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+        resp = proxy_client.get("/admin/api/queues/history")
+        assert resp.status_code == 502
+
+
+class TestHealthHistoryProxy:
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_request(self, mock_client_cls: AsyncMock, proxy_client: TestClient) -> None:
+        mock_response = MagicMock()
+        mock_response.content = b'{"range":"24h","granularity":"15min","services":{},"api_endpoints":{}}'
+        mock_response.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+        resp = proxy_client.get(
+            "/admin/api/health/history",
+            headers={"Authorization": "Bearer test-token"},
+        )
+        assert resp.status_code == 200
 
 
 class TestAuthHeaderForwarding:

@@ -249,6 +249,42 @@ _USER_TABLES: list[tuple[str, str]] = [
         "idx_extraction_history_created_at",
         "CREATE INDEX IF NOT EXISTS idx_extraction_history_created_at ON extraction_history(created_at DESC)",
     ),
+    (
+        "queue_metrics table",
+        """
+        CREATE TABLE IF NOT EXISTS queue_metrics (
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            recorded_at TIMESTAMPTZ NOT NULL,
+            queue_name VARCHAR(100) NOT NULL,
+            messages_ready INTEGER,
+            messages_unacknowledged INTEGER,
+            consumers INTEGER,
+            publish_rate REAL,
+            ack_rate REAL
+        )
+        """,
+    ),
+    (
+        "idx_queue_metrics_recorded_queue",
+        "CREATE INDEX IF NOT EXISTS idx_queue_metrics_recorded_queue ON queue_metrics (recorded_at, queue_name)",
+    ),
+    (
+        "service_health_metrics table",
+        """
+        CREATE TABLE IF NOT EXISTS service_health_metrics (
+            id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+            recorded_at TIMESTAMPTZ NOT NULL,
+            service_name VARCHAR(50) NOT NULL,
+            status VARCHAR(20),
+            response_time_ms REAL,
+            endpoint_stats JSONB
+        )
+        """,
+    ),
+    (
+        "idx_service_health_recorded_service",
+        "CREATE INDEX IF NOT EXISTS idx_service_health_recorded_service ON service_health_metrics (recorded_at, service_name)",
+    ),
 ]
 
 

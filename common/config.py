@@ -439,6 +439,10 @@ class ApiConfig:
     rabbitmq_username: str = "guest"
     rabbitmq_password: str = "guest"  # noqa: S105
 
+    # Admin dashboard — metrics collection
+    metrics_retention_days: int = 366
+    metrics_collection_interval: int = 300  # seconds
+
     @classmethod
     def from_env(cls) -> "ApiConfig":
         """Create configuration from environment variables."""
@@ -502,6 +506,18 @@ class ApiConfig:
 
         oauth_encryption_key = get_secret("OAUTH_ENCRYPTION_KEY") or None
 
+        metrics_retention_days_str = getenv("METRICS_RETENTION_DAYS", "366")
+        try:
+            metrics_retention_days = int(metrics_retention_days_str)
+        except ValueError:
+            metrics_retention_days = 366
+
+        metrics_collection_interval_str = getenv("METRICS_COLLECTION_INTERVAL", "300")
+        try:
+            metrics_collection_interval = int(metrics_collection_interval_str)
+        except ValueError:
+            metrics_collection_interval = 300
+
         return cls(
             postgres_host=_build_postgres_connstr(),
             postgres_username=cast("str", postgres_username),
@@ -525,6 +541,8 @@ class ApiConfig:
             rabbitmq_management_port=int(getenv("RABBITMQ_MANAGEMENT_PORT", "15672")),
             rabbitmq_username=getenv("RABBITMQ_USERNAME", "guest"),
             rabbitmq_password=get_secret("RABBITMQ_PASSWORD") or "guest",
+            metrics_retention_days=metrics_retention_days,
+            metrics_collection_interval=metrics_collection_interval,
         )
 
 

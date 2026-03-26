@@ -31,6 +31,7 @@ from api.queries.admin_queries import (
     get_sync_activity,
     get_user_stats,
 )
+from api.queries.metrics_queries import get_health_history, get_queue_history
 from common.config import DATA_TYPES, ApiConfig
 
 
@@ -261,6 +262,41 @@ async def admin_storage(
             "redis": _wrap(results[2], "redis"),
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3 — Queue Health Trends & System Health
+# ---------------------------------------------------------------------------
+
+
+@router.get("/api/admin/queues/history")
+async def admin_queue_history(
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+    range: str = "24h",
+) -> JSONResponse:
+    """Queue depth time-series for the given range."""
+    if _pool is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
+    try:
+        data = await get_queue_history(_pool, range)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return JSONResponse(content=data)
+
+
+@router.get("/api/admin/health/history")
+async def admin_health_history(
+    _admin: Annotated[dict[str, Any], Depends(require_admin)],
+    range: str = "24h",
+) -> JSONResponse:
+    """Service health and API endpoint metrics for the given range."""
+    if _pool is None:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
+    try:
+        data = await get_health_history(_pool, range)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return JSONResponse(content=data)
 
 
 # ---------------------------------------------------------------------------
