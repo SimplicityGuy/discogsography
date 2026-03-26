@@ -509,3 +509,29 @@ class TestGetAuditLog:
         sql = count_call[0][0]
         assert "action" in sql
         assert "admin_id" in sql
+
+    @pytest.mark.asyncio
+    async def test_enforces_90_day_window(self) -> None:
+        """Verify all queries include the 90-day window constraint."""
+        from api.queries.admin_queries import (
+            _AUDIT_COUNT_ACTION,
+            _AUDIT_COUNT_ADMIN,
+            _AUDIT_COUNT_BOTH,
+            _AUDIT_COUNT_UNFILTERED,
+            _AUDIT_ENTRIES_ACTION,
+            _AUDIT_ENTRIES_ADMIN,
+            _AUDIT_ENTRIES_BOTH,
+            _AUDIT_ENTRIES_UNFILTERED,
+        )
+
+        for sql in [
+            _AUDIT_COUNT_UNFILTERED,
+            _AUDIT_COUNT_ACTION,
+            _AUDIT_COUNT_ADMIN,
+            _AUDIT_COUNT_BOTH,
+            _AUDIT_ENTRIES_UNFILTERED,
+            _AUDIT_ENTRIES_ACTION,
+            _AUDIT_ENTRIES_ADMIN,
+            _AUDIT_ENTRIES_BOTH,
+        ]:
+            assert "90 days" in sql, f"90-day window missing from: {sql[:80]}..."
