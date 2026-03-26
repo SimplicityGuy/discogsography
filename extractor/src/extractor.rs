@@ -760,6 +760,19 @@ pub async fn run_extraction_loop(
     Ok(())
 }
 
+/// Stub for MusicBrainz data extraction — not yet implemented.
+pub async fn process_musicbrainz_data(
+    _config: Arc<ExtractorConfig>,
+    _state: Arc<RwLock<ExtractorState>>,
+    _shutdown: Arc<tokio::sync::Notify>,
+    _force_reprocess: bool,
+    _mq_factory: Arc<dyn MessageQueueFactory>,
+    _compiled_rules: Option<Arc<CompiledRulesConfig>>,
+) -> Result<bool> {
+    info!("🎵 MusicBrainz extraction not yet implemented");
+    Ok(true)
+}
+
 #[cfg(test)]
 #[path = "tests/extractor_tests.rs"]
 mod tests;

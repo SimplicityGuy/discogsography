@@ -5,7 +5,7 @@ use extractor::extractor::{ExtractorState, message_publisher, process_single_fil
 use extractor::message_queue::MockMessagePublisher;
 use extractor::state_marker::StateMarker;
 use extractor::types::S3FileInfo;
-use extractor::types::{DataMessage, DataType};
+use extractor::types::{DataMessage, DataType, Source};
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::{Mutex, RwLock};
@@ -26,6 +26,9 @@ fn test_config(root: &std::path::Path) -> ExtractorConfig {
         progress_log_interval: 1000,
         state_save_interval: 1000,
         data_quality_rules: None,
+        source: Source::Discogs,
+        musicbrainz_root: std::path::PathBuf::from("/musicbrainz-data"),
+        amqp_exchange_prefix: "discogsography".to_string(),
     }
 }
 

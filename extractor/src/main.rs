@@ -20,6 +20,7 @@ mod types;
 
 use config::ExtractorConfig;
 use health::HealthServer;
+use types::Source;
 
 /// High-performance Discogs data extractor written in Rust
 #[derive(Parser, Debug)]
@@ -32,6 +33,10 @@ struct Args {
     /// Path to data quality rules YAML file
     #[clap(long, env = "DATA_QUALITY_RULES")]
     data_quality_rules: Option<std::path::PathBuf>,
+
+    /// Data source to extract from (discogs or musicbrainz)
+    #[arg(long, env = "EXTRACTOR_SOURCE", default_value = "discogs")]
+    source: Source,
 }
 
 #[tokio::main]
@@ -69,6 +74,9 @@ async fn main() -> Result<()> {
     if args.data_quality_rules.is_some() {
         config.data_quality_rules = args.data_quality_rules;
     }
+
+    // CLI arg takes precedence over env var for source
+    config.source = args.source;
 
     // Load and compile data quality rules if configured
     let compiled_rules = if let Some(ref rules_path) = config.data_quality_rules {
@@ -114,9 +122,16 @@ async fn main() -> Result<()> {
     // Create factory for message queue connections
     let mq_factory: Arc<dyn extractor::MessageQueueFactory> = Arc::new(extractor::DefaultMessageQueueFactory);
 
-    // Run the main extraction loop
-    let extraction_result =
-        extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, trigger.clone(), compiled_rules).await;
+    // Run the main extraction loop, branching on source
+    let extraction_result = match config.source {
+        Source::Discogs => extractor::run_extraction_loop(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, trigger.clone(), compiled_rules).await,
+        Source::MusicBrainz => {
+            info!("🎵 Starting MusicBrainz extraction");
+            extractor::process_musicbrainz_data(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, compiled_rules)
+                .await
+                .map(|_| ())
+        }
+    };
 
     // Cleanup
     info!("🛑 Shutting down rust-extractor...");
