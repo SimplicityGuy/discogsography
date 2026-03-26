@@ -5,6 +5,7 @@
     <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
     <title>Discogsography Admin</title>
     <link href="/tailwind.css" rel="stylesheet"/>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8" integrity="sha384-T/4KgSWuZEPozpPz7rnnp/5lDSnpY1VPJCojf1S81uTHS1E38qgLfMgVsAeRCWc4" crossorigin="anonymous"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet"/>
     <style>
@@ -125,6 +126,20 @@
         .collapsible-header:hover { opacity: 0.8; }
         .collapsible-body { overflow: hidden; }
         .collapsible-body.collapsed { display: none; }
+
+        /* Range selector buttons */
+        .range-btn {
+            color: var(--text-dim);
+            background: transparent;
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+        }
+        .range-btn:hover { background: var(--inner-bg); color: var(--text-high); }
+        .range-btn.active {
+            background: var(--purple-accent);
+            color: #fff;
+            border-color: var(--purple-accent);
+        }
 
         /* Summary stat cards */
         .stat-card {
@@ -255,6 +270,12 @@
             </button>
             <button class="tab-btn" data-tab="storage" id="tab-btn-storage">
                 <span class="material-symbols-outlined text-sm">database</span> Storage
+            </button>
+            <button class="tab-btn" data-tab="queue-trends" id="tab-btn-queue-trends">
+                <span class="material-symbols-outlined text-sm">show_chart</span> Queue Trends
+            </button>
+            <button class="tab-btn" data-tab="system-health" id="tab-btn-system-health">
+                <span class="material-symbols-outlined text-sm">monitor_heart</span> System Health
             </button>
         </nav>
 
@@ -559,6 +580,142 @@
             </section>
 
         </div><!-- /tab-storage -->
+
+        <!-- ============================================================
+             TAB: QUEUE TRENDS
+             ============================================================ -->
+        <div id="tab-queue-trends" class="space-y-6" style="display:none">
+
+            <section class="dashboard-card p-6">
+                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm t-dim">show_chart</span> Queue Trends
+                    </h3>
+                    <div class="flex items-center gap-3">
+                        <span class="text-[10px] t-muted">Auto-refresh 60s</span>
+                        <span id="qt-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="qt-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
+                            <span class="material-symbols-outlined text-xs">warning</span> <span id="qt-error-msg"></span>
+                        </span>
+                        <button id="qt-refresh-btn" class="text-xs font-bold uppercase tracking-wider t-dim hover:t-high transition-colors flex items-center gap-1">
+                            <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Range selector -->
+                <div class="flex items-center gap-2 mb-6">
+                    <span class="text-[10px] font-bold uppercase tracking-wider t-muted mr-2">Range</span>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="1h" data-tab-range="queue-trends">1h</button>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="6h" data-tab-range="queue-trends">6h</button>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors active" data-range="24h" data-tab-range="queue-trends">24h</button>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="7d" data-tab-range="queue-trends">7d</button>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="30d" data-tab-range="queue-trends">30d</button>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="90d" data-tab-range="queue-trends">90d</button>
+                </div>
+
+                <!-- Summary tiles -->
+                <div class="mb-6">
+                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-3">Overview</p>
+                    <div class="grid grid-cols-5 gap-4" id="queue-summary-tiles"></div>
+                </div>
+
+                <!-- Queue Depth Chart -->
+                <div class="mb-6">
+                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-3">Queue Depth Over Time</p>
+                    <div class="bg-inner rounded-lg border b-theme p-4">
+                        <div id="queue-chart-legend" class="flex flex-wrap gap-3 mb-3 text-[10px] t-muted"></div>
+                        <canvas id="queue-depth-chart" height="280"></canvas>
+                    </div>
+                </div>
+
+                <!-- DLQ Section -->
+                <div>
+                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-3">Dead Letter Queues</p>
+                    <div class="grid grid-cols-2 gap-4" id="dlq-grid"></div>
+                </div>
+
+            </section>
+
+        </div><!-- /tab-queue-trends -->
+
+        <!-- ============================================================
+             TAB: SYSTEM HEALTH
+             ============================================================ -->
+        <div id="tab-system-health" class="space-y-6" style="display:none">
+
+            <section class="dashboard-card p-6">
+                <div class="flex items-center justify-between mb-4 border-b b-theme pb-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm t-dim">monitor_heart</span> System Health
+                    </h3>
+                    <div class="flex items-center gap-3">
+                        <span class="text-[10px] t-muted">Auto-refresh 60s</span>
+                        <span id="sh-loading" class="text-xs t-muted" style="display:none">Loading...</span>
+                        <span id="sh-error" class="text-xs text-amber-500 flex items-center gap-1" style="display:none">
+                            <span class="material-symbols-outlined text-xs">warning</span> <span id="sh-error-msg"></span>
+                        </span>
+                        <button id="sh-refresh-btn" class="text-xs font-bold uppercase tracking-wider t-dim hover:t-high transition-colors flex items-center gap-1">
+                            <span class="material-symbols-outlined text-sm">refresh</span> Refresh
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Range selector -->
+                <div class="flex items-center gap-2 mb-6">
+                    <span class="text-[10px] font-bold uppercase tracking-wider t-muted mr-2">Range</span>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="1h" data-tab-range="system-health">1h</button>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="6h" data-tab-range="system-health">6h</button>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors active" data-range="24h" data-tab-range="system-health">24h</button>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="7d" data-tab-range="system-health">7d</button>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="30d" data-tab-range="system-health">30d</button>
+                    <button class="range-btn text-[10px] px-2.5 py-1 rounded font-bold uppercase tracking-wider transition-colors" data-range="90d" data-tab-range="system-health">90d</button>
+                </div>
+
+                <!-- Service status cards -->
+                <div class="mb-6">
+                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-3">Service Status</p>
+                    <div class="grid grid-cols-5 gap-4" id="service-status-cards"></div>
+                </div>
+
+                <!-- Response Time Chart -->
+                <div class="mb-6">
+                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-3">Response Times</p>
+                    <div class="bg-inner rounded-lg border b-theme p-4">
+                        <div class="flex gap-4 mb-3 text-[10px]">
+                            <span class="flex items-center gap-1"><span style="display:inline-block;width:12px;height:3px;background:#34d399;border-radius:2px"></span> <span class="t-muted">p50</span></span>
+                            <span class="flex items-center gap-1"><span style="display:inline-block;width:12px;height:3px;background:#f59e0b;border-radius:2px"></span> <span class="t-muted">p95</span></span>
+                            <span class="flex items-center gap-1"><span style="display:inline-block;width:12px;height:3px;background:#f87171;border-radius:2px;border-top:1px dashed #f87171"></span> <span class="t-muted">p99</span></span>
+                        </div>
+                        <canvas id="response-time-chart" height="280"></canvas>
+                    </div>
+                </div>
+
+                <!-- Endpoints table -->
+                <div>
+                    <p class="text-[10px] font-bold uppercase tracking-wider t-muted mb-3">Endpoint Performance</p>
+                    <div class="bg-inner rounded-lg border b-theme overflow-auto" style="max-height:400px">
+                        <table class="w-full text-xs">
+                            <thead class="sticky top-0" style="background:var(--inner-bg)">
+                                <tr class="text-[10px] t-muted uppercase font-bold tracking-wider border-b b-theme">
+                                    <th class="text-left py-2 px-4">Endpoint</th>
+                                    <th class="text-right py-2 px-4">Requests</th>
+                                    <th class="text-right py-2 px-4">p50</th>
+                                    <th class="text-right py-2 px-4">p95</th>
+                                    <th class="text-right py-2 px-4">p99</th>
+                                    <th class="text-right py-2 px-4">Error %</th>
+                                </tr>
+                            </thead>
+                            <tbody id="endpoints-tbody">
+                                <tr><td colspan="6" class="py-4 text-center t-muted">Loading...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </section>
+
+        </div><!-- /tab-system-health -->
 
     </div><!-- /admin-view -->
 

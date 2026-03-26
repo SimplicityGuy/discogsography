@@ -7,6 +7,13 @@ const DLQ_NAMES = [
     'tableinator-masters-dlq', 'tableinator-releases-dlq',
 ];
 
+const QUEUE_CHART_COLORS = [
+    '#818cf8', '#34d399', '#f59e0b', '#f87171',
+    '#a78bfa', '#38bdf8', '#fb923c', '#e879f9',
+];
+
+// generateSparklineSVG is now a DOM-safe method: AdminDashboard._createSparklineSVGElement
+
 // Helper: create a table row with a single "no data" cell spanning colSpan columns
 function _emptyRow(colSpan, message) {
     const tr = document.createElement('tr');
@@ -23,6 +30,8 @@ class AdminDashboard {
         this.token = localStorage.getItem('admin_token');
         this.refreshInterval = null;
         this.activeTab = 'extractions';
+        this.queueDepthChart = null;
+        this.responseTimeChart = null;
         this.initTheme();
         this.bindEvents();
         if (this.token) {
@@ -147,6 +156,45 @@ class AdminDashboard {
         if (storageRefreshBtn) {
             storageRefreshBtn.addEventListener('click', () => this.fetchStorage());
         }
+
+        // Queue Trends refresh
+        const qtRefreshBtn = document.getElementById('qt-refresh-btn');
+        if (qtRefreshBtn) {
+            qtRefreshBtn.addEventListener('click', () => this.fetchQueueHistory(this._getRange('queue-trends')));
+        }
+
+        // System Health refresh
+        const shRefreshBtn = document.getElementById('sh-refresh-btn');
+        if (shRefreshBtn) {
+            shRefreshBtn.addEventListener('click', () => this.fetchHealthHistory(this._getRange('system-health')));
+        }
+
+        // Range selector buttons
+        document.querySelectorAll('.range-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const range = btn.dataset.range;
+                const tabRange = btn.dataset.tabRange;
+                // Update active state for this tab's range buttons
+                document.querySelectorAll(`.range-btn[data-tab-range="${tabRange}"]`).forEach(b => {
+                    b.classList.toggle('active', b === btn);
+                });
+                localStorage.setItem(`admin_range_${tabRange}`, range);
+                if (tabRange === 'queue-trends') {
+                    this.fetchQueueHistory(range);
+                } else if (tabRange === 'system-health') {
+                    this.fetchHealthHistory(range);
+                }
+            });
+        });
+
+        // Restore persisted range selections
+        ['queue-trends', 'system-health'].forEach(tab => {
+            const saved = localStorage.getItem(`admin_range_${tab}`);
+            if (saved) {
+                const btns = document.querySelectorAll(`.range-btn[data-tab-range="${tab}"]`);
+                btns.forEach(b => b.classList.toggle('active', b.dataset.range === saved));
+            }
+        });
     }
 
     // ─── Tab switching ───────────────────────────────────────────────────────
@@ -160,7 +208,7 @@ class AdminDashboard {
         });
 
         // Show/hide panels
-        const panels = ['extractions', 'dlq', 'users', 'storage'];
+        const panels = ['extractions', 'dlq', 'users', 'storage', 'queue-trends', 'system-health'];
         panels.forEach(name => {
             const el = document.getElementById(`tab-${name}`);
             if (el) el.style.display = name === tabName ? 'block' : 'none';
@@ -172,6 +220,10 @@ class AdminDashboard {
             this.fetchSyncActivity();
         } else if (tabName === 'storage') {
             this.fetchStorage();
+        } else if (tabName === 'queue-trends') {
+            this.fetchQueueHistory(this._getRange('queue-trends'));
+        } else if (tabName === 'system-health') {
+            this.fetchHealthHistory(this._getRange('system-health'));
         }
     }
 
@@ -763,6 +815,10 @@ class AdminDashboard {
                 this.fetchSyncActivity();
             } else if (this.activeTab === 'storage') {
                 this.fetchStorage();
+            } else if (this.activeTab === 'queue-trends') {
+                this.fetchQueueHistory(this._getRange('queue-trends'));
+            } else if (this.activeTab === 'system-health') {
+                this.fetchHealthHistory(this._getRange('system-health'));
             }
         }, 60000);
     }
@@ -772,6 +828,420 @@ class AdminDashboard {
             clearInterval(this.refreshInterval);
             this.refreshInterval = null;
         }
+    }
+
+    // ─── Queue Trends ───────────────────────────────────────────────────
+
+    async fetchQueueHistory(range) {
+        const loadingEl = document.getElementById('qt-loading');
+        const errorEl = document.getElementById('qt-error');
+        const errorMsgEl = document.getElementById('qt-error-msg');
+        if (loadingEl) loadingEl.style.display = 'inline';
+        if (errorEl) errorEl.style.display = 'none';
+
+        try {
+            const response = await this.authFetch(`/admin/api/queues/history?range=${encodeURIComponent(range)}`);
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                this._showInlineError(errorEl, errorMsgEl, err.detail || `Error ${response.status}`);
+                return;
+            }
+
+            const data = await response.json();
+            this.renderQueueSummaryTiles(data);
+            this.renderQueueDepthChart(data);
+            this.renderDlqGrid(data);
+        } catch {
+            this._showInlineError(errorEl, errorMsgEl, 'Failed to load queue history');
+        } finally {
+            if (loadingEl) loadingEl.style.display = 'none';
+        }
+    }
+
+    renderQueueSummaryTiles(data) {
+        const container = document.getElementById('queue-summary-tiles');
+        if (!container) return;
+
+        const queues = data.queues || [];
+        const dlqs = data.dlq_summary || [];
+
+        const totalDepth = queues.reduce((sum, q) => {
+            const pts = q.data_points || [];
+            const latest = pts.length > 0 ? (pts[pts.length - 1].messages_ready || 0) : 0;
+            return sum + latest;
+        }, 0);
+        const depthSparkPoints = this._aggregateSparkline(queues, 'messages_ready');
+
+        const dlqTotal = dlqs.reduce((sum, q) => {
+            const pts = q.data_points || [];
+            const latest = pts.length > 0 ? (pts[pts.length - 1].messages_ready || 0) : 0;
+            return sum + latest;
+        }, 0);
+        const dlqSparkPoints = this._aggregateSparkline(dlqs, 'messages_ready');
+
+        const avgPublish = this._avgLatest(queues, 'publish_rate');
+        const avgAck = this._avgLatest(queues, 'ack_rate');
+        const totalConsumers = queues.reduce((sum, q) => {
+            const pts = q.data_points || [];
+            const latest = pts.length > 0 ? (pts[pts.length - 1].consumers || 0) : 0;
+            return sum + latest;
+        }, 0);
+
+        const tiles = [
+            { label: 'Total Queue Depth', value: totalDepth.toLocaleString(), spark: depthSparkPoints, color: '#818cf8' },
+            { label: 'DLQ Messages', value: dlqTotal.toLocaleString(), spark: dlqSparkPoints, color: '#f87171' },
+            { label: 'Avg Publish Rate', value: `${avgPublish.toFixed(1)}/s`, spark: null, color: null },
+            { label: 'Avg Ack Rate', value: `${avgAck.toFixed(1)}/s`, spark: null, color: null },
+            { label: 'Active Consumers', value: totalConsumers.toLocaleString(), spark: null, color: null },
+        ];
+
+        container.replaceChildren(...tiles.map(t => {
+            const card = document.createElement('div');
+            card.className = 'stat-card';
+
+            const labelEl = document.createElement('p');
+            labelEl.className = 'text-[10px] font-bold uppercase tracking-wider t-muted mb-1';
+            labelEl.textContent = t.label;
+
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between';
+
+            const valEl = document.createElement('p');
+            valEl.className = 'text-2xl font-semibold mono t-high';
+            valEl.textContent = t.value;
+
+            row.appendChild(valEl);
+
+            if (t.spark && t.spark.length >= 2) {
+                const sparkDiv = document.createElement('div');
+                sparkDiv.appendChild(this._createSparklineSVGElement(t.spark, t.color));
+                row.appendChild(sparkDiv);
+            }
+
+            card.append(labelEl, row);
+            return card;
+        }));
+    }
+
+    renderQueueDepthChart(data) {
+        const canvas = document.getElementById('queue-depth-chart');
+        if (!canvas) return;
+
+        if (this.queueDepthChart) {
+            this.queueDepthChart.destroy();
+            this.queueDepthChart = null;
+        }
+
+        const queues = data.queues || [];
+        if (queues.length === 0) return;
+
+        const datasets = queues.map((q, i) => {
+            const pts = q.data_points || [];
+            return {
+                label: q.queue_name || `Queue ${i + 1}`,
+                data: pts.map(p => ({ x: p.timestamp, y: p.messages_ready || 0 })),
+                borderColor: QUEUE_CHART_COLORS[i % QUEUE_CHART_COLORS.length],
+                backgroundColor: QUEUE_CHART_COLORS[i % QUEUE_CHART_COLORS.length] + '20',
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.3,
+                fill: false,
+            };
+        });
+
+        // Update legend area using safe DOM methods
+        const legendEl = document.getElementById('queue-chart-legend');
+        if (legendEl) {
+            legendEl.replaceChildren(...datasets.map(ds => {
+                const span = document.createElement('span');
+                span.className = 'flex items-center gap-1';
+                const swatch = document.createElement('span');
+                swatch.style.cssText = `display:inline-block;width:12px;height:3px;background:${ds.borderColor};border-radius:2px`;
+                const label = document.createElement('span');
+                label.className = 't-muted';
+                label.textContent = ds.label;
+                span.append(swatch, label);
+                return span;
+            }));
+        }
+
+        this.queueDepthChart = new Chart(canvas, {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true },
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { tooltipFormat: 'MMM d, HH:mm' },
+                        grid: { color: '#334155' },
+                        ticks: { color: '#94a3b8', maxTicksLimit: 8 },
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#334155' },
+                        ticks: { color: '#94a3b8' },
+                    },
+                },
+            },
+        });
+    }
+
+    renderDlqGrid(data) {
+        const container = document.getElementById('dlq-grid');
+        if (!container) return;
+
+        const dlqs = data.dlq_summary || [];
+        if (dlqs.length === 0) {
+            container.replaceChildren();
+            const empty = document.createElement('p');
+            empty.className = 'text-xs t-muted col-span-2 text-center py-4';
+            empty.textContent = 'No DLQ data available';
+            container.appendChild(empty);
+            return;
+        }
+
+        container.replaceChildren(...dlqs.map(q => {
+            const card = document.createElement('div');
+            card.className = 'stat-card';
+
+            const name = document.createElement('p');
+            name.className = 'text-[10px] font-bold uppercase tracking-wider t-muted mb-1 truncate';
+            name.textContent = q.queue_name || '\u2014';
+            name.title = q.queue_name || '';
+
+            const row = document.createElement('div');
+            row.className = 'flex items-center justify-between';
+
+            const pts = q.data_points || [];
+            const latest = pts.length > 0 ? (pts[pts.length - 1].messages_ready || 0) : 0;
+
+            const val = document.createElement('p');
+            val.className = 'text-xl font-semibold mono t-high';
+            val.textContent = latest.toLocaleString();
+
+            row.appendChild(val);
+
+            const sparkPts = pts.map(p => p.messages_ready || 0);
+            if (sparkPts.length >= 2) {
+                const sparkDiv = document.createElement('div');
+                sparkDiv.appendChild(this._createSparklineSVGElement(sparkPts, '#f87171'));
+                row.appendChild(sparkDiv);
+            }
+
+            card.append(name, row);
+            return card;
+        }));
+    }
+
+    // ─── System Health ────────────────────────────────────────────────────
+
+    async fetchHealthHistory(range) {
+        const loadingEl = document.getElementById('sh-loading');
+        const errorEl = document.getElementById('sh-error');
+        const errorMsgEl = document.getElementById('sh-error-msg');
+        if (loadingEl) loadingEl.style.display = 'inline';
+        if (errorEl) errorEl.style.display = 'none';
+
+        try {
+            const response = await this.authFetch(`/admin/api/health/history?range=${encodeURIComponent(range)}`);
+            if (!response.ok) {
+                const err = await response.json().catch(() => ({}));
+                this._showInlineError(errorEl, errorMsgEl, err.detail || `Error ${response.status}`);
+                return;
+            }
+
+            const data = await response.json();
+            this.renderServiceCards(data);
+            this.renderResponseTimeChart(data);
+            this.renderEndpointsTable(data);
+        } catch {
+            this._showInlineError(errorEl, errorMsgEl, 'Failed to load health history');
+        } finally {
+            if (loadingEl) loadingEl.style.display = 'none';
+        }
+    }
+
+    renderServiceCards(data) {
+        const container = document.getElementById('service-status-cards');
+        if (!container) return;
+
+        const services = data.services || [];
+        if (services.length === 0) {
+            container.replaceChildren();
+            const empty = document.createElement('p');
+            empty.className = 'text-xs t-muted col-span-5 text-center py-4';
+            empty.textContent = 'No service data available';
+            container.appendChild(empty);
+            return;
+        }
+
+        container.replaceChildren(...services.map(svc => {
+            const card = document.createElement('div');
+            card.className = 'stat-card';
+
+            const status = (svc.status || 'unknown').toLowerCase();
+            let borderColor = '#ef4444';
+            if (status === 'healthy') borderColor = '#34d399';
+            else if (status === 'degraded' || status === 'starting') borderColor = '#f59e0b';
+            card.style.borderLeft = `3px solid ${borderColor}`;
+
+            const nameEl = document.createElement('p');
+            nameEl.className = 'text-xs font-semibold t-high mb-2';
+            nameEl.textContent = svc.service_name || '\u2014';
+
+            const statusEl = document.createElement('p');
+            statusEl.className = 'text-[10px] font-bold uppercase tracking-wider mb-2';
+            statusEl.style.color = borderColor;
+            statusEl.textContent = svc.status || 'unknown';
+
+            const uptimeLabel = document.createElement('p');
+            uptimeLabel.className = 'text-[10px] font-bold uppercase tracking-wider t-muted mb-0.5';
+            uptimeLabel.textContent = 'Uptime';
+            const uptimeVal = document.createElement('p');
+            uptimeVal.className = 'text-sm font-semibold mono t-high';
+            uptimeVal.textContent = svc.uptime_pct != null ? `${svc.uptime_pct.toFixed(1)}%` : '\u2014';
+
+            const rtLabel = document.createElement('p');
+            rtLabel.className = 'text-[10px] font-bold uppercase tracking-wider t-muted mb-0.5 mt-2';
+            rtLabel.textContent = 'Response Time';
+            const rtVal = document.createElement('p');
+            rtVal.className = 'text-sm font-semibold mono t-high';
+            rtVal.textContent = svc.response_time_ms != null ? `${svc.response_time_ms.toFixed(0)}ms` : '\u2014';
+
+            card.append(nameEl, statusEl, uptimeLabel, uptimeVal, rtLabel, rtVal);
+            return card;
+        }));
+    }
+
+    renderResponseTimeChart(data) {
+        const canvas = document.getElementById('response-time-chart');
+        if (!canvas) return;
+
+        if (this.responseTimeChart) {
+            this.responseTimeChart.destroy();
+            this.responseTimeChart = null;
+        }
+
+        const timeSeries = data.response_time_series || [];
+        if (timeSeries.length === 0) return;
+
+        const datasets = [
+            {
+                label: 'p50',
+                data: timeSeries.map(p => ({ x: p.timestamp, y: p.p50 || 0 })),
+                borderColor: '#34d399',
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.3,
+                fill: false,
+            },
+            {
+                label: 'p95',
+                data: timeSeries.map(p => ({ x: p.timestamp, y: p.p95 || 0 })),
+                borderColor: '#f59e0b',
+                borderWidth: 2,
+                pointRadius: 0,
+                tension: 0.3,
+                fill: false,
+            },
+            {
+                label: 'p99',
+                data: timeSeries.map(p => ({ x: p.timestamp, y: p.p99 || 0 })),
+                borderColor: '#f87171',
+                borderWidth: 2,
+                borderDash: [5, 3],
+                pointRadius: 0,
+                tension: 0.3,
+                fill: false,
+            },
+        ];
+
+        this.responseTimeChart = new Chart(canvas, {
+            type: 'line',
+            data: { datasets },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: { enabled: true },
+                },
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { tooltipFormat: 'MMM d, HH:mm' },
+                        grid: { color: '#334155' },
+                        ticks: { color: '#94a3b8', maxTicksLimit: 8 },
+                    },
+                    y: {
+                        beginAtZero: true,
+                        grid: { color: '#334155' },
+                        ticks: {
+                            color: '#94a3b8',
+                            callback: (v) => `${v}ms`,
+                        },
+                    },
+                },
+            },
+        });
+    }
+
+    renderEndpointsTable(data) {
+        const tbody = document.getElementById('endpoints-tbody');
+        if (!tbody) return;
+
+        const endpoints = data.endpoints || [];
+        if (endpoints.length === 0) {
+            tbody.replaceChildren(_emptyRow(6, 'No endpoint data available'));
+            return;
+        }
+
+        const sorted = [...endpoints].sort((a, b) => (b.request_count || 0) - (a.request_count || 0));
+
+        tbody.replaceChildren(...sorted.map(ep => {
+            const tr = document.createElement('tr');
+            tr.className = 'border-b b-row';
+
+            const tdPath = document.createElement('td');
+            tdPath.className = 'py-2 px-4 mono text-xs';
+            tdPath.style.color = '#818cf8';
+            tdPath.textContent = ep.endpoint || '\u2014';
+
+            const tdReqs = document.createElement('td');
+            tdReqs.className = 'py-2 px-4 mono t-mid text-right';
+            tdReqs.textContent = ep.request_count != null ? Number(ep.request_count).toLocaleString() : '\u2014';
+
+            const tdP50 = document.createElement('td');
+            tdP50.className = 'py-2 px-4 mono t-mid text-right';
+            tdP50.textContent = ep.p50 != null ? `${ep.p50.toFixed(0)}ms` : '\u2014';
+
+            const tdP95 = document.createElement('td');
+            tdP95.className = 'py-2 px-4 mono t-mid text-right';
+            tdP95.textContent = ep.p95 != null ? `${ep.p95.toFixed(0)}ms` : '\u2014';
+
+            const tdP99 = document.createElement('td');
+            tdP99.className = 'py-2 px-4 mono t-mid text-right';
+            tdP99.textContent = ep.p99 != null ? `${ep.p99.toFixed(0)}ms` : '\u2014';
+
+            const tdErr = document.createElement('td');
+            tdErr.className = 'py-2 px-4 mono text-right font-semibold';
+            const errPct = ep.error_pct != null ? ep.error_pct : 0;
+            tdErr.textContent = `${errPct.toFixed(1)}%`;
+            if (errPct < 1) tdErr.style.color = '#34d399';
+            else if (errPct <= 5) tdErr.style.color = '#f59e0b';
+            else tdErr.style.color = '#ef4444';
+
+            tr.append(tdPath, tdReqs, tdP50, tdP95, tdP99, tdErr);
+            return tr;
+        }));
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -794,6 +1264,73 @@ class AdminDashboard {
     _showInlineError(errorEl, errorMsgEl, message) {
         if (errorMsgEl) errorMsgEl.textContent = message;
         if (errorEl) errorEl.style.display = 'flex';
+    }
+
+    _getRange(tabName) {
+        return localStorage.getItem(`admin_range_${tabName}`) || '24h';
+    }
+
+    _aggregateSparkline(queues, field) {
+        if (!queues || queues.length === 0) return [];
+        // Find the max number of data points across queues
+        const maxLen = Math.max(...queues.map(q => (q.data_points || []).length));
+        if (maxLen === 0) return [];
+        const result = [];
+        for (let i = 0; i < maxLen; i++) {
+            let sum = 0;
+            for (const q of queues) {
+                const pts = q.data_points || [];
+                if (i < pts.length) {
+                    sum += pts[i][field] || 0;
+                }
+            }
+            result.push(sum);
+        }
+        return result;
+    }
+
+    _avgLatest(queues, field) {
+        if (!queues || queues.length === 0) return 0;
+        let sum = 0;
+        let count = 0;
+        for (const q of queues) {
+            const pts = q.data_points || [];
+            if (pts.length > 0) {
+                sum += pts[pts.length - 1][field] || 0;
+                count++;
+            }
+        }
+        return count > 0 ? sum / count : 0;
+    }
+
+    _createSparklineSVGElement(points, color, width = 55, height = 20) {
+        const ns = 'http://www.w3.org/2000/svg';
+        const svg = document.createElementNS(ns, 'svg');
+        svg.setAttribute('width', String(width));
+        svg.setAttribute('height', String(height));
+
+        if (!points || points.length < 2) return svg;
+
+        const max = Math.max(...points);
+        const min = Math.min(...points);
+        const range = max - min || 1;
+        const pad = 2;
+        const usableH = height - pad * 2;
+        const step = (width - pad * 2) / (points.length - 1);
+        const coords = points.map((v, i) =>
+            `${(pad + i * step).toFixed(1)},${(pad + usableH - ((v - min) / range) * usableH).toFixed(1)}`
+        ).join(' ');
+
+        const polyline = document.createElementNS(ns, 'polyline');
+        polyline.setAttribute('points', coords);
+        polyline.setAttribute('fill', 'none');
+        polyline.setAttribute('stroke', color);
+        polyline.setAttribute('stroke-width', '1.5');
+        polyline.setAttribute('stroke-linecap', 'round');
+        polyline.setAttribute('stroke-linejoin', 'round');
+        svg.appendChild(polyline);
+
+        return svg;
     }
 }
 
