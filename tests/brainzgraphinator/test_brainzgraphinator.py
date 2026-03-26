@@ -1,11 +1,13 @@
 """Tests for brainzgraphinator module."""
 
+import asyncio
+import contextlib
 import signal
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from aio_pika.abc import AbstractIncomingMessage
-from neo4j.exceptions import ServiceUnavailable
+from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from orjson import dumps
 import pytest
 
@@ -16,14 +18,18 @@ from brainzgraphinator.brainzgraphinator import (
     MUSICBRAINZ_DATA_TYPES,
     PROCESSORS,
     check_all_consumers_idle,
+    close_rabbitmq_connection,
     create_relationship_edges,
     enrich_artist,
     enrich_label,
     enrich_release,
     get_health_data,
+    main,
     on_artist_message,
     on_label_message,
     on_release_message,
+    periodic_queue_checker,
+    schedule_consumer_cancellation,
     signal_handler,
 )
 
@@ -570,3 +576,1133 @@ class TestEdgeCases:
         for _mb_type, neo4j_type in MB_RELATIONSHIP_MAP.items():
             assert neo4j_type == neo4j_type.upper(), f"Neo4j type should be uppercase: {neo4j_type}"
             assert "_" in neo4j_type or neo4j_type.isalpha(), f"Neo4j type should use underscores: {neo4j_type}"
+
+
+# ── Schedule consumer cancellation tests ─────────────────────────────────
+
+
+class TestScheduleConsumerCancellation:
+    """Tests for schedule_consumer_cancellation function."""
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.CONSUMER_CANCEL_DELAY", 0.1)
+    async def test_cancels_consumer_after_delay(self) -> None:
+        """Test cancels consumer after specified delay."""
+        mock_queue = AsyncMock()
+
+        bgmod.consumer_tags = {"artists": "consumer-tag-123"}
+        bgmod.consumer_cancel_tasks = {}
+
+        await schedule_consumer_cancellation("artists", mock_queue)
+        await asyncio.sleep(0.2)
+
+        mock_queue.cancel.assert_called_once_with("consumer-tag-123", nowait=True)
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.CONSUMER_CANCEL_DELAY", 0.1)
+    async def test_cancels_existing_scheduled_task(self) -> None:
+        """Test cancels existing scheduled task before creating new one."""
+        mock_queue = AsyncMock()
+        mock_existing_task = AsyncMock()
+
+        bgmod.consumer_tags = {"artists": "consumer-tag-123"}
+        bgmod.consumer_cancel_tasks = {"artists": mock_existing_task}
+
+        await schedule_consumer_cancellation("artists", mock_queue)
+
+        mock_existing_task.cancel.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.CONSUMER_CANCEL_DELAY", 0.1)
+    @patch("brainzgraphinator.brainzgraphinator.check_all_consumers_idle")
+    @patch("brainzgraphinator.brainzgraphinator.close_rabbitmq_connection")
+    async def test_closes_connection_when_all_idle(self, mock_close: AsyncMock, mock_check_idle: AsyncMock) -> None:
+        """Test closes RabbitMQ connection when all consumers idle."""
+        mock_queue = AsyncMock()
+        mock_check_idle.return_value = True
+
+        bgmod.consumer_tags = {"artists": "consumer-tag-123"}
+        bgmod.consumer_cancel_tasks = {}
+
+        await schedule_consumer_cancellation("artists", mock_queue)
+        await asyncio.sleep(0.2)
+
+        mock_check_idle.assert_called_once()
+        mock_close.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.CONSUMER_CANCEL_DELAY", 0.01)
+    async def test_cancel_exception_is_handled(self) -> None:
+        """Test exception during consumer cancel is logged and handled."""
+        mock_queue = AsyncMock()
+        mock_queue.cancel.side_effect = Exception("Cancel failed")
+
+        bgmod.consumer_tags = {"artists": "consumer-tag-123"}
+        bgmod.consumer_cancel_tasks = {}
+
+        await schedule_consumer_cancellation("artists", mock_queue)
+        await asyncio.sleep(0.05)
+
+        mock_queue.cancel.assert_called_once()
+        assert "artists" not in bgmod.consumer_cancel_tasks
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.CONSUMER_CANCEL_DELAY", 10)
+    async def test_cancel_during_shutdown_no_error(self) -> None:
+        """Test that cancelling the task during shutdown does not raise."""
+        mock_queue = AsyncMock()
+
+        bgmod.consumer_tags = {"artists": "consumer-tag-123"}
+        bgmod.consumer_cancel_tasks = {}
+
+        await schedule_consumer_cancellation("artists", mock_queue)
+
+        task = bgmod.consumer_cancel_tasks["artists"]
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
+# ── Close RabbitMQ connection tests ──────────────────────────────────────
+
+
+class TestCloseRabbitMQConnection:
+    """Tests for close_rabbitmq_connection function."""
+
+    @pytest.mark.asyncio
+    async def test_close_channel_and_connection(self) -> None:
+        """Test closes both channel and connection."""
+        mock_channel = AsyncMock()
+        mock_connection = AsyncMock()
+
+        bgmod.active_channel = mock_channel
+        bgmod.active_connection = mock_connection
+
+        await close_rabbitmq_connection()
+
+        mock_channel.close.assert_called_once()
+        mock_connection.close.assert_called_once()
+        assert bgmod.active_channel is None
+        assert bgmod.active_connection is None
+
+    @pytest.mark.asyncio
+    async def test_close_handles_channel_error(self) -> None:
+        """Test handles errors when closing channel."""
+        mock_channel = AsyncMock()
+        mock_channel.close.side_effect = Exception("Close failed")
+        mock_connection = AsyncMock()
+
+        bgmod.active_channel = mock_channel
+        bgmod.active_connection = mock_connection
+
+        with patch("brainzgraphinator.brainzgraphinator.logger"):
+            await close_rabbitmq_connection()
+
+        assert bgmod.active_channel is None
+        assert bgmod.active_connection is None
+
+    @pytest.mark.asyncio
+    async def test_close_handles_connection_error(self) -> None:
+        """Test handles errors when closing connection."""
+        mock_channel = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_connection.close.side_effect = Exception("Connection close failed")
+
+        bgmod.active_channel = mock_channel
+        bgmod.active_connection = mock_connection
+
+        with patch("brainzgraphinator.brainzgraphinator.logger"):
+            await close_rabbitmq_connection()
+
+        assert bgmod.active_channel is None
+        assert bgmod.active_connection is None
+
+    @pytest.mark.asyncio
+    async def test_close_when_no_active_connections(self) -> None:
+        """Test handles case when no active connections."""
+        bgmod.active_channel = None
+        bgmod.active_connection = None
+
+        await close_rabbitmq_connection()
+
+    @pytest.mark.asyncio
+    async def test_outer_exception_logged(self) -> None:
+        """Test that outer exception in close_rabbitmq_connection is logged."""
+        bgmod.active_channel = None
+        bgmod.active_connection = None
+
+        with patch("brainzgraphinator.brainzgraphinator.logger") as mock_logger:
+            mock_logger.info.side_effect = Exception("Logger failed unexpectedly")
+
+            await close_rabbitmq_connection()
+
+        mock_logger.error.assert_called()
+        error_str = " ".join(str(c) for c in mock_logger.error.call_args_list)
+        assert "Error" in error_str
+
+
+# ── Check consumers unexpectedly dead tests ──────────────────────────────
+
+
+class TestCheckConsumersUnexpectedlyDead:
+    """Tests for stuck state detection via health data."""
+
+    def test_returns_stuck_when_consumers_dead(self) -> None:
+        """Health data shows stuck when consumers have died unexpectedly."""
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
+            patch("brainzgraphinator.brainzgraphinator.consumer_tags", {}),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", {"artists"}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+        ):
+            data = get_health_data()
+            assert data["status"] == "unhealthy"
+            assert "STUCK" in data["current_task"]
+
+    def test_not_stuck_when_consumers_active(self) -> None:
+        """Health data shows healthy when consumers are still active."""
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
+            patch("brainzgraphinator.brainzgraphinator.consumer_tags", {"artists": "tag123"}),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+        ):
+            data = get_health_data()
+            assert data["status"] == "healthy"
+
+    def test_not_stuck_when_no_messages_processed(self) -> None:
+        """Health data not stuck when no messages have been processed yet."""
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
+            patch("brainzgraphinator.brainzgraphinator.consumer_tags", {}),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+        ):
+            data = get_health_data()
+            assert data["status"] == "healthy"
+
+
+# ── Periodic queue checker tests ─────────────────────────────────────────
+
+
+class TestPeriodicQueueChecker:
+    """Tests for periodic_queue_checker function."""
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.QUEUE_CHECK_INTERVAL", 0.05)
+    @patch("brainzgraphinator.brainzgraphinator.STUCK_CHECK_INTERVAL", 0.05)
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_checks_queues_periodically(self) -> None:
+        """Test periodically checks queues for messages."""
+        mock_rabbitmq_manager = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+        mock_queue = AsyncMock()
+        mock_queue.declaration_result.message_count = 0
+
+        mock_rabbitmq_manager.connect.return_value = mock_connection
+        mock_connection.channel.return_value = mock_channel
+        mock_channel.declare_queue.return_value = mock_queue
+
+        bgmod.rabbitmq_manager = mock_rabbitmq_manager
+        bgmod.active_connection = None
+        bgmod.active_channel = None
+        bgmod.consumer_tags = {}
+        bgmod.completed_files = {"artists", "labels", "releases"}
+
+        checker_task = asyncio.create_task(periodic_queue_checker())
+        await asyncio.sleep(0.15)
+
+        bgmod.shutdown_requested = True
+        await asyncio.sleep(0.05)
+
+        checker_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await checker_task
+
+        assert mock_rabbitmq_manager.connect.called
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.QUEUE_CHECK_INTERVAL", 0.05)
+    @patch("brainzgraphinator.brainzgraphinator.STUCK_CHECK_INTERVAL", 0.05)
+    async def test_skips_check_when_connection_active(self) -> None:
+        """Test skips check when connection is already active."""
+        mock_rabbitmq_manager = AsyncMock()
+
+        bgmod.rabbitmq_manager = mock_rabbitmq_manager
+        bgmod.active_connection = AsyncMock()
+        bgmod.shutdown_requested = False
+
+        checker_task = asyncio.create_task(periodic_queue_checker())
+        await asyncio.sleep(0.15)
+
+        bgmod.shutdown_requested = True
+        await asyncio.sleep(0.05)
+
+        checker_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await checker_task
+
+        mock_rabbitmq_manager.connect.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.STUCK_CHECK_INTERVAL", 0.01)
+    async def test_stuck_state_triggers_recovery(self) -> None:
+        """Test periodic_queue_checker detects stuck state and calls _recover_consumers."""
+        bgmod.consumer_tags = {}
+        bgmod.completed_files = {"artists"}
+        bgmod.message_counts = {"artists": 10, "labels": 0, "releases": 0}
+        bgmod.active_connection = None
+        bgmod.shutdown_requested = False
+
+        recover_event = asyncio.Event()
+
+        async def mock_recover() -> None:
+            recover_event.set()
+            bgmod.shutdown_requested = True
+
+        with patch("brainzgraphinator.brainzgraphinator._recover_consumers", mock_recover):
+            checker_task = asyncio.create_task(periodic_queue_checker())
+            try:
+                await asyncio.wait_for(recover_event.wait(), timeout=1.0)
+            finally:
+                bgmod.shutdown_requested = True
+                checker_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await checker_task
+
+        assert recover_event.is_set()
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.STUCK_CHECK_INTERVAL", 0.01)
+    @patch("brainzgraphinator.brainzgraphinator.QUEUE_CHECK_INTERVAL", 9999)
+    async def test_timing_guard_prevents_frequent_checks(self) -> None:
+        """Test timing guard continues when not enough time has passed."""
+        bgmod.consumer_tags = {}
+        bgmod.completed_files = {"artists", "labels", "releases"}
+        bgmod.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bgmod.active_connection = None
+        bgmod.shutdown_requested = False
+
+        recover_call_count = [0]
+
+        async def mock_recover() -> None:
+            recover_call_count[0] += 1
+
+        with patch("brainzgraphinator.brainzgraphinator._recover_consumers", mock_recover):
+            checker_task = asyncio.create_task(periodic_queue_checker())
+            await asyncio.sleep(0.08)
+            bgmod.shutdown_requested = True
+            await asyncio.sleep(0.02)
+            checker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await checker_task
+
+        assert recover_call_count[0] <= 2
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.STUCK_CHECK_INTERVAL", 0.01)
+    async def test_periodic_queue_checker_exception_handling(self) -> None:
+        """Test periodic_queue_checker handles exceptions in the loop."""
+        bgmod.consumer_tags = {}
+        bgmod.completed_files = {"artists", "labels", "releases"}
+        bgmod.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bgmod.active_connection = None
+        bgmod.shutdown_requested = False
+
+        call_count = [0]
+
+        async def mock_recover() -> None:
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise Exception("Recovery error")
+            bgmod.shutdown_requested = True
+
+        with (
+            patch("brainzgraphinator.brainzgraphinator._recover_consumers", mock_recover),
+            patch("brainzgraphinator.brainzgraphinator.QUEUE_CHECK_INTERVAL", 0.01),
+        ):
+            checker_task = asyncio.create_task(periodic_queue_checker())
+            await asyncio.sleep(0.15)
+            bgmod.shutdown_requested = True
+            checker_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await checker_task
+
+
+# ── Progress reporter tests ──────────────────────────────────────────────
+
+
+class TestProgressReporterFunction:
+    """Tests for progress_reporter function."""
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_exits_immediately_on_shutdown(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test progress_reporter exits when shutdown_requested is True."""
+        monkeypatch.setattr(bgmod, "shutdown_requested", True)
+        sleep_called = False
+
+        async def mock_sleep(_: float) -> None:
+            nonlocal sleep_called
+            sleep_called = True
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        await bgmod.progress_reporter()
+        assert not sleep_called
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_idle_mode_entry(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test entering idle mode after startup timeout with no messages."""
+        monkeypatch.setattr(bgmod, "shutdown_requested", False)
+        monkeypatch.setattr(bgmod, "message_counts", {"artists": 0, "labels": 0, "releases": 0})
+        monkeypatch.setattr(bgmod, "completed_files", set())
+        monkeypatch.setattr(bgmod, "idle_mode", False)
+        monkeypatch.setattr(bgmod, "STARTUP_IDLE_TIMEOUT", 0)
+        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0})
+        monkeypatch.setattr(bgmod, "consumer_tags", {})
+
+        call_count = 0
+
+        async def mock_sleep(_: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 2:
+                monkeypatch.setattr(bgmod, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        await bgmod.progress_reporter()
+        assert bgmod.idle_mode is True
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_idle_mode_periodic_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test idle mode periodic logging when IDLE_LOG_INTERVAL passes."""
+        monkeypatch.setattr(bgmod, "shutdown_requested", False)
+        monkeypatch.setattr(bgmod, "message_counts", {"artists": 0, "labels": 0, "releases": 0})
+        monkeypatch.setattr(bgmod, "completed_files", set())
+        monkeypatch.setattr(bgmod, "idle_mode", True)
+        monkeypatch.setattr(bgmod, "IDLE_LOG_INTERVAL", 0)
+        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0})
+        monkeypatch.setattr(bgmod, "consumer_tags", {})
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(bgmod, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("brainzgraphinator.brainzgraphinator.logger") as mock_logger:
+            await bgmod.progress_reporter()
+
+        info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
+        assert "idle" in info_calls.lower()
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_skip_when_all_files_complete(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test progress reporter skips when all files are complete."""
+        monkeypatch.setattr(bgmod, "shutdown_requested", False)
+        monkeypatch.setattr(bgmod, "message_counts", {"artists": 100, "labels": 50, "releases": 200})
+        monkeypatch.setattr(bgmod, "completed_files", set(MUSICBRAINZ_DATA_TYPES))
+        monkeypatch.setattr(bgmod, "idle_mode", False)
+        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0})
+        monkeypatch.setattr(bgmod, "consumer_tags", {})
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(bgmod, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("brainzgraphinator.brainzgraphinator.logger") as mock_logger:
+            await bgmod.progress_reporter()
+
+        info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
+        assert "progress" not in info_calls.lower()
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_reports_when_messages_exist(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test progress reporter logs when total > 0."""
+        monkeypatch.setattr(bgmod, "shutdown_requested", False)
+        monkeypatch.setattr(bgmod, "message_counts", {"artists": 10, "labels": 5, "releases": 0})
+        monkeypatch.setattr(bgmod, "completed_files", set())
+        monkeypatch.setattr(bgmod, "idle_mode", False)
+        monkeypatch.setattr(bgmod, "STARTUP_IDLE_TIMEOUT", 99999)
+        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0})
+        monkeypatch.setattr(bgmod, "consumer_tags", {"artists": "tag-1"})
+
+        async def mock_sleep(_: float) -> None:
+            monkeypatch.setattr(bgmod, "shutdown_requested", True)
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+        with patch("brainzgraphinator.brainzgraphinator.logger") as mock_logger:
+            await bgmod.progress_reporter()
+
+        info_calls = " ".join(str(c) for c in mock_logger.info.call_args_list)
+        assert "progress" in info_calls.lower() or "enrichment" in info_calls.lower()
+
+
+# ── Message handler edge case tests ──────────────────────────────────────
+
+
+class TestMessageHandlerEdgeCases:
+    """Tests for message handler edge cases."""
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_session_expired_requeues(self, mock_neo4j_driver: MagicMock, sample_artist_record: dict[str, Any]) -> None:
+        """SessionExpired from Neo4j results in nack with requeue."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps(sample_artist_record)
+
+        mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
+        mock_session.execute_write.side_effect = SessionExpired("Session expired")
+
+        with patch("brainzgraphinator.brainzgraphinator.graph", mock_neo4j_driver):
+            await on_artist_message(mock_message)
+
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_generic_exception_requeues(self, mock_neo4j_driver: MagicMock, sample_artist_record: dict[str, Any]) -> None:
+        """Generic exception results in nack with requeue."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps(sample_artist_record)
+
+        mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
+        mock_session.execute_write.side_effect = RuntimeError("Something went wrong")
+
+        with patch("brainzgraphinator.brainzgraphinator.graph", mock_neo4j_driver):
+            await on_artist_message(mock_message)
+
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_nack_failure_after_neo4j_error(self, mock_neo4j_driver: MagicMock, sample_artist_record: dict[str, Any]) -> None:
+        """Nack failure after Neo4j error is handled gracefully."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps(sample_artist_record)
+        mock_message.nack.side_effect = Exception("Nack failed")
+
+        mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
+        mock_session.execute_write.side_effect = ServiceUnavailable("Neo4j down")
+
+        with patch("brainzgraphinator.brainzgraphinator.graph", mock_neo4j_driver):
+            await on_artist_message(mock_message)
+
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_nack_failure_after_generic_error(self, mock_neo4j_driver: MagicMock, sample_artist_record: dict[str, Any]) -> None:
+        """Nack failure after generic error is handled gracefully."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps(sample_artist_record)
+        mock_message.nack.side_effect = Exception("Nack failed too")
+
+        mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
+        mock_session.execute_write.side_effect = RuntimeError("Bad stuff")
+
+        with patch("brainzgraphinator.brainzgraphinator.graph", mock_neo4j_driver):
+            await on_artist_message(mock_message)
+
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_graph_none_raises_runtime_error(self) -> None:
+        """Message when graph is None raises RuntimeError, nacks with requeue."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps({"mbid": "abc", "discogs_artist_id": 12345})
+
+        with patch("brainzgraphinator.brainzgraphinator.graph", None):
+            await on_artist_message(mock_message)
+
+        mock_message.nack.assert_called_once_with(requeue=True)
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_file_complete_adds_to_completed_files(self) -> None:
+        """file_complete control message adds data_type to completed_files set."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps({"type": "file_complete", "total_processed": 100})
+
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", set()) as mock_files,
+            patch("brainzgraphinator.brainzgraphinator.queues", {}),
+            patch("brainzgraphinator.brainzgraphinator.CONSUMER_CANCEL_DELAY", 0),
+        ):
+            await on_label_message(mock_message)
+            assert "labels" in mock_files
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    @patch("brainzgraphinator.brainzgraphinator.CONSUMER_CANCEL_DELAY", 300)
+    @patch("brainzgraphinator.brainzgraphinator.schedule_consumer_cancellation")
+    async def test_file_complete_schedules_cancellation(self, mock_schedule: AsyncMock) -> None:
+        """file_complete schedules consumer cancellation when delay > 0 and queue exists."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps({"type": "file_complete", "total_processed": 100})
+        mock_queue = AsyncMock()
+
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
+            patch("brainzgraphinator.brainzgraphinator.queues", {"releases": mock_queue}),
+        ):
+            await on_release_message(mock_message)
+
+        mock_schedule.assert_called_once_with("releases", mock_queue)
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False)
+    async def test_progress_interval_log(self, mock_neo4j_driver: MagicMock, sample_artist_record: dict[str, Any]) -> None:
+        """Message handler logs at progress_interval milestones."""
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = dumps(sample_artist_record)
+
+        mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
+
+        async def mock_tx_func(func: Any) -> Any:
+            mock_tx = MagicMock()
+            mock_result = MagicMock()
+            mock_result.single.return_value = {"matched_id": 12345}
+            mock_tx.run.return_value = mock_result
+            return func(mock_tx)
+
+        mock_session.execute_write.side_effect = mock_tx_func
+
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", mock_neo4j_driver),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 99, "labels": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.progress_interval", 100),
+        ):
+            await on_artist_message(mock_message)
+
+        mock_message.ack.assert_called_once()
+
+
+# ── Main function tests ──────────────────────────────────────────────────
+
+
+class TestMainConfigError:
+    """Test main() early return on BrainzgraphinatorConfig ValueError."""
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.signal.signal")
+    @patch("brainzgraphinator.brainzgraphinator.setup_logging")
+    @patch("brainzgraphinator.brainzgraphinator.HealthServer")
+    @patch("brainzgraphinator.brainzgraphinator.BrainzgraphinatorConfig.from_env", side_effect=ValueError("bad config"))
+    async def test_main_returns_on_config_error(
+        self,
+        _mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test main() returns after logging error when config raises ValueError."""
+        mock_health_server.return_value = MagicMock()
+
+        with (
+            patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+            patch("brainzgraphinator.brainzgraphinator.logger") as mock_logger,
+        ):
+            await main()
+
+        error_calls = str(mock_logger.error.call_args_list)
+        assert "Configuration error" in error_calls or "bad config" in error_calls
+
+
+class TestMainNeo4jFailure:
+    """Test main() early return on Neo4j connection failure."""
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.signal.signal")
+    @patch("brainzgraphinator.brainzgraphinator.setup_logging")
+    @patch("brainzgraphinator.brainzgraphinator.HealthServer")
+    @patch("brainzgraphinator.brainzgraphinator.BrainzgraphinatorConfig.from_env")
+    @patch("brainzgraphinator.brainzgraphinator.AsyncResilientNeo4jDriver")
+    async def test_main_returns_on_neo4j_error(
+        self,
+        mock_neo4j_class: MagicMock,
+        mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test main() returns after logging error when Neo4j session raises."""
+        mock_health_server.return_value = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.neo4j_host = "bolt://localhost:7687"
+        mock_config.neo4j_username = "neo4j"
+        mock_config.neo4j_password = "password"
+        mock_from_env.return_value = mock_config
+
+        mock_neo4j_instance = MagicMock()
+        mock_neo4j_class.return_value = mock_neo4j_instance
+
+        def failing_session(*_args: Any, **_kwargs: Any) -> Any:
+            raise Exception("Neo4j connection refused")
+
+        mock_neo4j_instance.session = MagicMock(side_effect=failing_session)
+
+        with (
+            patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+            patch("brainzgraphinator.brainzgraphinator.logger") as mock_logger,
+        ):
+            await main()
+
+        error_calls = str(mock_logger.error.call_args_list)
+        assert "Neo4j" in error_calls or "Failed" in error_calls
+
+
+class TestMainAmqpRetryExhausted:
+    """Test main() when all RabbitMQ connection retry attempts are exhausted."""
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.signal.signal")
+    @patch("brainzgraphinator.brainzgraphinator.setup_logging")
+    @patch("brainzgraphinator.brainzgraphinator.HealthServer")
+    @patch("brainzgraphinator.brainzgraphinator.BrainzgraphinatorConfig.from_env")
+    @patch("brainzgraphinator.brainzgraphinator.AsyncResilientNeo4jDriver")
+    @patch("brainzgraphinator.brainzgraphinator.AsyncResilientRabbitMQ")
+    async def test_main_returns_when_connect_retries_exhausted(
+        self,
+        mock_rabbitmq_class: MagicMock,
+        mock_neo4j_class: MagicMock,
+        mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test main() returns after exhausting all RabbitMQ connect retries."""
+        mock_health_server.return_value = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.neo4j_host = "bolt://localhost:7687"
+        mock_config.neo4j_username = "neo4j"
+        mock_config.neo4j_password = "password"
+        mock_config.amqp_connection = "amqp://guest:guest@localhost/"
+        mock_from_env.return_value = mock_config
+
+        mock_neo4j_instance = MagicMock()
+        mock_neo4j_class.return_value = mock_neo4j_instance
+        mock_neo4j_instance.close = AsyncMock()
+
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"test": 1})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+
+        mock_neo4j_instance.session = MagicMock(return_value=mock_cm)
+
+        # RabbitMQ constructor succeeds, but connect() always raises
+        mock_rabbitmq_instance = MagicMock()
+        mock_rabbitmq_instance.connect = AsyncMock(side_effect=Exception("RabbitMQ connection refused"))
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+
+        original_shutdown = bgmod.shutdown_requested
+        try:
+            bgmod.shutdown_requested = False
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("brainzgraphinator.brainzgraphinator.asyncio.sleep", AsyncMock(return_value=None)),
+                patch("brainzgraphinator.brainzgraphinator.logger"),
+            ):
+                await main()
+
+            # Should have tried max_startup_retries=5 times
+            assert mock_rabbitmq_instance.connect.call_count == 5
+        finally:
+            bgmod.shutdown_requested = original_shutdown
+
+
+class TestMainSuccessfulStartupAndShutdown:
+    """Test main() successful startup and shutdown path."""
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.signal.signal")
+    @patch("brainzgraphinator.brainzgraphinator.setup_logging")
+    @patch("brainzgraphinator.brainzgraphinator.HealthServer")
+    @patch("brainzgraphinator.brainzgraphinator.BrainzgraphinatorConfig.from_env")
+    @patch("brainzgraphinator.brainzgraphinator.AsyncResilientNeo4jDriver")
+    @patch("brainzgraphinator.brainzgraphinator.AsyncResilientRabbitMQ")
+    async def test_main_successful_startup_and_shutdown(
+        self,
+        mock_rabbitmq_class: MagicMock,
+        mock_neo4j_class: MagicMock,
+        mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test successful main execution with startup and graceful shutdown."""
+        mock_health_server.return_value = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.neo4j_host = "bolt://localhost:7687"
+        mock_config.neo4j_username = "neo4j"
+        mock_config.neo4j_password = "password"
+        mock_config.amqp_connection = "amqp://guest:guest@localhost/"
+        mock_from_env.return_value = mock_config
+
+        # Setup Neo4j
+        mock_neo4j_instance = MagicMock()
+        mock_neo4j_class.return_value = mock_neo4j_instance
+
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"test": 1})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_neo4j_instance.session = MagicMock(return_value=mock_cm)
+
+        # Setup RabbitMQ
+        mock_rabbitmq_instance = MagicMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+
+        mock_connection = AsyncMock()
+        mock_rabbitmq_instance.connect = AsyncMock(return_value=mock_connection)
+
+        mock_channel = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_channel.set_qos = AsyncMock()
+        mock_channel.declare_exchange = AsyncMock(return_value=AsyncMock())
+        mock_channel.declare_queue = AsyncMock(return_value=AsyncMock())
+        mock_connection.__aenter__ = AsyncMock(return_value=mock_connection)
+        mock_connection.__aexit__ = AsyncMock(return_value=None)
+
+        original_shutdown = bgmod.shutdown_requested
+        created_tasks: list[asyncio.Task[Any]] = []
+
+        def mock_create_task(coro: Any) -> asyncio.Task[Any]:
+            task = asyncio.get_event_loop().create_task(coro)
+            created_tasks.append(task)
+            return task
+
+        try:
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("brainzgraphinator.brainzgraphinator.logger"),
+                patch("brainzgraphinator.brainzgraphinator.shutdown_requested", False),
+                patch("asyncio.create_task", side_effect=mock_create_task),
+            ):
+
+                async def trigger_shutdown() -> None:
+                    await asyncio.sleep(0.05)
+                    bgmod.shutdown_requested = True
+
+                shutdown_task = asyncio.ensure_future(trigger_shutdown())
+
+                await main()
+                await shutdown_task
+
+            mock_neo4j_class.assert_called_once()
+            mock_rabbitmq_class.assert_called_once()
+        finally:
+            bgmod.shutdown_requested = original_shutdown
+            for task in created_tasks:
+                if not task.done():
+                    task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await task
+
+
+class TestMainStartupDelay:
+    """Test main() startup delay."""
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.signal.signal")
+    @patch("brainzgraphinator.brainzgraphinator.setup_logging")
+    @patch("brainzgraphinator.brainzgraphinator.HealthServer")
+    @patch("brainzgraphinator.brainzgraphinator.BrainzgraphinatorConfig.from_env", side_effect=ValueError("stop early"))
+    async def test_main_startup_delay(
+        self,
+        _mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test that startup delay is applied before config load."""
+        mock_health_server.return_value = MagicMock()
+        sleep_calls: list[float] = []
+
+        async def track_sleep(duration: float) -> None:
+            sleep_calls.append(duration)
+
+        with (
+            patch.dict("os.environ", {"STARTUP_DELAY": "3"}),
+            patch("brainzgraphinator.brainzgraphinator.asyncio.sleep", side_effect=track_sleep),
+            patch("brainzgraphinator.brainzgraphinator.logger"),
+        ):
+            await main()
+
+        assert 3 in sleep_calls or 3.0 in sleep_calls
+
+
+class TestMainAmqpConnectionNone:
+    """Test main() when amqp_connection is None after retry loop."""
+
+    @pytest.mark.asyncio
+    @patch("brainzgraphinator.brainzgraphinator.signal.signal")
+    @patch("brainzgraphinator.brainzgraphinator.setup_logging")
+    @patch("brainzgraphinator.brainzgraphinator.HealthServer")
+    @patch("brainzgraphinator.brainzgraphinator.BrainzgraphinatorConfig.from_env")
+    @patch("brainzgraphinator.brainzgraphinator.AsyncResilientNeo4jDriver")
+    @patch("brainzgraphinator.brainzgraphinator.AsyncResilientRabbitMQ")
+    async def test_main_returns_when_connection_none_after_shutdown(
+        self,
+        mock_rabbitmq_class: MagicMock,
+        mock_neo4j_class: MagicMock,
+        mock_from_env: MagicMock,
+        mock_health_server: MagicMock,
+        _mock_setup_logging: MagicMock,
+        _mock_signal: MagicMock,
+    ) -> None:
+        """Test main() returns when shutdown requested during connection attempts."""
+        mock_health_server.return_value = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.neo4j_host = "bolt://localhost:7687"
+        mock_config.neo4j_username = "neo4j"
+        mock_config.neo4j_password = "password"
+        mock_config.amqp_connection = "amqp://guest:guest@localhost/"
+        mock_from_env.return_value = mock_config
+
+        mock_neo4j_instance = MagicMock()
+        mock_neo4j_class.return_value = mock_neo4j_instance
+
+        mock_session = AsyncMock()
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value={"test": 1})
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_neo4j_instance.session = MagicMock(return_value=mock_cm)
+
+        # Make connect() set shutdown_requested so the while loop exits without connecting
+        mock_rabbitmq_instance = MagicMock()
+
+        async def connect_and_shutdown() -> None:
+            bgmod.shutdown_requested = True
+            raise Exception("Connection failed")
+
+        mock_rabbitmq_instance.connect = AsyncMock(side_effect=connect_and_shutdown)
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+
+        original_shutdown = bgmod.shutdown_requested
+        try:
+            bgmod.shutdown_requested = False
+            with (
+                patch.dict("os.environ", {"STARTUP_DELAY": "0"}),
+                patch("brainzgraphinator.brainzgraphinator.asyncio.sleep", AsyncMock(return_value=None)),
+                patch("brainzgraphinator.brainzgraphinator.logger") as mock_logger,
+            ):
+                await main()
+
+            error_calls = str(mock_logger.error.call_args_list)
+            assert "AMQP" in error_calls or "connection" in error_calls.lower()
+        finally:
+            bgmod.shutdown_requested = original_shutdown
+
+
+# ── Recover consumers tests ──────────────────────────────────────────────
+
+
+class TestRecoverConsumers:
+    """Tests for _recover_consumers function."""
+
+    @pytest.mark.asyncio
+    async def test_recover_no_messages_closes_connection(self) -> None:
+        """Test _recover_consumers closes temp connection when no messages in queues."""
+        from brainzgraphinator.brainzgraphinator import _recover_consumers
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+        mock_queue = AsyncMock()
+        mock_queue.declaration_result.message_count = 0
+
+        mock_rabbitmq_manager.connect.return_value = mock_connection
+        mock_connection.channel.return_value = mock_channel
+        mock_channel.declare_queue.return_value = mock_queue
+
+        bgmod.rabbitmq_manager = mock_rabbitmq_manager
+        bgmod.active_connection = None
+        bgmod.active_channel = None
+
+        await _recover_consumers()
+
+        mock_channel.close.assert_called_once()
+        mock_connection.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_recover_with_messages_restarts_consumers(self) -> None:
+        """Test _recover_consumers restarts consumers when messages found."""
+        from brainzgraphinator.brainzgraphinator import _recover_consumers
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+
+        # First 3 declare_queue calls are passive checks, rest are declarations
+        call_count = [0]
+
+        def make_queue(*_args: Any, **_kwargs: Any) -> AsyncMock:
+            q = AsyncMock()
+            call_count[0] += 1
+            # First 3 calls are passive checks
+            if call_count[0] <= 3:
+                if call_count[0] == 1:
+                    q.declaration_result.message_count = 5  # artists has messages
+                else:
+                    q.declaration_result.message_count = 0
+            return q
+
+        mock_rabbitmq_manager.connect.return_value = mock_connection
+        mock_connection.channel.return_value = mock_channel
+        mock_channel.declare_queue.side_effect = make_queue
+        mock_channel.declare_exchange.return_value = AsyncMock()
+
+        bgmod.rabbitmq_manager = mock_rabbitmq_manager
+        bgmod.active_connection = None
+        bgmod.active_channel = None
+        bgmod.consumer_tags = {}
+        bgmod.queues = {}
+        bgmod.completed_files = set()
+        bgmod.idle_mode = True
+
+        await _recover_consumers()
+
+        assert bgmod.active_connection is mock_connection
+        assert bgmod.idle_mode is False
+
+    @pytest.mark.asyncio
+    async def test_recover_closes_existing_connection(self) -> None:
+        """Test _recover_consumers closes existing connection before reconnecting."""
+        from brainzgraphinator.brainzgraphinator import _recover_consumers
+
+        mock_old_connection = AsyncMock()
+        mock_rabbitmq_manager = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+        mock_queue = AsyncMock()
+        mock_queue.declaration_result.message_count = 0
+
+        mock_rabbitmq_manager.connect.return_value = mock_connection
+        mock_connection.channel.return_value = mock_channel
+        mock_channel.declare_queue.return_value = mock_queue
+
+        bgmod.rabbitmq_manager = mock_rabbitmq_manager
+        bgmod.active_connection = mock_old_connection
+        bgmod.active_channel = None
+
+        await _recover_consumers()
+
+        mock_old_connection.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_recover_handles_connect_failure(self) -> None:
+        """Test _recover_consumers handles RabbitMQ connection failure."""
+        from brainzgraphinator.brainzgraphinator import _recover_consumers
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_rabbitmq_manager.connect.side_effect = Exception("Connection refused")
+
+        bgmod.rabbitmq_manager = mock_rabbitmq_manager
+        bgmod.active_connection = None
+        bgmod.active_channel = None
+
+        # Should not raise
+        await _recover_consumers()
+
+    @pytest.mark.asyncio
+    async def test_recover_handles_queue_declaration_failure(self) -> None:
+        """Test _recover_consumers handles failure during queue declaration."""
+        from brainzgraphinator.brainzgraphinator import _recover_consumers
+
+        mock_rabbitmq_manager = AsyncMock()
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+
+        mock_rabbitmq_manager.connect.return_value = mock_connection
+        mock_connection.channel.return_value = mock_channel
+        mock_channel.declare_queue.side_effect = Exception("Queue declaration failed")
+
+        bgmod.rabbitmq_manager = mock_rabbitmq_manager
+        bgmod.active_connection = None
+        bgmod.active_channel = None
+
+        # Should not raise
+        await _recover_consumers()
+
+        # Should try to close the temp connection
+        mock_channel.close.assert_called()
+
+
+# ── Health data additional tests ─────────────────────────────────────────
+
+
+class TestHealthDataAdditional:
+    """Additional health data tests for coverage."""
+
+    def test_health_timestamp_is_utc(self) -> None:
+        """Test get_health_data timestamp uses UTC."""
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
+            patch("brainzgraphinator.brainzgraphinator.consumer_tags", {}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
+        ):
+            data = get_health_data()
+            assert data["timestamp"].endswith("+00:00")
+
+    def test_health_data_active_processing(self) -> None:
+        """Health data shows active task when recent messages received."""
+        import time
+
+        current = time.time()
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
+            patch("brainzgraphinator.brainzgraphinator.consumer_tags", {"artists": "tag-1"}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 50, "labels": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": current, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
+        ):
+            data = get_health_data()
+            assert "Enriching" in data["current_task"]
+
+    def test_health_data_idle_waiting(self) -> None:
+        """Health data shows idle when consumers active but no recent messages."""
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
+            patch("brainzgraphinator.brainzgraphinator.consumer_tags", {"artists": "tag-1"}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
+        ):
+            data = get_health_data()
+            assert "Idle" in data["current_task"]
+
+    def test_health_data_unhealthy_no_graph(self) -> None:
+        """Health data shows unhealthy when graph is None but messages were processed."""
+        with (
+            patch("brainzgraphinator.brainzgraphinator.graph", None),
+            patch("brainzgraphinator.brainzgraphinator.consumer_tags", {"artists": "tag-1"}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
+        ):
+            data = get_health_data()
+            assert data["status"] == "unhealthy"
