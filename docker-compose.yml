@@ -280,14 +280,14 @@ services:
     tmpfs:
       - /tmp
 
-  # Rust-based extractor service
-  extractor:
+  # Rust-based extractor service for Discogs data
+  extractor-discogs:
     build:
       context: .
       dockerfile: extractor/Dockerfile
     image: discogsography/extractor:latest
-    container_name: discogsography-extractor
-    hostname: extractor
+    container_name: discogsography-extractor-discogs
+    hostname: extractor-discogs
     command: ["--source", "discogs"]
     user: "1000:1000"
     environment:
