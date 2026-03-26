@@ -48,6 +48,25 @@ fn hash_line(line: &str) -> String {
     format!("{:x}", hasher.finalize())
 }
 
+/// Find and return the Discogs numeric ID from a slice of url-rel objects.
+///
+/// Scans `url_rels` for an entry with `"type": "discogs"` and extracts the
+/// numeric ID from the `url.resource` field using [`extract_discogs_id`].
+/// Returns `Value::Null` when no matching rel is found.
+fn find_discogs_id(url_rels: &[Value], entity_type: &str) -> Value {
+    url_rels
+        .iter()
+        .find_map(|rel| {
+            if rel["type"].as_str() == Some("discogs") {
+                extract_discogs_id(rel["url"]["resource"].as_str()?, entity_type)
+            } else {
+                None
+            }
+        })
+        .map(Value::from)
+        .unwrap_or(Value::Null)
+}
+
 /// Parse a single MusicBrainz JSONL artist line into a [`DataMessage`].
 pub fn parse_mb_artist_line(line: &str) -> Result<DataMessage> {
     let v: Value = serde_json::from_str(line).context("Failed to parse artist JSONL line")?;
@@ -55,16 +74,8 @@ pub fn parse_mb_artist_line(line: &str) -> Result<DataMessage> {
     let mbid = v["id"].as_str().unwrap_or("unknown").to_string();
     let sha256 = hash_line(line);
 
-    // Extract Discogs artist ID from url-rels
     let url_rels = v["url-rels"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
-    let discogs_artist_id = url_rels.iter().find_map(|rel| {
-        if rel["type"].as_str() == Some("discogs") {
-            let resource = rel["url"]["resource"].as_str()?;
-            extract_discogs_id(resource, "artist")
-        } else {
-            None
-        }
-    });
+    let discogs_artist_id = find_discogs_id(url_rels, "artist");
     let external_links = extract_external_links(url_rels);
 
     let life_span = &v["life-span"];
@@ -104,14 +115,7 @@ pub fn parse_mb_label_line(line: &str) -> Result<DataMessage> {
     let sha256 = hash_line(line);
 
     let url_rels = v["url-rels"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
-    let discogs_label_id = url_rels.iter().find_map(|rel| {
-        if rel["type"].as_str() == Some("discogs") {
-            let resource = rel["url"]["resource"].as_str()?;
-            extract_discogs_id(resource, "label")
-        } else {
-            None
-        }
-    });
+    let discogs_label_id = find_discogs_id(url_rels, "label");
     let external_links = extract_external_links(url_rels);
 
     let life_span = &v["life-span"];
@@ -144,14 +148,7 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
     let sha256 = hash_line(line);
 
     let url_rels = v["url-rels"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
-    let discogs_release_id = url_rels.iter().find_map(|rel| {
-        if rel["type"].as_str() == Some("discogs") {
-            let resource = rel["url"]["resource"].as_str()?;
-            extract_discogs_id(resource, "release")
-        } else {
-            None
-        }
-    });
+    let discogs_release_id = find_discogs_id(url_rels, "release");
     let external_links = extract_external_links(url_rels);
 
     let release_group_mbid = v["release-group"]["id"].as_str().map(|s| Value::String(s.to_string())).unwrap_or(Value::Null);
@@ -170,6 +167,10 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
 }
 
 /// Parse an xz-compressed MusicBrainz JSONL file line by line.
+///
+/// **Blocking:** This function performs synchronous I/O and must be run on a
+/// blocking thread via `tokio::task::spawn_blocking`. Calling it directly from
+/// an async context will panic.
 ///
 /// Sends each successfully parsed [`DataMessage`] through `sender`.
 /// Malformed lines are skipped with a debug log.
