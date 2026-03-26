@@ -12,7 +12,7 @@ import sys
 import psycopg
 from psycopg.rows import dict_row
 
-from api.auth import decrypt_oauth_token, encrypt_oauth_token
+from api.auth import decrypt_oauth_token, encrypt_oauth_token, get_oauth_encryption_key
 from common.config import get_secret
 
 
@@ -55,7 +55,7 @@ def _mask(value: str) -> str:
 
 def show_config(conninfo: str) -> None:
     """Print current Discogs credentials (masked)."""
-    encryption_key = get_secret("OAUTH_ENCRYPTION_KEY")
+    encryption_key = get_oauth_encryption_key(get_secret("ENCRYPTION_MASTER_KEY"))
     with psycopg.connect(conninfo) as conn, conn.cursor(row_factory=dict_row) as cur:
         cur.execute("SELECT key, value FROM app_config WHERE key IN ('discogs_consumer_key', 'discogs_consumer_secret')")
         rows = {row["key"]: row["value"] for row in cur.fetchall()}
@@ -68,7 +68,7 @@ def show_config(conninfo: str) -> None:
 
 def set_config(conninfo: str, consumer_key: str, consumer_secret: str) -> None:
     """Upsert Discogs credentials into the app_config table."""
-    encryption_key = get_secret("OAUTH_ENCRYPTION_KEY")
+    encryption_key = get_oauth_encryption_key(get_secret("ENCRYPTION_MASTER_KEY"))
     if encryption_key:
         consumer_key = encrypt_oauth_token(consumer_key, encryption_key)
         consumer_secret = encrypt_oauth_token(consumer_secret, encryption_key)

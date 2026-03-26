@@ -10,7 +10,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from psycopg.rows import dict_row
 import structlog
 
-from api.auth import decode_token
+from api.auth import decode_token, get_oauth_encryption_key
 from api.limiter import limiter
 from api.syncer import run_full_sync
 from common import AsyncPostgreSQLPool, AsyncResilientNeo4jDriver
@@ -133,7 +133,7 @@ async def trigger_sync(
             pg_pool=_pool,
             neo4j_driver=_neo4j,
             discogs_user_agent=_config.discogs_user_agent,
-            oauth_encryption_key=getattr(_config, "oauth_encryption_key", None),
+            oauth_encryption_key=get_oauth_encryption_key(_config.encryption_master_key),
             redis_client=_redis,
         )
     )
