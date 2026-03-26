@@ -32,6 +32,8 @@ import pytest
 from common.config import ApiConfig
 
 
+_TEST_MASTER_KEY = base64.urlsafe_b64encode(b"test-master-key-padded-to-32!!").decode("ascii")
+
 TEST_JWT_SECRET = "test-jwt-secret-for-unit-tests"
 TEST_USER_ID = "00000000-0000-0000-0000-000000000001"
 TEST_USER_EMAIL = "test@example.com"
@@ -128,6 +130,7 @@ def test_api_config() -> ApiConfig:
         neo4j_host="bolt://localhost:7687",
         neo4j_username="neo4j",
         neo4j_password="testpassword",  # noqa: S106
+        encryption_master_key=_TEST_MASTER_KEY,
     )
 
 

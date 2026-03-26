@@ -85,3 +85,58 @@ class TestResetConfirm:
             json={"token": "some-token", "new_password": "short"},
         )
         assert response.status_code == 422  # Pydantic validation
+
+
+class TestTwoFactorSetup:
+    """Tests for POST /api/auth/2fa/setup."""
+
+    def test_setup_returns_secret_and_qr_uri(
+        self,
+        test_client: TestClient,
+        auth_headers: dict[str, str],
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+    ) -> None:
+        mock_cur.fetchone = AsyncMock(return_value=make_sample_user_row())
+        mock_redis.get = AsyncMock(return_value=None)
+        response = test_client.post("/api/auth/2fa/setup", headers=auth_headers)
+        assert response.status_code == 200
+        data = response.json()
+        assert "secret" in data
+        assert "otpauth_uri" in data
+        assert "recovery_codes" in data
+        assert len(data["recovery_codes"]) == 8
+        assert "otpauth://totp/" in data["otpauth_uri"]
+
+
+class TestTwoFactorVerify:
+    """Tests for POST /api/auth/2fa/verify."""
+
+    def test_verify_invalid_challenge_token(self, test_client: TestClient) -> None:
+        response = test_client.post(
+            "/api/auth/2fa/verify",
+            json={"challenge_token": "invalid.token.here", "code": "123456"},
+        )
+        assert response.status_code == 401
+
+
+class TestTwoFactorDisable:
+    """Tests for POST /api/auth/2fa/disable."""
+
+    def test_disable_requires_auth(self, test_client: TestClient) -> None:
+        response = test_client.post(
+            "/api/auth/2fa/disable",
+            json={"code": "123456", "password": "testpassword"},
+        )
+        assert response.status_code in (401, 403)
+
+
+class TestTwoFactorRecovery:
+    """Tests for POST /api/auth/2fa/recovery."""
+
+    def test_recovery_invalid_challenge(self, test_client: TestClient) -> None:
+        response = test_client.post(
+            "/api/auth/2fa/recovery",
+            json={"challenge_token": "bad.token.here", "code": "some-recovery-code"},
+        )
+        assert response.status_code == 401
