@@ -1,6 +1,6 @@
 """Tests for FastAPI dependency functions."""
 
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -30,6 +30,32 @@ def _make_valid_token(secret: str = TEST_SECRET) -> str:
 
     header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
     body = b64url(json.dumps({"sub": "user-1", "email": "test@example.com", "exp": 9_999_999_999}, separators=(",", ":")).encode())
+    signing_input = f"{header}.{body}".encode("ascii")
+    sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    return f"{header}.{body}.{sig}"
+
+
+def _make_admin_token(
+    admin_id: str = "admin-1",
+    email: str = "admin@test.com",
+    secret: str = TEST_SECRET,
+) -> str:
+    """Create a valid admin JWT for testing."""
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    body = b64url(
+        json.dumps(
+            {"sub": admin_id, "email": email, "exp": 9_999_999_999, "type": "admin", "jti": "admin:test123"},
+            separators=(",", ":"),
+        ).encode()
+    )
     signing_input = f"{header}.{body}".encode("ascii")
     sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
     return f"{header}.{body}.{sig}"
@@ -161,3 +187,121 @@ class TestRequireAdmin:
         with pytest.raises(HTTPException) as exc_info:
             await require_admin(_make_credentials("some-token"))
         assert exc_info.value.status_code == 503
+
+    @pytest.mark.asyncio
+    async def test_raises_403_when_type_is_not_admin(self) -> None:
+        configure(TEST_SECRET)
+        from fastapi import HTTPException
+
+        token = _make_valid_token()
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(creds)
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_raises_401_when_no_credentials(self) -> None:
+        configure(TEST_SECRET)
+        from fastapi import HTTPException
+
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(None)
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_raises_401_for_invalid_token(self) -> None:
+        configure(TEST_SECRET)
+        from fastapi import HTTPException
+
+        creds = _make_credentials("bad.token.value")
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(creds)
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_db_verified_admin_succeeds(self) -> None:
+        """Valid admin token + DB confirms is_admin=True -> returns payload."""
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value={"is_admin": True})
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=conn_ctx)
+
+        configure(TEST_SECRET, pool=mock_pool)
+
+        token = _make_admin_token()
+        creds = _make_credentials(token)
+        result = await require_admin(creds)
+        assert result["sub"] == "admin-1"
+        assert result["type"] == "admin"
+
+    @pytest.mark.asyncio
+    async def test_db_verified_admin_rejects_non_admin(self) -> None:
+        """Valid admin token but DB says is_admin=False -> 403."""
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value={"is_admin": False})
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=conn_ctx)
+
+        configure(TEST_SECRET, pool=mock_pool)
+        from fastapi import HTTPException
+
+        token = _make_admin_token()
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(creds)
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_db_verified_admin_rejects_missing_user(self) -> None:
+        """Valid admin token but user not found in DB -> 403."""
+        mock_pool = MagicMock()
+        mock_cur = AsyncMock()
+        mock_cur.fetchone = AsyncMock(return_value=None)
+        mock_conn = AsyncMock()
+        cur_ctx = AsyncMock()
+        cur_ctx.__aenter__ = AsyncMock(return_value=mock_cur)
+        cur_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor = MagicMock(return_value=cur_ctx)
+        conn_ctx = AsyncMock()
+        conn_ctx.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_ctx.__aexit__ = AsyncMock(return_value=False)
+        mock_pool.connection = MagicMock(return_value=conn_ctx)
+
+        configure(TEST_SECRET, pool=mock_pool)
+        from fastapi import HTTPException
+
+        token = _make_admin_token()
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(creds)
+        assert exc_info.value.status_code == 403
+
+    @pytest.mark.asyncio
+    async def test_revoked_token_rejected(self) -> None:
+        """Valid admin token but revoked in Redis -> 401."""
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value="1")
+        configure(TEST_SECRET, redis=mock_redis)
+        from fastapi import HTTPException
+
+        token = _make_admin_token()
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_admin(creds)
+        assert exc_info.value.status_code == 401

@@ -4,6 +4,7 @@ from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from psycopg.rows import dict_row
 
 from api.auth import decode_token
 
@@ -11,12 +12,14 @@ from api.auth import decode_token
 _security = HTTPBearer(auto_error=False)
 _jwt_secret: str | None = None
 _redis: Any = None
+_pool: Any = None
 
 
-def configure(jwt_secret: str | None, redis: Any = None) -> None:
-    global _jwt_secret, _redis
+def configure(jwt_secret: str | None, redis: Any = None, pool: Any = None) -> None:
+    global _jwt_secret, _redis, _pool
     _jwt_secret = jwt_secret
     _redis = redis
+    _pool = pool
 
 
 async def get_optional_user(
@@ -65,4 +68,14 @@ async def require_admin(
         revoked = await _redis.get(f"revoked:jti:{jti}")
         if revoked:
             raise HTTPException(status_code=401, detail="Token has been revoked")
+    # DB verification: confirm user exists and is_admin=True
+    if _pool is not None:
+        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "SELECT is_admin FROM users WHERE id = %s AND is_active = true",
+                (payload["sub"],),
+            )
+            row = await cur.fetchone()
+        if row is None or not row["is_admin"]:
+            raise HTTPException(status_code=403, detail="Admin access required")
     return payload
