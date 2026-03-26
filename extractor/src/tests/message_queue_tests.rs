@@ -1,11 +1,32 @@
 use super::*;
 
 #[test]
-fn test_exchange_names() {
-    assert_eq!(MessageQueue::exchange_name(DataType::Artists), "discogsography-artists");
-    assert_eq!(MessageQueue::exchange_name(DataType::Labels), "discogsography-labels");
-    assert_eq!(MessageQueue::exchange_name(DataType::Masters), "discogsography-masters");
-    assert_eq!(MessageQueue::exchange_name(DataType::Releases), "discogsography-releases");
+fn test_exchange_names_default_prefix() {
+    let mq = MessageQueue {
+        connection: Arc::new(RwLock::new(None)),
+        channel: Arc::new(RwLock::new(None)),
+        url: String::new(),
+        max_retries: 1,
+        exchange_prefix: DEFAULT_EXCHANGE_PREFIX.to_string(),
+    };
+    assert_eq!(mq.exchange_name(DataType::Artists), "discogsography-artists");
+    assert_eq!(mq.exchange_name(DataType::Labels), "discogsography-labels");
+    assert_eq!(mq.exchange_name(DataType::Masters), "discogsography-masters");
+    assert_eq!(mq.exchange_name(DataType::Releases), "discogsography-releases");
+}
+
+#[test]
+fn test_exchange_names_custom_prefix() {
+    let mq = MessageQueue {
+        connection: Arc::new(RwLock::new(None)),
+        channel: Arc::new(RwLock::new(None)),
+        url: String::new(),
+        max_retries: 1,
+        exchange_prefix: "musicbrainz".to_string(),
+    };
+    assert_eq!(mq.exchange_name(DataType::Artists), "musicbrainz-artists");
+    assert_eq!(mq.exchange_name(DataType::Labels), "musicbrainz-labels");
+    assert_eq!(mq.exchange_name(DataType::Releases), "musicbrainz-releases");
 }
 
 #[test]
@@ -120,7 +141,7 @@ fn test_message_serialization_file_complete() {
 
 #[test]
 fn test_constants() {
-    assert_eq!(AMQP_EXCHANGE_PREFIX, "discogsography");
+    assert_eq!(DEFAULT_EXCHANGE_PREFIX, "discogsography");
     assert_eq!(AMQP_EXCHANGE_TYPE, ExchangeKind::Fanout);
 }
 
@@ -137,7 +158,7 @@ fn test_message_properties_persistent_delivery() {
 #[tokio::test]
 async fn test_new_connection_failure() {
     // Use an invalid port so the connection will fail, with only 1 retry to keep the test fast
-    let result = MessageQueue::new("amqp://localhost:59999", 1).await;
+    let result = MessageQueue::new("amqp://localhost:59999", 1, DEFAULT_EXCHANGE_PREFIX).await;
     assert!(result.is_err());
     let err_msg = format!("{}", result.err().unwrap());
     assert!(err_msg.contains("Failed to connect to AMQP broker after retries"), "Unexpected error: {}", err_msg);
@@ -238,7 +259,7 @@ async fn test_new_connection_failure_with_retries() {
     // Use 2 retries to exercise the retry backoff loop (lines 72-75):
     // - First attempt: try_connect fails, retry_count=1 < 2, warn + sleep(1s) + backoff doubled
     // - Second attempt: try_connect fails, retry_count=2 >= 2, return error
-    let result = MessageQueue::new("amqp://localhost:59999", 2).await;
+    let result = MessageQueue::new("amqp://localhost:59999", 2, DEFAULT_EXCHANGE_PREFIX).await;
     assert!(result.is_err());
     let err_msg = format!("{}", result.err().unwrap());
     assert!(err_msg.contains("Failed to connect to AMQP broker after retries"), "Unexpected error: {}", err_msg);

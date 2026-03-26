@@ -222,7 +222,8 @@ async fn test_default_mq_factory_create_fails_without_broker() {
 
     let factory = DefaultMessageQueueFactory;
     // Invalid port so connection fails fast
-    let result: anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> = factory.create("amqp://localhost:59999").await;
+    let result: anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> =
+        factory.create("amqp://localhost:59999", "discogsography").await;
     assert!(result.is_err());
 }
 
@@ -392,7 +393,7 @@ async fn test_process_discogs_data_mq_factory_create_fails_on_all_processed() {
     struct FailingMqFactory;
     #[async_trait::async_trait]
     impl MessageQueueFactory for FailingMqFactory {
-        async fn create(&self, _url: &str) -> anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> {
+        async fn create(&self, _url: &str, _exchange_prefix: &str) -> anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> {
             Err(anyhow::anyhow!("AMQP connection refused"))
         }
     }
