@@ -370,6 +370,27 @@ class DlqPurgeResponse(BaseModel):
     messages_purged: int
 
 
+class AuditLogEntry(BaseModel):
+    """A single audit log entry for admin actions."""
+
+    id: UUID
+    admin_id: UUID
+    admin_email: str
+    action: str
+    target: str | None
+    details: dict[str, Any] | None
+    created_at: datetime
+
+
+class AuditLogResponse(BaseModel):
+    """Paginated audit log response."""
+
+    entries: list[AuditLogEntry]
+    total: int
+    page: int
+    page_size: int
+
+
 # --- Admin Phase 2 Response Models ---
 
 
