@@ -32,6 +32,8 @@ insights/         Insights service — precomputed analytics (proxied via API at
 mcp-server/       MCP server — exposes knowledge graph to AI assistants via API (no direct DB access)
 schema-init/      Schema initialization — one-time Neo4j and PostgreSQL schema setup
 tableinator/      Tableinator service — consumes messages, builds PostgreSQL tables
+brainzgraphinator/ Brainzgraphinator service — enriches Neo4j with MusicBrainz data
+brainztableinator/ Brainztableinator service — stores MusicBrainz data in PostgreSQL
 utilities/        Monitoring utilities — queue monitor, error checker, system monitor
 tests/            All tests organized by service (tests/api/, tests/common/, etc.)
 scripts/          Build and update scripts
@@ -46,6 +48,9 @@ backups/          Database backups
 - **Insights** fetches data from API internal endpoints (`/api/internal/insights/*`) over HTTP — does NOT connect to Neo4j directly. Uses Redis for caching.
 - **Explore** serves static files only — no external HTTP endpoints, no Neo4j env vars.
 - **State markers**: The extractor uses version-specific state markers (`.extraction_status_<version>.json`) to track progress. See `docs/state-marker-system.md`.
+- **Brainzgraphinator** enriches existing Neo4j nodes with MusicBrainz metadata. Skips entities without Discogs matches.
+- **Brainztableinator** stores all MusicBrainz data in `musicbrainz` PostgreSQL schema, including entities without Discogs matches.
+- **Extractor (MusicBrainz mode)** parses MB JSONL dumps and publishes to `musicbrainz-*` fanout exchanges. Runs as a separate container from the Discogs extractor.
 
 ## uv Commands
 
@@ -160,6 +165,8 @@ just deep-clean           # Clean + Docker volumes (destructive)
 | Neo4j | 7474 (browser), 7687 (bolt) | — |
 | PostgreSQL | 5433 (mapped from 5432) | — |
 | RabbitMQ | 5672 (AMQP), 15672 (management) | — |
+| Brainzgraphinator | — | 8011 |
+| Brainztableinator | — | 8010 |
 
 ## Environment Variables
 
