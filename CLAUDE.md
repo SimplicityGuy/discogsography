@@ -47,8 +47,8 @@ backups/              Database backups
 - **Discogs exchanges**: `discogsography-{artists,labels,masters,releases}` (4 fanout exchanges)
 - **MusicBrainz exchanges**: `musicbrainz-{artists,labels,releases}` (3 fanout exchanges, no masters)
 - **Each consumer** (graphinator, tableinator, brainzgraphinator, brainztableinator) independently declares its own queues, DLQs, and DLXs.
-- **Brainzgraphinator** enriches Neo4j with MusicBrainz metadata, relationships, and cross-references to Discogs entities.
-- **Brainztableinator** populates PostgreSQL `musicbrainz` schema with artists, labels, releases, relationships, and external links.
+- **Brainzgraphinator** enriches existing Neo4j nodes with MusicBrainz metadata (properties, relationships, cross-references). Skips entities without Discogs matches.
+- **Brainztableinator** stores all MusicBrainz data in `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links.
 - **Insights** fetches data from API internal endpoints (`/api/internal/insights/*`) over HTTP — does NOT connect to Neo4j directly. Uses Redis for caching.
 - **Explore** serves static files only — no external HTTP endpoints, no Neo4j env vars.
 - **State markers**: The extractor uses version-specific state markers (`.extraction_status_<version>.json`) to track progress. See `docs/state-marker-system.md`.

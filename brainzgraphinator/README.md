@@ -113,6 +113,12 @@ Creates new relationship edges between Discogs-matched entities. Both source and
 
 All relationship edges include `source: 'musicbrainz'` for provenance tracking.
 
+### Design Decisions
+
+- **Discogs-matched entities only**: Entities without a Discogs URL in the MusicBrainz data are skipped entirely in Neo4j. They are stored in PostgreSQL by brainztableinator for future use.
+- **Both sides required for edges**: Relationship edges are only created when both the source and target entity have Discogs IDs in our graph.
+- **`mb_` prefix**: All MusicBrainz-sourced properties use the `mb_` prefix (e.g., `mb_type`, `mb_gender`) to clearly distinguish from Discogs-sourced data. The `mbid` property is the exception.
+
 ### Example Cypher Queries
 
 ```cypher
