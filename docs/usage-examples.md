@@ -691,6 +691,19 @@ curl "http://localhost:8004/api/user/taste/card" \
   -o taste-card.svg
 ```
 
+### Collaboration Network
+
+```bash
+# Find multi-hop collaborators (artists connected via shared releases)
+curl "http://localhost:8004/api/network/artist/123/collaborators?depth=2&limit=50"
+
+# Get centrality scores for an artist (degree, collaborator count, group/alias)
+curl "http://localhost:8004/api/network/artist/123/centrality"
+
+# Detect community clusters around an artist (grouped by primary genre)
+curl "http://localhost:8004/api/network/cluster/123?limit=50"
+```
+
 ### Collection Timeline and Evolution (requires JWT authentication)
 
 ```bash

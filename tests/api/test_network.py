@@ -1,0 +1,640 @@
+"""Tests for the collaboration network router endpoints."""
+
+import json
+from unittest.mock import AsyncMock, patch
+
+from fastapi.testclient import TestClient
+import pytest
+
+
+class TestCollaboratorsEndpoint:
+    """Tests for GET /api/network/artist/{id}/collaborators."""
+
+    def test_success(self, test_client: TestClient) -> None:
+        """Returns 200 with multi-hop collaborators."""
+        identity = {"artist_id": "123", "artist_name": "Miles Davis"}
+        collaborators = [
+            {"artist_id": "456", "artist_name": "John Coltrane", "distance": 1, "collaboration_count": 5},
+            {"artist_id": "789", "artist_name": "Herbie Hancock", "distance": 2, "collaboration_count": 3},
+        ]
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch("api.queries.network_queries.get_multi_hop_collaborators", new_callable=AsyncMock, return_value=collaborators),
+            patch("api.queries.network_queries.count_multi_hop_collaborators", new_callable=AsyncMock, return_value=15),
+        ):
+            response = test_client.get("/api/network/artist/123/collaborators?depth=2&limit=50")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["artist_id"] == "123"
+        assert data["artist_name"] == "Miles Davis"
+        assert data["depth"] == 2
+        assert len(data["collaborators"]) == 2
+        assert data["total"] == 15
+
+    def test_not_found(self, test_client: TestClient) -> None:
+        """Returns 404 when artist does not exist."""
+        with patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=None):
+            response = test_client.get("/api/network/artist/999/collaborators")
+        assert response.status_code == 404
+
+    def test_not_ready(self, test_client: TestClient) -> None:
+        """Returns 503 when Neo4j is not configured."""
+        import api.routers.network as mod
+
+        original = mod._neo4j
+        mod._neo4j = None
+        try:
+            response = test_client.get("/api/network/artist/123/collaborators")
+            assert response.status_code == 503
+        finally:
+            mod._neo4j = original
+
+    def test_depth_validation(self, test_client: TestClient) -> None:
+        """Rejects depth > 3."""
+        response = test_client.get("/api/network/artist/123/collaborators?depth=5")
+        assert response.status_code == 422
+
+    def test_timeout(self, test_client: TestClient) -> None:
+        """Returns 504 on Neo4j timeout."""
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        identity = {"artist_id": "123", "artist_name": "Test"}
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch(
+                "api.queries.network_queries.get_multi_hop_collaborators",
+                new_callable=AsyncMock,
+                side_effect=Neo4jClientError("TransactionTimedOut"),
+            ),
+        ):
+            response = test_client.get("/api/network/artist/123/collaborators")
+        assert response.status_code == 504
+
+    def test_non_timeout_neo4j_error_reraises(self, test_client: TestClient) -> None:
+        """Non-timeout Neo4j errors are re-raised (500)."""
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        identity = {"artist_id": "123", "artist_name": "Test"}
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch(
+                "api.queries.network_queries.get_multi_hop_collaborators",
+                new_callable=AsyncMock,
+                side_effect=Neo4jClientError("SomeOtherError"),
+            ),
+        ):
+            response = test_client.get("/api/network/artist/123/collaborators")
+        assert response.status_code == 500
+
+    def test_limit_validation(self, test_client: TestClient) -> None:
+        """Rejects limit > 200."""
+        response = test_client.get("/api/network/artist/123/collaborators?limit=500")
+        assert response.status_code == 422
+
+    def test_depth_1(self, test_client: TestClient) -> None:
+        """Returns only direct collaborators at depth=1."""
+        identity = {"artist_id": "123", "artist_name": "Test Artist"}
+        collaborators = [
+            {"artist_id": "456", "artist_name": "Direct Collab", "distance": 1, "collaboration_count": 3},
+        ]
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch("api.queries.network_queries.get_multi_hop_collaborators", new_callable=AsyncMock, return_value=collaborators),
+            patch("api.queries.network_queries.count_multi_hop_collaborators", new_callable=AsyncMock, return_value=1),
+        ):
+            response = test_client.get("/api/network/artist/123/collaborators?depth=1")
+        assert response.status_code == 200
+        assert response.json()["depth"] == 1
+
+
+class TestCentralityEndpoint:
+    """Tests for GET /api/network/artist/{id}/centrality."""
+
+    def test_success(self, test_client: TestClient) -> None:
+        """Returns 200 with centrality scores."""
+        result = {
+            "artist_id": "123",
+            "artist_name": "Miles Davis",
+            "degree": 500,
+            "collaborator_count": 120,
+            "collaboration_releases": 85,
+            "group_count": 3,
+            "alias_count": 1,
+        }
+        with patch("api.queries.network_queries.get_artist_centrality", new_callable=AsyncMock, return_value=result):
+            response = test_client.get("/api/network/artist/123/centrality")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["artist_id"] == "123"
+        assert data["centrality"]["degree"] == 500
+        assert data["centrality"]["collaborator_count"] == 120
+        assert data["centrality"]["collaboration_releases"] == 85
+        assert data["centrality"]["group_count"] == 3
+        assert data["centrality"]["alias_count"] == 1
+
+    def test_not_found(self, test_client: TestClient) -> None:
+        """Returns 404 when artist does not exist."""
+        with patch("api.queries.network_queries.get_artist_centrality", new_callable=AsyncMock, return_value=None):
+            response = test_client.get("/api/network/artist/999/centrality")
+        assert response.status_code == 404
+
+    def test_not_ready(self, test_client: TestClient) -> None:
+        """Returns 503 when Neo4j is not configured."""
+        import api.routers.network as mod
+
+        original = mod._neo4j
+        mod._neo4j = None
+        try:
+            response = test_client.get("/api/network/artist/123/centrality")
+            assert response.status_code == 503
+        finally:
+            mod._neo4j = original
+
+    def test_timeout(self, test_client: TestClient) -> None:
+        """Returns 504 on Neo4j timeout."""
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        with patch(
+            "api.queries.network_queries.get_artist_centrality",
+            new_callable=AsyncMock,
+            side_effect=Neo4jClientError("TransactionTimedOut"),
+        ):
+            response = test_client.get("/api/network/artist/123/centrality")
+        assert response.status_code == 504
+
+    def test_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Returns cached result on Redis hit."""
+        cached = {
+            "artist_id": "123",
+            "artist_name": "Cached Artist",
+            "centrality": {"degree": 100, "collaborator_count": 50, "collaboration_releases": 30, "group_count": 2, "alias_count": 0},
+        }
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+        with patch("api.queries.network_queries.get_artist_centrality") as mock_query:
+            response = test_client.get("/api/network/artist/123/centrality")
+        assert response.status_code == 200
+        assert response.json() == cached
+        mock_query.assert_not_called()
+
+    def test_cache_miss_stores_result(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Stores result in Redis on cache miss."""
+        mock_redis.get = AsyncMock(return_value=None)
+        result = {
+            "artist_id": "123",
+            "artist_name": "Miles Davis",
+            "degree": 500,
+            "collaborator_count": 120,
+            "collaboration_releases": 85,
+            "group_count": 3,
+            "alias_count": 1,
+        }
+        with patch("api.queries.network_queries.get_artist_centrality", new_callable=AsyncMock, return_value=result):
+            response = test_client.get("/api/network/artist/123/centrality")
+        assert response.status_code == 200
+        mock_redis.setex.assert_called_once()
+        call_args = mock_redis.setex.call_args[0]
+        assert call_args[0] == "network:centrality:123"
+        assert call_args[1] == 3600
+
+    def test_cache_get_failure_falls_through(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis get failure falls through to Neo4j query."""
+        mock_redis.get = AsyncMock(side_effect=Exception("connection lost"))
+        result = {
+            "artist_id": "123",
+            "artist_name": "Miles Davis",
+            "degree": 500,
+            "collaborator_count": 120,
+            "collaboration_releases": 85,
+            "group_count": 3,
+            "alias_count": 1,
+        }
+        with patch("api.queries.network_queries.get_artist_centrality", new_callable=AsyncMock, return_value=result):
+            response = test_client.get("/api/network/artist/123/centrality")
+        assert response.status_code == 200
+        assert response.json()["artist_id"] == "123"
+
+    def test_cache_set_failure_still_returns(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis set failure does not prevent response."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=Exception("write failed"))
+        result = {
+            "artist_id": "123",
+            "artist_name": "Miles Davis",
+            "degree": 500,
+            "collaborator_count": 120,
+            "collaboration_releases": 85,
+            "group_count": 3,
+            "alias_count": 1,
+        }
+        with patch("api.queries.network_queries.get_artist_centrality", new_callable=AsyncMock, return_value=result):
+            response = test_client.get("/api/network/artist/123/centrality")
+        assert response.status_code == 200
+        assert response.json()["centrality"]["degree"] == 500
+
+    def test_non_timeout_neo4j_error_reraises(self, test_client: TestClient) -> None:
+        """Non-timeout Neo4j errors are re-raised (500)."""
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        with patch(
+            "api.queries.network_queries.get_artist_centrality",
+            new_callable=AsyncMock,
+            side_effect=Neo4jClientError("DatabaseUnavailable"),
+        ):
+            response = test_client.get("/api/network/artist/123/centrality")
+        assert response.status_code == 500
+
+    def test_no_redis(self, test_client: TestClient) -> None:
+        """Works without Redis configured."""
+        import api.routers.network as mod
+
+        original_redis = mod._redis
+        mod._redis = None
+        try:
+            result = {
+                "artist_id": "123",
+                "artist_name": "Test",
+                "degree": 10,
+                "collaborator_count": 5,
+                "collaboration_releases": 3,
+                "group_count": 0,
+                "alias_count": 0,
+            }
+            with patch("api.queries.network_queries.get_artist_centrality", new_callable=AsyncMock, return_value=result):
+                response = test_client.get("/api/network/artist/123/centrality")
+            assert response.status_code == 200
+        finally:
+            mod._redis = original_redis
+
+
+class TestClusterEndpoint:
+    """Tests for GET /api/network/cluster/{id}."""
+
+    def test_success(self, test_client: TestClient) -> None:
+        """Returns 200 with cluster detection results."""
+        identity = {"artist_id": "123", "artist_name": "Miles Davis"}
+        clusters = [
+            {
+                "cluster_label": "Jazz",
+                "members": [
+                    {"artist_id": "456", "artist_name": "John Coltrane", "shared_releases": 10},
+                    {"artist_id": "789", "artist_name": "Herbie Hancock", "shared_releases": 8},
+                ],
+                "size": 2,
+            },
+            {
+                "cluster_label": "Funk",
+                "members": [
+                    {"artist_id": "111", "artist_name": "Sly Stone", "shared_releases": 2},
+                ],
+                "size": 1,
+            },
+        ]
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch("api.queries.network_queries.get_artist_cluster", new_callable=AsyncMock, return_value=clusters),
+        ):
+            response = test_client.get("/api/network/cluster/123")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["artist_id"] == "123"
+        assert data["total_clusters"] == 2
+        assert data["total_members"] == 3
+        assert data["clusters"][0]["cluster_label"] == "Jazz"
+
+    def test_not_found(self, test_client: TestClient) -> None:
+        """Returns 404 when artist does not exist."""
+        with patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=None):
+            response = test_client.get("/api/network/cluster/999")
+        assert response.status_code == 404
+
+    def test_not_ready(self, test_client: TestClient) -> None:
+        """Returns 503 when Neo4j is not configured."""
+        import api.routers.network as mod
+
+        original = mod._neo4j
+        mod._neo4j = None
+        try:
+            response = test_client.get("/api/network/cluster/123")
+            assert response.status_code == 503
+        finally:
+            mod._neo4j = original
+
+    def test_timeout(self, test_client: TestClient) -> None:
+        """Returns 504 on Neo4j timeout."""
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        identity = {"artist_id": "123", "artist_name": "Test"}
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch(
+                "api.queries.network_queries.get_artist_cluster",
+                new_callable=AsyncMock,
+                side_effect=Neo4jClientError("TransactionTimedOut"),
+            ),
+        ):
+            response = test_client.get("/api/network/cluster/123")
+        assert response.status_code == 504
+
+    def test_empty_clusters(self, test_client: TestClient) -> None:
+        """Returns empty clusters when artist has no collaborators."""
+        identity = {"artist_id": "123", "artist_name": "Solo Artist"}
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch("api.queries.network_queries.get_artist_cluster", new_callable=AsyncMock, return_value=[]),
+        ):
+            response = test_client.get("/api/network/cluster/123")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["total_clusters"] == 0
+        assert data["total_members"] == 0
+
+    def test_cache_hit(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Returns cached result on Redis hit."""
+        cached = {
+            "artist_id": "123",
+            "artist_name": "Cached",
+            "clusters": [],
+            "total_clusters": 0,
+            "total_members": 0,
+        }
+        mock_redis.get = AsyncMock(return_value=json.dumps(cached))
+        with patch("api.queries.network_queries.get_artist_identity") as mock_id:
+            response = test_client.get("/api/network/cluster/123")
+        assert response.status_code == 200
+        assert response.json() == cached
+        mock_id.assert_not_called()
+
+    def test_cache_miss_stores_result(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Stores result in Redis on cache miss."""
+        mock_redis.get = AsyncMock(return_value=None)
+        identity = {"artist_id": "123", "artist_name": "Test"}
+        clusters = [{"cluster_label": "Jazz", "members": [], "size": 0}]
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch("api.queries.network_queries.get_artist_cluster", new_callable=AsyncMock, return_value=clusters),
+        ):
+            response = test_client.get("/api/network/cluster/123")
+        assert response.status_code == 200
+        mock_redis.setex.assert_called_once()
+        call_args = mock_redis.setex.call_args[0]
+        assert call_args[0] == "network:cluster:123:50"
+        assert call_args[1] == 3600
+
+    def test_cache_get_failure_falls_through(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis get failure falls through to Neo4j query."""
+        mock_redis.get = AsyncMock(side_effect=Exception("connection lost"))
+        identity = {"artist_id": "123", "artist_name": "Test"}
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch("api.queries.network_queries.get_artist_cluster", new_callable=AsyncMock, return_value=[]),
+        ):
+            response = test_client.get("/api/network/cluster/123")
+        assert response.status_code == 200
+
+    def test_cache_set_failure_still_returns(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """Redis set failure does not prevent response."""
+        mock_redis.get = AsyncMock(return_value=None)
+        mock_redis.setex = AsyncMock(side_effect=Exception("write failed"))
+        identity = {"artist_id": "123", "artist_name": "Test"}
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch("api.queries.network_queries.get_artist_cluster", new_callable=AsyncMock, return_value=[]),
+        ):
+            response = test_client.get("/api/network/cluster/123")
+        assert response.status_code == 200
+
+    def test_non_timeout_neo4j_error_reraises(self, test_client: TestClient) -> None:
+        """Non-timeout Neo4j errors are re-raised (500)."""
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        identity = {"artist_id": "123", "artist_name": "Test"}
+        with (
+            patch("api.queries.network_queries.get_artist_identity", new_callable=AsyncMock, return_value=identity),
+            patch(
+                "api.queries.network_queries.get_artist_cluster",
+                new_callable=AsyncMock,
+                side_effect=Neo4jClientError("SomeOtherError"),
+            ),
+        ):
+            response = test_client.get("/api/network/cluster/123")
+        assert response.status_code == 500
+
+    def test_limit_validation(self, test_client: TestClient) -> None:
+        """Rejects limit > 200."""
+        response = test_client.get("/api/network/cluster/123?limit=500")
+        assert response.status_code == 422
+
+
+class TestGetArtistIdentity:
+    """Tests for the get_artist_identity query function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_artist_dict(self) -> None:
+        """Returns artist identity when found."""
+        from api.queries.network_queries import get_artist_identity
+
+        mock_driver = AsyncMock()
+        expected = {"artist_id": "123", "artist_name": "Miles Davis"}
+        with patch("api.queries.network_queries.run_single", new_callable=AsyncMock, return_value=expected):
+            result = await get_artist_identity(mock_driver, "123")
+        assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_not_found(self) -> None:
+        """Returns None when artist does not exist."""
+        from api.queries.network_queries import get_artist_identity
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_single", new_callable=AsyncMock, return_value=None):
+            result = await get_artist_identity(mock_driver, "999")
+        assert result is None
+
+
+class TestGetMultiHopCollaborators:
+    """Tests for the get_multi_hop_collaborators query function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_collaborator_list(self) -> None:
+        """Returns list of collaborators with distance and count."""
+        from api.queries.network_queries import get_multi_hop_collaborators
+
+        mock_driver = AsyncMock()
+        expected = [
+            {"artist_id": "456", "artist_name": "John Coltrane", "distance": 1, "collaboration_count": 5},
+        ]
+        with patch("api.queries.network_queries.run_query", new_callable=AsyncMock, return_value=expected) as mock_run:
+            result = await get_multi_hop_collaborators(mock_driver, "123", depth=2, limit=50)
+        assert result == expected
+        mock_run.assert_called_once()
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["artist_id"] == "123"
+        assert call_kwargs["depth"] == 2
+        assert call_kwargs["limit"] == 50
+
+    @pytest.mark.asyncio
+    async def test_empty_results(self) -> None:
+        """Returns empty list when no collaborators found."""
+        from api.queries.network_queries import get_multi_hop_collaborators
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_query", new_callable=AsyncMock, return_value=[]):
+            result = await get_multi_hop_collaborators(mock_driver, "123")
+        assert result == []
+
+
+class TestCountMultiHopCollaborators:
+    """Tests for the count_multi_hop_collaborators query function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_count(self) -> None:
+        """Returns integer count of collaborators."""
+        from api.queries.network_queries import count_multi_hop_collaborators
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_count", new_callable=AsyncMock, return_value=42) as mock_run:
+            result = await count_multi_hop_collaborators(mock_driver, "123", depth=2)
+        assert result == 42
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["artist_id"] == "123"
+        assert call_kwargs["depth"] == 2
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_for_no_collaborators(self) -> None:
+        """Returns 0 when artist has no collaborators."""
+        from api.queries.network_queries import count_multi_hop_collaborators
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_count", new_callable=AsyncMock, return_value=0):
+            result = await count_multi_hop_collaborators(mock_driver, "123")
+        assert result == 0
+
+
+class TestGetArtistCentrality:
+    """Tests for the get_artist_centrality query function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_centrality_dict(self) -> None:
+        """Returns centrality data for an artist."""
+        from api.queries.network_queries import get_artist_centrality
+
+        mock_driver = AsyncMock()
+        expected = {
+            "artist_id": "123",
+            "artist_name": "Miles Davis",
+            "degree": 500,
+            "collaborator_count": 120,
+            "collaboration_releases": 85,
+            "group_count": 3,
+            "alias_count": 1,
+        }
+        with patch("api.queries.network_queries.run_single", new_callable=AsyncMock, return_value=expected):
+            result = await get_artist_centrality(mock_driver, "123")
+        assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_not_found(self) -> None:
+        """Returns None when artist does not exist."""
+        from api.queries.network_queries import get_artist_centrality
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_single", new_callable=AsyncMock, return_value=None):
+            result = await get_artist_centrality(mock_driver, "999")
+        assert result is None
+
+
+class TestGetArtistClusterGrouping:
+    """Tests for the grouping logic in get_artist_cluster."""
+
+    @pytest.mark.asyncio
+    async def test_groups_by_primary_genre(self) -> None:
+        """Results are grouped by primary_genre."""
+        from api.queries.network_queries import get_artist_cluster
+
+        mock_results = [
+            {"artist_id": "1", "artist_name": "A", "shared_releases": 5, "primary_genre": "Jazz"},
+            {"artist_id": "2", "artist_name": "B", "shared_releases": 3, "primary_genre": "Jazz"},
+            {"artist_id": "3", "artist_name": "C", "shared_releases": 2, "primary_genre": "Rock"},
+        ]
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_query", new_callable=AsyncMock, return_value=mock_results):
+            clusters = await get_artist_cluster(mock_driver, "123")
+        assert len(clusters) == 2
+        jazz_cluster = next(c for c in clusters if c["cluster_label"] == "Jazz")
+        assert jazz_cluster["size"] == 2
+        rock_cluster = next(c for c in clusters if c["cluster_label"] == "Rock")
+        assert rock_cluster["size"] == 1
+
+    @pytest.mark.asyncio
+    async def test_null_genre_becomes_unknown(self) -> None:
+        """Null primary_genre is grouped as 'Unknown'."""
+        from api.queries.network_queries import get_artist_cluster
+
+        mock_results = [
+            {"artist_id": "1", "artist_name": "A", "shared_releases": 5, "primary_genre": None},
+        ]
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_query", new_callable=AsyncMock, return_value=mock_results):
+            clusters = await get_artist_cluster(mock_driver, "123")
+        assert clusters[0]["cluster_label"] == "Unknown"
+
+    @pytest.mark.asyncio
+    async def test_empty_results(self) -> None:
+        """Empty query results produce empty clusters."""
+        from api.queries.network_queries import get_artist_cluster
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_query", new_callable=AsyncMock, return_value=[]):
+            clusters = await get_artist_cluster(mock_driver, "123")
+        assert clusters == []
+
+    @pytest.mark.asyncio
+    async def test_sorted_by_cluster_size_descending(self) -> None:
+        """Clusters are sorted by member count descending."""
+        from api.queries.network_queries import get_artist_cluster
+
+        mock_results = [
+            {"artist_id": "1", "artist_name": "A", "shared_releases": 1, "primary_genre": "Small"},
+            {"artist_id": "2", "artist_name": "B", "shared_releases": 2, "primary_genre": "Big"},
+            {"artist_id": "3", "artist_name": "C", "shared_releases": 3, "primary_genre": "Big"},
+            {"artist_id": "4", "artist_name": "D", "shared_releases": 4, "primary_genre": "Big"},
+        ]
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_query", new_callable=AsyncMock, return_value=mock_results):
+            clusters = await get_artist_cluster(mock_driver, "123")
+        assert clusters[0]["cluster_label"] == "Big"
+        assert clusters[0]["size"] == 3
+        assert clusters[1]["cluster_label"] == "Small"
+        assert clusters[1]["size"] == 1
+
+
+class TestConfigure:
+    """Tests for configure() function."""
+
+    def test_configure_sets_state(self) -> None:
+        """configure() stores neo4j and redis references."""
+        import api.routers.network as mod
+
+        original_neo4j = mod._neo4j
+        original_redis = mod._redis
+        mock_neo4j = AsyncMock()
+        mock_redis = AsyncMock()
+        try:
+            mod.configure(mock_neo4j, mock_redis)
+            assert mod._neo4j is mock_neo4j
+            assert mod._redis is mock_redis
+        finally:
+            mod._neo4j = original_neo4j
+            mod._redis = original_redis
+
+    def test_configure_without_redis(self) -> None:
+        """configure() without redis sets _redis to None."""
+        import api.routers.network as mod
+
+        original_neo4j = mod._neo4j
+        original_redis = mod._redis
+        try:
+            mod.configure(AsyncMock())
+            assert mod._redis is None
+        finally:
+            mod._neo4j = original_neo4j
+            mod._redis = original_redis
