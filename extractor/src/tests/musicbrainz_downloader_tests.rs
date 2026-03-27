@@ -2,6 +2,171 @@ use super::*;
 use std::io::Write;
 use tempfile::TempDir;
 
+#[tokio::test]
+async fn test_download_latest_already_current() {
+    let dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let index_html = r#"<html><body>
+        <a href="20260325-001001/">20260325-001001/</a>
+    </body></html>"#;
+
+    let _index_mock = server
+        .mock("GET", "/")
+        .with_status(200)
+        .with_body(index_html)
+        .create_async()
+        .await;
+
+    // Create existing version directory with all 3 entity files
+    let version_dir = dir.path().join("20260325-001001");
+    std::fs::create_dir(&version_dir).unwrap();
+    std::fs::write(version_dir.join("artist.jsonl"), b"data").unwrap();
+    std::fs::write(version_dir.join("label.jsonl"), b"data").unwrap();
+    std::fs::write(version_dir.join("release.jsonl"), b"data").unwrap();
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
+    let result = downloader.download_latest().await.unwrap();
+
+    assert!(matches!(result, MbDownloadResult::AlreadyCurrent(v) if v == "20260325-001001"));
+}
+
+#[tokio::test]
+async fn test_download_latest_new_version() {
+    let dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let index_html = r#"<html><body>
+        <a href="20260325-001001/">20260325-001001/</a>
+    </body></html>"#;
+    let _index_mock = server
+        .mock("GET", "/")
+        .with_status(200)
+        .with_body(index_html)
+        .create_async()
+        .await;
+
+    // Build a tiny tar.xz for each entity
+    let mut tar_bodies: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    let mut sha256_lines = String::new();
+
+    for entity in &["artist", "label", "release"] {
+        let content = format!("{{\"id\":\"test-{}\"}}\n", entity);
+        let mut tar_data = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut tar_data);
+            let bytes = content.as_bytes();
+            let mut header = tar::Header::new_gnu();
+            header.set_path(format!("{}/mbdump/{}", entity, entity)).unwrap();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append(&header, bytes).unwrap();
+            builder.finish().unwrap();
+        }
+        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+        encoder.write_all(&tar_data).unwrap();
+        let compressed = encoder.finish().unwrap();
+
+        let hash = format!("{:x}", sha2::Sha256::digest(&compressed));
+        sha256_lines.push_str(&format!("{} *{}.tar.xz\n", hash, entity));
+        tar_bodies.insert(entity.to_string(), compressed);
+    }
+
+    let _sha_mock = server
+        .mock("GET", "/20260325-001001/SHA256SUMS")
+        .with_status(200)
+        .with_body(&sha256_lines)
+        .create_async()
+        .await;
+
+    let _artist_mock = server
+        .mock("GET", "/20260325-001001/artist.tar.xz")
+        .with_status(200)
+        .with_body(tar_bodies.get("artist").unwrap().clone())
+        .create_async()
+        .await;
+    let _label_mock = server
+        .mock("GET", "/20260325-001001/label.tar.xz")
+        .with_status(200)
+        .with_body(tar_bodies.get("label").unwrap().clone())
+        .create_async()
+        .await;
+    let _release_mock = server
+        .mock("GET", "/20260325-001001/release.tar.xz")
+        .with_status(200)
+        .with_body(tar_bodies.get("release").unwrap().clone())
+        .create_async()
+        .await;
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
+    let result = downloader.download_latest().await.unwrap();
+
+    assert!(matches!(result, MbDownloadResult::Downloaded(v) if v == "20260325-001001"));
+
+    let version_dir = dir.path().join("20260325-001001");
+    assert!(version_dir.join("artist.jsonl").exists());
+    assert!(version_dir.join("label.jsonl").exists());
+    assert!(version_dir.join("release.jsonl").exists());
+
+    // Verify temp files cleaned up
+    assert!(!version_dir.join("artist.tar.xz.tmp").exists());
+
+    // Verify content
+    let artist_content = std::fs::read_to_string(version_dir.join("artist.jsonl")).unwrap();
+    assert!(artist_content.contains("test-artist"));
+}
+
+#[tokio::test]
+async fn test_download_latest_sha256_mismatch() {
+    let dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let index_html = r#"<html><body>
+        <a href="20260325-001001/">20260325-001001/</a>
+    </body></html>"#;
+    let _index_mock = server
+        .mock("GET", "/")
+        .with_status(200)
+        .with_body(index_html)
+        .create_async()
+        .await;
+
+    let _sha_mock = server
+        .mock("GET", "/20260325-001001/SHA256SUMS")
+        .with_status(200)
+        .with_body("0000000000000000000000000000000000000000000000000000000000000000 *artist.tar.xz\n")
+        .create_async()
+        .await;
+
+    // Serve some data that won't match the wrong hash
+    let tar_data = vec![0u8; 10];
+    let _artist_mock = server
+        .mock("GET", "/20260325-001001/artist.tar.xz")
+        .with_status(200)
+        .with_body(tar_data)
+        .expect_at_least(1)
+        .create_async()
+        .await;
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
+    let result = downloader.download_latest().await;
+
+    assert!(result.is_err());
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(
+        err_msg.contains("SHA256") || err_msg.contains("checksum") || err_msg.contains("mismatch"),
+        "Error should mention checksum: {}",
+        err_msg
+    );
+}
+
 #[test]
 fn test_discover_mb_dump_files_exact_patterns() {
     let dir = TempDir::new().unwrap();
