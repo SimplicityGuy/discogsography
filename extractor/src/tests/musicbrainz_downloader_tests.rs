@@ -69,6 +69,21 @@ fn test_discover_mb_dump_files_ignores_non_jsonl_xz() {
 }
 
 #[test]
+fn test_discover_mb_dump_files_bare_jsonl() {
+    let dir = TempDir::new().unwrap();
+    std::fs::write(dir.path().join("artist.jsonl"), b"fake").unwrap();
+    std::fs::write(dir.path().join("label.jsonl"), b"fake").unwrap();
+    std::fs::write(dir.path().join("release.jsonl"), b"fake").unwrap();
+
+    let found = discover_mb_dump_files(dir.path()).unwrap();
+
+    assert_eq!(found.len(), 3);
+    assert!(found.contains_key(&DataType::Artists));
+    assert!(found.contains_key(&DataType::Labels));
+    assert!(found.contains_key(&DataType::Releases));
+}
+
+#[test]
 fn test_detect_mb_dump_version_from_date_dir() {
     let version = detect_mb_dump_version(Path::new("/data/20260322"));
     assert_eq!(version, "20260322");

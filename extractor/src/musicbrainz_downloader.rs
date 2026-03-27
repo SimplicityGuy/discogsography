@@ -8,9 +8,9 @@ use crate::types::DataType;
 /// Known file name patterns for MusicBrainz JSONL dump files.
 /// Each entry maps a DataType to a list of candidate file-name patterns.
 const MB_FILE_PATTERNS: &[(DataType, &[&str])] = &[
-    (DataType::Artists, &["artist.jsonl.xz", "mbdump-artist.jsonl.xz"]),
-    (DataType::Labels, &["label.jsonl.xz", "mbdump-label.jsonl.xz"]),
-    (DataType::Releases, &["release.jsonl.xz", "mbdump-release.jsonl.xz"]),
+    (DataType::Artists, &["artist.jsonl.xz", "mbdump-artist.jsonl.xz", "artist.jsonl"]),
+    (DataType::Labels, &["label.jsonl.xz", "mbdump-label.jsonl.xz", "label.jsonl"]),
+    (DataType::Releases, &["release.jsonl.xz", "mbdump-release.jsonl.xz", "release.jsonl"]),
 ];
 
 /// Entity name used for fuzzy matching when none of the exact patterns hit.
@@ -54,7 +54,7 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
             for entry in &entries {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
-                if name_str.contains(keyword) && name_str.ends_with(".jsonl.xz") {
+                if name_str.contains(keyword) && (name_str.ends_with(".jsonl.xz") || name_str.ends_with(".jsonl")) {
                     let path = entry.path();
                     info!("📋 Found MusicBrainz {} dump (fuzzy match): {:?}", data_type, path);
                     found.insert(*data_type, path);
