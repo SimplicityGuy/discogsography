@@ -75,40 +75,36 @@ Services and queues are now grouped by pipeline. The `/api/metrics` endpoint ret
 {
   "pipelines": {
     "discogs": {
-      "services": {
-        "extractor": { "status": "healthy", "health_url": "http://extractor:8000/health" },
-        "graphinator": { "status": "healthy", "health_url": "http://graphinator:8001/health" },
-        "tableinator": { "status": "healthy", "health_url": "http://tableinator:8002/health" }
-      },
-      "queues": {
-        "artists": { "messages": 0, "consumers": 1 },
-        "labels": { "messages": 0, "consumers": 1 },
-        "releases": { "messages": 0, "consumers": 1 },
-        "masters": { "messages": 0, "consumers": 1 }
-      }
+      "services": [
+        { "name": "extractor-discogs", "status": "healthy", "last_seen": "...", "current_task": null, "progress": null, "error": null },
+        { "name": "graphinator", "status": "healthy", "..." : "..." },
+        { "name": "tableinator", "status": "healthy", "..." : "..." }
+      ],
+      "queues": [
+        { "name": "discogsography-graphinator-artists", "messages": 0, "messages_ready": 0, "messages_unacknowledged": 0, "consumers": 1, "message_rate": 0.0, "ack_rate": 0.0 },
+        { "name": "discogsography-tableinator-artists", "messages": 0, "..." : "..." }
+      ]
     },
     "musicbrainz": {
-      "services": {
-        "extractor-musicbrainz": { "status": "healthy", "health_url": "http://extractor:8000/health" },
-        "brainzgraphinator": { "status": "healthy", "health_url": "http://brainzgraphinator:8011/health" },
-        "brainztableinator": { "status": "healthy", "health_url": "http://brainztableinator:8010/health" }
-      },
-      "queues": {
-        "artists": { "messages": 0, "consumers": 1 },
-        "labels": { "messages": 0, "consumers": 1 },
-        "releases": { "messages": 0, "consumers": 1 }
-      }
+      "services": [
+        { "name": "extractor-musicbrainz", "status": "healthy", "..." : "..." },
+        { "name": "brainzgraphinator", "status": "healthy", "..." : "..." },
+        { "name": "brainztableinator", "status": "healthy", "..." : "..." }
+      ],
+      "queues": [
+        { "name": "musicbrainz-brainzgraphinator-artists", "messages": 0, "..." : "..." }
+      ]
     }
   },
   "databases": [
-    { "name": "neo4j", "connections": 5, "database_size": "1.2 GB" },
-    { "name": "postgresql", "connections": 10, "database_size": "3.4 GB" }
+    { "name": "Neo4j", "status": "healthy", "connection_count": 1, "size": "1,000 nodes, 5,000 relationships", "error": null },
+    { "name": "PostgreSQL", "status": "healthy", "connection_count": 10, "size": "3.40 GB", "error": null }
   ],
-  "timestamp": "2025-01-06T10:15:30"
+  "timestamp": "2025-01-06T10:15:30+00:00"
 }
 ```
 
-The `/api/services` and `/api/queues` endpoints return dicts keyed by pipeline name using the same structure shown above.
+The `/api/services` and `/api/queues` endpoints return dicts keyed by pipeline name, each containing a list of service or queue objects matching the structure above.
 
 ### MusicBrainz Pipeline Auto-Detection
 
@@ -129,19 +125,19 @@ The dashboard broadcasts updates every 2 seconds with the following data:
   "data": {
     "pipelines": {
       "discogs": {
-        "services": { "extractor": { "status": "healthy" }, "..." : "..." },
-        "queues": { "artists": { "messages": 0, "consumers": 1 }, "..." : "..." }
+        "services": [{ "name": "extractor-discogs", "status": "healthy", "..." : "..." }, "..."],
+        "queues": [{ "name": "discogsography-graphinator-artists", "messages": 0, "..." : "..." }, "..."]
       },
       "musicbrainz": {
-        "services": { "brainzgraphinator": { "status": "healthy" }, "..." : "..." },
-        "queues": { "artists": { "messages": 0, "consumers": 1 }, "..." : "..." }
+        "services": [{ "name": "brainzgraphinator", "status": "healthy", "..." : "..." }, "..."],
+        "queues": [{ "name": "musicbrainz-brainzgraphinator-artists", "messages": 0, "..." : "..." }, "..."]
       }
     },
     "databases": [
-      { "name": "neo4j", "connections": 5, "database_size": "1.2 GB" },
-      { "name": "postgresql", "connections": 10, "database_size": "3.4 GB" }
+      { "name": "Neo4j", "status": "healthy", "connection_count": 1, "size": "1,000 nodes, 5,000 relationships", "error": null },
+      { "name": "PostgreSQL", "status": "healthy", "connection_count": 10, "size": "3.40 GB", "error": null }
     ],
-    "timestamp": "2025-01-06T10:15:30"
+    "timestamp": "2025-01-06T10:15:30+00:00"
   }
 }
 ```
