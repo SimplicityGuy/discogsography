@@ -277,7 +277,9 @@ class TestCreditsRedisCaching:
         cached_data = {
             "name": "Bob Ludwig",
             "total_credits": 1,
-            "credits": [{"release_id": "1", "title": "Cached", "year": 2000, "role": "Mastered By", "category": "mastering", "artists": [], "labels": []}],
+            "credits": [
+                {"release_id": "1", "title": "Cached", "year": 2000, "role": "Mastered By", "category": "mastering", "artists": [], "labels": []}
+            ],
         }
         original_redis = credits_router._redis
         mock_redis = AsyncMock()
