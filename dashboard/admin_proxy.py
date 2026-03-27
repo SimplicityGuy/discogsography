@@ -168,6 +168,25 @@ async def proxy_trigger(request: Request) -> Response:
     return _ok_response(resp)
 
 
+@router.post("/admin/api/extractions/trigger-musicbrainz")
+async def proxy_trigger_musicbrainz(request: Request) -> Response:
+    """Proxy MusicBrainz extraction trigger requests to the API service."""
+    url = _build_url("/api/admin/extractions/trigger")
+    headers = _auth_headers(request)
+    sanitised_body = await _validated_json_body(request)
+    body_dict: dict = json.loads(sanitised_body) if sanitised_body else {}
+    body_dict["source"] = "musicbrainz"
+    payload = json.dumps(body_dict, separators=(",", ":")).encode()
+    headers["Content-Type"] = "application/json"
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, headers=headers, content=payload)
+    except (httpx.ConnectError, httpx.RequestError) as exc:
+        logger.error("❌ API service unreachable", url=url, error=str(exc))
+        return _unavailable_response()
+    return _ok_response(resp)
+
+
 # ---------------------------------------------------------------------------
 # Phase 2 — User Activity & Storage proxy routes
 # ---------------------------------------------------------------------------
