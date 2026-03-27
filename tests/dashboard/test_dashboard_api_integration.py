@@ -24,31 +24,34 @@ class TestDashboardAPIIntegration:
         response = client.get("/api/metrics")
         assert response.status_code == 200
         data = response.json()
-        assert "services" in data
-        assert "queues" in data
+        assert "pipelines" in data
         assert "databases" in data
         assert "timestamp" in data
+        assert "discogs" in data["pipelines"]
+        discogs = data["pipelines"]["discogs"]
+        assert "services" in discogs
+        assert "queues" in discogs
 
     def test_services_endpoint(self, client: TestClient) -> None:
-        """Test services endpoint returns service list."""
+        """Test services endpoint returns service dict grouped by pipeline."""
         response = client.get("/api/services")
         assert response.status_code == 200
-        services = response.json()
-        assert isinstance(services, list)
-        # Should have 3 services when mocked
-        assert len(services) == 3
-        service_names = {s["name"] for s in services}
-        assert service_names == {"extractor", "graphinator", "tableinator"}
+        data = response.json()
+        assert isinstance(data, dict)
+        assert "discogs" in data
+        assert len(data["discogs"]) == 3
+        service_names = {s["name"] for s in data["discogs"]}
+        assert service_names == {"extractor-discogs", "graphinator", "tableinator"}
 
     def test_queues_endpoint(self, client: TestClient) -> None:
-        """Test queues endpoint returns queue list."""
+        """Test queues endpoint returns queue dict grouped by pipeline."""
         response = client.get("/api/queues")
         assert response.status_code == 200
-        queues = response.json()
-        assert isinstance(queues, list)
-        # Should have mocked queues
-        assert len(queues) >= 2
-        for queue in queues:
+        data = response.json()
+        assert isinstance(data, dict)
+        assert "discogs" in data
+        assert len(data["discogs"]) >= 2
+        for queue in data["discogs"]:
             assert "name" in queue
             assert "messages" in queue
             assert "consumers" in queue
@@ -84,3 +87,54 @@ class TestDashboardAPIIntegration:
         response = client.get("/dashboard.js")
         assert response.status_code == 200
         assert "javascript" in response.headers["content-type"]
+
+    def test_musicbrainz_pipeline_absent_when_not_deployed(self, client: TestClient) -> None:
+        """Test that MusicBrainz pipeline is absent when services are not deployed."""
+        response = client.get("/api/metrics")
+        assert response.status_code == 200
+        data = response.json()
+        assert "musicbrainz" not in data["pipelines"]
+
+
+class TestDashboardPipelineDetection:
+    """Test pipeline auto-detection with MusicBrainz enabled."""
+
+    @pytest.fixture
+    def client_with_musicbrainz(self) -> typing.Generator[TestClient]:
+        """Create test client with MusicBrainz pipeline included."""
+        from tests.dashboard.dashboard_test_app import create_test_app_with_musicbrainz
+
+        app = create_test_app_with_musicbrainz()
+        with TestClient(app) as test_client:
+            yield test_client
+
+    def test_both_pipelines_present(self, client_with_musicbrainz: TestClient) -> None:
+        """Test that both Discogs and MusicBrainz pipelines are present."""
+        response = client_with_musicbrainz.get("/api/metrics")
+        assert response.status_code == 200
+        data = response.json()
+        assert "discogs" in data["pipelines"]
+        assert "musicbrainz" in data["pipelines"]
+        mb = data["pipelines"]["musicbrainz"]
+        service_names = {s["name"] for s in mb["services"]}
+        assert service_names == {"extractor-musicbrainz", "brainzgraphinator", "brainztableinator"}
+
+    def test_musicbrainz_services_endpoint(self, client_with_musicbrainz: TestClient) -> None:
+        """Test services endpoint includes MusicBrainz pipeline."""
+        response = client_with_musicbrainz.get("/api/services")
+        assert response.status_code == 200
+        data = response.json()
+        assert "discogs" in data
+        assert "musicbrainz" in data
+        mb_names = {s["name"] for s in data["musicbrainz"]}
+        assert mb_names == {"extractor-musicbrainz", "brainzgraphinator", "brainztableinator"}
+
+    def test_musicbrainz_queues_endpoint(self, client_with_musicbrainz: TestClient) -> None:
+        """Test queues endpoint includes MusicBrainz pipeline."""
+        response = client_with_musicbrainz.get("/api/queues")
+        assert response.status_code == 200
+        data = response.json()
+        assert "discogs" in data
+        assert "musicbrainz" in data
+        assert len(data["musicbrainz"]) >= 1
+        assert data["musicbrainz"][0]["name"] == "musicbrainz-brainzgraphinator-artists"
