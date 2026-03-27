@@ -339,6 +339,23 @@ Temporal analysis of the authenticated user's collection, showing how their tast
 
 - `metric` — Evolution metric: `genre`, `style`, or `label` (default: `genre`)
 
+### MusicBrainz Enrichment
+
+Endpoints exposing MusicBrainz enrichment data linked to Discogs entities. Requires data from brainzgraphinator (Neo4j) and brainztableinator (PostgreSQL).
+
+| Method | Path                                    | Auth Required | Rate Limit | Description                                              |
+| ------ | --------------------------------------- | ------------- | ---------- | -------------------------------------------------------- |
+| GET    | `/api/artist/{artist_id}/musicbrainz`   | No            | 30/min     | MusicBrainz metadata (type, gender, dates, area, disambiguation) |
+| GET    | `/api/artist/{artist_id}/relationships` | No            | 30/min     | MusicBrainz-sourced relationship edges (collaborations, memberships) |
+| GET    | `/api/artist/{artist_id}/external-links`| No            | 30/min     | External links (Wikipedia, Wikidata, AllMusic, Last.fm)  |
+| GET    | `/api/enrichment/status`                | No            | 10/min     | Enrichment coverage statistics (MB entities, Discogs matches, Neo4j enriched) |
+
+**Data sources:**
+
+- `/musicbrainz` and `/relationships` — Neo4j (enriched by brainzgraphinator)
+- `/external-links` — PostgreSQL `musicbrainz.external_links` table (populated by brainztableinator)
+- `/enrichment/status` — Both Neo4j and PostgreSQL
+
 ### Health
 
 | Method | Path      | Port | Description          |

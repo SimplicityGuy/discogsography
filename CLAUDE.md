@@ -22,35 +22,36 @@
 ## Directory Structure
 
 ```
-api/              API service — all user-facing HTTP endpoints (auth, search, graph, OAuth, insights proxy)
-common/           Shared library — config, models, utilities used by all Python services
-dashboard/        Dashboard service — real-time monitoring UI
-explore/          Explore service — static file serving for graph exploration frontend (Vitest for JS tests)
-extractor/        Rust-based extractor — high-performance Discogs XML data ingestion
-graphinator/      Graphinator service — consumes messages, builds Neo4j graph
-insights/         Insights service — precomputed analytics (proxied via API at /api/insights/*)
-mcp-server/       MCP server — exposes knowledge graph to AI assistants via API (no direct DB access)
-schema-init/      Schema initialization — one-time Neo4j and PostgreSQL schema setup
-tableinator/      Tableinator service — consumes messages, builds PostgreSQL tables
-brainzgraphinator/ Brainzgraphinator service — enriches Neo4j with MusicBrainz data
-brainztableinator/ Brainztableinator service — stores MusicBrainz data in PostgreSQL
-utilities/        Monitoring utilities — queue monitor, error checker, system monitor
-tests/            All tests organized by service (tests/api/, tests/common/, etc.)
-scripts/          Build and update scripts
-docs/             Documentation
-backups/          Database backups
+api/                  API service — all user-facing HTTP endpoints (auth, search, graph, OAuth, insights proxy, MusicBrainz)
+brainzgraphinator/    Brainzgraphinator service — MusicBrainz data → Neo4j enrichment
+brainztableinator/    Brainztableinator service — MusicBrainz data → PostgreSQL
+common/               Shared library — config, models, utilities used by all Python services
+dashboard/            Dashboard service — real-time monitoring UI
+explore/              Explore service — static file serving for graph exploration frontend (Vitest for JS tests)
+extractor/            Rust-based extractor — high-performance Discogs XML and MusicBrainz JSONL ingestion
+graphinator/          Graphinator service — consumes messages, builds Neo4j graph
+insights/             Insights service — precomputed analytics (proxied via API at /api/insights/*)
+mcp-server/           MCP server — exposes knowledge graph to AI assistants via API (no direct DB access)
+schema-init/          Schema initialization — one-time Neo4j and PostgreSQL schema setup
+tableinator/          Tableinator service — consumes messages, builds PostgreSQL tables
+utilities/            Monitoring utilities — queue monitor, error checker, system monitor
+tests/                All tests organized by service (tests/api/, tests/common/, etc.)
+scripts/              Build and update scripts
+docs/                 Documentation
+backups/              Database backups
 ```
 
 ## Architecture Notes
 
-- **Extractor** declares 4 fanout exchanges (`discogsography-artists`, `-labels`, `-masters`, `-releases`) and publishes messages. It has zero knowledge of consumers.
-- **Each consumer** (graphinator, tableinator) independently declares its own queues, DLQs, and DLXs.
+- **Extractor** supports two modes: `--source discogs` (XML → 4 fanout exchanges) and `--source musicbrainz` (JSONL → 3 fanout exchanges). It has zero knowledge of consumers.
+- **Discogs exchanges**: `discogsography-{artists,labels,masters,releases}` (4 fanout exchanges)
+- **MusicBrainz exchanges**: `musicbrainz-{artists,labels,releases}` (3 fanout exchanges, no masters)
+- **Each consumer** (graphinator, tableinator, brainzgraphinator, brainztableinator) independently declares its own queues, DLQs, and DLXs.
+- **Brainzgraphinator** enriches existing Neo4j nodes with MusicBrainz metadata (properties, relationships, cross-references). Skips entities without Discogs matches.
+- **Brainztableinator** stores all MusicBrainz data in `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links.
 - **Insights** fetches data from API internal endpoints (`/api/internal/insights/*`) over HTTP — does NOT connect to Neo4j directly. Uses Redis for caching.
 - **Explore** serves static files only — no external HTTP endpoints, no Neo4j env vars.
 - **State markers**: The extractor uses version-specific state markers (`.extraction_status_<version>.json`) to track progress. See `docs/state-marker-system.md`.
-- **Brainzgraphinator** enriches existing Neo4j nodes with MusicBrainz metadata. Skips entities without Discogs matches.
-- **Brainztableinator** stores all MusicBrainz data in `musicbrainz` PostgreSQL schema, including entities without Discogs matches.
-- **Extractor (MusicBrainz mode)** parses MB JSONL dumps and publishes to `musicbrainz-*` fanout exchanges. Runs as a separate container from the Discogs extractor.
 
 ## uv Commands
 
@@ -162,11 +163,11 @@ just deep-clean           # Clean + Docker volumes (destructive)
 | Extractor | — | 8000 |
 | Graphinator | — | 8001 |
 | Tableinator | — | 8002 |
+| Brainztableinator | — | 8010 |
+| Brainzgraphinator | — | 8011 |
 | Neo4j | 7474 (browser), 7687 (bolt) | — |
 | PostgreSQL | 5433 (mapped from 5432) | — |
 | RabbitMQ | 5672 (AMQP), 15672 (management) | — |
-| Brainzgraphinator | — | 8011 |
-| Brainztableinator | — | 8010 |
 
 ## Environment Variables
 

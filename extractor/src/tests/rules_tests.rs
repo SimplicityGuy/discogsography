@@ -713,12 +713,8 @@ fn test_flagged_writer_write_violation_and_flush() {
     let temp_dir = TempDir::new().unwrap();
     let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260301");
 
-    let violation = Violation {
-        rule_name: "test-rule".to_string(),
-        severity: Severity::Error,
-        field: "name".to_string(),
-        field_value: "".to_string(),
-    };
+    let violation =
+        Violation { rule_name: "test-rule".to_string(), severity: Severity::Error, field: "name".to_string(), field_value: "".to_string() };
 
     let parsed_json = json!({"name": "", "id": "123"});
     let raw_xml = b"<artist id=\"123\"><name></name></artist>";
@@ -746,18 +742,10 @@ fn test_flagged_writer_deduplicates_files() {
     let temp_dir = TempDir::new().unwrap();
     let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260301");
 
-    let violation1 = Violation {
-        rule_name: "rule-a".to_string(),
-        severity: Severity::Warning,
-        field: "name".to_string(),
-        field_value: "bad".to_string(),
-    };
-    let violation2 = Violation {
-        rule_name: "rule-b".to_string(),
-        severity: Severity::Error,
-        field: "year".to_string(),
-        field_value: "0".to_string(),
-    };
+    let violation1 =
+        Violation { rule_name: "rule-a".to_string(), severity: Severity::Warning, field: "name".to_string(), field_value: "bad".to_string() };
+    let violation2 =
+        Violation { rule_name: "rule-b".to_string(), severity: Severity::Error, field: "year".to_string(), field_value: "0".to_string() };
 
     let parsed_json = json!({"name": "bad", "year": "0"});
 
@@ -784,12 +772,7 @@ fn test_flagged_writer_no_capture_files() {
     let temp_dir = TempDir::new().unwrap();
     let mut writer = FlaggedRecordWriter::new(temp_dir.path(), "20260301");
 
-    let violation = Violation {
-        rule_name: "info-rule".to_string(),
-        severity: Severity::Info,
-        field: "x".to_string(),
-        field_value: "y".to_string(),
-    };
+    let violation = Violation { rule_name: "info-rule".to_string(), severity: Severity::Info, field: "x".to_string(), field_value: "y".to_string() };
 
     let parsed_json = json!({"x": "y"});
 

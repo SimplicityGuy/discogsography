@@ -112,10 +112,7 @@ async fn ready_handler(State((state, _)): State<AppState>) -> StatusCode {
     }
 }
 
-pub async fn trigger_handler(
-    State((state, trigger)): State<AppState>,
-    body: Option<Json<TriggerRequest>>,
-) -> (StatusCode, Json<serde_json::Value>) {
+pub async fn trigger_handler(State((state, trigger)): State<AppState>, body: Option<Json<TriggerRequest>>) -> (StatusCode, Json<serde_json::Value>) {
     let state = state.read().await;
     if state.extraction_status == ExtractionStatus::Running {
         return (StatusCode::CONFLICT, Json(json!({"status": "already_running"})));

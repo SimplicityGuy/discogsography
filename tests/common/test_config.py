@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from common import ExtractorConfig, GraphinatorConfig, TableinatorConfig, setup_logging
+from common import BrainzgraphinatorConfig, BrainztableinatorConfig, ExtractorConfig, GraphinatorConfig, TableinatorConfig, setup_logging
 from common.config import get_secret
 
 
@@ -115,6 +115,64 @@ class TestTableinatorConfig:
             TableinatorConfig.from_env()
 
 
+class TestBrainzgraphinatorConfig:
+    """Test BrainzgraphinatorConfig class."""
+
+    def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test configuration loading with all environment variables set."""
+        monkeypatch.setenv("RABBITMQ_USERNAME", "user")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
+        monkeypatch.setenv("RABBITMQ_HOST", "host")
+        monkeypatch.setenv("RABBITMQ_PORT", "5672")
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+
+        config = BrainzgraphinatorConfig.from_env()
+
+        assert config.amqp_connection == "amqp://user:pass@host:5672/%2F"
+        assert config.neo4j_host == "bolt://neo4j:7687"
+        assert config.neo4j_username == "neo4j"
+        assert config.neo4j_password == "secret"
+
+    def test_from_env_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test configuration loading with missing required variables."""
+        monkeypatch.delenv("NEO4J_HOST", raising=False)
+
+        with pytest.raises(ValueError, match=r"Missing required environment variables.*NEO4J_HOST"):
+            BrainzgraphinatorConfig.from_env()
+
+
+class TestBrainztableinatorConfig:
+    """Test BrainztableinatorConfig class."""
+
+    def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test configuration loading with all environment variables set."""
+        monkeypatch.setenv("RABBITMQ_USERNAME", "user")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
+        monkeypatch.setenv("RABBITMQ_HOST", "host")
+        monkeypatch.setenv("RABBITMQ_PORT", "5672")
+        monkeypatch.setenv("POSTGRES_HOST", "pghost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
+
+        config = BrainztableinatorConfig.from_env()
+
+        assert config.amqp_connection == "amqp://user:pass@host:5672/%2F"
+        assert config.postgres_host == "pghost:5432"
+        assert config.postgres_username == "pguser"
+        assert config.postgres_password == "pgpass"
+        assert config.postgres_database == "mydb"
+
+    def test_from_env_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test configuration loading with missing required variables."""
+        monkeypatch.delenv("POSTGRES_HOST", raising=False)
+
+        with pytest.raises(ValueError, match=r"Missing required environment variables.*POSTGRES_HOST"):
+            BrainztableinatorConfig.from_env()
+
+
 class TestSetupLogging:
     """Test setup_logging function."""
 
@@ -213,6 +271,18 @@ class TestSetupLogging:
 
         logger = logging.getLogger()
         assert logger.level == logging.ERROR
+
+    def test_setup_logging_warns_db_profiling(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that setup_logging warns when database profiling is enabled."""
+        import logging
+
+        logging.root.handlers = []
+        monkeypatch.setenv("DB_PROFILING", "true")
+
+        from unittest.mock import patch
+
+        with patch("common.config.query_debug.is_db_profiling", return_value=True):
+            setup_logging("test_service")
 
 
 class TestExtractorConfigEdgeCases:
@@ -976,3 +1046,30 @@ class TestInsightsConfig:
 
         config = InsightsConfig.from_env()
         assert config.redis_host == "redis://my-redis:6379/0"
+
+    def test_schedule_hours_less_than_one_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "0")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.schedule_hours == 24
+
+    def test_schedule_hours_negative_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "-5")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.schedule_hours == 24
+
+    def test_schedule_hours_invalid_string_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "abc")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.schedule_hours == 24

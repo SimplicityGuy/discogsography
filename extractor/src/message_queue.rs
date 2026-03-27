@@ -11,7 +11,8 @@ use async_trait::async_trait;
 
 use crate::types::{DataMessage, DataType, ExtractionCompleteMessage, FileCompleteMessage, Message};
 
-const AMQP_EXCHANGE_PREFIX: &str = "discogsography";
+#[allow(dead_code)]
+const DEFAULT_EXCHANGE_PREFIX: &str = "discogsography";
 const AMQP_EXCHANGE_TYPE: ExchangeKind = ExchangeKind::Fanout;
 
 #[cfg_attr(feature = "test-support", mockall::automock)]
@@ -35,19 +36,26 @@ pub struct MessageQueue {
     channel: Arc<RwLock<Option<Channel>>>,
     url: String,
     max_retries: u32,
+    exchange_prefix: String,
 }
 
 impl MessageQueue {
     /// Build the fanout exchange name for a given data type (e.g. "discogsography-artists")
-    fn exchange_name(data_type: DataType) -> String {
-        format!("{}-{}", AMQP_EXCHANGE_PREFIX, data_type)
+    fn exchange_name(&self, data_type: DataType) -> String {
+        format!("{}-{}", self.exchange_prefix, data_type)
     }
 
-    pub async fn new(url: &str, max_retries: u32) -> Result<Self> {
+    pub async fn new(url: &str, max_retries: u32, exchange_prefix: &str) -> Result<Self> {
         // Normalize the AMQP URL to handle trailing slash consistently with Python extractor
         let normalized_url = Self::normalize_amqp_url(url)?;
 
-        let mq = Self { connection: Arc::new(RwLock::new(None)), channel: Arc::new(RwLock::new(None)), url: normalized_url, max_retries };
+        let mq = Self {
+            connection: Arc::new(RwLock::new(None)),
+            channel: Arc::new(RwLock::new(None)),
+            url: normalized_url,
+            max_retries,
+            exchange_prefix: exchange_prefix.to_string(),
+        };
 
         mq.connect().await?;
         Ok(mq)
@@ -143,7 +151,7 @@ impl MessageQueue {
 impl MessagePublisher for MessageQueue {
     async fn setup_exchange(&self, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
-        let exchange_name = Self::exchange_name(data_type);
+        let exchange_name = self.exchange_name(data_type);
 
         channel
             .exchange_declare(
@@ -162,7 +170,7 @@ impl MessagePublisher for MessageQueue {
 
     async fn publish(&self, message: Message, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
-        let exchange_name = Self::exchange_name(data_type);
+        let exchange_name = self.exchange_name(data_type);
         let payload = serde_json::to_vec(&message).context("Failed to serialize message")?;
 
         let confirm = channel
@@ -181,7 +189,7 @@ impl MessagePublisher for MessageQueue {
 
     async fn publish_batch(&self, messages: Vec<DataMessage>, data_type: DataType) -> Result<()> {
         let channel = self.get_channel().await?;
-        let exchange_name = Self::exchange_name(data_type);
+        let exchange_name = self.exchange_name(data_type);
 
         for message in messages {
             let payload = serde_json::to_vec(&Message::Data(message)).context("Failed to serialize message")?;
