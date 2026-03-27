@@ -24,6 +24,7 @@ quick-xml = { version = "0.39", features = ["serialize"] }
 # Compression handling
 flate2 = "1.1"
 xz2 = "0.1"
+tar = "0.4"
 
 # Message queue (AMQP) - latest
 lapin = "4.0"
