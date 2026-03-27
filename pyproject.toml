@@ -71,6 +71,9 @@ insights = [
 tableinator = [
     "psycopg[binary]>=3.1.0",
 ]
+brainztableinator = [
+    "psycopg[binary]>=3.1.0",
+]
 dev = [
     "bandit>=1.7.0",
     "black>=24.0.0",
@@ -128,7 +131,7 @@ docstring-code-line-length = "dynamic"
 lines-after-imports = 2
 combine-as-imports = true
 split-on-trailing-comma = true
-known-first-party = ["api", "common", "dashboard", "explore", "graphinator", "mcp_server", "neo4j_schema", "postgres_schema", "schema_init", "tableinator"]
+known-first-party = ["api", "brainztableinator", "common", "dashboard", "explore", "graphinator", "mcp_server", "neo4j_schema", "postgres_schema", "schema_init", "tableinator"]
 section-order = ["future", "standard-library", "third-party", "first-party", "local-folder"]
 force-sort-within-sections = true
 
@@ -173,6 +176,7 @@ ignore = [
 "*/insights.py" = ["T201"]                  # Allow print statements for ASCII art
 "*/schema_init.py" = ["T201"]               # Allow print statements for ASCII art
 "*/server.py" = ["T201"]                    # Allow print statements for ASCII art
+"*/brainztableinator.py" = ["T201"]          # Allow print statements for ASCII art
 "*/tableinator.py" = ["T201"]               # Allow print statements for ASCII art
 "api/admin_setup.py" = ["T201"]              # CLI tool uses print for user output
 "api/setup.py" = ["T201"]                   # CLI tool uses print for user output
@@ -212,7 +216,7 @@ disallow_untyped_decorators = false
 
 
 [tool.coverage.run]
-source = ["api", "common", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
+source = ["api", "brainztableinator", "common", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
 omit = ["*/tests/*", "*/__init__.py"]
 relative_files = true
 
@@ -292,7 +296,7 @@ split_on_trailing_comma = true
 
 # uv workspace configuration
 [tool.uv.workspace]
-members = ["api", "common", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
+members = ["api", "brainztableinator", "common", "dashboard", "explore", "graphinator", "insights", "mcp-server", "schema-init", "tableinator"]
 
 # Environment restrictions for uv to avoid iOS and other incompatible platforms
 [tool.uv]

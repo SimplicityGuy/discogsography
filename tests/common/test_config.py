@@ -214,6 +214,18 @@ class TestSetupLogging:
         logger = logging.getLogger()
         assert logger.level == logging.ERROR
 
+    def test_setup_logging_warns_db_profiling(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test that setup_logging warns when database profiling is enabled."""
+        import logging
+
+        logging.root.handlers = []
+        monkeypatch.setenv("DB_PROFILING", "true")
+
+        from unittest.mock import patch
+
+        with patch("common.config.query_debug.is_db_profiling", return_value=True):
+            setup_logging("test_service")
+
 
 class TestExtractorConfigEdgeCases:
     """Test ExtractorConfig edge cases for PERIODIC_CHECK_DAYS validation."""
@@ -976,3 +988,30 @@ class TestInsightsConfig:
 
         config = InsightsConfig.from_env()
         assert config.redis_host == "redis://my-redis:6379/0"
+
+    def test_schedule_hours_less_than_one_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "0")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.schedule_hours == 24
+
+    def test_schedule_hours_negative_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "-5")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.schedule_hours == 24
+
+    def test_schedule_hours_invalid_string_defaults(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        _set_insights_env(monkeypatch)
+        monkeypatch.setenv("INSIGHTS_SCHEDULE_HOURS", "abc")
+
+        from common.config import InsightsConfig
+
+        config = InsightsConfig.from_env()
+        assert config.schedule_hours == 24
