@@ -123,6 +123,9 @@ function setupDOM() {
 // ── D3 Mock ────────────────────────────────────────────────────────────── //
 
 function createD3Mock() {
+    // Track callback functions passed to .text(), .attr(), .on() for coverage
+    const _callbacks = { text: [], attr: [], on: [], tick: null };
+
     const chainable = () => {
         const obj = {};
         const methods = [
@@ -136,8 +139,20 @@ function createD3Mock() {
             data: vi.fn(() => ({
                 join: vi.fn(() => {
                     const joined = {};
-                    ['attr', 'style', 'on', 'text'].forEach(m => {
+                    ['style'].forEach(m => {
                         joined[m] = vi.fn(function () { return joined; });
+                    });
+                    joined.attr = vi.fn(function (_name, valOrFn) {
+                        if (typeof valOrFn === 'function') _callbacks.attr.push(valOrFn);
+                        return joined;
+                    });
+                    joined.on = vi.fn(function (_event, fn) {
+                        if (typeof fn === 'function') _callbacks.on.push(fn);
+                        return joined;
+                    });
+                    joined.text = vi.fn(function (valOrFn) {
+                        if (typeof valOrFn === 'function') _callbacks.text.push(valOrFn);
+                        return joined;
                     });
                     return joined;
                 }),
@@ -156,15 +171,21 @@ function createD3Mock() {
 
     const simulation = {
         force: vi.fn(function () { return simulation; }),
-        on: vi.fn(function () { return simulation; }),
+        on: vi.fn(function (_event, fn) {
+            if (_event === 'tick' && typeof fn === 'function') _callbacks.tick = fn;
+            return simulation;
+        }),
     };
 
-    return {
+    const mock = {
         select: vi.fn(() => chainable()),
         forceSimulation: vi.fn(() => simulation),
         forceLink: vi.fn(() => {
             const fl = {};
-            fl.id = vi.fn(() => fl);
+            fl.id = vi.fn((fn) => {
+                if (typeof fn === 'function') _callbacks.forceLinkId = fn;
+                return fl;
+            });
             fl.distance = vi.fn(() => fl);
             return fl;
         }),
@@ -174,7 +195,10 @@ function createD3Mock() {
             return fb;
         }),
         forceCenter: vi.fn(() => ({})),
+        _callbacks,
     };
+
+    return mock;
 }
 
 // ── Helper to build standard mock fetch ────────────────────────────────── //
@@ -1194,6 +1218,75 @@ describe('CreditsPanel', () => {
             expect(() => {
                 window.creditsPanel._renderConnections(MOCK_CONNECTIONS.connections, 'Bob Ludwig');
             }).not.toThrow();
+        });
+
+        it('should truncate long names in labels via text callback', () => {
+            window.creditsPanel._renderConnections(MOCK_CONNECTIONS.connections, 'Bob Ludwig');
+
+            const textCallbacks = globalThis.d3._callbacks.text;
+            expect(textCallbacks.length).toBeGreaterThan(0);
+
+            const textFn = textCallbacks[0];
+            // Short name — returned as-is
+            expect(textFn({ id: 'Bob Ludwig' })).toBe('Bob Ludwig');
+            // Long name (>20 chars) — truncated with ellipsis
+            expect(textFn({ id: 'A Very Long Person Name Here' })).toBe('A Very Long Person\u2026');
+        });
+
+        it('should set different dy for center vs connected nodes via attr callback', () => {
+            window.creditsPanel._renderConnections(MOCK_CONNECTIONS.connections, 'Bob Ludwig');
+
+            const attrCallbacks = globalThis.d3._callbacks.attr;
+            // Find the dy callback (one that returns -16 or -10)
+            const dyFn = attrCallbacks.find(fn => fn({ group: 'center' }) === -16);
+            expect(dyFn).toBeDefined();
+            expect(dyFn({ group: 'center' })).toBe(-16);
+            expect(dyFn({ group: 'connected' })).toBe(-10);
+        });
+
+        it('should invoke tick handler to update positions', () => {
+            window.creditsPanel._renderConnections(MOCK_CONNECTIONS.connections, 'Bob Ludwig');
+
+            const tickFn = globalThis.d3._callbacks.tick;
+            expect(tickFn).toBeTypeOf('function');
+
+            // Clear attr callbacks collected during initial render
+            globalThis.d3._callbacks.attr.length = 0;
+
+            // tick handler calls .attr() on link, node, and label — should not throw
+            expect(() => tickFn()).not.toThrow();
+
+            // Invoke the attr callbacks captured during tick to cover the arrow functions
+            const tickAttrCallbacks = globalThis.d3._callbacks.attr;
+            expect(tickAttrCallbacks.length).toBeGreaterThan(0);
+            const mockDatum = { x: 10, y: 20, source: { x: 1, y: 2 }, target: { x: 3, y: 4 } };
+            tickAttrCallbacks.forEach(fn => fn(mockDatum));
+        });
+
+        it('should use node id as forceLink identifier', () => {
+            window.creditsPanel._renderConnections(MOCK_CONNECTIONS.connections, 'Bob Ludwig');
+
+            const idFn = globalThis.d3._callbacks.forceLinkId;
+            expect(idFn).toBeTypeOf('function');
+            expect(idFn({ id: 'test-node' })).toBe('test-node');
+        });
+
+        it('should navigate to connected person on node click', () => {
+            const selectSpy = vi.spyOn(window.creditsPanel, '_selectPerson');
+            window.creditsPanel._renderConnections(MOCK_CONNECTIONS.connections, 'Bob Ludwig');
+
+            const clickCallbacks = globalThis.d3._callbacks.on;
+            expect(clickCallbacks.length).toBeGreaterThan(0);
+
+            const clickFn = clickCallbacks[0];
+            // Clicking a non-center node should select that person
+            clickFn(new MouseEvent('click'), { id: 'Greg Calbi' });
+            expect(selectSpy).toHaveBeenCalledWith('Greg Calbi');
+
+            // Clicking center node should NOT select
+            selectSpy.mockClear();
+            clickFn(new MouseEvent('click'), { id: 'Bob Ludwig' });
+            expect(selectSpy).not.toHaveBeenCalled();
         });
 
         it('should deduplicate nodes', () => {
