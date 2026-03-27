@@ -181,6 +181,9 @@ test-parallel:
     uv run pytest tests/insights/ -v > /tmp/test-insights.log 2>&1 &
     pid_insights=$!
 
+    uv run pytest tests/brainzgraphinator/ -v > /tmp/test-brainzgraphinator.log 2>&1 &
+    pid_brainzgraphinator=$!
+
     uv run pytest tests/graphinator/ -v > /tmp/test-graphinator.log 2>&1 &
     pid_graphinator=$!
 
@@ -212,6 +215,7 @@ test-parallel:
     wait $pid_dashboard || { echo "❌ Dashboard tests failed"; cat /tmp/test-dashboard.log; failed=1; }
     wait $pid_explore || { echo "❌ Explore tests failed"; cat /tmp/test-explore.log; failed=1; }
     wait $pid_insights || { echo "❌ Insights tests failed"; cat /tmp/test-insights.log; failed=1; }
+    wait $pid_brainzgraphinator || { echo "❌ Brainzgraphinator tests failed"; cat /tmp/test-brainzgraphinator.log; failed=1; }
     wait $pid_graphinator || { echo "❌ Graphinator tests failed"; cat /tmp/test-graphinator.log; failed=1; }
     wait $pid_mcp_server || { echo "❌ MCP server tests failed"; cat /tmp/test-mcp-server.log; failed=1; }
     wait $pid_schema_init || { echo "❌ Schema-init tests failed"; cat /tmp/test-schema-init.log; failed=1; }
@@ -278,6 +282,12 @@ test-extractor-cov:
 test-insights:
     uv run pytest tests/insights/ -v \
         --cov --cov-config=.coveragerc.insights --cov-report=xml --cov-report=json --cov-report=term
+
+# Run brainzgraphinator service tests with coverage
+[group('test')]
+test-brainzgraphinator:
+    uv run pytest tests/brainzgraphinator/ -v \
+        --cov --cov-config=.coveragerc.brainzgraphinator --cov-report=xml --cov-report=json --cov-report=term
 
 # Run graphinator service tests with coverage
 [group('test')]

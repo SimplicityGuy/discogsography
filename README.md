@@ -35,6 +35,7 @@ Discogsography transforms monthly Discogs data dumps (~11.3GB compressed XML) in
 - **🐘 PostgreSQL Database**: High-performance queries and full-text search
 - **🔍 Interactive Explorer**: Graph visualisation, trends, and path discovery
 - **📊 Real-time Dashboard**: Monitor system health and processing metrics
+- **🎵 MusicBrainz Enrichment**: Cross-reference with MusicBrainz for metadata, relationships, and external links
 
 Perfect for music researchers, data scientists, developers, and music enthusiasts who want to explore the world's largest music database.
 
@@ -54,17 +55,30 @@ Perfect for music researchers, data scientists, developers, and music enthusiast
 | **[📈](docs/emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends           | `FastAPI`, `psycopg3`, `httpx`                               |
 | **[🤖](docs/emoji-guide.md#service-identifiers) MCP Server** | Exposes knowledge graph to AI assistants         | `FastMCP`, `httpx`                                           |
 
+### 🎵 MusicBrainz Enrichment Services
+
+| Service                                                              | Purpose                                                    | Key Technologies                    |
+| -------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------- |
+| **[🧠](docs/emoji-guide.md#service-identifiers) Brainzgraphinator** | Enriches Neo4j graph with MusicBrainz metadata and relationships | `neo4j-driver`, `pika`              |
+| **[🧬](docs/emoji-guide.md#service-identifiers) Brainztableinator** | Populates PostgreSQL with MusicBrainz data and external links    | `psycopg3`, `pika`                  |
+
 ### 📐 System Architecture
 
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Data Dumps")]
+    MB[("🎵 MusicBrainz<br/>JSONL Dumps")]
 
     subgraph Pipeline ["Data Pipeline"]
         EXT[["⚡ Extractor"]]
         RMQ{{"🐰 RabbitMQ"}}
         GRAPH[["🔗 Graphinator"]]
         TABLE[["🐘 Tableinator"]]
+    end
+
+    subgraph MBPipeline ["MusicBrainz Enrichment"]
+        BGRAPH[["🧠 Brainzgraphinator"]]
+        BTABLE[["🧬 Brainztableinator"]]
     end
 
     subgraph Storage ["Storage"]
@@ -81,14 +95,18 @@ graph TD
     end
 
     S3 --> EXT --> RMQ
+    MB --> EXT
     RMQ --> GRAPH --> NEO4J
     RMQ --> TABLE --> PG
+    RMQ --> BGRAPH --> NEO4J
+    RMQ --> BTABLE --> PG
 
     API --- NEO4J & PG & REDIS
     INSIGHTS --- PG & REDIS
     DASH -.- RMQ & NEO4J & PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style MB fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
@@ -96,6 +114,8 @@ graph TD
     style REDIS fill:#ffebee,stroke:#b71c1c,stroke-width:2px
     style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style BGRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    style BTABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style API fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
     style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
     style DASH fill:#fce4ec,stroke:#880e4f,stroke-width:2px
