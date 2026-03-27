@@ -109,3 +109,40 @@ fn test_discover_mb_dump_files_exact_preferred_over_fuzzy() {
     let artist_path = found.get(&DataType::Artists).unwrap();
     assert!(artist_path.ends_with("artist.jsonl.xz"));
 }
+
+#[test]
+fn test_find_latest_mb_directory_single() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join("20260325-001001")).unwrap();
+
+    let result = find_latest_mb_directory(dir.path());
+    assert_eq!(result, Some(dir.path().join("20260325-001001")));
+}
+
+#[test]
+fn test_find_latest_mb_directory_multiple() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join("20260321-001002")).unwrap();
+    std::fs::create_dir(dir.path().join("20260325-001001")).unwrap();
+
+    let result = find_latest_mb_directory(dir.path());
+    assert_eq!(result, Some(dir.path().join("20260325-001001")));
+}
+
+#[test]
+fn test_find_latest_mb_directory_empty() {
+    let dir = TempDir::new().unwrap();
+
+    let result = find_latest_mb_directory(dir.path());
+    assert_eq!(result, None);
+}
+
+#[test]
+fn test_find_latest_mb_directory_ignores_non_version_dirs() {
+    let dir = TempDir::new().unwrap();
+    std::fs::create_dir(dir.path().join("some-random-dir")).unwrap();
+    std::fs::create_dir(dir.path().join("20260325-001001")).unwrap();
+
+    let result = find_latest_mb_directory(dir.path());
+    assert_eq!(result, Some(dir.path().join("20260325-001001")));
+}

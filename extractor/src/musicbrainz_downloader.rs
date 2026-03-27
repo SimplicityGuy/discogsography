@@ -29,8 +29,7 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
     let mut found: HashMap<DataType, PathBuf> = HashMap::new();
 
     // `root` comes from operator-controlled config (CLI/env var), not HTTP input.
-    let entries: Vec<_> = match std::fs::read_dir(root) {
-        // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+    let entries: Vec<_> = match std::fs::read_dir(root) { // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
         Ok(rd) => rd.filter_map(|e| e.ok()).filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false)).collect(),
         Err(e) => {
             warn!("⚠️ Cannot read MusicBrainz dump directory {:?}: {}", root, e);
@@ -102,6 +101,29 @@ pub fn detect_mb_dump_version(root: &Path) -> String {
     let fallback = chrono::Utc::now().format("%Y%m%d").to_string();
     info!("📋 Using current date as MusicBrainz dump version: {}", fallback);
     fallback
+}
+
+/// Scan `root` for subdirectories matching the MusicBrainz version pattern
+/// (YYYYMMDD-HHMMSS) and return the path to the most recent one.
+#[allow(dead_code)]
+pub fn find_latest_mb_directory(root: &Path) -> Option<PathBuf> {
+    let version_pattern = regex::Regex::new(r"^\d{8}-\d{6}$").ok()?;
+
+    let mut versions: Vec<String> = match std::fs::read_dir(root) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                if version_pattern.is_match(&name) { Some(name) } else { None }
+            })
+            .collect(),
+        Err(_) => return None,
+    };
+
+    versions.sort_by(|a, b| b.cmp(a));
+    // `root` comes from operator-controlled config (CLI/env var), not HTTP input.
+    versions.first().map(|v| root.join(v)) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
 }
 
 #[cfg(test)]
