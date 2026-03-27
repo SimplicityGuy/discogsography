@@ -603,6 +603,11 @@ body {
                         <span class="material-symbols-outlined">account_tree</span>Genres
                     </a>
                 </li>
+                <li>
+                    <a class="nav-link" href="#" data-pane="credits">
+                        <span class="material-symbols-outlined">badge</span>Credits
+                    </a>
+                </li>
             </ul>
         </nav>
 
@@ -971,6 +976,84 @@ body {
             </div>
         </div>
 
+        <!-- Credits pane -->
+        <div class="pane" id="creditsPane">
+            <div class="user-pane-header">
+                <h5><span class="material-symbols-outlined">badge</span>Credits &amp; Provenance</h5>
+            </div>
+            <div class="user-pane-body">
+                <div class="credits-search-bar">
+                    <div class="credits-autocomplete-wrapper">
+                        <input type="text" id="creditsSearchInput" class="form-control"
+                               placeholder="Search for a credited person..." autocomplete="off">
+                        <div class="autocomplete-dropdown hidden" id="creditsAutocompleteDropdown"></div>
+                    </div>
+                </div>
+
+                <div class="loading-overlay" id="creditsLoading">
+                    <div class="spinner" role="status"></div>
+                    <p class="mt-2 text-text-mid">Loading credits...</p>
+                </div>
+
+                <!-- Person Profile Card -->
+                <div id="creditsProfileCard" class="credits-section hidden">
+                    <div class="credits-profile-header">
+                        <h6 id="creditsPersonName"></h6>
+                        <span class="credits-badge" id="creditsTotalCount"></span>
+                        <a class="credits-artist-link hidden" id="creditsArtistLink" href="#">View as Artist</a>
+                    </div>
+                    <div class="credits-profile-meta">
+                        <span id="creditsActiveYears" class="text-text-mid"></span>
+                    </div>
+                    <div id="creditsRoleBreakdown" class="credits-role-pills"></div>
+                </div>
+
+                <!-- Credits Timeline -->
+                <div id="creditsTimelineSection" class="credits-section hidden">
+                    <h6>Timeline</h6>
+                    <div id="creditsTimelineChart" class="credits-chart"></div>
+                </div>
+
+                <!-- Release List -->
+                <div id="creditsReleaseSection" class="credits-section hidden">
+                    <div class="credits-section-header">
+                        <h6>Releases</h6>
+                        <div class="credits-filter-pills" id="creditsRoleFilter"></div>
+                    </div>
+                    <div id="creditsReleaseList" class="credits-release-list"></div>
+                </div>
+
+                <!-- Connections Graph -->
+                <div id="creditsConnectionsSection" class="credits-section hidden">
+                    <h6>Connections</h6>
+                    <div id="creditsConnectionsGraph" class="credits-graph"></div>
+                </div>
+
+                <!-- Leaderboard -->
+                <div id="creditsLeaderboardSection" class="credits-section hidden">
+                    <h6>Prolific Leaderboard</h6>
+                    <div class="credits-leaderboard-controls">
+                        <select id="creditsLeaderboardCategory" class="form-control form-control-sm">
+                            <option value="production">Production</option>
+                            <option value="engineering">Engineering</option>
+                            <option value="mastering">Mastering</option>
+                            <option value="session">Session</option>
+                            <option value="design">Design</option>
+                            <option value="management">Management</option>
+                        </select>
+                    </div>
+                    <div id="creditsLeaderboardList" class="credits-leaderboard-list"></div>
+                </div>
+
+                <!-- Empty State -->
+                <div id="creditsEmptyState" class="user-pane-empty">
+                    <span class="material-symbols-outlined icon-3x mb-3">badge</span>
+                    <p>Search for a credited person to explore the people behind the music.</p>
+                    <p class="text-text-mid mt-1">Producers, engineers, mastering engineers, session musicians, and more.</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Collection pane -->
         <div class="pane" id="collectionPane">
             <div class="user-pane-body">
@@ -1058,6 +1141,7 @@ body {
     <script src="js/insights.js"></script>
     <script src="js/genre-tree.js"></script>
     <script src="js/collaborators.js"></script>
+    <script src="js/credits.js"></script>
     <script src="js/theme.js"></script>
     <script src="js/nlq.js"></script>
     <script src="js/app.js"></script>

@@ -413,6 +413,26 @@ def normalize_release(release_data: dict[str, Any]) -> dict[str, Any]:
         style_list = normalize_nested_list(styles, "style")
         result["styles"] = [s if isinstance(s, str) else normalize_text(s) or str(s) for s in style_list]
 
+    # Normalize extraartists (credits data)
+    extraartists = release_data.get("extraartists")
+    if extraartists:
+        normalized_credits = []
+        for artist in normalize_nested_list(extraartists, "artist"):
+            name = None
+            if isinstance(artist, dict):
+                name = artist.get("name")
+                role = artist.get("role", "")
+                artist_id = artist.get("id")
+            else:
+                continue
+            if name and role:
+                credit: dict[str, Any] = {"name": name, "role": role}
+                if artist_id:
+                    credit["id"] = artist_id
+                normalized_credits.append(credit)
+        if normalized_credits:
+            result["extraartists"] = normalized_credits
+
     # Copy other fields
     for key in ("released", "country", "notes", "data_quality", "formats", "tracklist", "identifiers", "videos", "companies"):
         if key in release_data:

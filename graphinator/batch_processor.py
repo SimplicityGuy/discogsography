@@ -13,6 +13,7 @@ from typing import Any, Callable
 
 import structlog
 from common import normalize_record
+from common.credit_roles import categorize_role
 from common.data_normalizer import extract_format_names
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 
@@ -889,6 +890,52 @@ class Neo4jBatchProcessor:
                         MERGE (s)-[:PART_OF]->(g)
                         """,
                         pairs=genre_style_data,
+                    )
+
+                # Process credits (extraartists) — Person nodes and CREDITED_ON relationships
+                credit_data = []
+                artist_credit_data = []
+                for release in releases_to_process:
+                    if release.get("extraartists"):
+                        for credit in release["extraartists"]:
+                            name = credit.get("name")
+                            role = credit.get("role", "")
+                            if name and role:
+                                category = categorize_role(role)
+                                entry: dict[str, Any] = {
+                                    "name": name,
+                                    "role": role,
+                                    "category": category,
+                                    "release_id": release["id"],
+                                }
+                                credit_data.append(entry)
+                                artist_id = credit.get("id")
+                                if artist_id:
+                                    artist_credit_data.append(
+                                        {
+                                            "name": name,
+                                            "artist_id": artist_id,
+                                        }
+                                    )
+                if credit_data:
+                    await tx.run(
+                        """
+                        UNWIND $credits AS credit
+                        MATCH (r:Release {id: credit.release_id})
+                        MERGE (p:Person {name: credit.name})
+                        MERGE (p)-[:CREDITED_ON {role: credit.role, category: credit.category}]->(r)
+                        """,
+                        credits=credit_data,
+                    )
+                if artist_credit_data:
+                    await tx.run(
+                        """
+                        UNWIND $credits AS credit
+                        MATCH (p:Person {name: credit.name})
+                        MATCH (a:Artist {id: credit.artist_id})
+                        MERGE (p)-[:SAME_AS]->(a)
+                        """,
+                        credits=artist_credit_data,
                     )
 
             await session.execute_write(batch_write)

@@ -22,6 +22,7 @@ from common import (
     setup_logging,
 )
 from common import normalize_record
+from common.credit_roles import categorize_role
 from common.data_normalizer import extract_format_names
 from neo4j.exceptions import ServiceUnavailable, SessionExpired
 from orjson import loads
@@ -992,6 +993,45 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
                 for style in styles_list
             ],
         )
+
+    # Handle credits (extraartists) — create Person nodes and CREDITED_ON relationships
+    extraartists: list[dict[str, Any]] | None = record.get("extraartists")
+    if extraartists:
+        credit_data = []
+        for credit in extraartists:
+            name = credit.get("name")
+            role = credit.get("role", "")
+            if name and role:
+                category = categorize_role(role)
+                artist_id = credit.get("id")
+                entry: dict[str, Any] = {
+                    "name": name,
+                    "role": role,
+                    "category": category,
+                    "release_id": record["id"],
+                }
+                if artist_id:
+                    entry["artist_id"] = artist_id
+                credit_data.append(entry)
+        if credit_data:
+            # Create Person nodes and CREDITED_ON relationships
+            tx.run(
+                "UNWIND $credits AS credit "
+                "MATCH (r:Release {id: credit.release_id}) "
+                "MERGE (p:Person {name: credit.name}) "
+                "MERGE (p)-[:CREDITED_ON {role: credit.role, category: credit.category}]->(r)",
+                credits=credit_data,
+            )
+            # Create SAME_AS relationships for credited people who are also performing artists
+            artist_credits = [c for c in credit_data if c.get("artist_id")]
+            if artist_credits:
+                tx.run(
+                    "UNWIND $credits AS credit "
+                    "MATCH (p:Person {name: credit.name}) "
+                    "MATCH (a:Artist {id: credit.artist_id}) "
+                    "MERGE (p)-[:SAME_AS]->(a)",
+                    credits=artist_credits,
+                )
 
     return True  # Updated successfully
 

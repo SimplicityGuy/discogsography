@@ -416,6 +416,82 @@ class TestNormalizeRelease:
         assert result["genres"] == ["Rock"]
         assert result["styles"] == ["Pop Rock", "Psychedelic Rock"]
 
+    def test_release_with_extraartists(self) -> None:
+        """Test normalizing release with extraartists (credits)."""
+        release_data = {
+            "id": "12345",
+            "title": "Abbey Road",
+            "sha256": "abc123",
+            "extraartists": {
+                "artist": [
+                    {"id": "500", "name": "Bob Ludwig", "role": "Mastered By"},
+                    {"id": "501", "name": "Flood", "role": "Producer"},
+                ]
+            },
+        }
+        result = normalize_release(release_data)
+        assert "extraartists" in result
+        assert len(result["extraartists"]) == 2
+        assert result["extraartists"][0]["name"] == "Bob Ludwig"
+        assert result["extraartists"][0]["role"] == "Mastered By"
+        assert result["extraartists"][0]["id"] == "500"
+
+    def test_release_with_extraartists_single_artist(self) -> None:
+        """Test normalizing release with single extraartist (not a list)."""
+        release_data = {
+            "id": "12345",
+            "title": "Test",
+            "sha256": "abc123",
+            "extraartists": {
+                "artist": {"id": "500", "name": "Bob Ludwig", "role": "Mastered By"},
+            },
+        }
+        result = normalize_release(release_data)
+        assert "extraartists" in result
+        assert len(result["extraartists"]) == 1
+
+    def test_release_extraartists_no_role_excluded(self) -> None:
+        """Test extraartist without role is excluded."""
+        release_data = {
+            "id": "12345",
+            "title": "Test",
+            "sha256": "abc123",
+            "extraartists": {
+                "artist": [
+                    {"id": "500", "name": "Bob Ludwig", "role": ""},
+                    {"id": "501", "name": "Flood", "role": "Producer"},
+                ]
+            },
+        }
+        result = normalize_release(release_data)
+        assert len(result["extraartists"]) == 1
+        assert result["extraartists"][0]["name"] == "Flood"
+
+    def test_release_extraartists_without_id(self) -> None:
+        """Test extraartist without artist ID still included."""
+        release_data = {
+            "id": "12345",
+            "title": "Test",
+            "sha256": "abc123",
+            "extraartists": {
+                "artist": {"name": "Unknown Person", "role": "Engineer"},
+            },
+        }
+        result = normalize_release(release_data)
+        assert len(result["extraartists"]) == 1
+        assert "id" not in result["extraartists"][0]
+
+    def test_release_empty_extraartists(self) -> None:
+        """Test empty extraartists not included in result."""
+        release_data = {
+            "id": "12345",
+            "title": "Test",
+            "sha256": "abc123",
+            "extraartists": {},
+        }
+        result = normalize_release(release_data)
+        assert "extraartists" not in result
+
 
 class TestNormalizeRecord:
     """Test normalize_record function."""

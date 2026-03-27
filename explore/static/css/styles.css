@@ -2204,6 +2204,113 @@
 .collaborator-sparkline { flex: 1; min-width: 80px; }
 .sparkline-svg { display: block; }
 
+/* ── Credits & Provenance ──────────────────────────────────────────────── */
+.credits-search-bar {
+    margin-bottom: 16px; position: relative;
+}
+.credits-autocomplete-wrapper { position: relative; }
+.credits-autocomplete-wrapper .autocomplete-dropdown {
+    position: absolute; top: 100%; left: 0; right: 0;
+    background: var(--card-bg); border: 1px solid var(--border-color);
+    border-radius: 8px; max-height: 240px; overflow-y: auto; z-index: 20;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+.credits-autocomplete-wrapper .autocomplete-item {
+    padding: 8px 12px; cursor: pointer; font-size: 0.875rem;
+    color: var(--text-high);
+}
+.credits-autocomplete-wrapper .autocomplete-item:hover,
+.credits-autocomplete-wrapper .autocomplete-item.active {
+    background: var(--hover-bg);
+}
+.credits-section { margin-bottom: 20px; }
+.credits-section h6 {
+    font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-mid); margin-bottom: 8px;
+}
+.credits-profile-header {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+}
+.credits-profile-header h6 {
+    font-size: 1.1rem; font-weight: 600; color: var(--text-high);
+    margin: 0; text-transform: none; letter-spacing: 0;
+}
+.credits-badge {
+    font-size: 0.75rem; padding: 2px 8px; border-radius: 12px;
+    background: var(--purple-accent); color: #fff;
+}
+.credits-artist-link {
+    font-size: 0.75rem; color: var(--blue-accent); margin-left: auto;
+}
+.credits-profile-meta { font-size: 0.8rem; margin-bottom: 8px; }
+.credits-role-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.credits-role-pill {
+    font-size: 0.7rem; padding: 2px 8px; border-radius: 10px;
+    background: var(--border-color); color: var(--text-high);
+    white-space: nowrap;
+}
+.credits-role-production { background: #7c3aed33; color: #a78bfa; }
+.credits-role-engineering { background: #2563eb33; color: #60a5fa; }
+.credits-role-mastering { background: #dc262633; color: #f87171; }
+.credits-role-session { background: #16a34a33; color: #4ade80; }
+.credits-role-design { background: #ea580c33; color: #fb923c; }
+.credits-role-management { background: #0891b233; color: #22d3ee; }
+.credits-role-other { background: #6b728033; color: #9ca3af; }
+.credits-chart { height: 200px; }
+.credits-section-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 8px; flex-wrap: wrap; gap: 6px;
+}
+.credits-filter-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+.credits-filter-pill {
+    font-size: 0.65rem; padding: 2px 6px; border-radius: 8px;
+    background: var(--border-color); color: var(--text-mid);
+    cursor: pointer; border: 1px solid transparent;
+}
+.credits-filter-pill.active {
+    border-color: var(--purple-accent); color: var(--text-high);
+}
+.credits-release-list { max-height: 400px; overflow-y: auto; }
+.credits-release-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 0; border-bottom: 1px solid var(--border-color);
+}
+.credits-release-year {
+    font-size: 0.8rem; color: var(--text-mid); width: 40px;
+    flex-shrink: 0; text-align: right;
+}
+.credits-release-info { flex: 1; min-width: 0; }
+.credits-release-title {
+    font-size: 0.85rem; color: var(--text-high); display: block;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.credits-release-artist {
+    font-size: 0.75rem; display: block;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.credits-graph { height: 300px; }
+.credits-graph svg { width: 100%; height: 100%; }
+.credits-leaderboard-controls { margin-bottom: 8px; }
+.credits-leaderboard-controls select {
+    max-width: 200px; font-size: 0.8rem;
+}
+.credits-leaderboard-list { max-height: 400px; overflow-y: auto; }
+.credits-leaderboard-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 5px 0; border-bottom: 1px solid var(--border-color);
+}
+.credits-leaderboard-rank {
+    font-size: 0.8rem; color: var(--text-mid); width: 24px;
+    text-align: right; flex-shrink: 0;
+}
+.credits-leaderboard-name {
+    flex: 1; font-size: 0.85rem; color: var(--text-high);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.credits-leaderboard-count {
+    font-size: 0.8rem; color: var(--text-mid); flex-shrink: 0;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .insights-top-row {
