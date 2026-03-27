@@ -1137,6 +1137,112 @@ class TestBatchTransactionLogic:
         first_query = captured_queries[0][0]
         assert "r.year" in first_query
 
+    @pytest.mark.asyncio
+    async def test_releases_batch_write_closure_credits_with_artist_id(self) -> None:
+        """Test credits with artist IDs produce both CREDITED_ON and SAME_AS queries."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        executed_queries: list[str] = []
+
+        async def track_query(query: str, **_params: Any) -> None:
+            executed_queries.append(query)
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = track_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage(
+                "releases",
+                {
+                    "id": "1",
+                    "title": "Release With Credits",
+                    "year": 1995,
+                    "sha256": "hash_credits",
+                    "artists": [{"id": "A1"}],
+                    "labels": [],
+                    "extraartists": [
+                        {"name": "Bob Ludwig", "role": "Mastered By", "id": "500"},
+                        {"name": "Flood", "role": "Producer", "id": "600"},
+                    ],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_releases_batch(messages)
+
+        # Should contain CREDITED_ON query for Person nodes
+        credited_queries = [q for q in executed_queries if "CREDITED_ON" in q]
+        assert len(credited_queries) == 1
+        assert "Person" in credited_queries[0]
+
+        # Should contain SAME_AS query linking Person to Artist (both credits have IDs)
+        same_as_queries = [q for q in executed_queries if "SAME_AS" in q]
+        assert len(same_as_queries) == 1
+
+    @pytest.mark.asyncio
+    async def test_releases_batch_write_closure_credits_without_artist_id(self) -> None:
+        """Test credits without artist IDs produce CREDITED_ON but NOT SAME_AS queries."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "2", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        executed_queries: list[str] = []
+
+        async def track_query(query: str, **_params: Any) -> None:
+            executed_queries.append(query)
+
+        mock_tx = AsyncMock()
+        mock_tx.run.side_effect = track_query
+
+        async def execute_write_mock(tx_func: Any) -> None:
+            await tx_func(mock_tx)
+
+        mock_session.execute_write = AsyncMock(side_effect=execute_write_mock)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage(
+                "releases",
+                {
+                    "id": "2",
+                    "title": "Release Credits No ID",
+                    "year": 2000,
+                    "sha256": "hash_no_id",
+                    "extraartists": [
+                        {"name": "Unknown Engineer", "role": "Engineer"},
+                        {"name": "Anonymous Mixer", "role": "Mixed By"},
+                    ],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_releases_batch(messages)
+
+        # Should contain CREDITED_ON query for Person nodes
+        credited_queries = [q for q in executed_queries if "CREDITED_ON" in q]
+        assert len(credited_queries) == 1
+        assert "Person" in credited_queries[0]
+
+        # Should NOT contain SAME_AS query (no artist IDs provided)
+        same_as_queries = [q for q in executed_queries if "SAME_AS" in q]
+        assert len(same_as_queries) == 0
+
 
 class TestBackoffPeriodSkip:
     """Test that _flush_queue returns early when in backoff period."""

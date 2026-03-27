@@ -293,6 +293,14 @@ function setupGlobalMocks() {
         stopPolling: vi.fn(),
     };
 
+    window.genreTreeView = {
+        load: vi.fn().mockResolvedValue(null),
+    };
+
+    window.creditsPanel = {
+        load: vi.fn().mockResolvedValue(null),
+    };
+
     window.searchPane = { focus: vi.fn() };
 
     window.UserPanes = class {
@@ -1444,6 +1452,20 @@ describe('ExploreApp helper methods', () => {
             app._switchPane('recommendations');
 
             expect(app.userPanes.loadRecommendations).toHaveBeenCalled();
+        });
+
+        it('should load genres when switching to genres pane', () => {
+            const app = new ExploreApp();
+            app._switchPane('genres');
+
+            expect(window.genreTreeView.load).toHaveBeenCalled();
+        });
+
+        it('should load credits when switching to credits pane', () => {
+            const app = new ExploreApp();
+            app._switchPane('credits');
+
+            expect(window.creditsPanel.load).toHaveBeenCalled();
         });
     });
 

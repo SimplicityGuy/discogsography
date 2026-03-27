@@ -481,6 +481,23 @@ class TestNormalizeRelease:
         assert len(result["extraartists"]) == 1
         assert "id" not in result["extraartists"][0]
 
+    def test_release_extraartists_non_dict_skipped(self) -> None:
+        """Test that non-dict extraartist entries are skipped."""
+        release_data = {
+            "id": "12345",
+            "title": "Test",
+            "sha256": "abc123",
+            "extraartists": {
+                "artist": [
+                    "just a string",
+                    {"name": "Flood", "role": "Producer"},
+                ]
+            },
+        }
+        result = normalize_release(release_data)
+        assert len(result["extraartists"]) == 1
+        assert result["extraartists"][0]["name"] == "Flood"
+
     def test_release_empty_extraartists(self) -> None:
         """Test empty extraartists not included in result."""
         release_data = {
