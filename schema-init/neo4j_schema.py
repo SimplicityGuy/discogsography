@@ -123,6 +123,21 @@ SCHEMA_STATEMENTS: list[tuple[str, str]] = [
         "style_name_fulltext",
         "CREATE FULLTEXT INDEX style_name_fulltext IF NOT EXISTS FOR (n:Style) ON EACH [n.name]",
     ),
+    # ── MusicBrainz MBID indexes ─────────────────────────────────────────────
+    # Used by brainzgraphinator for efficient lookups when enriching nodes
+    # with MusicBrainz metadata.
+    (
+        "artist_mbid",
+        "CREATE INDEX artist_mbid IF NOT EXISTS FOR (a:Artist) ON (a.mbid)",
+    ),
+    (
+        "label_mbid",
+        "CREATE INDEX label_mbid IF NOT EXISTS FOR (l:Label) ON (l.mbid)",
+    ),
+    (
+        "release_mbid",
+        "CREATE INDEX release_mbid IF NOT EXISTS FOR (r:Release) ON (r.mbid)",
+    ),
 ]
 
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from common import ExtractorConfig, GraphinatorConfig, TableinatorConfig, setup_logging
+from common import BrainzgraphinatorConfig, BrainztableinatorConfig, ExtractorConfig, GraphinatorConfig, TableinatorConfig, setup_logging
 from common.config import get_secret
 
 
@@ -113,6 +113,64 @@ class TestTableinatorConfig:
 
         with pytest.raises(ValueError, match=r"Missing required environment variables.*POSTGRES_HOST"):
             TableinatorConfig.from_env()
+
+
+class TestBrainzgraphinatorConfig:
+    """Test BrainzgraphinatorConfig class."""
+
+    def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test configuration loading with all environment variables set."""
+        monkeypatch.setenv("RABBITMQ_USERNAME", "user")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
+        monkeypatch.setenv("RABBITMQ_HOST", "host")
+        monkeypatch.setenv("RABBITMQ_PORT", "5672")
+        monkeypatch.setenv("NEO4J_HOST", "neo4j")
+        monkeypatch.setenv("NEO4J_USERNAME", "neo4j")
+        monkeypatch.setenv("NEO4J_PASSWORD", "secret")
+
+        config = BrainzgraphinatorConfig.from_env()
+
+        assert config.amqp_connection == "amqp://user:pass@host:5672/%2F"
+        assert config.neo4j_host == "bolt://neo4j:7687"
+        assert config.neo4j_username == "neo4j"
+        assert config.neo4j_password == "secret"
+
+    def test_from_env_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test configuration loading with missing required variables."""
+        monkeypatch.delenv("NEO4J_HOST", raising=False)
+
+        with pytest.raises(ValueError, match=r"Missing required environment variables.*NEO4J_HOST"):
+            BrainzgraphinatorConfig.from_env()
+
+
+class TestBrainztableinatorConfig:
+    """Test BrainztableinatorConfig class."""
+
+    def test_from_env_with_all_vars(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test configuration loading with all environment variables set."""
+        monkeypatch.setenv("RABBITMQ_USERNAME", "user")
+        monkeypatch.setenv("RABBITMQ_PASSWORD", "pass")
+        monkeypatch.setenv("RABBITMQ_HOST", "host")
+        monkeypatch.setenv("RABBITMQ_PORT", "5672")
+        monkeypatch.setenv("POSTGRES_HOST", "pghost")
+        monkeypatch.setenv("POSTGRES_USERNAME", "pguser")
+        monkeypatch.setenv("POSTGRES_PASSWORD", "pgpass")
+        monkeypatch.setenv("POSTGRES_DATABASE", "mydb")
+
+        config = BrainztableinatorConfig.from_env()
+
+        assert config.amqp_connection == "amqp://user:pass@host:5672/%2F"
+        assert config.postgres_host == "pghost:5432"
+        assert config.postgres_username == "pguser"
+        assert config.postgres_password == "pgpass"
+        assert config.postgres_database == "mydb"
+
+    def test_from_env_missing_required(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Test configuration loading with missing required variables."""
+        monkeypatch.delenv("POSTGRES_HOST", raising=False)
+
+        with pytest.raises(ValueError, match=r"Missing required environment variables.*POSTGRES_HOST"):
+            BrainztableinatorConfig.from_env()
 
 
 class TestSetupLogging:
