@@ -80,13 +80,41 @@ repos:
     rev: 745eface02aef23e168a8afb6b5737818efbea95  # frozen: v0.11.0.1
     hooks:
       - id: shellcheck
-        args: ["--severity=warning"]  # Show warnings and errors
+        args: [--shell=bash, --severity=warning]
 
   - repo: https://github.com/scop/pre-commit-shfmt
     rev: e26a818fd47b4f33cefa99035d1265b0849f4b47  # frozen: v3.13.0-1
     hooks:
       - id: shfmt
-        args: ["-i", "2", "-ci", "-bn", "-sr"]  # 2 space indent, indent case, binary next line, redirect operators
+        name: Check shell style with shfmt for database scripts
+        args:
+          - --indent=2
+          - --case-indent
+          - --language-dialect=bash
+          - --write
+          - scripts/reset-password.sh
+          - scripts/test-database-resilience.sh
+          - scripts/migrate-master-year-to-int.sh
+          - scripts/compute-label-stats.sh
+      - id: shfmt
+        name: Check shell style with shfmt for infrastructure scripts
+        args:
+          - --indent=2
+          - --case-indent
+          - --language-dialect=bash
+          - --write
+          - scripts/neo4j-entrypoint.sh
+          - scripts/create-secrets.sh
+          - scripts/migrate-encryption-key.sh
+          - tests/perftest/entrypoint.sh
+      - id: shfmt
+        name: Check shell style with shfmt for project scripts
+        args:
+          - --indent=2
+          - --case-indent
+          - --language-dialect=bash
+          - --write
+          - scripts/update-project.sh
 
   # Local hooks
   - repo: local

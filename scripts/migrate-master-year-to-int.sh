@@ -25,15 +25,15 @@ PASSWORD="${NEO4J_PASSWORD:-discogsography}"
 
 echo "🔍 Checking Neo4j container '${CONTAINER}' is running..."
 if ! docker inspect --format '{{.State.Running}}' "${CONTAINER}" 2>/dev/null | grep -q true; then
-    echo "❌ Container '${CONTAINER}' is not running. Start it first with: docker compose up -d neo4j"
-    exit 1
+  echo "❌ Container '${CONTAINER}' is not running. Start it first with: docker compose up -d neo4j"
+  exit 1
 fi
 
 echo "📊 Counting Master nodes with non-null year before migration..."
 BEFORE=$(docker exec "${CONTAINER}" cypher-shell \
-    -u "${USER}" -p "${PASSWORD}" --format plain \
-    "MATCH (m:Master) WHERE m.year IS NOT NULL RETURN count(m) AS n;" \
-    | tail -1)
+  -u "${USER}" -p "${PASSWORD}" --format plain \
+  "MATCH (m:Master) WHERE m.year IS NOT NULL RETURN count(m) AS n;" |
+  tail -1)
 echo "   Found ${BEFORE} Master nodes with a year property."
 
 echo ""
@@ -42,8 +42,8 @@ echo "   (Sets year=null where the value is absent, empty, or zero)"
 echo ""
 
 docker exec "${CONTAINER}" cypher-shell \
-    -u "${USER}" -p "${PASSWORD}" \
-    "MATCH (m:Master)
+  -u "${USER}" -p "${PASSWORD}" \
+  "MATCH (m:Master)
      WHERE m.year IS NOT NULL
      CALL {
        WITH m
@@ -54,13 +54,13 @@ docker exec "${CONTAINER}" cypher-shell \
 echo ""
 echo "📊 Verifying results..."
 INT_COUNT=$(docker exec "${CONTAINER}" cypher-shell \
-    -u "${USER}" -p "${PASSWORD}" --format plain \
-    "MATCH (m:Master) WHERE valueType(m.year) = 'INTEGER NOT NULL' RETURN count(m) AS n;" \
-    | tail -1)
+  -u "${USER}" -p "${PASSWORD}" --format plain \
+  "MATCH (m:Master) WHERE valueType(m.year) = 'INTEGER NOT NULL' RETURN count(m) AS n;" |
+  tail -1)
 NULL_COUNT=$(docker exec "${CONTAINER}" cypher-shell \
-    -u "${USER}" -p "${PASSWORD}" --format plain \
-    "MATCH (m:Master) WHERE m.year IS NULL RETURN count(m) AS n;" \
-    | tail -1)
+  -u "${USER}" -p "${PASSWORD}" --format plain \
+  "MATCH (m:Master) WHERE m.year IS NULL RETURN count(m) AS n;" |
+  tail -1)
 
 echo "   ✅ ${INT_COUNT} Master nodes now have an integer year."
 echo "   ℹ️  ${NULL_COUNT} Master nodes have no year (was 0, empty, or absent)."

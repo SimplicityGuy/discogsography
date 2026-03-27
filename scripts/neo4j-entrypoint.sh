@@ -6,8 +6,8 @@
 set -e
 
 if [ -f /run/secrets/neo4j_password ]; then
-    NEO4J_AUTH="neo4j/$(cat /run/secrets/neo4j_password)"
-    export NEO4J_AUTH
+  NEO4J_AUTH="neo4j/$(cat /run/secrets/neo4j_password)"
+  export NEO4J_AUTH
 fi
 
 exec /startup/docker-entrypoint.sh "$@"

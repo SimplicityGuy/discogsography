@@ -22,53 +22,53 @@ NC='\033[0m' # No Color
 
 # Function to check service health
 check_health() {
-    local service=$1
-    local port=$2
-    local url="http://localhost:${port}/health"
+  local service=$1
+  local port=$2
+  local url="http://localhost:${port}/health"
 
-    if curl -s "$url" > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ ${service} is healthy${NC}"
-        return 0
-    else
-        echo -e "${RED}❌ ${service} is not responding${NC}"
-        return 1
-    fi
+  if curl -s "$url" >/dev/null 2>&1; then
+    echo -e "${GREEN}✅ ${service} is healthy${NC}"
+    return 0
+  else
+    echo -e "${RED}❌ ${service} is not responding${NC}"
+    return 1
+  fi
 }
 
 # Function to count messages in RabbitMQ queue
 get_queue_depth() {
-    local queue=$1
-    local depth
-    depth=$(docker exec discogsography-rabbitmq-1 rabbitmqctl list_queues name messages | grep "$queue" | awk '{print $2}' 2>/dev/null || echo "0")
-    echo "$depth"
+  local queue=$1
+  local depth
+  depth=$(docker exec discogsography-rabbitmq-1 rabbitmqctl list_queues name messages | grep "$queue" | awk '{print $2}' 2>/dev/null || echo "0")
+  echo "$depth"
 }
 
 # Function to simulate database outage
 simulate_outage() {
-    local service=$1
-    local duration=$2
+  local service=$1
+  local duration=$2
 
-    echo -e "\n${YELLOW}🔌 Stopping ${service} for ${duration} seconds...${NC}"
-    docker compose stop "$service"
+  echo -e "\n${YELLOW}🔌 Stopping ${service} for ${duration} seconds...${NC}"
+  docker compose stop "$service"
 
-    echo -e "${BLUE}⏳ Waiting ${duration} seconds...${NC}"
-    sleep "$duration"
+  echo -e "${BLUE}⏳ Waiting ${duration} seconds...${NC}"
+  sleep "$duration"
 
-    echo -e "${GREEN}🔄 Restarting ${service}...${NC}"
-    docker compose start "$service"
+  echo -e "${GREEN}🔄 Restarting ${service}...${NC}"
+  docker compose start "$service"
 
-    # Wait for service to be ready
-    echo -e "${BLUE}⏳ Waiting for ${service} to be ready...${NC}"
-    sleep 10
+  # Wait for service to be ready
+  echo -e "${BLUE}⏳ Waiting for ${service} to be ready...${NC}"
+  sleep 10
 }
 
 # Function to monitor service logs
 monitor_logs() {
-    local service=$1
-    local duration=$2
+  local service=$1
+  local duration=$2
 
-    echo -e "\n${BLUE}📋 Monitoring ${service} logs for ${duration} seconds...${NC}"
-    timeout "$duration" docker compose logs -f "$service" 2>&1 | grep -E "(Circuit breaker|Retrying|connection|Connection|Failed|failed|established|resilient)" || true
+  echo -e "\n${BLUE}📋 Monitoring ${service} logs for ${duration} seconds...${NC}"
+  timeout "$duration" docker compose logs -f "$service" 2>&1 | grep -E "(Circuit breaker|Retrying|connection|Connection|Failed|failed|established|resilient)" || true
 }
 
 # Initial health check
@@ -84,13 +84,13 @@ check_health "Discovery" 8004
 echo -e "\n${BLUE}📊 Initial Queue Depths${NC}"
 echo "======================="
 for data_type in artists labels masters releases; do
-    graphinator_queue="graphinator-${data_type}"
-    tableinator_queue="tableinator-${data_type}"
+  graphinator_queue="graphinator-${data_type}"
+  tableinator_queue="tableinator-${data_type}"
 
-    g_depth=$(get_queue_depth "$graphinator_queue")
-    t_depth=$(get_queue_depth "$tableinator_queue")
+  g_depth=$(get_queue_depth "$graphinator_queue")
+  t_depth=$(get_queue_depth "$tableinator_queue")
 
-    echo "Queue ${data_type}: graphinator=${g_depth:-0}, tableinator=${t_depth:-0}"
+  echo "Queue ${data_type}: graphinator=${g_depth:-0}, tableinator=${t_depth:-0}"
 done
 
 # Test 1: Neo4j Outage
@@ -141,7 +141,7 @@ echo -e "${RED}⚠️  This is more disruptive as it affects message flow${NC}"
 
 # Start monitoring all services
 for service in extractor graphinator tableinator; do
-    monitor_logs "$service" 50 &
+  monitor_logs "$service" 50 &
 done
 
 # Simulate outage
@@ -170,13 +170,13 @@ check_health "Discovery" 8004
 echo -e "\n${BLUE}📊 Final Queue Depths${NC}"
 echo "===================="
 for data_type in artists labels masters releases; do
-    graphinator_queue="graphinator-${data_type}"
-    tableinator_queue="tableinator-${data_type}"
+  graphinator_queue="graphinator-${data_type}"
+  tableinator_queue="tableinator-${data_type}"
 
-    g_depth=$(get_queue_depth "$graphinator_queue")
-    t_depth=$(get_queue_depth "$tableinator_queue")
+  g_depth=$(get_queue_depth "$graphinator_queue")
+  t_depth=$(get_queue_depth "$tableinator_queue")
 
-    echo "Queue ${data_type}: graphinator=${g_depth:-0}, tableinator=${t_depth:-0}"
+  echo "Queue ${data_type}: graphinator=${g_depth:-0}, tableinator=${t_depth:-0}"
 done
 
 echo -e "\n${GREEN}✅ Resilience tests completed!${NC}"

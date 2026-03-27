@@ -33,7 +33,7 @@ set -euo pipefail
 resolve_value() {
   local val="$1"
   if [ -f "${val}" ]; then
-    tr -d '[:space:]' < "${val}"
+    tr -d '[:space:]' <"${val}"
   else
     printf '%s' "${val}"
   fi
@@ -96,9 +96,9 @@ echo "Migrating OAuth tokens from old encryption key to HKDF-derived key..."
 echo ""
 
 MIGRATED=$(docker exec "${CONTAINER}" env \
-    OLD_KEY="${OLD_KEY}" \
-    NEW_MASTER_KEY="${NEW_MASTER_KEY}" \
-    python3 -c "
+  OLD_KEY="${OLD_KEY}" \
+  NEW_MASTER_KEY="${NEW_MASTER_KEY}" \
+  python3 -c "
 import base64, os
 from pathlib import Path
 import psycopg
@@ -166,7 +166,7 @@ if [ ! -d "${NEW_KEY_DIR}" ]; then
   echo "Error: Directory for new key file does not exist: ${NEW_KEY_DIR}" >&2
   exit 1
 fi
-printf '%s' "${NEW_MASTER_KEY}" > "${NEW_KEY_FILE}"
+printf '%s' "${NEW_MASTER_KEY}" >"${NEW_KEY_FILE}"
 chmod 600 "${NEW_KEY_FILE}"
 echo "Wrote new master key to ${NEW_KEY_FILE} (mode 600)"
 

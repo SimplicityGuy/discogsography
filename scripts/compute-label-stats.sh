@@ -27,8 +27,8 @@ PASSWORD="${NEO4J_PASSWORD:-discogsography}"
 
 echo "🔍 Checking Neo4j container '${CONTAINER}' is running..."
 if ! docker inspect --format '{{.State.Running}}' "${CONTAINER}" 2>/dev/null | grep -q true; then
-    echo "❌ Container '${CONTAINER}' is not running. Start it first with: docker compose up -d neo4j"
-    exit 1
+  echo "❌ Container '${CONTAINER}' is not running. Start it first with: docker compose up -d neo4j"
+  exit 1
 fi
 
 echo "📊 Computing aggregate stats on Label nodes..."
@@ -38,10 +38,10 @@ echo "   Large labels (e.g. Reprise Records with 55K releases) may take longer."
 echo ""
 
 docker exec "${CONTAINER}" cypher-shell \
-    -u "${USER}" \
-    -p "${PASSWORD}" \
-    -d neo4j \
-    "CALL {
+  -u "${USER}" \
+  -p "${PASSWORD}" \
+  -d neo4j \
+  "CALL {
         MATCH (l:Label)
         CALL {
             WITH l
@@ -67,10 +67,10 @@ echo "✅ Label stats computed successfully."
 echo ""
 echo "🔍 Verifying — sample labels with stats:"
 docker exec "${CONTAINER}" cypher-shell \
-    -u "${USER}" \
-    -p "${PASSWORD}" \
-    -d neo4j \
-    "MATCH (l:Label)
+  -u "${USER}" \
+  -p "${PASSWORD}" \
+  -d neo4j \
+  "MATCH (l:Label)
      WHERE l.release_count IS NOT NULL
      RETURN l.name AS label, l.release_count AS releases,
             l.artist_count AS artists, l.genre_count AS genres

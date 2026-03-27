@@ -16,16 +16,16 @@ mkdir -p "$SECRETS_DIR"
 chmod 700 "$SECRETS_DIR"
 
 write_secret() {
-    local name="$1"
-    local value="$2"
-    local path="$SECRETS_DIR/$name"
-    if [ -f "$path" ]; then
-        echo "[skip] $name already exists"
-    else
-        printf '%s' "$value" > "$path"
-        chmod 600 "$path"
-        echo "[ok]   $name created"
-    fi
+  local name="$1"
+  local value="$2"
+  local path="$SECRETS_DIR/$name"
+  if [ -f "$path" ]; then
+    echo "[skip] $name already exists"
+  else
+    printf '%s' "$value" >"$path"
+    chmod 600 "$path"
+    echo "[ok]   $name created"
+  fi
 }
 
 # JWT secret key (hex, 32 bytes = 64 hex chars)
