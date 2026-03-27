@@ -6,8 +6,8 @@ Real-time monitoring dashboard for the Discogsography system with WebSocket supp
 
 The dashboard service provides a web-based interface to monitor all Discogsography services, including:
 
-- Service health status (extractor, graphinator, tableinator)
-- RabbitMQ queue metrics and consumer counts
+- Service health status for both Discogs and MusicBrainz pipelines
+- RabbitMQ queue metrics and consumer counts, grouped by pipeline
 - PostgreSQL and Neo4j database statistics
 - Real-time activity logs
 - WebSocket-based live updates
@@ -53,12 +53,71 @@ Service health URLs (`http://extractor:8000/health`, etc.) and the RabbitMQ mana
 
 - `GET /` - Dashboard web interface
 - `GET /health` - Health check endpoint (port 8003)
-- `GET /api/metrics` - Current system metrics
-- `GET /api/services` - Service-specific metrics
-- `GET /api/queues` - Queue metrics
+- `GET /api/metrics` - Current system metrics (pipelines + databases)
+- `GET /api/services` - Service metrics grouped by pipeline
+- `GET /api/queues` - Queue metrics grouped by pipeline
 - `GET /api/databases` - Database metrics
 - `GET /metrics` - Prometheus metrics endpoint
 - `WS /ws` - WebSocket connection for real-time updates
+
+### Admin Proxy Routes
+
+The dashboard proxies the following routes to the API service (requires JWT authentication):
+
+- `POST /admin/api/extractions/trigger` - Trigger a full Discogs extraction
+- `POST /admin/api/extractions/trigger-musicbrainz` - Trigger a full MusicBrainz extraction
+
+## Pipeline-Grouped API Responses
+
+Services and queues are now grouped by pipeline. The `/api/metrics` endpoint returns:
+
+```json
+{
+  "pipelines": {
+    "discogs": {
+      "services": {
+        "extractor": { "status": "healthy", "health_url": "http://extractor:8000/health" },
+        "graphinator": { "status": "healthy", "health_url": "http://graphinator:8001/health" },
+        "tableinator": { "status": "healthy", "health_url": "http://tableinator:8002/health" }
+      },
+      "queues": {
+        "artists": { "messages": 0, "consumers": 1 },
+        "labels": { "messages": 0, "consumers": 1 },
+        "releases": { "messages": 0, "consumers": 1 },
+        "masters": { "messages": 0, "consumers": 1 }
+      }
+    },
+    "musicbrainz": {
+      "services": {
+        "extractor-musicbrainz": { "status": "healthy", "health_url": "http://extractor:8000/health" },
+        "brainzgraphinator": { "status": "healthy", "health_url": "http://brainzgraphinator:8011/health" },
+        "brainztableinator": { "status": "healthy", "health_url": "http://brainztableinator:8010/health" }
+      },
+      "queues": {
+        "artists": { "messages": 0, "consumers": 1 },
+        "labels": { "messages": 0, "consumers": 1 },
+        "releases": { "messages": 0, "consumers": 1 }
+      }
+    }
+  },
+  "databases": [
+    { "name": "neo4j", "connections": 5, "database_size": "1.2 GB" },
+    { "name": "postgresql", "connections": 10, "database_size": "3.4 GB" }
+  ],
+  "timestamp": "2025-01-06T10:15:30"
+}
+```
+
+The `/api/services` and `/api/queues` endpoints return dicts keyed by pipeline name using the same structure shown above.
+
+### MusicBrainz Pipeline Auto-Detection
+
+The MusicBrainz pipeline section is **hidden automatically** when the MusicBrainz services (brainzgraphinator, brainztableinator) are not deployed. The dashboard checks health endpoints on startup and hides the entire pipeline panel if none of the MB services respond. This makes the dashboard safe to deploy in environments where only Discogs is running.
+
+### Queue Prefixes
+
+- **Discogs queues**: use the `discogsography` exchange prefix (4 entity types: artists, labels, masters, releases)
+- **MusicBrainz queues**: use the `musicbrainz-` exchange prefix (3 entity types: artists, labels, releases — no masters)
 
 ## WebSocket Updates
 
@@ -68,24 +127,21 @@ The dashboard broadcasts updates every 2 seconds with the following data:
 {
   "type": "metrics_update",
   "data": {
-    "services": {
-      "extractor": { "status": "healthy", "health_url": "..." },
-      "graphinator": { "status": "healthy", "health_url": "..." },
-      "tableinator": { "status": "healthy", "health_url": "..." }
+    "pipelines": {
+      "discogs": {
+        "services": { "extractor": { "status": "healthy" }, "..." : "..." },
+        "queues": { "artists": { "messages": 0, "consumers": 1 }, "..." : "..." }
+      },
+      "musicbrainz": {
+        "services": { "brainzgraphinator": { "status": "healthy" }, "..." : "..." },
+        "queues": { "artists": { "messages": 0, "consumers": 1 }, "..." : "..." }
+      }
     },
-    "queues": {
-      "labels": { "messages": 0, "consumers": 1 },
-      "artists": { "messages": 0, "consumers": 1 },
-      "releases": { "messages": 0, "consumers": 1 },
-      "masters": { "messages": 0, "consumers": 1 }
-    },
-    "databases": {
-      "neo4j": { "connections": 5, "database_size": "1.2 GB" },
-      "postgresql": { "connections": 10, "database_size": "3.4 GB" }
-    },
-    "activity": [
-      { "timestamp": "2025-01-06T10:15:30", "message": "Service started" }
-    ]
+    "databases": [
+      { "name": "neo4j", "connections": 5, "database_size": "1.2 GB" },
+      { "name": "postgresql", "connections": 10, "database_size": "3.4 GB" }
+    ],
+    "timestamp": "2025-01-06T10:15:30"
   }
 }
 ```
