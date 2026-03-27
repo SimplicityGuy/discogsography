@@ -2,14 +2,58 @@
 # Migrate OAuth tokens from OAUTH_ENCRYPTION_KEY to ENCRYPTION_MASTER_KEY.
 #
 # Usage:
-#   ./scripts/migrate-encryption-key.sh <container> <pg_password> <old_oauth_key> <new_master_key>
+#   ./scripts/migrate-encryption-key.sh [options] <container> <pg_password> <old_oauth_key> <new_master_key>
+#
+# Options:
+#   --old-key-file <path>      Read old OAuth encryption key from a secret file instead of CLI arg
+#   --new-key-file <path>      Write the new master key to a secret file after migration
+#
+# Examples:
+#   # Direct key arguments:
+#   ./scripts/migrate-encryption-key.sh api-container pgpass old_key new_key
+#
+#   # Read old key from file, write new key to file:
+#   ./scripts/migrate-encryption-key.sh --old-key-file secrets/oauth_encryption_key.txt \
+#       --new-key-file secrets/encryption_master_key.txt api-container pgpass "" new_key
+#
+#   # Read old key from file, pass new key directly:
+#   ./scripts/migrate-encryption-key.sh --old-key-file secrets/oauth_encryption_key.txt \
+#       api-container pgpass "" new_key
 #
 # Run this ONCE when switching from OAUTH_ENCRYPTION_KEY to ENCRYPTION_MASTER_KEY.
 
 set -euo pipefail
 
+OLD_KEY_FILE=""
+NEW_KEY_FILE=""
+
+# Parse options
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --old-key-file)
+      OLD_KEY_FILE="$2"
+      shift 2
+      ;;
+    --new-key-file)
+      NEW_KEY_FILE="$2"
+      shift 2
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      exit 1
+      ;;
+    *)
+      break
+      ;;
+  esac
+done
+
 if [ $# -lt 4 ]; then
-  echo "Usage: $0 <container> <pg_password> <old_oauth_key> <new_master_key>"
+  echo "Usage: $0 [options] <container> <pg_password> <old_oauth_key> <new_master_key>"
+  echo ""
+  echo "Options:"
+  echo "  --old-key-file <path>  Read old OAuth encryption key from a secret file"
+  echo "  --new-key-file <path>  Write the new master key to a secret file after migration"
   echo ""
   echo "Migrates OAuth tokens from old Fernet key to HKDF-derived key."
   echo "Run this ONCE when switching from OAUTH_ENCRYPTION_KEY to ENCRYPTION_MASTER_KEY."
@@ -20,6 +64,26 @@ CONTAINER="$1"
 PG_PASSWORD="$2"
 OLD_KEY="$3"
 NEW_MASTER_KEY="$4"
+
+# Read old key from file if specified
+if [ -n "${OLD_KEY_FILE}" ]; then
+  if [ ! -f "${OLD_KEY_FILE}" ]; then
+    echo "Error: Old key file not found: ${OLD_KEY_FILE}" >&2
+    exit 1
+  fi
+  OLD_KEY="$(tr -d '[:space:]' < "${OLD_KEY_FILE}")"
+  echo "Read old encryption key from ${OLD_KEY_FILE}"
+fi
+
+# Validate we have both keys
+if [ -z "${OLD_KEY}" ]; then
+  echo "Error: Old OAuth encryption key is empty. Provide it as an argument or via --old-key-file." >&2
+  exit 1
+fi
+if [ -z "${NEW_MASTER_KEY}" ]; then
+  echo "Error: New master key is empty." >&2
+  exit 1
+fi
 
 echo "Migrating OAuth tokens from old encryption key to HKDF-derived key..."
 echo ""
@@ -73,17 +137,34 @@ print(count)
 
 echo ""
 echo "Migrated ${MIGRATED} OAuth token(s)."
+
+# Write new key to secret file if specified
+if [ -n "${NEW_KEY_FILE}" ]; then
+  NEW_KEY_DIR="$(dirname "${NEW_KEY_FILE}")"
+  if [ ! -d "${NEW_KEY_DIR}" ]; then
+    echo "Error: Directory for new key file does not exist: ${NEW_KEY_DIR}" >&2
+    exit 1
+  fi
+  printf '%s' "${NEW_MASTER_KEY}" > "${NEW_KEY_FILE}"
+  chmod 600 "${NEW_KEY_FILE}"
+  echo "Wrote new master key to ${NEW_KEY_FILE} (mode 600)"
+fi
+
 echo ""
 echo "Next steps:"
 echo ""
 echo "  For .env (development):"
 echo "    1. Remove: OAUTH_ENCRYPTION_KEY"
-echo "    2. Add:    ENCRYPTION_MASTER_KEY=${NEW_MASTER_KEY}"
+echo "    2. Add:    ENCRYPTION_MASTER_KEY=<new_master_key>"
 echo ""
-echo "  For Docker secrets (production):"
-echo "    1. Rename: secrets/oauth_encryption_key.txt → secrets/encryption_master_key.txt"
-echo "       (or create new file with the master key value)"
-echo "    2. Update the value: printf '%s' '${NEW_MASTER_KEY}' > secrets/encryption_master_key.txt"
-echo "    3. Remove: secrets/oauth_encryption_key.txt"
+if [ -n "${NEW_KEY_FILE}" ]; then
+  echo "  For Docker secrets (production):"
+  echo "    1. New key already written to: ${NEW_KEY_FILE}"
+  echo "    2. Remove old secret file if it exists (e.g., secrets/oauth_encryption_key.txt)"
+else
+  echo "  For Docker secrets (production):"
+  echo "    1. Create: printf '%s' '<new_master_key>' > secrets/encryption_master_key.txt"
+  echo "    2. Remove: secrets/oauth_encryption_key.txt"
+fi
 echo ""
 echo "Done."
