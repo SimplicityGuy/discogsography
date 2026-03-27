@@ -9,7 +9,7 @@ class Dashboard {
         this.CIRCUMFERENCE = 176;
 
         this.gaugeStats = {};
-        this.currentMaps = null;
+        this.currentMaps = {};
 
         this.initializeWebSocket();
         this.fetchInitialData();
@@ -184,11 +184,28 @@ class Dashboard {
     // ─── Main update dispatcher ───────────────────────────────────────────────
 
     updateDashboard(data) {
-        this.updateServices(data.services);
-        this.updateQueues(data.queues);
-        this.updateDatabases(data.databases);
+        const pipelines = data.pipelines || {};
+
+        // Show/hide pipeline sections based on presence in data
+        for (const pipelineId of ['discogs', 'musicbrainz']) {
+            const section = document.getElementById(`pipeline-${pipelineId}`);
+            if (section) {
+                section.classList.toggle('hidden', !(pipelineId in pipelines));
+            }
+        }
+
+        // Update each pipeline's services and queues
+        for (const [pipelineName, pipelineData] of Object.entries(pipelines)) {
+            this.updateServices(pipelineName, pipelineData.services || []);
+            this.updateQueues(pipelineName, pipelineData.queues || []);
+        }
+
+        this.updateDatabases(data.databases || []);
         this.updateLastUpdated(data.timestamp);
-        this.updateOverallStatus(data.services);
+
+        // Aggregate all services for overall status
+        const allServices = Object.values(pipelines).flatMap(p => p.services || []);
+        this.updateOverallStatus(allServices);
     }
 
     // ─── Service cards ────────────────────────────────────────────────────────
@@ -217,22 +234,28 @@ class Dashboard {
         }
     }
 
-    updateServices(services) {
+    updateServices(pipelineName, services) {
+        const PIPELINE_ENTITY_TYPES = {
+            discogs: ['masters', 'releases', 'artists', 'labels'],
+            musicbrainz: ['artists', 'labels', 'releases'],
+        };
+        const types = PIPELINE_ENTITY_TYPES[pipelineName] || ['artists', 'labels', 'releases'];
+
         services.forEach(service => {
-            const badge = document.getElementById(`${service.name}-status-badge`);
+            const prefix = `${pipelineName}-${service.name}`;
+            const badge = document.getElementById(`${prefix}-status-badge`);
             if (badge) {
                 badge.className = this._serviceBadgeClasses(service.status);
                 badge.textContent = this._statusLabel(service.status);
             }
 
             // Extractor card – use extraction_progress from health endpoint
-            if (service.name === 'extractor' && service.extraction_progress) {
-                const TYPES = ['masters', 'releases', 'artists', 'labels'];
+            if (service.name.startsWith('extractor') && service.extraction_progress) {
                 const progress = service.extraction_progress;
                 const elapsed = service.last_extraction_time || {};
 
-                TYPES.forEach(type => {
-                    const el = document.getElementById(`extractor-${type}-state`);
+                types.forEach(type => {
+                    const el = document.getElementById(`${prefix}-${type}-state`);
                     if (!el) return;
                     const count = progress[type] || 0;
                     // Active if last extraction was within 30 seconds
@@ -240,9 +263,6 @@ class Dashboard {
                     if (active) {
                         el.textContent = `Processing (${count.toLocaleString()})`;
                         el.className = 'text-blue-400';
-                    } else if (count > 0) {
-                        el.textContent = 'Idle';
-                        el.className = 'text-emerald-400';
                     } else {
                         el.textContent = 'Idle';
                         el.className = 'text-emerald-400';
@@ -250,7 +270,7 @@ class Dashboard {
                 });
 
                 // Update total records
-                const totalEl = document.getElementById('extractor-total-records');
+                const totalEl = document.getElementById(`${prefix}-total-records`);
                 if (totalEl) {
                     const total = progress.total || 0;
                     totalEl.textContent = total > 0 ? total.toLocaleString() : '—';
@@ -261,18 +281,24 @@ class Dashboard {
 
     // ─── Queue metrics ────────────────────────────────────────────────────────
 
-    updateQueues(queues) {
-        const TYPES = ['masters', 'releases', 'artists', 'labels'];
+    updateQueues(pipelineName, queues) {
+        const PIPELINE_ENTITY_TYPES = {
+            discogs: ['masters', 'releases', 'artists', 'labels'],
+            musicbrainz: ['artists', 'labels', 'releases'],
+        };
+        const PIPELINE_CONSUMERS = {
+            discogs: { graph: 'graphinator', table: 'tableinator' },
+            musicbrainz: { graph: 'brainzgraphinator', table: 'brainztableinator' },
+        };
+
+        const TYPES = PIPELINE_ENTITY_TYPES[pipelineName] || ['artists', 'labels', 'releases'];
+        const CONSUMERS = PIPELINE_CONSUMERS[pipelineName] || PIPELINE_CONSUMERS.discogs;
 
         // Build per-service maps for both regular and dead-letter queues.
-        // Each data type has its own fanout exchange (e.g. "discogsography-artists").
-        // Queue naming: "discogsography-{service}-{type}" and "{queue}.dlq" for dead-letter queues.
-        // Each consumer owns its own DLX: "discogsography-{service}-{type}.dlx".
-        // Separate maps prevent DLQ entries from overwriting regular data.
-        const graphinatorMap    = {};
-        const tableInatorMap    = {};
-        const graphinatorDlqMap = {};
-        const tableInatorDlqMap = {};
+        const graphMap    = {};
+        const tableMap    = {};
+        const graphDlqMap = {};
+        const tableDlqMap = {};
 
         queues.forEach(queue => {
             const name  = queue.name.toLowerCase();
@@ -280,41 +306,41 @@ class Dashboard {
 
             for (const type of TYPES) {
                 if (!name.includes(type)) continue;
-                if (name.includes('graphinator')) {
-                    if (isDlq) graphinatorDlqMap[type] = queue;
-                    else       graphinatorMap[type]    = queue;
-                } else if (name.includes('tableinator')) {
-                    if (isDlq) tableInatorDlqMap[type] = queue;
-                    else       tableInatorMap[type]    = queue;
+                if (name.includes(CONSUMERS.graph)) {
+                    if (isDlq) graphDlqMap[type] = queue;
+                    else       graphMap[type]    = queue;
+                } else if (name.includes(CONSUMERS.table)) {
+                    if (isDlq) tableDlqMap[type] = queue;
+                    else       tableMap[type]    = queue;
                 }
                 break;
             }
         });
 
-        this.currentMaps = { graphinatorMap, tableInatorMap, graphinatorDlqMap, tableInatorDlqMap };
+        this.currentMaps[pipelineName] = { graphMap, tableMap, graphDlqMap, tableDlqMap, CONSUMERS, TYPES };
 
         const isDlq         = document.getElementById('dlq-toggle')?.checked ?? false;
-        const activeGraphMap = isDlq ? graphinatorDlqMap : graphinatorMap;
-        const activeTableMap = isDlq ? tableInatorDlqMap : tableInatorMap;
+        const activeGraphMap = isDlq ? graphDlqMap : graphMap;
+        const activeTableMap = isDlq ? tableDlqMap : tableMap;
 
-        // Graphinator card – total messages in active queue set.
+        // Graph consumer card – total messages in active queue set.
         TYPES.forEach(type => {
-            const el = document.getElementById(`graphinator-${type}-count`);
+            const el = document.getElementById(`${pipelineName}-${CONSUMERS.graph}-${type}-count`);
             if (!el) return;
             const q = activeGraphMap[type];
             el.textContent = q ? q.messages.toLocaleString() : '—';
         });
 
-        // Tableinator card – messages in active queue set.
+        // Table consumer card – messages in active queue set.
         TYPES.forEach(type => {
-            const el = document.getElementById(`tableinator-${type}-count`);
+            const el = document.getElementById(`${pipelineName}-${CONSUMERS.table}-${type}-count`);
             if (!el) return;
             const q = activeTableMap[type];
             el.textContent = q ? q.messages.toLocaleString() : '—';
         });
 
-        this._updateBarChart(activeGraphMap, activeTableMap, TYPES, isDlq);
-        this._updateRateCircles(graphinatorMap, tableInatorMap, TYPES, isDlq);
+        this._updateBarChart(pipelineName, activeGraphMap, activeTableMap, TYPES, isDlq, CONSUMERS);
+        this._updateRateCircles(pipelineName, graphMap, tableMap, TYPES, isDlq, CONSUMERS);
 
         // Log high message counts (regular queues only)
         queues.forEach(queue => {
@@ -329,58 +355,64 @@ class Dashboard {
 
     _onDlqToggle() {
         if (!this.currentMaps) return;
-        const TYPES = ['masters', 'releases', 'artists', 'labels'];
         const isDlq = document.getElementById('dlq-toggle')?.checked ?? false;
-        const { graphinatorMap, tableInatorMap, graphinatorDlqMap, tableInatorDlqMap } = this.currentMaps;
-        const activeGraphMap = isDlq ? graphinatorDlqMap : graphinatorMap;
-        const activeTableMap = isDlq ? tableInatorDlqMap : tableInatorMap;
 
-        TYPES.forEach(type => {
-            const gEl = document.getElementById(`graphinator-${type}-count`);
-            if (gEl) {
-                const q = activeGraphMap[type];
-                gEl.textContent = q ? q.messages.toLocaleString() : '—';
-            }
-            const tEl = document.getElementById(`tableinator-${type}-count`);
-            if (tEl) {
-                const q = activeTableMap[type];
-                tEl.textContent = q ? q.messages.toLocaleString() : '—';
-            }
-        });
+        for (const [pipelineName, maps] of Object.entries(this.currentMaps)) {
+            const { graphMap, tableMap, graphDlqMap, tableDlqMap, CONSUMERS, TYPES } = maps;
+            const activeGraphMap = isDlq ? graphDlqMap : graphMap;
+            const activeTableMap = isDlq ? tableDlqMap : tableMap;
 
-        this._updateBarChart(activeGraphMap, activeTableMap, TYPES, isDlq);
-        this._updateRateCircles(graphinatorMap, tableInatorMap, TYPES, isDlq);
+            TYPES.forEach(type => {
+                const gEl = document.getElementById(`${pipelineName}-${CONSUMERS.graph}-${type}-count`);
+                if (gEl) {
+                    const q = activeGraphMap[type];
+                    gEl.textContent = q ? q.messages.toLocaleString() : '—';
+                }
+                const tEl = document.getElementById(`${pipelineName}-${CONSUMERS.table}-${type}-count`);
+                if (tEl) {
+                    const q = activeTableMap[type];
+                    tEl.textContent = q ? q.messages.toLocaleString() : '—';
+                }
+            });
+
+            this._updateBarChart(pipelineName, activeGraphMap, activeTableMap, TYPES, isDlq, CONSUMERS);
+            this._updateRateCircles(pipelineName, graphMap, tableMap, TYPES, isDlq, CONSUMERS);
+        }
     }
 
     // ─── Bar chart (CSS height bars) ─────────────────────────────────────────
 
-    _updateBarChart(graphinatorMap, tableInatorMap, types, isDlq = false) {
-        const graphLegend = document.getElementById('chart-legend-graphinator');
-        const tableLegend = document.getElementById('chart-legend-tableinator');
-        if (graphLegend) graphLegend.textContent = isDlq ? 'Graphinator DLQ' : 'Graphinator';
-        if (tableLegend) tableLegend.textContent = isDlq ? 'Tableinator DLQ' : 'Tableinator';
+    _updateBarChart(pipelineName, graphMap, tableMap, types, isDlq = false, consumers = null) {
+        const graphLegend = document.getElementById(`${pipelineName}-chart-legend-${consumers?.graph || 'graphinator'}`);
+        const tableLegend = document.getElementById(`${pipelineName}-chart-legend-${consumers?.table || 'tableinator'}`);
+        const graphName = consumers?.graph || 'graphinator';
+        const tableName = consumers?.table || 'tableinator';
+        const graphLabel = graphName.charAt(0).toUpperCase() + graphName.slice(1);
+        const tableLabel = tableName.charAt(0).toUpperCase() + tableName.slice(1);
+        if (graphLegend) graphLegend.textContent = isDlq ? `${graphLabel} DLQ` : graphLabel;
+        if (tableLegend) tableLegend.textContent = isDlq ? `${tableLabel} DLQ` : tableLabel;
 
-        const allGraphinator = types.map(t => graphinatorMap[t]?.messages || 0);
-        const allTableinator = types.map(t => tableInatorMap[t]?.messages || 0);
-        const maxCount = Math.max(...allGraphinator, ...allTableinator, 1);
+        const allGraph = types.map(t => graphMap[t]?.messages || 0);
+        const allTable = types.map(t => tableMap[t]?.messages || 0);
+        const maxCount = Math.max(...allGraph, ...allTable, 1);
 
         // Update Y-axis labels
         const fmt = this._formatCount.bind(this);
-        const y4 = document.getElementById('bar-yaxis-4');
-        const y3 = document.getElementById('bar-yaxis-3');
-        const y2 = document.getElementById('bar-yaxis-2');
-        const y1 = document.getElementById('bar-yaxis-1');
+        const y4 = document.getElementById(`${pipelineName}-bar-yaxis-4`);
+        const y3 = document.getElementById(`${pipelineName}-bar-yaxis-3`);
+        const y2 = document.getElementById(`${pipelineName}-bar-yaxis-2`);
+        const y1 = document.getElementById(`${pipelineName}-bar-yaxis-1`);
         if (y4) y4.textContent = fmt(maxCount);
         if (y3) y3.textContent = fmt(maxCount * 0.75);
         if (y2) y2.textContent = fmt(maxCount * 0.5);
         if (y1) y1.textContent = fmt(maxCount * 0.25);
 
-        // Update bar heights: purple = graphinator messages, blue = tableinator messages
+        // Update bar heights: purple = graph consumer messages, blue = table consumer messages
         types.forEach(type => {
-            const gq = graphinatorMap[type];
-            const tq = tableInatorMap[type];
-            const msgBar   = document.getElementById(`bar-${type}-messages`);
-            const readyBar = document.getElementById(`bar-${type}-ready`);
+            const gq = graphMap[type];
+            const tq = tableMap[type];
+            const msgBar   = document.getElementById(`${pipelineName}-bar-${type}-messages`);
+            const readyBar = document.getElementById(`${pipelineName}-bar-${type}-ready`);
             if (msgBar) {
                 const count = gq?.messages || 0;
                 const pct = Math.max((count / maxCount) * 100, count > 0 ? 1 : 0);
@@ -396,8 +428,10 @@ class Dashboard {
 
     // ─── Circular rate gauges ─────────────────────────────────────────────────
 
-    _updateRateCircles(graphinatorMap, tableInatorMap, types, isDlq = false) {
+    _updateRateCircles(pipelineName, graphMap, tableMap, types, isDlq = false, consumers = null) {
         const C = this.CIRCUMFERENCE;
+        const graphName = consumers?.graph || 'graphinator';
+        const tableName = consumers?.table || 'tableinator';
 
         const updateGauge = (circleId, textId, rate, disabled) => {
             const circle = document.getElementById(circleId);
@@ -441,12 +475,12 @@ class Dashboard {
         };
 
         types.forEach(type => {
-            const gq = graphinatorMap[type];
-            const tq = tableInatorMap[type];
-            updateGauge(`rate-circle-graphinator-${type}-publish`, `rate-text-graphinator-${type}-publish`, gq?.message_rate || 0, isDlq);
-            updateGauge(`rate-circle-tableinator-${type}-publish`, `rate-text-tableinator-${type}-publish`, tq?.message_rate || 0, isDlq);
-            updateGauge(`rate-circle-graphinator-${type}-ack`,     `rate-text-graphinator-${type}-ack`,     gq?.ack_rate     || 0, isDlq);
-            updateGauge(`rate-circle-tableinator-${type}-ack`,     `rate-text-tableinator-${type}-ack`,     tq?.ack_rate     || 0, isDlq);
+            const gq = graphMap[type];
+            const tq = tableMap[type];
+            updateGauge(`${pipelineName}-rate-circle-${graphName}-${type}-publish`, `${pipelineName}-rate-text-${graphName}-${type}-publish`, gq?.message_rate || 0, isDlq);
+            updateGauge(`${pipelineName}-rate-circle-${tableName}-${type}-publish`, `${pipelineName}-rate-text-${tableName}-${type}-publish`, tq?.message_rate || 0, isDlq);
+            updateGauge(`${pipelineName}-rate-circle-${graphName}-${type}-ack`,     `${pipelineName}-rate-text-${graphName}-${type}-ack`,     gq?.ack_rate     || 0, isDlq);
+            updateGauge(`${pipelineName}-rate-circle-${tableName}-${type}-ack`,     `${pipelineName}-rate-text-${tableName}-${type}-ack`,     tq?.ack_rate     || 0, isDlq);
         });
     }
 

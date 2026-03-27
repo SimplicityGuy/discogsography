@@ -161,433 +161,803 @@
     </header>
 
     <!-- ================================================================
-         SERVICE CARDS  (3-column grid)
+         DISCOGS PIPELINE
          ================================================================ -->
-    <div class="grid grid-cols-3 gap-6">
+    <section id="pipeline-discogs" class="space-y-8 hidden">
+        <div class="flex items-center gap-3">
+            <h2 class="text-sm font-bold uppercase tracking-[0.15em] t-dim">Discogs Pipeline</h2>
+            <div class="flex-1 border-t b-theme"></div>
+        </div>
 
-        <!-- Extractor -->
-        <div id="service-extractor" class="dashboard-card p-6">
-            <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
-                <h3 class="text-sm font-semibold flex items-center gap-2">
-                    <span class="material-symbols-outlined text-sm t-dim">output</span> Extractor
-                </h3>
-                <span id="extractor-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
+        <!-- SERVICE CARDS (3-column grid) -->
+        <div class="grid grid-cols-3 gap-6">
+
+            <!-- Extractor (Discogs) -->
+            <div id="service-extractor-discogs" class="dashboard-card p-6">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm t-dim">output</span> Extractor
+                    </h3>
+                    <span id="discogs-extractor-discogs-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
+                </div>
+                <div class="space-y-3">
+                    <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider">
+                        <span>Queues</span><span>State</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Masters</span>
+                        <span id="discogs-extractor-discogs-masters-state" class="t-muted">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Releases</span>
+                        <span id="discogs-extractor-discogs-releases-state" class="t-muted">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Artists</span>
+                        <span id="discogs-extractor-discogs-artists-state" class="t-muted">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1">
+                        <span>Labels</span>
+                        <span id="discogs-extractor-discogs-labels-state" class="t-muted">—</span>
+                    </div>
+                    <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider pt-3 mt-1 border-t b-theme">
+                        <span>Total Records</span>
+                        <span id="discogs-extractor-discogs-total-records" class="t-high normal-case font-mono">—</span>
+                    </div>
+                </div>
             </div>
-            <div class="space-y-3">
-                <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider">
-                    <span>Queues</span><span>State</span>
+
+            <!-- Graphinator -->
+            <div id="service-graphinator" class="dashboard-card p-6">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm" style="color:var(--purple-accent)">hub</span> Graphinator
+                    </h3>
+                    <span id="discogs-graphinator-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
                 </div>
-                <div class="flex justify-between text-xs mono py-1 border-b b-row">
-                    <span>Masters</span>
-                    <span id="extractor-masters-state" class="t-muted">—</span>
+                <div class="space-y-3">
+                    <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider">
+                        <span>Queues</span><span>Messages</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Masters</span>
+                        <span id="discogs-graphinator-masters-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Releases</span>
+                        <span id="discogs-graphinator-releases-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Artists</span>
+                        <span id="discogs-graphinator-artists-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1">
+                        <span>Labels</span>
+                        <span id="discogs-graphinator-labels-count" class="t-high">—</span>
+                    </div>
                 </div>
-                <div class="flex justify-between text-xs mono py-1 border-b b-row">
-                    <span>Releases</span>
-                    <span id="extractor-releases-state" class="t-muted">—</span>
+            </div>
+
+            <!-- Tableinator -->
+            <div id="service-tableinator" class="dashboard-card p-6">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm" style="color:var(--blue-accent)">grid_view</span> Tableinator
+                    </h3>
+                    <span id="discogs-tableinator-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
                 </div>
-                <div class="flex justify-between text-xs mono py-1 border-b b-row">
-                    <span>Artists</span>
-                    <span id="extractor-artists-state" class="t-muted">—</span>
-                </div>
-                <div class="flex justify-between text-xs mono py-1">
-                    <span>Labels</span>
-                    <span id="extractor-labels-state" class="t-muted">—</span>
-                </div>
-                <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider pt-3 mt-1 border-t b-theme">
-                    <span>Total Records</span>
-                    <span id="extractor-total-records" class="t-high normal-case font-mono">—</span>
+                <div class="space-y-3">
+                    <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider">
+                        <span>Queues</span><span>Messages</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Masters</span>
+                        <span id="discogs-tableinator-masters-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Releases</span>
+                        <span id="discogs-tableinator-releases-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Artists</span>
+                        <span id="discogs-tableinator-artists-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1">
+                        <span>Labels</span>
+                        <span id="discogs-tableinator-labels-count" class="t-high">—</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Graphinator -->
-        <div id="service-graphinator" class="dashboard-card p-6">
-            <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
-                <h3 class="text-sm font-semibold flex items-center gap-2">
-                    <span class="material-symbols-outlined text-sm" style="color:var(--purple-accent)">hub</span> Graphinator
-                </h3>
-                <span id="graphinator-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
+        <!-- QUEUE SIZE METRICS (SVG bar chart) -->
+        <div class="dashboard-card p-8">
+            <div class="flex items-center justify-between mb-10">
+                <div>
+                    <h2 class="text-lg font-bold">Queue Size Metrics</h2>
+                    <p class="text-[10px] t-muted uppercase tracking-[0.2em] font-mono mt-1">Message Count by Queue Type</p>
+                </div>
+                <div class="flex items-center space-x-8">
+                    <div class="flex items-center space-x-2">
+                        <div class="w-3 h-3 rounded-sm" style="background:var(--purple-accent)"></div>
+                        <span id="discogs-chart-legend-graphinator" class="text-[10px] font-bold t-dim uppercase tracking-widest">Graphinator</span>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <div class="w-3 h-3 rounded-sm" style="background:var(--blue-accent)"></div>
+                        <span id="discogs-chart-legend-tableinator" class="text-[10px] font-bold t-dim uppercase tracking-widest">Tableinator</span>
+                    </div>
+                </div>
             </div>
-            <div class="space-y-3">
-                <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider">
-                    <span>Queues</span><span>Messages</span>
+
+            <div class="h-64 flex items-end justify-between px-12 relative">
+                <!-- Y-axis grid lines -->
+                <div class="absolute left-0 top-0 bottom-0 w-full flex flex-col justify-between pointer-events-none text-[9px] font-mono t-muted">
+                    <div class="border-t b-theme w-full pt-1" id="discogs-bar-yaxis-4">—</div>
+                    <div class="border-t b-theme w-full pt-1" id="discogs-bar-yaxis-3">—</div>
+                    <div class="border-t b-theme w-full pt-1" id="discogs-bar-yaxis-2">—</div>
+                    <div class="border-t b-theme w-full pt-1" id="discogs-bar-yaxis-1">—</div>
+                    <div class="border-t b-theme w-full"></div>
                 </div>
-                <div class="flex justify-between text-xs mono py-1 border-b b-row">
-                    <span>Masters</span>
-                    <span id="graphinator-masters-count" class="t-high">—</span>
-                </div>
-                <div class="flex justify-between text-xs mono py-1 border-b b-row">
-                    <span>Releases</span>
-                    <span id="graphinator-releases-count" class="t-high">—</span>
-                </div>
-                <div class="flex justify-between text-xs mono py-1 border-b b-row">
-                    <span>Artists</span>
-                    <span id="graphinator-artists-count" class="t-high">—</span>
-                </div>
-                <div class="flex justify-between text-xs mono py-1">
-                    <span>Labels</span>
-                    <span id="graphinator-labels-count" class="t-high">—</span>
+
+                <!-- Bar groups -->
+                <div class="flex-1 flex justify-around items-end z-10 h-full">
+                    <div class="flex flex-col items-center gap-4 h-full">
+                        <div class="flex items-end gap-2 flex-1">
+                            <div id="discogs-bar-masters-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
+                            <div id="discogs-bar-masters-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
+                        </div>
+                        <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Masters</span>
+                    </div>
+                    <div class="flex flex-col items-center gap-4 h-full">
+                        <div class="flex items-end gap-2 flex-1">
+                            <div id="discogs-bar-releases-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
+                            <div id="discogs-bar-releases-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
+                        </div>
+                        <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Releases</span>
+                    </div>
+                    <div class="flex flex-col items-center gap-4 h-full">
+                        <div class="flex items-end gap-2 flex-1">
+                            <div id="discogs-bar-artists-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
+                            <div id="discogs-bar-artists-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
+                        </div>
+                        <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Artists</span>
+                    </div>
+                    <div class="flex flex-col items-center gap-4 h-full">
+                        <div class="flex items-end gap-2 flex-1">
+                            <div id="discogs-bar-labels-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
+                            <div id="discogs-bar-labels-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
+                        </div>
+                        <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Labels</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- Tableinator -->
-        <div id="service-tableinator" class="dashboard-card p-6">
-            <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
-                <h3 class="text-sm font-semibold flex items-center gap-2">
-                    <span class="material-symbols-outlined text-sm" style="color:var(--blue-accent)">grid_view</span> Tableinator
-                </h3>
-                <span id="tableinator-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
+        <!-- PROCESSING RATES (circular SVG gauges) -->
+        <div class="grid grid-cols-2 gap-6">
+
+            <!-- Publish Rates panel -->
+            <div class="dashboard-card p-8">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xs font-bold t-dim uppercase tracking-[0.2em]">Publish Rates (msg/s)</h2>
+                    <div class="flex items-center space-x-6">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2.5 h-2.5 rounded-full" style="background:var(--purple-accent)"></div>
+                            <span class="text-[9px] font-bold t-muted uppercase">Graphinator</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2.5 h-2.5 rounded-full" style="background:var(--blue-accent)"></div>
+                            <span class="text-[9px] font-bold t-muted uppercase">Tableinator</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Graphinator publish row (purple) -->
+                <div class="flex items-center gap-4 mb-6">
+                    <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--purple-accent)">Graph.</span>
+                    <div class="grid grid-cols-4 gap-4 flex-1">
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-graphinator-masters-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-graphinator-masters-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Masters</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-graphinator-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-graphinator-releases-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-graphinator-artists-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-graphinator-artists-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-graphinator-labels-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-graphinator-labels-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Tableinator publish row (blue) -->
+                <div class="flex items-center gap-4">
+                    <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--blue-accent)">Table.</span>
+                    <div class="grid grid-cols-4 gap-4 flex-1">
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-tableinator-masters-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-tableinator-masters-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Masters</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-tableinator-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-tableinator-releases-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-tableinator-artists-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-tableinator-artists-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-tableinator-labels-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-tableinator-labels-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div class="space-y-3">
-                <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider">
-                    <span>Queues</span><span>Messages</span>
+
+            <!-- Ack Rates panel -->
+            <div class="dashboard-card p-8">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xs font-bold t-dim uppercase tracking-[0.2em]">Ack Rates (msg/s)</h2>
+                    <div class="flex items-center space-x-6">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2.5 h-2.5 rounded-full" style="background:var(--purple-accent)"></div>
+                            <span class="text-[9px] font-bold t-muted uppercase">Graphinator</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2.5 h-2.5 rounded-full" style="background:var(--blue-accent)"></div>
+                            <span class="text-[9px] font-bold t-muted uppercase">Tableinator</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="flex justify-between text-xs mono py-1 border-b b-row">
-                    <span>Masters</span>
-                    <span id="tableinator-masters-count" class="t-high">—</span>
+
+                <!-- Graphinator ack row (purple) -->
+                <div class="flex items-center gap-4 mb-6">
+                    <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--purple-accent)">Graph.</span>
+                    <div class="grid grid-cols-4 gap-4 flex-1">
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-graphinator-masters-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-graphinator-masters-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Masters</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-graphinator-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-graphinator-releases-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-graphinator-artists-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-graphinator-artists-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-graphinator-labels-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-graphinator-labels-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="flex justify-between text-xs mono py-1 border-b b-row">
-                    <span>Releases</span>
-                    <span id="tableinator-releases-count" class="t-high">—</span>
-                </div>
-                <div class="flex justify-between text-xs mono py-1 border-b b-row">
-                    <span>Artists</span>
-                    <span id="tableinator-artists-count" class="t-high">—</span>
-                </div>
-                <div class="flex justify-between text-xs mono py-1">
-                    <span>Labels</span>
-                    <span id="tableinator-labels-count" class="t-high">—</span>
+
+                <!-- Tableinator ack row (blue) -->
+                <div class="flex items-center gap-4">
+                    <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--blue-accent)">Table.</span>
+                    <div class="grid grid-cols-4 gap-4 flex-1">
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-tableinator-masters-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-tableinator-masters-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Masters</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-tableinator-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-tableinator-releases-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-tableinator-artists-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-tableinator-artists-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="discogs-rate-circle-tableinator-labels-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="discogs-rate-text-tableinator-labels-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
+                        </div>
+                    </div>
                 </div>
             </div>
+
         </div>
-    </div>
+    </section>
 
     <!-- ================================================================
-         QUEUE SIZE METRICS  (SVG bar chart)
+         MUSICBRAINZ PIPELINE
          ================================================================ -->
-    <div class="dashboard-card p-8">
-        <div class="flex items-center justify-between mb-10">
-            <div>
-                <h2 class="text-lg font-bold">Queue Size Metrics</h2>
-                <p class="text-[10px] t-muted uppercase tracking-[0.2em] font-mono mt-1">Message Count by Queue Type</p>
-            </div>
-            <div class="flex items-center space-x-8">
-                <div class="flex items-center space-x-2">
-                    <div class="w-3 h-3 rounded-sm" style="background:var(--purple-accent)"></div>
-                    <span id="chart-legend-graphinator" class="text-[10px] font-bold t-dim uppercase tracking-widest">Graphinator</span>
+    <section id="pipeline-musicbrainz" class="space-y-8 hidden">
+        <div class="flex items-center gap-3">
+            <h2 class="text-sm font-bold uppercase tracking-[0.15em] t-dim">MusicBrainz Pipeline</h2>
+            <div class="flex-1 border-t b-theme"></div>
+        </div>
+
+        <!-- SERVICE CARDS (3-column grid) -->
+        <div class="grid grid-cols-3 gap-6">
+
+            <!-- Extractor (MusicBrainz) -->
+            <div id="service-extractor-musicbrainz" class="dashboard-card p-6">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm t-dim">output</span> Extractor
+                    </h3>
+                    <span id="musicbrainz-extractor-musicbrainz-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
                 </div>
-                <div class="flex items-center space-x-2">
-                    <div class="w-3 h-3 rounded-sm" style="background:var(--blue-accent)"></div>
-                    <span id="chart-legend-tableinator" class="text-[10px] font-bold t-dim uppercase tracking-widest">Tableinator</span>
+                <div class="space-y-3">
+                    <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider">
+                        <span>Queues</span><span>State</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Artists</span>
+                        <span id="musicbrainz-extractor-musicbrainz-artists-state" class="t-muted">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Labels</span>
+                        <span id="musicbrainz-extractor-musicbrainz-labels-state" class="t-muted">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1">
+                        <span>Releases</span>
+                        <span id="musicbrainz-extractor-musicbrainz-releases-state" class="t-muted">—</span>
+                    </div>
+                    <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider pt-3 mt-1 border-t b-theme">
+                        <span>Total Records</span>
+                        <span id="musicbrainz-extractor-musicbrainz-total-records" class="t-high normal-case font-mono">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Brainzgraphinator -->
+            <div id="service-brainzgraphinator" class="dashboard-card p-6">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm" style="color:var(--purple-accent)">hub</span> Brainzgraphinator
+                    </h3>
+                    <span id="musicbrainz-brainzgraphinator-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
+                </div>
+                <div class="space-y-3">
+                    <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider">
+                        <span>Queues</span><span>Messages</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Artists</span>
+                        <span id="musicbrainz-brainzgraphinator-artists-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Labels</span>
+                        <span id="musicbrainz-brainzgraphinator-labels-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1">
+                        <span>Releases</span>
+                        <span id="musicbrainz-brainzgraphinator-releases-count" class="t-high">—</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Brainztableinator -->
+            <div id="service-brainztableinator" class="dashboard-card p-6">
+                <div class="flex items-center justify-between mb-6 border-b b-theme pb-4">
+                    <h3 class="text-sm font-semibold flex items-center gap-2">
+                        <span class="material-symbols-outlined text-sm" style="color:var(--blue-accent)">grid_view</span> Brainztableinator
+                    </h3>
+                    <span id="musicbrainz-brainztableinator-status-badge" class="text-[10px] bg-yellow-500/10 text-yellow-400 px-2 py-0.5 rounded border border-yellow-500/20 uppercase font-bold">Unknown</span>
+                </div>
+                <div class="space-y-3">
+                    <div class="flex justify-between text-[10px] t-muted uppercase font-bold tracking-wider">
+                        <span>Queues</span><span>Messages</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Artists</span>
+                        <span id="musicbrainz-brainztableinator-artists-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1 border-b b-row">
+                        <span>Labels</span>
+                        <span id="musicbrainz-brainztableinator-labels-count" class="t-high">—</span>
+                    </div>
+                    <div class="flex justify-between text-xs mono py-1">
+                        <span>Releases</span>
+                        <span id="musicbrainz-brainztableinator-releases-count" class="t-high">—</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <div class="h-64 flex items-end justify-between px-12 relative">
-            <!-- Y-axis grid lines -->
-            <div class="absolute left-0 top-0 bottom-0 w-full flex flex-col justify-between pointer-events-none text-[9px] font-mono t-muted">
-                <div class="border-t b-theme w-full pt-1" id="bar-yaxis-4">—</div>
-                <div class="border-t b-theme w-full pt-1" id="bar-yaxis-3">—</div>
-                <div class="border-t b-theme w-full pt-1" id="bar-yaxis-2">—</div>
-                <div class="border-t b-theme w-full pt-1" id="bar-yaxis-1">—</div>
-                <div class="border-t b-theme w-full"></div>
-            </div>
-
-            <!-- Bar groups -->
-            <div class="flex-1 flex justify-around items-end z-10 h-full">
-                <div class="flex flex-col items-center gap-4 h-full">
-                    <div class="flex items-end gap-2 flex-1">
-                        <div id="bar-masters-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
-                        <div id="bar-masters-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
-                    </div>
-                    <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Masters</span>
-                </div>
-                <div class="flex flex-col items-center gap-4 h-full">
-                    <div class="flex items-end gap-2 flex-1">
-                        <div id="bar-releases-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
-                        <div id="bar-releases-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
-                    </div>
-                    <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Releases</span>
-                </div>
-                <div class="flex flex-col items-center gap-4 h-full">
-                    <div class="flex items-end gap-2 flex-1">
-                        <div id="bar-artists-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
-                        <div id="bar-artists-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
-                    </div>
-                    <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Artists</span>
-                </div>
-                <div class="flex flex-col items-center gap-4 h-full">
-                    <div class="flex items-end gap-2 flex-1">
-                        <div id="bar-labels-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
-                        <div id="bar-labels-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
-                    </div>
-                    <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Labels</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- ================================================================
-         PROCESSING RATES  (circular SVG gauges)
-         ================================================================ -->
-    <div class="grid grid-cols-2 gap-6">
-
-        <!-- Publish Rates panel -->
+        <!-- QUEUE SIZE METRICS (SVG bar chart — 3 columns for MB) -->
         <div class="dashboard-card p-8">
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-xs font-bold t-dim uppercase tracking-[0.2em]">Publish Rates (msg/s)</h2>
-                <div class="flex items-center space-x-6">
+            <div class="flex items-center justify-between mb-10">
+                <div>
+                    <h2 class="text-lg font-bold">Queue Size Metrics</h2>
+                    <p class="text-[10px] t-muted uppercase tracking-[0.2em] font-mono mt-1">Message Count by Queue Type</p>
+                </div>
+                <div class="flex items-center space-x-8">
                     <div class="flex items-center space-x-2">
-                        <div class="w-2.5 h-2.5 rounded-full" style="background:var(--purple-accent)"></div>
-                        <span class="text-[9px] font-bold t-muted uppercase">Graphinator</span>
+                        <div class="w-3 h-3 rounded-sm" style="background:var(--purple-accent)"></div>
+                        <span id="musicbrainz-chart-legend-brainzgraphinator" class="text-[10px] font-bold t-dim uppercase tracking-widest">Brainzgraphinator</span>
                     </div>
                     <div class="flex items-center space-x-2">
-                        <div class="w-2.5 h-2.5 rounded-full" style="background:var(--blue-accent)"></div>
-                        <span class="text-[9px] font-bold t-muted uppercase">Tableinator</span>
+                        <div class="w-3 h-3 rounded-sm" style="background:var(--blue-accent)"></div>
+                        <span id="musicbrainz-chart-legend-brainztableinator" class="text-[10px] font-bold t-dim uppercase tracking-widest">Brainztableinator</span>
                     </div>
                 </div>
             </div>
 
-            <!-- Graphinator publish row (purple) -->
-            <div class="flex items-center gap-4 mb-6">
-                <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--purple-accent)">Graph.</span>
-                <div class="grid grid-cols-4 gap-4 flex-1">
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-graphinator-masters-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-graphinator-masters-publish" class="t-muted">0</span>
-                            </div>
-                        </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Masters</span>
-                    </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-graphinator-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-graphinator-releases-publish" class="t-muted">0</span>
-                            </div>
-                        </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
-                    </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-graphinator-artists-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-graphinator-artists-publish" class="t-muted">0</span>
-                            </div>
-                        </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
-                    </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-graphinator-labels-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-graphinator-labels-publish" class="t-muted">0</span>
-                            </div>
-                        </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
-                    </div>
+            <div class="h-64 flex items-end justify-between px-12 relative">
+                <!-- Y-axis grid lines -->
+                <div class="absolute left-0 top-0 bottom-0 w-full flex flex-col justify-between pointer-events-none text-[9px] font-mono t-muted">
+                    <div class="border-t b-theme w-full pt-1" id="musicbrainz-bar-yaxis-4">—</div>
+                    <div class="border-t b-theme w-full pt-1" id="musicbrainz-bar-yaxis-3">—</div>
+                    <div class="border-t b-theme w-full pt-1" id="musicbrainz-bar-yaxis-2">—</div>
+                    <div class="border-t b-theme w-full pt-1" id="musicbrainz-bar-yaxis-1">—</div>
+                    <div class="border-t b-theme w-full"></div>
                 </div>
-            </div>
 
-            <!-- Tableinator publish row (blue) -->
-            <div class="flex items-center gap-4">
-                <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--blue-accent)">Table.</span>
-                <div class="grid grid-cols-4 gap-4 flex-1">
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-tableinator-masters-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-tableinator-masters-publish" class="t-muted">0</span>
-                            </div>
+                <!-- Bar groups (3 columns — no masters) -->
+                <div class="flex-1 flex justify-around items-end z-10 h-full">
+                    <div class="flex flex-col items-center gap-4 h-full">
+                        <div class="flex items-end gap-2 flex-1">
+                            <div id="musicbrainz-bar-artists-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
+                            <div id="musicbrainz-bar-artists-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
                         </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Masters</span>
+                        <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Artists</span>
                     </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-tableinator-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-tableinator-releases-publish" class="t-muted">0</span>
-                            </div>
+                    <div class="flex flex-col items-center gap-4 h-full">
+                        <div class="flex items-end gap-2 flex-1">
+                            <div id="musicbrainz-bar-labels-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
+                            <div id="musicbrainz-bar-labels-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
                         </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
+                        <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Labels</span>
                     </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-tableinator-artists-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-tableinator-artists-publish" class="t-muted">0</span>
-                            </div>
+                    <div class="flex flex-col items-center gap-4 h-full">
+                        <div class="flex items-end gap-2 flex-1">
+                            <div id="musicbrainz-bar-releases-messages" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--purple-accent);height:0%"></div>
+                            <div id="musicbrainz-bar-releases-ready" class="w-10 rounded-t-sm transition-all duration-500" style="background:var(--blue-accent);height:0%"></div>
                         </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
-                    </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-tableinator-labels-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-tableinator-labels-publish" class="t-muted">0</span>
-                            </div>
-                        </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
+                        <span class="text-[10px] font-bold t-dim uppercase tracking-widest">Releases</span>
                     </div>
                 </div>
             </div>
         </div>
 
-        <!-- Ack Rates panel -->
-        <div class="dashboard-card p-8">
-            <div class="flex items-center justify-between mb-6">
-                <h2 class="text-xs font-bold t-dim uppercase tracking-[0.2em]">Ack Rates (msg/s)</h2>
-                <div class="flex items-center space-x-6">
-                    <div class="flex items-center space-x-2">
-                        <div class="w-2.5 h-2.5 rounded-full" style="background:var(--purple-accent)"></div>
-                        <span class="text-[9px] font-bold t-muted uppercase">Graphinator</span>
+        <!-- PROCESSING RATES (circular SVG gauges — 3 columns) -->
+        <div class="grid grid-cols-2 gap-6">
+
+            <!-- Publish Rates panel -->
+            <div class="dashboard-card p-8">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xs font-bold t-dim uppercase tracking-[0.2em]">Publish Rates (msg/s)</h2>
+                    <div class="flex items-center space-x-6">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2.5 h-2.5 rounded-full" style="background:var(--purple-accent)"></div>
+                            <span class="text-[9px] font-bold t-muted uppercase">Brainzgraph.</span>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2.5 h-2.5 rounded-full" style="background:var(--blue-accent)"></div>
+                            <span class="text-[9px] font-bold t-muted uppercase">Brainztable.</span>
+                        </div>
                     </div>
-                    <div class="flex items-center space-x-2">
-                        <div class="w-2.5 h-2.5 rounded-full" style="background:var(--blue-accent)"></div>
-                        <span class="text-[9px] font-bold t-muted uppercase">Tableinator</span>
+                </div>
+
+                <!-- Brainzgraphinator publish row (purple) -->
+                <div class="flex items-center gap-4 mb-6">
+                    <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--purple-accent)">Graph.</span>
+                    <div class="grid grid-cols-3 gap-4 flex-1">
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainzgraphinator-artists-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainzgraphinator-artists-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainzgraphinator-labels-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainzgraphinator-labels-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainzgraphinator-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainzgraphinator-releases-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Brainztableinator publish row (blue) -->
+                <div class="flex items-center gap-4">
+                    <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--blue-accent)">Table.</span>
+                    <div class="grid grid-cols-3 gap-4 flex-1">
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainztableinator-artists-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainztableinator-artists-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainztableinator-labels-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainztableinator-labels-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainztableinator-releases-publish" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainztableinator-releases-publish" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Graphinator ack row (purple) -->
-            <div class="flex items-center gap-4 mb-6">
-                <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--purple-accent)">Graph.</span>
-                <div class="grid grid-cols-4 gap-4 flex-1">
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-graphinator-masters-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-graphinator-masters-ack" class="t-muted">0</span>
-                            </div>
+            <!-- Ack Rates panel -->
+            <div class="dashboard-card p-8">
+                <div class="flex items-center justify-between mb-6">
+                    <h2 class="text-xs font-bold t-dim uppercase tracking-[0.2em]">Ack Rates (msg/s)</h2>
+                    <div class="flex items-center space-x-6">
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2.5 h-2.5 rounded-full" style="background:var(--purple-accent)"></div>
+                            <span class="text-[9px] font-bold t-muted uppercase">Brainzgraph.</span>
                         </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Masters</span>
+                        <div class="flex items-center space-x-2">
+                            <div class="w-2.5 h-2.5 rounded-full" style="background:var(--blue-accent)"></div>
+                            <span class="text-[9px] font-bold t-muted uppercase">Brainztable.</span>
+                        </div>
                     </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-graphinator-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-graphinator-releases-ack" class="t-muted">0</span>
+                </div>
+
+                <!-- Brainzgraphinator ack row (purple) -->
+                <div class="flex items-center gap-4 mb-6">
+                    <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--purple-accent)">Graph.</span>
+                    <div class="grid grid-cols-3 gap-4 flex-1">
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainzgraphinator-artists-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainzgraphinator-artists-ack" class="t-muted">0</span>
+                                </div>
                             </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
                         </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainzgraphinator-labels-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainzgraphinator-labels-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
+                        </div>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainzgraphinator-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainzgraphinator-releases-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
+                        </div>
                     </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-graphinator-artists-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-graphinator-artists-ack" class="t-muted">0</span>
+                </div>
+
+                <!-- Brainztableinator ack row (blue) -->
+                <div class="flex items-center gap-4">
+                    <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--blue-accent)">Table.</span>
+                    <div class="grid grid-cols-3 gap-4 flex-1">
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainztableinator-artists-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainztableinator-artists-ack" class="t-muted">0</span>
+                                </div>
                             </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
                         </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
-                    </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-graphinator-labels-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--purple-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-graphinator-labels-ack" class="t-muted">0</span>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainztableinator-labels-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainztableinator-labels-ack" class="t-muted">0</span>
+                                </div>
                             </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
                         </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
+                        <div class="flex flex-col items-center space-y-2">
+                            <div class="relative w-16 h-16">
+                                <svg class="w-full h-full -rotate-90">
+                                    <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
+                                    <circle id="musicbrainz-rate-circle-brainztableinator-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
+                                    <span id="musicbrainz-rate-text-brainztableinator-releases-ack" class="t-muted">0</span>
+                                </div>
+                            </div>
+                            <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
+                        </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Tableinator ack row (blue) -->
-            <div class="flex items-center gap-4">
-                <span class="text-[9px] font-bold uppercase tracking-wider w-14 shrink-0" style="color:var(--blue-accent)">Table.</span>
-                <div class="grid grid-cols-4 gap-4 flex-1">
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-tableinator-masters-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-tableinator-masters-ack" class="t-muted">0</span>
-                            </div>
-                        </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Masters</span>
-                    </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-tableinator-releases-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-tableinator-releases-ack" class="t-muted">0</span>
-                            </div>
-                        </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Releases</span>
-                    </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-tableinator-artists-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-tableinator-artists-ack" class="t-muted">0</span>
-                            </div>
-                        </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Artists</span>
-                    </div>
-                    <div class="flex flex-col items-center space-y-2">
-                        <div class="relative w-16 h-16">
-                            <svg class="w-full h-full -rotate-90">
-                                <circle cx="32" cy="32" fill="transparent" r="28" stroke="var(--gauge-track)" stroke-width="4"></circle>
-                                <circle id="rate-circle-tableinator-labels-ack" cx="32" cy="32" fill="transparent" r="28" stroke="var(--blue-accent)" stroke-dasharray="176" stroke-dashoffset="176" stroke-linecap="round" stroke-width="4" style="transition:stroke-dashoffset 0.5s ease"></circle>
-                            </svg>
-                            <div class="absolute inset-0 flex items-center justify-center text-[10px] font-bold mono">
-                                <span id="rate-text-tableinator-labels-ack" class="t-muted">0</span>
-                            </div>
-                        </div>
-                        <span class="text-[9px] t-muted font-bold uppercase">Labels</span>
-                    </div>
-                </div>
-            </div>
         </div>
-
-    </div>
+    </section>
 
     <!-- ================================================================
          BOTTOM ROW: DATABASE CARDS  +  SYSTEM EVENT LOG
