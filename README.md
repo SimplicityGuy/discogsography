@@ -188,12 +188,13 @@ See the [Quick Start Guide](docs/quick-start.md) for prerequisites, local develo
 
 ### 🔧 Operations
 
-| Document                                               | Purpose                                          |
-| ------------------------------------------------------ | ------------------------------------------------ |
-| **[Troubleshooting Guide](docs/troubleshooting.md)**   | 🔧 Common issues, solutions, and debugging steps |
-| **[Maintenance Guide](docs/maintenance.md)**           | 🔄 Package upgrades, dependency management       |
-| **[Performance Guide](docs/performance-guide.md)**     | ⚡ Database tuning, hardware specs, optimization |
-| **[Database Resilience](docs/database-resilience.md)** | 💾 Database connection patterns & error handling |
+| Document                                                       | Purpose                                              |
+| -------------------------------------------------------------- | ---------------------------------------------------- |
+| **[Troubleshooting Guide](docs/troubleshooting.md)**           | 🔧 Common issues, solutions, and debugging steps     |
+| **[Maintenance Guide](docs/maintenance.md)**                   | 🔄 Package upgrades, dependency management           |
+| **[Performance Guide](docs/performance-guide.md)**             | ⚡ Database tuning, hardware specs, optimization     |
+| **[Database Resilience](docs/database-resilience.md)**         | 💾 Database connection patterns & error handling     |
+| **[MusicBrainz Sync Guide](docs/musicbrainz-sync.md)**        | 🎵 MusicBrainz data import and enrichment operations |
 
 ### 🐋 Infrastructure & CI/CD
 
@@ -240,6 +241,7 @@ Some other projects working with the monthly Discogs data dump.
 ## 🙏 Acknowledgments
 
 - 🎵 [Discogs](https://www.discogs.com/) for providing the monthly data dumps
+- 🎵 [MusicBrainz](https://musicbrainz.org/) for the open music encyclopedia and twice-weekly JSONL dumps
 - 🚀 [uv](https://github.com/astral-sh/uv) for blazing-fast package management
 - 🔥 [Ruff](https://github.com/astral-sh/ruff) for lightning-fast linting
 - 🐍 The Python community for excellent libraries and tools

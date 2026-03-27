@@ -1,10 +1,15 @@
 # State Marker System
 
-The state marker system tracks extraction progress across all phases, allowing the extractor to intelligently decide whether to re-process, continue, or skip processing when restarted.
+The state marker system tracks extraction progress across all phases, allowing the extractor to intelligently decide whether to re-process, continue, or skip processing when restarted. The system supports both Discogs and MusicBrainz data sources with separate marker files.
 
 ## Overview
 
-Each Discogs data version (e.g., `20260101`) has its own state marker file (`.extraction_status_20260101.json`) that tracks:
+Each data version gets its own state marker file:
+
+- **Discogs**: `.extraction_status_{version}.json` (e.g., `.extraction_status_20260101.json`)
+- **MusicBrainz**: `.mb_extraction_status_{version}.json` (e.g., `.mb_extraction_status_20260326.json`)
+
+Each marker tracks:
 
 1. **Download Phase** - File downloads and checksums
 1. **Processing Phase** - Which files are being/have been processed
@@ -230,7 +235,9 @@ if decision == ProcessingDecision.SKIP:
 
 ## File Locations
 
-State markers are stored in the Discogs root directory:
+State markers are stored in the respective data root directories:
+
+### Discogs State Markers
 
 ```
 /discogs-data/
@@ -240,22 +247,42 @@ State markers are stored in the Discogs root directory:
 ├── discogs_20260101_releases.xml.gz
 ├── .discogs_metadata.json              # Download checksums (existing)
 ├── .processing_state.json              # Simple boolean flags (deprecated)
-└── .extraction_status_20260101.json    # State marker (new)
+└── .extraction_status_20260101.json    # State marker
 ```
+
+### MusicBrainz State Markers
+
+```
+/musicbrainz-data/
+├── artist.jsonl.xz
+├── label.jsonl.xz
+├── release.jsonl.xz
+└── .mb_extraction_status_20260326.json # MusicBrainz state marker
+```
+
+MusicBrainz state markers use the `.mb_extraction_status_{version}.json` naming convention to distinguish from Discogs markers. They follow the same internal structure and status values as Discogs markers, but track 3 data types (artists, labels, releases) instead of 4 (no masters).
 
 ## Version-Specific Tracking
 
-Each Discogs version gets its own state marker:
+Each data source version gets its own state marker:
+
+**Discogs** (monthly releases):
 
 - `.extraction_status_20260101.json` - January 2026 data
 - `.extraction_status_20251201.json` - December 2025 data
 - `.extraction_status_20251101.json` - November 2025 data
+
+**MusicBrainz** (twice-weekly releases):
+
+- `.mb_extraction_status_20260326.json` - March 26, 2026 dump
+- `.mb_extraction_status_20260322.json` - March 22, 2026 dump
 
 This allows:
 
 - Multiple versions to coexist
 - Easy cleanup of old versions
 - Clear version history
+- Independent tracking of Discogs and MusicBrainz extraction progress
 
 ## Migration Path
 

@@ -21,10 +21,14 @@ Emojis in Discogsography serve to:
 | 🔐    | API         | User accounts, JWT auth, and collection sync   |
 | ⚡    | Extractor   | Rust-based high-performance extraction service |
 | 🔗    | Graphinator | Neo4j graph service                            |
-| 🐘    | Tableinator | PostgreSQL service                             |
-| 🔍    | Explore     | Interactive graph exploration & trends         |
-| 📊    | Dashboard   | Analytics dashboard                            |
-| 🐰    | RabbitMQ    | Message broker                                 |
+| 🐘    | Tableinator       | PostgreSQL service                                  |
+| 🧠    | Brainzgraphinator | MusicBrainz Neo4j enrichment service                |
+| 🧬    | Brainztableinator | MusicBrainz PostgreSQL service                      |
+| 🔍    | Explore           | Interactive graph exploration & trends              |
+| 📊    | Dashboard         | Analytics dashboard                                 |
+| 📈    | Insights          | Precomputed analytics and music trends              |
+| 🤖    | MCP Server        | AI assistant integration via knowledge graph        |
+| 🐰    | RabbitMQ          | Message broker                                      |
 
 ### Status Indicators
 

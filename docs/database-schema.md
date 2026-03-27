@@ -10,10 +10,10 @@
 
 ## Overview
 
-Discogsography uses two complementary database systems:
+Discogsography uses two complementary database systems with data from two sources:
 
-- **Neo4j**: Graph database for complex relationship queries
-- **PostgreSQL**: Relational database for fast analytics and full-text search
+- **Neo4j**: Graph database for complex relationship queries (Discogs data + MusicBrainz enrichment)
+- **PostgreSQL**: Relational database for fast analytics and full-text search (Discogs data in `public` schema, MusicBrainz data in `musicbrainz` schema, precomputed analytics in `insights` schema)
 
 ### Schema Ownership
 
@@ -358,19 +358,26 @@ graph LR
 
 ### Complete Relationship Summary
 
-| Relationship | From    | To               | Properties                               |
-| ------------ | ------- | ---------------- | ---------------------------------------- |
-| BY           | Release | Artist           | None                                     |
-| ON           | Release | Label            | None                                     |
-| DERIVED_FROM | Release | Master           | None                                     |
-| IS           | Release | Genre            | None                                     |
-| IS           | Release | Style            | None                                     |
-| MEMBER_OF    | Artist  | Artist (band)    | None                                     |
-| ALIAS_OF     | Artist  | Artist (primary) | None                                     |
-| SUBLABEL_OF  | Label   | Label (parent)   | None                                     |
-| PART_OF      | Style   | Genre            | None                                     |
-| COLLECTED    | User    | Release          | rating, folder_id, date_added, synced_at |
-| WANTS        | User    | Release          | rating, date_added, synced_at            |
+| Relationship      | From    | To               | Source      | Properties                               |
+| ----------------- | ------- | ---------------- | ----------- | ---------------------------------------- |
+| BY                | Release | Artist           | Discogs     | None                                     |
+| ON                | Release | Label            | Discogs     | None                                     |
+| DERIVED_FROM      | Release | Master           | Discogs     | None                                     |
+| IS                | Release | Genre            | Discogs     | None                                     |
+| IS                | Release | Style            | Discogs     | None                                     |
+| MEMBER_OF         | Artist  | Artist (band)    | Both        | source (MB only), begin_date, end_date   |
+| ALIAS_OF          | Artist  | Artist (primary) | Discogs     | None                                     |
+| SUBLABEL_OF       | Label   | Label (parent)   | Discogs     | None                                     |
+| PART_OF           | Style   | Genre            | Discogs     | None                                     |
+| COLLECTED         | User    | Release          | Sync        | rating, folder_id, date_added, synced_at |
+| WANTS             | User    | Release          | Sync        | rating, date_added, synced_at            |
+| COLLABORATED_WITH | Artist  | Artist           | MusicBrainz | source                                   |
+| TAUGHT            | Artist  | Artist           | MusicBrainz | source                                   |
+| TRIBUTE_TO        | Artist  | Artist           | MusicBrainz | source                                   |
+| FOUNDED           | Artist  | Artist (group)   | MusicBrainz | source                                   |
+| SUPPORTED         | Artist  | Artist           | MusicBrainz | source                                   |
+| SUBGROUP_OF       | Artist  | Artist (parent)  | MusicBrainz | source                                   |
+| RENAMED_TO        | Artist  | Artist           | MusicBrainz | source                                   |
 
 ### Common Queries
 
@@ -1020,6 +1027,152 @@ CREATE TABLE IF NOT EXISTS insights.computation_log (
 CREATE INDEX IF NOT EXISTS idx_computation_log_type_started ON insights.computation_log (insight_type, started_at DESC);
 ```
 
+#### MusicBrainz Schema
+
+All MusicBrainz data is stored in a dedicated `musicbrainz` schema, separate from the main Discogs data.
+
+```sql
+CREATE SCHEMA IF NOT EXISTS musicbrainz;
+```
+
+**musicbrainz.artists** — MusicBrainz artist entities with Discogs cross-reference.
+
+```sql
+CREATE TABLE IF NOT EXISTS musicbrainz.artists (
+    mbid               VARCHAR PRIMARY KEY,
+    name               VARCHAR NOT NULL,
+    sort_name          VARCHAR,
+    mb_type            VARCHAR,
+    disambiguation     VARCHAR,
+    discogs_artist_id  INTEGER,
+    data               JSONB NOT NULL,
+    created_at         TIMESTAMPTZ DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mb_artists_discogs_id ON musicbrainz.artists (discogs_artist_id) WHERE discogs_artist_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_mb_artists_name ON musicbrainz.artists (name);
+```
+
+**musicbrainz.labels** — MusicBrainz label entities with Discogs cross-reference.
+
+```sql
+CREATE TABLE IF NOT EXISTS musicbrainz.labels (
+    mbid               VARCHAR PRIMARY KEY,
+    name               VARCHAR NOT NULL,
+    mb_type            VARCHAR,
+    disambiguation     VARCHAR,
+    discogs_label_id   INTEGER,
+    data               JSONB NOT NULL,
+    created_at         TIMESTAMPTZ DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mb_labels_discogs_id ON musicbrainz.labels (discogs_label_id) WHERE discogs_label_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_mb_labels_name ON musicbrainz.labels (name);
+```
+
+**musicbrainz.releases** — MusicBrainz release entities with Discogs cross-reference.
+
+```sql
+CREATE TABLE IF NOT EXISTS musicbrainz.releases (
+    mbid               VARCHAR PRIMARY KEY,
+    name               VARCHAR NOT NULL,
+    barcode            VARCHAR,
+    status             VARCHAR,
+    release_group_mbid VARCHAR,
+    discogs_release_id INTEGER,
+    data               JSONB NOT NULL,
+    created_at         TIMESTAMPTZ DEFAULT NOW(),
+    updated_at         TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mb_releases_discogs_id ON musicbrainz.releases (discogs_release_id) WHERE discogs_release_id IS NOT NULL;
+```
+
+**musicbrainz.relationships** — Artist-to-artist relationships from MusicBrainz.
+
+```sql
+CREATE TABLE IF NOT EXISTS musicbrainz.relationships (
+    id            SERIAL PRIMARY KEY,
+    source_mbid   VARCHAR NOT NULL,
+    source_type   VARCHAR NOT NULL,
+    target_mbid   VARCHAR NOT NULL,
+    rel_type      VARCHAR NOT NULL,
+    direction     VARCHAR,
+    attributes    JSONB,
+    created_at    TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mb_rels_source ON musicbrainz.relationships (source_mbid);
+CREATE INDEX IF NOT EXISTS idx_mb_rels_target ON musicbrainz.relationships (target_mbid);
+CREATE INDEX IF NOT EXISTS idx_mb_rels_type ON musicbrainz.relationships (rel_type);
+```
+
+**musicbrainz.external_links** — External URLs (Wikipedia, Wikidata, AllMusic, Last.fm, IMDb) per entity.
+
+```sql
+CREATE TABLE IF NOT EXISTS musicbrainz.external_links (
+    id          SERIAL PRIMARY KEY,
+    mbid        VARCHAR NOT NULL,
+    entity_type VARCHAR NOT NULL,
+    url         VARCHAR NOT NULL,
+    link_type   VARCHAR,
+    created_at  TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_mb_links_mbid ON musicbrainz.external_links (mbid);
+CREATE INDEX IF NOT EXISTS idx_mb_links_service ON musicbrainz.external_links (link_type);
+```
+
+#### MusicBrainz Neo4j Enrichment Properties
+
+The brainzgraphinator adds `mb_`-prefixed properties to existing Discogs nodes. The `mbid` property is the exception to the prefix convention.
+
+```mermaid
+graph LR
+    A[Artist Node] -->|enriched with| MB_A["mbid, mb_type, mb_gender,<br/>mb_begin_date, mb_end_date,<br/>mb_area, mb_begin_area,<br/>mb_end_area, mb_disambiguation"]
+    L[Label Node] -->|enriched with| MB_L["mbid, mb_type, mb_label_code,<br/>mb_begin_date, mb_end_date,<br/>mb_area"]
+    R[Release Node] -->|enriched with| MB_R["mbid, mb_barcode, mb_status"]
+
+    style A fill:#e3f2fd
+    style L fill:#fff9c4
+    style R fill:#f3e5f5
+    style MB_A fill:#e8f5e9
+    style MB_L fill:#e8f5e9
+    style MB_R fill:#e8f5e9
+```
+
+#### MusicBrainz Neo4j Relationship Edges
+
+```mermaid
+graph LR
+    A1[Artist] -->|COLLABORATED_WITH| A2[Artist]
+    A3[Artist] -->|TAUGHT| A4[Artist]
+    A5[Artist] -->|TRIBUTE_TO| A6[Artist]
+    A7[Artist] -->|FOUNDED| A8[Group]
+    A9[Artist] -->|SUPPORTED| A10[Artist]
+    A11[Group] -->|SUBGROUP_OF| A12[Group]
+    A13[Artist] -->|RENAMED_TO| A14[Artist]
+
+    style A1 fill:#e3f2fd
+    style A2 fill:#e3f2fd
+    style A3 fill:#e3f2fd
+    style A4 fill:#e3f2fd
+    style A5 fill:#e3f2fd
+    style A6 fill:#e3f2fd
+    style A7 fill:#e3f2fd
+    style A8 fill:#e3f2fd
+    style A9 fill:#e3f2fd
+    style A10 fill:#e3f2fd
+    style A11 fill:#e3f2fd
+    style A12 fill:#e3f2fd
+    style A13 fill:#e3f2fd
+    style A14 fill:#e3f2fd
+```
+
+All MusicBrainz-sourced edges carry `source: 'musicbrainz'` for provenance tracking. The existing `MEMBER_OF` relationship is enriched with date information from MusicBrainz.
+
 ### Common Queries
 
 #### Full-text search releases
@@ -1063,20 +1216,28 @@ LIMIT 20;
 
 ## Data Synchronization
 
-Both databases receive the same source data but store it differently:
+Both databases receive data from two sources (Discogs and MusicBrainz) but store it differently:
 
 ```mermaid
 graph TD
-    EXT[Extractor] -->|JSON Messages| RMQ[RabbitMQ]
-    RMQ -->|Same Data| GRAPH[Graphinator]
-    RMQ -->|Same Data| TABLE[Tableinator]
-    GRAPH -->|Relationships| NEO4J[(Neo4j)]
-    TABLE -->|JSONB| PG[(PostgreSQL)]
+    EXT_D[Extractor<br/>--source discogs] -->|JSON Messages| RMQ[RabbitMQ]
+    EXT_MB[Extractor<br/>--source musicbrainz] -->|JSON Messages| RMQ
+    RMQ -->|Discogs Data| GRAPH[Graphinator]
+    RMQ -->|Discogs Data| TABLE[Tableinator]
+    RMQ -->|MB Data| BGRAPH[Brainzgraphinator]
+    RMQ -->|MB Data| BTABLE[Brainztableinator]
+    GRAPH -->|Build Graph| NEO4J[(Neo4j)]
+    TABLE -->|Store JSONB| PG[(PostgreSQL)]
+    BGRAPH -->|Enrich Nodes| NEO4J
+    BTABLE -->|musicbrainz Schema| PG
 
-    style EXT fill:#fff9c4
+    style EXT_D fill:#fff9c4
+    style EXT_MB fill:#fff9c4
     style RMQ fill:#fff3e0
     style GRAPH fill:#f3e5f5
     style TABLE fill:#e8f5e9
+    style BGRAPH fill:#f3e5f5
+    style BTABLE fill:#e8f5e9
     style NEO4J fill:#f3e5f5
     style PG fill:#e8f5e9
 ```
@@ -1190,13 +1351,13 @@ SELECT schemaname, relname, n_live_tup, n_dead_tup
 FROM pg_stat_user_tables
 ORDER BY n_live_tup DESC;
 
--- Table sizes
+-- Table sizes (all schemas)
 SELECT
     schemaname,
     tablename,
     pg_size_pretty(pg_total_relation_size(schemaname||'.'||tablename)) AS size
 FROM pg_tables
-WHERE schemaname = 'public'
+WHERE schemaname IN ('public', 'musicbrainz', 'insights')
 ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 ```
 
@@ -1208,4 +1369,4 @@ ORDER BY pg_total_relation_size(schemaname||'.'||tablename) DESC;
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-07
+**Last Updated**: 2026-03-26

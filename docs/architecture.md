@@ -28,6 +28,13 @@ Discogsography is built as a microservices platform that processes large-scale m
 | **[📈](emoji-guide.md#service-identifiers) Insights**    | Precomputed analytics and music trends      | `FastAPI`, `psycopg3`, `httpx`                               | 8008, 8009 (internal) |
 | **[🤖](emoji-guide.md#service-identifiers) MCP Server**  | Exposes knowledge graph to AI assistants    | `FastMCP`, `httpx`                                           | stdio / streamable-http |
 
+### MusicBrainz Enrichment Services
+
+| Service                                                              | Purpose                                                          | Key Technologies                    | Port(s)       |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------- | ----------------------------------- | ------------- |
+| **[🧠](emoji-guide.md#service-identifiers) Brainzgraphinator**      | Enriches Neo4j graph with MusicBrainz metadata and relationships | `neo4j-driver`, `pika`              | 8011 (health) |
+| **[🧬](emoji-guide.md#service-identifiers) Brainztableinator**      | Stores all MusicBrainz data in PostgreSQL                        | `psycopg3`, `pika`                  | 8010 (health) |
+
 ### Infrastructure Components
 
 | Component                                               | Purpose                               | Port(s)       |
@@ -41,36 +48,50 @@ Discogsography is built as a microservices platform that processes large-scale m
 
 ### Data Pipeline
 
-Shows the ingestion flow from Discogs data dumps through extraction, message distribution, and persistence into both databases.
+Shows the ingestion flow from Discogs and MusicBrainz data dumps through extraction, message distribution, and persistence into both databases.
 
 ```mermaid
 graph TD
     S3[("🌐 Discogs S3<br/>Monthly Data Dumps<br/>~11.3GB XML")]
+    MB[("🎵 MusicBrainz<br/>JSONL Dumps<br/>Twice Weekly")]
     SCHEMA[["🔧 Schema-Init<br/>One-Shot DB<br/>Schema Initialiser"]]
-    EXT[["⚡ Extractor<br/>High-Performance<br/>XML Processing"]]
-    RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>4 Fanout Exchanges"}}
+    EXT_D[["⚡ Extractor<br/>--source discogs<br/>XML Processing"]]
+    EXT_MB[["⚡ Extractor<br/>--source musicbrainz<br/>JSONL Processing"]]
+    RMQ{{"🐰 RabbitMQ 4.x<br/>Message Broker<br/>7 Fanout Exchanges"}}
     NEO4J[("🔗 Neo4j 2026<br/>Graph Database<br/>Relationships")]
     PG[("🐘 PostgreSQL 18<br/>Analytics DB<br/>Full-text Search")]
     GRAPH[["🔗 Graphinator<br/>Graph Builder"]]
     TABLE[["🐘 Tableinator<br/>Table Builder"]]
+    BGRAPH[["🧠 Brainzgraphinator<br/>Neo4j Enrichment"]]
+    BTABLE[["🧬 Brainztableinator<br/>PostgreSQL Storage"]]
 
     SCHEMA -->|0. Create schemas| NEO4J
     SCHEMA -->|0. Create schemas| PG
-    S3 -->|1. Download & Parse| EXT
-    EXT -->|2. Publish Messages| RMQ
+    S3 -->|1a. Download & Parse XML| EXT_D
+    MB -->|1b. Parse JSONL| EXT_MB
+    EXT_D -->|2a. 4 Discogs exchanges| RMQ
+    EXT_MB -->|2b. 3 MB exchanges| RMQ
     RMQ -->|3a. Artists/Labels/Releases/Masters| GRAPH
     RMQ -->|3b. Artists/Labels/Releases/Masters| TABLE
+    RMQ -->|3c. MB Artists/Labels/Releases| BGRAPH
+    RMQ -->|3d. MB Artists/Labels/Releases| BTABLE
     GRAPH -->|4a. Build Graph| NEO4J
     TABLE -->|4b. Store Data| PG
+    BGRAPH -->|4c. Enrich Nodes| NEO4J
+    BTABLE -->|4d. Store MB Data| PG
 
     style S3 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style MB fill:#e1f5fe,stroke:#01579b,stroke-width:2px
     style SCHEMA fill:#f9fbe7,stroke:#827717,stroke-width:2px
-    style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style EXT_D fill:#ffccbc,stroke:#d84315,stroke-width:2px
+    style EXT_MB fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
     style PG fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
     style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style BGRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    style BTABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
 ```
 
 ### Service Communication
@@ -123,6 +144,8 @@ graph TD
     EXT[["⚡ Extractor"]]
     GRAPH[["🔗 Graphinator"]]
     TABLE[["🐘 Tableinator"]]
+    BGRAPH[["🧠 Brainzgraphinator"]]
+    BTABLE[["🧬 Brainztableinator"]]
     EXPLORE[["🔍 Explore"]]
 
     RMQ{{"🐰 RabbitMQ"}}
@@ -133,6 +156,8 @@ graph TD
     DASH -.->|Monitor| EXT
     DASH -.->|Monitor| GRAPH
     DASH -.->|Monitor| TABLE
+    DASH -.->|Monitor| BGRAPH
+    DASH -.->|Monitor| BTABLE
     DASH -.->|Monitor| EXPLORE
     DASH -.->|Stats| RMQ
     DASH -.->|Stats| NEO4J
@@ -143,6 +168,8 @@ graph TD
     style EXT fill:#ffccbc,stroke:#d84315,stroke-width:2px
     style GRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
     style TABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
+    style BGRAPH fill:#e0f2f1,stroke:#004d40,stroke-width:2px
+    style BTABLE fill:#fce4ec,stroke:#880e4f,stroke-width:2px
     style EXPLORE fill:#e8eaf6,stroke:#283593,stroke-width:2px
     style RMQ fill:#fff3e0,stroke:#e65100,stroke-width:2px
     style NEO4J fill:#f3e5f5,stroke:#4a148c,stroke-width:2px
@@ -180,21 +207,29 @@ graph LR
 
 ### 1. Data Extraction Phase
 
-**Extractor** (Rust-based):
+**Extractor** (Rust-based, two modes):
 
-- Downloads XML dumps from Discogs S3 bucket
-- High-performance XML parsing (20,000-400,000+ records/sec)
-- SHA256 hash-based deduplication
-- Publishes JSON messages to per-data-type RabbitMQ fanout exchanges
+- **Discogs mode** (`--source discogs`): Downloads XML dumps from Discogs S3 bucket, high-performance XML parsing (20,000-400,000+ records/sec), SHA256 hash-based deduplication
+- **MusicBrainz mode** (`--source musicbrainz`): Parses MusicBrainz JSONL dumps (xz-compressed), extracts Discogs IDs from URL relationships, publishes to MusicBrainz-specific fanout exchanges
+- Both modes publish JSON messages to per-data-type RabbitMQ fanout exchanges
+- Each mode runs as a separate container with its own state markers
 
 ### 2. Message Distribution Phase
 
-**RabbitMQ Fanout Exchanges** (one per data type, decoupled from consumers):
+**RabbitMQ Fanout Exchanges** (7 total, one per data type per source, decoupled from consumers):
+
+**Discogs exchanges** (4):
 
 - `discogsography-artists`: Artist and band data
 - `discogsography-labels`: Record label information
 - `discogsography-releases`: Release records
 - `discogsography-masters`: Master recording data
+
+**MusicBrainz exchanges** (3, no masters):
+
+- `musicbrainz-artists`: MusicBrainz artist data with Discogs cross-references
+- `musicbrainz-labels`: MusicBrainz label data with Discogs cross-references
+- `musicbrainz-releases`: MusicBrainz release data with Discogs cross-references
 
 Each consumer independently declares and binds its own queues to these exchanges.
 
@@ -234,6 +269,27 @@ See [Database Schema — Extractor Message Format](database-schema.md#extractor-
 
 See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extraction-cleanup) for details.
 
+### 3b. MusicBrainz Enrichment Phase
+
+**Brainzgraphinator** (Neo4j enrichment):
+
+- Consumes messages from 3 MusicBrainz queues (artists, labels, releases)
+- Enriches existing Discogs nodes with `mb_`-prefixed properties (type, gender, dates, area, disambiguation)
+- Creates 8 new relationship edge types between Discogs-matched entities (COLLABORATED_WITH, TAUGHT, TRIBUTE_TO, FOUNDED, SUPPORTED, SUBGROUP_OF, RENAMED_TO, enriched MEMBER_OF)
+- All MB-sourced edges carry `source: 'musicbrainz'` for provenance tracking
+- Skips entities without a Discogs match — only enriches nodes already in the graph
+- Idempotent: `MATCH...SET` for metadata, `MERGE` for edges — safe for re-import
+
+**Brainztableinator** (PostgreSQL):
+
+- Consumes messages from 3 MusicBrainz queues (artists, labels, releases)
+- Stores **all** MusicBrainz entities in the `musicbrainz` PostgreSQL schema — including entities without Discogs matches
+- Records artist-to-artist relationships (collaborations, band membership, etc.)
+- Stores external links (Wikipedia, Wikidata, AllMusic, Last.fm, IMDb)
+- Idempotent via `ON CONFLICT DO UPDATE/NOTHING`
+
+See [MusicBrainz Sync Guide](musicbrainz-sync.md) for operational instructions.
+
 ### 4. Query and Analytics Phase
 
 **API Service** (graph query endpoints):
@@ -257,6 +313,10 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 - Collaborator network (`/api/collaborators/{artist_id}` — artists sharing releases, with temporal breakdown)
 - Genre tree hierarchy (`/api/genre-tree` — genre/style tree derived from release co-occurrence)
 - Graph statistics (`/api/graph/stats` — aggregate node counts across all entity types)
+- MusicBrainz enrichment status (`/api/enrichment/status` — coverage statistics for MB-enriched entities)
+- MusicBrainz artist metadata (`/api/musicbrainz/artist/{artist_id}` — MB properties for a Discogs artist)
+- MusicBrainz artist relationships (`/api/musicbrainz/artist/{artist_id}/relationships` — MB-sourced edges)
+- MusicBrainz artist external links (`/api/musicbrainz/artist/{artist_id}/external-links` — Wikipedia, Wikidata, etc.)
 
 **MCP Server** (AI assistant integration):
 
@@ -292,27 +352,28 @@ See [Database Schema — Post-Extraction Cleanup](database-schema.md#post-extrac
 
 **Responsibilities**:
 
-- Download Discogs XML dumps from S3
+- **Discogs mode** (`--source discogs`): Download XML dumps from S3, parse, deduplicate, publish to 4 fanout exchanges
+- **MusicBrainz mode** (`--source musicbrainz`): Parse JSONL dumps, extract Discogs IDs, publish to 3 fanout exchanges
 - Validate checksums and metadata
-- Parse XML using high-performance streaming parser
-- Deduplicate records using SHA256 hashing
-- Publish to RabbitMQ queues
+- Track progress via version-specific state markers
 
 **Key Features**:
 
 - Async Rust with Tokio runtime
-- 20,000-400,000+ records/sec processing
-- Memory-efficient streaming parser
+- 20,000-400,000+ records/sec processing (Discogs XML)
+- Memory-efficient streaming parsers for both XML and JSONL
 - Periodic update checks (configurable interval)
 - Smart file completion tracking
 - Automatic retry with exponential backoff
+- Separate state markers per source: `.extraction_status_*.json` (Discogs) and `.mb_extraction_status_*.json` (MusicBrainz)
 
 **Configuration**:
 
-- `DISCOGS_ROOT`: Data storage directory
+- `DISCOGS_ROOT` / `MUSICBRAINZ_ROOT`: Data storage directories
 - `PERIODIC_CHECK_DAYS`: Update check interval
 - `RABBITMQ_HOST`: RabbitMQ hostname
 - `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`: RabbitMQ auth credentials
+- `AMQP_EXCHANGE_PREFIX`: Exchange name prefix (default: `discogsography` for Discogs, `musicbrainz` for MB)
 
 See [Extractor README](../extractor/README.md) for details.
 
@@ -387,6 +448,57 @@ See [Graphinator README](../graphinator/README.md) for details.
 - `POSTGRES_DATABASE`: Database name
 
 See [Tableinator README](../tableinator/README.md) for details.
+
+### Brainzgraphinator
+
+**Responsibilities**:
+
+- Enrich existing Neo4j nodes with MusicBrainz metadata
+- Create new relationship edges between Discogs-matched entities
+- Track enrichment statistics (entities enriched, skipped, relationships created)
+
+**Key Features**:
+
+- Enriches Artist, Label, and Release nodes with `mb_`-prefixed properties (mbid, type, gender, dates, area, disambiguation)
+- Creates 8 relationship edge types: MEMBER_OF (enriched), COLLABORATED_WITH, TAUGHT, TRIBUTE_TO, FOUNDED, SUPPORTED, SUBGROUP_OF, RENAMED_TO
+- All MB-sourced edges carry `source: 'musicbrainz'` provenance
+- Discogs-matched entities only — skips entities without a Discogs ID in the MB data
+- Both sides required for edges — relationships only created when both entities exist in Neo4j
+- Smart connection lifecycle: auto-close when idle, periodic queue checks, auto-reconnect
+- Idempotent writes: safe for re-import
+
+**Configuration**:
+
+- `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`: Neo4j connection
+- `RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`: RabbitMQ connection
+- `CONSUMER_CANCEL_DELAY`: Idle timeout before consumer cancellation (default: 300s)
+
+See [Brainzgraphinator README](../brainzgraphinator/README.md) for details.
+
+### Brainztableinator
+
+**Responsibilities**:
+
+- Store all MusicBrainz data in PostgreSQL `musicbrainz` schema
+- Record entity relationships and external links
+- Maintain data integrity with MBID-based primary keys
+
+**Key Features**:
+
+- Stores artists, labels, and releases with structured columns plus JSONB `data` for full record
+- Records relationships (collaborations, band membership, etc.) with source/target MBIDs
+- Stores external links (Wikipedia, Wikidata, AllMusic, Last.fm, IMDb) per entity
+- Stores **all** entities — including those without Discogs matches (available for future use)
+- `ON CONFLICT DO UPDATE/NOTHING` for idempotent processing
+- Smart connection lifecycle: auto-close when idle, periodic queue checks, auto-reconnect
+
+**Configuration**:
+
+- `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE`: PostgreSQL connection
+- `RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD`: RabbitMQ connection
+- `CONSUMER_CANCEL_DELAY`: Idle timeout before consumer cancellation (default: 300s)
+
+See [Brainztableinator README](../brainztableinator/README.md) for details.
 
 ### Explore Service
 
@@ -516,10 +628,12 @@ See [API README](../api/README.md) for details.
 
 ### Queue Structure
 
+#### Discogs Pipeline
+
 ```mermaid
 graph LR
     subgraph Producers
-        EXT[Extractor]
+        EXT[Extractor<br/>--source discogs]
     end
 
     subgraph RabbitMQ
@@ -550,33 +664,66 @@ graph LR
         TABLE[Tableinator]
     end
 
-    EXT --> AX
-    EXT --> LX
-    EXT --> RX
-    EXT --> MX
+    EXT --> AX & LX & RX & MX
 
-    AX --> GAQ
-    AX --> TAQ
-    LX --> GLQ
-    LX --> TLQ
-    RX --> GRQ
-    RX --> TRQ
-    MX --> GMQ
-    MX --> TMQ
+    AX --> GAQ & TAQ
+    LX --> GLQ & TLQ
+    RX --> GRQ & TRQ
+    MX --> GMQ & TMQ
 
-    GAQ --> GRAPH
-    GLQ --> GRAPH
-    GRQ --> GRAPH
-    GMQ --> GRAPH
-
-    TAQ --> TABLE
-    TLQ --> TABLE
-    TRQ --> TABLE
-    TMQ --> TABLE
+    GAQ & GLQ & GRQ & GMQ --> GRAPH
+    TAQ & TLQ & TRQ & TMQ --> TABLE
 
     style EXT fill:#ffccbc,stroke:#d84315
     style GRAPH fill:#f3e5f5,stroke:#4a148c
     style TABLE fill:#e8f5e9,stroke:#1b5e20
+```
+
+#### MusicBrainz Pipeline
+
+```mermaid
+graph LR
+    subgraph Producers
+        EXT_MB[Extractor<br/>--source musicbrainz]
+    end
+
+    subgraph RabbitMQ
+        subgraph MB Fanout Exchanges
+            MAQ[musicbrainz-artists]
+            MLQ[musicbrainz-labels]
+            MRQ[musicbrainz-releases]
+        end
+
+        subgraph Brainzgraphinator Queues
+            BGA[brainzgraphinator-artists]
+            BGL[brainzgraphinator-labels]
+            BGR[brainzgraphinator-releases]
+        end
+
+        subgraph Brainztableinator Queues
+            BTA[brainztableinator-artists]
+            BTL[brainztableinator-labels]
+            BTR[brainztableinator-releases]
+        end
+    end
+
+    subgraph Consumers
+        BGRAPH[Brainzgraphinator]
+        BTABLE[Brainztableinator]
+    end
+
+    EXT_MB --> MAQ & MLQ & MRQ
+
+    MAQ --> BGA & BTA
+    MLQ --> BGL & BTL
+    MRQ --> BGR & BTR
+
+    BGA & BGL & BGR --> BGRAPH
+    BTA & BTL & BTR --> BTABLE
+
+    style EXT_MB fill:#ffccbc,stroke:#d84315
+    style BGRAPH fill:#f3e5f5,stroke:#4a148c
+    style BTABLE fill:#e8f5e9,stroke:#1b5e20
 ```
 
 ### Queue Properties
@@ -626,6 +773,16 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 - COLLECTED (user → release)
 - WANTS (user → release)
 
+**MusicBrainz-sourced Relationships** (all carry `source: 'musicbrainz'`):
+
+- COLLABORATED_WITH (artist ↔ artist)
+- TAUGHT (teacher → student)
+- TRIBUTE_TO (tribute act → original)
+- FOUNDED (person → group)
+- SUPPORTED (supporter → main artist)
+- SUBGROUP_OF (subgroup → parent)
+- RENAMED_TO (old → new)
+
 See [Database Schema](database-schema.md) for details.
 
 ### PostgreSQL Database
@@ -645,11 +802,20 @@ See [Database Schema](database-schema.md) for details.
 - `insights.data_completeness`: Data quality metrics per entity type
 - `insights.computation_log`: Audit log of computation runs
 
+**MusicBrainz Schema** (`musicbrainz.*`):
+
+- `musicbrainz.artists`: MBID, name, type, gender, dates, area, Discogs cross-reference
+- `musicbrainz.labels`: MBID, name, type, label code, dates, Discogs cross-reference
+- `musicbrainz.releases`: MBID, name, barcode, status, Discogs cross-reference
+- `musicbrainz.relationships`: Source/target MBIDs, relationship type, direction, attributes
+- `musicbrainz.external_links`: MBID, service name, URL (Wikipedia, Wikidata, AllMusic, etc.)
+
 **Indexes**:
 
 - B-tree indexes on common query fields
 - GIN indexes on JSONB columns
 - Full-text search indexes
+- Filtered indexes on Discogs ID columns for MusicBrainz cross-reference lookups
 
 See [Database Schema](database-schema.md) for details.
 
@@ -726,6 +892,8 @@ curl http://localhost:8001/health  # Graphinator
 curl http://localhost:8002/health  # Tableinator
 curl http://localhost:8007/health  # Explore
 curl http://localhost:8009/health  # Insights
+curl http://localhost:8010/health  # Brainztableinator
+curl http://localhost:8011/health  # Brainzgraphinator
 ```
 
 ### Logging
@@ -804,6 +972,8 @@ See [Monitoring](monitoring.md) for details.
 - Extractor (one instance per data type)
 - Graphinator (multiple consumers per queue)
 - Tableinator (multiple consumers per queue)
+- Brainzgraphinator (multiple consumers per queue)
+- Brainztableinator (multiple consumers per queue)
 - Explore (load balanced)
 - Dashboard (load balanced)
 - Insights (load balanced)
@@ -873,4 +1043,4 @@ docker-compose up -d
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-23
+**Last Updated**: 2026-03-26
