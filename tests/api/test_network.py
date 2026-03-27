@@ -425,6 +425,123 @@ class TestClusterEndpoint:
         assert response.status_code == 422
 
 
+class TestGetArtistIdentity:
+    """Tests for the get_artist_identity query function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_artist_dict(self) -> None:
+        """Returns artist identity when found."""
+        from api.queries.network_queries import get_artist_identity
+
+        mock_driver = AsyncMock()
+        expected = {"artist_id": "123", "artist_name": "Miles Davis"}
+        with patch("api.queries.network_queries.run_single", new_callable=AsyncMock, return_value=expected):
+            result = await get_artist_identity(mock_driver, "123")
+        assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_not_found(self) -> None:
+        """Returns None when artist does not exist."""
+        from api.queries.network_queries import get_artist_identity
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_single", new_callable=AsyncMock, return_value=None):
+            result = await get_artist_identity(mock_driver, "999")
+        assert result is None
+
+
+class TestGetMultiHopCollaborators:
+    """Tests for the get_multi_hop_collaborators query function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_collaborator_list(self) -> None:
+        """Returns list of collaborators with distance and count."""
+        from api.queries.network_queries import get_multi_hop_collaborators
+
+        mock_driver = AsyncMock()
+        expected = [
+            {"artist_id": "456", "artist_name": "John Coltrane", "distance": 1, "collaboration_count": 5},
+        ]
+        with patch("api.queries.network_queries.run_query", new_callable=AsyncMock, return_value=expected) as mock_run:
+            result = await get_multi_hop_collaborators(mock_driver, "123", depth=2, limit=50)
+        assert result == expected
+        mock_run.assert_called_once()
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["artist_id"] == "123"
+        assert call_kwargs["depth"] == 2
+        assert call_kwargs["limit"] == 50
+
+    @pytest.mark.asyncio
+    async def test_empty_results(self) -> None:
+        """Returns empty list when no collaborators found."""
+        from api.queries.network_queries import get_multi_hop_collaborators
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_query", new_callable=AsyncMock, return_value=[]):
+            result = await get_multi_hop_collaborators(mock_driver, "123")
+        assert result == []
+
+
+class TestCountMultiHopCollaborators:
+    """Tests for the count_multi_hop_collaborators query function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_count(self) -> None:
+        """Returns integer count of collaborators."""
+        from api.queries.network_queries import count_multi_hop_collaborators
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_count", new_callable=AsyncMock, return_value=42) as mock_run:
+            result = await count_multi_hop_collaborators(mock_driver, "123", depth=2)
+        assert result == 42
+        call_kwargs = mock_run.call_args[1]
+        assert call_kwargs["artist_id"] == "123"
+        assert call_kwargs["depth"] == 2
+
+    @pytest.mark.asyncio
+    async def test_returns_zero_for_no_collaborators(self) -> None:
+        """Returns 0 when artist has no collaborators."""
+        from api.queries.network_queries import count_multi_hop_collaborators
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_count", new_callable=AsyncMock, return_value=0):
+            result = await count_multi_hop_collaborators(mock_driver, "123")
+        assert result == 0
+
+
+class TestGetArtistCentrality:
+    """Tests for the get_artist_centrality query function."""
+
+    @pytest.mark.asyncio
+    async def test_returns_centrality_dict(self) -> None:
+        """Returns centrality data for an artist."""
+        from api.queries.network_queries import get_artist_centrality
+
+        mock_driver = AsyncMock()
+        expected = {
+            "artist_id": "123",
+            "artist_name": "Miles Davis",
+            "degree": 500,
+            "collaborator_count": 120,
+            "collaboration_releases": 85,
+            "group_count": 3,
+            "alias_count": 1,
+        }
+        with patch("api.queries.network_queries.run_single", new_callable=AsyncMock, return_value=expected):
+            result = await get_artist_centrality(mock_driver, "123")
+        assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_returns_none_when_not_found(self) -> None:
+        """Returns None when artist does not exist."""
+        from api.queries.network_queries import get_artist_centrality
+
+        mock_driver = AsyncMock()
+        with patch("api.queries.network_queries.run_single", new_callable=AsyncMock, return_value=None):
+            result = await get_artist_centrality(mock_driver, "999")
+        assert result is None
+
+
 class TestGetArtistClusterGrouping:
     """Tests for the grouping logic in get_artist_cluster."""
 

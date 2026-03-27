@@ -245,6 +245,25 @@ Find artists who share releases with a given artist, with temporal collaboration
 
 - `limit` — Maximum collaborators to return (1–100, default: 20)
 
+### Collaboration Network
+
+Multi-hop collaborator traversal, centrality scoring, and community detection via the knowledge graph. Centrality and cluster results are cached in Redis (1h TTL). Rate limited to 30 requests/minute.
+
+| Method | Path                                        | Auth Required | Rate Limit | Description                                          |
+| ------ | ------------------------------------------- | ------------- | ---------- | ---------------------------------------------------- |
+| GET    | `/api/network/artist/{id}/collaborators`    | No            | 30/min     | Multi-hop collaborators via shared releases (depth 1–3) |
+| GET    | `/api/network/artist/{id}/centrality`       | No            | 30/min     | Degree centrality, collaborator count, group/alias counts |
+| GET    | `/api/network/cluster/{id}`                 | No            | 30/min     | Community detection via genre-based clustering       |
+
+**Query parameters for `/api/network/artist/{id}/collaborators`:**
+
+- `depth` — Number of hops to traverse (1–3, default: 2)
+- `limit` — Maximum collaborators to return (1–200, default: 50)
+
+**Query parameters for `/api/network/cluster/{id}`:**
+
+- `limit` — Maximum cluster members to return (1–200, default: 50)
+
 ### Genre Tree
 
 Full genre/style hierarchy derived from release co-occurrence in the knowledge graph.
