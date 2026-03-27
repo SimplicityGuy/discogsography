@@ -400,6 +400,35 @@ def build_test_plan(
             }
         )
 
+    # --- MusicBrainz Enrichment (static) ---
+    tests.append({"name": "enrichment/status", "url": f"{base}/api/enrichment/status", "params": None})
+
+    # --- MusicBrainz Enrichment (requires resolved artist IDs) ---
+    for artist_name, artist_id in artist_ids.items():
+        if artist_id is None:
+            continue
+        tests.append(
+            {
+                "name": f"musicbrainz/{artist_name}",
+                "url": f"{base}/api/artist/{artist_id}/musicbrainz",
+                "params": None,
+            }
+        )
+        tests.append(
+            {
+                "name": f"relationships/{artist_name}",
+                "url": f"{base}/api/artist/{artist_id}/relationships",
+                "params": None,
+            }
+        )
+        tests.append(
+            {
+                "name": f"external-links/{artist_name}",
+                "url": f"{base}/api/artist/{artist_id}/external-links",
+                "params": None,
+            }
+        )
+
     # --- Artist Similarity (requires resolved IDs) ---
     for artist_name, artist_id in artist_ids.items():
         if artist_id is None:
