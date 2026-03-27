@@ -65,4 +65,4 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=60s --retries=3 \
 EXPOSE 8000
 
 # Run the application
-CMD ["extractor"]
+ENTRYPOINT ["extractor"]
