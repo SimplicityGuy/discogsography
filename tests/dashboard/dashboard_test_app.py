@@ -27,8 +27,9 @@ mock_dashboard_app = None
 class MockDashboardApp:
     """Mock dashboard application for testing."""
 
-    def __init__(self) -> None:
+    def __init__(self, include_musicbrainz: bool = False) -> None:
         """Initialize mock dashboard."""
+        self.include_musicbrainz = include_musicbrainz
         self.config = DashboardConfig(
             amqp_connection="amqp://test:test@localhost:5672/",
             neo4j_host="neo4j://localhost:7687",
@@ -64,61 +65,113 @@ class MockDashboardApp:
         while True:
             try:
                 # Update mock metrics every 2 seconds
+                pipelines: dict[str, Any] = {
+                    "discogs": {
+                        "services": [
+                            {
+                                "name": "extractor-discogs",
+                                "status": "healthy",
+                                "last_seen": "2024-01-01T00:00:00+00:00",
+                                "current_task": None,
+                                "progress": None,
+                                "error": None,
+                                "extraction_progress": None,
+                                "last_extraction_time": None,
+                            },
+                            {
+                                "name": "graphinator",
+                                "status": "healthy",
+                                "last_seen": "2024-01-01T00:00:00+00:00",
+                                "current_task": None,
+                                "progress": None,
+                                "error": None,
+                                "extraction_progress": None,
+                                "last_extraction_time": None,
+                            },
+                            {
+                                "name": "tableinator",
+                                "status": "healthy",
+                                "last_seen": "2024-01-01T00:00:00+00:00",
+                                "current_task": None,
+                                "progress": None,
+                                "error": None,
+                                "extraction_progress": None,
+                                "last_extraction_time": None,
+                            },
+                        ],
+                        "queues": [
+                            {
+                                "name": "discogsography-graphinator-artists",
+                                "messages": 10,
+                                "messages_ready": 5,
+                                "messages_unacknowledged": 2,
+                                "consumers": 1,
+                                "message_rate": 0.5,
+                                "ack_rate": 0.3,
+                            },
+                            {
+                                "name": "discogsography-tableinator-artists",
+                                "messages": 8,
+                                "messages_ready": 3,
+                                "messages_unacknowledged": 1,
+                                "consumers": 1,
+                                "message_rate": 0.4,
+                                "ack_rate": 0.2,
+                            },
+                        ],
+                    },
+                }
+                if self.include_musicbrainz:
+                    pipelines["musicbrainz"] = {
+                        "services": [
+                            {
+                                "name": "extractor-musicbrainz",
+                                "status": "healthy",
+                                "last_seen": "2024-01-01T00:00:00+00:00",
+                                "current_task": None,
+                                "progress": None,
+                                "error": None,
+                                "extraction_progress": None,
+                                "last_extraction_time": None,
+                            },
+                            {
+                                "name": "brainzgraphinator",
+                                "status": "healthy",
+                                "last_seen": "2024-01-01T00:00:00+00:00",
+                                "current_task": None,
+                                "progress": None,
+                                "error": None,
+                                "extraction_progress": None,
+                                "last_extraction_time": None,
+                            },
+                            {
+                                "name": "brainztableinator",
+                                "status": "healthy",
+                                "last_seen": "2024-01-01T00:00:00+00:00",
+                                "current_task": None,
+                                "progress": None,
+                                "error": None,
+                                "extraction_progress": None,
+                                "last_extraction_time": None,
+                            },
+                        ],
+                        "queues": [
+                            {
+                                "name": "musicbrainz-brainzgraphinator-artists",
+                                "messages": 5,
+                                "messages_ready": 2,
+                                "messages_unacknowledged": 1,
+                                "consumers": 1,
+                                "message_rate": 0.3,
+                                "ack_rate": 0.2,
+                            },
+                        ],
+                    }
                 self.latest_metrics = {
-                    "services": [
-                        {
-                            "name": "extractor",
-                            "status": "healthy",
-                            "health_url": "http://localhost:8000/health",
-                        },
-                        {
-                            "name": "graphinator",
-                            "status": "healthy",
-                            "health_url": "http://localhost:8001/health",
-                        },
-                        {
-                            "name": "tableinator",
-                            "status": "healthy",
-                            "health_url": "http://localhost:8002/health",
-                        },
-                    ],
-                    "queues": [
-                        {
-                            "name": "discogsography-graphinator-artists",
-                            "messages": 10,
-                            "messages_ready": 5,
-                            "messages_unacknowledged": 2,
-                            "consumers": 1,
-                            "message_rate": 0.5,
-                            "ack_rate": 0.3,
-                        },
-                        {
-                            "name": "discogsography-tableinator-artists",
-                            "messages": 8,
-                            "messages_ready": 3,
-                            "messages_unacknowledged": 1,
-                            "consumers": 1,
-                            "message_rate": 0.4,
-                            "ack_rate": 0.2,
-                        },
-                    ],
+                    "pipelines": pipelines,
                     "databases": [
-                        {
-                            "name": "PostgreSQL",
-                            "status": "healthy",
-                            "connection_count": "5",
-                            "size": "100.5 MB",
-                            "address": "localhost:5432",
-                        },
-                        {
-                            "name": "Neo4j",
-                            "status": "healthy",
-                            "connection_count": "3",
-                            "size": "50.2 MB",
-                            "nodes": "1000",
-                            "relationships": "5000",
-                            "address": "neo4j://localhost:7687",
-                        },
+                        {"name": "PostgreSQL", "status": "healthy", "connection_count": 5, "size": "100.5 MB", "error": None},
+                        {"name": "Neo4j", "status": "healthy", "connection_count": 1, "size": "1,000 nodes, 5,000 relationships", "error": None},
                     ],
                     "timestamp": "2024-01-01T00:00:00Z",
                 }
@@ -131,8 +184,7 @@ class MockDashboardApp:
     async def collect_all_metrics(self) -> dict[str, Any]:
         """Return mock metrics."""
         return self.latest_metrics or {
-            "services": [],
-            "queues": [],
+            "pipelines": {},
             "databases": [],
             "timestamp": "2024-01-01T00:00:00Z",
         }
@@ -195,23 +247,23 @@ def create_test_app() -> FastAPI:
         return {}
 
     @app.get("/api/services")
-    async def get_services() -> list[dict[str, str]]:
-        """Get service statuses."""
+    async def get_services() -> dict[str, Any]:
+        """Get service statuses grouped by pipeline."""
         if mock_dashboard_app and mock_dashboard_app.latest_metrics:
-            services = mock_dashboard_app.latest_metrics.get("services", [])
-            return list(services)  # Ensure we return a list
-        return []
+            pipelines = mock_dashboard_app.latest_metrics.get("pipelines", {})
+            return {name: p["services"] for name, p in pipelines.items()}
+        return {}
 
     @app.get("/api/queues")
-    async def get_queues() -> list[dict[str, Any]]:
-        """Get queue information."""
+    async def get_queues() -> dict[str, Any]:
+        """Get queue information grouped by pipeline."""
         if mock_dashboard_app and mock_dashboard_app.latest_metrics:
-            queues = mock_dashboard_app.latest_metrics.get("queues", [])
-            return list(queues)  # Ensure we return a list
-        return []
+            pipelines = mock_dashboard_app.latest_metrics.get("pipelines", {})
+            return {name: p["queues"] for name, p in pipelines.items()}
+        return {}
 
     @app.get("/api/databases")
-    async def get_databases() -> list[dict[str, str]]:
+    async def get_databases() -> list[dict[str, Any]]:
         """Get database information."""
         if mock_dashboard_app and mock_dashboard_app.latest_metrics:
             databases = mock_dashboard_app.latest_metrics.get("databases", [])
@@ -272,5 +324,59 @@ def create_test_app() -> FastAPI:
         app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
     else:
         logger.error(f"❌ Static directory not found: {static_dir}")
+
+    return app
+
+
+def create_test_app_with_musicbrainz() -> FastAPI:
+    """Create a test FastAPI app with MusicBrainz pipeline included."""
+
+    @asynccontextmanager
+    async def mb_lifespan(_app: FastAPI) -> AsyncGenerator[None]:
+        """Manage test application lifecycle with MusicBrainz."""
+        global mock_dashboard_app
+        mock_dashboard_app = MockDashboardApp(include_musicbrainz=True)
+        await mock_dashboard_app.startup()
+        yield
+        await mock_dashboard_app.shutdown()
+
+    app = FastAPI(
+        title="Discogsography Dashboard",
+        version="0.1.0",
+        default_response_class=JSONResponse,
+        lifespan=mb_lifespan,
+    )
+
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    @app.get("/api/metrics")
+    async def get_metrics() -> dict[str, Any]:
+        """Get current system metrics."""
+        if mock_dashboard_app:
+            metrics = await mock_dashboard_app.collect_all_metrics()
+            return metrics
+        return {}
+
+    @app.get("/api/services")
+    async def get_services() -> dict[str, Any]:
+        """Get service statuses grouped by pipeline."""
+        if mock_dashboard_app and mock_dashboard_app.latest_metrics:
+            pipelines = mock_dashboard_app.latest_metrics.get("pipelines", {})
+            return {name: p["services"] for name, p in pipelines.items()}
+        return {}
+
+    @app.get("/api/queues")
+    async def get_queues() -> dict[str, Any]:
+        """Get queue information grouped by pipeline."""
+        if mock_dashboard_app and mock_dashboard_app.latest_metrics:
+            pipelines = mock_dashboard_app.latest_metrics.get("pipelines", {})
+            return {name: p["queues"] for name, p in pipelines.items()}
+        return {}
 
     return app

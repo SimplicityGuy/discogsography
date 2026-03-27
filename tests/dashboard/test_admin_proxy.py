@@ -532,6 +532,67 @@ class TestAuditLogProxy:
         assert resp.status_code == 502
 
 
+# ---------------------------------------------------------------------------
+# POST /admin/api/extractions/trigger-musicbrainz
+# ---------------------------------------------------------------------------
+
+
+class TestTriggerMusicBrainzProxy:
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_forwards_trigger_musicbrainz(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("post", 202, b'{"id":"abc","status":"running"}')
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.post("/admin/api/extractions/trigger-musicbrainz", headers={"Authorization": "Bearer mytoken"})
+        assert resp.status_code == 202
+        call_kwargs = mock_instance.post.call_args
+        assert "Bearer mytoken" in str(call_kwargs)
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_injects_source_musicbrainz(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("post", 202, b'{"id":"abc","status":"running"}')
+        mock_cls_patch.return_value = mock_instance
+
+        proxy_client.post("/admin/api/extractions/trigger-musicbrainz", headers={"Authorization": "Bearer tok"})
+        call_kwargs = mock_instance.post.call_args
+        assert '"source":"musicbrainz"' in str(call_kwargs) or b'"source":"musicbrainz"' in call_kwargs.kwargs.get("content", b"")
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_merges_body_with_source_injection(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("post", 202, b'{"id":"abc","status":"running"}')
+        mock_cls_patch.return_value = mock_instance
+
+        proxy_client.post(
+            "/admin/api/extractions/trigger-musicbrainz",
+            json={"force_reprocess": True},
+            headers={"Authorization": "Bearer tok"},
+        )
+        call_kwargs = mock_instance.post.call_args
+        content = call_kwargs.kwargs.get("content", b"")
+        import json as _json
+
+        body = _json.loads(content)
+        assert body["source"] == "musicbrainz"
+        assert body["force_reprocess"] is True
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_trigger_musicbrainz_targets_trigger_endpoint(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx("post", 202, b'{"id":"abc","status":"running"}')
+        mock_cls_patch.return_value = mock_instance
+
+        proxy_client.post("/admin/api/extractions/trigger-musicbrainz", headers={"Authorization": "Bearer tok"})
+        call_url = mock_instance.post.call_args[0][0]
+        assert call_url.endswith("/api/admin/extractions/trigger")
+
+    @patch("dashboard.admin_proxy.httpx.AsyncClient")
+    def test_trigger_musicbrainz_unreachable(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:
+        _, mock_instance = _mock_httpx_error("post")
+        mock_cls_patch.return_value = mock_instance
+
+        resp = proxy_client.post("/admin/api/extractions/trigger-musicbrainz")
+        assert resp.status_code == 502
+
+
 class TestAuthHeaderForwarding:
     @patch("dashboard.admin_proxy.httpx.AsyncClient")
     def test_no_auth_header_sent_when_absent(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:

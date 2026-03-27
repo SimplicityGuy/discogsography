@@ -37,9 +37,20 @@ open http://localhost:8003
 
 **Services Monitored**:
 
+Discogs pipeline:
+
 - Extractor (http://localhost:8000/health)
 - Graphinator (http://localhost:8001/health)
 - Tableinator (http://localhost:8002/health)
+
+MusicBrainz pipeline (auto-hidden when not deployed):
+
+- Extractor MusicBrainz (http://localhost:8000/health — shared extractor process)
+- Brainztableinator (http://localhost:8010/health)
+- Brainzgraphinator (http://localhost:8011/health)
+
+Other services:
+
 - Dashboard (http://localhost:8003/health)
 - API (http://localhost:8004/health, http://localhost:8005/health)
 - Explore (http://localhost:8007/health — internal only in Docker Compose)
@@ -96,7 +107,8 @@ See [Admin Guide](admin-guide.md) for full details.
 
 #### Admin Features
 
-- **Extraction Control** — Trigger a full reprocessing of Discogs data. Manual triggers always force reprocessing regardless of existing state markers.
+- **Extraction Control** — Trigger a full reprocessing of Discogs data (`POST /admin/api/extractions/trigger`). Manual triggers always force reprocessing regardless of existing state markers.
+- **MusicBrainz Extraction Control** — Trigger a full reprocessing of MusicBrainz data (`POST /admin/api/extractions/trigger-musicbrainz`). Only shown when the MusicBrainz pipeline is deployed.
 - **Extraction History** — View past extractions with status, duration, record counts, and error messages. Auto-refreshes every 30 seconds.
 - **DLQ Management** — Purge dead-letter queues when messages are known-bad or after fixing the root cause of processing failures.
 
@@ -474,6 +486,8 @@ services=(
   "API:8005"
   "Explore:8007"
   "Insights:8009"
+  "Brainztableinator:8010"
+  "Brainzgraphinator:8011"
 )
 
 for service in "${services[@]}"; do

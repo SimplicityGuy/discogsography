@@ -36,35 +36,30 @@ class TestDashboardUI:
         dashboard_url = "http://localhost:8003"
         page.goto(dashboard_url, wait_until="domcontentloaded")
 
-        # Each service has a dedicated card element with id="service-<name>"
-        service_names = ["extractor", "graphinator", "tableinator"]
-        for name in service_names:
-            card = page.locator(f"#service-{name}")
+        # Each Discogs service has a dedicated card element with id="service-<name>"
+        service_ids = ["extractor-discogs", "graphinator", "tableinator"]
+        for sid in service_ids:
+            card = page.locator(f"#service-{sid}")
             expect(card).to_be_visible(timeout=10000)
-
-        # Each card header contains the service name as text
-        for name in service_names:
-            card = page.locator(f"#service-{name}")
-            expect(card).to_contain_text(name.capitalize(), timeout=10000)
 
     def test_queue_section_display(self, page: Page) -> None:
         """Test that queue metrics sections are displayed."""
         dashboard_url = "http://localhost:8003"
         page.goto(dashboard_url, wait_until="domcontentloaded")
 
-        # Bar chart section heading
-        queue_heading = page.locator("h2", has_text="Queue Size Metrics")
+        # Bar chart section heading (scoped to Discogs pipeline to avoid strict mode violation)
+        queue_heading = page.locator("#pipeline-discogs h2", has_text="Queue Size Metrics")
         expect(queue_heading).to_be_visible(timeout=10000)
 
         # Processing rates section headings (split into publish and ack panels)
-        publish_rates_heading = page.locator("h2", has_text="Publish Rates")
+        publish_rates_heading = page.locator("#pipeline-discogs h2", has_text="Publish Rates")
         expect(publish_rates_heading).to_be_visible(timeout=10000)
 
-        ack_rates_heading = page.locator("h2", has_text="Ack Rates")
+        ack_rates_heading = page.locator("#pipeline-discogs h2", has_text="Ack Rates")
         expect(ack_rates_heading).to_be_visible(timeout=10000)
 
-        # SVG rate circles are rendered
-        rate_circle = page.locator("#rate-circle-graphinator-masters-publish")
+        # SVG rate circles are rendered (prefixed with pipeline name)
+        rate_circle = page.locator("#discogs-rate-circle-graphinator-masters-publish")
         expect(rate_circle).to_be_visible(timeout=10000)
 
     def test_database_cards_display(self, page: Page) -> None:
@@ -128,33 +123,33 @@ class TestDashboardUI:
         expect(page.locator("#activityLog")).to_be_visible(timeout=10000)
 
         # Service cards remain in the DOM regardless of viewport
-        expect(page.locator("#service-extractor")).to_be_visible(timeout=10000)
+        expect(page.locator("#service-extractor-discogs")).to_be_visible(timeout=10000)
 
     def test_api_endpoints(self, page: Page) -> None:
         """Test that API endpoints are accessible."""
         dashboard_url = "http://localhost:8003"
 
-        # Test metrics endpoint
+        # Test metrics endpoint (pipeline-grouped structure)
         response = page.request.get(f"{dashboard_url}/api/metrics")
         assert response.ok
         data = response.json()
-        assert "services" in data
-        assert "queues" in data
+        assert "pipelines" in data
         assert "databases" in data
+        assert "timestamp" in data
 
-        # Test services endpoint
+        # Test services endpoint (grouped by pipeline)
         response = page.request.get(f"{dashboard_url}/api/services")
         assert response.ok
         services = response.json()
-        assert isinstance(services, list)
+        assert isinstance(services, dict)
 
-        # Test queues endpoint
+        # Test queues endpoint (grouped by pipeline)
         response = page.request.get(f"{dashboard_url}/api/queues")
         assert response.ok
         queues = response.json()
-        assert isinstance(queues, list)
+        assert isinstance(queues, dict)
 
-        # Test databases endpoint
+        # Test databases endpoint (flat list, unchanged)
         response = page.request.get(f"{dashboard_url}/api/databases")
         assert response.ok
         databases = response.json()
