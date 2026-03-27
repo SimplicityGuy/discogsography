@@ -97,12 +97,14 @@ class CreditsPanel {
             return;
         }
 
-        dropdown.innerHTML = results.map(r =>
-            `<div class="autocomplete-item" data-name="${this._escapeHtml(r.name)}">${this._escapeHtml(r.name)}</div>`
-        ).join('');
-
-        dropdown.querySelectorAll('.autocomplete-item').forEach(item => {
-            item.addEventListener('click', () => this._selectPerson(item.dataset.name));
+        dropdown.textContent = '';
+        results.forEach(r => {
+            const item = document.createElement('div');
+            item.className = 'autocomplete-item';
+            item.dataset.name = r.name;
+            item.textContent = r.name;
+            item.addEventListener('click', () => this._selectPerson(r.name));
+            dropdown.appendChild(item);
         });
 
         dropdown.classList.remove('hidden');
@@ -181,7 +183,11 @@ class CreditsPanel {
             const data = await resp.json();
             this._renderLeaderboard(data.entries || []);
         } catch {
-            list.innerHTML = '<p class="text-text-mid">Could not load leaderboard.</p>';
+            list.textContent = '';
+            const msg = document.createElement('p');
+            msg.className = 'text-text-mid';
+            msg.textContent = 'Could not load leaderboard.';
+            list.appendChild(msg);
         }
     }
 
@@ -218,9 +224,13 @@ class CreditsPanel {
 
         // Role breakdown pills
         const pillsEl = document.getElementById('creditsRoleBreakdown');
-        pillsEl.innerHTML = (profile.role_breakdown || []).map(r =>
-            `<span class="credits-role-pill credits-role-${r.category}">${r.category} (${r.count})</span>`
-        ).join('');
+        pillsEl.textContent = '';
+        (profile.role_breakdown || []).forEach(r => {
+            const pill = document.createElement('span');
+            pill.className = `credits-role-pill credits-role-${r.category}`;
+            pill.textContent = `${r.category} (${r.count})`;
+            pillsEl.appendChild(pill);
+        });
 
         card.classList.remove('hidden');
     }
@@ -297,10 +307,21 @@ class CreditsPanel {
         // Build filter pills
         const categories = [...new Set(credits.map(c => c.category))].sort();
         if (filterEl) {
-            filterEl.innerHTML = `<span class="credits-filter-pill active" data-filter="all">All</span>` +
-                categories.map(c =>
-                    `<span class="credits-filter-pill credits-role-${c}" data-filter="${c}">${c}</span>`
-                ).join('');
+            filterEl.textContent = '';
+
+            const allPill = document.createElement('span');
+            allPill.className = 'credits-filter-pill active';
+            allPill.dataset.filter = 'all';
+            allPill.textContent = 'All';
+            filterEl.appendChild(allPill);
+
+            categories.forEach(c => {
+                const pill = document.createElement('span');
+                pill.className = `credits-filter-pill credits-role-${c}`;
+                pill.dataset.filter = c;
+                pill.textContent = c;
+                filterEl.appendChild(pill);
+            });
 
             filterEl.querySelectorAll('.credits-filter-pill').forEach(pill => {
                 pill.addEventListener('click', () => {
@@ -320,19 +341,45 @@ class CreditsPanel {
     }
 
     _renderCreditRows(container, credits) {
-        container.innerHTML = credits.slice(0, 100).map(c => `
-            <div class="credits-release-row">
-                <span class="credits-release-year">${c.year || '\u2014'}</span>
-                <div class="credits-release-info">
-                    <span class="credits-release-title">${this._escapeHtml(c.title)}</span>
-                    <span class="credits-release-artist text-text-mid">${(c.artists || []).join(', ')}</span>
-                </div>
-                <span class="credits-role-pill credits-role-${c.category}" title="${this._escapeHtml(c.role)}">${this._escapeHtml(c.role)}</span>
-            </div>
-        `).join('');
+        container.textContent = '';
+        credits.slice(0, 100).forEach(c => {
+            const row = document.createElement('div');
+            row.className = 'credits-release-row';
+
+            const yearSpan = document.createElement('span');
+            yearSpan.className = 'credits-release-year';
+            yearSpan.textContent = c.year || '\u2014';
+
+            const infoDiv = document.createElement('div');
+            infoDiv.className = 'credits-release-info';
+
+            const titleSpan = document.createElement('span');
+            titleSpan.className = 'credits-release-title';
+            titleSpan.textContent = c.title;
+
+            const artistSpan = document.createElement('span');
+            artistSpan.className = 'credits-release-artist text-text-mid';
+            artistSpan.textContent = (c.artists || []).join(', ');
+
+            infoDiv.appendChild(titleSpan);
+            infoDiv.appendChild(artistSpan);
+
+            const roleSpan = document.createElement('span');
+            roleSpan.className = `credits-role-pill credits-role-${c.category}`;
+            roleSpan.title = c.role;
+            roleSpan.textContent = c.role;
+
+            row.appendChild(yearSpan);
+            row.appendChild(infoDiv);
+            row.appendChild(roleSpan);
+            container.appendChild(row);
+        });
 
         if (credits.length > 100) {
-            container.innerHTML += `<p class="text-text-mid mt-2">Showing first 100 of ${credits.length} credits.</p>`;
+            const msg = document.createElement('p');
+            msg.className = 'text-text-mid mt-2';
+            msg.textContent = `Showing first 100 of ${credits.length} credits.`;
+            container.appendChild(msg);
         }
     }
 
@@ -347,7 +394,7 @@ class CreditsPanel {
         }
 
         section.classList.remove('hidden');
-        graphEl.innerHTML = '';
+        graphEl.textContent = '';
 
         const width = graphEl.clientWidth || 400;
         const height = 300;
@@ -420,17 +467,29 @@ class CreditsPanel {
         const list = document.getElementById('creditsLeaderboardList');
         if (!list) return;
 
-        list.innerHTML = entries.map((e, i) => `
-            <div class="credits-leaderboard-row">
-                <span class="credits-leaderboard-rank">${i + 1}</span>
-                <span class="credits-leaderboard-name">${this._escapeHtml(e.name)}</span>
-                <span class="credits-leaderboard-count">${e.credit_count}</span>
-            </div>
-        `).join('');
+        list.textContent = '';
+        entries.forEach((e, i) => {
+            const row = document.createElement('div');
+            row.className = 'credits-leaderboard-row';
 
-        list.querySelectorAll('.credits-leaderboard-name').forEach(el => {
-            el.style.cursor = 'pointer';
-            el.addEventListener('click', () => this._selectPerson(el.textContent));
+            const rankSpan = document.createElement('span');
+            rankSpan.className = 'credits-leaderboard-rank';
+            rankSpan.textContent = i + 1;
+
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'credits-leaderboard-name';
+            nameSpan.textContent = e.name;
+            nameSpan.style.cursor = 'pointer';
+            nameSpan.addEventListener('click', () => this._selectPerson(e.name));
+
+            const countSpan = document.createElement('span');
+            countSpan.className = 'credits-leaderboard-count';
+            countSpan.textContent = e.credit_count;
+
+            row.appendChild(rankSpan);
+            row.appendChild(nameSpan);
+            row.appendChild(countSpan);
+            list.appendChild(row);
         });
     }
 
@@ -444,13 +503,6 @@ class CreditsPanel {
     _hideEmptyState() {
         const el = document.getElementById('creditsEmptyState');
         if (el) el.classList.add('hidden');
-    }
-
-    _escapeHtml(str) {
-        if (!str) return '';
-        const div = document.createElement('div');
-        div.textContent = str;
-        return div.innerHTML;
     }
 
     /**

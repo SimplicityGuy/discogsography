@@ -129,6 +129,11 @@ See the [Configuration Guide](../docs/configuration.md#batch-processing-configur
    - Relationships: PART_OF (to Genre)
    - \*Pre-computed by `compute_genre_style_stats()` (see [Pre-Computed Node Properties](#-pre-computed-node-properties))
 
+1. **Person** - Credited personnel (producers, engineers, mastering engineers, session musicians, designers, managers)
+
+   - Properties: name, credit_count
+   - Relationships: CREDITED_ON (to Release, with `role` and `category` properties), SAME_AS (to Artist, when Discogs artist ID matches)
+
 1. **User** - Authenticated Discogs users (created by API syncer, not graphinator)
 
    - Properties: id
@@ -146,6 +151,8 @@ See the [Configuration Guide](../docs/configuration.md#batch-processing-configur
 - `ALIAS_OF` - Artist is an alias of another artist
 - `SUBLABEL_OF` - Label is a sublabel of a parent label
 - `PART_OF` - Style belongs to a genre
+- `CREDITED_ON` - Person credited on a release (properties: `role`, `category`)
+- `SAME_AS` - Person is the same entity as an Artist (linked via Discogs artist ID)
 
 #### Created by API Syncer
 

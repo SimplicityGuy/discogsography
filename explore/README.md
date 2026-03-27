@@ -22,6 +22,7 @@ The Explore frontend organizes functionality into tabbed panes:
 | **recommendations** | Personalized release recommendations based on collection                 | Yes           |
 | **collaborators**   | Collaborator network for an artist — shared releases and timelines       | No            |
 | **genre-tree**      | Interactive genre/style hierarchy browser                                 | No            |
+| **credits**         | Credits & Provenance — person search, profile, timeline, connections     | No            |
 | **gaps**            | Collection gap finder — missing releases for an artist, label, or master | Yes           |
 
 ### 🔍 Interactive Graph Explorer
@@ -143,6 +144,17 @@ Find releases you are missing from an artist, label, or master:
 - **Shared Releases**: Find all artists who share releases with a given artist
 - **Temporal Data**: Yearly collaboration counts, first/last collaboration year
 - **Rate Limited**: 30 requests/minute with Neo4j timeout protection
+
+### 🎭 Credits & Provenance
+
+Discover the people behind the music — producers, engineers, mastering engineers, session musicians, and designers:
+
+- **Person Search**: Autocomplete search across all credited personnel (fulltext index)
+- **Profile Card**: Summary showing total credits, active years, role breakdown pills, and linked artist
+- **Timeline Chart**: Plotly.js stacked bar chart showing year-by-year credit activity by category
+- **Release List**: All credited releases with role filter pills, paginated to 100
+- **Connections Graph**: D3.js force-directed graph of people connected through shared releases
+- **Role Leaderboard**: Most prolific people in each role category (mastering, production, etc.)
 
 ### 🌳 Genre Tree
 
@@ -336,6 +348,19 @@ The Explore service exposes only a health endpoint. All data endpoints are serve
 | GET    | `/api/recommend/similar/artist/{artist_id}`        | Similar artists by connection patterns |
 | GET    | `/api/recommend/explore/{entity_type}/{entity_id}` | Multi-signal discovery from an entity  |
 
+### Credits & Provenance
+
+| Method | Path                                      | Description                                         |
+| ------ | ----------------------------------------- | --------------------------------------------------- |
+| GET    | `/api/credits/person/{name}`              | All releases a person is credited on                |
+| GET    | `/api/credits/person/{name}/timeline`     | Year-by-year credit activity                        |
+| GET    | `/api/credits/person/{name}/profile`      | Summary profile with role breakdown                 |
+| GET    | `/api/credits/release/{release_id}`       | Full credits breakdown for a release                |
+| GET    | `/api/credits/role/{role}/top`            | Most prolific people in a role category             |
+| GET    | `/api/credits/shared`                     | Releases where two people are both credited         |
+| GET    | `/api/credits/connections/{name}`         | People connected through shared releases            |
+| GET    | `/api/credits/autocomplete`               | Search credits by person name                       |
+
 ### Insights (Proxied from Insights Service)
 
 | Method | Path                              | Description                           |
@@ -418,6 +443,7 @@ explore/
 │       ├── app.js          # Main controller + timeline scrubber
 │       ├── auth.js          # JWT auth state manager
 │       ├── autocomplete.js  # Search autocomplete
+│       ├── credits.js       # Credits & Provenance panel
 │       ├── graph.js         # D3 force-directed graph
 │       ├── insights.js      # Insights panel + auto-refresh
 │       ├── search.js        # Full-text search pane

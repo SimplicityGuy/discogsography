@@ -358,6 +358,42 @@ Temporal analysis of the authenticated user's collection, showing how their tast
 
 - `metric` — Evolution metric: `genre`, `style`, or `label` (default: `genre`)
 
+### Credits & Provenance
+
+Query the credited personnel (producers, engineers, mastering engineers, session musicians, designers) behind releases. Person nodes are created by the graphinator from Discogs `extraartists` data.
+
+| Method | Path                                      | Auth Required | Rate Limit | Description                                                 |
+| ------ | ----------------------------------------- | ------------- | ---------- | ----------------------------------------------------------- |
+| GET    | `/api/credits/person/{name}`              | No            | 60/min     | All releases a person is credited on, grouped by role       |
+| GET    | `/api/credits/person/{name}/timeline`     | No            | 60/min     | Year-by-year credit activity for a person                   |
+| GET    | `/api/credits/person/{name}/profile`      | No            | 60/min     | Summary profile with role breakdown                         |
+| GET    | `/api/credits/release/{release_id}`       | No            | 60/min     | Full credits breakdown for a release                        |
+| GET    | `/api/credits/role/{role}/top`            | No            | 30/min     | Most prolific people in a given role category               |
+| GET    | `/api/credits/shared`                     | No            | 30/min     | Releases where two people are both credited                 |
+| GET    | `/api/credits/connections/{name}`         | No            | 30/min     | People connected through shared releases                    |
+| GET    | `/api/credits/autocomplete`               | No            | 120/min    | Search credits by person name (fulltext, min 2 chars)       |
+
+**Role categories:** `production`, `engineering`, `mastering`, `session`, `design`, `management`, `other`
+
+**Query parameters for `/api/credits/role/{role}/top`:**
+
+- `limit` — Number of entries (1–100, default: 20)
+
+**Query parameters for `/api/credits/shared`:**
+
+- `person1` (required) — First person name
+- `person2` (required) — Second person name
+
+**Query parameters for `/api/credits/connections/{name}`:**
+
+- `depth` — Connection depth (1–3, default: 2)
+- `limit` — Maximum connections (1–200, default: 50)
+
+**Query parameters for `/api/credits/autocomplete`:**
+
+- `q` (required) — Search query (minimum 2 characters)
+- `limit` — Results to return (1–50, default: 10)
+
 ### MusicBrainz Enrichment
 
 Endpoints exposing MusicBrainz enrichment data linked to Discogs entities. Requires data from brainzgraphinator (Neo4j) and brainztableinator (PostgreSQL).

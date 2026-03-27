@@ -400,6 +400,69 @@ def build_test_plan(
             }
         )
 
+    # --- Credits & Provenance ---
+    for person_name in config.get("credited_persons", []):
+        encoded = person_name.replace(" ", "%20")
+        tests.append(
+            {
+                "name": f"credits/person/{person_name}",
+                "url": f"{base}/api/credits/person/{encoded}",
+                "params": None,
+            }
+        )
+        tests.append(
+            {
+                "name": f"credits/person/{person_name}/timeline",
+                "url": f"{base}/api/credits/person/{encoded}/timeline",
+                "params": None,
+            }
+        )
+        tests.append(
+            {
+                "name": f"credits/person/{person_name}/profile",
+                "url": f"{base}/api/credits/person/{encoded}/profile",
+                "params": None,
+            }
+        )
+        tests.append(
+            {
+                "name": f"credits/connections/{person_name}",
+                "url": f"{base}/api/credits/connections/{encoded}",
+                "params": {"depth": "1", "limit": "30"},
+            }
+        )
+
+    # Credits autocomplete
+    for person_name in config.get("credited_persons", []):
+        tests.append(
+            {
+                "name": f"credits/autocomplete/{person_name}",
+                "url": f"{base}/api/credits/autocomplete",
+                "params": {"q": person_name, "limit": "10"},
+            }
+        )
+
+    # Credits role leaderboard
+    for role_cat in config.get("credit_role_categories", []):
+        tests.append(
+            {
+                "name": f"credits/role/{role_cat}/top",
+                "url": f"{base}/api/credits/role/{role_cat}/top",
+                "params": {"limit": "20"},
+            }
+        )
+
+    # Credits shared (pairs of credited persons)
+    credited_persons = config.get("credited_persons", [])
+    for p1, p2 in combinations(credited_persons, 2):
+        tests.append(
+            {
+                "name": f"credits/shared/{p1}+{p2}",
+                "url": f"{base}/api/credits/shared",
+                "params": {"person1": p1, "person2": p2},
+            }
+        )
+
     # --- MusicBrainz Enrichment (static) ---
     tests.append({"name": "enrichment/status", "url": f"{base}/api/enrichment/status", "params": None})
 

@@ -633,6 +633,104 @@ class TestProcessReleasesBatch:
 
         mock_session.execute_write.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_process_releases_with_credits(self) -> None:
+        """Test processing releases with extraartists (credits) data."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        # Mock hash check — no existing hash means needs processing
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage(
+                "releases",
+                {
+                    "id": "1",
+                    "title": "Release With Credits",
+                    "year": 1995,
+                    "sha256": "hash_credits",
+                    "artists": [{"id": "A1"}],
+                    "labels": [],
+                    "extraartists": [
+                        {"name": "Bob Ludwig", "role": "Mastered By", "id": "500"},
+                        {"name": "Flood", "role": "Producer"},
+                    ],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_releases_batch(messages)
+
+        # execute_write should be called — the batch_write function processes credits
+        mock_session.execute_write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_releases_with_credits_no_artist_id(self) -> None:
+        """Test credits without artist IDs (no SAME_AS relationship)."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "2", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage(
+                "releases",
+                {
+                    "id": "2",
+                    "title": "Release Credits No ID",
+                    "year": 2000,
+                    "sha256": "hash_no_id",
+                    "extraartists": [
+                        {"name": "Unknown Engineer", "role": "Engineer"},
+                    ],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_releases_batch(messages)
+        mock_session.execute_write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_releases_credits_empty_name_skipped(self) -> None:
+        """Test that credits with missing name or role are skipped."""
+        mock_driver, mock_session = create_async_session_mock()
+
+        mock_result = create_async_result_mock([{"id": "3", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage(
+                "releases",
+                {
+                    "id": "3",
+                    "title": "Release Bad Credits",
+                    "year": 2005,
+                    "sha256": "hash_bad",
+                    "extraartists": [
+                        {"name": "", "role": "Producer"},  # empty name
+                        {"name": "Valid", "role": ""},  # empty role
+                        {"role": "Engineer"},  # missing name
+                    ],
+                },
+                AsyncMock(),
+                AsyncMock(),
+            )
+        ]
+
+        await processor._process_releases_batch(messages)
+        mock_session.execute_write.assert_called_once()
+
 
 class TestFlushAll:
     """Test flush_all functionality."""

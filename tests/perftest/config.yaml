@@ -44,3 +44,15 @@ labels:
   - Hooj Choons
   - Reprise Records
   - Tracid Traxx
+
+# Credits & Provenance — credited personnel for person-based queries
+credited_persons:
+  - Bob Ludwig
+  - Flood
+  - Alan Moulder
+
+# Role categories for leaderboard tests
+credit_role_categories:
+  - mastering
+  - production
+  - engineering
