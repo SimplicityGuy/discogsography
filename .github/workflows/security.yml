@@ -33,33 +33,19 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: 🔧 Setup Just
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 📦 Install dependencies
-        run: |
-          uv sync --all-extras
-          uv pip install -e api
-          uv pip install -e common
-          uv pip install -e dashboard
-          uv pip install -e explore
-          uv pip install -e graphinator
-          uv pip install -e insights
-          uv pip install -e tableinator
-          uv pip install -e schema-init
+        run: just install-all
 
       - name: 🔍 Run pip-audit (Python dependency vulnerability scan)
-        run: |
-          IGNORE_ARGS=""
-          if [[ -f .pip-audit-ignores ]]; then
-            while IFS= read -r line; do
-              vuln_id=$(echo "$line" | sed 's/#.*//' | tr -d '[:space:]')
-              [[ -z "$vuln_id" ]] && continue
-              IGNORE_ARGS="$IGNORE_ARGS --ignore-vuln $vuln_id"
-            done < .pip-audit-ignores
-          fi
-          # shellcheck disable=SC2086
-          uv run pip-audit --desc $IGNORE_ARGS
+        run: just pip-audit
 
       - name: 🛡️ Run bandit (Python SAST)
-        run: uv run bandit -r . -c pyproject.toml
+        run: just security
 
       - name: 🌐 Run osv-scanner (multi-ecosystem vulnerability scan)
         uses: google/osv-scanner-action/osv-scanner-action@v2.3.3
@@ -138,11 +124,16 @@ jobs:
         with:
           tool: cargo-audit,cargo-deny
 
+      - name: 🔧 Setup Just
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: 🔍 Run cargo-audit (Rust advisory database scan)
-        run: cargo audit
+        run: just extractor-audit
 
       - name: 🛡️ Run cargo-deny (Rust license and policy check)
-        run: cargo deny --manifest-path extractor/Cargo.toml check
+        run: just extractor-deny
 
   secret-scanning:
     name: Secret Scanning

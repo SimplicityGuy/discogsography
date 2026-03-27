@@ -75,6 +75,8 @@ The `justfile` is the single source of truth for all commands. Run `just --list`
 
 ```bash
 just install              # uv sync --all-extras
+just install-all          # Sync + editable install all services (CI)
+just install-e2e          # Frozen sync + E2E subset (CI)
 just install-js           # cd explore && npm ci
 just init                 # Install pre-commit hooks
 just update-deps          # Comprehensive update (Python, Rust, pre-commit, Docker)
@@ -107,6 +109,9 @@ just test-insights        # Insights tests with coverage
 just test-graphinator     # Graphinator tests with coverage
 just test-schema-init     # Schema-init tests with coverage
 just test-tableinator     # Tableinator tests with coverage
+just test-brainzgraphinator   # Brainzgraphinator tests with coverage
+just test-brainztableinator   # Brainztableinator tests with coverage
+just test-mcp-server      # MCP server tests with coverage
 ```
 
 ### Code Quality
@@ -116,6 +121,7 @@ just lint                 # All pre-commit hooks
 just lint-python          # Ruff + mypy only
 just format               # Auto-format Python (ruff format)
 just security             # Security checks (bandit)
+just pip-audit            # Python dependency vulnerability scan
 ```
 
 ### Rust
@@ -127,6 +133,8 @@ just extractor-bench      # Run benchmarks
 just extractor-lint       # Clippy (warnings = errors)
 just extractor-fmt        # Format code
 just extractor-fmt-check  # Check formatting (CI)
+just extractor-audit      # Rust advisory database scan
+just extractor-deny       # Rust license and policy check
 just extractor-clean      # Clean build artifacts
 ```
 

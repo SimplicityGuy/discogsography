@@ -74,17 +74,7 @@ jobs:
             ${{ runner.os }}-cargo-
 
       - name: 📦 Install dependencies
-        run: |
-          just install
-          # Install workspace packages
-          uv pip install -e api
-          uv pip install -e common
-          uv pip install -e dashboard
-          uv pip install -e explore
-          uv pip install -e graphinator
-          uv pip install -e insights
-          uv pip install -e tableinator
-          uv pip install -e schema-init
+        run: just install-all
 
       - name: 🧪 Run pre-commit hooks
         run: |

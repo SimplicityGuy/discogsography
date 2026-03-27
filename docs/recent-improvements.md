@@ -532,7 +532,7 @@ ______________________________________________________________________
 | Endpoint group       | Before                  | After               |
 | -------------------- | ----------------------- | ------------------- |
 | Graph queries        | Explore service (:8006) | API service (:8004) |
-| Sync triggers        | Curator service (:8010) | API service (:8004) |
+| Sync triggers        | Curator service (removed; :8010 now brainztableinator) | API service (:8004) |
 | User collection data | (new)                   | API service (:8004) |
 
 #### Benefits

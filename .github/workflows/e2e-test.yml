@@ -97,12 +97,7 @@ jobs:
             ${{ runner.os }}-playwright-browsers-
 
       - name: 📦 Install dependencies
-        run: |
-          uv sync --all-extras --frozen
-          # Install workspace packages
-          uv pip install -e dashboard
-          uv pip install -e explore
-          uv pip install -e common
+        run: just install-e2e
 
       - name: "🔬 Instrument JS for coverage"
         run: |

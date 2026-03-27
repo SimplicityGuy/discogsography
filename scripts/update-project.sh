@@ -644,7 +644,7 @@ update_python_packages() {
         backup_file "pyproject.toml"
 
         # Backup all pyproject.toml files including nested ones
-        for service in api common dashboard explore graphinator insights mcp-server schema-init tableinator; do
+        for service in api brainzgraphinator brainztableinator common dashboard explore graphinator insights mcp-server schema-init tableinator; do
             if [[ -f "$service/pyproject.toml" ]]; then
                 backup_file "$service/pyproject.toml"
             fi
@@ -1154,6 +1154,8 @@ show_file_report() {
     echo "🐍 Python Configuration:"
     echo "  ✓ pyproject.toml (root)"
     echo "  ✓ api/pyproject.toml"
+    echo "  ✓ brainzgraphinator/pyproject.toml"
+    echo "  ✓ brainztableinator/pyproject.toml"
     echo "  ✓ common/pyproject.toml"
     echo "  ✓ dashboard/pyproject.toml"
     echo "  ✓ explore/pyproject.toml"
@@ -1169,6 +1171,8 @@ show_file_report() {
     # Docker files
     echo "🐳 Docker Configuration:"
     echo "  ✓ api/Dockerfile"
+    echo "  ✓ brainzgraphinator/Dockerfile"
+    echo "  ✓ brainztableinator/Dockerfile"
     echo "  ✓ dashboard/Dockerfile"
     echo "  ✓ explore/Dockerfile"
     echo "  ✓ extractor/Dockerfile"
@@ -1233,6 +1237,8 @@ verify_components() {
     local pyproject_files=(
         "pyproject.toml"
         "api/pyproject.toml"
+        "brainzgraphinator/pyproject.toml"
+        "brainztableinator/pyproject.toml"
         "common/pyproject.toml"
         "dashboard/pyproject.toml"
         "explore/pyproject.toml"
@@ -1256,6 +1262,8 @@ verify_components() {
     print_info "Checking Dockerfiles..."
     local dockerfile_list=(
         "api/Dockerfile"
+        "brainzgraphinator/Dockerfile"
+        "brainztableinator/Dockerfile"
         "dashboard/Dockerfile"
         "explore/Dockerfile"
         "extractor/Dockerfile"

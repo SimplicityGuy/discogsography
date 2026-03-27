@@ -30,68 +30,89 @@ Tasks are organized into logical groups for easier navigation:
 
 ### 🛠️ Setup Group
 
-| Task                | Description                                                      |
-| ------------------- | ---------------------------------------------------------------- |
-| `install`           | Install all Python dependencies including dev extras             |
-| `install-js`        | Install JavaScript dependencies for Explore frontend tests       |
-| `init`              | Initialize pre-commit hooks for development                      |
-| `configure-discogs` | Configure Discogs app credentials (run against API container)    |
-| `update-hooks`      | Update pre-commit hooks to latest versions                       |
-| `check-updates`     | Check for outdated dependencies (Python, Rust, Docker)           |
-| `update-deps`       | Update all dependencies to latest versions (Python, Rust, hooks) |
-| `update-uv`         | Update uv itself to the latest version                           |
-| `lock-upgrade`      | Lock Python dependencies with upgrades (respects >= constraints) |
-| `sync`              | Sync all Python dependencies including dev and optional extras   |
-| `sync-upgrade`      | Sync all Python dependencies with upgrades                       |
-| `update-npm`        | Update npm dependencies in Explore frontend                      |
-| `update-cargo`      | Update Rust dependencies (lock file only, within Cargo.toml)     |
+| Task                | Description                                                              |
+| ------------------- | ------------------------------------------------------------------------ |
+| `install`           | Install all Python dependencies including dev extras                     |
+| `install-all`       | Install all dependencies including editable packages for all services    |
+| `install-e2e`       | Install dependencies for E2E testing (frozen lockfile, subset)           |
+| `install-js`        | Install JavaScript dependencies for Explore frontend tests              |
+| `init`              | Initialize pre-commit hooks for development                              |
+| `configure-discogs` | Configure Discogs app credentials (run against API container)            |
+| `update-hooks`      | Update pre-commit hooks to latest versions                               |
+| `check-updates`     | Check for outdated dependencies (Python, Rust, Docker)                   |
+| `update-deps`       | Update all dependencies to latest versions (Python, Rust, hooks, Docker) |
+| `update-uv`         | Update uv itself to the latest version                                   |
+| `lock-upgrade`      | Lock Python dependencies with upgrades (respects >= constraints)         |
+| `sync`              | Sync all Python dependencies including dev and optional extras           |
+| `sync-upgrade`      | Sync all Python dependencies with upgrades                               |
+| `update-npm`        | Update npm dependencies in Explore frontend                              |
+| `update-cargo`      | Update Rust dependencies (lock file only, within Cargo.toml)             |
 
 ### ✨ Quality Group
 
-| Task          | Description                               |
-| ------------- | ----------------------------------------- |
-| `lint`        | Run all pre-commit hooks on all files     |
-| `lint-python` | Run Python-specific linters (ruff + mypy) |
-| `format`      | Format all Python code with ruff          |
-| `security`    | Run security checks with bandit           |
+| Task          | Description                                        |
+| ------------- | -------------------------------------------------- |
+| `lint`        | Run all pre-commit hooks on all files              |
+| `lint-python` | Run Python-specific linters (ruff + mypy)          |
+| `format`      | Format all Python code with ruff                   |
+| `security`    | Run security checks with bandit                    |
+| `pip-audit`   | Run pip-audit (Python dependency vulnerability scan)|
 
 ### 🧪 Test Group
 
-| Task            | Description                                          |
-| --------------- | ---------------------------------------------------- |
-| `test`          | Run unit and integration tests (excluding E2E)       |
-| `test-js`       | Run JavaScript unit tests for Explore frontend       |
-| `test-js-cov`   | Run JavaScript tests with coverage                   |
-| `test-cov`      | Run tests with coverage report                       |
-| `test-e2e`      | Run end-to-end browser tests                         |
-| `test-all`      | Run all tests including E2E                          |
-| `test-parallel` | Run all service tests in parallel (Python, Rust, JS) |
-| `test-api`      | Run API service tests with coverage                  |
+| Task                       | Description                                          |
+| -------------------------- | ---------------------------------------------------- |
+| `test`                     | Run unit and integration tests (excluding E2E)       |
+| `test-js`                  | Run JavaScript unit tests for Explore frontend       |
+| `test-js-cov`              | Run JavaScript tests with coverage                   |
+| `test-cov`                 | Run tests with coverage report                       |
+| `test-e2e`                 | Run end-to-end browser tests                         |
+| `test-all`                 | Run all tests including E2E                          |
+| `test-parallel`            | Run all service tests in parallel (Python, Rust, JS) |
+| `test-api`                 | Run API service tests with coverage                  |
+| `test-brainzgraphinator`  | Run brainzgraphinator service tests with coverage    |
+| `test-brainztableinator`  | Run brainztableinator service tests with coverage    |
+| `test-common`              | Run common/shared library tests with coverage        |
+| `test-dashboard`           | Run dashboard service tests with coverage            |
+| `test-explore`             | Run explore service tests with coverage              |
+| `test-extractor`           | Run Rust extractor tests                             |
+| `test-extractor-cov`       | Run Rust extractor tests with coverage               |
+| `test-graphinator`         | Run graphinator service tests with coverage          |
+| `test-insights`            | Run insights service tests with coverage             |
+| `test-mcp-server`          | Run mcp-server tests with coverage                   |
+| `test-schema-init`         | Run schema-init service tests with coverage          |
+| `test-tableinator`         | Run tableinator service tests with coverage          |
 
 ### 🚀 Services Group
 
-| Task          | Description                                                | Port |
-| ------------- | ---------------------------------------------------------- | ---- |
-| `api`         | Run the API service (user accounts & JWT authentication)   | 8004 |
-| `dashboard`   | Run the dashboard service (monitoring UI)                  | 8003 |
-| `explore`     | Run the explore service (static file serving for graph UI) | 8006 |
-| `insights`    | Run the insights service (precomputed analytics & trends)  | 8008 |
-| `extractor`   | Run the Rust extractor (Discogs data ingestion)            | -    |
-| `graphinator` | Run the graphinator service (Neo4j graph builder)          | -    |
-| `schema-init` | Run the schema initializer (one-time Neo4j + PostgreSQL)   | -    |
-| `tableinator` | Run the tableinator service (PostgreSQL table builder)     | -    |
+| Task                  | Description                                                   | Port |
+| --------------------- | ------------------------------------------------------------- | ---- |
+| `api`                 | Run the API service (user accounts & JWT authentication)      | 8004 |
+| `brainzgraphinator`  | Run the brainzgraphinator service (MusicBrainz → Neo4j)      | -    |
+| `brainztableinator`  | Run the brainztableinator service (MusicBrainz → PostgreSQL)  | -    |
+| `dashboard`           | Run the dashboard service (monitoring UI)                     | 8003 |
+| `explore`             | Run the explore service (static file serving for graph UI)    | 8006 |
+| `extractor`           | Run the Rust extractor (Discogs data ingestion)               | -    |
+| `graphinator`         | Run the graphinator service (Neo4j graph builder)             | -    |
+| `insights`            | Run the insights service (precomputed analytics & trends)     | 8008 |
+| `mcp-server`          | Run the MCP server (AI assistant knowledge graph interface)   | -    |
+| `schema-init`         | Run the schema initializer (one-time Neo4j + PostgreSQL)      | -    |
+| `tableinator`         | Run the tableinator service (PostgreSQL table builder)        | -    |
 
 ### 🦀 Rust Group
 
-| Task              | Description                          |
-| ----------------- | ------------------------------------ |
-| `extractor-build` | Build Rust extractor in release mode |
-| `extractor-test`  | Run Rust extractor tests             |
-| `extractor-bench` | Run Rust extractor benchmarks        |
-| `extractor-run`   | Run Rust extractor in release mode   |
-| `extractor-lint`  | Lint Rust code with clippy           |
-| `extractor-fmt`   | Format Rust code                     |
-| `extractor-clean` | Clean Rust build artifacts           |
+| Task                  | Description                                    |
+| --------------------- | ---------------------------------------------- |
+| `extractor-build`     | Build Rust extractor in release mode           |
+| `extractor-test`      | Run Rust extractor tests                       |
+| `extractor-bench`     | Run Rust extractor benchmarks                  |
+| `extractor-run`       | Run Rust extractor in release mode             |
+| `extractor-lint`      | Lint Rust code with clippy                     |
+| `extractor-fmt`       | Format Rust code                               |
+| `extractor-fmt-check` | Check Rust code formatting (for CI/pre-commit) |
+| `extractor-audit`     | Run cargo-audit (Rust advisory database scan)  |
+| `extractor-deny`      | Run cargo-deny (Rust license and policy check) |
+| `extractor-clean`     | Clean Rust build artifacts                     |
 
 ### 🐋 Docker Group
 
@@ -182,10 +203,12 @@ just up
 just logs
 
 # Or run individual services
-just dashboard    # Terminal 1
-just explore      # Terminal 2
-just graphinator  # Terminal 3
-just tableinator  # Terminal 4
+just dashboard           # Terminal 1
+just explore             # Terminal 2
+just graphinator         # Terminal 3
+just tableinator         # Terminal 4
+just brainzgraphinator   # Terminal 5
+just brainztableinator   # Terminal 6
 ```
 
 ### Debugging Issues

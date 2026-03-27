@@ -20,6 +20,30 @@ default:
 install:
     uv sync --all-extras
 
+# Install all dependencies including editable packages for all services (used in CI)
+[group('setup')]
+install-all:
+    uv sync --all-extras
+    uv pip install -e api
+    uv pip install -e brainzgraphinator
+    uv pip install -e brainztableinator
+    uv pip install -e common
+    uv pip install -e dashboard
+    uv pip install -e explore
+    uv pip install -e graphinator
+    uv pip install -e insights
+    uv pip install -e mcp-server
+    uv pip install -e schema-init
+    uv pip install -e tableinator
+
+# Install dependencies for E2E testing (frozen lockfile, subset of packages)
+[group('setup')]
+install-e2e:
+    uv sync --all-extras --frozen
+    uv pip install -e common
+    uv pip install -e dashboard
+    uv pip install -e explore
+
 # Install JavaScript dependencies for Explore frontend tests
 [group('setup')]
 install-js:
@@ -122,7 +146,23 @@ format:
 # Run security checks with bandit
 [group('quality')]
 security:
-    uv run bandit -r . -x './.venv/*,./tests/*'
+    uv run bandit -r . -c pyproject.toml
+
+# Run pip-audit (Python dependency vulnerability scan)
+[group('quality')]
+pip-audit:
+    #!/usr/bin/env bash
+    set -e
+    IGNORE_ARGS=""
+    if [[ -f .pip-audit-ignores ]]; then
+        while IFS= read -r line; do
+            vuln_id=$(echo "$line" | sed 's/#.*//' | tr -d '[:space:]')
+            [[ -z "$vuln_id" ]] && continue
+            IGNORE_ARGS="$IGNORE_ARGS --ignore-vuln $vuln_id"
+        done < .pip-audit-ignores
+    fi
+    # shellcheck disable=SC2086
+    uv run pip-audit --desc $IGNORE_ARGS
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Testing
@@ -401,9 +441,24 @@ graphinator:
 schema-init:
     uv run python schema-init/schema_init.py
 
+# Run the brainzgraphinator service (MusicBrainz → Neo4j enrichment)
+[group('services')]
+brainzgraphinator:
+    uv run python brainzgraphinator/brainzgraphinator.py
+
+# Run the brainztableinator service (MusicBrainz → PostgreSQL)
+[group('services')]
+brainztableinator:
+    uv run python brainztableinator/brainztableinator.py
+
 # Run the Rust extractor (high-performance Discogs data ingestion)
 [group('services')]
 extractor: extractor-run
+
+# Run the MCP server (AI assistant knowledge graph interface)
+[group('services')]
+mcp-server:
+    uv run python -m mcp_server.server
 
 # Run the tableinator service (PostgreSQL table builder)
 [group('services')]
@@ -455,6 +510,16 @@ extractor-fmt-check:
     cd extractor && \
     cargo fmt --check
 
+# Run cargo-audit (Rust advisory database scan)
+[group('rust')]
+extractor-audit:
+    cargo audit
+
+# Run cargo-deny (Rust license and policy check)
+[group('rust')]
+extractor-deny:
+    cargo deny --manifest-path extractor/Cargo.toml check
+
 # Clean Rust build artifacts
 [group('rust')]
 extractor-clean:
@@ -492,6 +557,8 @@ rebuild:
 build:
     docker-compose build \
         api \
+        brainzgraphinator \
+        brainztableinator \
         dashboard \
         explore \
         extractor \

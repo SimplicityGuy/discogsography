@@ -31,6 +31,8 @@ jobs:
           cat << "EOF" > projects.json
           [
             {"name": "api", "use_cache": true},
+            {"name": "brainzgraphinator", "use_cache": true},
+            {"name": "brainztableinator", "use_cache": true},
             {"name": "dashboard", "use_cache": true},
             {"name": "explore", "use_cache": true},
             {"name": "extractor", "use_cache": true},
