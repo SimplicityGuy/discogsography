@@ -774,8 +774,8 @@ pub async fn process_musicbrainz_data(
     mq_factory: Arc<dyn MessageQueueFactory>,
     _compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<bool> {
+    use crate::musicbrainz_downloader::{MbDownloader, discover_mb_dump_files};
     use crate::jsonl_parser::{build_mbid_discogs_map_from_file, parse_mb_jsonl_file};
-    use crate::musicbrainz_downloader::{detect_mb_dump_version, discover_mb_dump_files};
 
     let extraction_started_at = chrono::Utc::now();
 
@@ -790,22 +790,28 @@ pub async fn process_musicbrainz_data(
         s.extraction_status = ExtractionStatus::Running;
     }
 
-    // Discover dump files
-    let dump_files = discover_mb_dump_files(&config.musicbrainz_root)?;
+    // Download latest MusicBrainz dump if needed
+    let downloader = MbDownloader::new(
+        config.musicbrainz_root.clone(),
+        config.musicbrainz_dump_url.clone(),
+    );
+    let download_result = downloader.download_latest().await?;
+    let version = download_result.version().to_string();
+    let versioned_root = config.musicbrainz_root.join(&version);
+    info!("📋 Using MusicBrainz dump version: {} from {:?}", version, versioned_root);
+
+    // Discover dump files in the versioned directory
+    let dump_files = discover_mb_dump_files(&versioned_root)?;
 
     if dump_files.is_empty() {
-        warn!("⚠️ No MusicBrainz dump files found");
+        warn!("⚠️ No MusicBrainz dump files found after download");
         let mut s = state.write().await;
         s.extraction_status = ExtractionStatus::Completed;
         return Ok(true);
     }
 
-    // Detect version
-    let version = detect_mb_dump_version(&config.musicbrainz_root);
-    info!("📋 Detected MusicBrainz dump version: {}", version);
-
     // Check state marker — skip if already completed and not force_reprocess
-    let marker_path = config.musicbrainz_root.join(format!(".mb_extraction_status_{}.json", version));
+    let marker_path = versioned_root.join(format!(".mb_extraction_status_{}.json", version));
     let mut state_marker = if force_reprocess {
         info!("🔄 Force reprocess requested, creating new state marker");
         StateMarker::new(version.clone())

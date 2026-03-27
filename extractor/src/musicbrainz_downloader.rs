@@ -85,6 +85,7 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
 /// Tries to extract a YYYYMMDD date from the last component of the directory
 /// path (e.g., `/data/20260322/` -> `"20260322"`).  Falls back to the current
 /// date formatted as `YYYYMMDD`.
+#[allow(dead_code)]
 pub fn detect_mb_dump_version(root: &Path) -> String {
     if let Some(dir_name) = root.file_name().and_then(|n| n.to_str()) {
         // Check if the directory name looks like a YYYYMMDD date
