@@ -14,6 +14,7 @@ from brainztableinator.brainztableinator import (
     PROCESSORS,
     _insert_external_link,
     _insert_relationship,
+    _recover_consumers,
     check_all_consumers_idle,
     close_rabbitmq_connection,
     get_connection,
@@ -1863,3 +1864,848 @@ class TestMainRabbitMQRetries:
 
         assert mock_manager.connect.call_count == 3
         assert connection is None
+
+
+# ===========================================================================
+# Process label/release with relationships and external links
+# ===========================================================================
+
+
+class TestProcessLabelRelationshipsAndLinks:
+    """Test process_label and process_release with relationships and external links."""
+
+    @pytest.mark.asyncio
+    async def test_process_label_with_relationships(self) -> None:
+        """Verify process_label inserts relationships."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "mbid": "label-mbid-123",
+            "name": "Test Label",
+            "mb_type": "Original Production",
+            "relations": [
+                {"target_mbid": "target-1", "type": "member", "direction": "forward"},
+            ],
+        }
+
+        await process_label(mock_conn, record)
+
+        # Should have calls for the main insert + relationship insert
+        assert mock_cursor.execute.call_count >= 2
+        rel_call = mock_cursor.execute.call_args_list[1]
+        assert "musicbrainz.relationships" in rel_call[0][0]
+
+    @pytest.mark.asyncio
+    async def test_process_label_with_external_links(self) -> None:
+        """Verify process_label inserts external links."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "mbid": "label-mbid-123",
+            "name": "Test Label",
+            "mb_type": "Original Production",
+            "external_links": [
+                {"url": "https://example.com", "type": "official"},
+            ],
+        }
+
+        await process_label(mock_conn, record)
+
+        assert mock_cursor.execute.call_count >= 2
+        link_call = mock_cursor.execute.call_args_list[1]
+        assert "musicbrainz.external_links" in link_call[0][0]
+
+    @pytest.mark.asyncio
+    async def test_process_release_with_relationships(self) -> None:
+        """Verify process_release inserts relationships."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "mbid": "release-mbid-123",
+            "name": "Test Album",
+            "status": "Official",
+            "relations": [
+                {"target_mbid": "target-1", "type": "part of", "direction": "forward"},
+            ],
+        }
+
+        await process_release(mock_conn, record)
+
+        assert mock_cursor.execute.call_count >= 2
+        rel_call = mock_cursor.execute.call_args_list[1]
+        assert "musicbrainz.relationships" in rel_call[0][0]
+
+    @pytest.mark.asyncio
+    async def test_process_release_with_external_links(self) -> None:
+        """Verify process_release inserts external links."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "mbid": "release-mbid-123",
+            "name": "Test Album",
+            "status": "Official",
+            "external_links": [
+                {"url": "https://example.com/release", "type": "streaming"},
+            ],
+        }
+
+        await process_release(mock_conn, record)
+
+        assert mock_cursor.execute.call_count >= 2
+        link_call = mock_cursor.execute.call_args_list[1]
+        assert "musicbrainz.external_links" in link_call[0][0]
+
+
+# ===========================================================================
+# Cancel after delay — all consumers idle path
+# ===========================================================================
+
+
+class TestCancelAfterDelayAllIdle:
+    """Test cancel_after_delay when all consumers become idle."""
+
+    @pytest.mark.asyncio
+    @patch("brainztableinator.brainztableinator.CONSUMER_CANCEL_DELAY", 0.05)
+    async def test_closes_connection_when_all_idle(self) -> None:
+        """Test that closing RabbitMQ connection happens when all consumers idle."""
+        mock_queue = AsyncMock()
+        mock_queue.cancel = AsyncMock()
+
+        import brainztableinator.brainztableinator as bt
+
+        bt.consumer_tags = {"artists": "consumer-tag-123"}
+        bt.shutdown_requested = False
+        bt.active_connection = AsyncMock()
+        bt.active_channel = AsyncMock()
+
+        with (
+            patch("brainztableinator.brainztableinator.check_all_consumers_idle", new_callable=AsyncMock, return_value=True),
+            patch("brainztableinator.brainztableinator.close_rabbitmq_connection", new_callable=AsyncMock) as mock_close,
+            patch("brainztableinator.brainztableinator.logger"),
+        ):
+            await schedule_consumer_cancellation("artists", mock_queue)
+            await asyncio.sleep(0.1)
+
+            mock_close.assert_called_once()
+
+
+# ===========================================================================
+# Periodic queue checker — CancelledError and early continue paths
+# ===========================================================================
+
+
+class TestPeriodicQueueCheckerEdgeCases:
+    """Test edge cases in periodic_queue_checker."""
+
+    @pytest.mark.asyncio
+    async def test_cancelled_error_breaks_loop(self) -> None:
+        """Test that CancelledError in the checker breaks the loop cleanly."""
+        import brainztableinator.brainztableinator as bt
+
+        bt.shutdown_requested = False
+        bt.consumer_tags = {}
+        bt.completed_files = set()
+        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bt.active_connection = None
+
+        from brainztableinator.brainztableinator import periodic_queue_checker
+
+        task = asyncio.create_task(periodic_queue_checker())
+        await asyncio.sleep(0.05)
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+        # Task should have completed without error
+        assert task.done()
+
+    @pytest.mark.asyncio
+    @patch("brainztableinator.brainztableinator.QUEUE_CHECK_INTERVAL", 100)
+    @patch("brainztableinator.brainztableinator.STUCK_CHECK_INTERVAL", 0.01)
+    async def test_skips_when_active_connection_exists(self) -> None:
+        """Test that checker skips full check when active connection exists."""
+        mock_rabbitmq_manager = AsyncMock()
+
+        import brainztableinator.brainztableinator as bt
+
+        bt.rabbitmq_manager = mock_rabbitmq_manager
+        bt.active_connection = AsyncMock()  # Active connection → skip
+        bt.active_channel = AsyncMock()
+        bt.consumer_tags = {}
+        bt.completed_files = set()
+        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bt.shutdown_requested = False
+
+        from brainztableinator.brainztableinator import periodic_queue_checker
+
+        checker_task = asyncio.create_task(periodic_queue_checker())
+        await asyncio.sleep(0.1)
+
+        bt.shutdown_requested = True
+        await asyncio.sleep(0.05)
+
+        checker_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await checker_task
+
+        # Should not have connected since active_connection exists
+        mock_rabbitmq_manager.connect.assert_not_called()
+
+
+# ===========================================================================
+# _recover_consumers edge cases
+# ===========================================================================
+
+
+class TestRecoverConsumersEdgeCases:
+    """Test _recover_consumers edge cases."""
+
+    @pytest.mark.asyncio
+    async def test_closes_existing_broken_connection(self) -> None:
+        """Test that _recover_consumers closes existing broken connection first."""
+        import brainztableinator.brainztableinator as bt
+
+        mock_broken_conn = AsyncMock()
+        mock_broken_conn.close = AsyncMock()
+
+        bt.active_connection = mock_broken_conn
+        bt.active_channel = AsyncMock()
+        bt.consumer_tags = {}
+        bt.queues = {}
+        bt.idle_mode = False
+        bt.completed_files = set()
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+
+        mock_new_connection = AsyncMock()
+        mock_new_channel = AsyncMock()
+        mock_queue = AsyncMock()
+        mock_queue.declaration_result.message_count = 0
+        mock_new_channel.declare_queue = AsyncMock(return_value=mock_queue)
+        mock_new_channel.declare_exchange = AsyncMock()
+        mock_new_channel.close = AsyncMock()
+        mock_new_connection.channel = AsyncMock(return_value=mock_new_channel)
+        mock_new_connection.close = AsyncMock()
+
+        bt.rabbitmq_manager = AsyncMock()
+        bt.rabbitmq_manager.connect = AsyncMock(return_value=mock_new_connection)
+
+        with patch("brainztableinator.brainztableinator.logger"):
+            await _recover_consumers()
+
+        mock_broken_conn.close.assert_called_once()
+        assert bt.active_connection is None
+
+    @pytest.mark.asyncio
+    async def test_no_messages_closes_temp_connection(self) -> None:
+        """Test that _recover_consumers closes temp connection when no messages found."""
+        import brainztableinator.brainztableinator as bt
+
+        bt.active_connection = None
+        bt.active_channel = None
+        bt.consumer_tags = {}
+        bt.queues = {}
+        bt.idle_mode = False
+        bt.completed_files = set()
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+        mock_queue = AsyncMock()
+        mock_queue.declaration_result.message_count = 0
+        mock_channel.declare_queue = AsyncMock(return_value=mock_queue)
+        mock_channel.declare_exchange = AsyncMock()
+        mock_channel.close = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_connection.close = AsyncMock()
+
+        bt.rabbitmq_manager = AsyncMock()
+        bt.rabbitmq_manager.connect = AsyncMock(return_value=mock_connection)
+
+        with patch("brainztableinator.brainztableinator.logger"):
+            await _recover_consumers()
+
+        # Should close temp connection since no messages
+        mock_channel.close.assert_called_once()
+        mock_connection.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_error_during_recovery_cleans_up(self) -> None:
+        """Test that _recover_consumers cleans up on error."""
+        import brainztableinator.brainztableinator as bt
+
+        bt.active_connection = None
+        bt.active_channel = None
+        bt.consumer_tags = {}
+        bt.queues = {}
+        bt.idle_mode = False
+
+        mock_connection = AsyncMock()
+        mock_channel = AsyncMock()
+        mock_channel.declare_queue = AsyncMock(side_effect=Exception("Queue declare failed"))
+        mock_channel.close = AsyncMock()
+        mock_connection.channel = AsyncMock(return_value=mock_channel)
+        mock_connection.close = AsyncMock()
+
+        bt.rabbitmq_manager = AsyncMock()
+        bt.rabbitmq_manager.connect = AsyncMock(return_value=mock_connection)
+
+        with patch("brainztableinator.brainztableinator.logger"):
+            await _recover_consumers()
+
+        # Should attempt cleanup on error
+        mock_channel.close.assert_called()
+        mock_connection.close.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_broken_connection_close_error_ignored(self) -> None:
+        """Test that errors closing broken connection are silently ignored."""
+        import brainztableinator.brainztableinator as bt
+
+        mock_broken_conn = AsyncMock()
+        mock_broken_conn.close = AsyncMock(side_effect=Exception("Already closed"))
+
+        bt.active_connection = mock_broken_conn
+        bt.active_channel = AsyncMock()
+        bt.consumer_tags = {}
+        bt.queues = {}
+        bt.idle_mode = False
+        bt.completed_files = set()
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+
+        mock_new_connection = AsyncMock()
+        mock_new_channel = AsyncMock()
+        mock_queue = AsyncMock()
+        mock_queue.declaration_result.message_count = 0
+        mock_new_channel.declare_queue = AsyncMock(return_value=mock_queue)
+        mock_new_channel.declare_exchange = AsyncMock()
+        mock_new_channel.close = AsyncMock()
+        mock_new_connection.channel = AsyncMock(return_value=mock_new_channel)
+        mock_new_connection.close = AsyncMock()
+
+        bt.rabbitmq_manager = AsyncMock()
+        bt.rabbitmq_manager.connect = AsyncMock(return_value=mock_new_connection)
+
+        with patch("brainztableinator.brainztableinator.logger"):
+            await _recover_consumers()  # Should not raise
+
+        assert bt.active_connection is None
+
+
+# ===========================================================================
+# Progress reporter — stalled, slow, waiting, canceled consumers
+# ===========================================================================
+
+
+class TestProgressReporterExtended:
+    """Extended tests for progress_reporter covering stalled/slow/waiting paths."""
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_logs_stalled_consumers(self) -> None:
+        """Test that stalled consumers are detected and logged."""
+        import brainztableinator.brainztableinator as bt
+        from brainztableinator.brainztableinator import progress_reporter
+
+        current_time = time.time()
+        bt.shutdown_requested = False
+        bt.idle_mode = False
+        bt.message_counts = {"artists": 100, "labels": 50, "releases": 10}
+        bt.last_message_time = {
+            "artists": current_time - 150,  # stalled (>120s)
+            "labels": current_time,
+            "releases": current_time,
+        }
+        bt.completed_files = set()
+        bt.consumer_tags = {"artists": "tag1", "labels": "tag2"}
+
+        _real_sleep = asyncio.sleep
+        call_count = 0
+
+        async def fast_sleep(_duration: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count > 4:
+                bt.shutdown_requested = True
+            await _real_sleep(0)
+
+        with (
+            patch("brainztableinator.brainztableinator.logger") as mock_logger,
+            patch("brainztableinator.brainztableinator.asyncio.sleep", side_effect=fast_sleep),
+        ):
+            await progress_reporter()
+
+        # Should have logged stalled consumers
+        error_calls = [str(c) for c in mock_logger.error.call_args_list]
+        assert any("Stalled" in c or "stalled" in c.lower() for c in error_calls)
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_logs_waiting_for_messages(self) -> None:
+        """Test waiting for messages state (total == 0, not idle)."""
+        import brainztableinator.brainztableinator as bt
+        from brainztableinator.brainztableinator import progress_reporter
+
+        bt.shutdown_requested = False
+        bt.idle_mode = False
+        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+        bt.completed_files = {"artists"}  # Not all complete, so won't skip
+        bt.consumer_tags = {"labels": "tag1"}
+
+        _real_sleep = asyncio.sleep
+        call_count = 0
+
+        async def fast_sleep(_duration: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count > 4:
+                bt.shutdown_requested = True
+            await _real_sleep(0)
+
+        with (
+            patch("brainztableinator.brainztableinator.STARTUP_IDLE_TIMEOUT", 9999),
+            patch("brainztableinator.brainztableinator.logger") as mock_logger,
+            patch("brainztableinator.brainztableinator.asyncio.sleep", side_effect=fast_sleep),
+        ):
+            await progress_reporter()
+
+        info_calls = [str(c) for c in mock_logger.info.call_args_list]
+        assert any("Waiting" in c or "waiting" in c.lower() for c in info_calls)
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_logs_slow_consumers(self) -> None:
+        """Test slow consumer detection (5 < time_since < 120)."""
+        import brainztableinator.brainztableinator as bt
+        from brainztableinator.brainztableinator import progress_reporter
+
+        current_time = time.time()
+        bt.shutdown_requested = False
+        bt.idle_mode = False
+        bt.message_counts = {"artists": 100, "labels": 50, "releases": 10}
+        bt.last_message_time = {
+            "artists": current_time - 60,  # slow (60s, between 5 and 120)
+            "labels": current_time - 60,
+            "releases": current_time - 60,
+        }
+        bt.completed_files = set()
+        bt.consumer_tags = {"artists": "tag1"}
+
+        _real_sleep = asyncio.sleep
+        call_count = 0
+
+        async def fast_sleep(_duration: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count > 4:
+                bt.shutdown_requested = True
+            await _real_sleep(0)
+
+        with (
+            patch("brainztableinator.brainztableinator.logger") as mock_logger,
+            patch("brainztableinator.brainztableinator.asyncio.sleep", side_effect=fast_sleep),
+        ):
+            await progress_reporter()
+
+        warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
+        assert any("Slow" in c or "slow" in c.lower() for c in warning_calls)
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_logs_canceled_consumers(self) -> None:
+        """Test logging of canceled consumers (in completed_files but not in consumer_tags)."""
+        import brainztableinator.brainztableinator as bt
+        from brainztableinator.brainztableinator import progress_reporter
+
+        current_time = time.time()
+        bt.shutdown_requested = False
+        bt.idle_mode = False
+        bt.message_counts = {"artists": 100, "labels": 50, "releases": 10}
+        bt.last_message_time = {
+            "artists": current_time,
+            "labels": current_time,
+            "releases": current_time,
+        }
+        bt.completed_files = {"artists"}  # artists completed but not in consumer_tags
+        bt.consumer_tags = {"labels": "tag1", "releases": "tag2"}
+
+        _real_sleep = asyncio.sleep
+        call_count = 0
+
+        async def fast_sleep(_duration: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count > 4:
+                bt.shutdown_requested = True
+            await _real_sleep(0)
+
+        with (
+            patch("brainztableinator.brainztableinator.logger") as mock_logger,
+            patch("brainztableinator.brainztableinator.asyncio.sleep", side_effect=fast_sleep),
+        ):
+            await progress_reporter()
+
+        info_calls = [str(c) for c in mock_logger.info.call_args_list]
+        assert any("Canceled" in c or "canceled" in c.lower() for c in info_calls)
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_idle_periodic_log(self) -> None:
+        """Test idle mode periodic log at IDLE_LOG_INTERVAL."""
+        import brainztableinator.brainztableinator as bt
+        from brainztableinator.brainztableinator import progress_reporter
+
+        bt.shutdown_requested = False
+        bt.idle_mode = True
+        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+        bt.completed_files = set()
+        bt.consumer_tags = {}
+
+        _real_sleep = asyncio.sleep
+        call_count = 0
+
+        async def fast_sleep(_duration: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count > 4:
+                bt.shutdown_requested = True
+            await _real_sleep(0)
+
+        with (
+            patch("brainztableinator.brainztableinator.IDLE_LOG_INTERVAL", 0),
+            patch("brainztableinator.brainztableinator.logger") as mock_logger,
+            patch("brainztableinator.brainztableinator.asyncio.sleep", side_effect=fast_sleep),
+        ):
+            await progress_reporter()
+
+        info_calls = [str(c) for c in mock_logger.info.call_args_list]
+        assert any("Idle" in c or "idle" in c.lower() for c in info_calls)
+
+    @pytest.mark.asyncio
+    async def test_progress_reporter_sleep_30s_after_3_reports(self) -> None:
+        """Test that sleep increases to 30s after 3 report cycles."""
+        import brainztableinator.brainztableinator as bt
+        from brainztableinator.brainztableinator import progress_reporter
+
+        bt.shutdown_requested = False
+        bt.idle_mode = False
+        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+        bt.completed_files = {"artists", "labels", "releases"}  # All complete so skips quickly
+        bt.consumer_tags = {}
+
+        sleep_durations: list[float] = []
+        _real_sleep = asyncio.sleep
+        call_count = 0
+
+        async def tracking_sleep(duration: float) -> None:
+            nonlocal call_count
+            sleep_durations.append(duration)
+            call_count += 1
+            if call_count > 5:
+                bt.shutdown_requested = True
+            await _real_sleep(0)
+
+        with (
+            patch("brainztableinator.brainztableinator.logger"),
+            patch("brainztableinator.brainztableinator.asyncio.sleep", side_effect=tracking_sleep),
+        ):
+            await progress_reporter()
+
+        # First 3 should be 10s, after that 30s
+        assert sleep_durations[0] == 10
+        assert sleep_durations[1] == 10
+        assert sleep_durations[2] == 10
+        assert any(d == 30 for d in sleep_durations[3:])
+
+
+# ===========================================================================
+# Main function — additional edge cases
+# ===========================================================================
+
+
+class TestMainEdgeCases:
+    """Test main() edge cases for improved coverage."""
+
+    @pytest.mark.asyncio
+    @patch("brainztableinator.brainztableinator.setup_logging")
+    @patch("brainztableinator.brainztableinator.HealthServer")
+    @patch("brainztableinator.brainztableinator.AsyncResilientRabbitMQ")
+    @patch("brainztableinator.brainztableinator.AsyncPostgreSQLPool")
+    @patch.dict("os.environ", {"STARTUP_DELAY": "1"})
+    async def test_main_with_startup_delay_logs(
+        self,
+        mock_pool_class: Mock,
+        mock_rabbitmq_class: AsyncMock,
+        mock_health_server: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test main logs startup delay when STARTUP_DELAY > 0."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        mock_pool = MagicMock()
+        mock_pool_class.return_value = mock_pool
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+        mock_rabbitmq_instance.connect.side_effect = Exception("Cannot connect")
+
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(delay: float) -> None:  # noqa: ARG001
+            await original_sleep(0)
+
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch("brainztableinator.brainztableinator.logger") as mock_logger,
+        ):
+            await main()
+
+        # Should have logged the startup delay
+        info_calls = [str(c) for c in mock_logger.info.call_args_list]
+        assert any("Waiting" in c or "waiting" in c.lower() for c in info_calls)
+
+    @pytest.mark.asyncio
+    @patch("brainztableinator.brainztableinator.setup_logging")
+    @patch("brainztableinator.brainztableinator.HealthServer")
+    @patch("brainztableinator.brainztableinator.AsyncResilientRabbitMQ")
+    @patch("brainztableinator.brainztableinator.AsyncPostgreSQLPool")
+    @patch.dict("os.environ", {"STARTUP_DELAY": "0"})
+    async def test_main_host_without_port(
+        self,
+        mock_pool_class: Mock,
+        mock_rabbitmq_class: AsyncMock,
+        mock_health_server: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test main when postgres_host has no port (default 5432)."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        mock_pool = MagicMock()
+        mock_pool_class.return_value = mock_pool
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+        mock_rabbitmq_instance.connect.side_effect = Exception("Cannot connect")
+
+        # Config returns host without port
+        mock_config = MagicMock()
+        mock_config.postgres_host = "localhost"  # No port
+        mock_config.postgres_username = "user"
+        mock_config.postgres_password = "pass"
+        mock_config.postgres_database = "testdb"
+        mock_config.amqp_connection = "amqp://guest:guest@localhost:5672/"
+
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(delay: float) -> None:  # noqa: ARG001
+            await original_sleep(0)
+
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch("brainztableinator.brainztableinator.BrainztableinatorConfig") as mock_config_class,
+        ):
+            mock_config_class.from_env.return_value = mock_config
+            await main()
+
+        # Should have used default port 5432
+        call_args = mock_pool_class.call_args
+        assert call_args[1]["connection_params"]["port"] == 5432
+        assert call_args[1]["connection_params"]["host"] == "localhost"
+
+    @pytest.mark.asyncio
+    @patch("brainztableinator.brainztableinator.setup_logging")
+    @patch("brainztableinator.brainztableinator.HealthServer")
+    @patch("brainztableinator.brainztableinator.AsyncResilientRabbitMQ")
+    @patch("brainztableinator.brainztableinator.AsyncPostgreSQLPool")
+    @patch.dict("os.environ", {"STARTUP_DELAY": "0"})
+    async def test_main_amqp_connection_none(
+        self,
+        mock_pool_class: Mock,
+        mock_rabbitmq_class: AsyncMock,
+        mock_health_server: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test main returns when amqp_connection is None after retries."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        mock_pool = MagicMock()
+        mock_pool_class.return_value = mock_pool
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+        # Return None instead of raising
+        mock_rabbitmq_instance.connect.return_value = None
+
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(delay: float) -> None:  # noqa: ARG001
+            await original_sleep(0)
+
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch("brainztableinator.brainztableinator.logger") as mock_logger,
+        ):
+            await main()
+
+        # Should have logged the "No AMQP connection" error and returned early
+        error_calls = [str(c) for c in mock_logger.error.call_args_list]
+        assert any("No AMQP connection" in c for c in error_calls)
+
+    @pytest.mark.asyncio
+    @patch("brainztableinator.brainztableinator.setup_logging")
+    @patch("brainztableinator.brainztableinator.HealthServer")
+    @patch("brainztableinator.brainztableinator.AsyncResilientRabbitMQ")
+    @patch("brainztableinator.brainztableinator.AsyncPostgreSQLPool")
+    @patch.dict("os.environ", {"STARTUP_DELAY": "0"})
+    async def test_main_keyboard_interrupt(
+        self,
+        mock_pool_class: Mock,
+        mock_rabbitmq_class: AsyncMock,
+        mock_health_server: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test main handles KeyboardInterrupt gracefully."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        mock_pool = MagicMock()
+        mock_pool_class.return_value = mock_pool
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+
+        mock_amqp_connection = AsyncMock()
+        mock_amqp_connection.__aenter__ = AsyncMock(return_value=mock_amqp_connection)
+        mock_amqp_connection.__aexit__ = AsyncMock(return_value=None)
+        mock_rabbitmq_instance.connect.return_value = mock_amqp_connection
+
+        mock_channel = AsyncMock()
+        mock_amqp_connection.channel = AsyncMock(return_value=mock_channel)
+
+        mock_queue = AsyncMock()
+        mock_channel.declare_queue.return_value = mock_queue
+
+        import brainztableinator.brainztableinator as bt
+
+        bt.shutdown_requested = False
+        bt.consumer_cancel_tasks = {"artists": AsyncMock()}
+        bt.connection_check_task = AsyncMock()
+
+        async def raise_keyboard_interrupt(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+            raise KeyboardInterrupt()
+
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(delay: float) -> None:  # noqa: ARG001
+            await original_sleep(0)
+
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch("asyncio.wait_for", raise_keyboard_interrupt),
+            patch("brainztableinator.brainztableinator.logger"),
+        ):
+            await main()
+
+        mock_health_instance.stop.assert_called()
+
+    @pytest.mark.asyncio
+    @patch("brainztableinator.brainztableinator.setup_logging")
+    @patch("brainztableinator.brainztableinator.HealthServer")
+    @patch("brainztableinator.brainztableinator.AsyncResilientRabbitMQ")
+    @patch("brainztableinator.brainztableinator.AsyncPostgreSQLPool")
+    @patch.dict("os.environ", {"STARTUP_DELAY": "0"})
+    async def test_main_pool_close_error(
+        self,
+        mock_pool_class: Mock,
+        mock_rabbitmq_class: AsyncMock,
+        mock_health_server: Mock,
+        _mock_setup_logging: Mock,
+    ) -> None:
+        """Test main handles pool close error gracefully."""
+        mock_health_instance = MagicMock()
+        mock_health_server.return_value = mock_health_instance
+
+        mock_pool = MagicMock()
+        mock_pool_class.return_value = mock_pool
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock(side_effect=Exception("Pool close failed"))
+
+        mock_connection_cm = AsyncMock()
+        mock_connection_cm.__aenter__ = AsyncMock(return_value=MagicMock())
+        mock_connection_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_pool.connection = MagicMock(return_value=mock_connection_cm)
+
+        mock_rabbitmq_instance = AsyncMock()
+        mock_rabbitmq_class.return_value = mock_rabbitmq_instance
+
+        mock_amqp_connection = AsyncMock()
+        mock_amqp_connection.__aenter__ = AsyncMock(return_value=mock_amqp_connection)
+        mock_amqp_connection.__aexit__ = AsyncMock(return_value=None)
+        mock_rabbitmq_instance.connect.return_value = mock_amqp_connection
+
+        mock_channel = AsyncMock()
+        mock_amqp_connection.channel = AsyncMock(return_value=mock_channel)
+
+        mock_queue = AsyncMock()
+        mock_channel.declare_queue.return_value = mock_queue
+
+        async def mock_wait_for(_coro: Any, timeout: float) -> None:  # noqa: ARG001
+            import brainztableinator.brainztableinator
+
+            brainztableinator.brainztableinator.shutdown_requested = True
+            raise TimeoutError()
+
+        original_sleep = asyncio.sleep
+
+        async def fast_sleep(delay: float) -> None:  # noqa: ARG001
+            await original_sleep(0)
+
+        created_tasks: list[asyncio.Task[Any]] = []
+        original_create_task = asyncio.create_task
+
+        def mock_create_task(coro: Any) -> asyncio.Task[Any]:
+            task = original_create_task(coro)
+            created_tasks.append(task)
+            return task
+
+        with (
+            patch("asyncio.sleep", side_effect=fast_sleep),
+            patch("asyncio.wait_for", mock_wait_for),
+            patch("asyncio.create_task", side_effect=mock_create_task),
+            patch("brainztableinator.brainztableinator.logger") as mock_logger,
+        ):
+            await main()
+
+        for task in created_tasks:
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+
+        # Should have logged warning about pool close error
+        warning_calls = [str(c) for c in mock_logger.warning.call_args_list]
+        assert any("pool" in c.lower() or "Pool" in c for c in warning_calls)
