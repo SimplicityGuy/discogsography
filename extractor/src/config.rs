@@ -19,6 +19,7 @@ pub struct ExtractorConfig {
     pub source: Source,
     pub musicbrainz_root: PathBuf,
     pub amqp_exchange_prefix: String,
+    pub musicbrainz_dump_url: String,
 }
 
 impl Default for ExtractorConfig {
@@ -37,6 +38,7 @@ impl Default for ExtractorConfig {
             source: Source::Discogs,
             musicbrainz_root: PathBuf::from("/musicbrainz-data"),
             amqp_exchange_prefix: "discogsography".to_string(),
+            musicbrainz_dump_url: "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string(),
         }
     }
 }
@@ -88,6 +90,9 @@ impl ExtractorConfig {
 
         let amqp_exchange_prefix = std::env::var("AMQP_EXCHANGE_PREFIX").unwrap_or_else(|_| "discogsography".to_string());
 
+        let musicbrainz_dump_url =
+            std::env::var("MUSICBRAINZ_DUMP_URL").unwrap_or_else(|_| "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string());
+
         Ok(Self {
             amqp_connection,
             discogs_root,
@@ -98,6 +103,7 @@ impl ExtractorConfig {
             source,
             musicbrainz_root,
             amqp_exchange_prefix,
+            musicbrainz_dump_url,
             ..Default::default()
         })
     }

@@ -29,6 +29,7 @@ fn test_config(root: &std::path::Path) -> ExtractorConfig {
         source: Source::Discogs,
         musicbrainz_root: std::path::PathBuf::from("/musicbrainz-data"),
         amqp_exchange_prefix: "discogsography".to_string(),
+        musicbrainz_dump_url: "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string(),
     }
 }
 
@@ -426,6 +427,7 @@ fn mb_test_config(mb_root: &std::path::Path) -> ExtractorConfig {
         source: Source::MusicBrainz,
         musicbrainz_root: mb_root.to_path_buf(),
         amqp_exchange_prefix: "discogsography-mb".to_string(),
+        musicbrainz_dump_url: "https://data.metabrainz.org/pub/musicbrainz/data/json-dumps/".to_string(),
     }
 }
 
