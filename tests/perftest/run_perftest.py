@@ -453,6 +453,49 @@ def build_test_plan(
             }
         )
 
+    # --- Network: multi-hop collaborators (requires resolved IDs) ---
+    for artist_name, artist_id in artist_ids.items():
+        if artist_id is None:
+            continue
+        tests.append(
+            {
+                "name": f"network-collaborators/{artist_name}/depth1",
+                "url": f"{base}/api/network/artist/{artist_id}/collaborators",
+                "params": {"depth": "1", "limit": "50"},
+            }
+        )
+        tests.append(
+            {
+                "name": f"network-collaborators/{artist_name}/depth2",
+                "url": f"{base}/api/network/artist/{artist_id}/collaborators",
+                "params": {"depth": "2", "limit": "50"},
+            }
+        )
+
+    # --- Network: artist centrality (requires resolved IDs) ---
+    for artist_name, artist_id in artist_ids.items():
+        if artist_id is None:
+            continue
+        tests.append(
+            {
+                "name": f"network-centrality/{artist_name}",
+                "url": f"{base}/api/network/artist/{artist_id}/centrality",
+                "params": None,
+            }
+        )
+
+    # --- Network: cluster detection (requires resolved IDs) ---
+    for artist_name, artist_id in artist_ids.items():
+        if artist_id is None:
+            continue
+        tests.append(
+            {
+                "name": f"network-cluster/{artist_name}",
+                "url": f"{base}/api/network/cluster/{artist_id}",
+                "params": {"limit": "50"},
+            }
+        )
+
     # --- Node Details (requires resolved IDs) ---
     for artist_name, artist_id in artist_ids.items():
         if artist_id is None:

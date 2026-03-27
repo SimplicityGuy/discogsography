@@ -58,10 +58,15 @@ async def artist_collaborators(
             return JSONResponse(content={"error": f"Artist '{artist_id}' not found"}, status_code=404)
 
         collaborators = await network_queries.get_multi_hop_collaborators(
-            _neo4j, artist_id, depth=depth, limit=limit,
+            _neo4j,
+            artist_id,
+            depth=depth,
+            limit=limit,
         )
         total = await network_queries.count_multi_hop_collaborators(
-            _neo4j, artist_id, depth=depth,
+            _neo4j,
+            artist_id,
+            depth=depth,
         )
     except Neo4jClientError as exc:
         if "TransactionTimedOut" in str(exc):

@@ -311,6 +311,7 @@ See [MusicBrainz Sync Guide](musicbrainz-sync.md) for operational instructions.
 - Collection timeline evolution (`/api/user/collection/timeline`, `/api/user/collection/evolution`)
 - Recommendation engine (`/api/recommend/similar/artist/{artist_id}` — find similar artists via shared genres/styles, `/api/recommend/explore/{entity_type}/{entity_id}` — explore-from-here discovery)
 - Collaborator network (`/api/collaborators/{artist_id}` — artists sharing releases, with temporal breakdown)
+- Collaboration network analysis (`/api/network/artist/{id}/collaborators` — multi-hop collaborator traversal, `/api/network/artist/{id}/centrality` — degree and collaboration centrality, `/api/network/cluster/{id}` — community detection via genre clustering)
 - Genre tree hierarchy (`/api/genre-tree` — genre/style tree derived from release co-occurrence)
 - Graph statistics (`/api/graph/stats` — aggregate node counts across all entity types)
 - MusicBrainz enrichment status (`/api/enrichment/status` — coverage statistics for MB-enriched entities)

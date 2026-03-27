@@ -10,6 +10,19 @@ Last Updated: 2026-03-25
 
 ## 🆕 Latest Improvements (March 2026)
 
+### 🕸️ Collaboration Network — Artist Connection Graph and Centrality (#99)
+
+**Overview**: Added three new `/api/network/` endpoints for collaboration network analysis — multi-hop collaborator traversal, centrality scoring, and community detection.
+
+#### Features
+
+- **Multi-hop collaborators** (`GET /api/network/artist/{id}/collaborators?depth=2&limit=50`): Traverses shared-release relationships up to 3 hops deep, returning collaborators ranked by distance and collaboration count.
+- **Centrality scores** (`GET /api/network/artist/{id}/centrality`): Computes degree centrality (total relationships), collaborator count, collaboration releases, group membership, and alias counts. Cached in Redis (1h TTL).
+- **Community detection** (`GET /api/network/cluster/{id}`): Detects communities around an artist by grouping shared-release neighbors by their primary genre. Cached in Redis (1h TTL).
+- **Performance tested**: All three endpoints added to the perftest suite with depth-1 and depth-2 collaborator variants.
+
+______________________________________________________________________
+
 ### 🤝 Collaborator Network and Genre Tree (#169)
 
 **Overview**: Added two new graph-powered features — a collaborator network endpoint that finds artists sharing releases with temporal breakdown, and a genre tree endpoint that derives a full genre/style hierarchy from release co-occurrence.

@@ -165,11 +165,13 @@ async def get_artist_cluster(
         genre = row.get("primary_genre") or "Unknown"
         if genre not in clusters:
             clusters[genre] = []
-        clusters[genre].append({
-            "artist_id": row["artist_id"],
-            "artist_name": row["artist_name"],
-            "shared_releases": row["shared_releases"],
-        })
+        clusters[genre].append(
+            {
+                "artist_id": row["artist_id"],
+                "artist_name": row["artist_name"],
+                "shared_releases": row["shared_releases"],
+            }
+        )
 
     return [
         {"cluster_label": genre, "members": members, "size": len(members)}
