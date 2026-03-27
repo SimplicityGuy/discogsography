@@ -151,6 +151,41 @@ class GraphinatorConfig:
 
 
 @dataclass(frozen=True)
+class BrainzgraphinatorConfig:
+    """Configuration for the brainzgraphinator service."""
+
+    amqp_connection: str
+    neo4j_host: str
+    neo4j_username: str
+    neo4j_password: str
+
+    @classmethod
+    def from_env(cls) -> "BrainzgraphinatorConfig":
+        """Create configuration from environment variables."""
+        amqp_connection = _build_amqp_url()
+        neo4j_username = getenv("NEO4J_USERNAME")
+        neo4j_password = get_secret("NEO4J_PASSWORD")
+
+        missing_vars = []
+        if not getenv("NEO4J_HOST"):
+            missing_vars.append("NEO4J_HOST")
+        if not neo4j_username:
+            missing_vars.append("NEO4J_USERNAME")
+        if not neo4j_password:
+            missing_vars.append("NEO4J_PASSWORD")
+
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        return cls(
+            amqp_connection=amqp_connection,
+            neo4j_host=_build_neo4j_uri(),
+            neo4j_username=cast("str", neo4j_username),
+            neo4j_password=cast("str", neo4j_password),
+        )
+
+
+@dataclass(frozen=True)
 class TableinatorConfig:
     """Configuration for the tableinator service."""
 
@@ -190,6 +225,46 @@ class TableinatorConfig:
         )
 
 
+@dataclass(frozen=True)
+class BrainztableinatorConfig:
+    """Configuration for the brainztableinator service."""
+
+    amqp_connection: str
+    postgres_host: str
+    postgres_username: str
+    postgres_password: str
+    postgres_database: str
+
+    @classmethod
+    def from_env(cls) -> "BrainztableinatorConfig":
+        """Create configuration from environment variables."""
+        amqp_connection = _build_amqp_url()
+        postgres_username = getenv("POSTGRES_USERNAME")
+        postgres_password = get_secret("POSTGRES_PASSWORD")
+        postgres_database = getenv("POSTGRES_DATABASE")
+
+        missing_vars = []
+        if not getenv("POSTGRES_HOST"):
+            missing_vars.append("POSTGRES_HOST")
+        if not postgres_username:
+            missing_vars.append("POSTGRES_USERNAME")
+        if not postgres_password:
+            missing_vars.append("POSTGRES_PASSWORD")
+        if not postgres_database:
+            missing_vars.append("POSTGRES_DATABASE")
+
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        return cls(
+            amqp_connection=amqp_connection,
+            postgres_host=_build_postgres_connstr(),
+            postgres_username=cast("str", postgres_username),
+            postgres_password=cast("str", postgres_password),
+            postgres_database=cast("str", postgres_database),
+        )
+
+
 # AMQP Configuration shared across all services
 AMQP_EXCHANGE_PREFIX = "discogsography"
 AMQP_EXCHANGE_TYPE = "fanout"  # Fanout exchanges for decoupled pub/sub
@@ -198,6 +273,12 @@ AMQP_QUEUE_PREFIX_TABLEINATOR = "discogsography-tableinator"
 
 # Data types that will be processed
 DATA_TYPES = ["artists", "labels", "masters", "releases"]
+
+# MusicBrainz AMQP configuration
+MUSICBRAINZ_EXCHANGE_PREFIX = "musicbrainz"
+AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR = "musicbrainz-brainzgraphinator"
+AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR = "musicbrainz-brainztableinator"
+MUSICBRAINZ_DATA_TYPES = ["artists", "labels", "releases"]
 
 
 def orjson_serializer(msg: dict[str, Any], **_kwargs: Any) -> str:

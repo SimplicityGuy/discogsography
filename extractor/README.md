@@ -1,11 +1,10 @@
 # Extractor
 
-High-performance Rust-based Discogs data extractor for the Discogsography platform.
+High-performance Rust-based data extractor for the Discogsography platform, supporting both Discogs and MusicBrainz data sources.
 
 ## Overview
 
-Extractor is a high-performance Rust service that streams and parses Discogs XML data dumps, sending processed
-records to RabbitMQ for consumption by downstream services (Graphinator and Tableinator).
+Extractor is a high-performance Rust service that streams and parses Discogs XML data dumps and MusicBrainz JSONL database dumps, sending processed records to RabbitMQ for consumption by downstream services (Graphinator and Tableinator).
 
 ## Features
 
@@ -330,15 +329,63 @@ The main entry point `process_discogs_data()` accepts trait objects (`&mut dyn D
 | ------------------ | ------------------------------------------------------------------------------------------------------------------- |
 | `lib.rs`           | Library crate root — re-exports all public modules for integration testing                                           |
 | `main.rs`          | Entry point, CLI args, health server, periodic check loop                                                           |
-| `extractor.rs`     | Core orchestration: download → parse → publish pipeline                                                             |
-| `downloader.rs`    | S3 file discovery, download with retry, checksum validation                                                         |
+| `extractor.rs`     | Core orchestration: download → parse → publish pipeline (Discogs and MusicBrainz)                                   |
+| `discogs_downloader.rs` | S3 file discovery, download with retry, checksum validation (Discogs mode)                                     |
+| `musicbrainz_downloader.rs` | Local dump file discovery and version detection (MusicBrainz mode)                                          |
 | `parser.rs`        | Streaming XML parser using quick-xml (artists, labels, masters, releases)                                           |
+| `jsonl_parser.rs`  | MusicBrainz JSONL parser — xz decompression, record parsing, MBID→Discogs ID mapping, relation enrichment          |
 | `message_queue.rs` | AMQP connection management, exchange declaration, batch publishing                                                  |
 | `state_marker.rs`  | Version-specific progress tracking, resume decisions                                                                |
 | `rules.rs`         | Data quality rule engine — YAML loading, compilation, condition evaluation, flagged record writing, quality reports |
 | `types.rs`         | Data types (DataType, DataMessage, Message, S3FileInfo, etc.)                                                       |
 | `config.rs`        | Environment variable configuration                                                                                  |
 | `health.rs`        | HTTP health/metrics/readiness endpoints                                                                             |
+
+## MusicBrainz Mode
+
+The extractor supports parsing MusicBrainz JSONL database dumps in addition to Discogs XML dumps.
+
+### Usage
+
+```bash
+# Discogs mode (default)
+extractor --source discogs
+
+# MusicBrainz mode
+extractor --source musicbrainz
+```
+
+### Environment Variables (MusicBrainz)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EXTRACTOR_SOURCE` | `discogs` | Data source: `discogs` or `musicbrainz` |
+| `MUSICBRAINZ_ROOT` | `/musicbrainz-data` | Directory containing MB JSONL dump files |
+| `AMQP_EXCHANGE_PREFIX` | `discogsography` | Exchange name prefix (`musicbrainz` for MB mode) |
+
+### MusicBrainz Dump Files
+
+Place xz-compressed JSONL dump files in the `MUSICBRAINZ_ROOT` directory:
+- `artist.jsonl.xz`
+- `label.jsonl.xz`
+- `release.jsonl.xz`
+
+### Fanout Exchanges
+
+In MusicBrainz mode, the extractor publishes to:
+- `musicbrainz-artists`
+- `musicbrainz-labels`
+- `musicbrainz-releases`
+
+### Two-Pass Processing
+
+For artist data, the extractor performs two passes:
+1. **First pass**: Builds an MBID→Discogs ID lookup map by scanning URL relationships
+2. **Second pass**: Parses full records and enriches relationship targets with resolved Discogs IDs
+
+### State Markers
+
+Progress is tracked via `.mb_extraction_status_{version}.json` files, separate from Discogs markers.
 
 ## Logging
 
@@ -373,8 +420,8 @@ Set the `LOG_LEVEL` environment variable to control logging verbosity:
 
 Extractor integrates with the Discogsography platform:
 
-- Publishes to 4 RabbitMQ fanout exchanges (one per data type) consumed by Graphinator (Neo4j) and Tableinator (PostgreSQL)
-- Supports all four data types: artists, labels, masters, releases
+- **Discogs mode**: Publishes to 4 RabbitMQ fanout exchanges (artists, labels, masters, releases) consumed by Graphinator (Neo4j) and Tableinator (PostgreSQL)
+- **MusicBrainz mode**: Publishes to 3 RabbitMQ fanout exchanges (artists, labels, releases) with MBID→Discogs ID cross-referencing
 - Provides HTTP health, metrics, and readiness endpoints
 
 ## License

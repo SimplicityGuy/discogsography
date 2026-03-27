@@ -266,6 +266,46 @@ jobs:
           verbose: false
 
   # ============================================================================
+  # BRAINZGRAPHINATOR SERVICE TESTS - Runs in parallel with all other test jobs
+  # ============================================================================
+  test-brainzgraphinator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "🔀 Checkout repository"
+        uses: actions/checkout@v6
+
+      - name: "🔧 Setup Python and UV"
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: "🔧 Setup Just"
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "📦 Install dependencies"
+        run: just install
+
+      - name: "🧪 Run brainzgraphinator tests"
+        run: just test-brainzgraphinator
+
+      - name: "📊 Upload coverage (brainzgraphinator)"
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./coverage.xml
+          flags: brainzgraphinator
+          name: brainzgraphinator-tests
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
+
+  # ============================================================================
   # GRAPHINATOR SERVICE TESTS - Runs in parallel with all other test jobs
   # ============================================================================
   test-graphinator:
@@ -381,6 +421,46 @@ jobs:
           files: ./coverage.xml
           flags: tableinator
           name: tableinator-tests
+          fail_ci_if_error: false
+          disable_search: true
+          verbose: false
+
+  # ============================================================================
+  # BRAINZTABLEINATOR SERVICE TESTS - Runs in parallel with all other test jobs
+  # ============================================================================
+  test-brainztableinator:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: "🔀 Checkout repository"
+        uses: actions/checkout@v6
+
+      - name: "🔧 Setup Python and UV"
+        uses: ./.github/actions/setup-python-uv
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: "🔧 Setup Just"
+        uses: extractions/setup-just@f8a3cce218d9f83db3a2ecd90e41ac3de6cdfd9b # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: "📦 Install dependencies"
+        run: just install
+
+      - name: "🧪 Run brainztableinator tests"
+        run: just test-brainztableinator
+
+      - name: "📊 Upload coverage (brainztableinator)"
+        if: always()
+        uses: codecov/codecov-action@v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          slug: SimplicityGuy/discogsography
+          files: ./coverage.xml
+          flags: brainztableinator
+          name: brainztableinator-tests
           fail_ci_if_error: false
           disable_search: true
           verbose: false

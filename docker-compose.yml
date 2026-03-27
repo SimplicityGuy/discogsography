@@ -280,14 +280,15 @@ services:
     tmpfs:
       - /tmp
 
-  # Rust-based extractor service
-  extractor:
+  # Rust-based extractor service for Discogs data
+  extractor-discogs:
     build:
       context: .
       dockerfile: extractor/Dockerfile
     image: discogsography/extractor:latest
-    container_name: discogsography-extractor
-    hostname: extractor
+    container_name: discogsography-extractor-discogs
+    hostname: extractor-discogs
+    command: ["--source", "discogs"]
     user: "1000:1000"
     environment:
       DISCOGS_ROOT: /discogs-data
@@ -303,6 +304,46 @@ services:
       - discogs_data:/discogs-data
       - extractor_logs:/logs
       - ./extractor/extraction-rules.yaml:/discogs-data/extraction-rules.yaml:ro
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  # Rust-based extractor service for MusicBrainz data
+  extractor-musicbrainz:
+    build:
+      context: .
+      dockerfile: extractor/Dockerfile
+    image: discogsography/extractor:latest
+    container_name: discogsography-extractor-musicbrainz
+    hostname: extractor-musicbrainz
+    command: ["--source", "musicbrainz"]
+    user: "1000:1000"
+    environment:
+      LOG_LEVEL: info
+      MUSICBRAINZ_ROOT: /musicbrainz-data
+      AMQP_EXCHANGE_PREFIX: musicbrainz
+      PERIODIC_CHECK_DAYS: "7"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PASSWORD: discogsography
+      RABBITMQ_USERNAME: discogsography
+      STARTUP_DELAY: "30"
+    volumes:
+      - musicbrainz_data:/musicbrainz-data
+      - extractor_logs:/logs
     depends_on:
       rabbitmq:
         condition: service_healthy
@@ -376,6 +417,61 @@ services:
     volumes:
       - graphinator_logs:/logs
 
+  # Brainzgraphinator service — MusicBrainz Neo4j enrichment
+  brainzgraphinator:
+    build:
+      context: .
+      dockerfile: brainzgraphinator/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: discogsography/brainzgraphinator:latest
+    container_name: discogsography-brainzgraphinator
+    hostname: brainzgraphinator
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      CONSUMER_CANCEL_DELAY: "300"
+      LOG_LEVEL: INFO
+      NEO4J_BATCH_FLUSH_INTERVAL: "2.0"
+      NEO4J_BATCH_MODE: "true"
+      NEO4J_BATCH_SIZE: "500"
+      NEO4J_HOST: neo4j
+      NEO4J_PASSWORD: discogsography
+      NEO4J_USERNAME: neo4j
+      PYTHONUNBUFFERED: "1"
+      QUEUE_CHECK_INTERVAL: "3600"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PASSWORD: discogsography
+      RABBITMQ_USERNAME: discogsography
+      STARTUP_DELAY: "20"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8011/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - brainzgraphinator_logs:/logs
+
   # Tableinator service
   tableinator:
     build:
@@ -431,6 +527,62 @@ services:
       - /tmp
     volumes:
       - tableinator_logs:/logs
+
+  # Brainztableinator service (MusicBrainz data to PostgreSQL)
+  brainztableinator:
+    build:
+      context: .
+      dockerfile: brainztableinator/Dockerfile
+      args:
+        PYTHON_VERSION: ${PYTHON_VERSION:-3.13}
+        UID: ${UID:-1000}
+        GID: ${GID:-1000}
+    image: discogsography/brainztableinator:latest
+    container_name: discogsography-brainztableinator
+    hostname: brainztableinator
+    user: "${UID:-1000}:${GID:-1000}"
+    environment:
+      CONSUMER_CANCEL_DELAY: "300"     # 5 minutes before canceling idle consumers
+      LOG_LEVEL: INFO
+      POSTGRES_BATCH_FLUSH_INTERVAL: "2.0"  # Reduced from 5.0 for faster flushing
+      POSTGRES_BATCH_MODE: "true"
+      POSTGRES_BATCH_SIZE: "500"          # Increased from 100 to 500
+      POSTGRES_DATABASE: discogsography
+      POSTGRES_HOST: postgres
+      POSTGRES_PASSWORD: discogsography
+      POSTGRES_USERNAME: discogsography
+      PYTHONUNBUFFERED: "1"
+      QUEUE_CHECK_INTERVAL: "3600"      # 1 hour between queue checks when idle
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PASSWORD: discogsography
+      RABBITMQ_USERNAME: discogsography
+      STARTUP_DELAY: "25"
+    depends_on:
+      schema-init:
+        condition: service_completed_successfully
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - discogsography
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:8010/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: on-failure
+    logging: *default-logging
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - brainztableinator_logs:/logs
 
   # Dashboard service
   dashboard:
@@ -610,7 +762,10 @@ volumes:
   schema_init_logs:
   api_logs:
   graphinator_logs:
+  brainzgraphinator_logs:
   tableinator_logs:
   dashboard_logs:
   explore_logs:
+  brainztableinator_logs:
   insights_logs:
+  musicbrainz_data:

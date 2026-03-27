@@ -766,19 +766,10 @@ rules:
     let (validated_sender, mut validated_receiver) = mpsc::channel::<DataMessage>(10);
 
     // Message 1: valid
-    let msg1 = DataMessage {
-        id: "1".to_string(),
-        sha256: "a".to_string(),
-        data: serde_json::json!({"title": "Good Album", "year": "2000"}),
-        raw_xml: None,
-    };
+    let msg1 =
+        DataMessage { id: "1".to_string(), sha256: "a".to_string(), data: serde_json::json!({"title": "Good Album", "year": "2000"}), raw_xml: None };
     // Message 2: missing title (error) + year out of range (warning)
-    let msg2 = DataMessage {
-        id: "2".to_string(),
-        sha256: "b".to_string(),
-        data: serde_json::json!({"year": "1800"}),
-        raw_xml: None,
-    };
+    let msg2 = DataMessage { id: "2".to_string(), sha256: "b".to_string(), data: serde_json::json!({"year": "1800"}), raw_xml: None };
     // Message 3: has title, year ok
     let msg3 = DataMessage {
         id: "3".to_string(),
@@ -828,12 +819,7 @@ rules:
     let (validated_sender, mut validated_receiver) = mpsc::channel::<DataMessage>(10);
 
     let raw_xml = b"<artist><profile>test</profile></artist>".to_vec();
-    let msg = DataMessage {
-        id: "77".to_string(),
-        sha256: "xyz".to_string(),
-        data: serde_json::json!({"profile": "test"}),
-        raw_xml: Some(raw_xml),
-    };
+    let msg = DataMessage { id: "77".to_string(), sha256: "xyz".to_string(), data: serde_json::json!({"profile": "test"}), raw_xml: Some(raw_xml) };
     parse_sender.send(msg).await.unwrap();
     drop(parse_sender);
 
@@ -937,9 +923,7 @@ async fn test_wait_for_trigger_returns_when_triggered() {
     let trigger = Arc::new(std::sync::Mutex::new(None::<bool>));
     let trigger_clone = trigger.clone();
 
-    let handle = tokio::spawn(async move {
-        wait_for_trigger(&trigger_clone).await
-    });
+    let handle = tokio::spawn(async move { wait_for_trigger(&trigger_clone).await });
 
     // Advance past a few polling intervals — should NOT return yet
     tokio::time::advance(Duration::from_secs(2)).await;
@@ -985,9 +969,7 @@ async fn test_wait_for_trigger_only_fires_once() {
 
     // Second call should block — spawn it and verify it doesn't complete
     let trigger_clone = trigger.clone();
-    let handle = tokio::spawn(async move {
-        wait_for_trigger(&trigger_clone).await
-    });
+    let handle = tokio::spawn(async move { wait_for_trigger(&trigger_clone).await });
 
     tokio::time::advance(Duration::from_secs(2)).await;
     tokio::task::yield_now().await;

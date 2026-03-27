@@ -195,7 +195,7 @@ services:
         delay: 5s
         max_attempts: 3
 
-  extractor:
+  extractor-discogs:
     restart: always
     environment:
       RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password

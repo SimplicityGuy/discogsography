@@ -109,3 +109,40 @@ fn test_extraction_progress_large_numbers() {
 
     assert_eq!(progress.total(), 4_250_000);
 }
+
+#[test]
+fn test_source_display_and_from_str() {
+    use extractor::types::Source;
+    use std::str::FromStr;
+
+    // Display
+    assert_eq!(format!("{}", Source::Discogs), "discogs");
+    assert_eq!(format!("{}", Source::MusicBrainz), "musicbrainz");
+
+    // FromStr
+    assert_eq!(Source::from_str("discogs").unwrap(), Source::Discogs);
+    assert_eq!(Source::from_str("musicbrainz").unwrap(), Source::MusicBrainz);
+    assert_eq!(Source::from_str("DISCOGS").unwrap(), Source::Discogs);
+    assert!(Source::from_str("invalid").is_err());
+}
+
+#[test]
+fn test_source_serde_roundtrip() {
+    use extractor::types::Source;
+
+    for source in [Source::Discogs, Source::MusicBrainz] {
+        let json = serde_json::to_string(&source).unwrap();
+        let roundtripped: Source = serde_json::from_str(&json).unwrap();
+        assert_eq!(roundtripped, source);
+    }
+}
+
+#[test]
+fn test_musicbrainz_types_excludes_masters() {
+    let mb_types = DataType::musicbrainz_types();
+    assert_eq!(mb_types.len(), 3);
+    assert!(mb_types.contains(&DataType::Artists));
+    assert!(mb_types.contains(&DataType::Labels));
+    assert!(mb_types.contains(&DataType::Releases));
+    assert!(!mb_types.contains(&DataType::Masters));
+}
