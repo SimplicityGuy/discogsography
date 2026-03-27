@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 import httpx
 import pytest
 
-from dashboard.dashboard import DashboardApp, DatabaseInfo, QueueInfo, ServiceStatus, SystemMetrics
+from dashboard.dashboard import PIPELINE_CONFIGS, DashboardApp, DatabaseInfo, QueueInfo, ServiceStatus, SystemMetrics
 
 
 class TestDashboardAppInit:
@@ -207,7 +207,7 @@ class TestDashboardAppMetrics:
             # Mock the collection methods
             mock_services = [
                 ServiceStatus(
-                    name="extractor",
+                    name="extractor-discogs",
                     status="healthy",
                     last_seen=datetime.now(),
                     current_task="processing",
@@ -236,8 +236,9 @@ class TestDashboardAppMetrics:
                 metrics = await app.collect_all_metrics()
 
                 assert isinstance(metrics, SystemMetrics)
-                assert metrics.services == mock_services
-                assert metrics.queues == mock_queues
+                assert "discogs" in metrics.pipelines
+                assert metrics.pipelines["discogs"].services == mock_services
+                assert metrics.pipelines["discogs"].queues == mock_queues
                 assert metrics.databases == mock_databases
                 assert metrics.timestamp is not None
 
@@ -249,7 +250,7 @@ class TestDashboardAppMetrics:
         with patch("dashboard.dashboard.get_config", return_value=mock_config):
             app = DashboardApp()
 
-            mock_metrics = SystemMetrics(services=[], queues=[], databases=[], timestamp=datetime.now())
+            mock_metrics = SystemMetrics(pipelines={}, databases=[], timestamp=datetime.now())
 
             call_count = 0
 
@@ -321,7 +322,7 @@ class TestDashboardAppBroadcast:
             app.websocket_connections.add(mock_ws1)
             app.websocket_connections.add(mock_ws2)
 
-            metrics = SystemMetrics(services=[], queues=[], databases=[], timestamp=datetime.now())
+            metrics = SystemMetrics(pipelines={}, databases=[], timestamp=datetime.now())
 
             await app.broadcast_metrics(metrics)
 
@@ -337,7 +338,7 @@ class TestDashboardAppBroadcast:
         with patch("dashboard.dashboard.get_config", return_value=mock_config):
             app = DashboardApp()
 
-            metrics = SystemMetrics(services=[], queues=[], databases=[], timestamp=datetime.now())
+            metrics = SystemMetrics(pipelines={}, databases=[], timestamp=datetime.now())
 
             # Should complete without error
             await app.broadcast_metrics(metrics)
@@ -358,7 +359,7 @@ class TestDashboardAppBroadcast:
             app.websocket_connections.add(mock_ws_working)
             app.websocket_connections.add(mock_ws_failing)
 
-            metrics = SystemMetrics(services=[], queues=[], databases=[], timestamp=datetime.now())
+            metrics = SystemMetrics(pipelines={}, databases=[], timestamp=datetime.now())
 
             await app.broadcast_metrics(metrics)
 
@@ -398,9 +399,9 @@ class TestDashboardAppDataCollection:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                statuses = await app.get_service_statuses()
+                statuses = await app.get_service_statuses(PIPELINE_CONFIGS["discogs"]["services"])
 
-                # Should have 3 services (extractor, graphinator, tableinator)
+                # Should have 3 services (extractor-discogs, graphinator, tableinator)
                 assert len(statuses) == 3
 
                 # All should be healthy
@@ -443,7 +444,7 @@ class TestDashboardAppDataCollection:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                statuses = await app.get_service_statuses()
+                statuses = await app.get_service_statuses(PIPELINE_CONFIGS["discogs"]["services"])
 
                 assert len(statuses) == 3
                 assert statuses[0].status == "healthy"
@@ -509,7 +510,7 @@ class TestDashboardAppDataCollection:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                queues = await app.get_queue_info()
+                queues = await app.get_queue_info("discogsography")
 
                 # Should only have 2 queues (discogsography prefix)
                 assert len(queues) == 2
@@ -527,7 +528,7 @@ class TestDashboardAppDataCollection:
             app = DashboardApp()
             # No rabbitmq connection
 
-            queues = await app.get_queue_info()
+            queues = await app.get_queue_info("discogsography")
 
             # Should return empty list
             assert queues == []
@@ -558,7 +559,7 @@ class TestDashboardAppDataCollection:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                queues = await app.get_queue_info()
+                queues = await app.get_queue_info("discogsography")
 
                 # Should return empty list and log warning
                 assert queues == []
@@ -590,7 +591,7 @@ class TestDashboardAppDataCollection:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                queues = await app.get_queue_info()
+                queues = await app.get_queue_info("discogsography")
 
                 # Should return empty list and log warning
                 assert queues == []
@@ -620,7 +621,7 @@ class TestDashboardAppDataCollection:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                queues = await app.get_queue_info()
+                queues = await app.get_queue_info("discogsography")
 
                 # Should return empty list and log debug
                 assert queues == []
@@ -650,7 +651,7 @@ class TestDashboardAppDataCollection:
                 mock_client.__aexit__ = AsyncMock(return_value=None)
                 mock_client_class.return_value = mock_client
 
-                queues = await app.get_queue_info()
+                queues = await app.get_queue_info("discogsography")
 
                 # Should return empty list and log error
                 assert queues == []
@@ -936,8 +937,7 @@ class TestFastAPIEndpoints:
         from dashboard.dashboard import get_metrics
 
         mock_metrics = SystemMetrics(
-            services=[],
-            queues=[],
+            pipelines={},
             databases=[],
             timestamp=datetime.now(UTC),
         )
@@ -963,8 +963,7 @@ class TestFastAPIEndpoints:
         from dashboard.dashboard import get_metrics
 
         mock_metrics = SystemMetrics(
-            services=[],
-            queues=[],
+            pipelines={},
             databases=[],
             timestamp=datetime.now(UTC),
         )
@@ -1009,7 +1008,7 @@ class TestFastAPIEndpoints:
 
         mock_services = [
             ServiceStatus(
-                name="extractor",
+                name="extractor-discogs",
                 status="healthy",
                 last_seen=datetime.now(UTC),
                 current_task=None,
@@ -1029,8 +1028,9 @@ class TestFastAPIEndpoints:
                 response = client.get("/api/services")
                 assert response.status_code == 200
                 data = response.json()
-                assert len(data) == 1
-                assert data[0]["name"] == "extractor"
+                assert isinstance(data, dict)
+                assert "discogs" in data
+                assert data["discogs"][0]["name"] == "extractor-discogs"
 
     @pytest.mark.asyncio
     async def test_get_queues(self) -> None:
@@ -1063,8 +1063,9 @@ class TestFastAPIEndpoints:
                 response = client.get("/api/queues")
                 assert response.status_code == 200
                 data = response.json()
-                assert len(data) == 1
-                assert data[0]["name"] == "discogsography.artists"
+                assert isinstance(data, dict)
+                assert "discogs" in data
+                assert data["discogs"][0]["name"] == "discogsography.artists"
 
     @pytest.mark.asyncio
     async def test_get_databases(self) -> None:
@@ -1129,8 +1130,7 @@ class TestWebSocketEndpoint:
         mock_dashboard_instance = Mock()
         mock_dashboard_instance.websocket_connections = set()
         mock_dashboard_instance.latest_metrics = SystemMetrics(
-            services=[],
-            queues=[],
+            pipelines={},
             databases=[],
             timestamp=datetime.now(UTC),
         )

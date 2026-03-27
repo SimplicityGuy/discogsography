@@ -94,7 +94,7 @@ class TestDashboardAPI:
 
             response = test_client.get("/api/services")
             assert response.status_code == 200
-            assert response.json() == []
+            assert response.json() == {}
 
     def test_queues_endpoint_without_dashboard(
         self,
@@ -117,7 +117,7 @@ class TestDashboardAPI:
 
             response = test_client.get("/api/queues")
             assert response.status_code == 200
-            assert response.json() == []
+            assert response.json() == {}
 
     def test_databases_endpoint_without_dashboard(
         self,
