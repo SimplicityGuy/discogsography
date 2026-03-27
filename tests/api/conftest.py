@@ -226,9 +226,11 @@ def test_client(
     _nlq_router.configure(NLQConfig(), None, mock_redis)
 
     import api.routers.musicbrainz as _musicbrainz_router
+    import api.routers.network as _network_router
     import api.routers.rarity as _rarity_router
 
     _musicbrainz_router.configure(mock_pool, mock_neo4j)
+    _network_router.configure(mock_neo4j, mock_redis)
     _rarity_router.configure(mock_neo4j, mock_pool, mock_redis)
 
     # Set up metrics buffer so the metrics middleware records requests
