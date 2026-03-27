@@ -39,6 +39,7 @@ from api.queries.search_queries import ALL_TYPES, execute_search
 import api.routers.admin as _admin_router
 import api.routers.auth as _auth_router
 import api.routers.collection as _collection_router
+import api.routers.credits as _credits_router
 import api.routers.explore as _explore_router
 import api.routers.insights as _insights_router
 import api.routers.insights_compute as _insights_compute_router
@@ -245,6 +246,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     _user_router.configure(_neo4j, jwt_secret_for_neo4j)
     _taste_router.configure(_neo4j, jwt_secret_for_neo4j)
     _collection_router.configure(_neo4j, _pool, jwt_secret_for_neo4j)
+    _credits_router.configure(_neo4j, _redis)
     _label_dna_router.configure(_neo4j, _redis)
     _recommend_router.configure(_neo4j, jwt_secret_for_neo4j, _redis)
     _search_router.configure(_pool, _redis)
@@ -377,6 +379,7 @@ app.include_router(_sync_router.router)
 app.include_router(_explore_router.router)
 app.include_router(_insights_router.router)
 app.include_router(_insights_compute_router.router)
+app.include_router(_credits_router.router)
 app.include_router(_label_dna_router.router)
 app.include_router(_search_router.router)
 app.include_router(_snapshot_router.router)

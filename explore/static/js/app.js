@@ -825,6 +825,8 @@ class ExploreApp {
             this.userPanes.loadRecommendations();
         } else if (pane === 'genres' && window.genreTreeView) {
             window.genreTreeView.load();
+        } else if (pane === 'credits' && window.creditsPanel) {
+            window.creditsPanel.load();
         }
     }
 

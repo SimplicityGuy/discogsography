@@ -13,6 +13,7 @@ Shared utilities and configuration for all discogsography services.
 - `db_resilience.py`: Shared retry/backoff primitives (`CircuitBreaker`, `ExponentialBackoff`) used by the database drivers
 - `oauth.py`: OAuth 1.0a signing utilities (HMAC-SHA1 signatures, Authorization header building)
 - `query_debug.py`: Query debug logging and database profiling utilities — provides `is_debug()`, `is_db_profiling()`, `log_cypher_query()`, `log_sql_query()`, and `execute_sql()` for debug-level query logging, plus optional `PROFILE`/`EXPLAIN` result logging to a dedicated profiling log file (`/logs/profiling.log`) when `DB_PROFILING=true`
+- `credit_roles.py`: Credit role taxonomy mapping Discogs `extraartists` roles to high-level categories (`production`, `engineering`, `mastering`, `session`, `design`, `management`, `other`). Used by the graphinator during ingestion and the credits API for role-based queries. Provides `categorize_role()`, `ROLE_CATEGORIES`, and `ALL_CATEGORIES`.
 - `state_marker.py`: Extraction state marker system for tracking progress and enabling safe restarts
 
 ### Key Constants (`__init__.py`)

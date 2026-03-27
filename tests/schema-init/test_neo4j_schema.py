@@ -52,6 +52,7 @@ class TestSchemaStatements:
             "release_id",
             "genre_name",
             "style_name",
+            "person_name",
         }
 
     def test_sha256_indexes_present(self) -> None:
@@ -70,7 +71,15 @@ class TestSchemaStatements:
             "artist_name_fulltext",
             "release_title_fulltext",
             "label_name_fulltext",
+            "person_name_fulltext",
         }
+
+    def test_person_schema_present(self) -> None:
+        """Verify Person node schema objects exist."""
+        names = {n for n, _ in SCHEMA_STATEMENTS}
+        assert "person_name" in names, "Person unique constraint missing"
+        assert "person_credit_count" in names, "Person credit_count index missing"
+        assert "person_name_fulltext" in names, "Person fulltext index missing"
 
     def test_constraints_listed_before_range_indexes(self) -> None:
         """Constraints must come first so their backing indexes exist before
@@ -86,8 +95,8 @@ class TestSchemaStatements:
         assert constraint_max < first_non_constraint, "All CONSTRAINT statements must appear before INDEX statements"
 
     def test_total_statement_count(self) -> None:
-        # 7 constraints + 10 range indexes + 3 MBID indexes + 5 fulltext = 25
-        assert len(SCHEMA_STATEMENTS) == 25
+        # 8 constraints + 11 range indexes + 3 MBID indexes + 6 fulltext = 28
+        assert len(SCHEMA_STATEMENTS) == 28
 
 
 class TestCreateNeo4jSchema:

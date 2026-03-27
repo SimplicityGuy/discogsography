@@ -53,6 +53,10 @@ SCHEMA_STATEMENTS: list[tuple[str, str]] = [
         "user_id",
         "CREATE CONSTRAINT user_id IF NOT EXISTS FOR (u:User) REQUIRE u.id IS UNIQUE",
     ),
+    (
+        "person_name",
+        "CREATE CONSTRAINT person_name IF NOT EXISTS FOR (p:Person) REQUIRE p.name IS UNIQUE",
+    ),
     # ── Range indexes ─────────────────────────────────────────────────────────
     # sha256 indexes retained for efficient MERGE operations during ingestion.
     (
@@ -101,6 +105,11 @@ SCHEMA_STATEMENTS: list[tuple[str, str]] = [
         "style_first_year_index",
         "CREATE INDEX style_first_year_index IF NOT EXISTS FOR (s:Style) ON (s.first_year)",
     ),
+    # Person credit_count index for fast "top credited people" leaderboard queries.
+    (
+        "person_credit_count",
+        "CREATE INDEX person_credit_count IF NOT EXISTS FOR (p:Person) ON (p.credit_count)",
+    ),
     # ── Fulltext indexes ──────────────────────────────────────────────────────
     # Used by explore for autocomplete and full-text search.
     (
@@ -122,6 +131,10 @@ SCHEMA_STATEMENTS: list[tuple[str, str]] = [
     (
         "style_name_fulltext",
         "CREATE FULLTEXT INDEX style_name_fulltext IF NOT EXISTS FOR (n:Style) ON EACH [n.name]",
+    ),
+    (
+        "person_name_fulltext",
+        "CREATE FULLTEXT INDEX person_name_fulltext IF NOT EXISTS FOR (n:Person) ON EACH [n.name]",
     ),
     # ── MusicBrainz MBID indexes ─────────────────────────────────────────────
     # Used by brainzgraphinator for efficient lookups when enriching nodes

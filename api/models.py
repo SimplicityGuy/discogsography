@@ -663,3 +663,125 @@ class HealthHistoryResponse(BaseModel):
     granularity: str
     services: dict[str, Any]
     api_endpoints: dict[str, Any]
+
+
+# ── Credits & Provenance models ──────────────────────────────────────────────
+
+
+class CreditEntry(BaseModel):
+    """A single credit on a release."""
+
+    release_id: str
+    title: str
+    year: int | None = None
+    role: str
+    category: str
+    artists: list[str] = Field(default_factory=list)
+    labels: list[str] = Field(default_factory=list)
+
+
+class PersonCreditsResponse(BaseModel):
+    """All credits for a person, grouped by role."""
+
+    name: str
+    total_credits: int
+    credits: list[CreditEntry]
+
+
+class TimelineEntry(BaseModel):
+    """Year-by-year credit activity entry."""
+
+    year: int
+    category: str
+    count: int
+
+
+class PersonTimelineResponse(BaseModel):
+    """Timeline of a person's credit activity."""
+
+    name: str
+    timeline: list[TimelineEntry]
+
+
+class ReleaseCreditEntry(BaseModel):
+    """A credited person on a release."""
+
+    name: str
+    role: str
+    category: str
+    artist_id: str | None = None
+    artist_name: str | None = None
+
+
+class ReleaseCreditsResponse(BaseModel):
+    """Full credits breakdown for a release."""
+
+    release_id: str
+    credits: list[ReleaseCreditEntry]
+
+
+class LeaderboardEntry(BaseModel):
+    """A person in the role leaderboard."""
+
+    name: str
+    credit_count: int
+
+
+class RoleLeaderboardResponse(BaseModel):
+    """Top credited people for a given role category."""
+
+    category: str
+    entries: list[LeaderboardEntry]
+
+
+class SharedCreditEntry(BaseModel):
+    """A release where two people are both credited."""
+
+    release_id: str
+    title: str
+    year: int | None = None
+    person1_role: str
+    person2_role: str
+    artists: list[str] = Field(default_factory=list)
+
+
+class SharedCreditsResponse(BaseModel):
+    """Releases where two people are both credited."""
+
+    person1: str
+    person2: str
+    shared_releases: list[SharedCreditEntry]
+
+
+class ConnectionEntry(BaseModel):
+    """A person connected through shared releases."""
+
+    name: str
+    shared_count: int
+
+
+class PersonConnectionsResponse(BaseModel):
+    """People connected through shared releases."""
+
+    name: str
+    connections: list[ConnectionEntry]
+
+
+class PersonAutocompleteEntry(BaseModel):
+    """Autocomplete result for a person."""
+
+    name: str
+    score: float
+
+
+class PersonProfileResponse(BaseModel):
+    """Summary profile for a credited person."""
+
+    name: str
+    total_credits: int
+    categories: list[str] = Field(default_factory=list)
+    first_year: int | None = None
+    last_year: int | None = None
+    artist_id: str | None = None
+    artist_name: str | None = None
+    role_breakdown: list[dict[str, Any]] = Field(default_factory=list)

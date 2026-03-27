@@ -225,10 +225,12 @@ def test_client(
 
     _nlq_router.configure(NLQConfig(), None, mock_redis)
 
+    import api.routers.credits as _credits_router
     import api.routers.musicbrainz as _musicbrainz_router
     import api.routers.network as _network_router
     import api.routers.rarity as _rarity_router
 
+    _credits_router.configure(mock_neo4j, mock_redis)
     _musicbrainz_router.configure(mock_pool, mock_neo4j)
     _network_router.configure(mock_neo4j, mock_redis)
     _rarity_router.configure(mock_neo4j, mock_pool, mock_redis)

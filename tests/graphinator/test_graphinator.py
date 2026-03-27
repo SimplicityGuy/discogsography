@@ -1635,6 +1635,58 @@ class TestReleaseTransactionLogic:
         mock_message.ack.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_creates_release_with_credits(self, mock_neo4j_driver: MagicMock) -> None:
+        """Test release creation with credits (extraartists)."""
+        from graphinator.graphinator import on_release_message
+
+        release_data = {
+            "id": "R123",
+            "title": "Test Release",
+            "sha256": "test_hash",
+            "extraartists": {
+                "artist": [
+                    {"id": "500", "name": "Bob Ludwig", "role": "Mastered By"},
+                    {"name": "Unknown Engineer", "role": "Engineer"},
+                ]
+            },
+        }
+
+        mock_message = AsyncMock(spec=AbstractIncomingMessage)
+        mock_message.body = json.dumps(release_data).encode()
+
+        mock_context_manager = mock_neo4j_driver.session(database="neo4j")
+        mock_session = await mock_context_manager.__aenter__()
+
+        mock_tx = MagicMock()
+        mock_tx.run.return_value.single.return_value = None
+
+        async def execute_tx(tx_func: Any) -> Any:
+            return tx_func(mock_tx)
+
+        mock_session.execute_write.side_effect = execute_tx
+
+        with (
+            patch("graphinator.graphinator.graph", mock_neo4j_driver),
+            patch("graphinator.graphinator.shutdown_requested", False),
+        ):
+            await on_release_message(mock_message)
+
+        # Should have calls for:
+        # 1. Hash check
+        # 2. Create release node
+        # 3. Person CREDITED_ON relationships
+        # 4. Person SAME_AS relationships (for Bob Ludwig who has artist_id)
+        assert mock_tx.run.call_count == 4
+        mock_message.ack.assert_called_once()
+
+        # Verify credits cypher was called with correct data
+        credits_calls = [call for call in mock_tx.run.call_args_list if "CREDITED_ON" in str(call)]
+        assert len(credits_calls) == 1
+
+        same_as_calls = [call for call in mock_tx.run.call_args_list if "SAME_AS" in str(call)]
+        assert len(same_as_calls) == 1
+
+    @pytest.mark.asyncio
     async def test_handles_master_id_as_direct_string(self, mock_neo4j_driver: MagicMock) -> None:
         """Test release with master_id as direct string."""
         from graphinator.graphinator import on_release_message
