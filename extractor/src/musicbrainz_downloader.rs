@@ -1,5 +1,6 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::collections::HashMap;
+use std::io;
 use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
@@ -124,6 +125,107 @@ pub fn find_latest_mb_directory(root: &Path) -> Option<PathBuf> {
     versions.sort_by(|a, b| b.cmp(a));
     // `root` comes from operator-controlled config (CLI/env var), not HTTP input.
     versions.first().map(|v| root.join(v)) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+}
+
+/// MusicBrainz entity names for download (singular, matching tarball names)
+#[allow(dead_code)]
+const MB_ENTITIES: &[&str] = &["artist", "label", "release"];
+
+#[allow(dead_code)]
+const MB_MAX_DOWNLOAD_RETRIES: u32 = 3;
+
+#[cfg(not(test))]
+#[allow(dead_code)]
+const MB_RETRY_BASE_DELAY_MS: u64 = 2_000;
+#[cfg(test)]
+#[allow(dead_code)]
+const MB_RETRY_BASE_DELAY_MS: u64 = 10;
+
+/// Result of a MusicBrainz download attempt
+#[allow(dead_code)]
+#[derive(Debug)]
+pub enum MbDownloadResult {
+    AlreadyCurrent(String),
+    Downloaded(String),
+}
+
+#[allow(dead_code)]
+impl MbDownloadResult {
+    pub fn version(&self) -> &str {
+        match self {
+            MbDownloadResult::AlreadyCurrent(v) | MbDownloadResult::Downloaded(v) => v,
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub struct MbDownloader {
+    output_directory: PathBuf,
+    base_url: String,
+}
+
+/// Parse version directory names (YYYYMMDD-HHMMSS) from an HTML index page.
+/// Returns them sorted descending (most recent first).
+#[allow(dead_code)]
+pub fn parse_version_directories(html: &str) -> Vec<String> {
+    let pattern = regex::Regex::new(r#"href="(\d{8}-\d{6})/?"#).unwrap();
+    let mut versions: Vec<String> = pattern
+        .captures_iter(html)
+        .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
+        .collect();
+    versions.sort_by(|a, b| b.cmp(a));
+    versions.dedup();
+    versions
+}
+
+/// Parse a SHA256SUMS file into a map of filename -> hex hash.
+#[allow(dead_code)]
+pub fn parse_sha256sums(content: &str) -> HashMap<String, String> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let mut parts = line.splitn(2, char::is_whitespace);
+            let hash = parts.next()?.trim().to_string();
+            let filename = parts.next()?.trim().trim_start_matches('*').to_string();
+            Some((filename, hash))
+        })
+        .collect()
+}
+
+/// Extract the `mbdump/<entity>` file from a `.tar.xz` archive.
+///
+/// Only the target entry is extracted; all other entries are skipped.
+/// Returns an error if the target entry is not found.
+#[allow(dead_code)]
+pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Path) -> Result<()> {
+    // `tar_path` and `out_path` come from operator-controlled config (CLI/env var), not HTTP input.
+    let file = std::fs::File::open(tar_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        .with_context(|| format!("Failed to open tarball: {:?}", tar_path))?;
+    let xz = xz2::read::XzDecoder::new(file);
+    let mut archive = tar::Archive::new(xz);
+
+    let target_suffix = format!("mbdump/{}", entity);
+
+    for entry_result in archive.entries().context("Failed to read tar entries")? {
+        let mut entry = entry_result.context("Failed to read tar entry")?;
+        let path = entry.path().context("Failed to read entry path")?;
+
+        if path.ends_with(&target_suffix) {
+            let mut out_file = std::fs::File::create(out_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+                .with_context(|| format!("Failed to create output file: {:?}", out_path))?;
+            io::copy(&mut entry, &mut out_file)
+                .with_context(|| format!("Failed to extract {} to {:?}", entity, out_path))?;
+            let size = out_file.metadata().map(|m| m.len()).unwrap_or(0);
+            info!("📋 Extracted {} from {:?} ({} bytes)", entity, tar_path, size);
+            return Ok(());
+        }
+    }
+
+    Err(anyhow::anyhow!("Entry '{}' not found in {:?}", target_suffix, tar_path))
 }
 
 #[cfg(test)]
