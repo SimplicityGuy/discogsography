@@ -79,7 +79,7 @@ RabbitMQ connections are configured using individual component variables.
 | `RABBITMQ_USERNAME` | RabbitMQ username  | `discogsography` | No       |
 | `RABBITMQ_PASSWORD` | RabbitMQ password  | `discogsography` | No       |
 
-**Used By**: Extractor, Graphinator, Tableinator, Dashboard
+**Used By**: Extractor, Graphinator, Tableinator, Brainzgraphinator, Brainztableinator, Dashboard
 
 **Secret convention**: `RABBITMQ_USERNAME_FILE` / `RABBITMQ_PASSWORD_FILE` paths are supported for Docker Compose runtime secrets.
 
@@ -362,7 +362,7 @@ See [Logging Guide](logging-guide.md) for detailed logging information.
 | `QUEUE_CHECK_INTERVAL`  | Seconds between queue checks when idle  | `3600` (1 hr) | 300-86400 |
 | `STUCK_CHECK_INTERVAL`  | Seconds between stuck-state checks      | `30`          | 5-300     |
 
-**Used By**: Graphinator, Tableinator
+**Used By**: Graphinator, Tableinator, Brainzgraphinator, Brainztableinator
 
 **Purpose**: Smart resource management for RabbitMQ connections
 
@@ -411,7 +411,7 @@ See [Consumer Cancellation](consumer-cancellation.md) for details.
 | `POSTGRES_BATCH_SIZE`           | Records per batch for PostgreSQL         | `100`        | `500`          | 10-1000    |
 | `POSTGRES_BATCH_FLUSH_INTERVAL` | Seconds between automatic flushes        | `5.0`        | `2.0`          | 1.0-60.0   |
 
-**Used By**: Graphinator (Neo4j), Tableinator (PostgreSQL)
+**Used By**: Graphinator (Neo4j), Tableinator (PostgreSQL), Brainzgraphinator (Neo4j), Brainztableinator (PostgreSQL)
 
 **Purpose**: Improve write performance by batching multiple database operations
 
@@ -736,6 +736,82 @@ Health check: http://localhost:8009/health
 
 **Notes**: The Insights service uses Redis for caching computed results (cache-aside pattern). The cache TTL matches the `INSIGHTS_SCHEDULE_HOURS` interval and is invalidated after each computation run. If Redis is unavailable, the service operates without caching.
 
+### Brainzgraphinator
+
+```bash
+# Required
+NEO4J_HOST="localhost"
+NEO4J_USERNAME="neo4j"
+NEO4J_PASSWORD="discogsography"
+
+# RabbitMQ
+RABBITMQ_HOST=rabbitmq           # default: rabbitmq
+RABBITMQ_USERNAME=discogsography # default: discogsography
+RABBITMQ_PASSWORD=discogsography # default: discogsography
+
+# Optional - Consumer Management
+CONSUMER_CANCEL_DELAY=300
+QUEUE_CHECK_INTERVAL=3600
+
+# Optional - Batch Processing (enabled by default)
+NEO4J_BATCH_MODE=true
+NEO4J_BATCH_SIZE=500
+NEO4J_BATCH_FLUSH_INTERVAL=2.0
+
+# Optional - Startup
+STARTUP_DELAY=20                 # Seconds to wait before starting (default: 20)
+
+# Optional - Logging
+LOG_LEVEL=INFO
+```
+
+Health check: http://localhost:8011/health
+
+**Notes**: Brainzgraphinator enriches existing Neo4j nodes with MusicBrainz metadata (properties, relationships, cross-references). It skips entities without Discogs matches. Consumes from the `musicbrainz-{artists,labels,releases}` exchanges.
+
+### Brainztableinator
+
+```bash
+# Required
+POSTGRES_HOST="localhost"
+POSTGRES_USERNAME="discogsography"
+POSTGRES_PASSWORD="discogsography"
+POSTGRES_DATABASE="discogsography"
+
+# RabbitMQ
+RABBITMQ_HOST=rabbitmq           # default: rabbitmq
+RABBITMQ_USERNAME=discogsography # default: discogsography
+RABBITMQ_PASSWORD=discogsography # default: discogsography
+
+# Optional - Consumer Management
+CONSUMER_CANCEL_DELAY=300
+QUEUE_CHECK_INTERVAL=3600
+
+# Optional - Batch Processing (enabled by default)
+POSTGRES_BATCH_MODE=true
+POSTGRES_BATCH_SIZE=500
+POSTGRES_BATCH_FLUSH_INTERVAL=2.0
+
+# Optional - Startup
+STARTUP_DELAY=25                 # Seconds to wait before starting (default: 25)
+
+# Optional - Logging
+LOG_LEVEL=INFO
+```
+
+Health check: http://localhost:8010/health
+
+**Notes**: Brainztableinator stores all MusicBrainz data in the `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links. Consumes from the `musicbrainz-{artists,labels,releases}` exchanges.
+
+### MCP Server
+
+```bash
+# Required
+API_BASE_URL="http://api:8004"   # Base URL for the Discogsography API
+```
+
+**Notes**: The MCP server has no direct database dependencies — all data is fetched via the API service over HTTP. It supports `stdio` (default, for local use with Claude Desktop/Cursor/Zed) and `streamable-http` (for hosted deployments) transports.
+
 ## Environment Templates
 
 ### Development (.env.development)
@@ -909,6 +985,8 @@ curl http://localhost:8003/health  # Dashboard
 curl http://localhost:8005/health  # API (health check port)
 curl http://localhost:8007/health  # Explore
 curl http://localhost:8009/health  # Insights
+curl http://localhost:8010/health  # Brainztableinator
+curl http://localhost:8011/health  # Brainzgraphinator
 ```
 
 Expected response for all:
@@ -960,4 +1038,4 @@ See [Troubleshooting Guide](troubleshooting.md) for more solutions.
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-20
+**Last Updated**: 2026-03-27

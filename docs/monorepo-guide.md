@@ -39,6 +39,18 @@ graph TD
     Tableinator[tableinator/<br/>PostgreSQL Service]
     TableFiles[tableinator.py]
 
+    BrainzGraph[brainzgraphinator/<br/>MusicBrainz Neo4j]
+    BrainzGraphFiles[brainzgraphinator.py]
+
+    BrainzTable[brainztableinator/<br/>MusicBrainz PostgreSQL]
+    BrainzTableFiles[brainztableinator.py]
+
+    Insights[insights/<br/>Analytics Service]
+    InsightsFiles[insights.py<br/>computations.py]
+
+    MCPServer[mcp-server/<br/>AI Assistant MCP]
+    MCPFiles[server.py]
+
     Root --> RootFiles
     Root --> API
     Root --> Common
@@ -48,6 +60,10 @@ graph TD
     Root --> Graphinator
     Root --> SchemaInit
     Root --> Tableinator
+    Root --> BrainzGraph
+    Root --> BrainzTable
+    Root --> Insights
+    Root --> MCPServer
 
     API --> APIFiles
     Common --> CommonFiles
@@ -57,6 +73,10 @@ graph TD
     Graphinator --> GraphFiles
     SchemaInit --> SchemaFiles
     Tableinator --> TableFiles
+    BrainzGraph --> BrainzGraphFiles
+    BrainzTable --> BrainzTableFiles
+    Insights --> InsightsFiles
+    MCPServer --> MCPFiles
 
     style Root fill:#f3e5f5,stroke:#9c27b0,stroke-width:3px
     style API fill:#e1f5fe,stroke:#0288d1,stroke-width:2px
@@ -67,6 +87,10 @@ graph TD
     style Graphinator fill:#f3e5f5,stroke:#9c27b0,stroke-width:2px
     style SchemaInit fill:#f1f8e9,stroke:#689f38,stroke-width:2px
     style Tableinator fill:#e0f2f1,stroke:#009688,stroke-width:2px
+    style BrainzGraph fill:#e0f7fa,stroke:#00838f,stroke-width:2px
+    style BrainzTable fill:#fff8e1,stroke:#ff8f00,stroke-width:2px
+    style Insights fill:#fff9c4,stroke:#f57f17,stroke-width:2px
+    style MCPServer fill:#ede7f6,stroke:#5e35b1,stroke-width:2px
 ```
 
 ### Directory Structure Details
@@ -105,6 +129,23 @@ discogsography/                    # Root workspace
 ├── graphinator/                   # Service (workspace member)
 │   ├── pyproject.toml           # Neo4j dependencies
 │   └── graphinator.py
+│
+├── brainzgraphinator/             # MusicBrainz Neo4j enrichment (workspace member)
+│   ├── pyproject.toml           # Service dependencies
+│   └── brainzgraphinator.py
+│
+├── brainztableinator/             # MusicBrainz PostgreSQL storage (workspace member)
+│   ├── pyproject.toml           # Service dependencies
+│   └── brainztableinator.py
+│
+├── insights/                      # Precomputed analytics (workspace member)
+│   ├── pyproject.toml           # Service dependencies
+│   ├── insights.py              # Service entry point
+│   └── computations.py          # Computation orchestration
+│
+├── mcp-server/                    # AI assistant MCP server (workspace member)
+│   ├── pyproject.toml           # Service dependencies
+│   └── server.py                # FastMCP server
 │
 ├── schema-init/                   # Database schema initializer (workspace member)
 │   ├── pyproject.toml           # Schema dependencies
@@ -147,10 +188,14 @@ The root `pyproject.toml` defines:
 [tool.uv.workspace]
 members = [
     "api",
+    "brainzgraphinator",
+    "brainztableinator",
     "common",
     "dashboard",
     "explore",
     "graphinator",
+    "insights",
+    "mcp-server",
     "schema-init",
     "tableinator"
 ]

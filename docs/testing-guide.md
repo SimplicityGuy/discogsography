@@ -78,6 +78,14 @@ tests/
 │   ├── test_rabbitmq_resilient.py
 │   └── test_state_marker.py
 │
+├── brainzgraphinator/                   # Brainzgraphinator tests
+│   ├── conftest.py
+│   └── test_brainzgraphinator.py
+│
+├── brainztableinator/                   # Brainztableinator tests
+│   ├── conftest.py
+│   └── test_brainztableinator.py
+│
 ├── dashboard/
 │   ├── conftest.py                      # Dashboard fixtures
 │   ├── test_dashboard_api.py            # API unit tests

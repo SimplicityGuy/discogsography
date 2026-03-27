@@ -376,7 +376,7 @@ The Explore service exposes only a health endpoint. All data endpoints are serve
 
 | Method | Path      | Service                  | Description  |
 | ------ | --------- | ------------------------ | ------------ |
-| GET    | `/health` | Explore (:8006 or :8007) | Health check |
+| GET    | `/health` | Explore (:8007) | Health check (dedicated health port) |
 
 ## ⚙️ Configuration
 

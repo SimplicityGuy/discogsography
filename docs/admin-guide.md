@@ -27,11 +27,13 @@ Click **Trigger Extraction** in the admin panel. This forces a full reprocessing
 - Reprocesses all files regardless of existing state markers
 - Publishes records to RabbitMQ for graphinator and tableinator consumers
 
+The admin panel also supports triggering a **MusicBrainz extraction**, which downloads the latest MusicBrainz JSONL dumps and publishes records to the `musicbrainz-{artists,labels,releases}` exchanges for brainzgraphinator and brainztableinator consumers.
+
 Use this when:
 
 - A previous extraction failed and you want to retry
 - You suspect data corruption and want a clean reprocess
-- A new Discogs monthly dump has been published and you don't want to wait for the periodic check
+- A new Discogs monthly dump (or MusicBrainz twice-weekly dump) has been published and you don't want to wait for the periodic check
 
 The extraction runs asynchronously. Progress is tracked in the extraction history table.
 
@@ -51,6 +53,12 @@ Dead-letter queues (DLQs) collect messages that consumers failed to process. Eac
 | `tableinator-labels-dlq` | Tableinator |
 | `tableinator-masters-dlq` | Tableinator |
 | `tableinator-releases-dlq` | Tableinator |
+| `brainzgraphinator-artists-dlq` | Brainzgraphinator |
+| `brainzgraphinator-labels-dlq` | Brainzgraphinator |
+| `brainzgraphinator-releases-dlq` | Brainzgraphinator |
+| `brainztableinator-artists-dlq` | Brainztableinator |
+| `brainztableinator-labels-dlq` | Brainztableinator |
+| `brainztableinator-releases-dlq` | Brainztableinator |
 
 **Purging** permanently deletes all messages in a DLQ. Do this when:
 

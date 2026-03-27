@@ -666,9 +666,6 @@ services:
     environment:
       API_BASE_URL: "http://api:8004"
       LOG_LEVEL: INFO
-      NEO4J_HOST: neo4j
-      NEO4J_PASSWORD: discogsography
-      NEO4J_USERNAME: neo4j
       PYTHONUNBUFFERED: "1"
     depends_on:
       schema-init:

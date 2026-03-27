@@ -45,7 +45,15 @@ discogsography/
 │   ├── auth.py             # JWT helpers and OAuth token encryption
 │   ├── limiter.py          # Shared slowapi rate-limiter instance
 │   ├── setup.py            # discogs-setup CLI tool
-│   ├── routers/            # FastAPI routers (auth, explore, sync, user, snapshot, oauth)
+│   ├── routers/            # FastAPI routers (auth, explore, sync, user, snapshot, oauth, nlq, rarity, etc.)
+│   ├── README.md
+│   └── __init__.py
+├── 🧠 brainzgraphinator/   # MusicBrainz Neo4j enrichment service
+│   ├── brainzgraphinator.py # Enriches Neo4j nodes with MusicBrainz metadata
+│   ├── README.md
+│   └── __init__.py
+├── 🧬 brainztableinator/   # MusicBrainz PostgreSQL storage service
+│   ├── brainztableinator.py # Stores MusicBrainz data in PostgreSQL
 │   ├── README.md
 │   └── __init__.py
 ├── 📦 common/              # Shared utilities and configuration
@@ -54,6 +62,7 @@ discogsography/
 │   └── __init__.py
 ├── 📊 dashboard/           # Real-time monitoring dashboard
 │   ├── dashboard.py        # FastAPI backend with WebSocket
+│   ├── admin_proxy.py      # Admin panel proxy to API service
 │   ├── tailwind.config.js  # Tailwind CLI configuration (content paths, plugins)
 │   ├── tailwind.input.css  # Tailwind source directives (@tailwind base/…)
 │   ├── static/             # Frontend HTML/CSS/JS (Tailwind, SVG gauges)
@@ -81,6 +90,10 @@ discogsography/
 │   │   └── js/             # Modular JS (app, graph, trends, auth, etc.)
 │   ├── README.md
 │   └── __init__.py
+├── 🔗 graphinator/         # Neo4j graph database service
+│   ├── graphinator.py      # Graph relationship builder
+│   ├── README.md
+│   └── __init__.py
 ├── 📈 insights/            # Precomputed analytics and music trends
 │   ├── insights.py         # Insights service entry point (scheduler + endpoints)
 │   ├── computations.py     # Computation orchestration (fetches from API over HTTP)
@@ -88,8 +101,8 @@ discogsography/
 │   ├── models.py           # Pydantic response models
 │   ├── README.md
 │   └── __init__.py
-├── 🔗 graphinator/         # Neo4j graph database service
-│   ├── graphinator.py      # Graph relationship builder
+├── 🤖 mcp-server/          # AI assistant MCP server
+│   ├── server.py           # FastMCP server exposing knowledge graph
 │   ├── README.md
 │   └── __init__.py
 ├── 🔧 schema-init/         # One-shot database schema initializer
@@ -109,11 +122,14 @@ discogsography/
 │   └── __init__.py
 ├── 🧪 tests/               # Comprehensive test suite
 │   ├── api/                # API service tests
+│   ├── brainzgraphinator/  # Brainzgraphinator tests
+│   ├── brainztableinator/  # Brainztableinator tests
 │   ├── common/             # Common module tests
 │   ├── dashboard/          # Dashboard tests (including E2E)
 │   ├── explore/            # Explore service tests
-│   ├── insights/           # Insights service tests
 │   ├── graphinator/        # Graphinator tests
+│   ├── insights/           # Insights service tests
+│   ├── mcp-server/         # MCP server tests
 │   ├── schema-init/        # Schema initializer tests
 │   └── tableinator/        # Tableinator tests
 ├── 📝 docs/                # Documentation
@@ -214,6 +230,15 @@ just insights
 
 # Tableinator (PostgreSQL builder)
 just tableinator
+
+# Brainzgraphinator (MusicBrainz → Neo4j enrichment)
+just brainzgraphinator
+
+# Brainztableinator (MusicBrainz → PostgreSQL)
+just brainztableinator
+
+# MCP Server (AI assistant integration)
+just mcp-server
 ```
 
 ### Code Quality Checks
@@ -281,14 +306,18 @@ uv run pre-commit run --all-files
 
 ```
 tests/
-├── api/              # API service tests (auth, routers, queries)
-├── common/           # Common module tests
-├── dashboard/        # Dashboard tests
+├── api/                  # API service tests (auth, routers, queries)
+├── brainzgraphinator/    # Brainzgraphinator tests
+├── brainztableinator/    # Brainztableinator tests
+├── common/               # Common module tests
+├── dashboard/            # Dashboard tests
 │   └── test_dashboard_ui.py  # E2E tests with Playwright
-├── explore/          # Explore service tests
-├── graphinator/      # Graphinator tests
-├── schema-init/      # Schema initializer tests
-└── tableinator/      # Tableinator tests
+├── explore/              # Explore service tests
+├── graphinator/          # Graphinator tests
+├── insights/             # Insights service tests
+├── mcp-server/           # MCP server tests
+├── schema-init/          # Schema initializer tests
+└── tableinator/          # Tableinator tests
 ```
 
 ### Running Tests
@@ -718,4 +747,4 @@ uv run pytest --pdb
 
 ______________________________________________________________________
 
-**Last Updated**: 2026-03-15
+**Last Updated**: 2026-03-27

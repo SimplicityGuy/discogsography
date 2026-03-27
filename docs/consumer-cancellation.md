@@ -21,7 +21,7 @@ This helps free up resources and provides clearer monitoring of active vs. compl
 sequenceDiagram
     participant EXT as Extractor
     participant RMQ as RabbitMQ
-    participant CONS as Consumer<br/>(Graphinator/Tableinator)
+    participant CONS as Consumer<br/>(Graphinator/Tableinator/<br/>Brainzgraphinator/Brainztableinator)
     participant TIMER as Cancellation Timer
 
     EXT->>RMQ: Publish file_complete to fanout exchange
