@@ -102,6 +102,7 @@ graph TD
     RMQ --> BTABLE --> PG
 
     API --- NEO4J & PG & REDIS
+    EXPLORE --- API
     INSIGHTS --- PG & REDIS
     DASH -.- RMQ & NEO4J & PG
 
@@ -133,7 +134,7 @@ See [Architecture Overview](docs/architecture.md) for detailed diagrams covering
 - **🐋 Container Security**: Non-root users, read-only filesystems, dropped capabilities
 - **📝 Type Safety**: Full type hints with strict mypy validation and Bandit security scanning
 - **✅ Comprehensive Testing**: Unit, integration, and E2E tests with Playwright
-- **🚀 Query Performance**: 249x overall query performance optimization across 88 endpoints (PRs #175–#189), plus configurable data quality rules for extraction validation (#187) — see [Recent Improvements](docs/recent-improvements.md)
+- **🚀 Query Performance**: 249x overall query performance optimization across 88 endpoints (PRs #175–#184), plus configurable data quality rules for extraction validation (#187) — see [Recent Improvements](docs/recent-improvements.md)
 
 ## 🚀 Quick Start
 

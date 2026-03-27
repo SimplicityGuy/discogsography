@@ -179,10 +179,18 @@ just deep-clean           # Clean + Docker volumes (destructive)
 
 ## Environment Variables
 
-- `NEO4J_URI` — Neo4j connection string
-- `POSTGRES_URL` — PostgreSQL connection string
-- `RABBITMQ_URL` — RabbitMQ connection string
+Core variables used across services (individual components, not composite URLs):
+
+- `NEO4J_HOST`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` — Neo4j connection
+- `POSTGRES_HOST`, `POSTGRES_USERNAME`, `POSTGRES_PASSWORD`, `POSTGRES_DATABASE` — PostgreSQL connection
+- `RABBITMQ_HOST`, `RABBITMQ_USERNAME`, `RABBITMQ_PASSWORD` — RabbitMQ connection
+- `REDIS_HOST` — Redis hostname
+- `JWT_SECRET_KEY` — HMAC-SHA256 signing secret (API only)
+- `ENCRYPTION_MASTER_KEY` — HKDF master key for OAuth + TOTP encryption (API only)
+- `API_BASE_URL` — API service URL (used by Explore, Insights, MCP Server)
 - `LOG_LEVEL` — Logging level (defaults to INFO)
+
+All variables support `_FILE` variants for Docker Compose runtime secrets in production. See [docs/configuration.md](docs/configuration.md) for the full reference.
 
 ## Code Style
 

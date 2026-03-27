@@ -139,6 +139,25 @@ If a user attempts to start the Discogs OAuth flow before credentials are config
 | POST   | `/api/auth/logout`   | Yes           | —          | Revoke JWT token (JTI blacklist) |
 | GET    | `/api/auth/me`       | Yes           | —          | Get current user details         |
 
+### Password Reset
+
+| Method | Path                      | Auth Required | Description                              |
+| ------ | ------------------------- | ------------- | ---------------------------------------- |
+| POST   | `/api/auth/reset-request` | No            | Request a password reset email/link      |
+| POST   | `/api/auth/reset-confirm` | No            | Confirm password reset with token        |
+
+### Two-Factor Authentication (TOTP 2FA)
+
+Requires `ENCRYPTION_MASTER_KEY` to be configured. All 2FA endpoints require JWT authentication.
+
+| Method | Path                    | Auth Required | Description                              |
+| ------ | ----------------------- | ------------- | ---------------------------------------- |
+| POST   | `/api/auth/2fa/setup`   | Yes           | Generate TOTP secret and QR code URI     |
+| POST   | `/api/auth/2fa/confirm` | Yes           | Confirm 2FA setup with TOTP code         |
+| POST   | `/api/auth/2fa/verify`  | Yes           | Verify TOTP code during login            |
+| POST   | `/api/auth/2fa/recovery`| Yes           | Use a recovery code to bypass 2FA        |
+| POST   | `/api/auth/2fa/disable` | Yes           | Disable 2FA for the account              |
+
 ### Discogs OAuth
 
 | Method | Path                           | Auth Required | Description                           |
@@ -308,6 +327,27 @@ Proxied endpoints forwarding to the insights microservice for precomputed analyt
 | GET    | `/api/insights/data-completeness` | No            | Data quality and completeness stats |
 | GET    | `/api/insights/status`            | No            | Computation status of insights data |
 
+### Natural Language Queries (NLQ)
+
+Natural language query interface for the knowledge graph. Translates plain English questions into graph queries.
+
+| Method | Path              | Auth Required | Description                              |
+| ------ | ----------------- | ------------- | ---------------------------------------- |
+| GET    | `/api/nlq/status` | No            | Check NLQ service availability           |
+| POST   | `/api/nlq/query`  | No            | Execute a natural language query         |
+
+### Release Rarity Scoring
+
+Rarity analysis for releases based on market scarcity, pressing details, and collector demand.
+
+| Method | Path                            | Auth Required | Description                                |
+| ------ | ------------------------------- | ------------- | ------------------------------------------ |
+| GET    | `/api/rarity/leaderboard`       | No            | Top rarest releases overall                |
+| GET    | `/api/rarity/hidden-gems`       | No            | Underappreciated rare releases             |
+| GET    | `/api/rarity/artist/{artist_id}`| No            | Rarity scores for an artist's releases     |
+| GET    | `/api/rarity/label/{label_id}`  | No            | Rarity scores for a label's releases       |
+| GET    | `/api/rarity/{release_id}`      | No            | Rarity score for a specific release        |
+
 ### Label DNA
 
 Fingerprint and compare record labels based on their genre, style, format, and decade profiles. Rate limited to 30 requests/minute.
@@ -410,6 +450,19 @@ Endpoints exposing MusicBrainz enrichment data linked to Discogs entities. Requi
 - `/musicbrainz` and `/relationships` — Neo4j (enriched by brainzgraphinator)
 - `/external-links` — PostgreSQL `musicbrainz.external_links` table (populated by brainztableinator)
 - `/enrichment/status` — Both Neo4j and PostgreSQL
+
+### Internal Insights Computation
+
+Internal endpoints called by the Insights service over HTTP to fetch raw query results. Not intended for direct external use.
+
+| Method | Path                                       | Auth Required | Description                          |
+| ------ | ------------------------------------------ | ------------- | ------------------------------------ |
+| GET    | `/api/internal/insights/artist-centrality` | No            | Artist centrality data from Neo4j    |
+| GET    | `/api/internal/insights/genre-trends`      | No            | Genre trend data from Neo4j          |
+| GET    | `/api/internal/insights/label-longevity`   | No            | Label longevity data from Neo4j      |
+| GET    | `/api/internal/insights/anniversaries`     | No            | Anniversary data from PostgreSQL     |
+| GET    | `/api/internal/insights/data-completeness` | No            | Data completeness from both databases|
+| GET    | `/api/internal/insights/rarity-scores`     | No            | Rarity score data from PostgreSQL    |
 
 ### Health
 
