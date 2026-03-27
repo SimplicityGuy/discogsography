@@ -29,7 +29,7 @@ def test_server() -> Any:
     # Ensure Python can find the project modules
     env["PYTHONPATH"] = project_root + os.pathsep + env.get("PYTHONPATH", "")
 
-    server_process = subprocess.Popen(  # noqa: S603
+    server_process = subprocess.Popen(
         [
             sys.executable,
             "-m",
