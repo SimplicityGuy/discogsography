@@ -225,6 +225,46 @@ class TableinatorConfig:
         )
 
 
+@dataclass(frozen=True)
+class BrainztableinatorConfig:
+    """Configuration for the brainztableinator service."""
+
+    amqp_connection: str
+    postgres_host: str
+    postgres_username: str
+    postgres_password: str
+    postgres_database: str
+
+    @classmethod
+    def from_env(cls) -> "BrainztableinatorConfig":
+        """Create configuration from environment variables."""
+        amqp_connection = _build_amqp_url()
+        postgres_username = getenv("POSTGRES_USERNAME")
+        postgres_password = get_secret("POSTGRES_PASSWORD")
+        postgres_database = getenv("POSTGRES_DATABASE")
+
+        missing_vars = []
+        if not getenv("POSTGRES_HOST"):
+            missing_vars.append("POSTGRES_HOST")
+        if not postgres_username:
+            missing_vars.append("POSTGRES_USERNAME")
+        if not postgres_password:
+            missing_vars.append("POSTGRES_PASSWORD")
+        if not postgres_database:
+            missing_vars.append("POSTGRES_DATABASE")
+
+        if missing_vars:
+            raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+        return cls(
+            amqp_connection=amqp_connection,
+            postgres_host=_build_postgres_connstr(),
+            postgres_username=cast("str", postgres_username),
+            postgres_password=cast("str", postgres_password),
+            postgres_database=cast("str", postgres_database),
+        )
+
+
 # AMQP Configuration shared across all services
 AMQP_EXCHANGE_PREFIX = "discogsography"
 AMQP_EXCHANGE_TYPE = "fanout"  # Fanout exchanges for decoupled pub/sub

@@ -19,6 +19,7 @@ members = [
     "discogsography",
     "discogsography-api",
     "discogsography-brainzgraphinator",
+    "discogsography-brainztableinator",
     "discogsography-common",
     "discogsography-dashboard",
     "discogsography-explore",
@@ -470,6 +471,9 @@ api = [
 brainzgraphinator = [
     { name = "neo4j-rust-ext", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
+brainztableinator = [
+    { name = "psycopg", extra = ["binary"], marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+]
 dashboard = [
     { name = "fastapi", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "httpx", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -596,6 +600,7 @@ requires-dist = [
     { name = "psutil", marker = "extra == 'utilities'", specifier = ">=5.9.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.0.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'api'", specifier = ">=3.1.0" },
+    { name = "psycopg", extras = ["binary"], marker = "extra == 'brainztableinator'", specifier = ">=3.1.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'dashboard'", specifier = ">=3.1.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'mcp-server'", specifier = ">=3.0.0" },
     { name = "psycopg", extras = ["binary"], marker = "extra == 'schema-init'", specifier = ">=3.1.0" },
@@ -631,7 +636,7 @@ requires-dist = [
     { name = "uvicorn", extras = ["standard"], marker = "extra == 'insights'", specifier = ">=0.32.0" },
     { name = "websockets", marker = "extra == 'dashboard'", specifier = ">=14.2" },
 ]
-provides-extras = ["api", "dashboard", "brainzgraphinator", "graphinator", "insights", "tableinator", "dev", "utilities", "explore", "schema-init", "mcp-server", "all"]
+provides-extras = ["api", "dashboard", "brainzgraphinator", "graphinator", "insights", "tableinator", "brainztableinator", "dev", "utilities", "explore", "schema-init", "mcp-server", "all"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -708,6 +713,25 @@ requires-dist = [
     { name = "aio-pika", specifier = ">=9.0.0" },
     { name = "neo4j-rust-ext", specifier = ">=6.1.0" },
     { name = "orjson", specifier = ">=3.0.0" },
+    { name = "structlog", specifier = ">=24.0.0" },
+]
+
+[[package]]
+name = "discogsography-brainztableinator"
+version = "0.1.0"
+source = { editable = "brainztableinator" }
+dependencies = [
+    { name = "aio-pika", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "orjson", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "psycopg", extra = ["binary"], marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "structlog", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "aio-pika", specifier = ">=9.0.0" },
+    { name = "orjson", specifier = ">=3.0.0" },
+    { name = "psycopg", extras = ["binary"], specifier = ">=3.1.0" },
     { name = "structlog", specifier = ">=24.0.0" },
 ]
 

@@ -196,6 +196,9 @@ test-parallel:
     uv run pytest tests/tableinator/ -v > /tmp/test-tableinator.log 2>&1 &
     pid_tableinator=$!
 
+    uv run pytest tests/brainztableinator/ -v > /tmp/test-brainztableinator.log 2>&1 &
+    pid_brainztableinator=$!
+
     (cd explore && npx vitest run) > /tmp/test-js.log 2>&1 &
     pid_js=$!
 
@@ -217,6 +220,7 @@ test-parallel:
     wait $pid_mcp_server || { echo "❌ MCP server tests failed"; cat /tmp/test-mcp-server.log; failed=1; }
     wait $pid_schema_init || { echo "❌ Schema-init tests failed"; cat /tmp/test-schema-init.log; failed=1; }
     wait $pid_tableinator || { echo "❌ Tableinator tests failed"; cat /tmp/test-tableinator.log; failed=1; }
+    wait $pid_brainztableinator || { echo "❌ Brainztableinator tests failed"; cat /tmp/test-brainztableinator.log; failed=1; }
     wait $pid_js || { echo "❌ JS tests failed"; cat /tmp/test-js.log; failed=1; }
 
     if [ -n "$pid_extractor" ]; then
@@ -308,6 +312,12 @@ test-schema-init:
 test-tableinator:
     uv run pytest tests/tableinator/ -v \
         --cov --cov-config=.coveragerc.tableinator --cov-report=xml --cov-report=json --cov-report=term
+
+# Run brainztableinator service tests with coverage
+[group('test')]
+test-brainztableinator:
+    uv run pytest tests/brainztableinator/ -v \
+        --cov --cov-config=.coveragerc.brainztableinator --cov-report=xml --cov-report=json --cov-report=term
 
 # E2E workflow: dashboard unit tests establishing coverage baseline
 [group('test')]

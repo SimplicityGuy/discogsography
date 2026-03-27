@@ -80,7 +80,7 @@ pub struct MockMqFactory {
 
 #[async_trait]
 impl MessageQueueFactory for MockMqFactory {
-    async fn create(&self, _url: &str) -> anyhow::Result<Arc<dyn MessagePublisher>> {
+    async fn create(&self, _url: &str, _exchange_prefix: &str) -> anyhow::Result<Arc<dyn MessagePublisher>> {
         Ok(self.publisher.clone())
     }
 }

@@ -1,10 +1,12 @@
 // Library exports for testing
 
 pub mod config;
-pub mod downloader;
+pub mod discogs_downloader;
 pub mod extractor;
 pub mod health;
+pub mod jsonl_parser;
 pub mod message_queue;
+pub mod musicbrainz_downloader;
 pub mod parser;
 pub mod rules;
 pub mod state_marker;

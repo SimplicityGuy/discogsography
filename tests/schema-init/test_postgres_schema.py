@@ -5,7 +5,15 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from postgres_schema import _ENTITY_TABLES, _INSIGHTS_TABLES, _SPECIFIC_INDEXES, _USER_TABLES, create_postgres_schema
+from postgres_schema import (
+    _ENTITY_TABLES,
+    _INSIGHTS_TABLES,
+    _MUSICBRAINZ_INDEXES,
+    _MUSICBRAINZ_TABLES,
+    _SPECIFIC_INDEXES,
+    _USER_TABLES,
+    create_postgres_schema,
+)
 
 
 @pytest.fixture
@@ -108,8 +116,15 @@ class TestCreatePostgresSchema:
 
         cursor = mock_pool.connection.return_value.__aenter__.return_value.cursor.return_value
         # 3 statements per entity table (CREATE TABLE + hash index + updated_at index)
-        # + specific indexes + user tables
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES) + len(_INSIGHTS_TABLES)
+        # + specific indexes + user tables + insights tables + musicbrainz tables/indexes
+        expected_calls = (
+            len(_ENTITY_TABLES) * 3
+            + len(_SPECIFIC_INDEXES)
+            + len(_USER_TABLES)
+            + len(_INSIGHTS_TABLES)
+            + len(_MUSICBRAINZ_TABLES)
+            + len(_MUSICBRAINZ_INDEXES)
+        )
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio
@@ -129,7 +144,14 @@ class TestCreatePostgresSchema:
         # Must not raise
         await create_postgres_schema(mock_pool)
 
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES) + len(_INSIGHTS_TABLES)
+        expected_calls = (
+            len(_ENTITY_TABLES) * 3
+            + len(_SPECIFIC_INDEXES)
+            + len(_USER_TABLES)
+            + len(_INSIGHTS_TABLES)
+            + len(_MUSICBRAINZ_TABLES)
+            + len(_MUSICBRAINZ_INDEXES)
+        )
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio
@@ -157,7 +179,14 @@ class TestCreatePostgresSchema:
         # Must not raise
         await create_postgres_schema(mock_pool)
 
-        expected_calls = len(_ENTITY_TABLES) * 3 + len(_SPECIFIC_INDEXES) + len(_USER_TABLES) + len(_INSIGHTS_TABLES)
+        expected_calls = (
+            len(_ENTITY_TABLES) * 3
+            + len(_SPECIFIC_INDEXES)
+            + len(_USER_TABLES)
+            + len(_INSIGHTS_TABLES)
+            + len(_MUSICBRAINZ_TABLES)
+            + len(_MUSICBRAINZ_INDEXES)
+        )
         assert cursor.execute.await_count == expected_calls
 
     @pytest.mark.asyncio

@@ -1,7 +1,7 @@
-// HTTP Integration tests for downloader module
+// HTTP Integration tests for discogs_downloader module
 // Tests web scraping and HTTP download functionality with mocked responses
 
-use extractor::downloader::Downloader;
+use extractor::discogs_downloader::Downloader;
 use extractor::types::S3FileInfo;
 use mockito::Server;
 use tempfile::TempDir;
