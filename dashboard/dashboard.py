@@ -92,13 +92,41 @@ class DatabaseInfo(BaseModel):
     error: str | None
 
 
-class SystemMetrics(BaseModel):
-    """Model for system-wide metrics."""
+class PipelineMetrics(BaseModel):
+    """Metrics for a single data pipeline (Discogs or MusicBrainz)."""
 
     services: list[ServiceStatus]
     queues: list[QueueInfo]
+
+
+class SystemMetrics(BaseModel):
+    """Model for system-wide metrics."""
+
+    pipelines: dict[str, PipelineMetrics]
     databases: list[DatabaseInfo]
     timestamp: datetime
+
+
+PIPELINE_CONFIGS: dict[str, dict] = {
+    "discogs": {
+        "services": [
+            ("extractor-discogs", "http://extractor-discogs:8000/health"),
+            ("graphinator", "http://graphinator:8001/health"),
+            ("tableinator", "http://tableinator:8002/health"),
+        ],
+        "queue_prefix": "discogsography",
+        "entity_types": ["masters", "releases", "artists", "labels"],
+    },
+    "musicbrainz": {
+        "services": [
+            ("extractor-musicbrainz", "http://extractor-musicbrainz:8000/health"),
+            ("brainzgraphinator", "http://brainzgraphinator:8011/health"),
+            ("brainztableinator", "http://brainztableinator:8010/health"),
+        ],
+        "queue_prefix": "musicbrainz",
+        "entity_types": ["artists", "labels", "releases"],
+    },
+}
 
 
 class DashboardApp:
@@ -205,28 +233,27 @@ class DashboardApp:
                 await asyncio.sleep(5)
 
     async def collect_all_metrics(self) -> SystemMetrics:
-        """Collect all system metrics."""
-        services = await self.get_service_statuses()
-        queues = await self.get_queue_info()
+        """Collect all system metrics grouped by pipeline."""
+        pipelines: dict[str, PipelineMetrics] = {}
+
+        for pipeline_name, config in PIPELINE_CONFIGS.items():
+            services = await self.get_service_statuses(config["services"])
+            queues = await self.get_queue_info(config["queue_prefix"])
+            # Auto-detect: include pipeline only if at least one service is reachable
+            if any(s.status != "unknown" for s in services):
+                pipelines[pipeline_name] = PipelineMetrics(services=services, queues=queues)
+
         databases = await self.get_database_info()
 
         return SystemMetrics(
-            services=services,
-            queues=queues,
+            pipelines=pipelines,
             databases=databases,
             timestamp=datetime.now(UTC),
         )
 
-    async def get_service_statuses(self) -> list[ServiceStatus]:
+    async def get_service_statuses(self, service_configs: list[tuple[str, str]]) -> list[ServiceStatus]:
         """Get status of all services."""
         services = []
-
-        # Check each service via health endpoints
-        service_configs = [
-            ("extractor", "http://extractor:8000/health"),
-            ("graphinator", "http://graphinator:8001/health"),
-            ("tableinator", "http://tableinator:8002/health"),
-        ]
 
         async with httpx.AsyncClient(timeout=5.0) as client:
             for name, url in service_configs:
@@ -274,7 +301,7 @@ class DashboardApp:
 
         return services
 
-    async def get_queue_info(self) -> list[QueueInfo]:
+    async def get_queue_info(self, prefix: str) -> list[QueueInfo]:
         """Get RabbitMQ queue information."""
         queues: list[QueueInfo] = []
 
@@ -292,7 +319,7 @@ class DashboardApp:
                 if response.status_code == 200:
                     queue_data = response.json()
                     for queue in queue_data:
-                        if queue["name"].startswith("discogsography"):
+                        if queue["name"].startswith(prefix):
                             queues.append(
                                 QueueInfo(
                                     name=queue["name"],
@@ -489,22 +516,30 @@ async def get_metrics() -> JSONResponse:
 
 @app.get("/api/services")
 async def get_services() -> JSONResponse:
-    """Get service statuses."""
+    """Get service statuses grouped by pipeline."""
     API_REQUESTS.labels(endpoint="/api/services", method="GET").inc()
     if not dashboard:
-        return JSONResponse(content=[])
-    services = await dashboard.get_service_statuses()
-    return JSONResponse(content=[s.model_dump(mode="json") for s in services])
+        return JSONResponse(content={})
+    result = {}
+    for pipeline_name, config in PIPELINE_CONFIGS.items():
+        services = await dashboard.get_service_statuses(config["services"])
+        if any(s.status != "unknown" for s in services):
+            result[pipeline_name] = [s.model_dump(mode="json") for s in services]
+    return JSONResponse(content=result)
 
 
 @app.get("/api/queues")
 async def get_queues() -> JSONResponse:
-    """Get queue information."""
+    """Get queue information grouped by pipeline."""
     API_REQUESTS.labels(endpoint="/api/queues", method="GET").inc()
     if not dashboard:
-        return JSONResponse(content=[])
-    queues = await dashboard.get_queue_info()
-    return JSONResponse(content=[q.model_dump(mode="json") for q in queues])
+        return JSONResponse(content={})
+    result = {}
+    for pipeline_name, config in PIPELINE_CONFIGS.items():
+        queues = await dashboard.get_queue_info(config["queue_prefix"])
+        if queues:
+            result[pipeline_name] = [q.model_dump(mode="json") for q in queues]
+    return JSONResponse(content=result)
 
 
 @app.get("/api/databases")
