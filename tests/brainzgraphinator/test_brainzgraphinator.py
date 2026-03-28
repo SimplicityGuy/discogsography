@@ -23,6 +23,7 @@ from brainzgraphinator.brainzgraphinator import (
     enrich_artist,
     enrich_label,
     enrich_release,
+    enrich_release_group,
     get_health_data,
     main,
     on_artist_message,
@@ -208,6 +209,44 @@ class TestEnrichRelease:
             assert result is True
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
+
+
+# ── Release-group enrichment tests ────────────────────────────────────────
+
+
+class TestEnrichReleaseGroup:
+    """Tests for enrich_release_group."""
+
+    def test_enrich_release_group_with_match(self, mock_tx: MagicMock, sample_release_group_record: dict[str, Any]) -> None:
+        """Release-group with discogs_master_id gets enriched on Master node."""
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            result = enrich_release_group(mock_tx, sample_release_group_record)
+            assert result is True
+
+        call_args = mock_tx.run.call_args_list[0]
+        cypher = call_args[0][0]
+        assert "MATCH (m:Master" in cypher
+        assert "SET m.mbid" in cypher
+        assert "m.mb_type" in cypher
+        assert "m.mb_secondary_types" in cypher
+        assert "m.mb_first_release_date" in cypher
+        assert "m.mb_updated_at" in cypher
+
+    def test_enrich_release_group_no_discogs_id_skips(self, mock_tx: MagicMock) -> None:
+        """Release-group with no discogs_master_id is deliberately skipped."""
+        record = {"mbid": "abc", "discogs_master_id": None}
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            result = enrich_release_group(mock_tx, record)
+            assert result is True
+        mock_tx.run.assert_not_called()
+
+    def test_enrich_release_group_no_neo4j_match(self, mock_tx: MagicMock) -> None:
+        """Release-group with discogs_master_id but no Neo4j Master node is skipped."""
+        mock_tx.run.return_value.single.return_value = None
+        record = {"mbid": "abc", "discogs_master_id": 99999}
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            result = enrich_release_group(mock_tx, record)
+            assert result is True
 
 
 # ── Relationship edge tests ───────────────────────────────────────────────
@@ -453,7 +492,7 @@ class TestConsumerManagement:
         """Returns True when no consumers and all files completed."""
         with (
             patch("brainzgraphinator.brainzgraphinator.consumer_tags", {}),
-            patch("brainzgraphinator.brainzgraphinator.completed_files", {"artists", "labels", "releases"}),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", {"artists", "labels", "release-groups", "releases"}),
         ):
             result = await check_all_consumers_idle()
         assert result is True
@@ -463,7 +502,7 @@ class TestConsumerManagement:
         """Returns False when consumers still active."""
         with (
             patch("brainzgraphinator.brainzgraphinator.consumer_tags", {"artists": "tag-1"}),
-            patch("brainzgraphinator.brainzgraphinator.completed_files", {"artists", "labels", "releases"}),
+            patch("brainzgraphinator.brainzgraphinator.completed_files", {"artists", "labels", "release-groups", "releases"}),
         ):
             result = await check_all_consumers_idle()
         assert result is False
@@ -494,6 +533,7 @@ class TestProcessorsMap:
         """PROCESSORS map maps to correct enrichment functions."""
         assert PROCESSORS["artists"] is enrich_artist
         assert PROCESSORS["labels"] is enrich_label
+        assert PROCESSORS["release-groups"] is enrich_release_group
         assert PROCESSORS["releases"] is enrich_release
 
     def test_handlers_map_has_all_types(self) -> None:
@@ -811,7 +851,7 @@ class TestPeriodicQueueChecker:
         bgmod.active_connection = None
         bgmod.active_channel = None
         bgmod.consumer_tags = {}
-        bgmod.completed_files = {"artists", "labels", "releases"}
+        bgmod.completed_files = {"artists", "labels", "release-groups", "releases"}
 
         checker_task = asyncio.create_task(periodic_queue_checker())
         await asyncio.sleep(0.15)
@@ -835,6 +875,9 @@ class TestPeriodicQueueChecker:
         bgmod.rabbitmq_manager = mock_rabbitmq_manager
         bgmod.active_connection = AsyncMock()
         bgmod.shutdown_requested = False
+        bgmod.consumer_tags = {"artists": "tag-1"}
+        bgmod.message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
+        bgmod.completed_files = set()
 
         checker_task = asyncio.create_task(periodic_queue_checker())
         await asyncio.sleep(0.15)
@@ -882,7 +925,7 @@ class TestPeriodicQueueChecker:
     async def test_timing_guard_prevents_frequent_checks(self) -> None:
         """Test timing guard continues when not enough time has passed."""
         bgmod.consumer_tags = {}
-        bgmod.completed_files = {"artists", "labels", "releases"}
+        bgmod.completed_files = {"artists", "labels", "release-groups", "releases"}
         bgmod.message_counts = {"artists": 0, "labels": 0, "releases": 0}
         bgmod.active_connection = None
         bgmod.shutdown_requested = False
@@ -908,7 +951,7 @@ class TestPeriodicQueueChecker:
     async def test_periodic_queue_checker_exception_handling(self) -> None:
         """Test periodic_queue_checker handles exceptions in the loop."""
         bgmod.consumer_tags = {}
-        bgmod.completed_files = {"artists", "labels", "releases"}
+        bgmod.completed_files = {"artists", "labels", "release-groups", "releases"}
         bgmod.message_counts = {"artists": 0, "labels": 0, "releases": 0}
         bgmod.active_connection = None
         bgmod.shutdown_requested = False
@@ -1555,14 +1598,14 @@ class TestRecoverConsumers:
         mock_connection = AsyncMock()
         mock_channel = AsyncMock()
 
-        # First 3 declare_queue calls are passive checks, rest are declarations
+        # First 4 declare_queue calls are passive checks, rest are declarations
         call_count = [0]
 
         def make_queue(*_args: Any, **_kwargs: Any) -> AsyncMock:
             q = AsyncMock()
             call_count[0] += 1
-            # First 3 calls are passive checks
-            if call_count[0] <= 3:
+            # First 4 calls are passive checks (one per data type)
+            if call_count[0] <= 4:
                 if call_count[0] == 1:
                     q.declaration_result.message_count = 5  # artists has messages
                 else:
