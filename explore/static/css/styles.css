@@ -1059,31 +1059,49 @@
 .recommendation-item {
     display: flex;
     justify-content: space-between;
-    align-items: flex-start;
-    padding: 0.6rem 0;
-    border-bottom: 1px solid var(--border-color);
-    gap: 0.5rem;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    margin-bottom: 0.5rem;
+    gap: 1rem;
+    transition: border-color 0.15s;
+}
+
+.recommendation-item:hover {
+    border-color: var(--accent-green);
 }
 
 .recommendation-item:last-child {
-    border-bottom: none;
+    margin-bottom: 0;
 }
 
 .recommendation-item .release-list-title a {
     color: var(--text-high);
     text-decoration: none;
+    font-weight: 500;
 }
 
 .recommendation-item .release-list-title a:hover {
     color: var(--accent-green);
-    text-decoration: underline;
+}
+
+.recommendation-item .release-list-meta {
+    font-size: 0.8rem;
+    color: var(--text-mid);
+    margin-top: 0.15rem;
 }
 
 .recommendation-score {
-    font-size: 0.78rem;
+    font-size: 0.75rem;
+    font-weight: 600;
     color: var(--accent-green);
     white-space: nowrap;
     flex-shrink: 0;
+    background: rgba(74, 222, 128, 0.1);
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
 }
 
 /* Discogs connection status badge */
@@ -1218,7 +1236,7 @@
 
 .search-pane-input-wrap {
     position: relative;
-    max-width: 600px;
+    flex: 1;
 }
 
 .search-pane-icon {
@@ -2206,9 +2224,9 @@
 
 /* ── Credits & Provenance ──────────────────────────────────────────────── */
 .credits-search-bar {
-    margin-bottom: 16px; position: relative;
+    margin-bottom: 16px; position: relative; max-width: 100%;
 }
-.credits-autocomplete-wrapper { position: relative; }
+.credits-autocomplete-wrapper { position: relative; width: 100%; }
 .credits-autocomplete-wrapper .autocomplete-dropdown {
     position: absolute; top: 100%; left: 0; right: 0;
     background: var(--card-bg); border: 1px solid var(--border-color);

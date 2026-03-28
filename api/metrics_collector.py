@@ -20,6 +20,7 @@ import time
 from typing import Any
 
 import httpx
+from psycopg.types.json import Jsonb
 import structlog
 
 
@@ -225,6 +226,10 @@ async def persist_metrics(
     """Batch INSERT queue and health metrics rows.  No-op if both lists are empty."""
     if not queue_rows and not health_rows:
         return
+
+    for row in health_rows:
+        if row.get("endpoint_stats") is not None:
+            row["endpoint_stats"] = Jsonb(row["endpoint_stats"])
 
     async with pool.connection() as conn, conn.cursor() as cur:
         if queue_rows:
