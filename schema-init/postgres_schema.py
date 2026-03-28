@@ -534,6 +534,21 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
         )""",
     ),
     (
+        "musicbrainz.release_groups table",
+        """CREATE TABLE IF NOT EXISTS musicbrainz.release_groups (
+            mbid UUID PRIMARY KEY,
+            name TEXT NOT NULL,
+            type TEXT,
+            secondary_types JSONB,
+            first_release_date TEXT,
+            disambiguation TEXT,
+            discogs_master_id INTEGER,
+            data JSONB,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )""",
+    ),
+    (
         "musicbrainz.relationships table",
         """CREATE TABLE IF NOT EXISTS musicbrainz.relationships (
             id SERIAL PRIMARY KEY,
