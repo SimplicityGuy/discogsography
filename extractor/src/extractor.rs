@@ -775,15 +775,9 @@ pub async fn run_musicbrainz_loop(
 ) -> Result<()> {
     info!("🎵 Starting MusicBrainz extraction...");
 
-    let success = process_musicbrainz_data(
-        config.clone(),
-        state.clone(),
-        shutdown.clone(),
-        force_reprocess,
-        mq_factory.clone(),
-        compiled_rules.clone(),
-    )
-    .await?;
+    let success =
+        process_musicbrainz_data(config.clone(), state.clone(), shutdown.clone(), force_reprocess, mq_factory.clone(), compiled_rules.clone())
+            .await?;
 
     if !success {
         error!("❌ Initial MusicBrainz processing failed");
@@ -843,8 +837,8 @@ pub async fn process_musicbrainz_data(
     mq_factory: Arc<dyn MessageQueueFactory>,
     _compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<bool> {
-    use crate::musicbrainz_downloader::{MbDownloader, discover_mb_dump_files};
     use crate::jsonl_parser::{build_mbid_discogs_map_from_file, parse_mb_jsonl_file};
+    use crate::musicbrainz_downloader::{MbDownloader, discover_mb_dump_files};
 
     let extraction_started_at = chrono::Utc::now();
 
@@ -860,10 +854,7 @@ pub async fn process_musicbrainz_data(
     }
 
     // Download latest MusicBrainz dump if needed
-    let downloader = MbDownloader::new(
-        config.musicbrainz_root.clone(),
-        config.musicbrainz_dump_url.clone(),
-    );
+    let downloader = MbDownloader::new(config.musicbrainz_root.clone(), config.musicbrainz_dump_url.clone());
     let download_result = downloader.download_latest().await?;
     let version = download_result.version().to_string();
     let versioned_root = config.musicbrainz_root.join(&version);

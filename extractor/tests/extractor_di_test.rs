@@ -442,12 +442,7 @@ async fn mb_mock_server() -> (mockito::Server, String) {
     let index_html = r#"<html><body>
         <a href="20260322-000000/">20260322-000000/</a>
     </body></html>"#;
-    server
-        .mock("GET", "/")
-        .with_status(200)
-        .with_body(index_html)
-        .create_async()
-        .await;
+    server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
     (server, base_url)
 }
 
@@ -533,7 +528,6 @@ async fn test_process_musicbrainz_data_skip_when_already_complete() {
     let s = state.read().await;
     assert_eq!(s.extraction_status, ExtractionStatus::Completed);
 }
-
 
 #[tokio::test]
 async fn test_process_musicbrainz_data_force_reprocess_bypasses_skip() {

@@ -13,12 +13,7 @@ async fn test_download_latest_already_current() {
         <a href="20260325-001001/">20260325-001001/</a>
     </body></html>"#;
 
-    let _index_mock = server
-        .mock("GET", "/")
-        .with_status(200)
-        .with_body(index_html)
-        .create_async()
-        .await;
+    let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
 
     // Create existing version directory with all 3 entity files
     let version_dir = dir.path().join("20260325-001001");
@@ -43,12 +38,7 @@ async fn test_download_latest_new_version() {
     let index_html = r#"<html><body>
         <a href="20260325-001001/">20260325-001001/</a>
     </body></html>"#;
-    let _index_mock = server
-        .mock("GET", "/")
-        .with_status(200)
-        .with_body(index_html)
-        .create_async()
-        .await;
+    let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
 
     // Build a tiny tar.xz for each entity
     let mut tar_bodies: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
@@ -77,12 +67,7 @@ async fn test_download_latest_new_version() {
         tar_bodies.insert(entity.to_string(), compressed);
     }
 
-    let _sha_mock = server
-        .mock("GET", "/20260325-001001/SHA256SUMS")
-        .with_status(200)
-        .with_body(&sha256_lines)
-        .create_async()
-        .await;
+    let _sha_mock = server.mock("GET", "/20260325-001001/SHA256SUMS").with_status(200).with_body(&sha256_lines).create_async().await;
 
     let _artist_mock = server
         .mock("GET", "/20260325-001001/artist.tar.xz")
@@ -131,12 +116,7 @@ async fn test_download_latest_sha256_mismatch() {
     let index_html = r#"<html><body>
         <a href="20260325-001001/">20260325-001001/</a>
     </body></html>"#;
-    let _index_mock = server
-        .mock("GET", "/")
-        .with_status(200)
-        .with_body(index_html)
-        .create_async()
-        .await;
+    let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
 
     let _sha_mock = server
         .mock("GET", "/20260325-001001/SHA256SUMS")
@@ -160,11 +140,7 @@ async fn test_download_latest_sha256_mismatch() {
 
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
-    assert!(
-        err_msg.contains("SHA256") || err_msg.contains("checksum") || err_msg.contains("mismatch"),
-        "Error should mention checksum: {}",
-        err_msg
-    );
+    assert!(err_msg.contains("SHA256") || err_msg.contains("checksum") || err_msg.contains("mismatch"), "Error should mention checksum: {}", err_msg);
 }
 
 #[test]
@@ -452,10 +428,7 @@ async fn test_download_latest_retry_on_failure() {
     let index_html = r#"<html><body>
         <a href="20260325-001001/">20260325-001001/</a>
     </body></html>"#;
-    let _index_mock = server.mock("GET", "/")
-        .with_status(200)
-        .with_body(index_html)
-        .create_async().await;
+    let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
 
     // Build valid tar.xz for all 3 entities
     let mut tar_bodies: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
@@ -483,32 +456,37 @@ async fn test_download_latest_retry_on_failure() {
         tar_bodies.insert(entity.to_string(), compressed);
     }
 
-    let _sha_mock = server.mock("GET", "/20260325-001001/SHA256SUMS")
-        .with_status(200)
-        .with_body(&sha256_lines)
-        .create_async().await;
+    let _sha_mock = server.mock("GET", "/20260325-001001/SHA256SUMS").with_status(200).with_body(&sha256_lines).create_async().await;
 
     // artist: first request fails (500), second succeeds
-    let _artist_fail = server.mock("GET", "/20260325-001001/artist.tar.xz")
+    let _artist_fail = server
+        .mock("GET", "/20260325-001001/artist.tar.xz")
         .with_status(500)
         .with_body("Internal Server Error")
         .expect(1)
-        .create_async().await;
-    let _artist_ok = server.mock("GET", "/20260325-001001/artist.tar.xz")
+        .create_async()
+        .await;
+    let _artist_ok = server
+        .mock("GET", "/20260325-001001/artist.tar.xz")
         .with_status(200)
         .with_body(tar_bodies.get("artist").unwrap().clone())
         .expect(1)
-        .create_async().await;
+        .create_async()
+        .await;
 
     // label and release succeed immediately
-    let _label_mock = server.mock("GET", "/20260325-001001/label.tar.xz")
+    let _label_mock = server
+        .mock("GET", "/20260325-001001/label.tar.xz")
         .with_status(200)
         .with_body(tar_bodies.get("label").unwrap().clone())
-        .create_async().await;
-    let _release_mock = server.mock("GET", "/20260325-001001/release.tar.xz")
+        .create_async()
+        .await;
+    let _release_mock = server
+        .mock("GET", "/20260325-001001/release.tar.xz")
         .with_status(200)
         .with_body(tar_bodies.get("release").unwrap().clone())
-        .create_async().await;
+        .create_async()
+        .await;
 
     let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
     let result = downloader.download_latest().await.unwrap();

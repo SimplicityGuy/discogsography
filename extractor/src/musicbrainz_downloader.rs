@@ -33,7 +33,8 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
     let mut found: HashMap<DataType, PathBuf> = HashMap::new();
 
     // `root` comes from operator-controlled config (CLI/env var), not HTTP input.
-    let entries: Vec<_> = match std::fs::read_dir(root) { // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+    let entries: Vec<_> = match std::fs::read_dir(root) {
+        // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
         Ok(rd) => rd.filter_map(|e| e.ok()).filter(|e| e.file_type().map(|ft| ft.is_file()).unwrap_or(false)).collect(),
         Err(e) => {
             warn!("⚠️ Cannot read MusicBrainz dump directory {:?}: {}", root, e);
@@ -208,16 +209,14 @@ impl MbDownloader {
         let checksums = parse_sha256sums(&sha_content);
 
         // Step 4: Create version directory
-        fs::create_dir_all(&version_dir)
-            .await
-            .with_context(|| format!("Failed to create directory: {:?}", version_dir))?;
+        fs::create_dir_all(&version_dir).await.with_context(|| format!("Failed to create directory: {:?}", version_dir))?;
 
         // Step 5: Download, verify, and extract each entity
         for entity in MB_ENTITIES {
             let tarball_name = format!("{}.tar.xz", entity);
-            let expected_hash = checksums.get(&tarball_name).ok_or_else(|| {
-                anyhow::anyhow!("No SHA256 checksum found for {} in SHA256SUMS", tarball_name)
-            })?;
+            let expected_hash = checksums
+                .get(&tarball_name)
+                .ok_or_else(|| anyhow::anyhow!("No SHA256 checksum found for {} in SHA256SUMS", tarball_name))?;
 
             let download_url = format!("{}{}/{}", self.base_url, version, tarball_name);
             let tmp_path = version_dir.join(format!("{}.tmp", tarball_name)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
@@ -230,11 +229,9 @@ impl MbDownloader {
             let extract_tmp = tmp_path.clone();
             let extract_entity = entity.to_string();
             let extract_out = out_path.clone();
-            tokio::task::spawn_blocking(move || {
-                extract_entity_from_tarball(&extract_tmp, &extract_entity, &extract_out)
-            })
-            .await
-            .context("Extraction task panicked")??;
+            tokio::task::spawn_blocking(move || extract_entity_from_tarball(&extract_tmp, &extract_entity, &extract_out))
+                .await
+                .context("Extraction task panicked")??;
 
             // Clean up temp tarball
             if let Err(e) = fs::remove_file(&tmp_path).await {
@@ -257,13 +254,7 @@ impl MbDownloader {
     }
 
     /// Download a file with retry logic and SHA256 verification.
-    async fn download_file(
-        &self,
-        url: &str,
-        dest: &Path,
-        expected_sha256: &str,
-        entity: &str,
-    ) -> Result<()> {
+    async fn download_file(&self, url: &str, dest: &Path, expected_sha256: &str, entity: &str) -> Result<()> {
         use futures::StreamExt;
 
         let mut last_error: Option<anyhow::Error> = None;
@@ -274,19 +265,14 @@ impl MbDownloader {
                     let _ = fs::remove_file(dest).await;
                 }
                 let delay_ms = MB_RETRY_BASE_DELAY_MS * (1u64 << (attempt - 2));
-                warn!(
-                    "🔄 Retry {}/{} for {} (waiting {}ms)...",
-                    attempt - 1,
-                    MB_MAX_DOWNLOAD_RETRIES - 1,
-                    entity,
-                    delay_ms
-                );
+                warn!("🔄 Retry {}/{} for {} (waiting {}ms)...", attempt - 1, MB_MAX_DOWNLOAD_RETRIES - 1, entity, delay_ms);
                 tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
             }
 
             info!("⬇️ Downloading {} (attempt {}/{})...", entity, attempt, MB_MAX_DOWNLOAD_RETRIES);
 
-            let response = match reqwest::get(url).await { // nosemgrep: rust.actix.ssrf.reqwest-taint.reqwest-taint
+            let response = match reqwest::get(url).await {
+                // nosemgrep: rust.actix.ssrf.reqwest-taint.reqwest-taint
                 Ok(r) => r,
                 Err(e) => {
                     let msg = format!("Failed to start download for {}: {}", entity, e);
@@ -327,17 +313,8 @@ impl MbDownloader {
                         let now = std::time::Instant::now();
                         if now.duration_since(last_progress_log).as_secs() >= 10 {
                             let elapsed = download_start.elapsed().as_secs_f64();
-                            let speed = if elapsed > 0.0 {
-                                (downloaded as f64 / 1_048_576.0) / elapsed
-                            } else {
-                                0.0
-                            };
-                            info!(
-                                "⬇️ {} — {:.1} MB received ({:.1} MB/s)",
-                                entity,
-                                downloaded as f64 / 1_048_576.0,
-                                speed
-                            );
+                            let speed = if elapsed > 0.0 { (downloaded as f64 / 1_048_576.0) / elapsed } else { 0.0 };
+                            info!("⬇️ {} — {:.1} MB received ({:.1} MB/s)", entity, downloaded as f64 / 1_048_576.0, speed);
                             last_progress_log = now;
                         }
                     }
@@ -366,31 +343,19 @@ impl MbDownloader {
             // Verify SHA256
             let actual_hash = format!("{:x}", hasher.finalize());
             if actual_hash != expected_sha256 {
-                let msg = format!(
-                    "SHA256 mismatch for {}: expected {}, got {}",
-                    entity, expected_sha256, actual_hash
-                );
+                let msg = format!("SHA256 mismatch for {}: expected {}, got {}", entity, expected_sha256, actual_hash);
                 warn!("⚠️ {}", msg);
                 last_error = Some(anyhow::anyhow!(msg));
                 let _ = fs::remove_file(dest).await;
                 continue;
             }
 
-            info!(
-                "✅ Downloaded {} ({:.2} MB, SHA256 verified)",
-                entity,
-                downloaded as f64 / 1_048_576.0
-            );
+            info!("✅ Downloaded {} ({:.2} MB, SHA256 verified)", entity, downloaded as f64 / 1_048_576.0);
             return Ok(());
         }
 
-        error!(
-            "❌ Download failed after {} attempts for {}",
-            MB_MAX_DOWNLOAD_RETRIES, entity
-        );
-        Err(last_error.unwrap_or_else(|| {
-            anyhow::anyhow!("Download failed after {} attempts", MB_MAX_DOWNLOAD_RETRIES)
-        }))
+        error!("❌ Download failed after {} attempts for {}", MB_MAX_DOWNLOAD_RETRIES, entity);
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Download failed after {} attempts", MB_MAX_DOWNLOAD_RETRIES)))
     }
 }
 
@@ -399,10 +364,7 @@ impl MbDownloader {
 #[allow(dead_code)]
 pub fn parse_version_directories(html: &str) -> Vec<String> {
     let pattern = regex::Regex::new(r#"href="(\d{8}-\d{6})/?"#).unwrap();
-    let mut versions: Vec<String> = pattern
-        .captures_iter(html)
-        .filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string()))
-        .collect();
+    let mut versions: Vec<String> = pattern.captures_iter(html).filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string())).collect();
     versions.sort_by(|a, b| b.cmp(a));
     versions.dedup();
     versions
@@ -447,8 +409,7 @@ pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Pat
         if path.ends_with(&target_suffix) {
             let mut out_file = std::fs::File::create(out_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
                 .with_context(|| format!("Failed to create output file: {:?}", out_path))?;
-            io::copy(&mut entry, &mut out_file)
-                .with_context(|| format!("Failed to extract {} to {:?}", entity, out_path))?;
+            io::copy(&mut entry, &mut out_file).with_context(|| format!("Failed to extract {} to {:?}", entity, out_path))?;
             let size = out_file.metadata().map(|m| m.len()).unwrap_or(0);
             info!("📋 Extracted {} from {:?} ({} bytes)", entity, tar_path, size);
             return Ok(());
