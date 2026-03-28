@@ -7,6 +7,13 @@ import pytest
 from api.queries.label_dna_queries import (
     compute_similar_labels,
     get_candidate_labels_genre_vectors,
+    get_label_active_years,
+    get_label_decade_profile,
+    get_label_format_profile,
+    get_label_full_profile,
+    get_label_genre_profile,
+    get_label_identity,
+    get_label_style_profile,
 )
 from api.queries.similarity import cosine_similarity, to_genre_vector
 
@@ -193,3 +200,132 @@ class TestGetCandidateLabelsGenreVectors:
 
         for call in mock_run_query.call_args_list:
             assert call.kwargs["timeout"] == 60
+
+
+# ---------------------------------------------------------------------------
+# Individual query functions
+# ---------------------------------------------------------------------------
+
+
+class TestLabelIdentity:
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.run_single", new_callable=AsyncMock)
+    async def test_returns_result(self, mock_run_single: AsyncMock) -> None:
+        mock_run_single.return_value = {"label_id": "L1", "label_name": "Warp", "release_count": 50, "artist_count": 20}
+        driver = AsyncMock()
+        result = await get_label_identity(driver, "L1")
+        assert result["label_name"] == "Warp"
+        mock_run_single.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.run_single", new_callable=AsyncMock)
+    async def test_returns_none(self, mock_run_single: AsyncMock) -> None:
+        mock_run_single.return_value = None
+        driver = AsyncMock()
+        result = await get_label_identity(driver, "X")
+        assert result is None
+
+
+class TestLabelGenreProfile:
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
+    async def test_returns_genres(self, mock_run_query: AsyncMock) -> None:
+        mock_run_query.return_value = [{"name": "Electronic", "count": 80}, {"name": "Rock", "count": 20}]
+        driver = AsyncMock()
+        result = await get_label_genre_profile(driver, "L1")
+        assert len(result) == 2
+        assert result[0]["name"] == "Electronic"
+
+
+class TestLabelStyleProfile:
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
+    async def test_returns_styles(self, mock_run_query: AsyncMock) -> None:
+        mock_run_query.return_value = [{"name": "Techno", "count": 50}]
+        driver = AsyncMock()
+        result = await get_label_style_profile(driver, "L1")
+        assert len(result) == 1
+        assert result[0]["name"] == "Techno"
+
+
+class TestLabelDecadeProfile:
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
+    async def test_returns_decades(self, mock_run_query: AsyncMock) -> None:
+        mock_run_query.return_value = [{"decade": 1990, "count": 30}, {"decade": 2000, "count": 50}]
+        driver = AsyncMock()
+        result = await get_label_decade_profile(driver, "L1")
+        assert len(result) == 2
+        assert result[0]["decade"] == 1990
+
+
+class TestLabelActiveYears:
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
+    async def test_returns_years(self, mock_run_query: AsyncMock) -> None:
+        mock_run_query.return_value = [{"year": 1992}, {"year": 1995}, {"year": 2001}]
+        driver = AsyncMock()
+        result = await get_label_active_years(driver, "L1")
+        assert result == [1992, 1995, 2001]
+
+
+class TestLabelFormatProfile:
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.run_query", new_callable=AsyncMock)
+    async def test_returns_formats(self, mock_run_query: AsyncMock) -> None:
+        mock_run_query.return_value = [{"name": "Vinyl", "count": 40}, {"name": "CD", "count": 30}]
+        driver = AsyncMock()
+        result = await get_label_format_profile(driver, "L1")
+        assert len(result) == 2
+        assert result[0]["name"] == "Vinyl"
+
+
+class TestLabelFullProfile:
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.get_label_identity", new_callable=AsyncMock)
+    async def test_identity_none_returns_none(self, mock_identity: AsyncMock) -> None:
+        """When identity returns None, full profile returns None."""
+        mock_identity.return_value = None
+        driver = AsyncMock()
+        result = await get_label_full_profile(driver, "X")
+        assert result is None
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.get_label_identity", new_callable=AsyncMock)
+    async def test_below_min_releases_returns_early(self, mock_identity: AsyncMock) -> None:
+        """When release_count < MIN_RELEASES, returns early with empty profiles."""
+        mock_identity.return_value = {"label_id": "L1", "label_name": "Tiny Label", "release_count": 2, "artist_count": 1}
+        driver = AsyncMock()
+        result = await get_label_full_profile(driver, "L1")
+        assert result is not None
+        assert result["release_count"] == 2
+        assert result["genres"] == []
+        assert result["styles"] == []
+        assert result["decades"] == []
+
+    @pytest.mark.asyncio
+    @patch("api.queries.label_dna_queries.get_label_decade_profile", new_callable=AsyncMock)
+    @patch("api.queries.label_dna_queries.get_label_style_profile", new_callable=AsyncMock)
+    @patch("api.queries.label_dna_queries.get_label_genre_profile", new_callable=AsyncMock)
+    @patch("api.queries.label_dna_queries.get_label_identity", new_callable=AsyncMock)
+    async def test_normal_path(
+        self,
+        mock_identity: AsyncMock,
+        mock_genres: AsyncMock,
+        mock_styles: AsyncMock,
+        mock_decades: AsyncMock,
+    ) -> None:
+        """Normal path with enough releases fetches genres, styles, decades in parallel."""
+        mock_identity.return_value = {"label_id": "L1", "label_name": "Warp", "release_count": 100, "artist_count": 40}
+        mock_genres.return_value = [{"name": "Electronic", "count": 80}]
+        mock_styles.return_value = [{"name": "Techno", "count": 50}]
+        mock_decades.return_value = [{"decade": 1990, "count": 60}]
+
+        driver = AsyncMock()
+        result = await get_label_full_profile(driver, "L1")
+        assert result["label_id"] == "L1"
+        assert result["label_name"] == "Warp"
+        assert result["release_count"] == 100
+        assert result["genres"] == [{"name": "Electronic", "count": 80}]
+        assert result["styles"] == [{"name": "Techno", "count": 50}]
+        assert result["decades"] == [{"decade": 1990, "count": 60}]

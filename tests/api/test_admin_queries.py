@@ -290,6 +290,55 @@ class TestGetNeo4jStorage:
         assert result["store_sizes"]["strings"] == "191 MB"
 
     @pytest.mark.asyncio
+    async def test_neo4j_jmx_store_sizes_kb_formatting(self):
+        """Test the kB formatting branch in _fmt() when bytes_val < 1 MB (line 152)."""
+        from api.queries.admin_queries import get_neo4j_storage
+
+        # apoc.meta.stats result
+        mock_stats_result = AsyncMock()
+        mock_stats_result.single = AsyncMock(
+            return_value={
+                "labels": {"Artist": 100},
+                "relTypesCount": {"BY": 200},
+            }
+        )
+
+        # JMX result with store size attributes all under 1 MB (1_048_576 bytes)
+        mock_jmx_result = AsyncMock()
+        mock_jmx_result.single = AsyncMock(
+            return_value={
+                "attributes": {
+                    "TotalStoreSize": {"value": 512_000},  # ~500 kB
+                    "NodeStoreSize": {"value": 102_400},  # 100 kB
+                    "RelationshipStoreSize": {"value": 204_800},  # 200 kB
+                    "StringStoreSize": {"value": 51_200},  # 50 kB
+                },
+            }
+        )
+
+        mock_session1 = AsyncMock()
+        mock_session1.run = AsyncMock(return_value=mock_stats_result)
+        mock_session1.__aenter__ = AsyncMock(return_value=mock_session1)
+        mock_session1.__aexit__ = AsyncMock(return_value=False)
+
+        mock_session2 = AsyncMock()
+        mock_session2.run = AsyncMock(return_value=mock_jmx_result)
+        mock_session2.__aenter__ = AsyncMock(return_value=mock_session2)
+        mock_session2.__aexit__ = AsyncMock(return_value=False)
+
+        mock_driver = MagicMock()
+        mock_driver.session = MagicMock(side_effect=[mock_session1, mock_session2])
+
+        result = await get_neo4j_storage(mock_driver)
+
+        assert result["status"] == "ok"
+        assert result["store_sizes"] is not None
+        assert result["store_sizes"]["total"] == "500 kB"
+        assert result["store_sizes"]["nodes"] == "100 kB"
+        assert result["store_sizes"]["relationships"] == "200 kB"
+        assert result["store_sizes"]["strings"] == "50 kB"
+
+    @pytest.mark.asyncio
     async def test_neo4j_driver_none(self):
         from api.queries.admin_queries import get_neo4j_storage
 
