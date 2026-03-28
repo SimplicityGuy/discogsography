@@ -354,6 +354,43 @@ class TestPersistMetrics:
         assert mock_cur.executemany.call_count == 2
 
     @pytest.mark.anyio
+    async def test_wraps_endpoint_stats_with_jsonb(self) -> None:
+        """endpoint_stats dicts are wrapped with Jsonb() before insertion."""
+        from psycopg.types.json import Jsonb
+
+        from api.metrics_collector import persist_metrics
+
+        mock_cur = AsyncMock()
+
+        mock_conn = MagicMock()
+        cursor_cm = MagicMock()
+        cursor_cm.__aenter__ = AsyncMock(return_value=mock_cur)
+        cursor_cm.__aexit__ = AsyncMock(return_value=False)
+        mock_conn.cursor.return_value = cursor_cm
+
+        conn_cm = MagicMock()
+        conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        conn_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = MagicMock()
+        mock_pool.connection.return_value = conn_cm
+
+        stats = {"/api/auth/me": {"count": 5, "p50": 1.2, "p95": 3.4, "p99": 5.0, "error_count": 0}}
+        health_rows = [
+            {
+                "service_name": "api",
+                "status": "healthy",
+                "response_time_ms": 10.0,
+                "endpoint_stats": stats,
+            }
+        ]
+
+        await persist_metrics(mock_pool, [], health_rows)
+
+        # Verify the dict was wrapped with Jsonb
+        assert isinstance(health_rows[0]["endpoint_stats"], Jsonb)
+
+    @pytest.mark.anyio
     async def test_noop_on_empty(self) -> None:
         from api.metrics_collector import persist_metrics
 

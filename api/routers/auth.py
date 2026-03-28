@@ -285,7 +285,7 @@ async def reset_request(request: Request, body: ResetRequestModel) -> JSONRespon
             900,  # 15 min TTL
             json.dumps({"user_id": str(user["id"]), "email": user["email"]}),
         )
-        reset_url = f"/reset?token={token}"
+        reset_url = f"/?reset_token={token}"
         if _notification_channel:
             await _notification_channel.send_password_reset(user["email"], reset_url)
 

@@ -236,6 +236,9 @@ services:
       POSTGRES_PASSWORD: discogsography
       POSTGRES_USERNAME: discogsography
       PYTHONUNBUFFERED: "1"
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PASSWORD: discogsography
+      RABBITMQ_USERNAME: discogsography
       REDIS_HOST: redis
       STARTUP_DELAY: "5"
       # NLQ (Natural Language Queries) — disabled by default

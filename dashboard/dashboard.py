@@ -13,7 +13,7 @@ from typing import cast
 
 from fastapi import FastAPI, Response, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import httpx
 import orjson
@@ -598,6 +598,14 @@ admin_api_host = os.getenv("API_HOST", "api")
 admin_api_port = int(os.getenv("API_PORT", "8004"))
 configure_admin_proxy(admin_api_host, admin_api_port)
 app.include_router(admin_router)
+
+
+@app.get("/admin")
+async def serve_admin() -> HTMLResponse:
+    """Serve admin page directly to avoid StaticFiles routing issues."""
+    admin_path = Path(__file__).parent / "static" / "admin.html"
+    return HTMLResponse(admin_path.read_text())
+
 
 # Mount static files for the UI
 static_dir = Path(__file__).parent / "static"

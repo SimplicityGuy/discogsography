@@ -153,9 +153,9 @@
                 </label>
             </div>
             <button id="theme-toggle" class="p-2 rounded-full transition-colors dashboard-card flex items-center justify-center" style="border-radius:9999px" title="Toggle theme">
-                <span id="theme-icon-auto" class="material-symbols-outlined text-lg t-dim hidden">brightness_auto</span>
-                <span id="theme-icon-sun" class="material-symbols-outlined text-lg t-dim hidden">light_mode</span>
-                <span id="theme-icon-moon" class="material-symbols-outlined text-lg t-dim hidden">dark_mode</span>
+                <span id="theme-icon-auto" class="material-symbols-outlined text-lg t-dim" style="display:none">brightness_auto</span>
+                <span id="theme-icon-sun" class="material-symbols-outlined text-lg t-dim" style="display:none">light_mode</span>
+                <span id="theme-icon-moon" class="material-symbols-outlined text-lg t-dim" style="display:none">dark_mode</span>
             </button>
         </div>
     </header>
@@ -1011,7 +1011,7 @@
         </div>
 
         <!-- System Event Log -->
-        <div class="dashboard-card flex flex-col overflow-hidden">
+        <div class="dashboard-card flex flex-col overflow-hidden" style="border-left: 1px solid var(--border-color)">
             <div class="px-6 py-4 border-b b-theme flex items-center justify-between">
                 <h2 class="text-sm font-bold flex items-center gap-2">
                     <span class="material-symbols-outlined text-sm t-dim">list_alt</span> System Event Log

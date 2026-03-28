@@ -411,7 +411,7 @@ pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Pat
                 .with_context(|| format!("Failed to create output file: {:?}", out_path))?;
             io::copy(&mut entry, &mut out_file).with_context(|| format!("Failed to extract {} to {:?}", entity, out_path))?;
             let size = out_file.metadata().map(|m| m.len()).unwrap_or(0);
-            info!("📋 Extracted {} from {:?} ({} bytes)", entity, tar_path, size);
+            info!("📋 Extracted {} from {} ({} bytes)", entity, tar_path.display(), size);
             return Ok(());
         }
     }

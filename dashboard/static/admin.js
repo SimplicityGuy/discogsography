@@ -64,9 +64,9 @@ class AdminDashboard {
 
         const updateIcons = () => {
             const mode = getMode();
-            autoIcon.classList.toggle('hidden', mode !== 'auto');
-            sunIcon.classList.toggle('hidden', mode !== 'light');
-            moonIcon.classList.toggle('hidden', mode !== 'dark');
+            autoIcon.style.display = mode === 'auto' ? '' : 'none';
+            sunIcon.style.display = mode === 'light' ? '' : 'none';
+            moonIcon.style.display = mode === 'dark' ? '' : 'none';
         };
 
         applyMode(getMode());
