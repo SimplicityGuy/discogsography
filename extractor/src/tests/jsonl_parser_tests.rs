@@ -326,12 +326,14 @@ fn test_enrich_relations_with_map() {
 
     let relations = vec![
         serde_json::json!({
-            "type": "collaboration",
-            "target": {"id": "target-mbid-1", "name": "Artist B"}
+            "type": "member of band",
+            "target-type": "artist",
+            "artist": {"id": "target-mbid-1", "name": "Artist B"}
         }),
         serde_json::json!({
             "type": "tribute",
-            "target": {"id": "target-mbid-2", "name": "Artist C"}
+            "target-type": "artist",
+            "artist": {"id": "target-mbid-2", "name": "Artist C"}
         }),
     ];
 
@@ -340,7 +342,7 @@ fn test_enrich_relations_with_map() {
     assert_eq!(enriched[0]["target_discogs_artist_id"], 200);
     assert!(enriched[1]["target_discogs_artist_id"].is_null());
     // Original fields preserved
-    assert_eq!(enriched[0]["type"], "collaboration");
+    assert_eq!(enriched[0]["type"], "member of band");
     assert_eq!(enriched[1]["type"], "tribute");
 }
 
@@ -358,11 +360,30 @@ fn test_enrich_relations_no_target_id() {
     let mut map = HashMap::new();
     map.insert("some-mbid".to_string(), 999i64);
 
-    // Relation with no "target" field at all — should get null
-    let relations = vec![serde_json::json!({"type": "misc"})];
+    // Relation with no target entity — should get null
+    let relations = vec![serde_json::json!({"type": "misc", "target-type": "artist"})];
     let enriched = enrich_relations(relations, &map);
     assert_eq!(enriched.len(), 1);
     assert!(enriched[0]["target_discogs_artist_id"].is_null());
+}
+
+#[test]
+fn test_enrich_relations_skips_url_rels() {
+    use std::collections::HashMap;
+    let map: HashMap<String, i64> = HashMap::new();
+
+    // URL-type relations should be passed through without enrichment
+    let relations = vec![serde_json::json!({
+        "type": "discogs",
+        "target-type": "url",
+        "url": {"id": "some-uuid", "resource": "https://www.discogs.com/artist/123"}
+    })];
+    let enriched = enrich_relations(relations, &map);
+    assert_eq!(enriched.len(), 1);
+    // Should NOT have target_discogs_artist_id added
+    assert!(enriched[0].get("target_discogs_artist_id").is_none());
+    // Original fields preserved
+    assert_eq!(enriched[0]["type"], "discogs");
 }
 
 // ─── parse_mb_jsonl_file with discogs_map ─────────────────────────────────────
@@ -375,7 +396,7 @@ fn test_parse_mb_jsonl_file_with_discogs_map_enriches_relations() {
     use tokio::sync::mpsc;
     use xz2::write::XzEncoder;
 
-    let line = r#"{"id":"mbid-artist","name":"Test Artist","sort-name":"Artist, Test","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[{"type":"collaboration","target-type":"artist","target":{"id":"target-mbid-A","name":"Collab Artist"}}]}"#;
+    let line = r#"{"id":"mbid-artist","name":"Test Artist","sort-name":"Artist, Test","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[{"type":"collaboration","target-type":"artist","artist":{"id":"target-mbid-A","name":"Collab Artist"}}]}"#;
     let content = format!("{}\n", line);
 
     let mut temp_file = NamedTempFile::new().unwrap();

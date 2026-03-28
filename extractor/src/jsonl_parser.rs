@@ -246,14 +246,23 @@ pub fn build_mbid_discogs_map_from_file(path: &Path, entity_type: &str) -> Resul
 
 /// Enrich relationship target entries with Discogs IDs from a lookup map.
 ///
-/// For each relation, looks up the target's MBID in `discogs_map`. If found,
-/// adds `"target_discogs_artist_id": <id>` to the relation object. If not
-/// found, adds `"target_discogs_artist_id": null`.
+/// For each non-URL relation, looks up the target entity's MBID in `discogs_map`.
+/// The target entity is stored under a key matching the `target-type` field
+/// (e.g., `rel["artist"]["id"]` for `target-type: "artist"`).
+/// If found, adds `"target_discogs_artist_id": <id>` to the relation object.
+/// If not found, adds `"target_discogs_artist_id": null`.
+/// URL-type relations are passed through unchanged.
 pub fn enrich_relations(relations: Vec<Value>, discogs_map: &HashMap<String, i64>) -> Vec<Value> {
     relations
         .into_iter()
         .map(|mut rel| {
-            let target_mbid = rel["target"]["id"].as_str().map(|s| s.to_string());
+            let target_type = rel["target-type"].as_str().unwrap_or("");
+            // Only enrich entity-to-entity relations (not URL rels)
+            if target_type == "url" {
+                return rel;
+            }
+            // The target entity is stored under a key matching target-type
+            let target_mbid = rel[target_type]["id"].as_str().map(|s| s.to_string());
             let target_discogs_id: Value =
                 target_mbid.as_deref().and_then(|mbid| discogs_map.get(mbid)).copied().map(Value::from).unwrap_or(Value::Null);
             if let Some(obj) = rel.as_object_mut() {
