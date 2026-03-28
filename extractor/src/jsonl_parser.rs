@@ -48,6 +48,38 @@ fn extract_url_rels(relations: &[Value]) -> Vec<Value> {
     relations.iter().filter(|rel| rel["target-type"].as_str() == Some("url")).cloned().collect()
 }
 
+/// Extract entity-to-entity relationships from the unified `relations` array,
+/// normalizing to a flat format with `target_mbid` and `target_type` fields.
+///
+/// URL-type relations are excluded (they're captured separately via
+/// [`extract_url_rels`] → [`extract_external_links`]).
+///
+/// The MusicBrainz dump stores the target entity under a key matching
+/// `target-type` (e.g., `rel["artist"]["id"]` for `target-type: "artist"`).
+/// This function normalizes that to `target_mbid` for downstream consumers.
+fn extract_entity_rels(relations: &[Value]) -> Vec<Value> {
+    relations
+        .iter()
+        .filter_map(|rel| {
+            let target_type = rel["target-type"].as_str()?;
+            if target_type == "url" {
+                return None;
+            }
+            let target_mbid = rel[target_type]["id"].as_str().unwrap_or("");
+            Some(serde_json::json!({
+                "type": rel["type"],
+                "target_type": target_type,
+                "target_mbid": target_mbid,
+                "direction": rel["direction"],
+                "attributes": rel["attributes"],
+                "begin_date": rel["begin"],
+                "end_date": rel["end"],
+                "ended": rel["ended"]
+            }))
+        })
+        .collect()
+}
+
 /// Filter URL-rel entries, returning non-Discogs ones as `{"service": ..., "url": ...}` objects.
 pub fn extract_external_links(url_rels: &[Value]) -> Vec<Value> {
     url_rels
@@ -101,6 +133,7 @@ pub fn parse_mb_artist_line(line: &str) -> Result<DataMessage> {
 
     let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
     let url_rels = extract_url_rels(all_rels);
+    let entity_rels = extract_entity_rels(all_rels);
     let discogs_artist_id = find_discogs_id(&url_rels, "artist");
     let external_links = extract_external_links(&url_rels);
 
@@ -126,7 +159,7 @@ pub fn parse_mb_artist_line(line: &str) -> Result<DataMessage> {
         "disambiguation": v["disambiguation"],
         "aliases": v["aliases"],
         "tags": v["tags"],
-        "relations": v["relations"],
+        "relations": entity_rels,
         "external_links": external_links
     });
 
@@ -142,6 +175,7 @@ pub fn parse_mb_label_line(line: &str) -> Result<DataMessage> {
 
     let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
     let url_rels = extract_url_rels(all_rels);
+    let entity_rels = extract_entity_rels(all_rels);
     let discogs_label_id = find_discogs_id(&url_rels, "label");
     let external_links = extract_external_links(&url_rels);
 
@@ -160,7 +194,7 @@ pub fn parse_mb_label_line(line: &str) -> Result<DataMessage> {
         },
         "area": area_name,
         "disambiguation": v["disambiguation"],
-        "relations": v["relations"],
+        "relations": entity_rels,
         "external_links": external_links
     });
 
@@ -176,6 +210,7 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
 
     let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
     let url_rels = extract_url_rels(all_rels);
+    let entity_rels = extract_entity_rels(all_rels);
     let discogs_release_id = find_discogs_id(&url_rels, "release");
     let external_links = extract_external_links(&url_rels);
 
@@ -187,7 +222,7 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
         "barcode": v["barcode"],
         "status": v["status"],
         "release_group_mbid": release_group_mbid,
-        "relations": v["relations"],
+        "relations": entity_rels,
         "external_links": external_links
     });
 
@@ -244,25 +279,19 @@ pub fn build_mbid_discogs_map_from_file(path: &Path, entity_type: &str) -> Resul
     Ok(map)
 }
 
-/// Enrich relationship target entries with Discogs IDs from a lookup map.
+/// Enrich relationship entries with Discogs IDs from a lookup map.
 ///
-/// For each non-URL relation, looks up the target entity's MBID in `discogs_map`.
-/// The target entity is stored under a key matching the `target-type` field
-/// (e.g., `rel["artist"]["id"]` for `target-type: "artist"`).
+/// For each relation, looks up `target_mbid` in `discogs_map`.
 /// If found, adds `"target_discogs_artist_id": <id>` to the relation object.
 /// If not found, adds `"target_discogs_artist_id": null`.
-/// URL-type relations are passed through unchanged.
+///
+/// Expects relations already normalized by [`extract_entity_rels`] with
+/// `target_mbid` and `target_type` fields.
 pub fn enrich_relations(relations: Vec<Value>, discogs_map: &HashMap<String, i64>) -> Vec<Value> {
     relations
         .into_iter()
         .map(|mut rel| {
-            let target_type = rel["target-type"].as_str().unwrap_or("");
-            // Only enrich entity-to-entity relations (not URL rels)
-            if target_type == "url" {
-                return rel;
-            }
-            // The target entity is stored under a key matching target-type
-            let target_mbid = rel[target_type]["id"].as_str().map(|s| s.to_string());
+            let target_mbid = rel["target_mbid"].as_str().map(|s| s.to_string());
             let target_discogs_id: Value =
                 target_mbid.as_deref().and_then(|mbid| discogs_map.get(mbid)).copied().map(Value::from).unwrap_or(Value::Null);
             if let Some(obj) = rel.as_object_mut() {

@@ -69,7 +69,7 @@ fn test_extract_external_links_all_discogs() {
 fn test_extract_url_rels_filters_by_target_type() {
     let relations = serde_json::json!([
         {"type": "discogs", "target-type": "url", "url": {"resource": "https://www.discogs.com/artist/108713"}},
-        {"type": "collaboration", "target-type": "artist", "target": {"id": "some-mbid"}},
+        {"type": "collaboration", "target-type": "artist", "artist": {"id": "some-mbid", "name": "Test"}},
         {"type": "wikipedia", "target-type": "url", "url": {"resource": "https://en.wikipedia.org/wiki/Test"}}
     ]);
     let url_rels = extract_url_rels(relations.as_array().unwrap());
@@ -91,6 +91,41 @@ fn test_extract_url_rels_no_url_type() {
     ]);
     let url_rels = extract_url_rels(relations.as_array().unwrap());
     assert!(url_rels.is_empty());
+}
+
+// ─── extract_entity_rels ────────────────────────────────────────────────────
+
+#[test]
+fn test_extract_entity_rels_normalizes_format() {
+    let relations = serde_json::json!([
+        {
+            "type": "member of band", "target-type": "artist", "direction": "backward",
+            "artist": {"id": "artist-mbid-1", "name": "James Hetfield"},
+            "attributes": ["guitar", "lead vocals"],
+            "begin": "1981", "end": null, "ended": false
+        },
+        {
+            "type": "discogs", "target-type": "url",
+            "url": {"id": "url-uuid", "resource": "https://www.discogs.com/artist/18839"}
+        }
+    ]);
+    let entity_rels = extract_entity_rels(relations.as_array().unwrap());
+    // URL rel should be excluded
+    assert_eq!(entity_rels.len(), 1);
+    // Normalized fields
+    assert_eq!(entity_rels[0]["type"], "member of band");
+    assert_eq!(entity_rels[0]["target_type"], "artist");
+    assert_eq!(entity_rels[0]["target_mbid"], "artist-mbid-1");
+    assert_eq!(entity_rels[0]["direction"], "backward");
+    assert_eq!(entity_rels[0]["begin_date"], "1981");
+    assert!(entity_rels[0]["end_date"].is_null());
+    assert_eq!(entity_rels[0]["ended"], false);
+}
+
+#[test]
+fn test_extract_entity_rels_empty() {
+    let entity_rels = extract_entity_rels(&[]);
+    assert!(entity_rels.is_empty());
 }
 
 // ─── parse_mb_artist_line ────────────────────────────────────────────────────
@@ -324,16 +359,17 @@ fn test_enrich_relations_with_map() {
     let mut map = HashMap::new();
     map.insert("target-mbid-1".to_string(), 200i64);
 
+    // Relations already normalized by extract_entity_rels
     let relations = vec![
         serde_json::json!({
             "type": "member of band",
-            "target-type": "artist",
-            "artist": {"id": "target-mbid-1", "name": "Artist B"}
+            "target_type": "artist",
+            "target_mbid": "target-mbid-1"
         }),
         serde_json::json!({
             "type": "tribute",
-            "target-type": "artist",
-            "artist": {"id": "target-mbid-2", "name": "Artist C"}
+            "target_type": "artist",
+            "target_mbid": "target-mbid-2"
         }),
     ];
 
@@ -360,30 +396,11 @@ fn test_enrich_relations_no_target_id() {
     let mut map = HashMap::new();
     map.insert("some-mbid".to_string(), 999i64);
 
-    // Relation with no target entity — should get null
-    let relations = vec![serde_json::json!({"type": "misc", "target-type": "artist"})];
+    // Relation with empty target_mbid — should get null
+    let relations = vec![serde_json::json!({"type": "misc", "target_type": "artist", "target_mbid": ""})];
     let enriched = enrich_relations(relations, &map);
     assert_eq!(enriched.len(), 1);
     assert!(enriched[0]["target_discogs_artist_id"].is_null());
-}
-
-#[test]
-fn test_enrich_relations_skips_url_rels() {
-    use std::collections::HashMap;
-    let map: HashMap<String, i64> = HashMap::new();
-
-    // URL-type relations should be passed through without enrichment
-    let relations = vec![serde_json::json!({
-        "type": "discogs",
-        "target-type": "url",
-        "url": {"id": "some-uuid", "resource": "https://www.discogs.com/artist/123"}
-    })];
-    let enriched = enrich_relations(relations, &map);
-    assert_eq!(enriched.len(), 1);
-    // Should NOT have target_discogs_artist_id added
-    assert!(enriched[0].get("target_discogs_artist_id").is_none());
-    // Original fields preserved
-    assert_eq!(enriched[0]["type"], "discogs");
 }
 
 // ─── parse_mb_jsonl_file with discogs_map ─────────────────────────────────────
@@ -418,6 +435,10 @@ fn test_parse_mb_jsonl_file_with_discogs_map_enriches_relations() {
     let relations = msg.data["relations"].as_array().unwrap();
     assert_eq!(relations.len(), 1);
     assert_eq!(relations[0]["target_discogs_artist_id"], 777);
+    // Verify normalized format
+    assert_eq!(relations[0]["target_mbid"], "target-mbid-A");
+    assert_eq!(relations[0]["target_type"], "artist");
+    assert_eq!(relations[0]["type"], "collaboration");
 }
 
 // ─── find_discogs_id edge case: discogs type but no url resource ─────────────
