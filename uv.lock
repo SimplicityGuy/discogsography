@@ -162,7 +162,7 @@ wheels = [
 
 [[package]]
 name = "brevo-python"
-version = "4.0.8"
+version = "4.0.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "httpx", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -170,9 +170,9 @@ dependencies = [
     { name = "pydantic-core", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "typing-extensions", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/92/05/966c8774acc9bfa288e95a6d9f4522504dc28d35dda82cdf4745c447728c/brevo_python-4.0.8.tar.gz", hash = "sha256:791632b2d860a32d892935fafd1fa064a582e1e43e1535cae9a15fffacd98d2a", size = 427934, upload-time = "2026-03-25T09:00:45.54Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/5c/ee3954c5542e5959c932969018b364c2a1f53b5492d3154a32ded6c33db4/brevo_python-4.0.9.tar.gz", hash = "sha256:2102a1cc5ae689e145bcf25447e4ce17a64c413d71813938ebe60e78cc4de75e", size = 427998, upload-time = "2026-03-27T14:08:23.072Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/8b/b2/90f175cbf11987bd10994cbe7628e8fc2029f04aed3c7ab471a225a50f22/brevo_python-4.0.8-py3-none-any.whl", hash = "sha256:fcb7e569edcdd0b568cc8f0e53a9c369ee023df3842a74777c0b54144c46917e", size = 877337, upload-time = "2026-03-25T09:00:43.132Z" },
+    { url = "https://files.pythonhosted.org/packages/30/fe/e6a47aad9d20ac1452b68ad3ce95e6e26a92489069ff3a4fe3ed4ca72163/brevo_python-4.0.9-py3-none-any.whl", hash = "sha256:33ccc80e47526d9326935da2670bdbba17eeffcb1715bbd4fb62c3696ec9eb43", size = 877391, upload-time = "2026-03-27T14:08:21.785Z" },
 ]
 
 [[package]]
@@ -2324,14 +2324,14 @@ wheels = [
 
 [[package]]
 name = "types-requests"
-version = "2.32.4.20260324"
+version = "2.33.0.20260327"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "urllib3", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin') or (platform_machine == 'x86_64' and sys_platform == 'darwin') or (platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/6c/b1/66bafdc85965e5aa3db42e1b9128bf8abe252edd7556d00a07ef437a3e0e/types_requests-2.32.4.20260324.tar.gz", hash = "sha256:33a2a9ccb1de7d4e4da36e347622c35418f6761269014cc32857acabd5df739e", size = 23765, upload-time = "2026-03-24T04:06:35.106Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/02/5f/2e3dbae6e21be6ae026563bad96cbf76602d73aa85ea09f13419ddbdabb4/types_requests-2.33.0.20260327.tar.gz", hash = "sha256:f4f74f0b44f059e3db420ff17bd1966e3587cdd34062fe38a23cda97868f8dd8", size = 23804, upload-time = "2026-03-27T04:23:38.737Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/5b/5a/ce5999f9bd72c7fac681d26cd0a5782b379053bfc2214e2a3fbe30852c9e/types_requests-2.32.4.20260324-py3-none-any.whl", hash = "sha256:f83ef2deb284fe99a249b8b0b0a3e4b9809e01ff456063c4df0aac7670c07ab9", size = 20735, upload-time = "2026-03-24T04:06:33.9Z" },
+    { url = "https://files.pythonhosted.org/packages/8c/55/951e733616c92cb96b57554746d2f65f4464d080cc2cc093605f897aba89/types_requests-2.33.0.20260327-py3-none-any.whl", hash = "sha256:fde0712be6d7c9a4d490042d6323115baf872d9a71a22900809d0432de15776e", size = 20737, upload-time = "2026-03-27T04:23:37.813Z" },
 ]
 
 [[package]]
