@@ -2,12 +2,16 @@ use extractor::config::ExtractorConfig;
 use extractor::discogs_downloader::MockDataSource;
 use extractor::extractor::DefaultMessageQueueFactory;
 use extractor::extractor::{
-    ExtractionStatus, ExtractorState, message_publisher, process_musicbrainz_data, process_single_file, run_musicbrainz_loop,
+    ExtractionStatus, ExtractorState, message_publisher, process_discogs_data, process_musicbrainz_data, process_single_file, run_musicbrainz_loop,
 };
 use extractor::message_queue::MockMessagePublisher;
+use extractor::rules::{CompiledRulesConfig, RulesConfig};
 use extractor::state_marker::StateMarker;
 use extractor::types::S3FileInfo;
 use extractor::types::{DataMessage, DataType, Source};
+use flate2::Compression;
+use flate2::write::GzEncoder;
+use std::io::Write;
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::sync::{Mutex, RwLock};
@@ -1116,4 +1120,690 @@ async fn test_run_musicbrainz_loop_trigger_then_shutdown() {
     let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
 
     assert!(result.is_ok());
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// process_discogs_data — all files processed, extraction_complete send fails
+// (covers extractor.rs line 177)
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_process_discogs_data_all_processed_extraction_complete_send_fails() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // State marker where processing is started and file is already completed
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.start_processing(1);
+    marker.start_file_processing("discogs_20260101_artists.xml.gz");
+    marker.complete_file_processing("discogs_20260101_artists.xml.gz", 1000);
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(1).returning(|| {
+        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
+    });
+    mock_dl.expect_take_state_marker().times(1).returning(move || Some(marker.clone()));
+
+    // MQ that fails on send_extraction_complete
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Err(anyhow::anyhow!("extraction_complete send failed")));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = process_discogs_data(config, state, shutdown, true, &mut mock_dl, factory, None).await;
+
+    // Still returns Ok(true) — failure of extraction_complete is logged but not fatal in this path
+    assert!(result.is_ok());
+    assert!(result.unwrap());
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ExtractionStatus as_str coverage
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[test]
+fn test_extraction_status_as_str_all_variants() {
+    assert_eq!(ExtractionStatus::Idle.as_str(), "idle");
+    assert_eq!(ExtractionStatus::Running.as_str(), "running");
+    assert_eq!(ExtractionStatus::Completed.as_str(), "completed");
+    assert_eq!(ExtractionStatus::Failed.as_str(), "failed");
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// Helper: create a gzipped XML file on disk for process_single_file tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+fn create_gzipped_xml_file(dir: &std::path::Path, filename: &str, xml_content: &str) {
+    let file_path = dir.join(filename);
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+    std::fs::write(file_path, compressed).unwrap();
+}
+
+fn compile_test_rules(yaml: &str) -> Arc<CompiledRulesConfig> {
+    let config: RulesConfig = serde_yaml_ng::from_str(yaml).unwrap();
+    Arc::new(CompiledRulesConfig::compile(config).unwrap())
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// process_single_file — with rules/validator path (covers extractor.rs 344-395)
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_process_single_file_with_rules_no_violations() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Test Artist</name>
+        <profile>Some profile</profile>
+    </artist>
+    <artist id="2">
+        <name>Another Artist</name>
+    </artist>
+</artists>"#;
+
+    let filename = "discogs_20260101_artists.xml.gz";
+    create_gzipped_xml_file(temp_dir.path(), filename, xml_content);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let state_marker = Arc::new(Mutex::new(StateMarker::new("20260101".to_string())));
+    let marker_path = temp_dir.path().join("marker.json");
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let mq: Arc<dyn extractor::message_queue::MessagePublisher> = Arc::new(mock_mq);
+
+    let rules = compile_test_rules(
+        r#"
+rules:
+  artists:
+    - name: name_required
+      field: name
+      condition: {type: required}
+      severity: error
+"#,
+    );
+
+    let result = process_single_file(filename, config, state.clone(), state_marker, marker_path, mq, Some(rules)).await;
+
+    assert!(result.is_ok(), "process_single_file with rules should succeed: {:?}", result);
+
+    let s = state.read().await;
+    assert!(s.completed_files.contains(filename));
+    assert_eq!(s.extraction_progress.artists, 2);
+}
+
+#[tokio::test]
+async fn test_process_single_file_with_rules_and_violations() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // One artist has name, one doesn't — triggers violation
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Good Artist</name>
+    </artist>
+    <artist id="2">
+        <profile>Missing name</profile>
+    </artist>
+</artists>"#;
+
+    let filename = "discogs_20260101_artists.xml.gz";
+    create_gzipped_xml_file(temp_dir.path(), filename, xml_content);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let state_marker = Arc::new(Mutex::new(StateMarker::new("20260101".to_string())));
+    let marker_path = temp_dir.path().join("marker.json");
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let mq: Arc<dyn extractor::message_queue::MessagePublisher> = Arc::new(mock_mq);
+
+    let rules = compile_test_rules(
+        r#"
+rules:
+  artists:
+    - name: name_required
+      field: name
+      condition: {type: required}
+      severity: error
+"#,
+    );
+
+    let result = process_single_file(filename, config, state.clone(), state_marker, marker_path, mq, Some(rules)).await;
+
+    assert!(result.is_ok(), "process_single_file with violations should still succeed: {:?}", result);
+
+    let s = state.read().await;
+    assert!(s.completed_files.contains(filename));
+    assert_eq!(s.extraction_progress.artists, 2);
+
+    // Check that flagged files were written
+    let flagged_dir = temp_dir.path().join("flagged").join("20260101").join("artists");
+    assert!(flagged_dir.exists(), "Flagged directory should be created for violations");
+}
+
+#[tokio::test]
+async fn test_process_single_file_without_rules() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<labels>
+    <label>
+        <id>1</id>
+        <name>Test Label</name>
+    </label>
+</labels>"#;
+
+    let filename = "discogs_20260101_labels.xml.gz";
+    create_gzipped_xml_file(temp_dir.path(), filename, xml_content);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let state_marker = Arc::new(Mutex::new(StateMarker::new("20260101".to_string())));
+    let marker_path = temp_dir.path().join("marker.json");
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let mq: Arc<dyn extractor::message_queue::MessagePublisher> = Arc::new(mock_mq);
+
+    let result = process_single_file(filename, config, state.clone(), state_marker, marker_path, mq, None).await;
+
+    assert!(result.is_ok(), "process_single_file without rules should succeed: {:?}", result);
+
+    let s = state.read().await;
+    assert!(s.completed_files.contains(filename));
+    assert_eq!(s.extraction_progress.labels, 1);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// process_discogs_data — Reprocess decision path (covers extractor.rs 131-132)
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_process_discogs_data_reprocess_decision() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // Create a state marker with a failed download phase — triggers Reprocess
+    let mut marker = StateMarker::new("20260101".to_string());
+    marker.download_phase.status = extractor::state_marker::PhaseStatus::Failed;
+    let marker_path = StateMarker::file_path(temp_dir.path(), "20260101");
+    marker.save(&marker_path).await.unwrap();
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(1).returning(|| {
+        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
+    });
+    mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = process_discogs_data(config, state, shutdown, false, &mut mock_dl, factory, None).await;
+
+    // Key assertion: download_discogs_data was called (Reprocess path taken)
+    let _ = result;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// process_discogs_data — end-to-end with actual file processing
+// (covers lines 218-258, 283-290 in extractor.rs)
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_process_discogs_data_end_to_end_success() {
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create actual gzipped XML files on disk
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Test Artist</name>
+    </artist>
+</artists>"#;
+    create_gzipped_xml_file(temp_dir.path(), "discogs_20260101_artists.xml.gz", xml_content);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(1).returning(|| {
+        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
+    });
+    mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, None).await;
+
+    assert!(result.is_ok(), "End-to-end processing should succeed: {:?}", result);
+    assert!(result.unwrap(), "Should return true for successful processing");
+
+    let s = state.read().await;
+    assert_eq!(s.extraction_status, ExtractionStatus::Completed);
+    assert!(s.completed_files.contains("discogs_20260101_artists.xml.gz"));
+    assert_eq!(s.extraction_progress.artists, 1);
+}
+
+#[tokio::test]
+async fn test_process_discogs_data_end_to_end_with_rules() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Valid Artist</name>
+    </artist>
+    <artist id="2">
+        <profile>No name here</profile>
+    </artist>
+</artists>"#;
+    create_gzipped_xml_file(temp_dir.path(), "discogs_20260101_artists.xml.gz", xml_content);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(1).returning(|| {
+        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
+    });
+    mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let rules = compile_test_rules(
+        r#"
+rules:
+  artists:
+    - name: name_required
+      field: name
+      condition: {type: required}
+      severity: error
+"#,
+    );
+
+    let result = process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, Some(rules)).await;
+
+    assert!(result.is_ok(), "End-to-end with rules should succeed: {:?}", result);
+    assert!(result.unwrap());
+
+    let s = state.read().await;
+    assert_eq!(s.extraction_status, ExtractionStatus::Completed);
+    assert_eq!(s.extraction_progress.artists, 2);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// process_discogs_data — send_extraction_complete failure path
+// (covers extractor.rs lines 283-284)
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_process_discogs_data_extraction_complete_failure() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Test Artist</name>
+    </artist>
+</artists>"#;
+    create_gzipped_xml_file(temp_dir.path(), "discogs_20260101_artists.xml.gz", xml_content);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(1).returning(|| {
+        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
+    });
+    mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
+
+    // MQ that fails on send_extraction_complete
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Err(anyhow::anyhow!("AMQP send failed")));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, None).await;
+
+    // Should return Ok(false) — extraction_complete failure makes success=false
+    assert!(result.is_ok());
+    assert!(!result.unwrap(), "Should return false when extraction_complete fails");
+
+    let s = state.read().await;
+    assert_eq!(s.extraction_status, ExtractionStatus::Failed);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// process_discogs_data — mq_factory.create failure at final extraction_complete
+// (covers extractor.rs lines 288-290)
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_process_discogs_data_mq_factory_create_fails_at_extraction_complete() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1">
+        <name>Test Artist</name>
+    </artist>
+</artists>"#;
+    create_gzipped_xml_file(temp_dir.path(), "discogs_20260101_artists.xml.gz", xml_content);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(1).returning(|| {
+        Ok(vec!["discogs_20260101_artists.xml.gz".to_string()])
+    });
+    mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
+
+    // Factory that succeeds for per-file MQ but fails for the final extraction_complete MQ
+    use std::sync::atomic::AtomicUsize;
+    let call_count = Arc::new(AtomicUsize::new(0));
+
+    struct CountingMqFactory {
+        publisher: Arc<dyn extractor::message_queue::MessagePublisher>,
+        call_count: Arc<AtomicUsize>,
+    }
+    #[async_trait::async_trait]
+    impl extractor::extractor::MessageQueueFactory for CountingMqFactory {
+        async fn create(&self, _url: &str, _exchange_prefix: &str) -> anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> {
+            let count = self.call_count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            if count == 0 {
+                Ok(self.publisher.clone())
+            } else {
+                Err(anyhow::anyhow!("AMQP connection refused"))
+            }
+        }
+    }
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(CountingMqFactory { publisher: Arc::new(mock_mq), call_count });
+
+    let result = process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, None).await;
+
+    // Should return Ok(false) — extraction_complete MQ connection failure
+    assert!(result.is_ok());
+    assert!(!result.unwrap(), "Should return false when final MQ create fails");
+
+    let s = state.read().await;
+    assert_eq!(s.extraction_status, ExtractionStatus::Failed);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// process_discogs_data — multiple files end-to-end
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_process_discogs_data_multiple_files() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let artists_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<artists>
+    <artist id="1"><name>Artist 1</name></artist>
+</artists>"#;
+    let labels_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<labels>
+    <label><id>1</id><name>Label 1</name></label>
+</labels>"#;
+
+    create_gzipped_xml_file(temp_dir.path(), "discogs_20260101_artists.xml.gz", artists_xml);
+    create_gzipped_xml_file(temp_dir.path(), "discogs_20260101_labels.xml.gz", labels_xml);
+
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "data/discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+            S3FileInfo { name: "discogs_20260101_labels.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().times(1).returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().times(1).returning(|| {
+        Ok(vec![
+            "discogs_20260101_artists.xml.gz".to_string(),
+            "discogs_20260101_labels.xml.gz".to_string(),
+        ])
+    });
+    mock_dl.expect_take_state_marker().times(1).returning(|| Some(StateMarker::new("20260101".to_string())));
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = process_discogs_data(config, state.clone(), shutdown, false, &mut mock_dl, factory, None).await;
+
+    assert!(result.is_ok());
+    assert!(result.unwrap());
+
+    let s = state.read().await;
+    assert_eq!(s.extraction_status, ExtractionStatus::Completed);
+    assert_eq!(s.completed_files.len(), 2);
+    assert_eq!(s.extraction_progress.artists, 1);
+    assert_eq!(s.extraction_progress.labels, 1);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// process_discogs_data — version extraction failure
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_process_discogs_data_version_extraction_failure() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/invalidfilename".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "invalidfilename".to_string(), size: 1000 },
+        ])
+    });
+
+    let mock_mq = MockMessagePublisher::new();
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = process_discogs_data(config, state, shutdown, false, &mut mock_dl, factory, None).await;
+
+    assert!(result.is_err());
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// process_discogs_data — list_s3_files failure
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_process_discogs_data_list_s3_files_failure() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| Err(anyhow::anyhow!("HTTP timeout")));
+
+    let mock_mq = MockMessagePublisher::new();
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = process_discogs_data(config, state, shutdown, false, &mut mock_dl, factory, None).await;
+
+    assert!(result.is_err());
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// process_discogs_data — download_discogs_data failure
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_process_discogs_data_download_failure() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = Arc::new(test_config(temp_dir.path()));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_dl = MockDataSource::new();
+    mock_dl.expect_list_s3_files().returning(|| {
+        Ok(vec![
+            S3FileInfo { name: "data/discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_get_latest_monthly_files().returning(|_| {
+        Ok(vec![
+            S3FileInfo { name: "discogs_20260101_artists.xml.gz".to_string(), size: 1000 },
+        ])
+    });
+    mock_dl.expect_set_state_marker().returning(|_, _| ());
+    mock_dl.expect_download_discogs_data().returning(|| Err(anyhow::anyhow!("Download failed")));
+
+    let mock_mq = MockMessagePublisher::new();
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = process_discogs_data(config, state, shutdown, false, &mut mock_dl, factory, None).await;
+
+    assert!(result.is_err());
 }

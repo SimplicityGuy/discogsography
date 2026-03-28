@@ -700,6 +700,59 @@ describe('GraphVisualization', () => {
         });
     });
 
+    describe('_initControls button clicks', () => {
+        it('zoomInBtn click should invoke zoomIn', () => {
+            const spy = vi.spyOn(graph, 'zoomIn');
+            document.getElementById('zoomInBtn').click();
+            expect(spy).toHaveBeenCalled();
+        });
+
+        it('zoomOutBtn click should invoke zoomOut', () => {
+            const spy = vi.spyOn(graph, 'zoomOut');
+            document.getElementById('zoomOutBtn').click();
+            expect(spy).toHaveBeenCalled();
+        });
+
+        it('zoomResetBtn click should invoke zoomReset', () => {
+            const spy = vi.spyOn(graph, 'zoomReset');
+            document.getElementById('zoomResetBtn').click();
+            expect(spy).toHaveBeenCalled();
+        });
+
+        it('fullscreenBtn click should invoke toggleFullscreen', () => {
+            const spy = vi.spyOn(graph, 'toggleFullscreen');
+            document.getElementById('fullscreenBtn').click();
+            expect(spy).toHaveBeenCalled();
+        });
+
+        it('Escape key should exit fullscreen when in fullscreen mode', () => {
+            graph.container.classList.add('fullscreen');
+            const spy = vi.spyOn(graph, 'toggleFullscreen');
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            expect(spy).toHaveBeenCalled();
+        });
+
+        it('Escape key should not toggle when not in fullscreen mode', () => {
+            graph.container.classList.remove('fullscreen');
+            const spy = vi.spyOn(graph, 'toggleFullscreen');
+            document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+            expect(spy).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('fitToView', () => {
+        it('should return early with no nodes', () => {
+            graph.nodes = [];
+            graph.fitToView(); // should not throw
+        });
+
+        it('should return early when container has zero dimensions', () => {
+            graph.nodes = [{ x: 10, y: 10, isCenter: true }];
+            // jsdom clientWidth/clientHeight default to 0
+            graph.fitToView(); // should not throw
+        });
+    });
+
     describe('_onResize', () => {
         it('should update SVG dimensions', () => {
             graph._onResize();
@@ -739,6 +792,552 @@ describe('GraphVisualization', () => {
             expect(graph.nodes.find(n => n.id === 'child-release-1')).toBeDefined();
             const catNode = graph.nodes.find(n => n.id === 'cat-releases');
             expect(catNode.name).toBe('Releases (1)');
+        });
+    });
+
+    describe('_render with callback-invoking D3 mock', () => {
+        /**
+         * Create a D3 mock that actually invokes callbacks passed to
+         * .each(), .text(), .attr(), .style(), .on() so that the rendering
+         * code inside _render() is fully exercised.
+         */
+        function createCallbackD3Mock(nodes, links) {
+            // Track callbacks registered with .on()
+            const simulationOnCallbacks = {};
+            const capturedCallbacks = {
+                each: [],
+                text: [],
+                attr: {},
+                style: {},
+            };
+
+            function makeChainSel(dataItems) {
+                const sel = {};
+                const chainMethods = ['classed', 'remove', 'transition', 'duration', 'filter'];
+                chainMethods.forEach(m => {
+                    sel[m] = vi.fn().mockReturnValue(sel);
+                });
+                sel.data = vi.fn().mockImplementation(() => makeChainSel(dataItems));
+                sel.join = vi.fn().mockImplementation(() => makeChainSel(dataItems));
+                sel.append = vi.fn().mockImplementation(() => makeChainSel(dataItems));
+                sel.select = vi.fn().mockImplementation(() => makeChainSel(dataItems));
+                sel.selectAll = vi.fn().mockImplementation(() => makeChainSel(dataItems));
+                sel.call = vi.fn().mockReturnValue(sel);
+                sel.on = vi.fn().mockImplementation((event, cb) => {
+                    // Just store, don't invoke event handlers
+                    return sel;
+                });
+                sel.each = vi.fn().mockImplementation((cb) => {
+                    // Invoke the callback for each data item
+                    if (dataItems && cb) {
+                        dataItems.forEach(d => cb.call({}, d));
+                    }
+                    return sel;
+                });
+                sel.text = vi.fn().mockImplementation((arg) => {
+                    // If it's a function, invoke for each data item
+                    if (typeof arg === 'function' && dataItems) {
+                        dataItems.forEach(d => arg(d));
+                    }
+                    return sel;
+                });
+                sel.attr = vi.fn().mockImplementation((name, val) => {
+                    if (typeof val === 'function' && dataItems) {
+                        dataItems.forEach(d => val(d));
+                    }
+                    return sel;
+                });
+                sel.style = vi.fn().mockImplementation((name, val) => {
+                    if (typeof val === 'function' && dataItems) {
+                        dataItems.forEach(d => val(d));
+                    }
+                    return sel;
+                });
+                return sel;
+            }
+
+            const zoomMock = {
+                scaleExtent: vi.fn().mockReturnThis(),
+                on: vi.fn().mockReturnThis(),
+                transform: vi.fn(),
+                scaleBy: vi.fn(),
+            };
+
+            const simulationMock = {
+                force: vi.fn().mockReturnThis(),
+                on: vi.fn().mockImplementation((event, cb) => {
+                    simulationOnCallbacks[event] = cb;
+                    return simulationMock;
+                }),
+                stop: vi.fn(),
+                alpha: vi.fn().mockReturnThis(),
+                alphaTarget: vi.fn().mockReturnThis(),
+                restart: vi.fn(),
+            };
+
+            // Main group returns chain with link/node data awareness
+            let callCount = 0;
+            const gSel = makeChainSel([]);
+            // Override append to return different data for links vs nodes group
+            gSel.append = vi.fn().mockImplementation(() => {
+                callCount++;
+                // First append('g') is for links, second for nodes
+                if (callCount === 1) return makeChainSel(links);
+                return makeChainSel(nodes);
+            });
+            gSel.selectAll = vi.fn().mockReturnValue(gSel);
+
+            const svgSel = makeChainSel([]);
+            svgSel.append = vi.fn().mockImplementation(() => {
+                // For 'defs' and 'g' appends from _initSvg
+                return makeChainSel([]);
+            });
+
+            const mock = {
+                select: vi.fn().mockImplementation((selector) => {
+                    if (selector === '#graphSvg') return svgSel;
+                    // d3.select(this) inside .each() - return a chain
+                    return makeChainSel([]);
+                }),
+                zoom: vi.fn().mockReturnValue(zoomMock),
+                zoomIdentity: { translate: vi.fn().mockReturnValue({ scale: vi.fn() }) },
+                forceSimulation: vi.fn().mockReturnValue(simulationMock),
+                forceLink: vi.fn().mockReturnValue({
+                    id: vi.fn().mockReturnThis(),
+                    distance: vi.fn().mockImplementation((cb) => {
+                        // Invoke distance callback to cover the branching
+                        if (typeof cb === 'function') {
+                            cb({ source: { isCenter: true }, target: {} });
+                            cb({ source: { isCategory: true }, target: {} });
+                            cb({ source: {}, target: {} });
+                        }
+                        return { id: vi.fn().mockReturnThis(), distance: vi.fn().mockReturnThis() };
+                    }),
+                }),
+                forceManyBody: vi.fn().mockReturnValue({
+                    strength: vi.fn().mockImplementation((cb) => {
+                        if (typeof cb === 'function') {
+                            cb({ isCenter: true });
+                            cb({ isCategory: true });
+                            cb({});
+                        }
+                        return { strength: vi.fn().mockReturnThis() };
+                    }),
+                }),
+                forceCenter: vi.fn(),
+                forceCollide: vi.fn().mockReturnValue({
+                    radius: vi.fn().mockImplementation((cb) => {
+                        if (typeof cb === 'function') {
+                            cb({ isCenter: true });
+                        }
+                        return { radius: vi.fn().mockReturnThis() };
+                    }),
+                }),
+                drag: vi.fn().mockReturnValue({ on: vi.fn().mockReturnThis() }),
+                _simulationMock: simulationMock,
+                _simulationOnCallbacks: simulationOnCallbacks,
+                _gSel: gSel,
+            };
+
+            return mock;
+        }
+
+        it('should invoke node.each callback for category nodes', () => {
+            const testNodes = [
+                { id: 'cat-1', isCenter: false, isCategory: true, displayName: 'Releases', name: 'Releases (5)', count: 5 },
+            ];
+            const testLinks = [];
+            const cbMock = createCallbackD3Mock(testNodes, testLinks);
+            globalThis.d3 = cbMock;
+
+            graph.nodes = testNodes;
+            graph.links = testLinks;
+            graph.g = cbMock._gSel;
+            graph.simulation = null;
+            graph._render();
+
+            // Verify simulation was created
+            expect(cbMock.forceSimulation).toHaveBeenCalled();
+        });
+
+        it('should invoke node.each callback for load-more nodes', () => {
+            const testNodes = [
+                { id: 'lm-1', isCenter: false, isCategory: false, isLoadMore: true, name: 'Load 10 more...', categoryId: 'cat-1' },
+            ];
+            const testLinks = [];
+            const cbMock = createCallbackD3Mock(testNodes, testLinks);
+            globalThis.d3 = cbMock;
+
+            graph.nodes = testNodes;
+            graph.links = testLinks;
+            graph.g = cbMock._gSel;
+            graph.simulation = null;
+            graph._render();
+
+            expect(cbMock.forceSimulation).toHaveBeenCalled();
+        });
+
+        it('should invoke node.each callback for regular circle nodes with various types', () => {
+            const testNodes = [
+                { id: 'c1', isCenter: true, isCategory: false, name: 'Radiohead', type: 'artist' },
+                { id: 'n1', isCenter: false, isCategory: false, name: 'Album', type: 'release' },
+                { id: 'n2', isCenter: false, isCategory: false, name: 'Warp', type: 'label' },
+                { id: 'n3', isCenter: false, isCategory: false, name: 'Rock', type: 'genre' },
+                { id: 'n4', isCenter: false, isCategory: false, name: 'IDM', type: 'style' },
+                { id: 'n5', isCenter: false, isCategory: false, name: 'Unknown', type: 'master' },
+            ];
+            const testLinks = [];
+            const cbMock = createCallbackD3Mock(testNodes, testLinks);
+            globalThis.d3 = cbMock;
+
+            graph.nodes = testNodes;
+            graph.links = testLinks;
+            graph.g = cbMock._gSel;
+            graph.simulation = null;
+            graph._render();
+
+            expect(cbMock.forceSimulation).toHaveBeenCalled();
+        });
+
+        it('should invoke node.each callback for comparison mode nodes', () => {
+            const testNodes = [
+                { id: 'n1', isCenter: false, isCategory: false, name: 'A Only', type: 'artist', compareStatus: 'only_a' },
+                { id: 'n2', isCenter: false, isCategory: false, name: 'B Only', type: 'release', compareStatus: 'only_b' },
+                { id: 'n3', isCenter: false, isCategory: false, name: 'Both', type: 'artist', compareStatus: 'both' },
+            ];
+            const testLinks = [
+                { source: 'cat-1', target: 'n1', compareStatus: 'only_a' },
+                { source: 'cat-1', target: 'n2', compareStatus: 'only_b' },
+                { source: 'cat-1', target: 'n3' },
+            ];
+            const cbMock = createCallbackD3Mock(testNodes, testLinks);
+            globalThis.d3 = cbMock;
+
+            graph.nodes = testNodes;
+            graph.links = testLinks;
+            graph.g = cbMock._gSel;
+            graph.simulation = null;
+            graph._render();
+
+            expect(cbMock.forceSimulation).toHaveBeenCalled();
+        });
+
+        it('should invoke tooltip text callback for all node types', () => {
+            const testNodes = [
+                { id: 'c1', isCenter: true, isCategory: false, name: 'Radiohead', type: 'artist' },
+                { id: 'cat-1', isCenter: false, isCategory: true, displayName: 'Releases', name: 'Releases (5)', count: 5 },
+                { id: 'lm-1', isCenter: false, isCategory: false, isLoadMore: true, name: 'Load more' },
+                { id: 'n1', isCenter: false, isCategory: false, name: 'Album', type: 'artist', compareStatus: 'only_a' },
+                { id: 'n2', isCenter: false, isCategory: false, name: 'Track', type: 'release', compareStatus: 'only_b' },
+                { id: 'n3', isCenter: false, isCategory: false, name: 'Other', type: 'release' },
+            ];
+            const cbMock = createCallbackD3Mock(testNodes, []);
+            globalThis.d3 = cbMock;
+
+            graph.nodes = testNodes;
+            graph.links = [];
+            graph.g = cbMock._gSel;
+            graph.simulation = null;
+            graph._render();
+
+            expect(cbMock.forceSimulation).toHaveBeenCalled();
+        });
+
+        it('should invoke label text callback for long names (truncation)', () => {
+            const testNodes = [
+                { id: 'n1', isCenter: false, isCategory: false, name: 'A Very Long Album Name That Exceeds Twenty Chars', type: 'release' },
+                { id: 'lm-1', isCenter: false, isCategory: false, isLoadMore: true, name: 'Load 999 more remaining items...' },
+            ];
+            const cbMock = createCallbackD3Mock(testNodes, []);
+            globalThis.d3 = cbMock;
+
+            graph.nodes = testNodes;
+            graph.links = [];
+            graph.g = cbMock._gSel;
+            graph.simulation = null;
+            graph._render();
+
+            expect(cbMock.forceSimulation).toHaveBeenCalled();
+        });
+
+        it('should invoke simulation tick and end callbacks', () => {
+            const testNodes = [
+                { id: 'c1', isCenter: true, name: 'Radiohead', type: 'artist', x: 100, y: 100, fx: 100, fy: 100 },
+            ];
+            const testLinks = [];
+            const cbMock = createCallbackD3Mock(testNodes, testLinks);
+            globalThis.d3 = cbMock;
+
+            graph.nodes = testNodes;
+            graph.links = testLinks;
+            graph.g = cbMock._gSel;
+            graph.simulation = null;
+            graph._render();
+
+            // Invoke tick callback
+            const tickCb = cbMock._simulationOnCallbacks['tick'];
+            expect(tickCb).toBeDefined();
+            tickCb();
+
+            // Invoke end callback
+            const endCb = cbMock._simulationOnCallbacks['end'];
+            expect(endCb).toBeDefined();
+            endCb();
+        });
+
+        it('should cancel pending render timeout', () => {
+            const testNodes = [];
+            const cbMock = createCallbackD3Mock(testNodes, []);
+            globalThis.d3 = cbMock;
+
+            graph.nodes = testNodes;
+            graph.links = [];
+            graph.g = cbMock._gSel;
+            graph._renderTimeout = setTimeout(() => {}, 99999);
+            graph.simulation = null;
+            graph._render();
+
+            expect(graph._renderTimeout).toBeNull();
+        });
+
+        it('should stop existing simulation before re-rendering', () => {
+            const testNodes = [];
+            const cbMock = createCallbackD3Mock(testNodes, []);
+            globalThis.d3 = cbMock;
+
+            const oldSim = { stop: vi.fn() };
+            graph.nodes = testNodes;
+            graph.links = [];
+            graph.g = cbMock._gSel;
+            graph.simulation = oldSim;
+            graph._render();
+
+            expect(oldSim.stop).toHaveBeenCalled();
+        });
+    });
+
+    describe('_expandCategory', () => {
+        it('should skip already-expanded category', async () => {
+            graph.expandedCategories.add('cat-releases');
+            graph._pendingExpands = 1;
+
+            const checkSpy = vi.spyOn(graph, '_checkExpandsDone');
+            await graph._expandCategory('cat-releases', 'Radiohead', 'artist', 'releases');
+
+            expect(graph._pendingExpands).toBe(0);
+            expect(checkSpy).toHaveBeenCalled();
+            expect(window.apiClient.expand).not.toHaveBeenCalled();
+        });
+
+        it('should skip duplicate child nodes', async () => {
+            graph._pendingExpands = 1;
+            // Pre-add a child node that will also be in the API response
+            graph.nodes.push({
+                id: 'child-release-1', name: 'Album 1', type: 'release',
+                isCenter: false, isCategory: false,
+            });
+
+            window.apiClient.expand.mockResolvedValue({
+                children: [
+                    { id: '1', name: 'Album 1', type: 'release' },
+                    { id: '2', name: 'Album 2', type: 'release' },
+                ],
+                total: 2, limit: 30, has_more: false, offset: 0,
+            });
+
+            await graph._expandCategory('cat-releases', 'Radiohead', 'artist', 'releases');
+
+            // Should have the pre-existing one plus the new one
+            const childNodes = graph.nodes.filter(n => n.id.startsWith('child-'));
+            expect(childNodes).toHaveLength(2);
+        });
+
+        it('should add load-more node when has_more is true', async () => {
+            graph._pendingExpands = 1;
+
+            window.apiClient.expand.mockResolvedValue({
+                children: [{ id: '1', name: 'Album 1', type: 'release' }],
+                total: 50, limit: 30, has_more: true, offset: 0,
+            });
+
+            await graph._expandCategory('cat-releases', 'Radiohead', 'artist', 'releases');
+
+            const loadMore = graph.nodes.find(n => n.isLoadMore);
+            expect(loadMore).toBeDefined();
+            expect(loadMore.name).toContain('49');
+        });
+    });
+
+    describe('_onNodeClicked with load-more in non-compare mode', () => {
+        it('should call _loadMoreCategory when clicking load-more node', () => {
+            graph.compareMode = false;
+            const loadMoreSpy = vi.spyOn(graph, '_loadMoreCategory').mockResolvedValue(undefined);
+            const event = { stopPropagation: vi.fn() };
+            const node = { isCategory: false, isLoadMore: true, categoryId: 'cat-1', id: 'load-more-cat-1' };
+
+            graph._onNodeClicked(event, node);
+
+            expect(loadMoreSpy).toHaveBeenCalledWith(node);
+        });
+    });
+
+    describe('_loadMoreCategory with has_more and category label update', () => {
+        it('should update category label with loaded/total counts', async () => {
+            graph._categoryMeta.set('cat-releases', {
+                parentName: 'Radiohead', parentType: 'artist',
+                category: 'releases', offset: 30, limit: 30, total: 60,
+            });
+            graph.nodes.push({
+                id: 'cat-releases', displayName: 'Releases', name: 'Releases (30)',
+                isCategory: true, isCenter: false,
+            });
+            const loadMoreNode = {
+                id: 'load-more-cat-releases', categoryId: 'cat-releases', isLoadMore: true,
+            };
+            graph.nodes.push(loadMoreNode);
+            graph.links.push({ source: 'cat-releases', target: 'load-more-cat-releases' });
+
+            window.apiClient.expand.mockResolvedValue({
+                children: [
+                    { id: '31', name: 'Album 31', type: 'release' },
+                    { id: '32', name: 'Album 32', type: 'release' },
+                ],
+                total: 60, limit: 30, has_more: true, offset: 30,
+            });
+
+            await graph._loadMoreCategory(loadMoreNode);
+
+            // Should update label
+            const catNode = graph.nodes.find(n => n.id === 'cat-releases');
+            expect(catNode.name).toBe('Releases (32 / 60)');
+
+            // Should still have a load-more node for remaining
+            const remainingLm = graph.nodes.find(n => n.isLoadMore && n.categoryId === 'cat-releases');
+            expect(remainingLm).toBeDefined();
+        });
+
+        it('should skip duplicate children in _loadMoreCategory', async () => {
+            graph._categoryMeta.set('cat-releases', {
+                parentName: 'Radiohead', parentType: 'artist',
+                category: 'releases', offset: 1, limit: 30, total: 2,
+            });
+            graph.nodes.push(
+                { id: 'cat-releases', displayName: 'Releases', name: 'Releases (1)', isCategory: true, isCenter: false },
+                { id: 'child-release-1', name: 'Album 1', type: 'release', isCenter: false, isCategory: false },
+            );
+            graph.links.push({ source: 'cat-releases', target: 'child-release-1' });
+
+            window.apiClient.expand.mockResolvedValue({
+                children: [
+                    { id: '1', name: 'Album 1', type: 'release' },
+                    { id: '2', name: 'Album 2', type: 'release' },
+                ],
+                total: 2, limit: 30, has_more: false, offset: 1,
+            });
+
+            const loadMoreNode = { id: 'load-more-cat-releases', categoryId: 'cat-releases' };
+            await graph._loadMoreCategory(loadMoreNode);
+
+            const childNodes = graph.nodes.filter(n => n.id.startsWith('child-'));
+            expect(childNodes).toHaveLength(2);
+        });
+    });
+
+    describe('setCompareYears with categories', () => {
+        it('should clear child nodes and fetch comparison data for each category', async () => {
+            graph.centerName = 'Radiohead';
+            graph.centerType = 'artist';
+
+            graph.nodes.push(
+                { id: 'center-1', isCenter: true, isCategory: false, name: 'Radiohead', type: 'artist' },
+                { id: 'cat-releases', isCategory: true, isCenter: false, displayName: 'Releases', name: 'Releases (5)', count: 5 },
+                { id: 'child-release-1', isCategory: false, isCenter: false, name: 'Album 1', type: 'release' },
+            );
+            graph.links.push(
+                { source: 'center-1', target: 'cat-releases' },
+                { source: 'cat-releases', target: 'child-release-1' },
+            );
+            graph._categoryMeta.set('cat-releases', {
+                parentName: 'Radiohead', parentType: 'artist',
+                category: 'releases', offset: 5, limit: 30, total: 5,
+            });
+
+            window.apiClient.expand
+                .mockResolvedValueOnce({
+                    children: [{ id: '1', name: 'A', type: 'release' }],
+                    total: 1, limit: 30, has_more: false,
+                })
+                .mockResolvedValueOnce({
+                    children: [{ id: '2', name: 'B', type: 'release' }],
+                    total: 1, limit: 30, has_more: false,
+                });
+
+            await graph.setCompareYears(1990, 2000);
+            // Wait for async _fetchComparisonData
+            await new Promise(r => setTimeout(r, 20));
+
+            expect(graph.compareMode).toBe(true);
+            expect(graph.compareYearA).toBe(1990);
+            expect(graph.compareYearB).toBe(2000);
+
+            // Child nodes should be from comparison
+            const childA = graph.nodes.find(n => n.id === 'child-release-1');
+            expect(childA).toBeDefined();
+        });
+    });
+
+    describe('_fetchComparisonData with categories and diff', () => {
+        it('should update category label with arrow notation', async () => {
+            graph.compareYearA = 1990;
+            graph.compareYearB = 2000;
+            graph.nodes.push({
+                id: 'cat-releases', displayName: 'Releases', name: 'Releases',
+                isCategory: true, isCenter: false, count: 5,
+            });
+
+            window.apiClient.expand
+                .mockResolvedValueOnce({
+                    children: [{ id: '1', name: 'A', type: 'release' }],
+                    total: 1, limit: 30, has_more: false,
+                })
+                .mockResolvedValueOnce({
+                    children: [{ id: '2', name: 'B', type: 'release' }],
+                    total: 2, limit: 30, has_more: false,
+                });
+
+            graph._pendingExpands = 1;
+            await graph._fetchComparisonData('cat-releases', 'Radiohead', 'artist', 'releases');
+
+            const catNode = graph.nodes.find(n => n.id === 'cat-releases');
+            expect(catNode.name).toContain('1');
+            expect(catNode.name).toContain('2');
+        });
+
+        it('should skip duplicate nodes in comparison data', async () => {
+            graph.compareYearA = 1990;
+            graph.compareYearB = 2000;
+            // Pre-add a node
+            graph.nodes.push(
+                { id: 'cat-releases', displayName: 'Releases', name: 'Releases', isCategory: true, isCenter: false },
+                { id: 'child-release-1', name: 'A', type: 'release', isCenter: false, isCategory: false },
+            );
+
+            window.apiClient.expand
+                .mockResolvedValueOnce({
+                    children: [{ id: '1', name: 'A', type: 'release' }],
+                    total: 1, limit: 30, has_more: false,
+                })
+                .mockResolvedValueOnce({
+                    children: [{ id: '1', name: 'A', type: 'release' }],
+                    total: 1, limit: 30, has_more: false,
+                });
+
+            graph._pendingExpands = 1;
+            await graph._fetchComparisonData('cat-releases', 'Radiohead', 'artist', 'releases');
+
+            // child-release-1 should NOT be duplicated
+            const matching = graph.nodes.filter(n => n.id === 'child-release-1');
+            expect(matching).toHaveLength(1);
         });
     });
 
