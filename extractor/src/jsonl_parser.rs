@@ -202,18 +202,6 @@ pub fn parse_mb_label_line(line: &str) -> Result<DataMessage> {
 }
 
 /// Partition a flat `relations` array into URL-type relations (those with `"target-type": "url"`).
-///
-/// MusicBrainz release-groups store all relations (URL and entity) in a single
-/// `"relations"` array, unlike artists/labels which use a separate `"url-rels"` array.
-pub fn extract_url_rels(all_rels: &[Value]) -> Vec<Value> {
-    all_rels.iter().filter(|rel| rel["target-type"].as_str() == Some("url")).cloned().collect()
-}
-
-/// Partition a flat `relations` array into entity-type relations (those without `"target-type": "url"`).
-pub fn extract_entity_rels(all_rels: &[Value]) -> Vec<Value> {
-    all_rels.iter().filter(|rel| rel["target-type"].as_str() != Some("url")).cloned().collect()
-}
-
 /// Parse a single MusicBrainz JSONL release line into a [`DataMessage`].
 pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
     let v: Value = serde_json::from_str(line).context("Failed to parse release JSONL line")?;
