@@ -137,6 +137,7 @@ impl XmlParser {
             DataType::Artists => "artist",
             DataType::Labels => "label",
             DataType::Masters => "master",
+            DataType::ReleaseGroups => unreachable!("ReleaseGroups is MusicBrainz-only, not used in Discogs XML parser"),
             DataType::Releases => "release",
         };
 

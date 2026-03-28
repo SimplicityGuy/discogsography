@@ -25,6 +25,7 @@ from brainztableinator.brainztableinator import (
     process_artist,
     process_label,
     process_release,
+    process_release_group,
     schedule_consumer_cancellation,
     signal_handler,
 )
@@ -45,12 +46,12 @@ class TestHealthData:
             patch("brainztableinator.brainztableinator.consumer_tags", {}),
             patch(
                 "brainztableinator.brainztableinator.message_counts",
-                {"artists": 0, "labels": 0, "releases": 0},
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
             ),
             patch("brainztableinator.brainztableinator.completed_files", set()),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
-                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
             ),
         ):
             health = get_health_data()
@@ -66,12 +67,12 @@ class TestHealthData:
             patch("brainztableinator.brainztableinator.consumer_tags", {}),
             patch(
                 "brainztableinator.brainztableinator.message_counts",
-                {"artists": 0, "labels": 0, "releases": 0},
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
             ),
             patch("brainztableinator.brainztableinator.completed_files", set()),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
-                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
             ),
         ):
             health = get_health_data()
@@ -207,6 +208,72 @@ class TestProcessRelease:
         sql = call_args[0][0]
         assert "INSERT INTO musicbrainz.releases" in sql
         assert "ON CONFLICT (mbid) DO UPDATE" in sql
+
+
+class TestProcessReleaseGroup:
+    """Tests for process_release_group."""
+
+    @pytest.mark.asyncio
+    async def test_process_release_group_basic(self):
+        """Verify INSERT INTO musicbrainz.release_groups is called."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "id": "rg-mbid-123",
+            "mbid": "rg-mbid-123",
+            "name": "Test Album",
+            "mb_type": "Album",
+            "secondary_types": ["Compilation"],
+            "first_release_date": "2020-01-15",
+            "disambiguation": "",
+            "discogs_master_id": 12345,
+        }
+
+        await process_release_group(mock_conn, record)
+
+        mock_cursor.execute.assert_called()
+        call_args = mock_cursor.execute.call_args_list[0]
+        sql = call_args[0][0]
+        assert "INSERT INTO musicbrainz.release_groups" in sql
+        assert "ON CONFLICT (mbid) DO UPDATE" in sql
+
+    @pytest.mark.asyncio
+    async def test_process_release_group_with_relationships_and_links(self):
+        """Verify relationships and external links are also inserted."""
+        mock_conn, mock_cursor = _make_mock_conn()
+        record = {
+            "id": "rg-mbid-456",
+            "mbid": "rg-mbid-456",
+            "name": "Linked Album",
+            "mb_type": "Album",
+            "relations": [
+                {
+                    "target_mbid": "target-mbid-1",
+                    "target_type": "artist",
+                    "type": "performance",
+                    "attributes": [],
+                    "ended": False,
+                }
+            ],
+            "external_links": [
+                {
+                    "url": "https://example.com/release-group",
+                    "type": "discogs",
+                }
+            ],
+        }
+
+        await process_release_group(mock_conn, record)
+
+        # Should have 3 execute calls: release_group insert + relationship + external link
+        assert mock_cursor.execute.call_count == 3
+
+        # Check relationship insert
+        rel_sql = mock_cursor.execute.call_args_list[1][0][0]
+        assert "INSERT INTO musicbrainz.relationships" in rel_sql
+
+        # Check external link insert
+        link_sql = mock_cursor.execute.call_args_list[2][0][0]
+        assert "INSERT INTO musicbrainz.external_links" in link_sql
 
 
 # ===========================================================================
@@ -379,11 +446,11 @@ class TestOnDataMessage:
             patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
             patch(
                 "brainztableinator.brainztableinator.message_counts",
-                {"artists": 0, "labels": 0, "releases": 0},
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
             ),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
-                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
             ),
             patch.dict(
                 "brainztableinator.brainztableinator.PROCESSORS",
@@ -458,11 +525,11 @@ class TestOnDataMessage:
             patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
             patch(
                 "brainztableinator.brainztableinator.message_counts",
-                {"artists": 0, "labels": 0, "releases": 0, "unknown_type": 0},
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0, "unknown_type": 0},
             ),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
-                {"artists": 0.0, "labels": 0.0, "releases": 0.0, "unknown_type": 0.0},
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0, "unknown_type": 0.0},
             ),
         ):
             await on_data_message(mock_message, "unknown_type")
@@ -481,11 +548,11 @@ class TestOnDataMessage:
             patch("brainztableinator.brainztableinator.connection_pool", None),
             patch(
                 "brainztableinator.brainztableinator.message_counts",
-                {"artists": 0, "labels": 0, "releases": 0},
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
             ),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
-                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
             ),
         ):
             await on_data_message(mock_message, "artists")
@@ -516,11 +583,11 @@ class TestOnDataMessage:
             patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
             patch(
                 "brainztableinator.brainztableinator.message_counts",
-                {"artists": 0, "labels": 0, "releases": 0},
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
             ),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
-                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
             ),
             patch.dict(
                 "brainztableinator.brainztableinator.PROCESSORS",
@@ -632,7 +699,7 @@ class TestConsumerManagement:
             patch("brainztableinator.brainztableinator.consumer_tags", {}),
             patch(
                 "brainztableinator.brainztableinator.completed_files",
-                {"artists", "labels", "releases"},
+                {"artists", "labels", "release-groups", "releases"},
             ),
         ):
             result = await check_all_consumers_idle()
@@ -648,7 +715,7 @@ class TestConsumerManagement:
             ),
             patch(
                 "brainztableinator.brainztableinator.completed_files",
-                {"artists", "labels", "releases"},
+                {"artists", "labels", "release-groups", "releases"},
             ),
         ):
             result = await check_all_consumers_idle()
@@ -684,13 +751,17 @@ class TestProcessors:
         """PROCESSORS should map 'labels' to process_label."""
         assert PROCESSORS["labels"] is process_label
 
+    def test_processors_maps_release_groups(self):
+        """PROCESSORS should map 'release-groups' to process_release_group."""
+        assert PROCESSORS["release-groups"] is process_release_group
+
     def test_processors_maps_releases(self):
         """PROCESSORS should map 'releases' to process_release."""
         assert PROCESSORS["releases"] is process_release
 
-    def test_processors_has_exactly_three_entries(self):
-        """PROCESSORS should have exactly 3 data types."""
-        assert len(PROCESSORS) == 3
+    def test_processors_has_exactly_four_entries(self):
+        """PROCESSORS should have exactly 4 data types."""
+        assert len(PROCESSORS) == 4
 
 
 # ===========================================================================
@@ -928,7 +999,7 @@ class TestCheckConsumersUnexpectedlyDead:
         from brainztableinator.brainztableinator import check_consumers_unexpectedly_dead
 
         bt.consumer_tags = {}
-        bt.completed_files = {"artists", "labels", "releases"}
+        bt.completed_files = {"artists", "labels", "release-groups", "releases"}
         bt.message_counts = {"artists": 100}
         assert await check_consumers_unexpectedly_dead() is False
 
@@ -940,7 +1011,7 @@ class TestCheckConsumersUnexpectedlyDead:
 
         bt.consumer_tags = {}
         bt.completed_files = set()
-        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bt.message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
         assert await check_consumers_unexpectedly_dead() is False
 
     @pytest.mark.asyncio
@@ -987,7 +1058,7 @@ class TestPeriodicQueueChecker:
         bt.active_connection = None
         bt.active_channel = None
         bt.consumer_tags = {}
-        bt.completed_files = {"artists", "labels", "releases"}  # All complete
+        bt.completed_files = {"artists", "labels", "release-groups", "releases"}  # All complete
         bt.shutdown_requested = False
 
         from brainztableinator.brainztableinator import periodic_queue_checker
@@ -1067,7 +1138,7 @@ class TestPeriodicQueueChecker:
         bt.active_connection = None
         bt.active_channel = None
         bt.consumer_tags = {}
-        bt.completed_files = {"artists", "labels", "releases"}  # All complete so idle check passes
+        bt.completed_files = {"artists", "labels", "release-groups", "releases"}  # All complete so idle check passes
         bt.queues = {}
         bt.shutdown_requested = False
         bt.last_message_time = {}
@@ -1197,7 +1268,7 @@ class TestProgressReporterIdleMode:
         with patch("brainztableinator.brainztableinator.logger"):
             total = sum(bt.message_counts.values())
             assert total == 160
-            assert len(bt.completed_files) < len(["artists", "labels", "releases"])
+            assert len(bt.completed_files) < len(["artists", "labels", "release-groups", "releases"])
 
     @pytest.mark.asyncio
     async def test_progress_reporter_detects_stalled_consumers(self) -> None:
@@ -1225,10 +1296,10 @@ class TestProgressReporterIdleMode:
         """Test that progress reporter skips logging when all files complete."""
         import brainztableinator.brainztableinator as bt
 
-        bt.completed_files = {"artists", "labels", "releases"}
+        bt.completed_files = {"artists", "labels", "release-groups", "releases"}
         bt.message_counts = {"artists": 100, "labels": 50, "releases": 10}
 
-        assert len(bt.completed_files) == 3
+        assert len(bt.completed_files) == 4
 
     @pytest.mark.asyncio
     async def test_progress_reporter_idle_mode_detection(self) -> None:
@@ -1237,8 +1308,8 @@ class TestProgressReporterIdleMode:
         from brainztableinator.brainztableinator import progress_reporter
 
         bt.shutdown_requested = False
-        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
-        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+        bt.message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
         bt.completed_files = set()
         bt.consumer_tags = {"artists": "tag1"}
         bt.idle_mode = False
@@ -1378,7 +1449,7 @@ class TestGetHealthDataExtended:
             "releases": 0.0,
         }
         bt.consumer_tags = {}
-        bt.completed_files = {"artists", "labels", "releases"}
+        bt.completed_files = {"artists", "labels", "release-groups", "releases"}
 
         result = get_health_data()
 
@@ -1492,11 +1563,11 @@ class TestOnDataMessageExtended:
             patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
             patch(
                 "brainztableinator.brainztableinator.message_counts",
-                {"artists": 0, "labels": 0, "releases": 0},
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
             ),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
-                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
             ),
             patch("brainztableinator.brainztableinator.logger"),
         ):
@@ -1518,11 +1589,11 @@ class TestOnDataMessageExtended:
             patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
             patch(
                 "brainztableinator.brainztableinator.message_counts",
-                {"artists": 0, "labels": 0, "releases": 0},
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
             ),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
-                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
             ),
             patch("brainztableinator.brainztableinator.logger"),
         ):
@@ -1545,11 +1616,11 @@ class TestOnDataMessageExtended:
             patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
             patch(
                 "brainztableinator.brainztableinator.message_counts",
-                {"artists": 0, "labels": 0, "releases": 0},
+                {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0},
             ),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
-                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
             ),
             patch("brainztableinator.brainztableinator.logger") as mock_logger,
         ):
@@ -1587,7 +1658,7 @@ class TestOnDataMessageExtended:
             ),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
-                {"artists": 0.0, "labels": 0.0, "releases": 0.0},
+                {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0},
             ),
             patch("brainztableinator.brainztableinator.logger") as mock_logger,
         ):
@@ -2001,7 +2072,7 @@ class TestPeriodicQueueCheckerEdgeCases:
         bt.shutdown_requested = False
         bt.consumer_tags = {}
         bt.completed_files = set()
-        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bt.message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
         bt.active_connection = None
 
         from brainztableinator.brainztableinator import periodic_queue_checker
@@ -2029,7 +2100,7 @@ class TestPeriodicQueueCheckerEdgeCases:
         bt.active_channel = AsyncMock()
         bt.consumer_tags = {}
         bt.completed_files = set()
-        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bt.message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
         bt.shutdown_requested = False
 
         from brainztableinator.brainztableinator import periodic_queue_checker
@@ -2070,7 +2141,7 @@ class TestRecoverConsumersEdgeCases:
         bt.queues = {}
         bt.idle_mode = False
         bt.completed_files = set()
-        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
 
         mock_new_connection = AsyncMock()
         mock_new_channel = AsyncMock()
@@ -2102,7 +2173,7 @@ class TestRecoverConsumersEdgeCases:
         bt.queues = {}
         bt.idle_mode = False
         bt.completed_files = set()
-        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
 
         mock_connection = AsyncMock()
         mock_channel = AsyncMock()
@@ -2166,7 +2237,7 @@ class TestRecoverConsumersEdgeCases:
         bt.queues = {}
         bt.idle_mode = False
         bt.completed_files = set()
-        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
 
         mock_new_connection = AsyncMock()
         mock_new_channel = AsyncMock()
@@ -2241,8 +2312,8 @@ class TestProgressReporterExtended:
 
         bt.shutdown_requested = False
         bt.idle_mode = False
-        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
-        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+        bt.message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
         bt.completed_files = {"artists"}  # Not all complete, so won't skip
         bt.consumer_tags = {"labels": "tag1"}
 
@@ -2348,8 +2419,8 @@ class TestProgressReporterExtended:
 
         bt.shutdown_requested = False
         bt.idle_mode = True
-        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
-        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+        bt.message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
         bt.completed_files = set()
         bt.consumer_tags = {}
 
@@ -2381,9 +2452,9 @@ class TestProgressReporterExtended:
 
         bt.shutdown_requested = False
         bt.idle_mode = False
-        bt.message_counts = {"artists": 0, "labels": 0, "releases": 0}
-        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
-        bt.completed_files = {"artists", "labels", "releases"}  # All complete so skips quickly
+        bt.message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
+        bt.last_message_time = {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
+        bt.completed_files = {"artists", "labels", "release-groups", "releases"}  # All complete so skips quickly
         bt.consumer_tags = {}
 
         sleep_durations: list[float] = []

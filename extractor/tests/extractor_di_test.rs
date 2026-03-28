@@ -459,6 +459,7 @@ fn create_complete_versioned_dir(parent: &std::path::Path, version: &str) -> std
     std::fs::create_dir_all(&versioned).unwrap();
     std::fs::write(versioned.join("artist.jsonl"), b"").unwrap();
     std::fs::write(versioned.join("label.jsonl"), b"").unwrap();
+    std::fs::write(versioned.join("release-group.jsonl"), b"").unwrap();
     std::fs::write(versioned.join("release.jsonl"), b"").unwrap();
     versioned
 }

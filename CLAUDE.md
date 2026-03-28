@@ -43,9 +43,9 @@ backups/              Database backups
 
 ## Architecture Notes
 
-- **Extractor** supports two modes: `--source discogs` (XML → 4 fanout exchanges) and `--source musicbrainz` (JSONL → 3 fanout exchanges). It has zero knowledge of consumers.
+- **Extractor** supports two modes: `--source discogs` (XML → 4 fanout exchanges) and `--source musicbrainz` (JSONL → 4 fanout exchanges). It has zero knowledge of consumers.
 - **Discogs exchanges**: `discogsography-{artists,labels,masters,releases}` (4 fanout exchanges)
-- **MusicBrainz exchanges**: `musicbrainz-{artists,labels,releases}` (3 fanout exchanges, no masters)
+- **MusicBrainz exchanges**: `musicbrainz-{artists,labels,release-groups,releases}` (4 fanout exchanges)
 - **Each consumer** (graphinator, tableinator, brainzgraphinator, brainztableinator) independently declares its own queues, DLQs, and DLXs.
 - **Brainzgraphinator** enriches existing Neo4j nodes with MusicBrainz metadata (properties, relationships, cross-references). Skips entities without Discogs matches.
 - **Brainztableinator** stores all MusicBrainz data in `musicbrainz` PostgreSQL schema — including entities without Discogs matches — with relationships and external links.

@@ -225,10 +225,11 @@ graph LR
 - `discogsography-releases`: Release records
 - `discogsography-masters`: Master recording data
 
-**MusicBrainz exchanges** (3, no masters):
+**MusicBrainz exchanges** (4):
 
 - `musicbrainz-artists`: MusicBrainz artist data with Discogs cross-references
 - `musicbrainz-labels`: MusicBrainz label data with Discogs cross-references
+- `musicbrainz-release-groups`: MusicBrainz release-group data with Discogs master cross-references
 - `musicbrainz-releases`: MusicBrainz release data with Discogs cross-references
 
 Each consumer independently declares and binds its own queues to these exchanges.

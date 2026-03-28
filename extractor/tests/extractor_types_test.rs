@@ -47,6 +47,7 @@ fn test_extraction_progress_default() {
     assert_eq!(progress.artists, 0);
     assert_eq!(progress.labels, 0);
     assert_eq!(progress.masters, 0);
+    assert_eq!(progress.release_groups, 0);
     assert_eq!(progress.releases, 0);
     assert_eq!(progress.total(), 0);
 }
@@ -55,7 +56,7 @@ fn test_extraction_progress_default() {
 fn test_extraction_progress_increment_all_types() {
     use extractor::types::ExtractionProgress;
 
-    let mut progress = ExtractionProgress { artists: 100, labels: 200, masters: 300, releases: 400 };
+    let mut progress = ExtractionProgress { artists: 100, labels: 200, masters: 300, release_groups: 0, releases: 400 };
 
     assert_eq!(progress.total(), 1000);
 
@@ -63,9 +64,10 @@ fn test_extraction_progress_increment_all_types() {
     progress.artists += 50;
     progress.labels += 100;
     progress.masters += 150;
+    progress.release_groups += 50;
     progress.releases += 200;
 
-    assert_eq!(progress.total(), 1500);
+    assert_eq!(progress.total(), 1550);
 }
 
 #[test]
@@ -86,6 +88,7 @@ fn test_data_type_display_formatting() {
     assert_eq!(format!("{}", DataType::Artists), "artists");
     assert_eq!(format!("{}", DataType::Labels), "labels");
     assert_eq!(format!("{}", DataType::Masters), "masters");
+    assert_eq!(format!("{}", DataType::ReleaseGroups), "release-groups");
     assert_eq!(format!("{}", DataType::Releases), "releases");
 }
 
@@ -105,7 +108,7 @@ fn test_data_type_case_insensitive_parsing() {
 fn test_extraction_progress_large_numbers() {
     use extractor::types::ExtractionProgress;
 
-    let progress = ExtractionProgress { artists: 1_000_000, labels: 500_000, masters: 750_000, releases: 2_000_000 };
+    let progress = ExtractionProgress { artists: 1_000_000, labels: 500_000, masters: 750_000, release_groups: 0, releases: 2_000_000 };
 
     assert_eq!(progress.total(), 4_250_000);
 }
@@ -140,9 +143,10 @@ fn test_source_serde_roundtrip() {
 #[test]
 fn test_musicbrainz_types_excludes_masters() {
     let mb_types = DataType::musicbrainz_types();
-    assert_eq!(mb_types.len(), 3);
+    assert_eq!(mb_types.len(), 4);
     assert!(mb_types.contains(&DataType::Artists));
     assert!(mb_types.contains(&DataType::Labels));
+    assert!(mb_types.contains(&DataType::ReleaseGroups));
     assert!(mb_types.contains(&DataType::Releases));
     assert!(!mb_types.contains(&DataType::Masters));
 }

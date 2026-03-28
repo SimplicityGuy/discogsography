@@ -31,9 +31,14 @@ logger = structlog.get_logger(__name__)
 config: BrainzgraphinatorConfig | None = None
 
 # Progress tracking
-message_counts = {"artists": 0, "labels": 0, "releases": 0}
+message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
-last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+last_message_time = {
+    "artists": 0.0,
+    "labels": 0.0,
+    "release-groups": 0.0,
+    "releases": 0.0,
+}
 completed_files: set[str] = set()  # Track which files have completed processing
 
 # Consumer management
@@ -422,10 +427,47 @@ def create_relationship_edges(
         enrichment_stats["relationships_created"] += 1
 
 
+def enrich_release_group(tx: Any, record: dict[str, Any]) -> bool:
+    """Enrich an existing Master node with MusicBrainz release-group metadata.
+
+    If discogs_master_id is None, skip — entity has no Discogs match.
+    """
+    discogs_id = record.get("discogs_master_id")
+    if discogs_id is None:
+        enrichment_stats["entities_skipped_no_discogs_match"] += 1
+        return True
+
+    result = tx.run(
+        "MATCH (m:Master {id: $discogs_id}) "
+        "SET m.mbid = $mbid, "
+        "    m.mb_type = $mb_type, "
+        "    m.mb_secondary_types = $mb_secondary_types, "
+        "    m.mb_first_release_date = $mb_first_release_date, "
+        "    m.mb_disambiguation = $mb_disambiguation, "
+        "    m.mb_updated_at = $mb_updated_at "
+        "RETURN m.id AS matched_id",
+        discogs_id=discogs_id,
+        mbid=record.get("mbid"),
+        mb_type=record.get("type"),
+        mb_secondary_types=record.get("secondary_types", []),
+        mb_first_release_date=record.get("first_release_date"),
+        mb_disambiguation=record.get("disambiguation"),
+        mb_updated_at=datetime.now(UTC).isoformat(),
+    )
+    matched = result.single()
+    if matched:
+        enrichment_stats["entities_enriched"] += 1
+    else:
+        enrichment_stats["entities_skipped_no_discogs_match"] += 1
+
+    return True
+
+
 # Processor lookup by data type
 PROCESSORS: dict[str, Any] = {
     "artists": enrich_artist,
     "labels": enrich_label,
+    "release-groups": enrich_release_group,
     "releases": enrich_release,
 }
 
@@ -489,12 +531,14 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
 
 on_artist_message = make_message_handler("artists", enrich_artist)
 on_label_message = make_message_handler("labels", enrich_label)
+on_release_group_message = make_message_handler("release-groups", enrich_release_group)
 on_release_message = make_message_handler("releases", enrich_release)
 
 # Handler lookup by data type for consumer registration
 HANDLERS: dict[str, Any] = {
     "artists": on_artist_message,
     "labels": on_label_message,
+    "release-groups": on_release_group_message,
     "releases": on_release_message,
 }
 

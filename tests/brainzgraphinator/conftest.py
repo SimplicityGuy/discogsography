@@ -88,3 +88,16 @@ def sample_release_record():
         "barcode": "724384952051",
         "status": "Official",
     }
+
+
+@pytest.fixture
+def sample_release_group_record():
+    """Sample MusicBrainz release-group record for testing."""
+    return {
+        "mbid": "1dc4c347-a1db-32aa-b14f-bc9cc507b843",
+        "discogs_master_id": 23853,
+        "type": "Album",
+        "secondary_types": ["Compilation"],
+        "first_release_date": "1969-09-26",
+        "disambiguation": "",
+    }

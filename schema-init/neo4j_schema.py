@@ -151,6 +151,10 @@ SCHEMA_STATEMENTS: list[tuple[str, str]] = [
         "release_mbid",
         "CREATE INDEX release_mbid IF NOT EXISTS FOR (r:Release) ON (r.mbid)",
     ),
+    (
+        "master_mbid",
+        "CREATE INDEX master_mbid IF NOT EXISTS FOR (m:Master) ON (m.mbid)",
+    ),
 ]
 
 

@@ -32,9 +32,14 @@ logger = structlog.get_logger(__name__)
 config: BrainztableinatorConfig | None = None
 
 # Progress tracking
-message_counts = {"artists": 0, "labels": 0, "releases": 0}
+message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
 progress_interval = 100  # Log progress every 100 messages
-last_message_time = {"artists": 0.0, "labels": 0.0, "releases": 0.0}
+last_message_time = {
+    "artists": 0.0,
+    "labels": 0.0,
+    "release-groups": 0.0,
+    "releases": 0.0,
+}
 completed_files: set[str] = set()  # Track which files have completed processing
 current_task = None
 current_progress = 0.0
@@ -591,10 +596,48 @@ async def process_release(conn: Any, record: dict[str, Any]) -> None:
         await _insert_external_link(conn, mbid, "release", link)
 
 
+async def process_release_group(conn: Any, record: dict[str, Any]) -> None:
+    """Insert or update a MusicBrainz release-group record in PostgreSQL."""
+    mbid = record.get("mbid", record.get("id", ""))
+    async with conn.cursor() as cursor:
+        await cursor.execute(
+            "INSERT INTO musicbrainz.release_groups "
+            "(mbid, name, type, secondary_types, first_release_date, "
+            "disambiguation, discogs_master_id, data) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s) "
+            "ON CONFLICT (mbid) DO UPDATE SET "
+            "name = EXCLUDED.name, type = EXCLUDED.type, "
+            "secondary_types = EXCLUDED.secondary_types, "
+            "first_release_date = EXCLUDED.first_release_date, "
+            "disambiguation = EXCLUDED.disambiguation, "
+            "discogs_master_id = EXCLUDED.discogs_master_id, "
+            "data = EXCLUDED.data, updated_at = NOW()",
+            (
+                mbid,
+                record.get("name", ""),
+                record.get("mb_type", ""),
+                Jsonb(record.get("secondary_types", [])),
+                record.get("first_release_date"),
+                record.get("disambiguation", ""),
+                record.get("discogs_master_id"),
+                Jsonb(record),
+            ),
+        )
+
+    # Insert relationships
+    for rel in record.get("relations", []):
+        await _insert_relationship(conn, mbid, "release-group", rel)
+
+    # Insert external links
+    for link in record.get("external_links", []):
+        await _insert_external_link(conn, mbid, "release-group", link)
+
+
 # Map data types to their processing functions
 PROCESSORS: dict[str, Any] = {
     "artists": process_artist,
     "labels": process_label,
+    "release-groups": process_release_group,
     "releases": process_release,
 }
 

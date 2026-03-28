@@ -15,11 +15,12 @@ async fn test_download_latest_already_current() {
 
     let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
 
-    // Create existing version directory with all 3 entity files
+    // Create existing version directory with all entity files
     let version_dir = dir.path().join("20260325-001001");
     std::fs::create_dir(&version_dir).unwrap();
     std::fs::write(version_dir.join("artist.jsonl"), b"data").unwrap();
     std::fs::write(version_dir.join("label.jsonl"), b"data").unwrap();
+    std::fs::write(version_dir.join("release-group.jsonl"), b"data").unwrap();
     std::fs::write(version_dir.join("release.jsonl"), b"data").unwrap();
 
     let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
@@ -44,7 +45,7 @@ async fn test_download_latest_new_version() {
     let mut tar_bodies: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
     let mut sha256_lines = String::new();
 
-    for entity in &["artist", "label", "release"] {
+    for entity in &["artist", "label", "release-group", "release"] {
         let content = format!("{{\"id\":\"test-{}\"}}\n", entity);
         let mut tar_data = Vec::new();
         {
@@ -81,6 +82,12 @@ async fn test_download_latest_new_version() {
         .with_body(tar_bodies.get("label").unwrap().clone())
         .create_async()
         .await;
+    let _release_group_mock = server
+        .mock("GET", "/20260325-001001/release-group.tar.xz")
+        .with_status(200)
+        .with_body(tar_bodies.get("release-group").unwrap().clone())
+        .create_async()
+        .await;
     let _release_mock = server
         .mock("GET", "/20260325-001001/release.tar.xz")
         .with_status(200)
@@ -96,6 +103,7 @@ async fn test_download_latest_new_version() {
     let version_dir = dir.path().join("20260325-001001");
     assert!(version_dir.join("artist.jsonl").exists());
     assert!(version_dir.join("label.jsonl").exists());
+    assert!(version_dir.join("release-group.jsonl").exists());
     assert!(version_dir.join("release.jsonl").exists());
 
     // Verify temp files cleaned up
@@ -430,11 +438,11 @@ async fn test_download_latest_retry_on_failure() {
     </body></html>"#;
     let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
 
-    // Build valid tar.xz for all 3 entities
+    // Build valid tar.xz for all entities
     let mut tar_bodies: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
     let mut sha256_lines = String::new();
 
-    for entity in &["artist", "label", "release"] {
+    for entity in &["artist", "label", "release-group", "release"] {
         let content = format!("{{\"id\":\"{}\"}}\n", entity);
         let mut tar_data = Vec::new();
         {
@@ -474,11 +482,17 @@ async fn test_download_latest_retry_on_failure() {
         .create_async()
         .await;
 
-    // label and release succeed immediately
+    // label, release-group, and release succeed immediately
     let _label_mock = server
         .mock("GET", "/20260325-001001/label.tar.xz")
         .with_status(200)
         .with_body(tar_bodies.get("label").unwrap().clone())
+        .create_async()
+        .await;
+    let _release_group_mock = server
+        .mock("GET", "/20260325-001001/release-group.tar.xz")
+        .with_status(200)
+        .with_body(tar_bodies.get("release-group").unwrap().clone())
         .create_async()
         .await;
     let _release_mock = server
@@ -504,6 +518,7 @@ fn test_is_version_complete_true() {
     std::fs::create_dir(&version_dir).unwrap();
     std::fs::write(version_dir.join("artist.jsonl"), b"data").unwrap();
     std::fs::write(version_dir.join("label.jsonl"), b"data").unwrap();
+    std::fs::write(version_dir.join("release-group.jsonl"), b"data").unwrap();
     std::fs::write(version_dir.join("release.jsonl"), b"data").unwrap();
 
     let downloader = MbDownloader::new(dir.path().to_path_buf(), "http://unused".to_string());
@@ -609,10 +624,11 @@ async fn test_download_latest_connection_error_exhausts_retries() {
 
     let sha_content = "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *artist.tar.xz\n\
                         abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *label.tar.xz\n\
+                        abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *release-group.tar.xz\n\
                         abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *release.tar.xz\n";
     let _sha_mock = server.mock("GET", "/20260325-001001/SHA256SUMS").with_status(200).with_body(sha_content).create_async().await;
 
-    // All attempts return 500 — exhausts retries
+    // All attempts return 500 — exhausts retries on the first entity
     let _artist_mock = server
         .mock("GET", "/20260325-001001/artist.tar.xz")
         .with_status(500)
@@ -671,6 +687,11 @@ fn test_entity_keyword_masters() {
     assert_eq!(entity_keyword(DataType::Masters), "master");
 }
 
+#[test]
+fn test_entity_keyword_release_groups() {
+    assert_eq!(entity_keyword(DataType::ReleaseGroups), "release-group");
+}
+
 // ── discover_mb_dump_files: fuzzy .jsonl (no .xz) ───────────────────────
 
 #[test]
@@ -701,11 +722,11 @@ async fn test_download_latest_retry_cleans_up_dest_file() {
     </body></html>"#;
     let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
 
-    // Build a valid tar.xz for all 3 entities
+    // Build a valid tar.xz for all entities
     let mut tar_bodies: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
     let mut sha256_lines = String::new();
 
-    for entity in &["artist", "label", "release"] {
+    for entity in &["artist", "label", "release-group", "release"] {
         let content = format!("{{\"id\":\"{}\"}}\n", entity);
         let mut tar_data = Vec::new();
         {
@@ -746,11 +767,17 @@ async fn test_download_latest_retry_cleans_up_dest_file() {
         .create_async()
         .await;
 
-    // label and release succeed immediately
+    // label, release-group, and release succeed immediately
     let _label_mock = server
         .mock("GET", "/20260325-001001/label.tar.xz")
         .with_status(200)
         .with_body(tar_bodies.get("label").unwrap().clone())
+        .create_async()
+        .await;
+    let _release_group_mock = server
+        .mock("GET", "/20260325-001001/release-group.tar.xz")
+        .with_status(200)
+        .with_body(tar_bodies.get("release-group").unwrap().clone())
         .create_async()
         .await;
     let _release_mock = server
@@ -788,6 +815,7 @@ async fn test_download_latest_empty_response_stream_error() {
 
     let sha_content = "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *artist.tar.xz\n\
                         abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *label.tar.xz\n\
+                        abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *release-group.tar.xz\n\
                         abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *release.tar.xz\n";
     let _sha_mock = server.mock("GET", "/20260325-001001/SHA256SUMS").with_status(200).with_body(sha_content).create_async().await;
 
