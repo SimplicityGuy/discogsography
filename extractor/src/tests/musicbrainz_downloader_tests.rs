@@ -439,3 +439,80 @@ fn test_extract_entity_from_tarball_missing_entity() {
     assert!(result.is_err());
     assert!(!out_path.exists());
 }
+
+#[tokio::test]
+async fn test_download_latest_retry_on_failure() {
+    use std::io::Write;
+
+    let dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let index_html = r#"<html><body>
+        <a href="20260325-001001/">20260325-001001/</a>
+    </body></html>"#;
+    let _index_mock = server.mock("GET", "/")
+        .with_status(200)
+        .with_body(index_html)
+        .create_async().await;
+
+    // Build valid tar.xz for all 3 entities
+    let mut tar_bodies: std::collections::HashMap<String, Vec<u8>> = std::collections::HashMap::new();
+    let mut sha256_lines = String::new();
+
+    for entity in &["artist", "label", "release"] {
+        let content = format!("{{\"id\":\"{}\"}}\n", entity);
+        let mut tar_data = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut tar_data);
+            let bytes = content.as_bytes();
+            let mut header = tar::Header::new_gnu();
+            header.set_path(format!("{}/mbdump/{}", entity, entity)).unwrap();
+            header.set_size(bytes.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder.append(&header, bytes).unwrap();
+            builder.finish().unwrap();
+        }
+        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 1);
+        encoder.write_all(&tar_data).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let hash = format!("{:x}", sha2::Sha256::digest(&compressed));
+        sha256_lines.push_str(&format!("{} *{}.tar.xz\n", hash, entity));
+        tar_bodies.insert(entity.to_string(), compressed);
+    }
+
+    let _sha_mock = server.mock("GET", "/20260325-001001/SHA256SUMS")
+        .with_status(200)
+        .with_body(&sha256_lines)
+        .create_async().await;
+
+    // artist: first request fails (500), second succeeds
+    let _artist_fail = server.mock("GET", "/20260325-001001/artist.tar.xz")
+        .with_status(500)
+        .with_body("Internal Server Error")
+        .expect(1)
+        .create_async().await;
+    let _artist_ok = server.mock("GET", "/20260325-001001/artist.tar.xz")
+        .with_status(200)
+        .with_body(tar_bodies.get("artist").unwrap().clone())
+        .expect(1)
+        .create_async().await;
+
+    // label and release succeed immediately
+    let _label_mock = server.mock("GET", "/20260325-001001/label.tar.xz")
+        .with_status(200)
+        .with_body(tar_bodies.get("label").unwrap().clone())
+        .create_async().await;
+    let _release_mock = server.mock("GET", "/20260325-001001/release.tar.xz")
+        .with_status(200)
+        .with_body(tar_bodies.get("release").unwrap().clone())
+        .create_async().await;
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
+    let result = downloader.download_latest().await.unwrap();
+
+    assert!(matches!(result, MbDownloadResult::Downloaded(_)));
+    assert!(dir.path().join("20260325-001001/artist.jsonl").exists());
+}
