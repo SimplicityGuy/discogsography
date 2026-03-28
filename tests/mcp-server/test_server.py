@@ -79,6 +79,18 @@ class TestSearch:
         assert "error" in result
 
     @pytest.mark.asyncio
+    async def test_search_empty_types_defaults_to_all(self, mock_context, app_ctx):
+        from mcp_server.server import search
+
+        app_ctx.client.get = AsyncMock(return_value=_mock_response({"total": 0, "results": []}))
+
+        await search(query="test", types="", ctx=mock_context)
+
+        call_params = app_ctx.client.get.call_args.kwargs["params"]
+        # When types is empty, it should default to all valid search types
+        assert "types" in call_params
+
+    @pytest.mark.asyncio
     async def test_search_clamps_limit(self, mock_context, app_ctx):
         from mcp_server.server import search
 
@@ -268,6 +280,14 @@ class TestFindPath:
 
         result = await find_path(from_name="X", from_type="invalid", to_name="Y", to_type="artist", ctx=mock_context)
         assert "error" in result
+
+    @pytest.mark.asyncio
+    async def test_invalid_to_type(self, mock_context):
+        from mcp_server.server import find_path
+
+        result = await find_path(from_name="X", from_type="artist", to_name="Y", to_type="invalid", ctx=mock_context)
+        assert "error" in result
+        assert "to_type" in result["error"]
 
     @pytest.mark.asyncio
     async def test_entity_not_found(self, mock_context, app_ctx):
@@ -468,3 +488,10 @@ class TestMain:
         with patch("mcp_server.server.mcp") as mock_mcp, patch("sys.argv", ["discogsography-mcp", "--transport=streamable-http"]):
             main()
             mock_mcp.run.assert_called_once_with(transport="streamable-http")
+
+    def test_main_invalid_transport_falls_back_to_stdio(self):
+        from mcp_server.server import main
+
+        with patch("mcp_server.server.mcp") as mock_mcp, patch("sys.argv", ["discogsography-mcp", "--transport", "invalid"]):
+            main()
+            mock_mcp.run.assert_called_once_with(transport="stdio")

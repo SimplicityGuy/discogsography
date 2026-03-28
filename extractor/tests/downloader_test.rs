@@ -397,3 +397,220 @@ async fn test_metadata_json_format() {
     assert_eq!(info.checksum, "abc123def456");
     assert_eq!(info.size, 9876);
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// HTTP-based list_s3_files tests using mockito
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_list_s3_files_scraping_with_valid_data() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    // Main page with year links — regex matches href="?prefix=data%2F(\d{4})%2F"
+    let main_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+        <a href="?prefix=data%2F2025%2F">2025/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_html).create_async().await;
+
+    // Year page with file links — regex matches ?download=data%2F\d{4}%2F(discogs_(\d{8})_[^"]+)
+    let year_html = r#"<html><body>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">artists</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">labels</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">masters</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">releases</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">CHECKSUM</a>
+    </body></html>"#;
+    let _year_mock = server
+        .mock("GET", "/?prefix=data%2F2026%2F")
+        .with_status(200)
+        .with_body(year_html)
+        .create_async()
+        .await;
+
+    // 2025 year page — empty (no files)
+    let _year2025_mock = server
+        .mock("GET", "/?prefix=data%2F2025%2F")
+        .with_status(200)
+        .with_body("<html><body>No files</body></html>")
+        .create_async()
+        .await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+    let files = downloader.list_s3_files().await.unwrap();
+
+    assert_eq!(files.len(), 5, "Should find 5 files (4 data + 1 checksum)");
+    assert!(files.iter().any(|f| f.name.contains("artists")));
+    assert!(files.iter().any(|f| f.name.contains("labels")));
+    assert!(files.iter().any(|f| f.name.contains("masters")));
+    assert!(files.iter().any(|f| f.name.contains("releases")));
+    assert!(files.iter().any(|f| f.name.contains("CHECKSUM")));
+}
+
+#[tokio::test]
+async fn test_list_s3_files_no_files_found() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    // Main page with year links
+    let main_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_html).create_async().await;
+
+    // Year page with NO matching file links
+    let _year_mock = server
+        .mock("GET", "/?prefix=data%2F2026%2F")
+        .with_status(200)
+        .with_body("<html><body>Nothing here</body></html>")
+        .create_async()
+        .await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+    let result = downloader.list_s3_files().await;
+
+    assert!(result.is_err(), "Should return error when no files found");
+    let err_msg = format!("{}", result.err().unwrap());
+    assert!(err_msg.contains("No files found"), "Error should mention no files: {}", err_msg);
+}
+
+#[tokio::test]
+async fn test_list_s3_files_no_year_directories() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    // Main page with NO year links at all
+    let main_html = r#"<html><body>No year directories found</body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_html).create_async().await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+    let result = downloader.list_s3_files().await;
+
+    assert!(result.is_err(), "Should return error when no year directories found");
+    let err_msg = format!("{}", result.err().unwrap());
+    assert!(err_msg.contains("year directories"), "Error should mention year directories: {}", err_msg);
+}
+
+#[tokio::test]
+async fn test_list_s3_files_caching() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    // Main page with year links
+    let main_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_html).expect(1).create_async().await;
+
+    let year_html = r#"<html><body>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">file</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">file</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">file</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">file</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">file</a>
+    </body></html>"#;
+    let _year_mock = server
+        .mock("GET", "/?prefix=data%2F2026%2F")
+        .with_status(200)
+        .with_body(year_html)
+        .expect(1)
+        .create_async()
+        .await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+
+    // First call — scrapes
+    let files1 = downloader.list_s3_files().await.unwrap();
+    assert_eq!(files1.len(), 5);
+
+    // Second call — should use cache (mocks expect only 1 call each)
+    let files2 = downloader.list_s3_files().await.unwrap();
+    assert_eq!(files2.len(), 5);
+}
+
+#[tokio::test]
+async fn test_download_discogs_data_with_mockito() {
+    let temp_dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    // Main page with year links — must match regex: href="?prefix=data%2F(\d{4})%2F"
+    let main_html = r#"<html><body>
+        <a href="?prefix=data%2F2026%2F">2026/</a>
+    </body></html>"#;
+    let _main_mock = server.mock("GET", "/").with_status(200).with_body(main_html).create_async().await;
+
+    // Year page — must match regex: ?download=data%2F\d{4}%2F(discogs_(\d{8})_[^"]+)
+    let year_html = r#"<html><body>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz">file</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz">file</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz">file</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz">file</a>
+        <a href="?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt">file</a>
+    </body></html>"#;
+    let _year_mock = server
+        .mock("GET", "/?prefix=data%2F2026%2F")
+        .with_status(200)
+        .with_body(year_html)
+        .create_async()
+        .await;
+
+    // Create compressed gzipped files for download
+    use flate2::Compression;
+    use flate2::write::GzEncoder;
+    use std::io::Write;
+
+    let xml_content = r#"<?xml version="1.0" encoding="UTF-8"?><artists><artist id="1"><name>Test</name></artist></artists>"#;
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+    encoder.write_all(xml_content.as_bytes()).unwrap();
+    let compressed = encoder.finish().unwrap();
+
+    // Mock the download endpoints — the downloader constructs URLs as: base_url + "?download=data%2F" + year + "%2F" + filename
+    let _dl_artists = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_artists.xml.gz")
+        .with_status(200)
+        .with_body(compressed.clone())
+        .create_async()
+        .await;
+    let _dl_labels = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_labels.xml.gz")
+        .with_status(200)
+        .with_body(compressed.clone())
+        .create_async()
+        .await;
+    let _dl_masters = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_masters.xml.gz")
+        .with_status(200)
+        .with_body(compressed.clone())
+        .create_async()
+        .await;
+    let _dl_releases = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_releases.xml.gz")
+        .with_status(200)
+        .with_body(compressed.clone())
+        .create_async()
+        .await;
+    let _dl_checksum = server
+        .mock("GET", "/?download=data%2F2026%2Fdiscogs_20260101_CHECKSUM.txt")
+        .with_status(200)
+        .with_body(b"checksum data".to_vec())
+        .create_async()
+        .await;
+
+    let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), base_url).await.unwrap();
+    let result = downloader.download_discogs_data().await;
+
+    assert!(result.is_ok(), "Download should succeed: {:?}", result);
+    let files = result.unwrap();
+    assert!(files.len() >= 4, "Should download at least 4 files, got {}", files.len());
+}
