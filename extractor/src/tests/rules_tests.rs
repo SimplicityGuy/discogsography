@@ -929,6 +929,62 @@ fn test_load_rejects_invalid_yaml() {
     assert!(result.is_err());
 }
 
+// ── resolve_field_values coverage: Value::Number branch ─────────────
+
+#[test]
+fn test_range_rule_with_numeric_json_value() {
+    // When a field has a JSON number (not a string), the resolve_field_values
+    // function should convert it via Value::Number(n) => Some(n.to_string()).
+    let rules = compile_yaml(
+        r#"
+rules:
+  releases:
+    - name: year_range
+      field: year
+      condition:
+        type: range
+        min: 1900
+        max: 2100
+      severity: warning
+"#,
+    );
+
+    // Year as an actual JSON number (not string) — tests the Number branch
+    let record = json!({"year": 1850});
+    let violations = evaluate_rules(&rules, "releases", &record);
+    assert_eq!(violations.len(), 1, "Numeric year 1850 should violate range 1900-2100");
+    assert_eq!(violations[0].rule_name, "year_range");
+
+    // Year within range — no violation
+    let record2 = json!({"year": 2000});
+    let violations2 = evaluate_rules(&rules, "releases", &record2);
+    assert!(violations2.is_empty(), "Numeric year 2000 should be within range");
+}
+
+#[test]
+fn test_resolve_field_values_with_non_object_value() {
+    // Exercise the `_ => None` branch: field resolves to something that isn't
+    // String, Number, or Null (e.g., a bool or nested object).
+    let rules = compile_yaml(
+        r#"
+rules:
+  artists:
+    - name: name_length
+      field: name
+      condition:
+        type: length
+        min: 1
+      severity: warning
+"#,
+    );
+
+    // name is a boolean — can't be converted to a string, so no violation
+    let record = json!({"name": true});
+    let violations = evaluate_rules(&rules, "artists", &record);
+    // The field resolves to a boolean, which is `_ => None` — skipped entirely
+    assert!(violations.is_empty(), "Boolean field value should be skipped");
+}
+
 #[test]
 fn test_default_rules_file() {
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("extraction-rules.yaml");

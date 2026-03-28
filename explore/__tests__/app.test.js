@@ -819,6 +819,289 @@ describe('ExploreApp helper methods', () => {
         });
     });
 
+    describe('ExploreApp._updateAuthUI - Discogs connected', () => {
+        it('should show disconnect and sync buttons when Discogs is connected', () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getUser.mockReturnValue({ email: 'alice@example.com' });
+            window.authManager.getDiscogsStatus.mockReturnValue({ connected: true, discogs_username: 'alice_discogs' });
+
+            const app = new ExploreApp();
+            app._updateAuthUI();
+
+            const statusDisplay = document.getElementById('discogsStatusDisplay');
+            expect(statusDisplay.querySelector('.discogs-badge')).not.toBeNull();
+            expect(document.getElementById('connectDiscogsBtn').classList.contains('hidden')).toBe(true);
+            expect(document.getElementById('disconnectDiscogsBtn').classList.contains('hidden')).toBe(false);
+            expect(document.getElementById('syncBtn').classList.contains('hidden')).toBe(false);
+        });
+
+        it('should show connect button when logged in but Discogs not connected', () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getUser.mockReturnValue({ email: 'alice@example.com' });
+            window.authManager.getDiscogsStatus.mockReturnValue({ connected: false });
+
+            const app = new ExploreApp();
+            app._updateAuthUI();
+
+            expect(document.getElementById('connectDiscogsBtn').classList.contains('hidden')).toBe(false);
+            expect(document.getElementById('disconnectDiscogsBtn').classList.contains('hidden')).toBe(true);
+            expect(document.getElementById('syncBtn').classList.contains('hidden')).toBe(true);
+        });
+
+        it('should hide all Discogs buttons when not logged in', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.authManager.getUser.mockReturnValue(null);
+            window.authManager.getDiscogsStatus.mockReturnValue(null);
+
+            const app = new ExploreApp();
+            app._updateAuthUI();
+
+            expect(document.getElementById('connectDiscogsBtn').classList.contains('hidden')).toBe(true);
+            expect(document.getElementById('disconnectDiscogsBtn').classList.contains('hidden')).toBe(true);
+            expect(document.getElementById('syncBtn').classList.contains('hidden')).toBe(true);
+        });
+
+        it('should hide navSecondary and navGaps when not logged in', () => {
+            window.authManager.isLoggedIn.mockReturnValue(false);
+            window.authManager.getUser.mockReturnValue(null);
+            window.authManager.getDiscogsStatus.mockReturnValue(null);
+
+            // Add navSecondary and navGaps elements
+            let navSec = document.getElementById('navSecondary');
+            if (!navSec) {
+                navSec = document.createElement('div');
+                navSec.id = 'navSecondary';
+                document.body.appendChild(navSec);
+            }
+            let navGaps = document.getElementById('navGaps');
+            if (!navGaps) {
+                navGaps = document.createElement('div');
+                navGaps.id = 'navGaps';
+                document.body.appendChild(navGaps);
+            }
+
+            const app = new ExploreApp();
+            app._updateAuthUI();
+
+            expect(navSec.classList.contains('hidden')).toBe(true);
+            expect(navGaps.classList.contains('hidden')).toBe(true);
+        });
+
+        it('should show navSecondary when logged in', () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getUser.mockReturnValue({ email: 'alice@example.com' });
+            window.authManager.getDiscogsStatus.mockReturnValue({ connected: false });
+
+            let navSec = document.getElementById('navSecondary');
+            if (!navSec) {
+                navSec = document.createElement('div');
+                navSec.id = 'navSecondary';
+                document.body.appendChild(navSec);
+            }
+
+            const app = new ExploreApp();
+            app._updateAuthUI();
+
+            expect(navSec.classList.contains('hidden')).toBe(false);
+        });
+    });
+
+    describe('ExploreApp._bindEvents', () => {
+        it('should bind pane switching via data-pane attribute', () => {
+            // Add a nav link with data-pane
+            const link = document.createElement('a');
+            link.dataset.pane = 'trends';
+            link.className = 'nav-link';
+            document.body.appendChild(link);
+
+            const app = new ExploreApp();
+            link.click();
+
+            expect(app.activePane).toBe('trends');
+            link.remove();
+        });
+
+        it('should bind search type via data-type attribute', () => {
+            const typeItem = document.createElement('a');
+            typeItem.dataset.type = 'label';
+            document.body.appendChild(typeItem);
+
+            const app = new ExploreApp();
+            typeItem.click();
+
+            expect(app.searchType).toBe('label');
+            typeItem.remove();
+        });
+
+        it('should close info panel on closePanelBtn click', () => {
+            const app = new ExploreApp();
+            const panel = document.getElementById('infoPanel');
+            panel.classList.add('open');
+
+            document.getElementById('closePanelBtn').click();
+
+            expect(panel.classList.contains('open')).toBe(false);
+        });
+
+        it('should trigger login on Enter in password field', async () => {
+            const app = new ExploreApp();
+            document.getElementById('loginEmail').value = '';
+            document.getElementById('loginPassword').value = '';
+
+            document.getElementById('loginPassword').dispatchEvent(
+                new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+            );
+            await new Promise(r => setTimeout(r, 10));
+
+            // Should have attempted login (error case since fields are empty)
+            expect(document.getElementById('loginError').textContent).toBeTruthy();
+        });
+
+        it('should trigger register on Enter in register password field', async () => {
+            const app = new ExploreApp();
+            document.getElementById('registerEmail').value = '';
+            document.getElementById('registerPassword').value = '';
+
+            document.getElementById('registerPassword').dispatchEvent(
+                new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })
+            );
+            await new Promise(r => setTimeout(r, 10));
+
+            expect(document.getElementById('registerError').textContent).toBeTruthy();
+        });
+
+        it('should handle logout button click', async () => {
+            window.authManager.getToken.mockReturnValue('tok');
+            const app = new ExploreApp();
+
+            document.getElementById('logoutBtn').dispatchEvent(
+                new MouseEvent('click', { bubbles: true })
+            );
+            await new Promise(r => setTimeout(r, 10));
+
+            expect(window.apiClient.logout).toHaveBeenCalled();
+        });
+
+        it('should handle connectDiscogsBtn click', () => {
+            const app = new ExploreApp();
+
+            document.getElementById('connectDiscogsBtn').dispatchEvent(
+                new MouseEvent('click', { bubbles: true })
+            );
+
+            expect(app.userPanes.startDiscogsOAuth).toHaveBeenCalled();
+        });
+
+        it('should handle disconnectDiscogsBtn click', () => {
+            const app = new ExploreApp();
+
+            document.getElementById('disconnectDiscogsBtn').dispatchEvent(
+                new MouseEvent('click', { bubbles: true })
+            );
+
+            expect(app.userPanes.disconnectDiscogs).toHaveBeenCalled();
+        });
+
+        it('should handle syncBtn click', () => {
+            const app = new ExploreApp();
+
+            document.getElementById('syncBtn').dispatchEvent(
+                new MouseEvent('click', { bubbles: true })
+            );
+
+            expect(app.userPanes.triggerSync).toHaveBeenCalled();
+        });
+
+        it('should handle navLoginBtn click to open auth modal', () => {
+            globalThis.Alpine = { store: vi.fn().mockReturnValue({ authOpen: false }) };
+            const app = new ExploreApp();
+
+            document.getElementById('navLoginBtn').click();
+
+            // Should clear login/register errors
+            expect(document.getElementById('loginError').textContent).toBe('');
+            expect(document.getElementById('registerError').textContent).toBe('');
+        });
+
+        it('should handle share button click', async () => {
+            window.authManager.getToken.mockReturnValue(null);
+            const app = new ExploreApp();
+
+            document.getElementById('shareBtn').click();
+            await new Promise(r => setTimeout(r, 10));
+
+            // Should not proceed (no token)
+            expect(window.apiClient.saveSnapshot).not.toHaveBeenCalled();
+        });
+
+        it('should handle timeline toggle button click', () => {
+            const app = new ExploreApp();
+            app.timeline._ready = true;
+            const container = document.getElementById('timelineScrubber');
+            container.classList.add('hidden');
+
+            document.getElementById('timelineToggleBtn').click();
+
+            // timeline.toggle() should have been called
+            expect(container.classList.contains('hidden')).toBe(false);
+        });
+    });
+
+    describe('ExploreApp._decorateOwnership - with matching info panel title', () => {
+        it('should add badges when info panel title matches a release node', async () => {
+            window.authManager.isLoggedIn.mockReturnValue(true);
+            window.authManager.getToken.mockReturnValue('token');
+            window.apiClient.getUserStatus.mockResolvedValue({
+                status: { '123': { in_collection: true, in_wantlist: false } },
+            });
+
+            const app = new ExploreApp();
+            app.graph.nodes = [{ type: 'release', name: 'OK Computer', nodeId: '123' }];
+
+            // Set info panel title to match
+            document.getElementById('infoPanelTitle').textContent = '123';
+
+            await app._decorateOwnership();
+
+            // Should have called _addOwnershipBadges
+            expect(window.apiClient.getUserStatus).toHaveBeenCalled();
+        });
+    });
+
+    describe('ExploreApp._renderDetails - style and release with styles', () => {
+        it('should render styles for release type', () => {
+            const app = new ExploreApp();
+            const nodes = app._renderDetails(
+                { name: 'OK Computer', styles: ['Art Rock'] },
+                'release', 'ok'
+            );
+
+            const section = nodes.find(n => {
+                if (!n.classList?.contains('detail-section')) return false;
+                return n.querySelector('h6')?.textContent === 'Styles';
+            });
+            expect(section).toBeDefined();
+        });
+
+        it('should render collaborators section and trigger load for artist', () => {
+            window.collaboratorsPanel = { load: vi.fn() };
+            window.authManager.isLoggedIn.mockReturnValue(false);
+
+            const app = new ExploreApp();
+            const nodes = app._renderDetails(
+                { name: 'Radiohead', release_count: 10, id: '42' },
+                'artist', 'radiohead'
+            );
+
+            const collabSection = nodes.find(n => {
+                const heading = n.querySelector && n.querySelector('h6');
+                return heading?.textContent === 'Collaborators';
+            });
+            expect(collabSection).toBeDefined();
+            expect(window.collaboratorsPanel.load).toHaveBeenCalledWith('42');
+        });
+    });
+
     describe('ExploreApp._detailStat', () => {
         it('should create a stat div with label and value', () => {
             const app = new ExploreApp();

@@ -1,7 +1,8 @@
 """Tests for insights FastAPI endpoints."""
 
+import asyncio
 from datetime import UTC
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
 import pytest
@@ -240,6 +241,122 @@ class TestStatusEndpointNeverCached:
         assert response.status_code == 200
         mock_cache.get.assert_not_called()
         mock_cache.set.assert_not_called()
+
+
+# ============================================================
+# Lifespan tests
+# ============================================================
+
+
+class TestLifespan:
+    @pytest.mark.asyncio
+    async def test_lifespan_startup_and_shutdown(self) -> None:
+        """Test the full lifespan context manager startup and shutdown paths."""
+        from fastapi import FastAPI
+
+        import insights.insights as _module
+
+        mock_pool = AsyncMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_redis = AsyncMock()
+        mock_redis.ping = AsyncMock()
+        mock_redis.aclose = AsyncMock()
+
+        mock_http_client = AsyncMock()
+        mock_http_client.aclose = AsyncMock()
+
+        mock_health_srv = MagicMock()
+        mock_health_srv.start_background = MagicMock()
+        mock_health_srv.stop = MagicMock()
+
+        mock_cache = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.postgres_host = "localhost:5432"
+        mock_config.postgres_database = "test"
+        mock_config.postgres_username = "user"
+        mock_config.postgres_password = "pass"
+        mock_config.api_base_url = "http://localhost:8004"
+        mock_config.redis_host = "redis://localhost"
+        mock_config.schedule_hours = 24
+        mock_config.milestone_years = [25, 50]
+
+        # Create a scheduler task that completes immediately
+        async def fake_scheduler(*_args: object, **_kwargs: object) -> None:
+            await asyncio.sleep(100)
+
+        fake_app = FastAPI()
+
+        with (
+            patch.object(_module, "setup_logging"),
+            patch.object(_module.InsightsConfig, "from_env", return_value=mock_config),
+            patch.object(_module, "HealthServer", return_value=mock_health_srv),
+            patch.object(_module, "AsyncPostgreSQLPool", return_value=mock_pool),
+            patch("httpx.AsyncClient", return_value=mock_http_client),
+            patch("redis.asyncio.from_url", new_callable=AsyncMock, return_value=mock_redis),
+            patch.object(_module, "InsightsCache", return_value=mock_cache),
+            patch.object(_module, "_scheduler_loop", side_effect=fake_scheduler),
+        ):
+            async with _module.lifespan(fake_app):
+                # Verify startup
+                mock_health_srv.start_background.assert_called_once()
+                mock_pool.initialize.assert_awaited_once()
+                assert _module._cache is mock_cache
+
+            # Verify shutdown
+            mock_health_srv.stop.assert_called_once()
+            mock_pool.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_lifespan_redis_unavailable_fallback(self) -> None:
+        """When Redis is unavailable, caching should be disabled gracefully."""
+        from fastapi import FastAPI
+
+        import insights.insights as _module
+
+        mock_pool = AsyncMock()
+        mock_pool.initialize = AsyncMock()
+        mock_pool.close = AsyncMock()
+
+        mock_http_client = AsyncMock()
+        mock_http_client.aclose = AsyncMock()
+
+        mock_health_srv = MagicMock()
+        mock_health_srv.start_background = MagicMock()
+        mock_health_srv.stop = MagicMock()
+
+        mock_config = MagicMock()
+        mock_config.postgres_host = "localhost:5432"
+        mock_config.postgres_database = "test"
+        mock_config.postgres_username = "user"
+        mock_config.postgres_password = "pass"
+        mock_config.api_base_url = "http://localhost:8004"
+        mock_config.redis_host = "redis://localhost"
+        mock_config.schedule_hours = 24
+        mock_config.milestone_years = [25, 50]
+
+        async def fake_scheduler(*_args: object, **_kwargs: object) -> None:
+            await asyncio.sleep(100)
+
+        fake_app = FastAPI()
+
+        with (
+            patch.object(_module, "setup_logging"),
+            patch.object(_module.InsightsConfig, "from_env", return_value=mock_config),
+            patch.object(_module, "HealthServer", return_value=mock_health_srv),
+            patch.object(_module, "AsyncPostgreSQLPool", return_value=mock_pool),
+            patch("httpx.AsyncClient", return_value=mock_http_client),
+            patch("redis.asyncio.from_url", side_effect=ConnectionError("Redis down")),
+            patch.object(_module, "_scheduler_loop", side_effect=fake_scheduler),
+        ):
+            async with _module.lifespan(fake_app):
+                # Redis failure should result in None cache
+                assert _module._redis is None
+                assert _module._cache is None
+
+            mock_health_srv.stop.assert_called_once()
 
 
 # ============================================================
