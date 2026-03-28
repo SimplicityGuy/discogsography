@@ -44,8 +44,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN groupadd -r extractor && useradd -r -g extractor extractor
 
 # Create necessary directories
-RUN mkdir -p /discogs-data /logs && \
-    chown -R extractor:extractor /discogs-data /logs
+RUN mkdir -p /discogs-data /musicbrainz-data /logs && \
+    chown -R extractor:extractor /discogs-data /musicbrainz-data /logs
 
 # Copy binary from builder
 COPY --from=builder /app/target/release/extractor /usr/local/bin/extractor
