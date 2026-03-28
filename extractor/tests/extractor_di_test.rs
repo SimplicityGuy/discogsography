@@ -212,7 +212,7 @@ async fn test_process_discogs_data_force_reprocess_bypasses_skip() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -350,7 +350,7 @@ async fn test_process_discogs_data_all_files_already_processed() {
     mock_dl.expect_take_state_marker().times(1).returning(move || Some(marker.clone()));
 
     let mut mock_mq = MockMessagePublisher::new();
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -559,7 +559,7 @@ async fn test_process_musicbrainz_data_force_reprocess_bypasses_skip() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -650,7 +650,7 @@ async fn test_process_musicbrainz_data_reprocess_decision() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -690,7 +690,7 @@ async fn test_process_musicbrainz_data_skips_completed_files() {
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     // send_file_complete should only be called for label and release (artist is skipped)
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -733,7 +733,7 @@ async fn test_process_musicbrainz_data_only_labels_no_artist_dump() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -915,7 +915,7 @@ async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Err(anyhow::anyhow!("extraction_complete failed")));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Err(anyhow::anyhow!("extraction_complete failed")));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -976,7 +976,7 @@ async fn test_run_musicbrainz_loop_trigger_ok_false() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Err(anyhow::anyhow!("extraction_complete failed")));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Err(anyhow::anyhow!("extraction_complete failed")));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -1159,7 +1159,7 @@ async fn test_process_discogs_data_all_processed_extraction_complete_send_fails(
 
     // MQ that fails on send_extraction_complete
     let mut mock_mq = MockMessagePublisher::new();
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Err(anyhow::anyhow!("extraction_complete send failed")));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Err(anyhow::anyhow!("extraction_complete send failed")));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -1385,7 +1385,7 @@ async fn test_process_discogs_data_reprocess_decision() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -1439,7 +1439,7 @@ async fn test_process_discogs_data_end_to_end_success() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -1495,7 +1495,7 @@ async fn test_process_discogs_data_end_to_end_with_rules() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -1564,7 +1564,7 @@ async fn test_process_discogs_data_extraction_complete_failure() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Err(anyhow::anyhow!("AMQP send failed")));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Err(anyhow::anyhow!("AMQP send failed")));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
@@ -1705,7 +1705,7 @@ async fn test_process_discogs_data_multiple_files() {
     mock_mq.expect_setup_exchange().returning(|_| Ok(()));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
     mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
-    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
     let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
