@@ -1,7 +1,9 @@
 use extractor::config::ExtractorConfig;
 use extractor::discogs_downloader::MockDataSource;
 use extractor::extractor::DefaultMessageQueueFactory;
-use extractor::extractor::{ExtractionStatus, ExtractorState, message_publisher, process_musicbrainz_data, process_single_file};
+use extractor::extractor::{
+    ExtractionStatus, ExtractorState, message_publisher, process_musicbrainz_data, process_single_file, run_musicbrainz_loop,
+};
 use extractor::message_queue::MockMessagePublisher;
 use extractor::state_marker::StateMarker;
 use extractor::types::S3FileInfo;
@@ -739,4 +741,107 @@ async fn test_process_musicbrainz_data_only_labels_no_artist_dump() {
 
     let s = state.read().await;
     assert_eq!(s.extraction_status, ExtractionStatus::Completed);
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// run_musicbrainz_loop tests
+// ──────────────────────────────────────────────────────────────────────────────
+
+#[tokio::test]
+async fn test_run_musicbrainz_loop_shutdown_after_initial_processing() {
+    // Initial processing succeeds (already-current), then shutdown fires immediately.
+    let temp_dir = TempDir::new().unwrap();
+    let (_server, base_url) = mb_mock_server().await;
+    let _versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
+
+    // Write a completed state marker so extraction is skipped
+    let mut marker = StateMarker::new("20260322-000000".to_string());
+    marker.complete_processing();
+    marker.complete_extraction();
+    let marker_path = temp_dir.path().join("20260322-000000").join(".mb_extraction_status_20260322-000000.json");
+    marker.save(&marker_path).await.unwrap();
+
+    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mock_mq = MockMessagePublisher::new();
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+
+    // Signal shutdown after a short delay so the loop exits
+    let shutdown_clone = shutdown.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        shutdown_clone.notify_one();
+    });
+
+    let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_run_musicbrainz_loop_initial_failure_returns_error() {
+    // Initial processing fails (no download server reachable for SHA256SUMS),
+    // so the loop returns an error without entering the periodic check.
+    let temp_dir = TempDir::new().unwrap();
+    let (_server, base_url) = mb_mock_server().await;
+
+    // Do NOT create versioned dir — downloader will try to fetch SHA256SUMS and fail.
+    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mock_mq = MockMessagePublisher::new();
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+
+    let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
+
+    assert!(result.is_err());
+}
+
+#[tokio::test]
+async fn test_run_musicbrainz_loop_trigger_then_shutdown() {
+    // Initial processing succeeds, then API trigger fires, then shutdown.
+    let temp_dir = TempDir::new().unwrap();
+    let (_server, base_url) = mb_mock_server().await;
+    let _versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
+
+    // Write a completed state marker
+    let mut marker = StateMarker::new("20260322-000000".to_string());
+    marker.complete_processing();
+    marker.complete_extraction();
+    let marker_path = temp_dir.path().join("20260322-000000").join(".mb_extraction_status_20260322-000000.json");
+    marker.save(&marker_path).await.unwrap();
+
+    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mock_mq = MockMessagePublisher::new();
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+
+    // After a short delay, set the trigger, then signal shutdown
+    let trigger_clone = trigger.clone();
+    let shutdown_clone = shutdown.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        {
+            let mut t = trigger_clone.lock().unwrap();
+            *t = Some(false);
+        }
+        // Give time for the trigger to be processed, then shut down
+        tokio::time::sleep(tokio::time::Duration::from_millis(1000)).await;
+        shutdown_clone.notify_one();
+    });
+
+    let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
+
+    assert!(result.is_ok());
 }

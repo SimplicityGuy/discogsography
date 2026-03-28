@@ -246,7 +246,7 @@ impl MbDownloader {
     }
 
     /// Check whether a version directory contains all expected entity JSONL files.
-    fn is_version_complete(&self, version_dir: &Path) -> bool {
+    pub(crate) fn is_version_complete(&self, version_dir: &Path) -> bool {
         if !version_dir.is_dir() {
             return false;
         }

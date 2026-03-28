@@ -494,3 +494,193 @@ async fn test_download_latest_retry_on_failure() {
     assert!(matches!(result, MbDownloadResult::Downloaded(_)));
     assert!(dir.path().join("20260325-001001/artist.jsonl").exists());
 }
+
+// ── is_version_complete ─────────────────────────────────────────────────
+
+#[test]
+fn test_is_version_complete_true() {
+    let dir = TempDir::new().unwrap();
+    let version_dir = dir.path().join("20260325-001001");
+    std::fs::create_dir(&version_dir).unwrap();
+    std::fs::write(version_dir.join("artist.jsonl"), b"data").unwrap();
+    std::fs::write(version_dir.join("label.jsonl"), b"data").unwrap();
+    std::fs::write(version_dir.join("release.jsonl"), b"data").unwrap();
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), "http://unused".to_string());
+    assert!(downloader.is_version_complete(&version_dir));
+}
+
+#[test]
+fn test_is_version_complete_missing_one_file() {
+    let dir = TempDir::new().unwrap();
+    let version_dir = dir.path().join("20260325-001001");
+    std::fs::create_dir(&version_dir).unwrap();
+    std::fs::write(version_dir.join("artist.jsonl"), b"data").unwrap();
+    std::fs::write(version_dir.join("label.jsonl"), b"data").unwrap();
+    // release.jsonl is missing
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), "http://unused".to_string());
+    assert!(!downloader.is_version_complete(&version_dir));
+}
+
+#[test]
+fn test_is_version_complete_nonexistent_dir() {
+    let dir = TempDir::new().unwrap();
+    let version_dir = dir.path().join("nonexistent");
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), "http://unused".to_string());
+    assert!(!downloader.is_version_complete(&version_dir));
+}
+
+// ── MbDownloadResult::version ───────────────────────────────────────────
+
+#[test]
+fn test_mb_download_result_version_already_current() {
+    let result = MbDownloadResult::AlreadyCurrent("20260325-001001".to_string());
+    assert_eq!(result.version(), "20260325-001001");
+}
+
+#[test]
+fn test_mb_download_result_version_downloaded() {
+    let result = MbDownloadResult::Downloaded("20260325-001001".to_string());
+    assert_eq!(result.version(), "20260325-001001");
+}
+
+// ── download_latest error paths ─────────────────────────────────────────
+
+#[tokio::test]
+async fn test_download_latest_no_versions_found() {
+    let dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    // Empty HTML with no version directories
+    let index_html = r#"<html><body><a href="../">Parent</a></body></html>"#;
+    let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
+    let result = downloader.download_latest().await;
+
+    assert!(result.is_err());
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(err_msg.contains("No version directories found"), "Unexpected error: {}", err_msg);
+}
+
+#[tokio::test]
+async fn test_download_latest_sha256sums_missing_entry() {
+    let dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let index_html = r#"<html><body>
+        <a href="20260325-001001/">20260325-001001/</a>
+    </body></html>"#;
+    let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
+
+    // SHA256SUMS missing the artist entry
+    let _sha_mock = server
+        .mock("GET", "/20260325-001001/SHA256SUMS")
+        .with_status(200)
+        .with_body("abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *label.tar.xz\n")
+        .create_async()
+        .await;
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
+    let result = downloader.download_latest().await;
+
+    assert!(result.is_err());
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(err_msg.contains("No SHA256 checksum found for artist.tar.xz"), "Unexpected error: {}", err_msg);
+}
+
+#[tokio::test]
+async fn test_download_latest_connection_error_exhausts_retries() {
+    let dir = TempDir::new().unwrap();
+
+    let mut server = mockito::Server::new_async().await;
+    let base_url = format!("{}/", server.url());
+
+    let index_html = r#"<html><body>
+        <a href="20260325-001001/">20260325-001001/</a>
+    </body></html>"#;
+    let _index_mock = server.mock("GET", "/").with_status(200).with_body(index_html).create_async().await;
+
+    let sha_content = "abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *artist.tar.xz\n\
+                        abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *label.tar.xz\n\
+                        abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234 *release.tar.xz\n";
+    let _sha_mock = server.mock("GET", "/20260325-001001/SHA256SUMS").with_status(200).with_body(sha_content).create_async().await;
+
+    // All attempts return 500 — exhausts retries
+    let _artist_mock = server
+        .mock("GET", "/20260325-001001/artist.tar.xz")
+        .with_status(500)
+        .with_body("Server Error")
+        .expect_at_least(1)
+        .create_async()
+        .await;
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), base_url);
+    let result = downloader.download_latest().await;
+
+    assert!(result.is_err());
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(err_msg.contains("HTTP error") || err_msg.contains("failed"), "Unexpected error: {}", err_msg);
+}
+
+// ── find_latest_mb_directory edge cases ─────────────────────────────────
+
+#[test]
+fn test_find_latest_mb_directory_nonexistent_root() {
+    let result = find_latest_mb_directory(Path::new("/nonexistent/root/path"));
+    assert_eq!(result, None);
+}
+
+#[test]
+fn test_find_latest_mb_directory_files_only_no_dirs() {
+    let dir = TempDir::new().unwrap();
+    // Create files with version-like names (not directories)
+    std::fs::write(dir.path().join("20260325-001001"), b"file").unwrap();
+
+    let result = find_latest_mb_directory(dir.path());
+    assert_eq!(result, None);
+}
+
+// ── parse_sha256sums edge cases ─────────────────────────────────────────
+
+#[test]
+fn test_parse_sha256sums_empty() {
+    let checksums = parse_sha256sums("");
+    assert!(checksums.is_empty());
+}
+
+#[test]
+fn test_parse_sha256sums_blank_lines() {
+    let content = "\n  \nabcd1234 *file.tar.xz\n\n";
+    let checksums = parse_sha256sums(content);
+    assert_eq!(checksums.len(), 1);
+    assert_eq!(checksums.get("file.tar.xz").unwrap(), "abcd1234");
+}
+
+// ── entity_keyword coverage ─────────────────────────────────────────────
+
+#[test]
+fn test_entity_keyword_masters() {
+    // entity_keyword handles DataType::Masters
+    assert_eq!(entity_keyword(DataType::Masters), "master");
+}
+
+// ── discover_mb_dump_files: fuzzy .jsonl (no .xz) ───────────────────────
+
+#[test]
+fn test_discover_mb_dump_files_fuzzy_match_bare_jsonl() {
+    let dir = TempDir::new().unwrap();
+    // Non-standard name containing "release" and ending in .jsonl (not .xz)
+    std::fs::write(dir.path().join("custom-release-v3.jsonl"), b"fake").unwrap();
+
+    let found = discover_mb_dump_files(dir.path()).unwrap();
+
+    assert_eq!(found.len(), 1);
+    assert!(found.contains_key(&DataType::Releases));
+}
