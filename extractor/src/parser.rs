@@ -137,6 +137,7 @@ impl XmlParser {
             DataType::Artists => "artist",
             DataType::Labels => "label",
             DataType::Masters => "master",
+            DataType::ReleaseGroups => "release-group",
             DataType::Releases => "release",
         };
 
