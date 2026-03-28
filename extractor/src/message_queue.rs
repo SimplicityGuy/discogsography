@@ -27,6 +27,7 @@ pub trait MessagePublisher: Send + Sync {
         version: &str,
         started_at: chrono::DateTime<chrono::Utc>,
         record_counts: std::collections::HashMap<String, u64>,
+        data_types: &[DataType],
     ) -> Result<()>;
     async fn close(&self) -> Result<()>;
 }
@@ -225,25 +226,26 @@ impl MessagePublisher for MessageQueue {
         version: &str,
         started_at: chrono::DateTime<chrono::Utc>,
         record_counts: std::collections::HashMap<String, u64>,
+        data_types: &[DataType],
     ) -> Result<()> {
         let message = ExtractionCompleteMessage { version: version.to_string(), timestamp: chrono::Utc::now(), started_at, record_counts };
 
-        // Publish to all data type exchanges so every consumer queue receives it
+        // Publish to specified data type exchanges so every consumer queue receives it
         // Attempt all exchanges before returning, so a single failure doesn't prevent
         // other consumers from receiving the signal
         let mut errors = Vec::new();
-        for data_type in DataType::all() {
-            if let Err(e) = self.publish(Message::ExtractionComplete(message.clone()), data_type).await {
+        for data_type in data_types {
+            if let Err(e) = self.publish(Message::ExtractionComplete(message.clone()), *data_type).await {
                 error!("❌ Failed to send extraction_complete to {}: {}", data_type, e);
                 errors.push(format!("{}: {}", data_type, e));
             }
         }
 
         if errors.is_empty() {
-            info!("🏁 Extraction complete message sent to all {} exchanges (version: {})", DataType::all().len(), version,);
+            info!("🏁 Extraction complete message sent to all {} exchanges (version: {})", data_types.len(), version,);
         } else {
-            let succeeded = DataType::all().len() - errors.len();
-            warn!("⚠️ Extraction complete sent to {}/{} exchanges (version: {})", succeeded, DataType::all().len(), version,);
+            let succeeded = data_types.len() - errors.len();
+            warn!("⚠️ Extraction complete sent to {}/{} exchanges (version: {})", succeeded, data_types.len(), version,);
             return Err(anyhow::anyhow!("Failed to send extraction_complete to {} exchange(s): {}", errors.len(), errors.join("; ")));
         }
 
