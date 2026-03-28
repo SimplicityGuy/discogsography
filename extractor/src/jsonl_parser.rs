@@ -39,6 +39,15 @@ pub fn extract_discogs_id(url: &str, entity_type: &str) -> Option<i64> {
     id_str.parse::<i64>().ok()
 }
 
+/// Extract URL-type relationships from the unified `relations` array.
+///
+/// MusicBrainz JSON dumps store all relationships (artist-to-artist, artist-to-url, etc.)
+/// in a single `relations` array. URL relationships are identified by `"target-type": "url"`.
+/// This function filters for those entries only.
+fn extract_url_rels(relations: &[Value]) -> Vec<Value> {
+    relations.iter().filter(|rel| rel["target-type"].as_str() == Some("url")).cloned().collect()
+}
+
 /// Filter URL-rel entries, returning non-Discogs ones as `{"service": ..., "url": ...}` objects.
 pub fn extract_external_links(url_rels: &[Value]) -> Vec<Value> {
     url_rels
@@ -90,9 +99,10 @@ pub fn parse_mb_artist_line(line: &str) -> Result<DataMessage> {
     let mbid = v["id"].as_str().unwrap_or("unknown").to_string();
     let sha256 = hash_line(line);
 
-    let url_rels = v["url-rels"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
-    let discogs_artist_id = find_discogs_id(url_rels, "artist");
-    let external_links = extract_external_links(url_rels);
+    let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+    let url_rels = extract_url_rels(all_rels);
+    let discogs_artist_id = find_discogs_id(&url_rels, "artist");
+    let external_links = extract_external_links(&url_rels);
 
     let life_span = &v["life-span"];
     let area_name = v["area"]["name"].as_str().map(|s| Value::String(s.to_string())).unwrap_or(Value::Null);
@@ -130,9 +140,10 @@ pub fn parse_mb_label_line(line: &str) -> Result<DataMessage> {
     let mbid = v["id"].as_str().unwrap_or("unknown").to_string();
     let sha256 = hash_line(line);
 
-    let url_rels = v["url-rels"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
-    let discogs_label_id = find_discogs_id(url_rels, "label");
-    let external_links = extract_external_links(url_rels);
+    let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+    let url_rels = extract_url_rels(all_rels);
+    let discogs_label_id = find_discogs_id(&url_rels, "label");
+    let external_links = extract_external_links(&url_rels);
 
     let life_span = &v["life-span"];
     let area_name = v["area"]["name"].as_str().map(|s| Value::String(s.to_string())).unwrap_or(Value::Null);
@@ -163,9 +174,10 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
     let mbid = v["id"].as_str().unwrap_or("unknown").to_string();
     let sha256 = hash_line(line);
 
-    let url_rels = v["url-rels"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
-    let discogs_release_id = find_discogs_id(url_rels, "release");
-    let external_links = extract_external_links(url_rels);
+    let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+    let url_rels = extract_url_rels(all_rels);
+    let discogs_release_id = find_discogs_id(&url_rels, "release");
+    let external_links = extract_external_links(&url_rels);
 
     let release_group_mbid = v["release-group"]["id"].as_str().map(|s| Value::String(s.to_string())).unwrap_or(Value::Null);
 
@@ -182,12 +194,13 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
     Ok(DataMessage { id: mbid, sha256, data, raw_xml: None })
 }
 
-/// First pass: build a map of MBID → Discogs ID by scanning all url-rels in an xz-compressed JSONL file.
+/// First pass: build a map of MBID → Discogs ID by scanning URL relations in a JSONL file.
 ///
 /// **Blocking:** This function performs synchronous I/O and must be run on a
 /// blocking thread via `tokio::task::spawn_blocking`.
 ///
-/// Only lines that contain a Discogs url-rel are added to the map.
+/// Scans the `relations` array for entries with `target-type: "url"` and `type: "discogs"`.
+/// Only lines that contain a Discogs URL relation are added to the map.
 /// Malformed lines are silently skipped.
 pub fn build_mbid_discogs_map_from_file(path: &Path, entity_type: &str) -> Result<HashMap<String, i64>> {
     let reader = open_jsonl_reader(path).context(format!("Failed to open file for MBID map: {:?}", path))?;
@@ -214,7 +227,8 @@ pub fn build_mbid_discogs_map_from_file(path: &Path, entity_type: &str) -> Resul
             Some(id) => id.to_string(),
             None => continue,
         };
-        let url_rels = v["url-rels"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+        let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+        let url_rels = extract_url_rels(all_rels);
         if let Some(discogs_id) = url_rels.iter().find_map(|rel| {
             if rel["type"].as_str() == Some("discogs") {
                 extract_discogs_id(rel["url"]["resource"].as_str()?, entity_type)

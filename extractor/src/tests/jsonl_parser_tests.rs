@@ -63,11 +63,41 @@ fn test_extract_external_links_all_discogs() {
     assert!(links.is_empty());
 }
 
+// ─── extract_url_rels ───────────────────────────────────────────────────────
+
+#[test]
+fn test_extract_url_rels_filters_by_target_type() {
+    let relations = serde_json::json!([
+        {"type": "discogs", "target-type": "url", "url": {"resource": "https://www.discogs.com/artist/108713"}},
+        {"type": "collaboration", "target-type": "artist", "target": {"id": "some-mbid"}},
+        {"type": "wikipedia", "target-type": "url", "url": {"resource": "https://en.wikipedia.org/wiki/Test"}}
+    ]);
+    let url_rels = extract_url_rels(relations.as_array().unwrap());
+    assert_eq!(url_rels.len(), 2);
+    assert_eq!(url_rels[0]["type"], "discogs");
+    assert_eq!(url_rels[1]["type"], "wikipedia");
+}
+
+#[test]
+fn test_extract_url_rels_empty_relations() {
+    let url_rels = extract_url_rels(&[]);
+    assert!(url_rels.is_empty());
+}
+
+#[test]
+fn test_extract_url_rels_no_url_type() {
+    let relations = serde_json::json!([
+        {"type": "collaboration", "target-type": "artist", "target": {"id": "some-mbid"}}
+    ]);
+    let url_rels = extract_url_rels(relations.as_array().unwrap());
+    assert!(url_rels.is_empty());
+}
+
 // ─── parse_mb_artist_line ────────────────────────────────────────────────────
 
 #[test]
 fn test_parse_mb_artist_line_with_discogs() {
-    let line = r#"{"id":"b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d","name":"The Beatles","sort-name":"Beatles, The","type":"Group","gender":null,"life-span":{"begin":"1960","end":"1970","ended":true},"area":{"name":"London"},"begin-area":{"name":"Liverpool"},"end-area":null,"disambiguation":"the band","aliases":[],"tags":[],"relations":[],"url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/artist/108713"}},{"type":"wikipedia","url":{"resource":"https://en.wikipedia.org/wiki/The_Beatles"}}]}"#;
+    let line = r#"{"id":"b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d","name":"The Beatles","sort-name":"Beatles, The","type":"Group","gender":null,"life-span":{"begin":"1960","end":"1970","ended":true},"area":{"name":"London"},"begin-area":{"name":"Liverpool"},"end-area":null,"disambiguation":"the band","aliases":[],"tags":[],"relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/artist/108713"}},{"type":"wikipedia","target-type":"url","url":{"resource":"https://en.wikipedia.org/wiki/The_Beatles"}}]}"#;
     let msg = parse_mb_artist_line(line).unwrap();
     assert_eq!(msg.id, "b10bbbfc-cf9e-42e0-be17-e2c3e1d2600d");
     assert_eq!(msg.data["discogs_artist_id"], 108713);
@@ -85,7 +115,7 @@ fn test_parse_mb_artist_line_with_discogs() {
 
 #[test]
 fn test_parse_mb_artist_line_no_discogs() {
-    let line = r#"{"id":"some-mbid","name":"Unknown","sort-name":"Unknown","type":"Person","gender":"Male","life-span":{"begin":"1990","end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[]}"#;
+    let line = r#"{"id":"some-mbid","name":"Unknown","sort-name":"Unknown","type":"Person","gender":"Male","life-span":{"begin":"1990","end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[]}"#;
     let msg = parse_mb_artist_line(line).unwrap();
     assert!(msg.data["discogs_artist_id"].is_null());
     assert_eq!(msg.data["gender"], "Male");
@@ -100,7 +130,7 @@ fn test_parse_mb_artist_line_invalid_json() {
 
 #[test]
 fn test_parse_mb_artist_line_life_span_fields() {
-    let line = r#"{"id":"test-id","name":"Solo Artist","sort-name":"Artist, Solo","type":"Person","gender":"Female","life-span":{"begin":"1985","end":null,"ended":false},"area":{"name":"New York"},"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[]}"#;
+    let line = r#"{"id":"test-id","name":"Solo Artist","sort-name":"Artist, Solo","type":"Person","gender":"Female","life-span":{"begin":"1985","end":null,"ended":false},"area":{"name":"New York"},"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[]}"#;
     let msg = parse_mb_artist_line(line).unwrap();
     assert_eq!(msg.data["life_span"]["begin"], "1985");
     assert!(msg.data["life_span"]["end"].is_null());
@@ -111,7 +141,7 @@ fn test_parse_mb_artist_line_life_span_fields() {
 
 #[test]
 fn test_parse_mb_label_line_with_discogs() {
-    let line = r#"{"id":"4cccc72a-0bd0-433a-905e-dad87871397d","name":"EMI","type":"Original Production","label-code":542,"life-span":{"begin":"1931","end":"2012","ended":true},"area":{"name":"United Kingdom"},"disambiguation":"","relations":[],"url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/label/542"}},{"type":"allmusic","url":{"resource":"https://www.allmusic.com/artist/emi-mn0000929870"}}]}"#;
+    let line = r#"{"id":"4cccc72a-0bd0-433a-905e-dad87871397d","name":"EMI","type":"Original Production","label-code":542,"life-span":{"begin":"1931","end":"2012","ended":true},"area":{"name":"United Kingdom"},"disambiguation":"","relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/label/542"}},{"type":"allmusic","target-type":"url","url":{"resource":"https://www.allmusic.com/artist/emi-mn0000929870"}}]}"#;
     let msg = parse_mb_label_line(line).unwrap();
     assert_eq!(msg.id, "4cccc72a-0bd0-433a-905e-dad87871397d");
     assert_eq!(msg.data["discogs_label_id"], 542);
@@ -126,7 +156,7 @@ fn test_parse_mb_label_line_with_discogs() {
 
 #[test]
 fn test_parse_mb_label_line_no_discogs() {
-    let line = r#"{"id":"label-mbid","name":"Indie Label","type":"Imprint","label-code":null,"life-span":{"begin":"2000","end":null,"ended":false},"area":null,"disambiguation":"small indie","relations":[],"url-rels":[]}"#;
+    let line = r#"{"id":"label-mbid","name":"Indie Label","type":"Imprint","label-code":null,"life-span":{"begin":"2000","end":null,"ended":false},"area":null,"disambiguation":"small indie","relations":[]}"#;
     let msg = parse_mb_label_line(line).unwrap();
     assert!(msg.data["discogs_label_id"].is_null());
     assert_eq!(msg.data["name"], "Indie Label");
@@ -143,7 +173,7 @@ fn test_parse_mb_label_line_invalid_json() {
 
 #[test]
 fn test_parse_mb_release_line_with_discogs() {
-    let line = r#"{"id":"c7b9bcd3-a23e-476b-be7f-f8e96c54b6a2","title":"Abbey Road","barcode":"077774644228","status":"Official","release-group":{"id":"1dc4c347-a1db-32aa-b14f-bc9cc507b843"},"relations":[],"url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/release/5027187"}},{"type":"youtube","url":{"resource":"https://www.youtube.com/watch?v=abc"}}]}"#;
+    let line = r#"{"id":"c7b9bcd3-a23e-476b-be7f-f8e96c54b6a2","title":"Abbey Road","barcode":"077774644228","status":"Official","release-group":{"id":"1dc4c347-a1db-32aa-b14f-bc9cc507b843"},"relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/release/5027187"}},{"type":"youtube","target-type":"url","url":{"resource":"https://www.youtube.com/watch?v=abc"}}]}"#;
     let msg = parse_mb_release_line(line).unwrap();
     assert_eq!(msg.id, "c7b9bcd3-a23e-476b-be7f-f8e96c54b6a2");
     assert_eq!(msg.data["discogs_release_id"], 5_027_187);
@@ -158,7 +188,7 @@ fn test_parse_mb_release_line_with_discogs() {
 
 #[test]
 fn test_parse_mb_release_line_no_discogs() {
-    let line = r#"{"id":"release-mbid","title":"Unknown Release","barcode":null,"status":"Bootleg","release-group":{"id":"group-mbid"},"relations":[],"url-rels":[]}"#;
+    let line = r#"{"id":"release-mbid","title":"Unknown Release","barcode":null,"status":"Bootleg","release-group":{"id":"group-mbid"},"relations":[]}"#;
     let msg = parse_mb_release_line(line).unwrap();
     assert!(msg.data["discogs_release_id"].is_null());
     assert_eq!(msg.data["name"], "Unknown Release");
@@ -189,8 +219,8 @@ fn test_parse_mb_jsonl_file_artists() {
     use tokio::sync::mpsc;
     use xz2::write::XzEncoder;
 
-    let line1 = r#"{"id":"mbid-1","name":"Artist One","sort-name":"One, Artist","type":"Person","gender":"Male","life-span":{"begin":"1970","end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[]}"#;
-    let line2 = r#"{"id":"mbid-2","name":"Artist Two","sort-name":"Two, Artist","type":"Group","gender":null,"life-span":{"begin":"1990","end":"2000","ended":true},"area":{"name":"Berlin"},"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[]}"#;
+    let line1 = r#"{"id":"mbid-1","name":"Artist One","sort-name":"One, Artist","type":"Person","gender":"Male","life-span":{"begin":"1970","end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[]}"#;
+    let line2 = r#"{"id":"mbid-2","name":"Artist Two","sort-name":"Two, Artist","type":"Group","gender":null,"life-span":{"begin":"1990","end":"2000","ended":true},"area":{"name":"Berlin"},"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[]}"#;
     let content = format!("{}\n{}\n", line1, line2);
 
     let mut temp_file = NamedTempFile::new().unwrap();
@@ -220,7 +250,7 @@ fn test_parse_mb_jsonl_file_skips_malformed_lines() {
     use tokio::sync::mpsc;
     use xz2::write::XzEncoder;
 
-    let good = r#"{"id":"ok-id","name":"Good Artist","sort-name":"Artist, Good","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[]}"#;
+    let good = r#"{"id":"ok-id","name":"Good Artist","sort-name":"Artist, Good","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[]}"#;
     let content = format!("not json at all\n{}\n{{broken}}\n", good);
 
     let mut temp_file = NamedTempFile::new().unwrap();
@@ -266,10 +296,10 @@ fn test_build_mbid_discogs_map() {
     use tempfile::NamedTempFile;
     use xz2::write::XzEncoder;
 
-    // Line 1: has a Discogs url-rel → should appear in map
-    let line_with_discogs = r#"{"id":"artist-mbid-1","name":"Artist With Discogs","sort-name":"With Discogs, Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/artist/12345"}}]}"#;
-    // Line 2: no Discogs url-rel → should NOT appear in map
-    let line_without_discogs = r#"{"id":"artist-mbid-2","name":"Artist Without Discogs","sort-name":"Without Discogs, Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[{"type":"wikipedia","url":{"resource":"https://en.wikipedia.org/wiki/Some_Artist"}}]}"#;
+    // Line 1: has a Discogs URL relation → should appear in map
+    let line_with_discogs = r#"{"id":"artist-mbid-1","name":"Artist With Discogs","sort-name":"With Discogs, Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/artist/12345"}}]}"#;
+    // Line 2: no Discogs URL relation → should NOT appear in map
+    let line_without_discogs = r#"{"id":"artist-mbid-2","name":"Artist Without Discogs","sort-name":"Without Discogs, Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[{"type":"wikipedia","target-type":"url","url":{"resource":"https://en.wikipedia.org/wiki/Some_Artist"}}]}"#;
     let content = format!("{}\n{}\n", line_with_discogs, line_without_discogs);
 
     let mut temp_file = NamedTempFile::new().unwrap();
@@ -345,7 +375,7 @@ fn test_parse_mb_jsonl_file_with_discogs_map_enriches_relations() {
     use tokio::sync::mpsc;
     use xz2::write::XzEncoder;
 
-    let line = r#"{"id":"mbid-artist","name":"Test Artist","sort-name":"Artist, Test","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[{"type":"collaboration","target":{"id":"target-mbid-A","name":"Collab Artist"}}],"url-rels":[]}"#;
+    let line = r#"{"id":"mbid-artist","name":"Test Artist","sort-name":"Artist, Test","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[{"type":"collaboration","target-type":"artist","target":{"id":"target-mbid-A","name":"Collab Artist"}}]}"#;
     let content = format!("{}\n", line);
 
     let mut temp_file = NamedTempFile::new().unwrap();
@@ -394,7 +424,7 @@ fn test_parse_mb_jsonl_file_labels() {
     use tokio::sync::mpsc;
     use xz2::write::XzEncoder;
 
-    let line = r#"{"id":"label-mbid-1","name":"Test Label","type":"Original Production","label-code":100,"life-span":{"begin":"1950","end":null,"ended":false},"area":{"name":"Germany"},"disambiguation":"","relations":[],"url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/label/9999"}}]}"#;
+    let line = r#"{"id":"label-mbid-1","name":"Test Label","type":"Original Production","label-code":100,"life-span":{"begin":"1950","end":null,"ended":false},"area":{"name":"Germany"},"disambiguation":"","relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/label/9999"}}]}"#;
     let content = format!("{}\n", line);
 
     let mut temp_file = NamedTempFile::new().unwrap();
@@ -422,7 +452,7 @@ fn test_parse_mb_jsonl_file_releases() {
     use tokio::sync::mpsc;
     use xz2::write::XzEncoder;
 
-    let line = r#"{"id":"release-mbid-1","title":"Test Album","barcode":"1234567890","status":"Official","release-group":{"id":"rg-mbid-1"},"relations":[],"url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/release/55555"}}]}"#;
+    let line = r#"{"id":"release-mbid-1","title":"Test Album","barcode":"1234567890","status":"Official","release-group":{"id":"rg-mbid-1"},"relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/release/55555"}}]}"#;
     let content = format!("{}\n", line);
 
     let mut temp_file = NamedTempFile::new().unwrap();
@@ -452,7 +482,7 @@ fn test_parse_mb_jsonl_file_with_empty_lines() {
     use tokio::sync::mpsc;
     use xz2::write::XzEncoder;
 
-    let good = r#"{"id":"ok-id","name":"Good Artist","sort-name":"Artist, Good","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[]}"#;
+    let good = r#"{"id":"ok-id","name":"Good Artist","sort-name":"Artist, Good","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[]}"#;
     // Mix empty lines, whitespace-only lines, and valid data
     let content = format!("\n\n{}\n   \n\n", good);
 
@@ -480,8 +510,8 @@ fn test_build_mbid_discogs_map_with_malformed_lines() {
     use tempfile::NamedTempFile;
     use xz2::write::XzEncoder;
 
-    let valid_line = r#"{"id":"mbid-good","url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/artist/42"}}]}"#;
-    let no_id_line = r#"{"name":"no id field","url-rels":[{"type":"discogs","url":{"resource":"https://www.discogs.com/artist/99"}}]}"#;
+    let valid_line = r#"{"id":"mbid-good","relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/artist/42"}}]}"#;
+    let no_id_line = r#"{"name":"no id field","relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/artist/99"}}]}"#;
     let invalid_json = "not json at all";
     // Mix: valid, invalid JSON, empty line, line with no id, valid again
     let content = format!("{}\n{}\n\n{}\n{}\n", valid_line, invalid_json, no_id_line, valid_line);
@@ -515,7 +545,7 @@ fn test_parse_mb_jsonl_file_receiver_dropped() {
     use xz2::write::XzEncoder;
 
     // Create a file with multiple valid lines
-    let line = r#"{"id":"mbid-1","name":"Artist","sort-name":"Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[],"url-rels":[]}"#;
+    let line = r#"{"id":"mbid-1","name":"Artist","sort-name":"Artist","type":"Person","gender":null,"life-span":{"begin":null,"end":null,"ended":false},"area":null,"begin-area":null,"end-area":null,"disambiguation":"","aliases":[],"tags":[],"relations":[]}"#;
     let content = format!("{}\n{}\n{}\n{}\n{}\n", line, line, line, line, line);
 
     let mut temp_file = NamedTempFile::new().unwrap();
