@@ -245,6 +245,39 @@ fn test_parse_mb_release_line_true_invalid_json() {
     assert!(result.is_err());
 }
 
+// ─── parse_mb_release_group_line ────────────────────────────────────────────
+
+#[test]
+fn test_parse_mb_release_group_line_with_discogs() {
+    let line = r#"{"id":"1dc4c347-a1db-32aa-b14f-bc9cc507b843","title":"Abbey Road","primary-type":"Album","secondary-types":["Compilation"],"first-release-date":"1969-09-26","disambiguation":"","relations":[{"type":"discogs","target-type":"url","url":{"resource":"https://www.discogs.com/master/23853"}},{"type":"wikipedia","target-type":"url","url":{"resource":"https://en.wikipedia.org/wiki/Abbey_Road"}}]}"#;
+    let msg = parse_mb_release_group_line(line).unwrap();
+    assert_eq!(msg.id, "1dc4c347-a1db-32aa-b14f-bc9cc507b843");
+    assert_eq!(msg.data["discogs_master_id"], 23853);
+    assert_eq!(msg.data["name"], "Abbey Road");
+    assert_eq!(msg.data["mb_type"], "Album");
+    assert_eq!(msg.data["secondary_types"], serde_json::json!(["Compilation"]));
+    assert_eq!(msg.data["first_release_date"], "1969-09-26");
+    assert!(!msg.sha256.is_empty());
+    let links = msg.data["external_links"].as_array().unwrap();
+    assert_eq!(links.len(), 1);
+    assert_eq!(links[0]["service"], "wikipedia");
+}
+
+#[test]
+fn test_parse_mb_release_group_line_no_discogs() {
+    let line = r#"{"id":"rg-mbid","title":"Unknown Album","primary-type":"Album","secondary-types":[],"first-release-date":"2020","disambiguation":"test","relations":[]}"#;
+    let msg = parse_mb_release_group_line(line).unwrap();
+    assert!(msg.data["discogs_master_id"].is_null());
+    assert_eq!(msg.data["name"], "Unknown Album");
+    assert_eq!(msg.data["mb_type"], "Album");
+}
+
+#[test]
+fn test_parse_mb_release_group_line_invalid_json() {
+    let result = parse_mb_release_group_line("not valid json");
+    assert!(result.is_err());
+}
+
 // ─── parse_mb_jsonl_file (integration via in-memory xz) ─────────────────────
 
 #[test]

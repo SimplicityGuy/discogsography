@@ -201,6 +201,19 @@ pub fn parse_mb_label_line(line: &str) -> Result<DataMessage> {
     Ok(DataMessage { id: mbid, sha256, data, raw_xml: None })
 }
 
+/// Partition a flat `relations` array into URL-type relations (those with `"target-type": "url"`).
+///
+/// MusicBrainz release-groups store all relations (URL and entity) in a single
+/// `"relations"` array, unlike artists/labels which use a separate `"url-rels"` array.
+pub fn extract_url_rels(all_rels: &[Value]) -> Vec<Value> {
+    all_rels.iter().filter(|rel| rel["target-type"].as_str() == Some("url")).cloned().collect()
+}
+
+/// Partition a flat `relations` array into entity-type relations (those without `"target-type": "url"`).
+pub fn extract_entity_rels(all_rels: &[Value]) -> Vec<Value> {
+    all_rels.iter().filter(|rel| rel["target-type"].as_str() != Some("url")).cloned().collect()
+}
+
 /// Parse a single MusicBrainz JSONL release line into a [`DataMessage`].
 pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
     let v: Value = serde_json::from_str(line).context("Failed to parse release JSONL line")?;
@@ -222,6 +235,33 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
         "barcode": v["barcode"],
         "status": v["status"],
         "release_group_mbid": release_group_mbid,
+        "relations": entity_rels,
+        "external_links": external_links
+    });
+
+    Ok(DataMessage { id: mbid, sha256, data, raw_xml: None })
+}
+
+/// Parse a single MusicBrainz JSONL release-group line into a [`DataMessage`].
+pub fn parse_mb_release_group_line(line: &str) -> Result<DataMessage> {
+    let v: Value = serde_json::from_str(line).context("Failed to parse release-group JSONL line")?;
+
+    let mbid = v["id"].as_str().unwrap_or("unknown").to_string();
+    let sha256 = hash_line(line);
+
+    let all_rels = v["relations"].as_array().map(|a| a.as_slice()).unwrap_or(&[]);
+    let url_rels = extract_url_rels(all_rels);
+    let entity_rels = extract_entity_rels(all_rels);
+    let discogs_master_id = find_discogs_id(&url_rels, "master");
+    let external_links = extract_external_links(&url_rels);
+
+    let data = serde_json::json!({
+        "discogs_master_id": discogs_master_id,
+        "name": v["title"],
+        "mb_type": v["primary-type"],
+        "secondary_types": v["secondary-types"],
+        "first_release_date": v["first-release-date"],
+        "disambiguation": v["disambiguation"],
         "relations": entity_rels,
         "external_links": external_links
     });
@@ -326,6 +366,7 @@ pub fn parse_mb_jsonl_file(
         DataType::Artists => parse_mb_artist_line,
         DataType::Labels => parse_mb_label_line,
         DataType::Releases => parse_mb_release_line,
+        DataType::ReleaseGroups => parse_mb_release_group_line,
         DataType::Masters => {
             warn!("⚠️ MusicBrainz does not have a Masters data type; skipping file {:?}", path);
             return Ok(0);
