@@ -14,6 +14,7 @@ use crate::types::DataType;
 const MB_FILE_PATTERNS: &[(DataType, &[&str])] = &[
     (DataType::Artists, &["artist.jsonl.xz", "mbdump-artist.jsonl.xz", "artist.jsonl"]),
     (DataType::Labels, &["label.jsonl.xz", "mbdump-label.jsonl.xz", "label.jsonl"]),
+    (DataType::ReleaseGroups, &["release-group.jsonl.xz", "mbdump-release-group.jsonl.xz", "release-group.jsonl"]),
     (DataType::Releases, &["release.jsonl.xz", "mbdump-release.jsonl.xz", "release.jsonl"]),
 ];
 
@@ -22,6 +23,7 @@ fn entity_keyword(dt: DataType) -> &'static str {
     match dt {
         DataType::Artists => "artist",
         DataType::Labels => "label",
+        DataType::ReleaseGroups => "release-group",
         DataType::Releases => "release",
         DataType::Masters => "master",
     }
@@ -134,7 +136,7 @@ pub fn find_latest_mb_directory(root: &Path) -> Option<PathBuf> {
 
 /// MusicBrainz entity names for download (singular, matching tarball names)
 #[allow(dead_code)]
-const MB_ENTITIES: &[&str] = &["artist", "label", "release"];
+const MB_ENTITIES: &[&str] = &["artist", "label", "release-group", "release"];
 
 #[allow(dead_code)]
 const MB_MAX_DOWNLOAD_RETRIES: u32 = 3;
