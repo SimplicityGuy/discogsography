@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::io;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
@@ -409,9 +409,36 @@ pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Pat
         if path.ends_with(&target_suffix) {
             let mut out_file = std::fs::File::create(out_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
                 .with_context(|| format!("Failed to create output file: {:?}", out_path))?;
-            io::copy(&mut entry, &mut out_file).with_context(|| format!("Failed to extract {} to {:?}", entity, out_path))?;
-            let size = out_file.metadata().map(|m| m.len()).unwrap_or(0);
-            info!("📋 Extracted {} from {:?} ({} bytes)", entity, tar_path, size);
+
+            // Copy with progress logging — xz decompression of large files can take 30+ minutes
+            let mut buf = [0u8; 256 * 1024]; // 256 KB buffer
+            let mut total_written: u64 = 0;
+            let extract_start = std::time::Instant::now();
+            let mut last_progress_log = extract_start;
+
+            loop {
+                let n = entry.read(&mut buf).with_context(|| format!("Failed to read {} from tarball", entity))?;
+                if n == 0 {
+                    break;
+                }
+                out_file.write_all(&buf[..n]).with_context(|| format!("Failed to write {} to {:?}", entity, out_path))?;
+                total_written += n as u64;
+
+                let now = std::time::Instant::now();
+                if now.duration_since(last_progress_log).as_secs() >= 10 {
+                    let elapsed = extract_start.elapsed().as_secs_f64();
+                    let speed = if elapsed > 0.0 { (total_written as f64 / 1_048_576.0) / elapsed } else { 0.0 };
+                    info!(
+                        "📦 {} — extracting: {:.1} MB written ({:.1} MB/s)",
+                        entity,
+                        total_written as f64 / 1_048_576.0,
+                        speed,
+                    );
+                    last_progress_log = now;
+                }
+            }
+
+            info!("📋 Extracted {} from {:?} ({} bytes)", entity, tar_path, total_written);
             return Ok(());
         }
     }
