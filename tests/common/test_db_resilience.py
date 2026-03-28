@@ -578,6 +578,41 @@ class TestCircuitBreakerEdgeCases:
         assert result == "success"
         assert breaker.state == CircuitState.CLOSED
 
+    @pytest.mark.asyncio
+    async def test_call_async_rejects_when_open(self) -> None:
+        """Test async circuit breaker rejects calls when OPEN and not ready to reset (line 76)."""
+        config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=2, recovery_timeout=10)
+        breaker = CircuitBreaker(config)
+
+        async def async_fail() -> None:
+            raise RuntimeError("Failed")
+
+        # Open the circuit
+        for _ in range(2):
+            with pytest.raises(RuntimeError):
+                await breaker.call_async(async_fail)
+
+        assert breaker.state == CircuitState.OPEN
+
+        # Next async call should be rejected without calling the function
+        with pytest.raises(Exception, match="TestBreaker: Circuit breaker is OPEN"):
+            await breaker.call_async(async_fail)
+
+    @pytest.mark.asyncio
+    async def test_call_async_with_sync_function(self) -> None:
+        """Test call_async with a sync (non-coroutine) function (line 82)."""
+        config = CircuitBreakerConfig(name="TestBreaker")
+        breaker = CircuitBreaker(config)
+
+        def sync_func() -> str:
+            return "sync_result"
+
+        result = await breaker.call_async(sync_func)
+
+        assert result == "sync_result"
+        assert breaker.failure_count == 0
+        assert breaker.state == CircuitState.CLOSED
+
     def test_multiple_exception_types(self) -> None:
         """Test circuit breaker with tuple of exception types."""
 
@@ -702,4 +737,146 @@ class TestConnectionTestFailures:
 
         # Close should not raise even if aclose() fails
         await manager.close()
+        assert manager._connection is None
+
+    def test_connection_test_returns_false(self) -> None:
+        """Test that connection test returning False raises 'Connection test failed' (line 189)."""
+        from common.db_resilience import ResilientConnection
+
+        mock_conn = Mock()
+        connection_factory = Mock(return_value=mock_conn)
+        # connection_test returns False inside create_connection, triggering line 189
+        connection_test = Mock(return_value=False)
+
+        manager = ResilientConnection(connection_factory, connection_test, max_retries=1)
+
+        with pytest.raises(Exception, match="Failed to establish connection after 1 attempts"):
+            manager.get_connection()
+
+    def test_test_connection_exception_returns_false(self) -> None:
+        """Test _test_connection returns False when connection_test raises (lines 213-215)."""
+        from common.db_resilience import ResilientConnection
+
+        mock_conn = Mock()
+        connection_factory = Mock(return_value=mock_conn)
+        # First call in _test_connection raises, second call in create_connection succeeds
+        connection_test = Mock(side_effect=[RuntimeError("Health check error"), True])
+
+        manager = ResilientConnection(connection_factory, connection_test, max_retries=1)
+        # Set an existing connection so _test_connection is called first
+        manager._connection = mock_conn
+
+        conn = manager.get_connection()
+        # _test_connection caught the exception and returned False,
+        # then a new connection was created successfully
+        assert conn == mock_conn
+
+    @pytest.mark.asyncio
+    async def test_async_connection_test_returns_false_sync(self) -> None:
+        """Test async get_connection with sync connection_test returning False (line 276)."""
+        from common.db_resilience import AsyncResilientConnection
+
+        mock_conn = Mock()
+        # Sync factory and sync test that returns False
+        connection_factory = Mock(return_value=mock_conn)
+        connection_test = Mock(return_value=False)
+
+        manager = AsyncResilientConnection(connection_factory, connection_test, max_retries=1)
+
+        with pytest.raises(Exception, match="Failed to establish connection after 1 attempts"):
+            await manager.get_connection()
+
+    @pytest.mark.asyncio
+    async def test_async_connection_test_returns_false_async(self) -> None:
+        """Test async get_connection with async connection_test returning False (line 273)."""
+        from unittest.mock import AsyncMock
+
+        from common.db_resilience import AsyncResilientConnection
+
+        mock_conn = Mock()
+        connection_factory = AsyncMock(return_value=mock_conn)
+        # Async connection_test that returns False
+        connection_test = AsyncMock(return_value=False)
+
+        manager = AsyncResilientConnection(connection_factory, connection_test, max_retries=1)
+
+        with pytest.raises(Exception, match="Failed to establish connection after 1 attempts"):
+            await manager.get_connection()
+
+    @pytest.mark.asyncio
+    async def test_async_test_connection_sync_success(self) -> None:
+        """Test async _test_connection with sync connection_test (line 304)."""
+        from common.db_resilience import AsyncResilientConnection
+
+        mock_conn = Mock()
+        connection_factory = Mock(return_value=mock_conn)
+        # Sync connection_test
+        connection_test = Mock(return_value=True)
+
+        manager = AsyncResilientConnection(connection_factory, connection_test)
+
+        # Set existing connection so _test_connection is called
+        manager._connection = mock_conn
+
+        conn = await manager.get_connection()
+        assert conn == mock_conn
+
+    @pytest.mark.asyncio
+    async def test_async_test_connection_sync_exception(self) -> None:
+        """Test async _test_connection with sync connection_test that raises (lines 305-307)."""
+        from common.db_resilience import AsyncResilientConnection
+
+        mock_conn = Mock()
+        connection_factory = Mock(return_value=mock_conn)
+        # First call (in _test_connection) raises, second call (in create_connection) succeeds
+        connection_test = Mock(side_effect=[RuntimeError("Health check error"), True])
+
+        manager = AsyncResilientConnection(connection_factory, connection_test, max_retries=1)
+        manager._connection = mock_conn
+
+        conn = await manager.get_connection()
+        assert conn == mock_conn
+
+    @pytest.mark.asyncio
+    async def test_async_close_with_sync_close_method(self) -> None:
+        """Test async close when connection has sync close() but no aclose() (lines 317-321)."""
+        from unittest.mock import AsyncMock
+
+        from common.db_resilience import AsyncResilientConnection
+
+        mock_conn = Mock(spec=[])  # No attributes by default
+        mock_conn.close = Mock()  # Add sync close
+        # Ensure no aclose attribute
+        assert not hasattr(mock_conn, "aclose")
+
+        connection_factory = AsyncMock(return_value=mock_conn)
+        connection_test = AsyncMock(return_value=True)
+
+        manager = AsyncResilientConnection(connection_factory, connection_test)
+        await manager.get_connection()
+        await manager.close()
+
+        mock_conn.close.assert_called_once()
+        assert manager._connection is None
+
+    @pytest.mark.asyncio
+    async def test_async_close_with_async_close_method(self) -> None:
+        """Test async close when connection has async close() but no aclose() (lines 318-319)."""
+        from unittest.mock import AsyncMock
+
+        from common.db_resilience import AsyncResilientConnection
+
+        mock_conn = Mock(spec=[])  # No attributes by default
+        mock_conn.close = AsyncMock()  # Add async close
+        # Ensure no aclose attribute
+        assert not hasattr(mock_conn, "aclose")
+
+        connection_factory = AsyncMock(return_value=mock_conn)
+        connection_test = AsyncMock(return_value=True)
+
+        manager = AsyncResilientConnection(connection_factory, connection_test)
+        await manager.get_connection()
+        await manager.close()
+
+        mock_conn.close.assert_called_once()
         assert manager._connection is None

@@ -411,3 +411,193 @@ class TestProcessMessageWithRetry:
 
         handler.assert_called_once_with(message)
         message.ack.assert_called_once()
+
+
+class TestResilientRabbitMQConnectionExceptionBranch:
+    """Tests for ResilientRabbitMQConnection exception branches."""
+
+    @patch("common.rabbitmq_resilient.BlockingConnection")
+    def test_test_connection_generic_exception_returns_false(self, _mock_blocking_connection: Mock) -> None:
+        """Test _test_connection returns False when a generic exception is raised (lines 72-73)."""
+        conn = ResilientRabbitMQConnection(connection_url="amqp://guest:guest@localhost:5672/")
+
+        # Use PropertyMock so accessing is_open as a property raises an exception
+        failing_conn = Mock()
+        type(failing_conn).is_open = property(Mock(side_effect=RuntimeError("unexpected error")))
+
+        result = conn._test_connection(failing_conn)
+
+        assert result is False
+
+
+class TestAsyncResilientRabbitMQAdditionalCoverage:
+    """Additional tests for AsyncResilientRabbitMQ to cover missing lines."""
+
+    @pytest.fixture
+    def connection_url(self) -> str:
+        """Test connection URL."""
+        return "amqp://guest:guest@localhost:5672/"
+
+    @pytest.fixture
+    def mock_async_connection(self) -> AsyncMock:
+        """Create a mock async RabbitMQ connection."""
+        conn = AsyncMock()
+        conn.is_closed = False
+        conn.close = AsyncMock()
+        conn.reconnect_callbacks = Mock()
+        conn.reconnect_callbacks.add = Mock()
+
+        channel = AsyncMock()
+        channel.is_closed = False
+        channel.close = AsyncMock()
+        conn.channel = AsyncMock(return_value=channel)
+        return conn
+
+    @pytest.mark.asyncio
+    @patch("common.rabbitmq_resilient.connect_robust", new_callable=AsyncMock)
+    async def test_connect_double_check_under_lock_returns_existing(
+        self, mock_connect_robust: AsyncMock, connection_url: str, mock_async_connection: AsyncMock
+    ) -> None:
+        """Test that connect() returns existing connection under lock (line 154).
+
+        When two tasks race to connect, the second one should find the connection
+        already established under the lock and return it without calling connect_robust again.
+        """
+        mock_connect_robust.return_value = mock_async_connection
+
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+
+        # Simulate the scenario: fast-path check sees is_closed=True (so it enters the loop),
+        # but under the lock, is_closed=False (another task connected in the meantime).
+        mock_reconnecting = AsyncMock()
+        # PropertyMock on the type so is_closed returns True first, then False
+        is_closed_mock = Mock(side_effect=[True, False])
+        type(mock_reconnecting).is_closed = property(lambda self: is_closed_mock())  # noqa: ARG005
+
+        conn._connection = mock_reconnecting
+
+        result = await conn.connect()
+
+        # Should return the existing connection without calling connect_robust
+        assert result is mock_reconnecting
+        mock_connect_robust.assert_not_called()
+
+    @pytest.mark.asyncio
+    @patch("common.rabbitmq_resilient.connect_robust", new_callable=AsyncMock)
+    async def test_connect_executes_async_reconnect_callbacks(
+        self, mock_connect_robust: AsyncMock, connection_url: str, mock_async_connection: AsyncMock
+    ) -> None:
+        """Test that async reconnect callbacks are executed on connect (lines 177-183)."""
+        mock_connect_robust.return_value = mock_async_connection
+
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+
+        async_callback = AsyncMock()
+        conn.add_reconnect_callback(async_callback)
+
+        await conn.connect()
+
+        async_callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("common.rabbitmq_resilient.connect_robust", new_callable=AsyncMock)
+    async def test_connect_executes_sync_reconnect_callbacks(
+        self, mock_connect_robust: AsyncMock, connection_url: str, mock_async_connection: AsyncMock
+    ) -> None:
+        """Test that sync reconnect callbacks are executed on connect (lines 180-181)."""
+        mock_connect_robust.return_value = mock_async_connection
+
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+
+        sync_callback = Mock()
+        conn.add_reconnect_callback(sync_callback)
+
+        await conn.connect()
+
+        sync_callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("common.rabbitmq_resilient.connect_robust", new_callable=AsyncMock)
+    async def test_connect_handles_failing_reconnect_callback(
+        self, mock_connect_robust: AsyncMock, connection_url: str, mock_async_connection: AsyncMock
+    ) -> None:
+        """Test that errors in reconnect callbacks are logged but do not prevent connection (lines 182-183)."""
+        mock_connect_robust.return_value = mock_async_connection
+
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+
+        failing_callback = Mock(side_effect=RuntimeError("callback error"))
+        good_callback = Mock()
+        conn.add_reconnect_callback(failing_callback)
+        conn.add_reconnect_callback(good_callback)
+
+        # Should not raise despite the failing callback
+        connection = await conn.connect()
+
+        assert connection == mock_async_connection
+        failing_callback.assert_called_once()
+        good_callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    @patch("common.rabbitmq_resilient.connect_robust", new_callable=AsyncMock)
+    async def test_connect_handles_failing_async_reconnect_callback(
+        self, mock_connect_robust: AsyncMock, connection_url: str, mock_async_connection: AsyncMock
+    ) -> None:
+        """Test that errors in async reconnect callbacks are logged but do not prevent connection (lines 182-183)."""
+        mock_connect_robust.return_value = mock_async_connection
+
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+
+        failing_async_callback = AsyncMock(side_effect=RuntimeError("async callback error"))
+        conn.add_reconnect_callback(failing_async_callback)
+
+        # Should not raise despite the failing async callback
+        connection = await conn.connect()
+
+        assert connection == mock_async_connection
+        failing_async_callback.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_close_handles_channel_close_exception(self, connection_url: str) -> None:
+        """Test that close() handles channel close exceptions gracefully (lines 236-237)."""
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+
+        # Set up a channel that raises on close
+        failing_channel = AsyncMock()
+        failing_channel.is_closed = False
+        failing_channel.close = AsyncMock(side_effect=RuntimeError("channel close error"))
+
+        # Set up a normal connection
+        mock_connection = AsyncMock()
+        mock_connection.is_closed = False
+        mock_connection.close = AsyncMock()
+
+        conn._channel = failing_channel
+        conn._connection = mock_connection
+
+        # Should not raise
+        await conn.close()
+
+        assert conn._channel is None
+        assert conn._connection is None
+        mock_connection.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_close_handles_connection_close_exception(self, connection_url: str) -> None:
+        """Test that close() handles connection close exceptions gracefully (lines 245-246)."""
+        conn = AsyncResilientRabbitMQ(connection_url=connection_url)
+
+        # No channel to close
+        conn._channel = None
+
+        # Set up a connection that raises on close
+        failing_connection = AsyncMock()
+        failing_connection.is_closed = False
+        failing_connection.close = AsyncMock(side_effect=RuntimeError("connection close error"))
+
+        conn._connection = failing_connection
+
+        # Should not raise
+        await conn.close()
+
+        assert conn._connection is None

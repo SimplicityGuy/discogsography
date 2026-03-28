@@ -309,6 +309,24 @@ class TestExploreQueries:
         result = await explore_style(driver, "Alt Rock")
         assert result == record
 
+    @pytest.mark.asyncio
+    async def test_explore_genre_not_found(self) -> None:
+        """Genre not found returns None (line 188)."""
+        from api.queries.neo4j_queries import explore_genre
+
+        driver = _make_driver(single=None)
+        result = await explore_genre(driver, "Nonexistent Genre")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_explore_style_not_found(self) -> None:
+        """Style not found returns None (line 263)."""
+        from api.queries.neo4j_queries import explore_style
+
+        driver = _make_driver(single=None)
+        result = await explore_style(driver, "Nonexistent Style")
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # Expand queries - artist
@@ -650,6 +668,40 @@ class TestCountBeforeYear:
         assert len(captured_cypher) == 1
         assert "before_year" not in captured_cypher[0]
         assert "before_year" not in captured_params[0]
+
+
+class TestCountBeforeYearAllFunctions:
+    """Parametrized tests for before_year branches in all count_* functions."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "func_name, entity_type, entity_arg_name",
+        [
+            ("count_artist_labels", "artist", "Radiohead"),
+            ("count_genre_releases", "genre", "Rock"),
+            ("count_genre_artists", "genre", "Rock"),
+            ("count_genre_labels", "genre", "Rock"),
+            ("count_genre_styles", "genre", "Rock"),
+            ("count_label_releases", "label", "Warp Records"),
+            ("count_label_artists", "label", "Warp Records"),
+            ("count_label_genres", "label", "Warp Records"),
+            ("count_style_releases", "style", "Alt Rock"),
+            ("count_style_artists", "style", "Alt Rock"),
+            ("count_style_labels", "style", "Alt Rock"),
+            ("count_style_genres", "style", "Alt Rock"),
+        ],
+    )
+    async def test_count_with_before_year(self, func_name: str, entity_type: str, entity_arg_name: str) -> None:  # noqa: ARG002
+        """Each count_* function with before_year includes it in Cypher and params."""
+        import api.queries.neo4j_queries as mod
+
+        func = getattr(mod, func_name)
+        driver, captured_cypher, captured_params = _make_capturing_driver(total=7)
+        result = await func(driver, entity_arg_name, before_year=2000)
+        assert result == 7
+        assert len(captured_cypher) == 1
+        assert "before_year" in captured_cypher[0]
+        assert captured_params[0].get("before_year") == 2000
 
 
 # ---------------------------------------------------------------------------

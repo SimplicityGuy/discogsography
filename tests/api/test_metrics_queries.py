@@ -292,6 +292,28 @@ class TestGetHealthHistory:
         assert len(ep["history"]) == 2
 
     @pytest.mark.asyncio
+    async def test_endpoint_stats_invalid_json(self):
+        """Invalid JSON in endpoint_stats triggers the except branch (lines 183-184)."""
+        rows = [
+            {
+                "service_name": "api",
+                "ts": "2026-03-25T10:00:00",
+                "status": "healthy",
+                "response_time_ms": 30,
+                "endpoint_stats": "not valid json{",
+            },
+        ]
+        pool, execute_side_effect = _mock_pool_with_rows(rows)
+
+        with patch("api.queries.metrics_queries.execute_sql", side_effect=execute_side_effect):
+            result = await get_health_history(pool, "1h")
+
+        # The service should still be recorded (status/response_time parsed fine)
+        assert "api" in result["services"]
+        # But endpoint_stats parsing failed, so no api_endpoints populated
+        assert result["api_endpoints"] == {}
+
+    @pytest.mark.asyncio
     async def test_invalid_range(self):
         pool = MagicMock()
         with pytest.raises(ValueError, match="Invalid range"):

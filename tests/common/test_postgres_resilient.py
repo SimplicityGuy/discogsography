@@ -1758,3 +1758,356 @@ class TestAsyncPostgreSQLPoolUncoveredLines:
 
         # Cleanup
         await pool.close()
+
+
+class TestSyncHealthCheckLoopDirect:
+    """Tests that call _health_check_loop() directly to cover lines 108-145."""
+
+    @pytest.fixture
+    def mock_connection(self) -> Mock:
+        """Create a mock PostgreSQL connection."""
+        conn = Mock()
+        conn.closed = False
+        conn.autocommit = True
+        conn.close = Mock()
+        cursor = Mock()
+        cursor.execute = Mock()
+        cursor.fetchone = Mock(return_value=(1,))
+        cursor.__enter__ = Mock(return_value=cursor)
+        cursor.__exit__ = Mock(return_value=None)
+        conn.cursor = Mock(return_value=cursor)
+        return conn
+
+    @pytest.fixture
+    def connection_params(self) -> dict:
+        """Test connection parameters."""
+        return {
+            "host": "localhost",
+            "port": 5432,
+            "dbname": "test",
+            "user": "test_user",
+            "password": "test_pass",
+        }
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_health_check_loop_direct_removes_unhealthy(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """Line 108-145: Directly call _health_check_loop() to cover the method body."""
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=5, health_check_interval=1)
+
+        # Add an unhealthy connection to the pool
+        unhealthy_conn = Mock()
+        unhealthy_conn.closed = True
+        unhealthy_conn.close = Mock()
+        pool.connections.put_nowait(unhealthy_conn)
+
+        # Set _closed = True after one sleep so the loop exits after one iteration
+        call_count = 0
+
+        def sleep_then_close(_interval: float) -> None:
+            nonlocal call_count
+            call_count += 1
+            if call_count >= 1:
+                pool._closed = True
+
+        with patch("common.postgres_resilient.time.sleep", side_effect=sleep_then_close):
+            pool._health_check_loop()
+
+        # The unhealthy connection should have been removed and closed
+        unhealthy_conn.close.assert_called()
+        pool.close()
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_health_check_loop_direct_returns_healthy(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """Line 108-145: Healthy connections are returned to the pool."""
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, health_check_interval=1)
+
+        # Drain existing connections
+        while not pool.connections.empty():
+            try:
+                pool.connections.get_nowait()
+            except Exception:
+                break
+
+        # Add a healthy connection
+        healthy_conn = Mock()
+        healthy_conn.closed = False
+        cursor = Mock()
+        cursor.execute = Mock()
+        cursor.fetchone = Mock(return_value=(1,))
+        cursor.__enter__ = Mock(return_value=cursor)
+        cursor.__exit__ = Mock(return_value=None)
+        healthy_conn.cursor = Mock(return_value=cursor)
+        pool.connections.put_nowait(healthy_conn)
+
+        def sleep_then_close(_interval: float) -> None:
+            pool._closed = True
+
+        with patch("common.postgres_resilient.time.sleep", side_effect=sleep_then_close):
+            pool._health_check_loop()
+
+        # Healthy connection should be back in the pool
+        assert pool.connections.qsize() == 1
+        pool.close()
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_health_check_loop_direct_replenishes_connections(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """Line 134-145: Health check replenishes pool when below min_connections."""
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=2, max_connections=5, health_check_interval=1)
+
+        # Drain all connections so the pool is below minimum
+        while not pool.connections.empty():
+            try:
+                pool.connections.get_nowait()
+            except Exception:
+                break
+
+        assert pool.connections.qsize() == 0
+
+        def sleep_then_close(_interval: float) -> None:
+            pool._closed = True
+
+        with patch("common.postgres_resilient.time.sleep", side_effect=sleep_then_close):
+            pool._health_check_loop()
+
+        # Pool should have been replenished to min_connections
+        assert pool.connections.qsize() == 2
+        pool.close()
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_health_check_loop_direct_replenish_failure(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """Line 143-145: Health check logs warning and breaks on replenishment failure."""
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=3, max_connections=5, health_check_interval=1)
+
+        # Drain the pool
+        while not pool.connections.empty():
+            try:
+                pool.connections.get_nowait()
+            except Exception:
+                break
+
+        # Make _create_connection raise an exception for replenishment
+        pool._create_connection = Mock(side_effect=OperationalError("Connection failed"))  # type: ignore[method-assign]
+
+        def sleep_then_close(_interval: float) -> None:
+            pool._closed = True
+
+        with patch("common.postgres_resilient.time.sleep", side_effect=sleep_then_close):
+            pool._health_check_loop()
+
+        # Pool should still be empty since replenishment failed
+        assert pool.connections.qsize() == 0
+        pool.close()
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_health_check_loop_direct_queue_empty_break(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """Line 124-125: Health check catches Empty and breaks when queue is drained mid-iteration."""
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, health_check_interval=1)
+
+        # Drain existing connections
+        while not pool.connections.empty():
+            try:
+                pool.connections.get_nowait()
+            except Exception:
+                break
+
+        # Artificially make qsize report items but the queue is actually empty
+        # This forces the for loop to iterate but get_nowait raises Empty
+        pool.connections.qsize = Mock(return_value=3)  # type: ignore[method-assign]
+
+        def sleep_then_close(_interval: float) -> None:
+            pool._closed = True
+
+        with patch("common.postgres_resilient.time.sleep", side_effect=sleep_then_close):
+            pool._health_check_loop()
+
+        # Should complete without error
+        pool.close()
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_health_check_loop_direct_full_queue_on_return(
+        self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
+    ) -> None:
+        """Line 131-132: Healthy connection closed when queue is full on return."""
+        from queue import Full
+
+        mock_connect.return_value = mock_connection
+
+        pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, health_check_interval=1)
+
+        # Drain existing
+        while not pool.connections.empty():
+            try:
+                pool.connections.get_nowait()
+            except Exception:
+                break
+
+        # Add a healthy connection
+        healthy_conn = Mock()
+        healthy_conn.closed = False
+        healthy_conn.close = Mock()
+        cursor = Mock()
+        cursor.execute = Mock()
+        cursor.fetchone = Mock(return_value=(1,))
+        cursor.__enter__ = Mock(return_value=cursor)
+        cursor.__exit__ = Mock(return_value=None)
+        healthy_conn.cursor = Mock(return_value=cursor)
+        pool.connections.put_nowait(healthy_conn)
+
+        # Save original methods
+        original_put_nowait = pool.connections.put_nowait
+        original_qsize = pool.connections.qsize
+
+        # Override put_nowait to raise Full when returning healthy connections
+        pool.connections.put_nowait = Mock(side_effect=Full)  # type: ignore[method-assign]
+
+        def sleep_then_close(_interval: float) -> None:
+            pool._closed = True
+
+        with patch("common.postgres_resilient.time.sleep", side_effect=sleep_then_close):
+            pool._health_check_loop()
+
+        # Healthy connection should have been closed because queue was full
+        healthy_conn.close.assert_called()
+
+        # Restore original methods before close() which needs to drain the queue
+        pool.connections.put_nowait = original_put_nowait  # type: ignore[method-assign]
+        pool.connections.qsize = original_qsize  # type: ignore[method-assign]
+        pool.close()
+
+
+class TestInitializePoolFull:
+    """Test _initialize_pool() Full exception branch (line 77)."""
+
+    @pytest.fixture
+    def connection_params(self) -> dict:
+        """Test connection parameters."""
+        return {
+            "host": "localhost",
+            "port": 5432,
+            "dbname": "test",
+            "user": "test_user",
+            "password": "test_pass",
+        }
+
+    @pytest.fixture
+    def mock_connection(self) -> Mock:
+        """Create a mock PostgreSQL connection."""
+        conn = Mock()
+        conn.closed = False
+        conn.autocommit = True
+        conn.close = Mock()
+        cursor = Mock()
+        cursor.execute = Mock()
+        cursor.fetchone = Mock(return_value=(1,))
+        cursor.__enter__ = Mock(return_value=cursor)
+        cursor.__exit__ = Mock(return_value=None)
+        conn.cursor = Mock(return_value=cursor)
+        return conn
+
+    @patch("common.postgres_resilient.psycopg.connect")
+    @patch("common.postgres_resilient.threading.Thread")
+    def test_initialize_pool_queue_full(self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock) -> None:
+        """Line 77: _initialize_pool() breaks when queue is Full."""
+        mock_connect.return_value = mock_connection
+
+        # Create a pool with max_connections=1 but min_connections=3
+        # The queue maxsize=1, so when trying to add the second connection it raises Full
+        pool = ResilientPostgreSQLPool(
+            connection_params=connection_params,
+            min_connections=3,
+            max_connections=1,
+            health_check_interval=9999,
+        )
+
+        # The pool should have only 1 connection (Full prevented adding more)
+        assert pool.connections.qsize() == 1
+        pool.close()
+
+
+class TestAsyncHealthCheckQueueEmpty:
+    """Test async _health_check_loop() QueueEmpty branch (lines 393-394)."""
+
+    @pytest.fixture
+    def connection_params(self) -> dict:
+        """Test connection parameters."""
+        return {
+            "host": "localhost",
+            "port": 5432,
+            "dbname": "test",
+            "user": "test_user",
+            "password": "test_pass",
+        }
+
+    @pytest.fixture
+    def mock_async_connection(self) -> AsyncMock:
+        """Create a mock async PostgreSQL connection."""
+        conn = AsyncMock()
+        conn.closed = False
+        conn.set_autocommit = AsyncMock()
+        conn.close = AsyncMock()
+        cursor = AsyncMock()
+        cursor.execute = AsyncMock()
+        cursor.fetchone = AsyncMock(return_value=(1,))
+        cursor.__aenter__ = AsyncMock(return_value=cursor)
+        cursor.__aexit__ = AsyncMock(return_value=None)
+        conn.cursor = Mock(return_value=cursor)
+        return conn
+
+    @pytest.mark.asyncio
+    @patch("common.postgres_resilient.psycopg.AsyncConnection.connect")
+    async def test_async_health_check_queue_empty_on_get(self, mock_connect: Mock, connection_params: dict, mock_async_connection: AsyncMock) -> None:
+        """Lines 393-394: _health_check_loop() catches asyncio.QueueEmpty and breaks."""
+        mock_connect.return_value = mock_async_connection
+
+        pool = AsyncPostgreSQLPool(
+            connection_params=connection_params,
+            min_connections=0,
+            max_connections=5,
+            health_check_interval=0,
+        )
+        await pool.initialize()
+
+        # Make qsize report items but get_nowait raises QueueEmpty
+        pool.connections.qsize = Mock(return_value=3)  # type: ignore[method-assign]
+        original_get = pool.connections.get_nowait
+        pool.connections.get_nowait = Mock(side_effect=asyncio.QueueEmpty)  # type: ignore[method-assign]
+
+        pool._health_check_task = asyncio.create_task(pool._health_check_loop())
+
+        # Give the health check loop time to run
+        await asyncio.sleep(0.15)
+
+        # Pool should still be operational
+        assert pool._closed is False
+
+        # Restore before cleanup
+        pool.connections.get_nowait = original_get  # type: ignore[method-assign]
+        pool.connections.qsize = asyncio.Queue.qsize.__get__(pool.connections)  # type: ignore[attr-defined]
+
+        await pool.close()
