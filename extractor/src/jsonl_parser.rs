@@ -3,13 +3,28 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 use xz2::read::XzDecoder;
 
 use crate::types::{DataMessage, DataType};
+
+/// Open a file for line-by-line reading, automatically handling both plain `.jsonl` and
+/// XZ-compressed files based on the file extension.
+///
+/// - Files ending in `.jsonl` are read as plain text.
+/// - All other files (including `.jsonl.xz`, no extension, etc.) are opened with XzDecoder.
+fn open_jsonl_reader(path: &Path) -> Result<BufReader<Box<dyn Read + Send>>> {
+    // `path` comes from operator-controlled config (CLI/config file), not HTTP input.
+    let file = File::open(path).context(format!("Failed to open file: {:?}", path))?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+    let reader: Box<dyn Read + Send> = match path.extension().and_then(|e| e.to_str()) {
+        Some("jsonl") => Box::new(file),
+        _ => Box::new(XzDecoder::new(file)),
+    };
+    Ok(BufReader::new(reader))
+}
 
 /// Extract a Discogs numeric ID from a Discogs URL of the form:
 /// `https://www.discogs.com/{entity_type}/{id}` or
@@ -175,10 +190,7 @@ pub fn parse_mb_release_line(line: &str) -> Result<DataMessage> {
 /// Only lines that contain a Discogs url-rel are added to the map.
 /// Malformed lines are silently skipped.
 pub fn build_mbid_discogs_map_from_file(path: &Path, entity_type: &str) -> Result<HashMap<String, i64>> {
-    // `path` comes from operator-controlled config (CLI/config file), not HTTP input.
-    let file = File::open(path).context(format!("Failed to open file for MBID map: {:?}", path))?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-    let decoder = XzDecoder::new(file);
-    let reader = BufReader::new(decoder);
+    let reader = open_jsonl_reader(path).context(format!("Failed to open file for MBID map: {:?}", path))?;
 
     let mut map = HashMap::new();
 
@@ -256,10 +268,7 @@ pub fn parse_mb_jsonl_file(
     sender: mpsc::Sender<DataMessage>,
     discogs_map: Option<&HashMap<String, i64>>,
 ) -> Result<u64> {
-    // `path` comes from operator-controlled config (CLI/config file), not HTTP input.
-    let file = File::open(path).context(format!("Failed to open file: {:?}", path))?; // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
-    let decoder = XzDecoder::new(file);
-    let reader = BufReader::new(decoder);
+    let reader = open_jsonl_reader(path).context(format!("Failed to open JSONL file: {:?}", path))?;
 
     let parse_fn: fn(&str) -> Result<DataMessage> = match data_type {
         DataType::Artists => parse_mb_artist_line,

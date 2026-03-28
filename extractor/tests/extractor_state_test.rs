@@ -339,7 +339,7 @@ async fn test_extraction_status_equality() {
 #[tokio::test]
 async fn test_extraction_status_clone_copy() {
     let status = ExtractionStatus::Running;
-    let cloned = status.clone();
+    let cloned = status;
     let copied = status;
     assert_eq!(status, cloned);
     assert_eq!(status, copied);

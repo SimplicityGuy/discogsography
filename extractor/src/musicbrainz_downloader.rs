@@ -1,16 +1,20 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::io;
 use std::path::{Path, PathBuf};
-use tracing::{debug, info, warn};
+use tokio::fs;
+use tokio::io::AsyncWriteExt;
+use tracing::{debug, error, info, warn};
 
 use crate::types::DataType;
 
 /// Known file name patterns for MusicBrainz JSONL dump files.
 /// Each entry maps a DataType to a list of candidate file-name patterns.
 const MB_FILE_PATTERNS: &[(DataType, &[&str])] = &[
-    (DataType::Artists, &["artist.jsonl.xz", "mbdump-artist.jsonl.xz"]),
-    (DataType::Labels, &["label.jsonl.xz", "mbdump-label.jsonl.xz"]),
-    (DataType::Releases, &["release.jsonl.xz", "mbdump-release.jsonl.xz"]),
+    (DataType::Artists, &["artist.jsonl.xz", "mbdump-artist.jsonl.xz", "artist.jsonl"]),
+    (DataType::Labels, &["label.jsonl.xz", "mbdump-label.jsonl.xz", "label.jsonl"]),
+    (DataType::Releases, &["release.jsonl.xz", "mbdump-release.jsonl.xz", "release.jsonl"]),
 ];
 
 /// Entity name used for fuzzy matching when none of the exact patterns hit.
@@ -55,7 +59,7 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
             for entry in &entries {
                 let name = entry.file_name();
                 let name_str = name.to_string_lossy();
-                if name_str.contains(keyword) && name_str.ends_with(".jsonl.xz") {
+                if name_str.contains(keyword) && (name_str.ends_with(".jsonl.xz") || name_str.ends_with(".jsonl")) {
                     let path = entry.path();
                     info!("📋 Found MusicBrainz {} dump (fuzzy match): {:?}", data_type, path);
                     found.insert(*data_type, path);
@@ -82,6 +86,7 @@ pub fn discover_mb_dump_files(root: &Path) -> Result<HashMap<DataType, PathBuf>>
 /// Tries to extract a YYYYMMDD date from the last component of the directory
 /// path (e.g., `/data/20260322/` -> `"20260322"`).  Falls back to the current
 /// date formatted as `YYYYMMDD`.
+#[allow(dead_code)]
 pub fn detect_mb_dump_version(root: &Path) -> String {
     if let Some(dir_name) = root.file_name().and_then(|n| n.to_str()) {
         // Check if the directory name looks like a YYYYMMDD date
@@ -102,6 +107,316 @@ pub fn detect_mb_dump_version(root: &Path) -> String {
     let fallback = chrono::Utc::now().format("%Y%m%d").to_string();
     info!("📋 Using current date as MusicBrainz dump version: {}", fallback);
     fallback
+}
+
+/// Scan `root` for subdirectories matching the MusicBrainz version pattern
+/// (YYYYMMDD-HHMMSS) and return the path to the most recent one.
+#[allow(dead_code)]
+pub fn find_latest_mb_directory(root: &Path) -> Option<PathBuf> {
+    let version_pattern = regex::Regex::new(r"^\d{8}-\d{6}$").ok()?;
+
+    let mut versions: Vec<String> = match std::fs::read_dir(root) {
+        Ok(rd) => rd
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+            .filter_map(|e| {
+                let name = e.file_name().to_string_lossy().to_string();
+                if version_pattern.is_match(&name) { Some(name) } else { None }
+            })
+            .collect(),
+        Err(_) => return None,
+    };
+
+    versions.sort_by(|a, b| b.cmp(a));
+    // `root` comes from operator-controlled config (CLI/env var), not HTTP input.
+    versions.first().map(|v| root.join(v)) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+}
+
+/// MusicBrainz entity names for download (singular, matching tarball names)
+#[allow(dead_code)]
+const MB_ENTITIES: &[&str] = &["artist", "label", "release"];
+
+#[allow(dead_code)]
+const MB_MAX_DOWNLOAD_RETRIES: u32 = 3;
+
+#[cfg(not(test))]
+#[allow(dead_code)]
+const MB_RETRY_BASE_DELAY_MS: u64 = 2_000;
+#[cfg(test)]
+#[allow(dead_code)]
+const MB_RETRY_BASE_DELAY_MS: u64 = 10;
+
+/// Result of a MusicBrainz download attempt
+#[allow(dead_code)]
+#[derive(Debug)]
+pub enum MbDownloadResult {
+    AlreadyCurrent(String),
+    Downloaded(String),
+}
+
+#[allow(dead_code)]
+impl MbDownloadResult {
+    pub fn version(&self) -> &str {
+        match self {
+            MbDownloadResult::AlreadyCurrent(v) | MbDownloadResult::Downloaded(v) => v,
+        }
+    }
+}
+
+#[allow(dead_code)]
+pub struct MbDownloader {
+    output_directory: PathBuf,
+    base_url: String,
+}
+
+#[allow(dead_code)]
+impl MbDownloader {
+    pub fn new(output_directory: PathBuf, base_url: String) -> Self {
+        Self { output_directory, base_url }
+    }
+
+    /// Discover the latest MusicBrainz dump version and download it if not already present.
+    pub async fn download_latest(&self) -> Result<MbDownloadResult> {
+        // Step 1: Scrape index page for version directories
+        info!("🌐 Fetching MusicBrainz dump index from {}...", self.base_url);
+        let response = reqwest::get(&self.base_url) // nosemgrep: rust.actix.ssrf.reqwest-taint.reqwest-taint
+            .await
+            .context("Failed to fetch MusicBrainz dump index")?;
+        let html = response.text().await.context("Failed to read index HTML")?;
+
+        let versions = parse_version_directories(&html);
+        if versions.is_empty() {
+            return Err(anyhow::anyhow!("No version directories found at {}", self.base_url));
+        }
+
+        let version = &versions[0];
+        info!("📋 Latest MusicBrainz dump version: {}", version);
+
+        // Step 2: Check if already downloaded
+        let version_dir = self.output_directory.join(version); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        if self.is_version_complete(&version_dir) {
+            info!("✅ MusicBrainz dump {} already downloaded", version);
+            return Ok(MbDownloadResult::AlreadyCurrent(version.clone()));
+        }
+
+        // Step 3: Download SHA256SUMS
+        let sha_url = format!("{}{}/SHA256SUMS", self.base_url, version);
+        info!("⬇️ Fetching SHA256SUMS from {}...", sha_url);
+        let sha_response = reqwest::get(&sha_url) // nosemgrep: rust.actix.ssrf.reqwest-taint.reqwest-taint
+            .await
+            .context("Failed to fetch SHA256SUMS")?;
+        let sha_content = sha_response.text().await.context("Failed to read SHA256SUMS")?;
+        let checksums = parse_sha256sums(&sha_content);
+
+        // Step 4: Create version directory
+        fs::create_dir_all(&version_dir).await.with_context(|| format!("Failed to create directory: {:?}", version_dir))?;
+
+        // Step 5: Download, verify, and extract each entity
+        for entity in MB_ENTITIES {
+            let tarball_name = format!("{}.tar.xz", entity);
+            let expected_hash = checksums
+                .get(&tarball_name)
+                .ok_or_else(|| anyhow::anyhow!("No SHA256 checksum found for {} in SHA256SUMS", tarball_name))?;
+
+            let download_url = format!("{}{}/{}", self.base_url, version, tarball_name);
+            let tmp_path = version_dir.join(format!("{}.tmp", tarball_name)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+            let out_path = version_dir.join(format!("{}.jsonl", entity)); // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+
+            // Download with retry
+            self.download_file(&download_url, &tmp_path, expected_hash, entity).await?;
+
+            // Extract on blocking thread
+            let extract_tmp = tmp_path.clone();
+            let extract_entity = entity.to_string();
+            let extract_out = out_path.clone();
+            tokio::task::spawn_blocking(move || extract_entity_from_tarball(&extract_tmp, &extract_entity, &extract_out))
+                .await
+                .context("Extraction task panicked")??;
+
+            // Clean up temp tarball
+            if let Err(e) = fs::remove_file(&tmp_path).await {
+                warn!("⚠️ Failed to remove temp tarball {:?}: {}", tmp_path, e);
+            }
+
+            info!("✅ Successfully downloaded and extracted MusicBrainz {} dump", entity);
+        }
+
+        info!("✅ MusicBrainz dump {} download complete", version);
+        Ok(MbDownloadResult::Downloaded(version.clone()))
+    }
+
+    /// Check whether a version directory contains all expected entity JSONL files.
+    pub(crate) fn is_version_complete(&self, version_dir: &Path) -> bool {
+        if !version_dir.is_dir() {
+            return false;
+        }
+        MB_ENTITIES.iter().all(|entity| version_dir.join(format!("{}.jsonl", entity)).exists())
+    }
+
+    /// Download a file with retry logic and SHA256 verification.
+    async fn download_file(&self, url: &str, dest: &Path, expected_sha256: &str, entity: &str) -> Result<()> {
+        use futures::StreamExt;
+
+        let mut last_error: Option<anyhow::Error> = None;
+
+        for attempt in 1..=MB_MAX_DOWNLOAD_RETRIES {
+            if attempt > 1 {
+                if dest.exists() {
+                    let _ = fs::remove_file(dest).await;
+                }
+                let delay_ms = MB_RETRY_BASE_DELAY_MS * (1u64 << (attempt - 2));
+                warn!("🔄 Retry {}/{} for {} (waiting {}ms)...", attempt - 1, MB_MAX_DOWNLOAD_RETRIES - 1, entity, delay_ms);
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+            }
+
+            info!("⬇️ Downloading {} (attempt {}/{})...", entity, attempt, MB_MAX_DOWNLOAD_RETRIES);
+
+            let response = match reqwest::get(url).await {
+                // nosemgrep: rust.actix.ssrf.reqwest-taint.reqwest-taint
+                Ok(r) => r,
+                Err(e) => {
+                    let msg = format!("Failed to start download for {}: {}", entity, e);
+                    warn!("⚠️ {}", msg);
+                    last_error = Some(anyhow::anyhow!(msg));
+                    continue;
+                }
+            };
+
+            if !response.status().is_success() {
+                let msg = format!("HTTP error downloading {}: {}", entity, response.status());
+                warn!("⚠️ {}", msg);
+                last_error = Some(anyhow::anyhow!(msg));
+                continue;
+            }
+
+            let mut file = fs::File::create(dest) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+                .await
+                .context("Failed to create download file")?;
+            let mut hasher = Sha256::new();
+            let mut downloaded: u64 = 0;
+            let download_start = std::time::Instant::now();
+            let mut last_progress_log = download_start;
+
+            let mut stream = response.bytes_stream();
+            let mut stream_error: Option<anyhow::Error> = None;
+
+            while let Some(chunk_result) = stream.next().await {
+                match chunk_result {
+                    Ok(chunk) => {
+                        hasher.update(&chunk);
+                        if let Err(e) = file.write_all(&chunk).await {
+                            stream_error = Some(anyhow::anyhow!("Write failed: {}", e));
+                            break;
+                        }
+                        downloaded += chunk.len() as u64;
+
+                        let now = std::time::Instant::now();
+                        if now.duration_since(last_progress_log).as_secs() >= 10 {
+                            let elapsed = download_start.elapsed().as_secs_f64();
+                            let speed = if elapsed > 0.0 { (downloaded as f64 / 1_048_576.0) / elapsed } else { 0.0 };
+                            info!("⬇️ {} — {:.1} MB received ({:.1} MB/s)", entity, downloaded as f64 / 1_048_576.0, speed);
+                            last_progress_log = now;
+                        }
+                    }
+                    Err(e) => {
+                        stream_error = Some(anyhow::anyhow!("Stream error: {}", e));
+                        break;
+                    }
+                }
+            }
+
+            if let Some(err) = stream_error {
+                warn!("⚠️ Attempt {}/{} failed for {}: {}", attempt, MB_MAX_DOWNLOAD_RETRIES, entity, err);
+                last_error = Some(err);
+                continue;
+            }
+
+            if let Err(e) = file.flush().await {
+                last_error = Some(anyhow::anyhow!("Flush failed: {}", e));
+                continue;
+            }
+            if let Err(e) = file.sync_data().await {
+                last_error = Some(anyhow::anyhow!("Sync failed: {}", e));
+                continue;
+            }
+
+            // Verify SHA256
+            let actual_hash = format!("{:x}", hasher.finalize());
+            if actual_hash != expected_sha256 {
+                let msg = format!("SHA256 mismatch for {}: expected {}, got {}", entity, expected_sha256, actual_hash);
+                warn!("⚠️ {}", msg);
+                last_error = Some(anyhow::anyhow!(msg));
+                let _ = fs::remove_file(dest).await;
+                continue;
+            }
+
+            info!("✅ Downloaded {} ({:.2} MB, SHA256 verified)", entity, downloaded as f64 / 1_048_576.0);
+            return Ok(());
+        }
+
+        error!("❌ Download failed after {} attempts for {}", MB_MAX_DOWNLOAD_RETRIES, entity);
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Download failed after {} attempts", MB_MAX_DOWNLOAD_RETRIES)))
+    }
+}
+
+/// Parse version directory names (YYYYMMDD-HHMMSS) from an HTML index page.
+/// Returns them sorted descending (most recent first).
+#[allow(dead_code)]
+pub fn parse_version_directories(html: &str) -> Vec<String> {
+    let pattern = regex::Regex::new(r#"href="(\d{8}-\d{6})/?"#).unwrap();
+    let mut versions: Vec<String> = pattern.captures_iter(html).filter_map(|cap| cap.get(1).map(|m| m.as_str().to_string())).collect();
+    versions.sort_by(|a, b| b.cmp(a));
+    versions.dedup();
+    versions
+}
+
+/// Parse a SHA256SUMS file into a map of filename -> hex hash.
+#[allow(dead_code)]
+pub fn parse_sha256sums(content: &str) -> HashMap<String, String> {
+    content
+        .lines()
+        .filter_map(|line| {
+            let line = line.trim();
+            if line.is_empty() {
+                return None;
+            }
+            let mut parts = line.splitn(2, char::is_whitespace);
+            let hash = parts.next()?.trim().to_string();
+            let filename = parts.next()?.trim().trim_start_matches('*').to_string();
+            Some((filename, hash))
+        })
+        .collect()
+}
+
+/// Extract the `mbdump/<entity>` file from a `.tar.xz` archive.
+///
+/// Only the target entry is extracted; all other entries are skipped.
+/// Returns an error if the target entry is not found.
+#[allow(dead_code)]
+pub fn extract_entity_from_tarball(tar_path: &Path, entity: &str, out_path: &Path) -> Result<()> {
+    // `tar_path` and `out_path` come from operator-controlled config (CLI/env var), not HTTP input.
+    let file = std::fs::File::open(tar_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        .with_context(|| format!("Failed to open tarball: {:?}", tar_path))?;
+    let xz = xz2::read::XzDecoder::new(file);
+    let mut archive = tar::Archive::new(xz);
+
+    let target_suffix = format!("mbdump/{}", entity);
+
+    for entry_result in archive.entries().context("Failed to read tar entries")? {
+        let mut entry = entry_result.context("Failed to read tar entry")?;
+        let path = entry.path().context("Failed to read entry path")?;
+
+        if path.ends_with(&target_suffix) {
+            let mut out_file = std::fs::File::create(out_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+                .with_context(|| format!("Failed to create output file: {:?}", out_path))?;
+            io::copy(&mut entry, &mut out_file).with_context(|| format!("Failed to extract {} to {:?}", entity, out_path))?;
+            let size = out_file.metadata().map(|m| m.len()).unwrap_or(0);
+            info!("📋 Extracted {} from {:?} ({} bytes)", entity, tar_path, size);
+            return Ok(());
+        }
+    }
+
+    Err(anyhow::anyhow!("Entry '{}' not found in {:?}", target_suffix, tar_path))
 }
 
 #[cfg(test)]

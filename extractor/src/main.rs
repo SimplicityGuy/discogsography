@@ -141,10 +141,16 @@ async fn main() -> Result<()> {
             .await
         }
         Source::MusicBrainz => {
-            info!("🎵 Starting MusicBrainz extraction");
-            extractor::process_musicbrainz_data(config.clone(), state.clone(), shutdown.clone(), args.force_reprocess, mq_factory, compiled_rules)
-                .await
-                .map(|_| ())
+            extractor::run_musicbrainz_loop(
+                config.clone(),
+                state.clone(),
+                shutdown.clone(),
+                args.force_reprocess,
+                mq_factory,
+                trigger.clone(),
+                compiled_rules,
+            )
+            .await
         }
     };
 

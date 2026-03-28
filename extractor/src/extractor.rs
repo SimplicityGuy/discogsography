@@ -763,6 +763,69 @@ pub async fn run_extraction_loop(
     Ok(())
 }
 
+/// Main MusicBrainz extraction loop with periodic checks for new dumps.
+pub async fn run_musicbrainz_loop(
+    config: Arc<ExtractorConfig>,
+    state: Arc<RwLock<ExtractorState>>,
+    shutdown: Arc<tokio::sync::Notify>,
+    force_reprocess: bool,
+    mq_factory: Arc<dyn MessageQueueFactory>,
+    trigger: Arc<std::sync::Mutex<Option<bool>>>,
+    compiled_rules: Option<Arc<CompiledRulesConfig>>,
+) -> Result<()> {
+    info!("🎵 Starting MusicBrainz extraction...");
+
+    let success =
+        process_musicbrainz_data(config.clone(), state.clone(), shutdown.clone(), force_reprocess, mq_factory.clone(), compiled_rules.clone())
+            .await?;
+
+    if !success {
+        error!("❌ Initial MusicBrainz processing failed");
+        return Err(anyhow::anyhow!("Initial MusicBrainz processing failed"));
+    }
+
+    info!("✅ Initial MusicBrainz processing completed successfully");
+
+    // Periodic check loop
+    loop {
+        let check_interval = Duration::from_secs(config.periodic_check_days * 24 * 60 * 60);
+        info!("⏰ Waiting {} days before next MusicBrainz check...", config.periodic_check_days);
+
+        tokio::select! {
+            _ = sleep(check_interval) => {
+                info!("🔄 Starting periodic check for new MusicBrainz dumps...");
+                let start = Instant::now();
+                match process_musicbrainz_data(config.clone(), state.clone(), shutdown.clone(), false, mq_factory.clone(), compiled_rules.clone()).await {
+                    Ok(true) => {
+                        info!("✅ Periodic MusicBrainz check completed successfully in {:?}", start.elapsed());
+                    }
+                    Ok(false) => {
+                        error!("❌ Periodic MusicBrainz check completed with errors");
+                    }
+                    Err(e) => {
+                        error!("❌ Periodic MusicBrainz check failed: {}", e);
+                    }
+                }
+            }
+            trigger_force_reprocess = wait_for_trigger(&trigger) => {
+                info!("🔄 MusicBrainz extraction triggered via API (force_reprocess={})...", trigger_force_reprocess);
+                let start = Instant::now();
+                match process_musicbrainz_data(config.clone(), state.clone(), shutdown.clone(), trigger_force_reprocess, mq_factory.clone(), compiled_rules.clone()).await {
+                    Ok(true) => info!("✅ Triggered MusicBrainz extraction completed in {:?}", start.elapsed()),
+                    Ok(false) => error!("❌ Triggered MusicBrainz extraction completed with errors"),
+                    Err(e) => error!("❌ Triggered MusicBrainz extraction failed: {}", e),
+                }
+            }
+            _ = shutdown.notified() => {
+                info!("🛑 Shutdown requested, stopping MusicBrainz periodic checks");
+                break;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 /// Process MusicBrainz JSONL dump files and publish records to AMQP.
 ///
 /// Pipeline per file: blocking JSONL parser -> async batcher -> async publisher
@@ -775,7 +838,7 @@ pub async fn process_musicbrainz_data(
     _compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<bool> {
     use crate::jsonl_parser::{build_mbid_discogs_map_from_file, parse_mb_jsonl_file};
-    use crate::musicbrainz_downloader::{detect_mb_dump_version, discover_mb_dump_files};
+    use crate::musicbrainz_downloader::{MbDownloader, discover_mb_dump_files};
 
     let extraction_started_at = chrono::Utc::now();
 
@@ -790,22 +853,25 @@ pub async fn process_musicbrainz_data(
         s.extraction_status = ExtractionStatus::Running;
     }
 
-    // Discover dump files
-    let dump_files = discover_mb_dump_files(&config.musicbrainz_root)?;
+    // Download latest MusicBrainz dump if needed
+    let downloader = MbDownloader::new(config.musicbrainz_root.clone(), config.musicbrainz_dump_url.clone());
+    let download_result = downloader.download_latest().await?;
+    let version = download_result.version().to_string();
+    let versioned_root = config.musicbrainz_root.join(&version);
+    info!("📋 Using MusicBrainz dump version: {} from {:?}", version, versioned_root);
+
+    // Discover dump files in the versioned directory
+    let dump_files = discover_mb_dump_files(&versioned_root)?;
 
     if dump_files.is_empty() {
-        warn!("⚠️ No MusicBrainz dump files found");
+        warn!("⚠️ No MusicBrainz dump files found after download");
         let mut s = state.write().await;
         s.extraction_status = ExtractionStatus::Completed;
         return Ok(true);
     }
 
-    // Detect version
-    let version = detect_mb_dump_version(&config.musicbrainz_root);
-    info!("📋 Detected MusicBrainz dump version: {}", version);
-
     // Check state marker — skip if already completed and not force_reprocess
-    let marker_path = config.musicbrainz_root.join(format!(".mb_extraction_status_{}.json", version));
+    let marker_path = versioned_root.join(format!(".mb_extraction_status_{}.json", version));
     let mut state_marker = if force_reprocess {
         info!("🔄 Force reprocess requested, creating new state marker");
         StateMarker::new(version.clone())
