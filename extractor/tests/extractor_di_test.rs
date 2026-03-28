@@ -782,6 +782,278 @@ async fn test_run_musicbrainz_loop_shutdown_after_initial_processing() {
     assert!(result.is_ok());
 }
 
+#[tokio::test(start_paused = true)]
+async fn test_run_musicbrainz_loop_periodic_check_ok_true() {
+    // Test that the periodic check arm (sleep branch) fires and handles Ok(true).
+    // Uses paused time to instantly advance past check_interval.
+    let temp_dir = TempDir::new().unwrap();
+    let (_server, base_url) = mb_mock_server().await;
+    let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
+
+    // Write a completed state marker
+    let mut marker = StateMarker::new("20260322-000000".to_string());
+    marker.complete_processing();
+    marker.complete_extraction();
+    let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
+    marker.save(&marker_path).await.unwrap();
+
+    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mock_mq = MockMessagePublisher::new();
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+
+    // Advance time past the check interval, then signal shutdown
+    let shutdown_clone = shutdown.clone();
+    let config_clone = config.clone();
+    tokio::spawn(async move {
+        // Wait a bit for the loop to enter the select
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        // Advance past the periodic check interval (config says 1 day)
+        let check_interval = tokio::time::Duration::from_secs(config_clone.periodic_check_days * 24 * 60 * 60);
+        tokio::time::sleep(check_interval).await;
+        // Let the periodic check complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        shutdown_clone.notify_one();
+    });
+
+    let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
+
+    assert!(result.is_ok());
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_run_musicbrainz_loop_periodic_check_err() {
+    // Test that the periodic check arm handles Err(e) gracefully (logs error, continues loop).
+    let temp_dir = TempDir::new().unwrap();
+    let (_server, base_url) = mb_mock_server().await;
+    let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
+
+    // Write a completed state marker so initial processing succeeds
+    let mut marker = StateMarker::new("20260322-000000".to_string());
+    marker.complete_processing();
+    marker.complete_extraction();
+    let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
+    marker.save(&marker_path).await.unwrap();
+
+    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // Use a factory that always fails on create — won't matter for initial call
+    // (state marker skips MQ), but will cause Err on the periodic check.
+    use extractor::extractor::MessageQueueFactory as MQF;
+    struct AlwaysFailMqFactory;
+    #[async_trait::async_trait]
+    impl MQF for AlwaysFailMqFactory {
+        async fn create(&self, _url: &str, _exchange_prefix: &str) -> anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> {
+            Err(anyhow::anyhow!("AMQP connection refused"))
+        }
+    }
+    let factory: Arc<dyn MQF> = Arc::new(AlwaysFailMqFactory);
+
+    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+
+    let shutdown_clone = shutdown.clone();
+    let config_clone = config.clone();
+    let marker_path_clone = marker_path.clone();
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        // Wait for initial processing to complete by polling state
+        loop {
+            let s = state_clone.read().await;
+            if s.extraction_status == ExtractionStatus::Completed {
+                break;
+            }
+            drop(s);
+            tokio::task::yield_now().await;
+        }
+        // Remove the state marker so the periodic check proceeds past Skip decision
+        let _ = tokio::fs::remove_file(&marker_path_clone).await;
+        // Advance past the periodic check interval
+        let check_interval = tokio::time::Duration::from_secs(config_clone.periodic_check_days * 24 * 60 * 60);
+        tokio::time::sleep(check_interval).await;
+        // Let the periodic check complete (it will fail on MQ create)
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        shutdown_clone.notify_one();
+    });
+
+    let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
+
+    // The loop should continue after the periodic check error and exit on shutdown
+    assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
+}
+
+#[tokio::test(start_paused = true)]
+async fn test_run_musicbrainz_loop_periodic_check_ok_false() {
+    // Test that the periodic check arm handles Ok(false) gracefully.
+    // We achieve this by having send_extraction_complete fail during the periodic check.
+    let temp_dir = TempDir::new().unwrap();
+    let (_server, base_url) = mb_mock_server().await;
+    let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
+
+    // Write a completed state marker so initial processing succeeds
+    let mut marker = StateMarker::new("20260322-000000".to_string());
+    marker.complete_processing();
+    marker.complete_extraction();
+    let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
+    marker.save(&marker_path).await.unwrap();
+
+    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // MQ that fails on send_extraction_complete, causing Ok(false) return
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Err(anyhow::anyhow!("extraction_complete failed")));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+
+    let shutdown_clone = shutdown.clone();
+    let config_clone = config.clone();
+    let marker_path_clone = marker_path.clone();
+    let state_clone = state.clone();
+    tokio::spawn(async move {
+        // Wait for initial processing to complete
+        loop {
+            let s = state_clone.read().await;
+            if s.extraction_status == ExtractionStatus::Completed {
+                break;
+            }
+            drop(s);
+            tokio::task::yield_now().await;
+        }
+        // Remove the state marker so periodic check proceeds past Skip
+        let _ = tokio::fs::remove_file(&marker_path_clone).await;
+        // Advance past the periodic check interval
+        let check_interval = tokio::time::Duration::from_secs(config_clone.periodic_check_days * 24 * 60 * 60);
+        tokio::time::sleep(check_interval).await;
+        // Let the periodic check complete
+        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+        shutdown_clone.notify_one();
+    });
+
+    let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
+
+    // The loop should continue after Ok(false) and exit on shutdown
+    assert!(result.is_ok(), "Expected Ok, got: {:?}", result);
+}
+
+#[tokio::test]
+async fn test_run_musicbrainz_loop_trigger_ok_false() {
+    // Test the trigger arm with Ok(false) — process_musicbrainz_data returns false.
+    // We achieve this by having send_extraction_complete fail.
+    let temp_dir = TempDir::new().unwrap();
+    let (_server, base_url) = mb_mock_server().await;
+    let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
+
+    // Write a completed state marker so initial processing succeeds immediately
+    let mut marker = StateMarker::new("20260322-000000".to_string());
+    marker.complete_processing();
+    marker.complete_extraction();
+    let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
+    marker.save(&marker_path).await.unwrap();
+
+    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // MQ that fails on send_extraction_complete, causing Ok(false) return
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _| Err(anyhow::anyhow!("extraction_complete failed")));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+
+    let trigger_clone = trigger.clone();
+    let shutdown_clone = shutdown.clone();
+    let marker_path_clone = marker_path.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        // Remove the state marker so the triggered call proceeds past Skip and processes
+        let _ = tokio::fs::remove_file(&marker_path_clone).await;
+        // Set trigger to fire
+        {
+            let mut t = trigger_clone.lock().unwrap();
+            *t = Some(false);
+        }
+        // Wait for processing
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        shutdown_clone.notify_one();
+    });
+
+    let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
+
+    // Loop should continue after Ok(false) and exit on shutdown
+    assert!(result.is_ok());
+}
+
+#[tokio::test]
+async fn test_run_musicbrainz_loop_trigger_err() {
+    // Test the trigger arm with Err(e) — process_musicbrainz_data returns an error.
+    let temp_dir = TempDir::new().unwrap();
+    let (_server, base_url) = mb_mock_server().await;
+    let versioned = create_complete_versioned_dir(temp_dir.path(), "20260322-000000");
+
+    // Write a completed state marker so initial processing succeeds immediately
+    let mut marker = StateMarker::new("20260322-000000".to_string());
+    marker.complete_processing();
+    marker.complete_extraction();
+    let marker_path = versioned.join(".mb_extraction_status_20260322-000000.json");
+    marker.save(&marker_path).await.unwrap();
+
+    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    // Use a factory that fails on MQ create — after removing state marker, triggers Err path
+    use extractor::extractor::MessageQueueFactory;
+    struct FailingMqFactory2;
+    #[async_trait::async_trait]
+    impl MessageQueueFactory for FailingMqFactory2 {
+        async fn create(&self, _url: &str, _exchange_prefix: &str) -> anyhow::Result<Arc<dyn extractor::message_queue::MessagePublisher>> {
+            Err(anyhow::anyhow!("AMQP connection refused"))
+        }
+    }
+    let factory = Arc::new(FailingMqFactory2);
+
+    let trigger: Arc<std::sync::Mutex<Option<bool>>> = Arc::new(std::sync::Mutex::new(None));
+
+    let trigger_clone = trigger.clone();
+    let shutdown_clone = shutdown.clone();
+    let marker_path_clone = marker_path.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        // Remove state marker so the triggered call proceeds past Skip to MQ creation (and fails)
+        let _ = tokio::fs::remove_file(&marker_path_clone).await;
+        {
+            let mut t = trigger_clone.lock().unwrap();
+            *t = Some(false);
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(2000)).await;
+        shutdown_clone.notify_one();
+    });
+
+    let result = run_musicbrainz_loop(config, state, shutdown, false, factory, trigger, None).await;
+
+    // Loop should continue after Err(e) and exit on shutdown
+    assert!(result.is_ok());
+}
+
 #[tokio::test]
 async fn test_run_musicbrainz_loop_initial_failure_returns_error() {
     // Initial processing fails (no download server reachable for SHA256SUMS),
