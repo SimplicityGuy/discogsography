@@ -278,7 +278,7 @@ DATA_TYPES = ["artists", "labels", "masters", "releases"]
 MUSICBRAINZ_EXCHANGE_PREFIX = "musicbrainz"
 AMQP_QUEUE_PREFIX_BRAINZGRAPHINATOR = "musicbrainz-brainzgraphinator"
 AMQP_QUEUE_PREFIX_BRAINZTABLEINATOR = "musicbrainz-brainztableinator"
-MUSICBRAINZ_DATA_TYPES = ["artists", "labels", "releases"]
+MUSICBRAINZ_DATA_TYPES = ["artists", "labels", "release-groups", "releases"]
 
 
 def orjson_serializer(msg: dict[str, Any], **_kwargs: Any) -> str:
