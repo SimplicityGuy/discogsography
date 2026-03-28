@@ -472,3 +472,235 @@ class TestRunCollector:
         assert len(api_rows) == 1
         assert api_rows[0]["endpoint_stats"] is not None
         assert "/api/search" in api_rows[0]["endpoint_stats"]
+
+    @pytest.mark.anyio
+    async def test_collector_attaches_stats_to_existing_api_row(self) -> None:
+        """When health_rows already has an 'api' entry, endpoint_stats is attached to it."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/search", 200, 10.0)
+
+        existing_api_row = {"service_name": "api", "status": "healthy", "response_time_ms": 5.0, "endpoint_stats": None}
+
+        persisted_health: list[list[dict[str, Any]]] = []
+
+        async def capture_persist(_pool: Any, _q: Any, h: list[dict[str, Any]]) -> None:
+            persisted_health.append(h)
+            raise asyncio.CancelledError
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[existing_api_row]),
+            patch("api.metrics_collector.persist_metrics", side_effect=capture_persist),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+        assert len(persisted_health) == 1
+        api_rows = [r for r in persisted_health[0] if r["service_name"] == "api"]
+        assert len(api_rows) == 1
+        assert api_rows[0]["endpoint_stats"] is not None
+
+    @pytest.mark.anyio
+    async def test_collector_handles_queue_metrics_error(self) -> None:
+        """run_collector continues when collect_queue_metrics raises."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, side_effect=RuntimeError("boom")),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.persist_metrics", new_callable=AsyncMock),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock),
+            patch("asyncio.sleep", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+    @pytest.mark.anyio
+    async def test_collector_handles_health_check_error(self) -> None:
+        """run_collector continues when collect_service_health raises."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, side_effect=RuntimeError("boom")),
+            patch("api.metrics_collector.persist_metrics", new_callable=AsyncMock),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock),
+            patch("asyncio.sleep", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+    @pytest.mark.anyio
+    async def test_collector_handles_persist_error(self) -> None:
+        """run_collector continues when persist_metrics raises (non-CancelledError)."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.persist_metrics", new_callable=AsyncMock, side_effect=RuntimeError("db error")),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock),
+            patch("asyncio.sleep", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+    @pytest.mark.anyio
+    async def test_collector_handles_prune_error(self) -> None:
+        """run_collector continues when prune_old_metrics raises."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.persist_metrics", new_callable=AsyncMock),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock, side_effect=RuntimeError("prune error")),
+            patch("asyncio.sleep", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+    @pytest.mark.anyio
+    async def test_collector_handles_flush_error(self) -> None:
+        """run_collector continues when metrics_buffer.flush() raises."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+        buf.record("/api/search", 200, 10.0)
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
+            patch.object(buf, "flush", side_effect=RuntimeError("flush error")),
+            patch("api.metrics_collector.persist_metrics", new_callable=AsyncMock),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock),
+            patch("asyncio.sleep", side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+    @pytest.mark.anyio
+    async def test_collector_persist_cancelled_error_reraises(self) -> None:
+        """run_collector re-raises CancelledError from persist_metrics."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[{"queue_name": "q"}]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.persist_metrics", new_callable=AsyncMock, side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+    @pytest.mark.anyio
+    async def test_collector_prune_cancelled_error_reraises(self) -> None:
+        """run_collector re-raises CancelledError from prune_old_metrics."""
+        from api.metrics_collector import MetricsBuffer, run_collector
+
+        mock_pool = MagicMock()
+        config = MagicMock()
+        config.rabbitmq_management_host = "localhost"
+        config.rabbitmq_management_port = 15672
+        config.rabbitmq_username = "guest"
+        config.rabbitmq_password = "guest"
+        config.metrics_retention_days = 30
+        config.metrics_collection_interval = 1
+
+        buf = MetricsBuffer(max_size=100)
+
+        with (
+            patch("api.metrics_collector.collect_queue_metrics", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.collect_service_health", new_callable=AsyncMock, return_value=[]),
+            patch("api.metrics_collector.persist_metrics", new_callable=AsyncMock),
+            patch("api.metrics_collector.prune_old_metrics", new_callable=AsyncMock, side_effect=asyncio.CancelledError),
+            pytest.raises(asyncio.CancelledError),
+        ):
+            await run_collector(mock_pool, config, buf)
+
+
+class TestCollectServiceHealthException:
+    """Test collect_service_health outer exception handler (line 200-202)."""
+
+    @pytest.mark.anyio
+    async def test_returns_empty_on_client_creation_failure(self) -> None:
+        from api.metrics_collector import collect_service_health
+
+        with patch("api.metrics_collector.httpx.AsyncClient", side_effect=RuntimeError("client init failed")):
+            rows = await collect_service_health()
+        assert rows == []

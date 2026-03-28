@@ -235,6 +235,72 @@ class TestTasteServiceNotReady:
             mod._neo4j_driver = original
 
 
+class TestTasteTimeouts:
+    """Tests for Neo4j timeout handling (lines 107-114, 141-148)."""
+
+    def test_fingerprint_timeout_returns_504(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        exc = Neo4jClientError("TransactionTimedOut: query timed out")
+        with (
+            _patch_min_count(50),
+            patch(
+                "api.routers.taste.get_taste_heatmap",
+                new_callable=AsyncMock,
+                side_effect=exc,
+            ),
+        ):
+            resp = test_client.get("/api/user/taste/fingerprint", headers=_auth_headers())
+        assert resp.status_code == 504
+        assert "timed out" in resp.json()["error"]
+
+    def test_fingerprint_non_timeout_error_reraises(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        exc = Neo4jClientError("SomeOtherError: something went wrong")
+        with (
+            _patch_min_count(50),
+            patch(
+                "api.routers.taste.get_taste_heatmap",
+                new_callable=AsyncMock,
+                side_effect=exc,
+            ),
+        ):
+            resp = test_client.get("/api/user/taste/fingerprint", headers=_auth_headers())
+        assert resp.status_code == 500
+
+    def test_blindspots_timeout_returns_504(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        exc = Neo4jClientError("TransactionTimedOut: query timed out")
+        with (
+            _patch_min_count(50),
+            patch(
+                "api.routers.taste.get_blind_spots",
+                new_callable=AsyncMock,
+                side_effect=exc,
+            ),
+        ):
+            resp = test_client.get("/api/user/taste/blindspots", headers=_auth_headers())
+        assert resp.status_code == 504
+        assert "timed out" in resp.json()["error"]
+
+    def test_blindspots_non_timeout_error_reraises(self, test_client: TestClient) -> None:
+        from neo4j.exceptions import ClientError as Neo4jClientError
+
+        exc = Neo4jClientError("SomeOtherError: something went wrong")
+        with (
+            _patch_min_count(50),
+            patch(
+                "api.routers.taste.get_blind_spots",
+                new_callable=AsyncMock,
+                side_effect=exc,
+            ),
+        ):
+            resp = test_client.get("/api/user/taste/blindspots", headers=_auth_headers())
+        assert resp.status_code == 500
+
+
 class TestTasteNoAuth:
     def test_heatmap_requires_auth(self, test_client: TestClient) -> None:
         resp = test_client.get("/api/user/taste/heatmap")
