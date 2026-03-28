@@ -73,6 +73,13 @@ class TestDashboardAPI:
         assert response.status_code == 200
         assert "javascript" in response.headers["content-type"]
 
+    def test_admin_page(self, test_client: TestClient) -> None:
+        """Test that /admin serves admin.html directly."""
+        response = test_client.get("/admin")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+        assert "Admin" in response.text
+
     def test_services_endpoint_without_dashboard(
         self,
         mock_dashboard_config: Any,
