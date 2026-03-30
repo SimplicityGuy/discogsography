@@ -268,7 +268,7 @@ async def check_file_completion(
     return False
 
 
-def enrich_artist(tx: Any, record: dict[str, Any]) -> bool:
+async def enrich_artist(tx: Any, record: dict[str, Any]) -> bool:
     """Enrich an existing Artist node with MusicBrainz metadata.
 
     If discogs_artist_id is None, skip — entity has no Discogs match.
@@ -278,7 +278,7 @@ def enrich_artist(tx: Any, record: dict[str, Any]) -> bool:
         enrichment_stats["entities_skipped_no_discogs_match"] += 1
         return True  # Deliberately skipped, not an error
 
-    result = tx.run(
+    result = await tx.run(
         "MATCH (a:Artist {id: $discogs_id}) "
         "SET a.mbid = $mbid, "
         "    a.mb_type = $mb_type, "
@@ -303,7 +303,7 @@ def enrich_artist(tx: Any, record: dict[str, Any]) -> bool:
         mb_disambiguation=record.get("disambiguation"),
         mb_updated_at=datetime.now(UTC).isoformat(),
     )
-    matched = result.single()
+    matched = await result.single()
     if matched:
         enrichment_stats["entities_enriched"] += 1
     else:
@@ -312,12 +312,12 @@ def enrich_artist(tx: Any, record: dict[str, Any]) -> bool:
     # Create relationship edges if relations are present
     relations = record.get("relations", [])
     if relations and matched:
-        create_relationship_edges(tx, discogs_id, relations)
+        await create_relationship_edges(tx, discogs_id, relations)
 
     return True
 
 
-def enrich_label(tx: Any, record: dict[str, Any]) -> bool:
+async def enrich_label(tx: Any, record: dict[str, Any]) -> bool:
     """Enrich an existing Label node with MusicBrainz metadata.
 
     If discogs_label_id is None, skip — entity has no Discogs match.
@@ -327,7 +327,7 @@ def enrich_label(tx: Any, record: dict[str, Any]) -> bool:
         enrichment_stats["entities_skipped_no_discogs_match"] += 1
         return True
 
-    result = tx.run(
+    result = await tx.run(
         "MATCH (l:Label {id: $discogs_id}) "
         "SET l.mbid = $mbid, "
         "    l.mb_type = $mb_type, "
@@ -346,7 +346,7 @@ def enrich_label(tx: Any, record: dict[str, Any]) -> bool:
         mb_area=record.get("area"),
         mb_updated_at=datetime.now(UTC).isoformat(),
     )
-    matched = result.single()
+    matched = await result.single()
     if matched:
         enrichment_stats["entities_enriched"] += 1
     else:
@@ -355,7 +355,7 @@ def enrich_label(tx: Any, record: dict[str, Any]) -> bool:
     return True
 
 
-def enrich_release(tx: Any, record: dict[str, Any]) -> bool:
+async def enrich_release(tx: Any, record: dict[str, Any]) -> bool:
     """Enrich an existing Release node with MusicBrainz metadata.
 
     If discogs_release_id is None, skip — entity has no Discogs match.
@@ -365,7 +365,7 @@ def enrich_release(tx: Any, record: dict[str, Any]) -> bool:
         enrichment_stats["entities_skipped_no_discogs_match"] += 1
         return True
 
-    result = tx.run(
+    result = await tx.run(
         "MATCH (r:Release {id: $discogs_id}) "
         "SET r.mbid = $mbid, "
         "    r.mb_barcode = $mb_barcode, "
@@ -378,7 +378,7 @@ def enrich_release(tx: Any, record: dict[str, Any]) -> bool:
         mb_status=record.get("status"),
         mb_updated_at=datetime.now(UTC).isoformat(),
     )
-    matched = result.single()
+    matched = await result.single()
     if matched:
         enrichment_stats["entities_enriched"] += 1
     else:
@@ -387,7 +387,7 @@ def enrich_release(tx: Any, record: dict[str, Any]) -> bool:
     return True
 
 
-def create_relationship_edges(
+async def create_relationship_edges(
     tx: Any,
     source_discogs_id: int,
     relations: list[dict[str, Any]],
@@ -416,7 +416,7 @@ def create_relationship_edges(
             continue
 
         # Safe: edge_type comes from MB_RELATIONSHIP_MAP, not user input
-        tx.run(
+        result = await tx.run(
             f"MATCH (a:Artist {{id: $source_id}}) "  # noqa: S608
             f"MATCH (b:Artist {{id: $target_id}}) "
             f"MERGE (a)-[r:{edge_type}]->(b) "
@@ -424,10 +424,11 @@ def create_relationship_edges(
             source_id=source_discogs_id,
             target_id=target_discogs_id,
         )
+        await result.consume()
         enrichment_stats["relationships_created"] += 1
 
 
-def enrich_release_group(tx: Any, record: dict[str, Any]) -> bool:
+async def enrich_release_group(tx: Any, record: dict[str, Any]) -> bool:
     """Enrich an existing Master node with MusicBrainz release-group metadata.
 
     If discogs_master_id is None, skip — entity has no Discogs match.
@@ -437,7 +438,7 @@ def enrich_release_group(tx: Any, record: dict[str, Any]) -> bool:
         enrichment_stats["entities_skipped_no_discogs_match"] += 1
         return True
 
-    result = tx.run(
+    result = await tx.run(
         "MATCH (m:Master {id: $discogs_id}) "
         "SET m.mbid = $mbid, "
         "    m.mb_type = $mb_type, "
@@ -454,7 +455,7 @@ def enrich_release_group(tx: Any, record: dict[str, Any]) -> bool:
         mb_disambiguation=record.get("disambiguation"),
         mb_updated_at=datetime.now(UTC).isoformat(),
     )
-    matched = result.single()
+    matched = await result.single()
     if matched:
         enrichment_stats["entities_enriched"] += 1
     else:
@@ -501,8 +502,8 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
 
             async with graph.session(database="neo4j") as session:
 
-                def tx_fn(tx: Any) -> bool:
-                    return bool(enrich_fn(tx, body))
+                async def tx_fn(tx: Any) -> bool:
+                    return bool(await enrich_fn(tx, body))
 
                 await session.execute_write(tx_fn)
 
