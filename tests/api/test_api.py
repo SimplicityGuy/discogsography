@@ -1061,3 +1061,69 @@ class TestBlindRegistration:
         data = response.json()
         assert "id" not in data
         assert "hashed_password" not in data
+
+
+class TestVerifyDiscogsOAuthStateBinding:
+    """Tests for OAuth state user_id binding (lines 538-548 of api.py)."""
+
+    def test_verify_discogs_rejects_different_user(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Returns 403 when the OAuth state was initiated by a different user."""
+        import json as _json
+
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ckey"},
+            {"key": "discogs_consumer_secret", "value": "csecret"},
+        ]
+        # State data with a different user_id than TEST_USER_ID
+        mock_redis.get.return_value = _json.dumps({"secret": "reqsecret", "user_id": "different-user-id"})
+
+        response = test_client.post(
+            "/api/oauth/verify/discogs",
+            headers=auth_headers,
+            json={"state": "reqtok", "oauth_verifier": "verif123"},
+        )
+        assert response.status_code == 403
+        assert "different user" in response.json()["detail"].lower()
+
+    def test_verify_discogs_backwards_compat_raw_secret(
+        self,
+        test_client: TestClient,
+        mock_cur: AsyncMock,
+        mock_redis: AsyncMock,
+        auth_headers: dict[str, str],
+    ) -> None:
+        """Raw string (not JSON) in Redis is treated as secret with no user binding."""
+        mock_cur.fetchall.return_value = [
+            {"key": "discogs_consumer_key", "value": "ckey"},
+            {"key": "discogs_consumer_secret", "value": "csecret"},
+        ]
+        mock_cur.fetchone.return_value = {"id": 1}
+        # Raw string — not JSON, triggers backwards compat path
+        mock_redis.get.return_value = "plain-secret-string"
+
+        with (
+            patch(
+                "api.api.exchange_oauth_verifier",
+                new=AsyncMock(return_value={"oauth_token": "acctok", "oauth_token_secret": "accsec"}),
+            ),
+            patch(
+                "api.api.fetch_discogs_identity",
+                new=AsyncMock(return_value={"username": "discogs_user", "id": 12345}),
+            ),
+        ):
+            response = test_client.post(
+                "/api/oauth/verify/discogs",
+                headers=auth_headers,
+                json={"state": "reqtok", "oauth_verifier": "verif123"},
+            )
+
+        # Should succeed — raw string backwards compat skips user_id check
+        assert response.status_code == 200
+        data = response.json()
+        assert data["connected"] is True

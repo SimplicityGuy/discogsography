@@ -244,3 +244,13 @@ class TestRarityScoresEndpoint:
             assert response.status_code == 503
         finally:
             ic_router._neo4j = original
+
+
+class TestAnniversariesValidation:
+    """Tests for milestones query parameter validation (lines 82-83)."""
+
+    def test_anniversaries_invalid_milestones_returns_422(self, test_client: TestClient) -> None:
+        """Returns 422 when milestones contains non-integer values."""
+        response = test_client.get("/api/internal/insights/anniversaries?year=2025&month=3&milestones=25,abc,50")
+        assert response.status_code == 422
+        assert "milestones" in response.json()["error"].lower()
