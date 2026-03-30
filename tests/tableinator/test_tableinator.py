@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+from datetime import UTC
 import json
 import signal
 import time
@@ -1725,7 +1726,13 @@ class TestPurgeStaleRows:
 
         mock_cursor.execute.assert_called_once()
         call_args = mock_cursor.execute.call_args
-        assert "2026-01-01T00:00:00Z" in call_args[0][1]
+        param = call_args[0][1]
+        # After fix, started_at is parsed to a datetime with UTC timezone
+        if isinstance(param, tuple):
+            param = param[0]
+        from datetime import datetime
+
+        assert param == datetime(2026, 1, 1, tzinfo=UTC)
 
         tableinator.tableinator.connection_pool = None
 

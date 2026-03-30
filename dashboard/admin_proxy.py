@@ -13,6 +13,7 @@ import re
 
 from fastapi import APIRouter, Query, Request, Response
 import httpx
+from starlette.responses import JSONResponse
 import structlog
 
 
@@ -91,7 +92,10 @@ async def proxy_login(request: Request) -> Response:
     """Proxy login requests to the API service."""
     url = _build_url("/api/admin/auth/login")
     headers = _auth_headers(request)
-    sanitised_body = await _validated_json_body(request)
+    try:
+        sanitised_body = await _validated_json_body(request)
+    except json.JSONDecodeError:
+        return JSONResponse(content={"detail": "Malformed JSON in request body"}, status_code=400)
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             if sanitised_body:
@@ -154,7 +158,10 @@ async def proxy_trigger(request: Request) -> Response:
     """Proxy extraction trigger requests to the API service."""
     url = _build_url("/api/admin/extractions/trigger")
     headers = _auth_headers(request)
-    sanitised_body = await _validated_json_body(request)
+    try:
+        sanitised_body = await _validated_json_body(request)
+    except json.JSONDecodeError:
+        return JSONResponse(content={"detail": "Malformed JSON in request body"}, status_code=400)
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             if sanitised_body:
@@ -173,7 +180,10 @@ async def proxy_trigger_musicbrainz(request: Request) -> Response:
     """Proxy MusicBrainz extraction trigger requests to the API service."""
     url = _build_url("/api/admin/extractions/trigger")
     headers = _auth_headers(request)
-    sanitised_body = await _validated_json_body(request)
+    try:
+        sanitised_body = await _validated_json_body(request)
+    except json.JSONDecodeError:
+        return JSONResponse(content={"detail": "Malformed JSON in request body"}, status_code=400)
     body_dict: dict = json.loads(sanitised_body) if sanitised_body else {}
     body_dict["source"] = "musicbrainz"
     payload = json.dumps(body_dict, separators=(",", ":")).encode()

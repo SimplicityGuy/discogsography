@@ -173,7 +173,7 @@ pub async fn process_discogs_data(
         let record_counts = HashMap::new();
         match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
             Ok(mq) => {
-                if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::all()).await {
+                if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
                     error!("❌ Failed to send extraction_complete message: {}", e);
                 }
                 let _ = mq.close().await;
@@ -279,7 +279,7 @@ pub async fn process_discogs_data(
         drop(s); // Release read lock before async MQ operations
         match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
             Ok(mq) => {
-                if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::all()).await {
+                if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
                     error!("❌ Failed to send extraction_complete message: {}", e);
                     success = false;
                 }
@@ -903,7 +903,7 @@ pub async fn process_musicbrainz_data(
         .context("Failed to connect to message queue for MusicBrainz")?;
 
     // Declare exchanges for MusicBrainz data types
-    for data_type in DataType::musicbrainz_types() {
+    for data_type in DataType::musicbrainz() {
         mq.setup_exchange(data_type).await?;
     }
 
@@ -1008,8 +1008,10 @@ pub async fn process_musicbrainz_data(
         // Update state marker with results from batcher
         state_marker = batcher_state_marker.lock().await.clone();
 
-        // Mark file complete
-        state_marker.complete_file_processing(file_name, total_count);
+        // Mark file complete only on success; on failure, save current state without marking complete
+        if success {
+            state_marker.complete_file_processing(file_name, total_count);
+        }
         state_marker.save(&marker_path).await?;
 
         // Update shared state
@@ -1030,7 +1032,7 @@ pub async fn process_musicbrainz_data(
     }
 
     // Send extraction_complete to MusicBrainz exchanges only (no masters)
-    let mb_types = DataType::musicbrainz_types();
+    let mb_types = DataType::musicbrainz();
     if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &mb_types).await {
         error!("❌ Failed to send extraction_complete: {}", e);
         success = false;

@@ -212,6 +212,8 @@ class ResilientPostgreSQLPool:
             if conn and not conn.closed and not self._closed:
                 try:
                     self.connections.put_nowait(conn)
+                    with self._lock:
+                        self.active_connections = max(0, self.active_connections - 1)
                 except Full:
                     # Pool is full, close connection
                     with contextlib.suppress(Exception):
@@ -338,7 +340,6 @@ class AsyncPostgreSQLPool:
                 conn = await self._create_connection()
                 if conn:
                     await self.connections.put(conn)
-                    self.active_connections += 1
             except asyncio.QueueFull:
                 break
             except Exception as e:

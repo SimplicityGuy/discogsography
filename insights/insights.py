@@ -192,7 +192,7 @@ async def top_artists(
     if not _pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
-    cache_key = f"insights:top-artists:{limit}"
+    cache_key = f"insights:top-artists:{limit}:{metric}"
     if _cache:
         cached = await _cache.get(cache_key)
         if cached is not None:

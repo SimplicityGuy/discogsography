@@ -64,6 +64,17 @@ async def _get_current_user(
                     detail="Token has been revoked",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+        # Check if password was changed after token was issued
+        if user_id and _redis:
+            pw_changed = await _redis.get(f"password_changed:{user_id}")
+            if pw_changed:
+                iat = payload.get("iat")
+                if iat and int(iat) < int(pw_changed):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Token has been revoked",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
         return payload
     except ValueError as exc:
         raise HTTPException(
@@ -142,6 +153,7 @@ async def trigger_sync(
     # Set per-user cooldown to prevent rapid re-triggers
     if _redis:
         await _redis.setex(f"sync:cooldown:{user_id}", 600, "1")
+        await _redis.delete(f"sync:lock:{user_id}")
 
     logger.info("🔄 Sync triggered", user_id=user_id, sync_id=sync_id)
     return JSONResponse(content={"sync_id": sync_id, "status": "started"}, status_code=status.HTTP_202_ACCEPTED)

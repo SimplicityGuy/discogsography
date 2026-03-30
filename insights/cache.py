@@ -50,7 +50,7 @@ class InsightsCache:
                 if keys:
                     await self._redis.delete(*keys)
                     deleted += len(keys)
-                if cursor == 0:
+                if int(cursor) == 0:
                     break
             if deleted:
                 logger.info("🔄 Cache invalidated", keys_deleted=deleted)

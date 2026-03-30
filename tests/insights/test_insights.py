@@ -111,10 +111,10 @@ class TestTopArtistsCacheIntegration:
         mock_cache.get.return_value = None
         response = test_client_with_cache.get("/api/insights/top-artists?limit=10")
         assert response.status_code == 200
-        mock_cache.get.assert_called_once_with("insights:top-artists:10")
+        mock_cache.get.assert_called_once_with("insights:top-artists:10:centrality")
         mock_cache.set.assert_called_once()
         key = mock_cache.set.call_args[0][0]
-        assert key == "insights:top-artists:10"
+        assert key == "insights:top-artists:10:centrality"
 
     def test_cache_hit_returns_cached_data(
         self,

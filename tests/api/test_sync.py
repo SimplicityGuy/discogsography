@@ -306,8 +306,10 @@ class TestSyncRedisCooldown:
     def test_cooldown_key_uses_user_id(self, test_client: TestClient, mock_redis: AsyncMock, auth_headers: dict[str, str]) -> None:
         mock_redis.get.return_value = "1"
         test_client.post("/api/sync", headers=auth_headers)
-        mock_redis.get.assert_awaited_once()
-        call_key = mock_redis.get.call_args[0][0]
+        # get is called for password_changed check and cooldown check
+        cooldown_calls = [c for c in mock_redis.get.call_args_list if "sync:cooldown:" in str(c)]
+        assert len(cooldown_calls) == 1
+        call_key = cooldown_calls[0][0][0]
         assert call_key == f"sync:cooldown:{TEST_USER_ID}"
 
     def test_sets_cooldown_after_trigger(

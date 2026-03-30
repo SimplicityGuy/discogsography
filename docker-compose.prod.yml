@@ -210,6 +210,21 @@ services:
         delay: 5s
         max_attempts: 3
 
+  extractor-musicbrainz:
+    restart: always
+    environment:
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
+    secrets:
+      - rabbitmq_username
+      - rabbitmq_password
+    deploy:
+      replicas: 1
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+
   graphinator:
     restart: always
     environment:
@@ -227,6 +242,40 @@ services:
         max_attempts: 3
 
   tableinator:
+    restart: always
+    environment:
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      POSTGRES_USERNAME_FILE: /run/secrets/postgres_username
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
+    secrets:
+      - rabbitmq_username
+      - rabbitmq_password
+      - postgres_username
+      - postgres_password
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+
+  brainzgraphinator:
+    restart: always
+    environment:
+      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
+      RABBITMQ_PASSWORD_FILE: /run/secrets/rabbitmq_password
+      RABBITMQ_USERNAME_FILE: /run/secrets/rabbitmq_username
+    secrets:
+      - neo4j_password
+      - rabbitmq_username
+      - rabbitmq_password
+    deploy:
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+
+  brainztableinator:
     restart: always
     environment:
       POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
@@ -266,12 +315,6 @@ services:
 
   explore:
     restart: always
-    environment:
-      NEO4J_HOST: neo4j
-      NEO4J_PASSWORD_FILE: /run/secrets/neo4j_password
-      NEO4J_USERNAME: ${NEO4J_USER:-neo4j}
-    secrets:
-      - neo4j_password
     deploy:
       restart_policy:
         condition: any

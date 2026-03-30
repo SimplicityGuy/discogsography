@@ -20,9 +20,13 @@ impl DataType {
         vec![DataType::Artists, DataType::Labels, DataType::Masters, DataType::ReleaseGroups, DataType::Releases]
     }
 
-    /// Get data types supported by MusicBrainz (no Masters)
-    #[allow(dead_code)]
-    pub fn musicbrainz_types() -> Vec<DataType> {
+    /// Get data types for Discogs extraction (no ReleaseGroups)
+    pub fn discogs() -> Vec<DataType> {
+        vec![DataType::Artists, DataType::Labels, DataType::Masters, DataType::Releases]
+    }
+
+    /// Get data types for MusicBrainz extraction (no Masters)
+    pub fn musicbrainz() -> Vec<DataType> {
         vec![DataType::Artists, DataType::Labels, DataType::ReleaseGroups, DataType::Releases]
     }
 

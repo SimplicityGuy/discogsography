@@ -76,8 +76,8 @@ class TestCacheInvalidateAll:
     async def test_handles_multiple_scan_pages(self, cache: InsightsCache, mock_redis: AsyncMock) -> None:
         # First scan returns cursor=42 (not done), second returns cursor=0 (done)
         mock_redis.scan.side_effect = [
-            (42, ["insights:key1"]),
-            (0, ["insights:key2"]),
+            ("42", ["insights:key1"]),
+            ("0", ["insights:key2"]),
         ]
         await cache.invalidate_all()
         assert mock_redis.delete.call_count == 2

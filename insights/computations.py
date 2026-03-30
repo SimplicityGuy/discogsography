@@ -92,7 +92,10 @@ async def compute_and_store_artist_centrality(client: httpx.AsyncClient, pool: A
         return len(results)
     except Exception as e:
         logger.error("❌ Artist centrality computation failed", error=str(e))
-        await _log_computation(pool, "artist_centrality", "failed", started_at, error_message=str(e))
+        try:
+            await _log_computation(pool, "artist_centrality", "failed", started_at, error_message=str(e))
+        except Exception as log_err:
+            logger.warning("⚠️ Failed to log computation error", error=str(log_err))
         raise
 
 
@@ -121,7 +124,10 @@ async def compute_and_store_genre_trends(client: httpx.AsyncClient, pool: Any) -
         return len(results)
     except Exception as e:
         logger.error("❌ Genre trends computation failed", error=str(e))
-        await _log_computation(pool, "genre_trends", "failed", started_at, error_message=str(e))
+        try:
+            await _log_computation(pool, "genre_trends", "failed", started_at, error_message=str(e))
+        except Exception as log_err:
+            logger.warning("⚠️ Failed to log computation error", error=str(log_err))
         raise
 
 
@@ -164,7 +170,10 @@ async def compute_and_store_label_longevity(client: httpx.AsyncClient, pool: Any
         return len(results)
     except Exception as e:
         logger.error("❌ Label longevity computation failed", error=str(e))
-        await _log_computation(pool, "label_longevity", "failed", started_at, error_message=str(e))
+        try:
+            await _log_computation(pool, "label_longevity", "failed", started_at, error_message=str(e))
+        except Exception as log_err:
+            logger.warning("⚠️ Failed to log computation error", error=str(log_err))
         raise
 
 
@@ -222,7 +231,10 @@ async def compute_and_store_anniversaries(
         return rows_written
     except Exception as e:
         logger.error("❌ Anniversaries computation failed", error=str(e))
-        await _log_computation(pool, "anniversaries", "failed", started_at, error_message=str(e))
+        try:
+            await _log_computation(pool, "anniversaries", "failed", started_at, error_message=str(e))
+        except Exception as log_err:
+            logger.warning("⚠️ Failed to log computation error", error=str(log_err))
         raise
 
 
@@ -263,7 +275,10 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
         return len(results)
     except Exception as e:
         logger.error("❌ Data completeness computation failed", error=str(e))
-        await _log_computation(pool, "data_completeness", "failed", started_at, error_message=str(e))
+        try:
+            await _log_computation(pool, "data_completeness", "failed", started_at, error_message=str(e))
+        except Exception as log_err:
+            logger.warning("⚠️ Failed to log computation error", error=str(log_err))
         raise
 
 
@@ -309,7 +324,10 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
         return len(results)
     except Exception as e:
         logger.error("❌ Release rarity computation failed", error=str(e))
-        await _log_computation(pool, "release_rarity", "failed", started_at, error_message=str(e))
+        try:
+            await _log_computation(pool, "release_rarity", "failed", started_at, error_message=str(e))
+        except Exception as log_err:
+            logger.warning("⚠️ Failed to log computation error", error=str(log_err))
         raise
 
 

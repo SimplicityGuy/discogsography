@@ -292,11 +292,13 @@ async def enrich_artist(tx: Any, record: dict[str, Any]) -> bool:
         "    a.mb_updated_at = $mb_updated_at "
         "RETURN a.id AS matched_id",
         discogs_id=discogs_id,
-        mbid=record.get("mbid"),
-        mb_type=record.get("type"),
+        mbid=record.get("mbid", record.get("id")),
+        mb_type=record.get("mb_type", record.get("type")),
         mb_gender=record.get("gender"),
-        mb_begin_date=record.get("begin_date"),
-        mb_end_date=record.get("end_date"),
+        mb_begin_date=record.get(
+            "begin_date", (record.get("life_span") or {}).get("begin")
+        ),
+        mb_end_date=record.get("end_date", (record.get("life_span") or {}).get("end")),
         mb_area=record.get("area"),
         mb_begin_area=record.get("begin_area"),
         mb_end_area=record.get("end_area"),
@@ -338,11 +340,13 @@ async def enrich_label(tx: Any, record: dict[str, Any]) -> bool:
         "    l.mb_updated_at = $mb_updated_at "
         "RETURN l.id AS matched_id",
         discogs_id=discogs_id,
-        mbid=record.get("mbid"),
-        mb_type=record.get("type"),
+        mbid=record.get("mbid", record.get("id")),
+        mb_type=record.get("mb_type", record.get("type")),
         mb_label_code=record.get("label_code"),
-        mb_begin_date=record.get("begin_date"),
-        mb_end_date=record.get("end_date"),
+        mb_begin_date=record.get(
+            "begin_date", (record.get("life_span") or {}).get("begin")
+        ),
+        mb_end_date=record.get("end_date", (record.get("life_span") or {}).get("end")),
         mb_area=record.get("area"),
         mb_updated_at=datetime.now(UTC).isoformat(),
     )
@@ -373,7 +377,7 @@ async def enrich_release(tx: Any, record: dict[str, Any]) -> bool:
         "    r.mb_updated_at = $mb_updated_at "
         "RETURN r.id AS matched_id",
         discogs_id=discogs_id,
-        mbid=record.get("mbid"),
+        mbid=record.get("mbid", record.get("id")),
         mb_barcode=record.get("barcode"),
         mb_status=record.get("status"),
         mb_updated_at=datetime.now(UTC).isoformat(),
@@ -448,8 +452,8 @@ async def enrich_release_group(tx: Any, record: dict[str, Any]) -> bool:
         "    m.mb_updated_at = $mb_updated_at "
         "RETURN m.id AS matched_id",
         discogs_id=discogs_id,
-        mbid=record.get("mbid"),
-        mb_type=record.get("type"),
+        mbid=record.get("mbid", record.get("id")),
+        mb_type=record.get("mb_type", record.get("type")),
         mb_secondary_types=record.get("secondary_types", []),
         mb_first_release_date=record.get("first_release_date"),
         mb_disambiguation=record.get("disambiguation"),
@@ -763,6 +767,8 @@ async def _recover_consumers() -> None:
             await temp_connection.close()
         except Exception:  # nosec: B110
             pass
+        active_connection = None
+        active_channel = None
 
 
 async def main() -> None:

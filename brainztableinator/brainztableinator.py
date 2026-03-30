@@ -427,6 +427,8 @@ async def _recover_consumers() -> None:
             await temp_connection.close()
         except Exception:  # nosec: B110
             pass
+        active_connection = None
+        active_channel = None
 
 
 async def _insert_relationship(
@@ -498,9 +500,11 @@ async def process_artist(conn: Any, record: dict[str, Any]) -> None:
                 record.get("sort_name", ""),
                 record.get("mb_type", ""),
                 record.get("gender", ""),
-                record.get("begin_date"),
-                record.get("end_date"),
-                record.get("ended", False),
+                record.get("begin_date", (record.get("life_span") or {}).get("begin")),
+                record.get("end_date", (record.get("life_span") or {}).get("end")),
+                record.get(
+                    "ended", (record.get("life_span") or {}).get("ended", False)
+                ),
                 record.get("area", ""),
                 record.get("begin_area", ""),
                 record.get("end_area", ""),
@@ -543,9 +547,11 @@ async def process_label(conn: Any, record: dict[str, Any]) -> None:
                 record.get("name", ""),
                 record.get("mb_type", ""),
                 record.get("label_code"),
-                record.get("begin_date"),
-                record.get("end_date"),
-                record.get("ended", False),
+                record.get("begin_date", (record.get("life_span") or {}).get("begin")),
+                record.get("end_date", (record.get("life_span") or {}).get("end")),
+                record.get(
+                    "ended", (record.get("life_span") or {}).get("ended", False)
+                ),
                 record.get("area", ""),
                 record.get("disambiguation", ""),
                 record.get("discogs_label_id"),
