@@ -89,7 +89,7 @@ class CircuitBreaker:
     async def call_async(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute async function with circuit breaker protection."""
         if self._async_lock is None:
-            self._async_lock = asyncio.Lock()
+            self._async_lock = asyncio.Lock()  # Safe: first call always from single task in asyncio
         execute_under_lock = False
         async with self._async_lock:
             if self.state == CircuitState.OPEN:

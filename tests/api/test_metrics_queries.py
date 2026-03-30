@@ -87,6 +87,10 @@ class TestHelpers:
     def test_bucket_to_trunc_unit_hours(self):
         assert _bucket_to_trunc_unit("6 hours") == "hour"
 
+    def test_bucket_to_trunc_unit_invalid(self):
+        with pytest.raises(ValueError, match="Invalid trunc unit"):
+            _bucket_to_trunc_unit("1 foobar")
+
     def test_round_or_int_raw(self):
         assert _round_or_int(42.7, is_raw=True) == 42
         assert isinstance(_round_or_int(42.7, is_raw=True), int)

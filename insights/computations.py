@@ -78,6 +78,7 @@ async def compute_and_store_artist_centrality(client: httpx.AsyncClient, pool: A
 
         async with pool.connection() as conn, conn.cursor() as cursor:
             cursor = cast("Any", cursor)
+            await cursor.execute("BEGIN")
             await cursor.execute("DELETE FROM insights.artist_centrality")
             for rank, row in enumerate(results, 1):
                 await cursor.execute(
@@ -87,6 +88,7 @@ async def compute_and_store_artist_centrality(client: httpx.AsyncClient, pool: A
                     """,
                     (rank, row["artist_id"], row["artist_name"], row["edge_count"]),
                 )
+            await cursor.execute("COMMIT")
         logger.info("💾 Artist centrality stored", count=len(results))
         await _log_computation(pool, "artist_centrality", "completed", started_at, len(results))
         return len(results)
@@ -110,6 +112,7 @@ async def compute_and_store_genre_trends(client: httpx.AsyncClient, pool: Any) -
 
         async with pool.connection() as conn, conn.cursor() as cursor:
             cursor = cast("Any", cursor)
+            await cursor.execute("BEGIN")
             await cursor.execute("DELETE FROM insights.genre_trends")
             for row in results:
                 await cursor.execute(
@@ -119,6 +122,7 @@ async def compute_and_store_genre_trends(client: httpx.AsyncClient, pool: Any) -
                     """,
                     (row["genre"], row["decade"], row["release_count"]),
                 )
+            await cursor.execute("COMMIT")
         logger.info("💾 Genre trends stored", count=len(results))
         await _log_computation(pool, "genre_trends", "completed", started_at, len(results))
         return len(results)
@@ -143,6 +147,7 @@ async def compute_and_store_label_longevity(client: httpx.AsyncClient, pool: Any
         current_year = datetime.now(UTC).year
         async with pool.connection() as conn, conn.cursor() as cursor:
             cursor = cast("Any", cursor)
+            await cursor.execute("BEGIN")
             await cursor.execute("DELETE FROM insights.label_longevity")
             for rank, row in enumerate(results, 1):
                 still_active = row["last_year"] >= current_year - 2
@@ -165,6 +170,7 @@ async def compute_and_store_label_longevity(client: httpx.AsyncClient, pool: Any
                         still_active,
                     ),
                 )
+            await cursor.execute("COMMIT")
         logger.info("💾 Label longevity stored", count=len(results))
         await _log_computation(pool, "label_longevity", "completed", started_at, len(results))
         return len(results)
@@ -206,6 +212,7 @@ async def compute_and_store_anniversaries(
         rows_written = 0
         async with pool.connection() as conn, conn.cursor() as cursor:
             cursor = cast("Any", cursor)
+            await cursor.execute("BEGIN")
             await cursor.execute(
                 "DELETE FROM insights.monthly_anniversaries WHERE computed_year = %s AND computed_month = %s",
                 (year, month),
@@ -226,6 +233,7 @@ async def compute_and_store_anniversaries(
                         (row["master_id"], row["title"], row.get("artist_name"), row["release_year"], anniversary, month, year),
                     )
                     rows_written += 1
+            await cursor.execute("COMMIT")
         logger.info("💾 Monthly anniversaries stored", count=rows_written, year=year, month=month)
         await _log_computation(pool, "anniversaries", "completed", started_at, rows_written)
         return rows_written
@@ -251,6 +259,7 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
 
         async with pool.connection() as conn, conn.cursor() as cursor:
             cursor = cast("Any", cursor)
+            await cursor.execute("BEGIN")
             await cursor.execute("DELETE FROM insights.data_completeness")
             for row in results:
                 await cursor.execute(
@@ -270,6 +279,7 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
                         row["completeness_pct"],
                     ),
                 )
+            await cursor.execute("COMMIT")
         logger.info("💾 Data completeness stored", count=len(results))
         await _log_computation(pool, "data_completeness", "completed", started_at, len(results))
         return len(results)
@@ -294,6 +304,7 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
 
         async with pool.connection() as conn, conn.cursor() as cursor:
             cursor = cast("Any", cursor)
+            await cursor.execute("BEGIN")
             await cursor.execute("DELETE FROM insights.release_rarity")
             for row in results:
                 await cursor.execute(
@@ -319,6 +330,7 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
                         row.get("graph_isolation"),
                     ),
                 )
+            await cursor.execute("COMMIT")
         logger.info("💾 Release rarity scores stored", count=len(results))
         await _log_computation(pool, "release_rarity", "completed", started_at, len(results))
         return len(results)

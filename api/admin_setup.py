@@ -28,14 +28,15 @@ def _build_conninfo() -> str:
 
 
 def add_admin(conninfo: str, email: str, password: str) -> None:
-    """Insert a new admin account into dashboard_admins."""
+    """Insert or promote an admin account in the users table."""
     hashed = _hash_password(password)
 
     upsert_sql = """
-        INSERT INTO dashboard_admins (email, hashed_password)
-        VALUES (%s, %s)
+        INSERT INTO users (email, hashed_password, is_admin, is_active)
+        VALUES (%s, %s, TRUE, TRUE)
         ON CONFLICT (email) DO UPDATE SET
             hashed_password = EXCLUDED.hashed_password,
+            is_admin = TRUE,
             updated_at = NOW()
     """
     with psycopg.connect(conninfo) as conn, conn.cursor() as cur:
@@ -46,7 +47,7 @@ def add_admin(conninfo: str, email: str, password: str) -> None:
 def list_admins(conninfo: str) -> None:
     """List all admin accounts (email + active status)."""
     with psycopg.connect(conninfo) as conn, conn.cursor() as cur:
-        cur.execute("SELECT email, is_active, created_at FROM dashboard_admins ORDER BY created_at")
+        cur.execute("SELECT email, is_active, created_at FROM users WHERE is_admin = TRUE ORDER BY created_at")
         rows = cur.fetchall()
 
     if not rows:

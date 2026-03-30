@@ -29,8 +29,11 @@ services:
   rabbitmq:
     restart: always
     environment:
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
-      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS_FILE: /run/secrets/rabbitmq_password
+      RABBITMQ_DEFAULT_USER_FILE: /run/secrets/rabbitmq_username
+    secrets:
+      - rabbitmq_password
+      - rabbitmq_username
 
   postgres:
     restart: always

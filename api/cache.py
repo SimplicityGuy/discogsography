@@ -52,7 +52,7 @@ class RecommendCache:
                     cursor, keys = await self._redis.scan(cursor=int(cursor), match=pattern, count=100)
                     if keys:
                         await self._redis.delete(*keys)
-                    if cursor == 0:
+                    if str(cursor) == "0":
                         break
         except Exception:
             logger.debug("⚠️ Cache invalidation failed", user_id=user_id)

@@ -417,7 +417,7 @@ async def nlq_query(
 # ---------------------------------------------------------------------------
 
 
-_VALID_TRANSPORTS = {"stdio", "sse", "streamable-http"}
+_VALID_TRANSPORTS = {"stdio", "streamable-http"}
 
 
 def main() -> None:

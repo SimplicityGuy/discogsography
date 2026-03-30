@@ -465,8 +465,20 @@ class StateMarker:
 
 
 def _extract_data_type(filename: str) -> str | None:
-    """Extract data type from filename (e.g., 'discogs_20260101_artists.xml.gz' -> 'artists')."""
+    """Extract data type from filename.
+
+    Supports both Discogs (e.g., 'discogs_20260101_artists.xml.gz' -> 'artists')
+    and MusicBrainz (e.g., 'artist.jsonl.gz' -> 'artist') naming conventions.
+    """
+    if not filename:
+        return None
     try:
-        return filename.split("_", maxsplit=2)[2].split(".", maxsplit=1)[0]
+        parts = filename.split("_", maxsplit=2)
+        if len(parts) >= 3:
+            # Discogs format: discogs_YYYYMMDD_artists.xml.gz
+            return parts[2].split(".", maxsplit=1)[0]
+        # MusicBrainz format: artist.jsonl.gz or release-group.jsonl.gz
+        result = filename.split(".", maxsplit=1)[0]
+        return result or None
     except (IndexError, AttributeError):
         return None

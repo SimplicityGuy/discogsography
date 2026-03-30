@@ -725,6 +725,17 @@ class TestGetExploreTraversal:
         cypher = call_args[0][0]
         assert "*1..2" in cypher
 
+    @pytest.mark.asyncio
+    async def test_get_explore_traversal_rejects_invalid_entity_type(self) -> None:
+        """Invalid entity_type returns [] without making any Neo4j call."""
+        from api.queries.recommend_queries import get_explore_traversal
+
+        driver = _make_driver(records=[])
+        result = await get_explore_traversal(driver, "invalid", "some_id")
+        assert result == []
+        # Should NOT have called Neo4j at all
+        driver.session.return_value.__aenter__.return_value.run.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # score_discoveries

@@ -16,9 +16,9 @@ def get_message_from_queue(
     username: str | None = None,
     password: str | None = None,
 ) -> dict[str, Any] | None:
+    """Peek at a message from the queue without consuming it."""
     username = username or os.environ.get("RABBITMQ_USERNAME", "discogsography")
     password = password or get_secret("RABBITMQ_PASSWORD", "")
-    """Peek at a message from the queue without consuming it."""
     connection = None
     try:
         # Connect to RabbitMQ

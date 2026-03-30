@@ -305,3 +305,90 @@ class TestRequireAdmin:
         with pytest.raises(HTTPException) as exc_info:
             await require_admin(creds)
         assert exc_info.value.status_code == 401
+
+
+def _make_token_with_claims(extra_claims: dict, secret: str = TEST_SECRET) -> str:
+    """Create a valid HS256 JWT with custom claims merged into the base payload."""
+    import base64
+    import hashlib
+    import hmac
+    import json
+
+    def b64url(data: bytes) -> str:
+        return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+    header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+    payload = {"sub": "user-1", "email": "test@example.com", "exp": 9_999_999_999}
+    payload.update(extra_claims)
+    body = b64url(json.dumps(payload, separators=(",", ":")).encode())
+    signing_input = f"{header}.{body}".encode("ascii")
+    sig = b64url(hmac.new(secret.encode("utf-8"), signing_input, hashlib.sha256).digest())
+    return f"{header}.{body}.{sig}"
+
+
+class TestRequireUserTokenChecks:
+    """Tests for admin-token rejection, JTI revocation, and password-changed revocation in require_user."""
+
+    @pytest.mark.asyncio
+    async def test_rejects_admin_token_with_403(self) -> None:
+        configure(TEST_SECRET)
+        from fastapi import HTTPException
+
+        token = _make_admin_token()
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_user(creds)
+        assert exc_info.value.status_code == 403
+        assert "Admin tokens cannot be used" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
+    async def test_revoked_jti_returns_401(self) -> None:
+        mock_redis = AsyncMock()
+        mock_redis.get = AsyncMock(return_value="1")
+        configure(TEST_SECRET, redis=mock_redis)
+        from fastapi import HTTPException
+
+        token = _make_token_with_claims({"jti": "test-jti-123"})
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_user(creds)
+        assert exc_info.value.status_code == 401
+        assert "Token has been revoked" in str(exc_info.value.detail)
+        mock_redis.get.assert_any_call("revoked:jti:test-jti-123")
+
+    @pytest.mark.asyncio
+    async def test_password_changed_revocation(self) -> None:
+        mock_redis = AsyncMock()
+
+        async def redis_get(key: str) -> str | None:
+            if key.startswith("password_changed:"):
+                return "2000"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=redis_get)
+        configure(TEST_SECRET, redis=mock_redis)
+        from fastapi import HTTPException
+
+        token = _make_token_with_claims({"iat": 1000})
+        creds = _make_credentials(token)
+        with pytest.raises(HTTPException) as exc_info:
+            await require_user(creds)
+        assert exc_info.value.status_code == 401
+        assert "Token invalidated by password change" in str(exc_info.value.detail)
+
+    @pytest.mark.asyncio
+    async def test_password_changed_allows_newer_token(self) -> None:
+        mock_redis = AsyncMock()
+
+        async def redis_get(key: str) -> str | None:
+            if key.startswith("password_changed:"):
+                return "2000"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=redis_get)
+        configure(TEST_SECRET, redis=mock_redis)
+
+        token = _make_token_with_claims({"iat": 3000})
+        creds = _make_credentials(token)
+        result = await require_user(creds)
+        assert result["sub"] == "user-1"
