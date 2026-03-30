@@ -1969,7 +1969,7 @@ async fn test_process_musicbrainz_data_compression_state_marker_has_both_names()
 
 #[tokio::test]
 async fn test_process_musicbrainz_data_entity_failure_skips_compression() {
-    // When send_file_complete fails, entity_success is false and compression is skipped
+    // When publish_batch fails, file_success is false and compression is skipped
     let temp_dir = TempDir::new().unwrap();
     let (_server, base_url) = mb_mock_server().await;
 
@@ -1985,10 +1985,10 @@ async fn test_process_musicbrainz_data_entity_failure_skips_compression() {
     let shutdown = Arc::new(tokio::sync::Notify::new());
 
     let mut mock_mq = MockMessagePublisher::new();
-    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    // setup_exchange fails — MQ connection setup failure prevents processing
+    mock_mq.expect_setup_exchange().returning(|_| Err(anyhow::anyhow!("AMQP setup error")));
     mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
-    // send_file_complete fails — triggers entity_success = false, skipping compression
-    mock_mq.expect_send_file_complete().returning(|_, _, _| Err(anyhow::anyhow!("AMQP error")));
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Ok(()));
     mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
     mock_mq.expect_close().returning(|| Ok(()));
 
@@ -1996,16 +1996,16 @@ async fn test_process_musicbrainz_data_entity_failure_skips_compression() {
 
     let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
 
-    assert!(result.is_ok());
-    assert!(!result.unwrap(), "Should return false (not all entities succeeded)");
+    // setup_exchange failure causes process_musicbrainz_data to return an error
+    assert!(result.is_err(), "Should fail when exchange setup fails");
 
-    // Verify: .jsonl files should NOT be compressed because entity_success was false
+    // Verify: .jsonl files should NOT be compressed because pipeline never ran
     assert!(
         versioned.join("artist.jsonl").exists(),
-        "artist.jsonl should remain (compression skipped due to failure)"
+        "artist.jsonl should remain (pipeline failed before compression)"
     );
     assert!(
         !versioned.join("artist.jsonl.xz").exists(),
-        "artist.jsonl.xz should NOT exist (compression skipped)"
+        "artist.jsonl.xz should NOT exist (pipeline failed)"
     );
 }

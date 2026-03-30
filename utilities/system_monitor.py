@@ -30,10 +30,10 @@ def get_queue_stats(
     username: str | None = None,
     password: str | None = None,
 ) -> list[dict[str, Any]] | None:
+    """Fetch queue statistics from RabbitMQ Management API."""
     base_url = base_url or os.environ.get("RABBITMQ_URL", "http://localhost:15672")
     username = username or os.environ.get("RABBITMQ_USERNAME", "discogsography")
     password = password or get_secret("RABBITMQ_PASSWORD", "")
-    """Fetch queue statistics from RabbitMQ Management API."""
     try:
         response = requests.get(f"{base_url}/api/queues", auth=(username, password), timeout=10)
         response.raise_for_status()
@@ -67,11 +67,10 @@ def check_neo4j_status() -> str:
                 "docker",
                 "exec",
                 "discogsography-neo4j",
+                "env",
+                f"NEO4J_USERNAME={neo4j_username}",
+                f"NEO4J_PASSWORD={neo4j_password}",
                 "cypher-shell",
-                "-u",
-                neo4j_username,
-                "-p",
-                neo4j_password,
                 "MATCH (n) RETURN labels(n)[0] as label, count(n) as count ORDER BY count DESC LIMIT 10",
             ],
             capture_output=True,

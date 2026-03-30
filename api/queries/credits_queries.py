@@ -140,9 +140,10 @@ async def get_person_connections(
         LIMIT $limit
         OPTIONAL MATCH (hop1)-[:CREDITED_ON]->(r2:Release)<-[:CREDITED_ON]-(hop2:Person)
         WHERE hop2.name <> $name AND hop2.name <> hop1.name
+        WITH hop1, direct_shared, hop2, count(DISTINCT r2) AS hop2_shared
         WITH hop1, direct_shared,
              CASE WHEN hop2 IS NOT NULL
-                  THEN collect(DISTINCT {name: hop2.name, via: hop1.name, shared: count(DISTINCT r2)})[..10]
+                  THEN collect(DISTINCT {name: hop2.name, via: hop1.name, shared: hop2_shared})[..10]
                   ELSE []
              END AS second_hops
         RETURN hop1.name AS name, direct_shared AS shared_count, second_hops

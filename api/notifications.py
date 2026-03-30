@@ -1,5 +1,6 @@
 """Notification channel abstraction for user-facing messages."""
 
+import asyncio
 from typing import Protocol, runtime_checkable
 
 from brevo import Brevo
@@ -55,7 +56,8 @@ class BrevoNotificationChannel:
 
         logger.debug("🔑 Sending password reset email", email=email, reset_url=reset_url)
         try:
-            self._client.transactional_emails.send_transac_email(
+            await asyncio.to_thread(
+                self._client.transactional_emails.send_transac_email,
                 subject="Reset your Discogsography password",
                 html_content=html_content,
                 sender=SendTransacEmailRequestSender(

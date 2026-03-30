@@ -178,7 +178,7 @@ _USER_TABLES: list[tuple[str, str]] = [
             metadata     JSONB,
             created_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
             updated_at   TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-            UNIQUE(user_id, release_id, instance_id)
+            UNIQUE NULLS NOT DISTINCT(user_id, release_id, instance_id)
         )
         """,
     ),

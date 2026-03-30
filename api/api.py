@@ -473,7 +473,9 @@ async def authorize_discogs(
     # This acts as both a CSRF token and a lookup key for the token secret
     state = token_data["oauth_token"]
     redis_key = f"{REDIS_STATE_PREFIX}{state}"
-    await _redis.setex(redis_key, REDIS_OAUTH_STATE_TTL, token_data["oauth_token_secret"])
+    # Store both the token secret and the initiating user_id to prevent cross-user OAuth binding
+    state_data = json.dumps({"secret": token_data["oauth_token_secret"], "user_id": current_user.get("sub")})
+    await _redis.setex(redis_key, REDIS_OAUTH_STATE_TTL, state_data)
 
     authorize_url = f"{DISCOGS_AUTHORIZE_URL}?oauth_token={state}"
     logger.info("🔐 Discogs OAuth flow started", user_id=current_user.get("sub"))
@@ -524,12 +526,29 @@ async def verify_discogs(
 
     # Retrieve request token secret from Redis
     redis_key = f"{REDIS_STATE_PREFIX}{request.state}"
-    token_secret = await _redis.get(redis_key)
+    raw_state_data = await _redis.get(redis_key)
 
-    if not token_secret:
+    if not raw_state_data:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="OAuth state not found or expired. Please restart the OAuth flow.",
+        )
+
+    # Parse state data (contains secret + initiating user_id)
+    try:
+        state_data = json.loads(raw_state_data)
+        token_secret = state_data["secret"]
+        initiating_user_id = state_data.get("user_id")
+    except (ValueError, KeyError, TypeError):
+        # Backwards compat: raw string is just the secret
+        token_secret = raw_state_data
+        initiating_user_id = None
+
+    # Verify the completing user matches the user who started the OAuth flow
+    if initiating_user_id and initiating_user_id != current_user.get("sub"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="OAuth flow was initiated by a different user",
         )
 
     try:

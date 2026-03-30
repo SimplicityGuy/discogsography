@@ -408,6 +408,10 @@ async def get_explore_traversal(
     if not (1 <= hops <= 3):
         hops = 2
 
+    _ALLOWED_ENTITY_TYPES = {"genre", "style", "artist", "label", "release", "master"}
+    if entity_type not in _ALLOWED_ENTITY_TYPES:
+        return []
+
     if entity_type in ("genre", "style"):
         node_label = entity_type.capitalize()
         match_clause = f"(start:{node_label} {{name: $entity_id}})"

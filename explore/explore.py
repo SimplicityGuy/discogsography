@@ -51,6 +51,10 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
     health_server.start_background()
     logger.info("🏥 Health server started on port 8007")
 
+    # Initialize HTTP client during startup to avoid lazy-init race condition
+    global _http_client
+    _http_client = httpx.AsyncClient(base_url=_api_base_url, timeout=150.0)
+
     logger.info("✅ Explore service ready")
     yield
 
@@ -89,9 +93,9 @@ _http_client: httpx.AsyncClient | None = None
 
 
 def _get_http_client() -> httpx.AsyncClient:
-    global _http_client
     if _http_client is None:
-        _http_client = httpx.AsyncClient(base_url=_api_base_url, timeout=150.0)
+        msg = "HTTP client not initialized — service not started"
+        raise RuntimeError(msg)
     return _http_client
 
 

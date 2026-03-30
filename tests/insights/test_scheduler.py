@@ -30,7 +30,9 @@ class TestSchedulerLoop:
             await _scheduler_loop(mock_client, mock_pool, interval_hours=1)
 
         assert call_count == 2
-        mock_sleep.assert_called_with(3600)
+        # Sleep time = max(0, interval - elapsed); elapsed is near-zero in tests
+        sleep_arg = mock_sleep.call_args[0][0]
+        assert 3599 <= sleep_arg <= 3600
 
     @pytest.mark.asyncio
     async def test_continues_on_computation_error(self) -> None:

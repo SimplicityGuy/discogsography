@@ -74,6 +74,7 @@ async def _scheduler_loop(
     interval_seconds = interval_hours * 3600
 
     while True:
+        cycle_start = asyncio.get_event_loop().time()
         try:
             logger.info("🔄 Scheduler: starting insight computations...")
             await run_all_computations(client, pool, milestone_years=milestone_years)
@@ -87,7 +88,9 @@ async def _scheduler_loop(
         except Exception:
             logger.exception("❌ Scheduler: computation cycle failed, will retry next interval")
 
-        await asyncio.sleep(interval_seconds)
+        elapsed = asyncio.get_event_loop().time() - cycle_start
+        sleep_time = max(0, interval_seconds - elapsed)
+        await asyncio.sleep(sleep_time)
 
 
 @asynccontextmanager

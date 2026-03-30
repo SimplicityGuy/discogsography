@@ -67,21 +67,23 @@ class TestExploreLifespanShutdown:
 
     @pytest.mark.asyncio
     async def test_shutdown_closes_http_client(self) -> None:
-        """Line 59-60: _http_client.aclose() called during shutdown."""
+        """_http_client.aclose() called during shutdown."""
         import explore.explore as explore_module
         from explore.explore import lifespan
 
         mock_client = AsyncMock()
         mock_client.aclose = AsyncMock()
         original = explore_module._http_client
-        explore_module._http_client = mock_client
 
         mock_health = MagicMock()
         mock_health.start_background = MagicMock()
         mock_health.stop = MagicMock()
 
         try:
-            with patch("explore.explore.HealthServer", return_value=mock_health):
+            with (
+                patch("explore.explore.HealthServer", return_value=mock_health),
+                patch("explore.explore.httpx.AsyncClient", return_value=mock_client),
+            ):
                 async with lifespan(MagicMock()):
                     pass  # Trigger shutdown on exit
             mock_client.aclose.assert_awaited_once()
@@ -1081,30 +1083,30 @@ class TestUserEndpoints:
 
 
 class TestGetHttpClient:
-    """Test the _get_http_client lazy initialization."""
+    """Test the _get_http_client initialization."""
 
-    def test_creates_client_when_none(self) -> None:
+    def test_raises_when_not_initialized(self) -> None:
+        import explore.explore as explore_module
+
+        original = explore_module._http_client
+        explore_module._http_client = None
+        try:
+            with pytest.raises(RuntimeError, match="HTTP client not initialized"):
+                explore_module._get_http_client()
+        finally:
+            explore_module._http_client = original
+
+    def test_returns_client_when_initialized(self) -> None:
         import httpx
 
         import explore.explore as explore_module
 
         original = explore_module._http_client
-        explore_module._http_client = None
+        mock_client = MagicMock(spec=httpx.AsyncClient)
+        explore_module._http_client = mock_client
         try:
             client = explore_module._get_http_client()
-            assert isinstance(client, httpx.AsyncClient)
-        finally:
-            explore_module._http_client = original
-
-    def test_returns_same_client_on_second_call(self) -> None:
-        import explore.explore as explore_module
-
-        original = explore_module._http_client
-        explore_module._http_client = None
-        try:
-            client1 = explore_module._get_http_client()
-            client2 = explore_module._get_http_client()
-            assert client1 is client2
+            assert client is mock_client
         finally:
             explore_module._http_client = original
 

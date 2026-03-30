@@ -470,9 +470,10 @@ class TestPostgreSQLBatchProcessor:
         with patch("tableinator.batch_processor.logger") as mock_logger:
             await processor._flush_queue("artists")
 
-        # Should log error and nack
+        # Should log error and re-enqueue for local retry — not nack
         mock_logger.error.assert_called()
-        nack.assert_called_once()
+        nack.assert_not_called()
+        assert len(processor.queues["artists"]) == 1
 
     @pytest.mark.asyncio
     async def test_flush_queue_ack_callback_error(self) -> None:
@@ -520,8 +521,8 @@ class TestPostgreSQLBatchProcessor:
         assert processor.processed_counts["artists"] == 1
 
     @pytest.mark.asyncio
-    async def test_flush_queue_nack_callback_error(self) -> None:
-        """Test handling errors in nack callback."""
+    async def test_flush_queue_general_error_requeues(self) -> None:
+        """Test that general errors re-enqueue messages for local retry."""
         # Setup connection pool that raises error when getting connection
         mock_connection_cm = AsyncMock()
         mock_connection_cm.__aenter__ = AsyncMock(side_effect=Exception("Connection failed"))
@@ -532,8 +533,7 @@ class TestPostgreSQLBatchProcessor:
 
         processor = PostgreSQLBatchProcessor(mock_connection_pool)
 
-        # Add message with failing nack callback
-        failing_nack = AsyncMock(side_effect=Exception("Nack failed"))
+        nack = AsyncMock()
         processor.queues["artists"].append(
             PendingMessage(
                 data_type="artists",
@@ -541,15 +541,17 @@ class TestPostgreSQLBatchProcessor:
                 data={"id": "1"},
                 sha256="abc",
                 ack_callback=AsyncMock(),
-                nack_callback=failing_nack,
+                nack_callback=nack,
             )
         )
 
         with patch("tableinator.batch_processor.logger") as mock_logger:
             await processor._flush_queue("artists")
 
-        # Should log warning about nack failure
-        assert any("nack" in str(call).lower() for call in mock_logger.warning.call_args_list)
+        # Messages re-enqueued for local retry — nack not called
+        mock_logger.error.assert_called()
+        nack.assert_not_called()
+        assert len(processor.queues["artists"]) == 1
 
     @pytest.mark.asyncio
     async def test_process_batch_with_unchanged_records(self) -> None:
@@ -1132,7 +1134,7 @@ class TestGeneralExceptionBackoff:
 
     @pytest.mark.asyncio
     async def test_general_exception_nacks_messages(self) -> None:
-        """Non-transient errors should nack messages (not return them to queue)."""
+        """Non-transient errors should re-enqueue messages for local retry."""
         mock_connection = MagicMock()
         mock_cursor = AsyncMock()
         mock_cursor.execute = AsyncMock(side_effect=Exception("Unexpected"))
@@ -1166,7 +1168,9 @@ class TestGeneralExceptionBackoff:
         with patch("tableinator.batch_processor.logger"):
             await processor._flush_queue("artists")
 
-        nack.assert_called_once()
+        # Messages re-enqueued for local retry — nack not called
+        nack.assert_not_called()
+        assert len(processor.queues["artists"]) == 1
 
 
 class TestSuccessRecovery:

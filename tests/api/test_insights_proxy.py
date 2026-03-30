@@ -90,7 +90,6 @@ class TestForwardStatusCodePreservation:
     @pytest.mark.asyncio
     async def test_forward_preserves_422_status(self) -> None:
         """_forward returns upstream 422 instead of masking it as 200."""
-        import api.routers.insights as mod
         from api.routers.insights import _forward
 
         mock_response = MagicMock()
@@ -99,21 +98,18 @@ class TestForwardStatusCodePreservation:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        original_client = mod._client
-        mod._client = mock_client
+        from starlette.datastructures import URL
+        from starlette.requests import Request
 
-        try:
-            from starlette.datastructures import URL
-            from starlette.requests import Request
+        mock_request = AsyncMock(spec=Request)
+        mock_request.url = URL("http://test/api/insights/genre-trends")
 
-            mock_request = AsyncMock(spec=Request)
-            mock_request.url = URL("http://test/api/insights/genre-trends")
-
+        with patch("api.routers.insights.httpx.AsyncClient", return_value=mock_client):
             result = await _forward(mock_request, "/api/insights/genre-trends")
-            assert result.status_code == 422
-        finally:
-            mod._client = original_client
+        assert result.status_code == 422
 
     def test_proxy_genre_trends_forwards_422(self, test_client: TestClient) -> None:
         """Proxy returns 422 when upstream insights service returns 422."""
@@ -131,8 +127,7 @@ class TestForwardWithQueryString:
 
     @pytest.mark.asyncio
     async def test_forward_appends_query_string(self) -> None:
-        """Line 38: _forward appends ?query when request has a query string."""
-        import api.routers.insights as mod
+        """_forward appends ?query when request has a query string."""
         from api.routers.insights import _forward
 
         mock_response = MagicMock()
@@ -141,56 +136,20 @@ class TestForwardWithQueryString:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        original_client = mod._client
-        mod._client = mock_client
+        from starlette.datastructures import URL
+        from starlette.requests import Request
 
-        try:
-            from starlette.datastructures import URL
-            from starlette.requests import Request
+        mock_request = AsyncMock(spec=Request)
+        mock_request.url = URL("http://test/api/insights/genre-trends?genre=Jazz")
 
-            mock_request = AsyncMock(spec=Request)
-            mock_request.url = URL("http://test/api/insights/genre-trends?genre=Jazz")
-
+        with patch("api.routers.insights.httpx.AsyncClient", return_value=mock_client):
             result = await _forward(mock_request, "/api/insights/genre-trends")
-            assert result.status_code == 200
-            assert result.body == JSONResponse(content={"items": []}).body
-            mock_client.get.assert_awaited_once_with("http://insights:8008/api/insights/genre-trends?genre=Jazz")
-        finally:
-            mod._client = original_client
-
-    @pytest.mark.asyncio
-    async def test_forward_creates_client_when_none(self) -> None:
-        """Line 34: _forward creates an httpx.AsyncClient when _client is None."""
-        import api.routers.insights as mod
-        from api.routers.insights import _forward
-
-        original_client = mod._client
-        mod._client = None
-
-        try:
-            mock_response = MagicMock()
-            mock_response.json.return_value = {"ok": True}
-            mock_response.status_code = 200
-
-            from starlette.datastructures import URL
-            from starlette.requests import Request
-
-            mock_request = AsyncMock(spec=Request)
-            mock_request.url = URL("http://test/api/insights/status")
-
-            with patch("api.routers.insights.httpx.AsyncClient") as mock_cls:
-                mock_instance = AsyncMock()
-                mock_instance.get = AsyncMock(return_value=mock_response)
-                mock_cls.return_value = mock_instance
-
-                result = await _forward(mock_request, "/api/insights/status")
-
-            assert result.status_code == 200
-            assert result.body == JSONResponse(content={"ok": True}).body
-            mock_cls.assert_called_once_with(timeout=30.0)
-        finally:
-            mod._client = original_client
+        assert result.status_code == 200
+        assert result.body == JSONResponse(content={"items": []}).body
+        mock_client.get.assert_awaited_once_with("http://insights:8008/api/insights/genre-trends?genre=Jazz")
 
 
 class TestInsightsProxy:
@@ -228,7 +187,6 @@ class TestInsightsProxy:
     @pytest.mark.asyncio
     async def test_forward_success(self) -> None:
         """Test _forward returns JSON from insights service."""
-        import api.routers.insights as mod
         from api.routers.insights import _forward
 
         mock_response = MagicMock()
@@ -237,20 +195,49 @@ class TestInsightsProxy:
 
         mock_client = AsyncMock()
         mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
 
-        original_client = mod._client
-        mod._client = mock_client
+        from starlette.datastructures import URL
+        from starlette.requests import Request
 
-        try:
-            from starlette.datastructures import URL
-            from starlette.requests import Request
+        mock_request = AsyncMock(spec=Request)
+        mock_request.url = URL("http://test/api/insights/top-artists")
 
-            mock_request = AsyncMock(spec=Request)
-            mock_request.url = URL("http://test/api/insights/top-artists")
-
+        with patch("api.routers.insights.httpx.AsyncClient", return_value=mock_client):
             result = await _forward(mock_request, "/api/insights/top-artists")
-            assert result.status_code == 200
-            assert result.body == JSONResponse(content={"items": [], "count": 0}).body
-            mock_client.get.assert_awaited_once_with("http://insights:8008/api/insights/top-artists")
-        finally:
-            mod._client = original_client
+        assert result.status_code == 200
+        assert result.body == JSONResponse(content={"items": [], "count": 0}).body
+        mock_client.get.assert_awaited_once_with("http://insights:8008/api/insights/top-artists")
+
+
+class TestInsightsForwardClient:
+    """Tests that _forward uses a per-request httpx.AsyncClient (lines 33-34)."""
+
+    @pytest.mark.asyncio
+    async def test_forward_creates_per_request_client(self) -> None:
+        """_forward creates a new httpx.AsyncClient as a context manager for each request."""
+        from api.routers.insights import _forward
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"data": "test"}
+        mock_response.status_code = 200
+
+        from starlette.datastructures import URL
+        from starlette.requests import Request
+
+        mock_request = AsyncMock(spec=Request)
+        mock_request.url = URL("http://test/api/insights/top-artists")
+
+        mock_instance = AsyncMock()
+        mock_instance.get = AsyncMock(return_value=mock_response)
+        mock_instance.__aenter__ = AsyncMock(return_value=mock_instance)
+        mock_instance.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("api.routers.insights.httpx.AsyncClient", return_value=mock_instance) as mock_cls:
+            result = await _forward(mock_request, "/api/insights/top-artists")
+
+        mock_cls.assert_called_once_with(timeout=30.0)
+        mock_instance.__aenter__.assert_awaited_once()
+        mock_instance.__aexit__.assert_awaited_once()
+        assert result.status_code == 200

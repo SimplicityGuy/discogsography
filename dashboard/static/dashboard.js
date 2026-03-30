@@ -76,6 +76,10 @@ class Dashboard {
     // ─── WebSocket ────────────────────────────────────────────────────────────
 
     initializeWebSocket() {
+        // Close any existing WebSocket to prevent connection leaks on reconnect
+        if (this.ws) {
+            try { this.ws.close(); } catch (_) { /* ignore */ }
+        }
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
         this.ws = new WebSocket(wsUrl);
@@ -526,7 +530,7 @@ class Dashboard {
                     badge.textContent = db.status === 'healthy' ? 'Healthy' : 'Unavailable';
                     badge.className = `text-[10px] font-bold uppercase ${db.status === 'healthy' ? 'text-emerald-400' : 'text-red-400'}`;
                 }
-                if (connEl) connEl.textContent = db.connection_count.toString();
+                if (connEl) connEl.textContent = db.connection_count != null ? db.connection_count.toString() : '—';
                 if (sizeEl) sizeEl.textContent = db.size || '—';
             }
         });

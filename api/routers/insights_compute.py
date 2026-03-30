@@ -77,7 +77,10 @@ async def anniversaries(
     """Return raw monthly anniversary query results from Neo4j."""
     if not _neo4j:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
-    milestone_years = [int(m.strip()) for m in milestones.split(",") if m.strip()]
+    try:
+        milestone_years = [int(m.strip()) for m in milestones.split(",") if m.strip()]
+    except ValueError:
+        return JSONResponse(content={"error": "milestones must be comma-separated integers"}, status_code=422)
     results = await query_monthly_anniversaries(_neo4j, current_year=year, current_month=month, milestone_years=milestone_years)
     return JSONResponse(content={"items": results})
 
