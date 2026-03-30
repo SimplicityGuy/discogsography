@@ -49,7 +49,7 @@ jobs:
 
       - name: 📊 Upload coverage (api)
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -89,7 +89,7 @@ jobs:
 
       - name: 📊 Upload coverage (common)
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -134,7 +134,7 @@ jobs:
 
       - name: 📊 Upload coverage (dashboard)
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -174,7 +174,7 @@ jobs:
 
       - name: 📊 Upload coverage (explore)
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -214,7 +214,7 @@ jobs:
 
       - name: "📊 Upload coverage (insights)"
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -254,7 +254,7 @@ jobs:
 
       - name: "📊 Upload coverage (mcp-server)"
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -294,7 +294,7 @@ jobs:
 
       - name: "📊 Upload coverage (brainzgraphinator)"
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -334,7 +334,7 @@ jobs:
 
       - name: 📊 Upload coverage (graphinator)
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -374,7 +374,7 @@ jobs:
 
       - name: 📊 Upload coverage (schema-init)
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -414,7 +414,7 @@ jobs:
 
       - name: 📊 Upload coverage (tableinator)
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -454,7 +454,7 @@ jobs:
 
       - name: "📊 Upload coverage (brainztableinator)"
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -496,7 +496,7 @@ jobs:
 
       - name: "📊 Upload coverage (explore-js)"
         if: always()
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
@@ -572,7 +572,7 @@ jobs:
 
       - name: 📊 Upload Rust coverage reports
         if: steps.check-rust.outputs.exists == 'true'
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           slug: SimplicityGuy/discogsography
