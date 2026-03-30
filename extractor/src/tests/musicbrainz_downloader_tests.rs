@@ -978,3 +978,64 @@ fn test_compress_jsonl_to_xz_preserves_other_files_in_directory() {
     decoder.read_to_string(&mut content).unwrap();
     assert_eq!(content, "existing data\n");
 }
+
+#[test]
+fn test_compress_jsonl_to_xz_fails_when_output_path_blocked() {
+    let dir = TempDir::new().unwrap();
+    let jsonl_path = dir.path().join("artist.jsonl");
+    std::fs::write(&jsonl_path, b"test data\n").unwrap();
+
+    // Create a directory at the .xz output path — File::create will fail
+    std::fs::create_dir_all(dir.path().join("artist.jsonl.xz")).unwrap();
+
+    let result = compress_jsonl_to_xz(&jsonl_path);
+
+    assert!(result.is_err(), "Should fail when output path is a directory");
+    let err_msg = format!("{}", result.unwrap_err());
+    assert!(err_msg.contains("Failed to create compressed file"), "Error should mention file creation: {}", err_msg);
+
+    // Original file should still exist (not deleted on failure)
+    assert!(jsonl_path.exists(), "Original file should remain on compression failure");
+}
+
+#[test]
+fn test_is_version_complete_with_xz_files() {
+    let dir = TempDir::new().unwrap();
+
+    // Create only .xz files (no .jsonl)
+    for name in &["artist", "label", "release-group", "release"] {
+        let xz_path = dir.path().join(format!("{}.jsonl.xz", name));
+        std::fs::write(&xz_path, b"compressed content").unwrap();
+    }
+
+    // is_version_complete should recognize .xz files
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), "https://example.com".to_string());
+    assert!(downloader.is_version_complete(dir.path()), "Should be complete with all .xz files");
+}
+
+#[test]
+fn test_is_version_complete_with_mixed_files() {
+    let dir = TempDir::new().unwrap();
+
+    // Mix of .jsonl and .jsonl.xz files
+    std::fs::write(dir.path().join("artist.jsonl"), b"").unwrap();
+    std::fs::write(dir.path().join("label.jsonl.xz"), b"").unwrap();
+    std::fs::write(dir.path().join("release-group.jsonl"), b"").unwrap();
+    std::fs::write(dir.path().join("release.jsonl.xz"), b"").unwrap();
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), "https://example.com".to_string());
+    assert!(downloader.is_version_complete(dir.path()), "Should be complete with mixed .jsonl and .xz files");
+}
+
+#[test]
+fn test_is_version_complete_missing_entity() {
+    let dir = TempDir::new().unwrap();
+
+    // Missing release-group (neither .jsonl nor .xz)
+    std::fs::write(dir.path().join("artist.jsonl"), b"").unwrap();
+    std::fs::write(dir.path().join("label.jsonl.xz"), b"").unwrap();
+    std::fs::write(dir.path().join("release.jsonl"), b"").unwrap();
+
+    let downloader = MbDownloader::new(dir.path().to_path_buf(), "https://example.com".to_string());
+    assert!(!downloader.is_version_complete(dir.path()), "Should be incomplete with missing entity");
+}
