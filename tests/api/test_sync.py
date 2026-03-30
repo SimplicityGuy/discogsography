@@ -407,6 +407,45 @@ class TestSyncTokenRevocation:
         assert "revoked" in response.json()["detail"].lower()
 
 
+class TestSyncPasswordChanged:
+    """Tests for password_changed check in sync._get_current_user (lines 68-77)."""
+
+    def test_token_issued_before_password_change_returns_401(self, test_client: TestClient, mock_redis: AsyncMock) -> None:
+        """A JWT issued before a password change should return 401."""
+        import base64
+        import hashlib
+        import hmac
+        import json
+
+        def b64url(data: bytes) -> str:
+            return base64.urlsafe_b64encode(data).rstrip(b"=").decode("ascii")
+
+        # Token issued at time 1000
+        iat_value = 1000
+        header = b64url(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+        body = b64url(
+            json.dumps(
+                {"sub": TEST_USER_ID, "email": TEST_USER_EMAIL, "exp": 9_999_999_999, "iat": iat_value},
+                separators=(",", ":"),
+            ).encode()
+        )
+        signing_input = f"{header}.{body}".encode("ascii")
+        sig = b64url(hmac.new(TEST_JWT_SECRET.encode("utf-8"), signing_input, hashlib.sha256).digest())
+        token = f"{header}.{body}.{sig}"
+
+        # Password was changed at time 2000 (after iat=1000)
+        async def fake_get(key: str) -> str | None:
+            if key == f"password_changed:{TEST_USER_ID}":
+                return "2000"
+            return None
+
+        mock_redis.get = AsyncMock(side_effect=fake_get)
+
+        response = test_client.post("/api/sync", headers={"Authorization": f"Bearer {token}"})
+        assert response.status_code == 401
+        assert "revoked" in response.json()["detail"].lower()
+
+
 class TestSyncAtomicLock:
     """Tests for atomic lock preventing duplicate sync tasks (lines 97-103)."""
 

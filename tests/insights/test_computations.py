@@ -428,6 +428,59 @@ class TestComputeAndStoreDataCompleteness:
                 await compute_and_store_data_completeness(mock_client, mock_pool)
 
 
+class TestLogComputationFailureDuringError:
+    """Test that when _log_computation raises, the original exception still propagates."""
+
+    @pytest.mark.asyncio
+    async def test_original_exception_propagates_when_log_computation_fails(self) -> None:
+        """When _fetch_from_api raises and _log_computation also raises, the original error propagates."""
+        from insights.computations import compute_and_store_artist_centrality
+
+        mock_client = AsyncMock()
+        # Create a pool where _log_computation will fail (cursor.execute raises)
+        mock_cursor = AsyncMock()
+        mock_cursor.execute = AsyncMock(side_effect=RuntimeError("DB log write failed"))
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = AsyncMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        with patch("insights.computations._fetch_from_api") as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("API unavailable")
+            with pytest.raises(RuntimeError, match="API unavailable"):
+                await compute_and_store_artist_centrality(mock_client, mock_pool)
+
+    @pytest.mark.asyncio
+    async def test_genre_trends_original_exception_propagates_when_log_fails(self) -> None:
+        """Genre trends: original exception propagates even when _log_computation raises."""
+        from insights.computations import compute_and_store_genre_trends
+
+        mock_client = AsyncMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.execute = AsyncMock(side_effect=RuntimeError("DB log write failed"))
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = AsyncMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        with patch("insights.computations._fetch_from_api") as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("API down")
+            with pytest.raises(RuntimeError, match="API down"):
+                await compute_and_store_genre_trends(mock_client, mock_pool)
+
+
 class TestRunAllComputations:
     @pytest.mark.asyncio
     async def test_runs_all_five(self) -> None:

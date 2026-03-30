@@ -593,6 +593,38 @@ class TestTriggerMusicBrainzProxy:
         assert resp.status_code == 502
 
 
+class TestMalformedJsonBody:
+    def test_login_malformed_json_returns_400(self, proxy_client: TestClient) -> None:
+        """POST /admin/api/login with malformed JSON body returns 400."""
+        resp = proxy_client.post(
+            "/admin/api/login",
+            content=b"{not valid json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert "Malformed JSON" in resp.json()["detail"]
+
+    def test_trigger_malformed_json_returns_400(self, proxy_client: TestClient) -> None:
+        """POST /admin/api/extractions/trigger with malformed JSON body returns 400."""
+        resp = proxy_client.post(
+            "/admin/api/extractions/trigger",
+            content=b"{{bad json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert "Malformed JSON" in resp.json()["detail"]
+
+    def test_trigger_musicbrainz_malformed_json_returns_400(self, proxy_client: TestClient) -> None:
+        """POST /admin/api/extractions/trigger-musicbrainz with malformed JSON returns 400."""
+        resp = proxy_client.post(
+            "/admin/api/extractions/trigger-musicbrainz",
+            content=b"not json at all",
+            headers={"Content-Type": "application/json"},
+        )
+        assert resp.status_code == 400
+        assert "Malformed JSON" in resp.json()["detail"]
+
+
 class TestAuthHeaderForwarding:
     @patch("dashboard.admin_proxy.httpx.AsyncClient")
     def test_no_auth_header_sent_when_absent(self, mock_cls_patch: AsyncMock, proxy_client: TestClient) -> None:

@@ -460,6 +460,70 @@ class TestApiGet:
             params={"key": "value"},
         )
 
+    @pytest.mark.asyncio
+    async def test_api_get_http_error_returns_error_dict(self, app_ctx):
+        """HTTP error response (e.g. 500) returns error dict instead of raising."""
+        from mcp_server.server import _api_get
+
+        error_response = MagicMock(spec=httpx.Response)
+        error_response.status_code = 500
+        error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server Error",
+            request=MagicMock(),
+            response=error_response,
+        )
+        app_ctx.client.get = AsyncMock(return_value=error_response)
+
+        result = await _api_get(app_ctx, "/api/test")
+
+        assert "error" in result
+        assert "500" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_api_get_network_error_returns_error_dict(self, app_ctx):
+        """Network error (e.g. ConnectError) returns error dict instead of raising."""
+        from mcp_server.server import _api_get
+
+        app_ctx.client.get = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+
+        result = await _api_get(app_ctx, "/api/test")
+
+        assert "error" in result
+        assert "Connection refused" in result["error"]
+
+
+class TestApiPost:
+    @pytest.mark.asyncio
+    async def test_api_post_http_error_returns_error_dict(self, app_ctx):
+        """HTTP error response from POST returns error dict."""
+        from mcp_server.server import _api_post
+
+        error_response = MagicMock(spec=httpx.Response)
+        error_response.status_code = 500
+        error_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Server Error",
+            request=MagicMock(),
+            response=error_response,
+        )
+        app_ctx.client.post = AsyncMock(return_value=error_response)
+
+        result = await _api_post(app_ctx, "/api/test", json_data={"query": "test"})
+
+        assert "error" in result
+        assert "500" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_api_post_network_error_returns_error_dict(self, app_ctx):
+        """Network error from POST returns error dict."""
+        from mcp_server.server import _api_post
+
+        app_ctx.client.post = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+
+        result = await _api_post(app_ctx, "/api/test", json_data={"query": "test"})
+
+        assert "error" in result
+        assert "Connection refused" in result["error"]
+
 
 # ---------------------------------------------------------------------------
 # Entry point
