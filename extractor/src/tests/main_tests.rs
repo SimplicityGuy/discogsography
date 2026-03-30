@@ -42,7 +42,19 @@ async fn test_setup_shutdown_handler() {
 }
 
 #[test]
-fn test_ascii_art_display() {
+fn test_ascii_art_display_discogs() {
     // Just verify the function doesn't panic
-    print_ascii_art();
+    print_ascii_art(Some(&Source::Discogs));
+}
+
+#[test]
+fn test_ascii_art_display_musicbrainz() {
+    // Just verify the function doesn't panic
+    print_ascii_art(Some(&Source::MusicBrainz));
+}
+
+#[test]
+fn test_ascii_art_display_none() {
+    // Just verify the function doesn't panic with no source
+    print_ascii_art(None);
 }
