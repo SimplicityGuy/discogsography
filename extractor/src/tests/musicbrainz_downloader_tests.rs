@@ -1,5 +1,5 @@
 use super::*;
-use std::io::Write;
+use std::io::{Read, Write};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -834,4 +834,74 @@ async fn test_download_latest_empty_response_stream_error() {
     assert!(result.is_err());
     let err_msg = format!("{}", result.unwrap_err());
     assert!(err_msg.contains("SHA256") || err_msg.contains("mismatch"), "Expected checksum error, got: {}", err_msg);
+}
+
+#[test]
+fn test_compress_jsonl_to_xz_creates_compressed_file() {
+    let dir = TempDir::new().unwrap();
+    let jsonl_path = dir.path().join("artist.jsonl");
+
+    // Write sample JSONL content
+    let content = "{\"id\":\"1\",\"name\":\"Test Artist\"}\n{\"id\":\"2\",\"name\":\"Another Artist\"}\n";
+    std::fs::write(&jsonl_path, content).unwrap();
+
+    let result = compress_jsonl_to_xz(&jsonl_path);
+    assert!(result.is_ok(), "Compression failed: {:?}", result.err());
+
+    let xz_path = result.unwrap();
+    assert_eq!(xz_path, dir.path().join("artist.jsonl.xz"));
+    assert!(xz_path.exists(), "Compressed file should exist");
+    assert!(!jsonl_path.exists(), "Original file should be deleted");
+
+    // Verify the compressed file can be decompressed back to the original content
+    let file = std::fs::File::open(&xz_path).unwrap();
+    let mut decoder = xz2::read::XzDecoder::new(file);
+    let mut decompressed = String::new();
+    decoder.read_to_string(&mut decompressed).unwrap();
+    assert_eq!(decompressed, content);
+}
+
+#[test]
+fn test_compress_jsonl_to_xz_nonexistent_file() {
+    let dir = TempDir::new().unwrap();
+    let jsonl_path = dir.path().join("nonexistent.jsonl");
+
+    let result = compress_jsonl_to_xz(&jsonl_path);
+    assert!(result.is_err());
+}
+
+#[test]
+fn test_compress_jsonl_to_xz_empty_file() {
+    let dir = TempDir::new().unwrap();
+    let jsonl_path = dir.path().join("empty.jsonl");
+    std::fs::write(&jsonl_path, "").unwrap();
+
+    let result = compress_jsonl_to_xz(&jsonl_path);
+    assert!(result.is_ok());
+
+    let xz_path = result.unwrap();
+    assert!(xz_path.exists());
+    assert!(!jsonl_path.exists());
+}
+
+#[test]
+fn test_discover_finds_compressed_files_after_compression() {
+    let dir = TempDir::new().unwrap();
+
+    // Create .jsonl.xz files (as if previously compressed)
+    for name in &["artist.jsonl.xz", "label.jsonl.xz", "release.jsonl.xz", "release-group.jsonl.xz"] {
+        let path = dir.path().join(name);
+        // Write a minimal valid XZ file
+        let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 6);
+        encoder.write_all(b"{}\n").unwrap();
+        let compressed = encoder.finish().unwrap();
+        std::fs::write(&path, compressed).unwrap();
+    }
+
+    let found = discover_mb_dump_files(dir.path()).unwrap();
+    assert_eq!(found.len(), 4, "Should discover all 4 entity types from .xz files");
+    assert!(found.contains_key(&DataType::Artists));
+    assert!(found.contains_key(&DataType::Labels));
+    assert!(found.contains_key(&DataType::Releases));
+    assert!(found.contains_key(&DataType::ReleaseGroups));
 }

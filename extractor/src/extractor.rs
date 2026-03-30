@@ -838,7 +838,7 @@ pub async fn process_musicbrainz_data(
     _compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<bool> {
     use crate::jsonl_parser::{build_mbid_discogs_map_from_file, parse_mb_jsonl_file};
-    use crate::musicbrainz_downloader::{MbDownloader, discover_mb_dump_files};
+    use crate::musicbrainz_downloader::{MbDownloader, compress_jsonl_to_xz, discover_mb_dump_files};
 
     let extraction_started_at = chrono::Utc::now();
 
@@ -980,16 +980,20 @@ pub async fn process_musicbrainz_data(
         let pub_state = state.clone();
         let publisher_handle = tokio::spawn(async move { message_publisher(batch_receiver, pub_mq, pub_dt, pub_state).await });
 
-        // Wait for all stages
+        // Wait for all stages, tracking per-entity success
+        let mut entity_success = true;
+
         let total_count = match parser_handle.await {
             Ok(Ok(count)) => count,
             Ok(Err(e)) => {
                 error!("❌ MusicBrainz parser failed for {}: {}", data_type, e);
+                entity_success = false;
                 success = false;
                 0
             }
             Err(e) => {
                 error!("❌ MusicBrainz parser task panicked for {}: {}", data_type, e);
+                entity_success = false;
                 success = false;
                 0
             }
@@ -997,11 +1001,13 @@ pub async fn process_musicbrainz_data(
 
         if let Err(e) = batcher_handle.await {
             error!("❌ MusicBrainz batcher task failed for {}: {}", data_type, e);
+            entity_success = false;
             success = false;
         }
 
         if let Err(e) = publisher_handle.await {
             error!("❌ MusicBrainz publisher task failed for {}: {}", data_type, e);
+            entity_success = false;
             success = false;
         }
 
@@ -1024,7 +1030,28 @@ pub async fn process_musicbrainz_data(
         // Send file_complete message
         if let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
             error!("❌ Failed to send file_complete for {}: {}", data_type, e);
+            entity_success = false;
             success = false;
+        }
+
+        // Compress JSONL to XZ to reclaim disk space (only for successfully processed plain .jsonl files)
+        if entity_success && file_path.extension().is_some_and(|e| e == "jsonl") {
+            let compress_path = file_path.clone();
+            match tokio::task::spawn_blocking(move || compress_jsonl_to_xz(&compress_path)).await {
+                Ok(Ok(compressed_path)) => {
+                    // Register compressed filename in state marker so resume finds it as completed
+                    if let Some(compressed_name) = compressed_path.file_name().and_then(|n| n.to_str()) {
+                        state_marker.complete_file_processing(compressed_name, total_count);
+                        state_marker.save(&marker_path).await?;
+                    }
+                }
+                Ok(Err(e)) => {
+                    warn!("⚠️ Failed to compress {}: {} (continuing without compression)", file_name, e);
+                }
+                Err(e) => {
+                    warn!("⚠️ Compression task panicked for {}: {} (continuing without compression)", file_name, e);
+                }
+            }
         }
 
         record_counts.insert(data_type.to_string(), total_count);
