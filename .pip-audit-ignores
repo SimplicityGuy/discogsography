@@ -8,5 +8,3 @@
 # which remain. Only add entries here when no fix is available upstream.
 #
 # Format: VULN-ID  # package==version — short description (date added)
-
-CVE-2026-4539  # pygments==2.19.2 — ReDoS in AdlLexer, local access only, no fix available (2026-03-25)
