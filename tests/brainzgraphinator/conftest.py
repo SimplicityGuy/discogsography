@@ -29,10 +29,10 @@ def mock_neo4j_driver():
 
 @pytest.fixture
 def mock_tx():
-    """Create a mock Neo4j transaction for testing enrichment functions."""
-    tx = MagicMock()
-    # Default: MATCH returns a result with a single record
-    mock_result = MagicMock()
+    """Create a mock Neo4j async transaction for testing enrichment functions."""
+    tx = AsyncMock()
+    # Default: MATCH returns an async result with a single record
+    mock_result = AsyncMock()
     mock_result.single.return_value = {"matched_id": 12345}
     tx.run.return_value = mock_result
     return tx

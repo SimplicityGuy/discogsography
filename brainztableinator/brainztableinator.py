@@ -436,7 +436,7 @@ async def _insert_relationship(
     async with conn.cursor() as cursor:
         await cursor.execute(
             "INSERT INTO musicbrainz.relationships "
-            "(source_mbid, source_type, target_mbid, target_type, rel_type, attributes, begin_date, end_date, ended) "
+            "(source_mbid, source_entity_type, target_mbid, target_entity_type, relationship_type, attributes, begin_date, end_date, ended) "
             "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
             "ON CONFLICT DO NOTHING",
             (
@@ -460,7 +460,7 @@ async def _insert_external_link(
     async with conn.cursor() as cursor:
         await cursor.execute(
             "INSERT INTO musicbrainz.external_links "
-            "(mbid, entity_type, url, link_type) "
+            "(mbid, entity_type, url, service_name) "
             "VALUES (%s, %s, %s, %s) "
             "ON CONFLICT DO NOTHING",
             (
@@ -822,7 +822,7 @@ async def progress_reporter() -> None:
 
         # Build progress string with completion emojis
         progress_parts = []
-        for data_type in ["artists", "labels", "releases"]:
+        for data_type in ["artists", "labels", "release-groups", "releases"]:
             emoji = "✅ " if data_type in completed_files else ""
             progress_parts.append(
                 f"{emoji}{data_type.capitalize()}: {message_counts[data_type]}"

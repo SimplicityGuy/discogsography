@@ -46,7 +46,7 @@ class TestHealthData:
 
     @patch("brainzgraphinator.brainzgraphinator.graph", None)
     @patch("brainzgraphinator.brainzgraphinator.consumer_tags", {})
-    @patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "releases": 0})
+    @patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0})
     def test_health_data_starting(self) -> None:
         """Health status is 'starting' when graph is None and no consumers registered."""
         data = get_health_data()
@@ -56,8 +56,8 @@ class TestHealthData:
 
     @patch("brainzgraphinator.brainzgraphinator.graph", MagicMock())
     @patch("brainzgraphinator.brainzgraphinator.consumer_tags", {"artists": "tag-1"})
-    @patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "releases": 0})
-    @patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0})
+    @patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0})
+    @patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0})
     @patch("brainzgraphinator.brainzgraphinator.completed_files", set())
     def test_health_data_healthy(self) -> None:
         """Health status is 'healthy' when graph is initialized."""
@@ -66,8 +66,8 @@ class TestHealthData:
 
     @patch("brainzgraphinator.brainzgraphinator.graph", MagicMock())
     @patch("brainzgraphinator.brainzgraphinator.consumer_tags", {})
-    @patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "releases": 0})
-    @patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0})
+    @patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "release-groups": 0, "releases": 0})
+    @patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0})
     @patch("brainzgraphinator.brainzgraphinator.completed_files", set())
     @patch(
         "brainzgraphinator.brainzgraphinator.enrichment_stats",
@@ -86,10 +86,11 @@ class TestHealthData:
 class TestEnrichArtist:
     """Tests for enrich_artist."""
 
-    def test_enrich_artist_with_discogs_match(self, mock_tx: MagicMock, sample_artist_record: dict[str, Any]) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_artist_with_discogs_match(self, mock_tx: AsyncMock, sample_artist_record: dict[str, Any]) -> None:
         """Artist with discogs_artist_id gets enriched with all mb_ fields."""
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_artist(mock_tx, sample_artist_record)
+            result = await enrich_artist(mock_tx, sample_artist_record)
             assert result is True
 
         # Verify Cypher SET was called
@@ -106,40 +107,44 @@ class TestEnrichArtist:
         assert "a.mb_disambiguation" in cypher
         assert "a.mb_updated_at" in cypher
 
-    def test_enrich_artist_no_discogs_id_skips(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_artist_no_discogs_id_skips(self, mock_tx: AsyncMock) -> None:
         """Artist with no discogs_artist_id is deliberately skipped."""
         record = {"mbid": "abc", "discogs_artist_id": None}
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_artist(mock_tx, record)
+            result = await enrich_artist(mock_tx, record)
             assert result is True
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
 
-    def test_enrich_artist_no_neo4j_match(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_artist_no_neo4j_match(self, mock_tx: AsyncMock) -> None:
         """Artist with discogs_artist_id but no Neo4j match increments skip counter."""
-        mock_result = MagicMock()
+        mock_result = AsyncMock()
         mock_result.single.return_value = None
         mock_tx.run.return_value = mock_result
 
         record = {"mbid": "abc", "discogs_artist_id": 12345}
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_artist(mock_tx, record)
+            result = await enrich_artist(mock_tx, record)
             assert result is True
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
 
-    def test_enrich_artist_with_relationships(self, mock_tx: MagicMock, sample_artist_record: dict[str, Any]) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_artist_with_relationships(self, mock_tx: AsyncMock, sample_artist_record: dict[str, Any]) -> None:
         """Artist with relations triggers create_relationship_edges."""
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            enrich_artist(mock_tx, sample_artist_record)
+            await enrich_artist(mock_tx, sample_artist_record)
 
         # First call is the MATCH/SET, subsequent calls are for relationships
         assert mock_tx.run.call_count >= 2
 
-    def test_enrich_artist_missing_discogs_id_key(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_artist_missing_discogs_id_key(self, mock_tx: AsyncMock) -> None:
         """Artist record missing discogs_artist_id key entirely is skipped."""
         record = {"mbid": "abc"}
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_artist(mock_tx, record)
+            result = await enrich_artist(mock_tx, record)
             assert result is True
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
@@ -148,10 +153,11 @@ class TestEnrichArtist:
 class TestEnrichLabel:
     """Tests for enrich_label."""
 
-    def test_enrich_label_with_match(self, mock_tx: MagicMock, sample_label_record: dict[str, Any]) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_label_with_match(self, mock_tx: AsyncMock, sample_label_record: dict[str, Any]) -> None:
         """Label with discogs_label_id gets enriched."""
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_label(mock_tx, sample_label_record)
+            result = await enrich_label(mock_tx, sample_label_record)
             assert result is True
 
         call_args = mock_tx.run.call_args_list[0]
@@ -164,34 +170,37 @@ class TestEnrichLabel:
         assert "l.mb_area" in cypher
         assert "l.mb_updated_at" in cypher
 
-    def test_enrich_label_no_discogs_id_skips(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_label_no_discogs_id_skips(self, mock_tx: AsyncMock) -> None:
         """Label with no discogs_label_id is deliberately skipped."""
         record = {"mbid": "abc", "discogs_label_id": None}
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_label(mock_tx, record)
+            result = await enrich_label(mock_tx, record)
             assert result is True
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
 
-    def test_enrich_label_no_neo4j_match(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_label_no_neo4j_match(self, mock_tx: AsyncMock) -> None:
         """Label with discogs_label_id but no Neo4j match."""
-        mock_result = MagicMock()
+        mock_result = AsyncMock()
         mock_result.single.return_value = None
         mock_tx.run.return_value = mock_result
 
         record = {"mbid": "abc", "discogs_label_id": 54321}
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            enrich_label(mock_tx, record)
+            await enrich_label(mock_tx, record)
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
 
 
 class TestEnrichRelease:
     """Tests for enrich_release."""
 
-    def test_enrich_release_with_match(self, mock_tx: MagicMock, sample_release_record: dict[str, Any]) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_release_with_match(self, mock_tx: AsyncMock, sample_release_record: dict[str, Any]) -> None:
         """Release with discogs_release_id gets enriched."""
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_release(mock_tx, sample_release_record)
+            result = await enrich_release(mock_tx, sample_release_record)
             assert result is True
 
         call_args = mock_tx.run.call_args_list[0]
@@ -201,11 +210,12 @@ class TestEnrichRelease:
         assert "r.mb_status" in cypher
         assert "r.mb_updated_at" in cypher
 
-    def test_enrich_release_no_discogs_id_skips(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_release_no_discogs_id_skips(self, mock_tx: AsyncMock) -> None:
         """Release with no discogs_release_id is deliberately skipped."""
         record = {"mbid": "abc", "discogs_release_id": None}
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_release(mock_tx, record)
+            result = await enrich_release(mock_tx, record)
             assert result is True
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
@@ -217,10 +227,11 @@ class TestEnrichRelease:
 class TestEnrichReleaseGroup:
     """Tests for enrich_release_group."""
 
-    def test_enrich_release_group_with_match(self, mock_tx: MagicMock, sample_release_group_record: dict[str, Any]) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_release_group_with_match(self, mock_tx: AsyncMock, sample_release_group_record: dict[str, Any]) -> None:
         """Release-group with discogs_master_id gets enriched on Master node."""
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_release_group(mock_tx, sample_release_group_record)
+            result = await enrich_release_group(mock_tx, sample_release_group_record)
             assert result is True
 
         call_args = mock_tx.run.call_args_list[0]
@@ -232,20 +243,23 @@ class TestEnrichReleaseGroup:
         assert "m.mb_first_release_date" in cypher
         assert "m.mb_updated_at" in cypher
 
-    def test_enrich_release_group_no_discogs_id_skips(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_release_group_no_discogs_id_skips(self, mock_tx: AsyncMock) -> None:
         """Release-group with no discogs_master_id is deliberately skipped."""
         record = {"mbid": "abc", "discogs_master_id": None}
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_release_group(mock_tx, record)
+            result = await enrich_release_group(mock_tx, record)
             assert result is True
-        mock_tx.run.assert_not_called()
+            mock_tx.run.assert_not_called()
+            assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
 
-    def test_enrich_release_group_no_neo4j_match(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_release_group_no_neo4j_match(self, mock_tx: AsyncMock) -> None:
         """Release-group with discogs_master_id but no Neo4j Master node is skipped."""
         mock_tx.run.return_value.single.return_value = None
         record = {"mbid": "abc", "discogs_master_id": 99999}
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            result = enrich_release_group(mock_tx, record)
+            result = await enrich_release_group(mock_tx, record)
             assert result is True
 
 
@@ -271,32 +285,36 @@ class TestRelationshipEdges:
             assert mb_type in MB_RELATIONSHIP_MAP, f"Missing relationship type: {mb_type}"
         assert len(MB_RELATIONSHIP_MAP) == 8
 
-    def test_create_edge_both_sides_matched(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_create_edge_both_sides_matched(self, mock_tx: AsyncMock) -> None:
         """Edge is created via MERGE when both source and target exist."""
         relations = [{"type": "member of band", "target_discogs_artist_id": 67890}]
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            create_relationship_edges(mock_tx, 12345, relations)
+            await create_relationship_edges(mock_tx, 12345, relations)
             mock_tx.run.assert_called_once()
             cypher = mock_tx.run.call_args[0][0]
             assert "MERGE (a)-[r:MEMBER_OF]->(b)" in cypher
             assert bgmod.enrichment_stats["relationships_created"] == 1
 
-    def test_create_edge_target_no_discogs_id_skips(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_create_edge_target_no_discogs_id_skips(self, mock_tx: AsyncMock) -> None:
         """Edge with None target_discogs_artist_id is skipped."""
         relations = [{"type": "member of band", "target_discogs_artist_id": None}]
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            create_relationship_edges(mock_tx, 12345, relations)
+            await create_relationship_edges(mock_tx, 12345, relations)
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["relationships_skipped_missing_side"] == 1
 
-    def test_create_edge_unknown_type_skips(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_create_edge_unknown_type_skips(self, mock_tx: AsyncMock) -> None:
         """Unknown relationship type is silently skipped."""
         relations = [{"type": "unknown_relationship", "target_discogs_artist_id": 67890}]
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            create_relationship_edges(mock_tx, 12345, relations)
+            await create_relationship_edges(mock_tx, 12345, relations)
             mock_tx.run.assert_not_called()
 
-    def test_create_edge_multiple_relations(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_create_edge_multiple_relations(self, mock_tx: AsyncMock) -> None:
         """Multiple relations result in multiple MERGE calls."""
         relations = [
             {"type": "member of band", "target_discogs_artist_id": 67890},
@@ -304,23 +322,25 @@ class TestRelationshipEdges:
             {"type": "teacher", "target_discogs_artist_id": 22222},
         ]
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            create_relationship_edges(mock_tx, 12345, relations)
+            await create_relationship_edges(mock_tx, 12345, relations)
             assert mock_tx.run.call_count == 3
             assert bgmod.enrichment_stats["relationships_created"] == 3
 
-    def test_edge_has_source_musicbrainz(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_edge_has_source_musicbrainz(self, mock_tx: AsyncMock) -> None:
         """Edge SET includes source: 'musicbrainz'."""
         relations = [{"type": "founder", "target_discogs_artist_id": 67890}]
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            create_relationship_edges(mock_tx, 12345, relations)
+            await create_relationship_edges(mock_tx, 12345, relations)
             cypher = mock_tx.run.call_args[0][0]
             assert "r.source = 'musicbrainz'" in cypher
 
-    def test_create_edge_missing_target_key(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_create_edge_missing_target_key(self, mock_tx: AsyncMock) -> None:
         """Relation with missing target_discogs_artist_id key is skipped."""
         relations = [{"type": "member of band"}]
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            create_relationship_edges(mock_tx, 12345, relations)
+            await create_relationship_edges(mock_tx, 12345, relations)
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["relationships_skipped_missing_side"] == 1
 
@@ -341,11 +361,11 @@ class TestMessageHandling:
         mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
 
         async def mock_tx_func(func: Any) -> Any:
-            mock_tx = MagicMock()
-            mock_result = MagicMock()
+            mock_tx = AsyncMock()
+            mock_result = AsyncMock()
             mock_result.single.return_value = {"matched_id": 12345}
             mock_tx.run.return_value = mock_result
-            return func(mock_tx)
+            return await func(mock_tx)
 
         mock_session.execute_write.side_effect = mock_tx_func
 
@@ -548,20 +568,22 @@ class TestProcessorsMap:
 class TestEdgeCases:
     """Additional edge case tests for completeness."""
 
-    def test_enrich_artist_empty_relations(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_artist_empty_relations(self, mock_tx: AsyncMock) -> None:
         """Artist with empty relations list does not create edges."""
         record = {"mbid": "abc", "discogs_artist_id": 12345, "relations": []}
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            enrich_artist(mock_tx, record)
+            await enrich_artist(mock_tx, record)
 
         # Only the MATCH/SET call, no relationship calls
         assert mock_tx.run.call_count == 1
 
-    def test_enrich_artist_no_relations_key(self, mock_tx: MagicMock) -> None:
+    @pytest.mark.asyncio
+    async def test_enrich_artist_no_relations_key(self, mock_tx: AsyncMock) -> None:
         """Artist record without relations key works fine."""
         record = {"mbid": "abc", "discogs_artist_id": 12345}
         with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
-            enrich_artist(mock_tx, record)
+            await enrich_artist(mock_tx, record)
 
         assert mock_tx.run.call_count == 1
 
@@ -575,11 +597,11 @@ class TestEdgeCases:
         mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
 
         async def mock_tx_func(func: Any) -> Any:
-            mock_tx = MagicMock()
-            mock_result = MagicMock()
+            mock_tx = AsyncMock()
+            mock_result = AsyncMock()
             mock_result.single.return_value = {"matched_id": 54321}
             mock_tx.run.return_value = mock_result
-            return func(mock_tx)
+            return await func(mock_tx)
 
         mock_session.execute_write.side_effect = mock_tx_func
 
@@ -598,11 +620,11 @@ class TestEdgeCases:
         mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
 
         async def mock_tx_func(func: Any) -> Any:
-            mock_tx = MagicMock()
-            mock_result = MagicMock()
+            mock_tx = AsyncMock()
+            mock_result = AsyncMock()
             mock_result.single.return_value = {"matched_id": 99999}
             mock_tx.run.return_value = mock_result
-            return func(mock_tx)
+            return await func(mock_tx)
 
         mock_session.execute_write.side_effect = mock_tx_func
 
@@ -793,8 +815,8 @@ class TestCheckConsumersUnexpectedlyDead:
             patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
             patch("brainzgraphinator.brainzgraphinator.consumer_tags", {}),
             patch("brainzgraphinator.brainzgraphinator.completed_files", {"artists"}),
-            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "releases": 0}),
-            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "release-groups": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}),
         ):
             data = get_health_data()
             assert data["status"] == "unhealthy"
@@ -806,8 +828,8 @@ class TestCheckConsumersUnexpectedlyDead:
             patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
             patch("brainzgraphinator.brainzgraphinator.consumer_tags", {"artists": "tag123"}),
             patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
-            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "releases": 0}),
-            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "release-groups": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}),
         ):
             data = get_health_data()
             assert data["status"] == "healthy"
@@ -818,8 +840,8 @@ class TestCheckConsumersUnexpectedlyDead:
             patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
             patch("brainzgraphinator.brainzgraphinator.consumer_tags", {}),
             patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
-            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "releases": 0}),
-            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}),
         ):
             data = get_health_data()
             assert data["status"] == "healthy"
@@ -897,7 +919,7 @@ class TestPeriodicQueueChecker:
         """Test periodic_queue_checker detects stuck state and calls _recover_consumers."""
         bgmod.consumer_tags = {}
         bgmod.completed_files = {"artists"}
-        bgmod.message_counts = {"artists": 10, "labels": 0, "releases": 0}
+        bgmod.message_counts = {"artists": 10, "labels": 0, "release-groups": 0, "releases": 0}
         bgmod.active_connection = None
         bgmod.shutdown_requested = False
 
@@ -926,7 +948,7 @@ class TestPeriodicQueueChecker:
         """Test timing guard continues when not enough time has passed."""
         bgmod.consumer_tags = {}
         bgmod.completed_files = {"artists", "labels", "release-groups", "releases"}
-        bgmod.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bgmod.message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
         bgmod.active_connection = None
         bgmod.shutdown_requested = False
 
@@ -952,7 +974,7 @@ class TestPeriodicQueueChecker:
         """Test periodic_queue_checker handles exceptions in the loop."""
         bgmod.consumer_tags = {}
         bgmod.completed_files = {"artists", "labels", "release-groups", "releases"}
-        bgmod.message_counts = {"artists": 0, "labels": 0, "releases": 0}
+        bgmod.message_counts = {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}
         bgmod.active_connection = None
         bgmod.shutdown_requested = False
 
@@ -1000,11 +1022,11 @@ class TestProgressReporterFunction:
     async def test_progress_reporter_idle_mode_entry(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test entering idle mode after startup timeout with no messages."""
         monkeypatch.setattr(bgmod, "shutdown_requested", False)
-        monkeypatch.setattr(bgmod, "message_counts", {"artists": 0, "labels": 0, "releases": 0})
+        monkeypatch.setattr(bgmod, "message_counts", {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0})
         monkeypatch.setattr(bgmod, "completed_files", set())
         monkeypatch.setattr(bgmod, "idle_mode", False)
         monkeypatch.setattr(bgmod, "STARTUP_IDLE_TIMEOUT", 0)
-        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0})
+        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0})
         monkeypatch.setattr(bgmod, "consumer_tags", {})
 
         call_count = 0
@@ -1023,11 +1045,11 @@ class TestProgressReporterFunction:
     async def test_progress_reporter_idle_mode_periodic_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test idle mode periodic logging when IDLE_LOG_INTERVAL passes."""
         monkeypatch.setattr(bgmod, "shutdown_requested", False)
-        monkeypatch.setattr(bgmod, "message_counts", {"artists": 0, "labels": 0, "releases": 0})
+        monkeypatch.setattr(bgmod, "message_counts", {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0})
         monkeypatch.setattr(bgmod, "completed_files", set())
         monkeypatch.setattr(bgmod, "idle_mode", True)
         monkeypatch.setattr(bgmod, "IDLE_LOG_INTERVAL", 0)
-        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0})
+        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0})
         monkeypatch.setattr(bgmod, "consumer_tags", {})
 
         async def mock_sleep(_: float) -> None:
@@ -1044,10 +1066,10 @@ class TestProgressReporterFunction:
     async def test_progress_reporter_skip_when_all_files_complete(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test progress reporter skips when all files are complete."""
         monkeypatch.setattr(bgmod, "shutdown_requested", False)
-        monkeypatch.setattr(bgmod, "message_counts", {"artists": 100, "labels": 50, "releases": 200})
+        monkeypatch.setattr(bgmod, "message_counts", {"artists": 100, "labels": 50, "release-groups": 0, "releases": 200})
         monkeypatch.setattr(bgmod, "completed_files", set(MUSICBRAINZ_DATA_TYPES))
         monkeypatch.setattr(bgmod, "idle_mode", False)
-        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0})
+        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0})
         monkeypatch.setattr(bgmod, "consumer_tags", {})
 
         async def mock_sleep(_: float) -> None:
@@ -1064,11 +1086,11 @@ class TestProgressReporterFunction:
     async def test_progress_reporter_reports_when_messages_exist(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Test progress reporter logs when total > 0."""
         monkeypatch.setattr(bgmod, "shutdown_requested", False)
-        monkeypatch.setattr(bgmod, "message_counts", {"artists": 10, "labels": 5, "releases": 0})
+        monkeypatch.setattr(bgmod, "message_counts", {"artists": 10, "labels": 5, "release-groups": 0, "releases": 0})
         monkeypatch.setattr(bgmod, "completed_files", set())
         monkeypatch.setattr(bgmod, "idle_mode", False)
         monkeypatch.setattr(bgmod, "STARTUP_IDLE_TIMEOUT", 99999)
-        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0})
+        monkeypatch.setattr(bgmod, "last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0})
         monkeypatch.setattr(bgmod, "consumer_tags", {"artists": "tag-1"})
 
         async def mock_sleep(_: float) -> None:
@@ -1207,17 +1229,17 @@ class TestMessageHandlerEdgeCases:
         mock_session = await mock_neo4j_driver.session(database="neo4j").__aenter__()
 
         async def mock_tx_func(func: Any) -> Any:
-            mock_tx = MagicMock()
-            mock_result = MagicMock()
+            mock_tx = AsyncMock()
+            mock_result = AsyncMock()
             mock_result.single.return_value = {"matched_id": 12345}
             mock_tx.run.return_value = mock_result
-            return func(mock_tx)
+            return await func(mock_tx)
 
         mock_session.execute_write.side_effect = mock_tx_func
 
         with (
             patch("brainzgraphinator.brainzgraphinator.graph", mock_neo4j_driver),
-            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 99, "labels": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 99, "labels": 0, "release-groups": 0, "releases": 0}),
             patch("brainzgraphinator.brainzgraphinator.progress_interval", 100),
         ):
             await on_artist_message(mock_message)
@@ -1704,8 +1726,8 @@ class TestHealthDataAdditional:
         with (
             patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
             patch("brainzgraphinator.brainzgraphinator.consumer_tags", {}),
-            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "releases": 0}),
-            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}),
             patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
         ):
             data = get_health_data()
@@ -1719,8 +1741,10 @@ class TestHealthDataAdditional:
         with (
             patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
             patch("brainzgraphinator.brainzgraphinator.consumer_tags", {"artists": "tag-1"}),
-            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 50, "labels": 0, "releases": 0}),
-            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": current, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 50, "labels": 0, "release-groups": 0, "releases": 0}),
+            patch(
+                "brainzgraphinator.brainzgraphinator.last_message_time", {"artists": current, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
+            ),
             patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
         ):
             data = get_health_data()
@@ -1731,8 +1755,8 @@ class TestHealthDataAdditional:
         with (
             patch("brainzgraphinator.brainzgraphinator.graph", MagicMock()),
             patch("brainzgraphinator.brainzgraphinator.consumer_tags", {"artists": "tag-1"}),
-            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "releases": 0}),
-            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 0, "labels": 0, "release-groups": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}),
             patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
         ):
             data = get_health_data()
@@ -1743,8 +1767,8 @@ class TestHealthDataAdditional:
         with (
             patch("brainzgraphinator.brainzgraphinator.graph", None),
             patch("brainzgraphinator.brainzgraphinator.consumer_tags", {"artists": "tag-1"}),
-            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "releases": 0}),
-            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "releases": 0.0}),
+            patch("brainzgraphinator.brainzgraphinator.message_counts", {"artists": 10, "labels": 0, "release-groups": 0, "releases": 0}),
+            patch("brainzgraphinator.brainzgraphinator.last_message_time", {"artists": 0.0, "labels": 0.0, "release-groups": 0.0, "releases": 0.0}),
             patch("brainzgraphinator.brainzgraphinator.completed_files", set()),
         ):
             data = get_health_data()

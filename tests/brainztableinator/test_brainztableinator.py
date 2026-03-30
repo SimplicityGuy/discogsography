@@ -1022,7 +1022,7 @@ class TestCheckConsumersUnexpectedlyDead:
 
         bt.consumer_tags = {}
         bt.completed_files = {"labels"}  # Only 1 of 3 complete
-        bt.message_counts = {"artists": 100, "labels": 50, "releases": 0}
+        bt.message_counts = {"artists": 100, "labels": 50, "release-groups": 0, "releases": 0}
         assert await check_consumers_unexpectedly_dead() is True
 
 
@@ -1217,7 +1217,7 @@ class TestPeriodicQueueChecker:
         # Stuck state: no consumers, but files not completed and has processed messages
         bt.consumer_tags = {}
         bt.completed_files = set()
-        bt.message_counts = {"artists": 100, "labels": 50, "releases": 10}
+        bt.message_counts = {"artists": 100, "labels": 50, "release-groups": 0, "releases": 10}
         bt.queues = {}
         bt.shutdown_requested = False
         bt.last_message_time = {
@@ -1256,7 +1256,7 @@ class TestProgressReporterIdleMode:
         import brainztableinator.brainztableinator as bt
 
         bt.shutdown_requested = False
-        bt.message_counts = {"artists": 100, "labels": 50, "releases": 10}
+        bt.message_counts = {"artists": 100, "labels": 50, "release-groups": 0, "releases": 10}
         bt.last_message_time = {
             "artists": time.time(),
             "labels": time.time(),
@@ -1297,7 +1297,7 @@ class TestProgressReporterIdleMode:
         import brainztableinator.brainztableinator as bt
 
         bt.completed_files = {"artists", "labels", "release-groups", "releases"}
-        bt.message_counts = {"artists": 100, "labels": 50, "releases": 10}
+        bt.message_counts = {"artists": 100, "labels": 50, "release-groups": 0, "releases": 10}
 
         assert len(bt.completed_files) == 4
 
@@ -1341,8 +1341,8 @@ class TestProgressReporterIdleMode:
 
         bt.shutdown_requested = False
         bt.idle_mode = True  # Start in idle mode
-        bt.message_counts = {"artists": 5, "labels": 0, "releases": 0}
-        bt.last_message_time = {"artists": time.time(), "labels": 0.0, "releases": 0.0}
+        bt.message_counts = {"artists": 5, "labels": 0, "release-groups": 0, "releases": 0}
+        bt.last_message_time = {"artists": time.time(), "labels": 0.0, "release-groups": 0.0, "releases": 0.0}
         bt.completed_files = set()
         bt.consumer_tags = {"artists": "tag1"}
 
@@ -1379,7 +1379,7 @@ class TestGetHealthDataExtended:
 
         current_time = time.time()
         bt.current_progress = 50
-        bt.message_counts = {"artists": 100, "labels": 50, "releases": 0}
+        bt.message_counts = {"artists": 100, "labels": 50, "release-groups": 0, "releases": 0}
         bt.last_message_time = {
             "artists": current_time - 5,
             "labels": current_time - 8,
@@ -1410,7 +1410,7 @@ class TestGetHealthDataExtended:
 
         bt.connection_pool = None
         bt.consumer_tags = {"artists": "consumer-1"}
-        bt.message_counts = {"artists": 100, "labels": 0, "releases": 0}
+        bt.message_counts = {"artists": 100, "labels": 0, "release-groups": 0, "releases": 0}
         bt.completed_files = set()
 
         result = get_health_data()
@@ -1423,7 +1423,7 @@ class TestGetHealthDataExtended:
 
         current_time = time.time()
         bt.current_progress = 0
-        bt.message_counts = {"artists": 100, "labels": 50, "releases": 0}
+        bt.message_counts = {"artists": 100, "labels": 50, "release-groups": 0, "releases": 0}
         bt.last_message_time = {
             "artists": current_time - 60,
             "labels": current_time - 120,
@@ -1442,7 +1442,7 @@ class TestGetHealthDataExtended:
 
         current_time = time.time()
         bt.current_progress = 0
-        bt.message_counts = {"artists": 100, "labels": 50, "releases": 0}
+        bt.message_counts = {"artists": 100, "labels": 50, "release-groups": 0, "releases": 0}
         bt.last_message_time = {
             "artists": current_time - 60,
             "labels": current_time - 120,
@@ -1462,7 +1462,7 @@ class TestGetHealthDataExtended:
         bt.connection_pool = MagicMock()
         bt.consumer_tags = {}
         bt.completed_files = set()
-        bt.message_counts = {"artists": 50, "labels": 0, "releases": 0}
+        bt.message_counts = {"artists": 50, "labels": 0, "release-groups": 0, "releases": 0}
 
         result = get_health_data()
 
@@ -1654,7 +1654,7 @@ class TestOnDataMessageExtended:
             patch("brainztableinator.brainztableinator.connection_pool", mock_pool),
             patch(
                 "brainztableinator.brainztableinator.message_counts",
-                {"artists": 9, "labels": 0, "releases": 0},
+                {"artists": 9, "labels": 0, "release-groups": 0, "releases": 0},
             ),
             patch(
                 "brainztableinator.brainztableinator.last_message_time",
@@ -2275,7 +2275,7 @@ class TestProgressReporterExtended:
         current_time = time.time()
         bt.shutdown_requested = False
         bt.idle_mode = False
-        bt.message_counts = {"artists": 100, "labels": 50, "releases": 10}
+        bt.message_counts = {"artists": 100, "labels": 50, "release-groups": 0, "releases": 10}
         bt.last_message_time = {
             "artists": current_time - 150,  # stalled (>120s)
             "labels": current_time,
@@ -2346,7 +2346,7 @@ class TestProgressReporterExtended:
         current_time = time.time()
         bt.shutdown_requested = False
         bt.idle_mode = False
-        bt.message_counts = {"artists": 100, "labels": 50, "releases": 10}
+        bt.message_counts = {"artists": 100, "labels": 50, "release-groups": 0, "releases": 10}
         bt.last_message_time = {
             "artists": current_time - 60,  # slow (60s, between 5 and 120)
             "labels": current_time - 60,
@@ -2383,7 +2383,7 @@ class TestProgressReporterExtended:
         current_time = time.time()
         bt.shutdown_requested = False
         bt.idle_mode = False
-        bt.message_counts = {"artists": 100, "labels": 50, "releases": 10}
+        bt.message_counts = {"artists": 100, "labels": 50, "release-groups": 0, "releases": 10}
         bt.last_message_time = {
             "artists": current_time,
             "labels": current_time,
