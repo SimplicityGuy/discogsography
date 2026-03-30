@@ -38,6 +38,9 @@ async def _get_current_user(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not configured")
     try:
         payload = decode_token(credentials.credentials, _jwt_secret)
+        # Reject admin tokens
+        if payload.get("type") == "admin":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin tokens cannot be used for user endpoints")
         # Check jti blacklist (revoked tokens via logout)
         jti: str | None = payload.get("jti")
         if jti and _redis:
@@ -48,6 +51,18 @@ async def _get_current_user(
                     detail="Token has been revoked",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
+        # Check password-changed revocation
+        user_id = payload.get("sub")
+        if user_id and _redis:
+            pw_changed = await _redis.get(f"password_changed:{user_id}")
+            if pw_changed:
+                issued_at = payload.get("iat", 0)
+                if issued_at < int(pw_changed):
+                    raise HTTPException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        detail="Token invalidated by password change",
+                        headers={"WWW-Authenticate": "Bearer"},
+                    )
         return payload
     except ValueError as exc:
         raise HTTPException(

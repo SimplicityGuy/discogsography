@@ -15,7 +15,6 @@ logger = structlog.get_logger(__name__)
 router = APIRouter()
 
 _INSIGHTS_BASE_URL = "http://insights:8008"
-_client: httpx.AsyncClient | None = None
 
 
 def configure(insights_base_url: str | None = None) -> None:
@@ -27,15 +26,12 @@ def configure(insights_base_url: str | None = None) -> None:
 
 async def _forward(request: Request, path: str) -> JSONResponse:
     """Forward a request to the insights service, preserving the status code."""
-    global _client
-    if _client is None:
-        _client = httpx.AsyncClient(timeout=30.0)
-
     url = f"{_INSIGHTS_BASE_URL}{path}"
     if request.url.query:
         url = f"{url}?{request.url.query}"
 
-    response = await _client.get(url)
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        response = await client.get(url)
     return JSONResponse(content=response.json(), status_code=response.status_code)
 
 

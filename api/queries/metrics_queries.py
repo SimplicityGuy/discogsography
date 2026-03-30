@@ -29,9 +29,15 @@ GRANULARITY_MAP: dict[str, dict[str, Any]] = {
 }
 
 
+_VALID_TRUNC_UNITS = {"minute", "hour", "day", "week", "month"}
+
+
 def _bucket_to_trunc_unit(bucket: str) -> str:
     """Convert a bucket string like '15 minutes' to a date_trunc unit like 'minute'."""
     unit = bucket.rsplit(maxsplit=1)[-1].rstrip("s")  # "minutes" -> "minute", "hours" -> "hour"
+    if unit not in _VALID_TRUNC_UNITS:
+        msg = f"Invalid trunc unit: {unit!r}"
+        raise ValueError(msg)
     return unit
 
 

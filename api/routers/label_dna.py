@@ -163,12 +163,7 @@ async def label_dna(
 
     response = dna.model_dump()
 
-    # Cache the result
-    if _redis:
-        try:
-            await _redis.setex(cache_key, _LABEL_DNA_CACHE_TTL, json.dumps(response, default=str))
-        except Exception:
-            logger.debug("⚠️ Label DNA cache set failed", key=cache_key)
+    # _build_dna already caches the result — no redundant cache write needed
 
     return JSONResponse(content=response)
 

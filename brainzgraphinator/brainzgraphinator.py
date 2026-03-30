@@ -582,7 +582,10 @@ async def progress_reporter() -> None:
             )
 
         if idle_mode:
-            if (current_time - last_idle_log) >= IDLE_LOG_INTERVAL:
+            if total > 0:
+                idle_mode = False
+                logger.info("🔄 Messages detected, resuming normal operation")
+            elif (current_time - last_idle_log) >= IDLE_LOG_INTERVAL:
                 last_idle_log = current_time
                 logger.info(
                     "⏳ Still idle, waiting for MusicBrainz messages",

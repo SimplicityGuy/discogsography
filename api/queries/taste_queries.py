@@ -76,7 +76,7 @@ async def get_obscurity_score(
     if not rows:
         return {"score": 1.0, "median_collectors": 0.0, "total_releases": 0}
 
-    collector_counts = [r["collectors"] for r in rows]
+    collector_counts = sorted(r["collectors"] for r in rows)
     n = len(collector_counts)
     mid = n // 2
     median = (collector_counts[mid - 1] + collector_counts[mid]) / 2.0 if n % 2 == 0 else float(collector_counts[mid])

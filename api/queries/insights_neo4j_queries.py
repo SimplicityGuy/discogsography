@@ -40,7 +40,7 @@ async def query_genre_trends(driver: Any, genre: str | None = None) -> list[dict
     """
     if genre:
         cypher = """
-        MATCH (r:Release)-[:HAS_GENRE]->(g:Genre {name: $genre})
+        MATCH (r:Release)-[:IS]->(g:Genre {name: $genre})
         WHERE r.year IS NOT NULL AND r.year > 0
         WITH g.name AS genre, (r.year / 10) * 10 AS decade, count(r) AS release_count
         ORDER BY decade
@@ -49,7 +49,7 @@ async def query_genre_trends(driver: Any, genre: str | None = None) -> list[dict
         results = await run_query(driver, cypher, database="neo4j", genre=genre)
     else:
         cypher = """
-        MATCH (r:Release)-[:HAS_GENRE]->(g:Genre)
+        MATCH (r:Release)-[:IS]->(g:Genre)
         WHERE r.year IS NOT NULL AND r.year > 0
         WITH g.name AS genre, (r.year / 10) * 10 AS decade, count(r) AS release_count
         ORDER BY genre, decade
@@ -67,7 +67,7 @@ async def query_label_longevity(driver: Any, limit: int = 50) -> list[dict[str, 
     calculates years active, total releases, and peak decade.
     """
     cypher = """
-    MATCH (l:Label)<-[:RELEASED_ON]-(r:Release)
+    MATCH (r:Release)-[:ON]->(l:Label)
     WHERE r.year IS NOT NULL AND r.year > 0
     WITH l,
          min(r.year) AS first_year,
@@ -112,7 +112,7 @@ async def query_monthly_anniversaries(
     cypher = """
     UNWIND $target_years AS target_year
     MATCH (m:Master {year: target_year})
-    OPTIONAL MATCH (m)<-[:MASTER_OF]-(r:Release)<-[:PERFORMED]-(a:Artist)
+    OPTIONAL MATCH (m)-[:DERIVED_FROM]->(r:Release)-[:BY]->(a:Artist)
     WITH m, collect(DISTINCT a.name)[0] AS artist_name
     RETURN m.id AS master_id, m.title AS title, artist_name,
            m.year AS release_year

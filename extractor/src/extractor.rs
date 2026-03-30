@@ -169,8 +169,11 @@ pub async fn process_discogs_data(
         state_marker.complete_extraction();
         state_marker.save(&marker_path).await?;
 
-        // Send extraction_complete so consumers know this run is done
-        let record_counts = HashMap::new();
+        // Send extraction_complete with actual record counts from state marker
+        let mut record_counts = HashMap::new();
+        for (file_name, file_state) in &state_marker.processing_phase.progress_by_file {
+            record_counts.insert(file_name.clone(), file_state.records_extracted);
+        }
         match mq_factory.create(&config.amqp_connection, &config.amqp_exchange_prefix).await {
             Ok(mq) => {
                 if let Err(e) = mq.send_extraction_complete(&version, extraction_started_at, record_counts, &DataType::discogs()).await {
@@ -980,28 +983,33 @@ pub async fn process_musicbrainz_data(
         let pub_state = state.clone();
         let publisher_handle = tokio::spawn(async move { message_publisher(batch_receiver, pub_mq, pub_dt, pub_state).await });
 
-        // Wait for all stages
+        // Wait for all stages — use per-file success flag to avoid cross-file bleed
+        let mut file_success = true;
         let total_count = match parser_handle.await {
             Ok(Ok(count)) => count,
             Ok(Err(e)) => {
                 error!("❌ MusicBrainz parser failed for {}: {}", data_type, e);
-                success = false;
+                file_success = false;
                 0
             }
             Err(e) => {
                 error!("❌ MusicBrainz parser task panicked for {}: {}", data_type, e);
-                success = false;
+                file_success = false;
                 0
             }
         };
 
         if let Err(e) = batcher_handle.await {
             error!("❌ MusicBrainz batcher task failed for {}: {}", data_type, e);
-            success = false;
+            file_success = false;
         }
 
         if let Err(e) = publisher_handle.await {
             error!("❌ MusicBrainz publisher task failed for {}: {}", data_type, e);
+            file_success = false;
+        }
+
+        if !file_success {
             success = false;
         }
 
@@ -1009,7 +1017,7 @@ pub async fn process_musicbrainz_data(
         state_marker = batcher_state_marker.lock().await.clone();
 
         // Mark file complete only on success; on failure, save current state without marking complete
-        if success {
+        if file_success {
             state_marker.complete_file_processing(file_name, total_count);
         }
         state_marker.save(&marker_path).await?;
@@ -1021,10 +1029,12 @@ pub async fn process_musicbrainz_data(
             s.active_connections.remove(data_type);
         }
 
-        // Send file_complete message
-        if let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
-            error!("❌ Failed to send file_complete for {}: {}", data_type, e);
-            success = false;
+        // Send file_complete message only on success to avoid misleading consumers
+        if file_success {
+            if let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
+                error!("❌ Failed to send file_complete for {}: {}", data_type, e);
+                success = false;
+            }
         }
 
         record_counts.insert(data_type.to_string(), total_count);

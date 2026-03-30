@@ -293,6 +293,9 @@ class PostgreSQLBatchProcessor:
                     batch_size=len(messages),
                     error=str(e),
                 )
+                # Re-enqueue messages for local retry before AMQP nack
+                for msg in reversed(messages):
+                    queue.appendleft(msg)
                 # Track failures for non-transient errors too, to enable backoff
                 self._consecutive_failures[data_type] = (
                     self._consecutive_failures.get(data_type, 0) + 1
@@ -307,6 +310,8 @@ class PostgreSQLBatchProcessor:
                     self.config.backoff_max,
                 )
                 self._backoff_until[data_type] = time.time() + delay
+                # Messages are back on deque for retry — do NOT nack them
+                return
 
         batch_duration = time.time() - batch_start
 
