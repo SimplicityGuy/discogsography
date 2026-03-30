@@ -1003,3 +1003,44 @@ class TestConnectionTestFailures:
 
         mock_conn.close.assert_called_once()
         assert manager._connection is None
+
+
+class TestAsyncLazyLockInit:
+    """Tests for lazy asyncio.Lock initialization in _on_success_async and _on_failure_async."""
+
+    @pytest.mark.asyncio
+    async def test_on_success_async_creates_lock_when_none(self) -> None:
+        """Test _on_success_async lazily creates asyncio.Lock when _async_lock is None."""
+        import asyncio
+
+        config = CircuitBreakerConfig(name="TestBreaker")
+        breaker = CircuitBreaker(config)
+
+        # Ensure lock starts as None
+        assert breaker._async_lock is None
+
+        # Call _on_success_async directly
+        await breaker._on_success_async()
+
+        # Lock should now be initialized
+        assert isinstance(breaker._async_lock, asyncio.Lock)
+        assert breaker.failure_count == 0
+
+    @pytest.mark.asyncio
+    async def test_on_failure_async_creates_lock_when_none(self) -> None:
+        """Test _on_failure_async lazily creates asyncio.Lock when _async_lock is None."""
+        import asyncio
+
+        config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=5)
+        breaker = CircuitBreaker(config)
+
+        # Ensure lock starts as None
+        assert breaker._async_lock is None
+
+        # Call _on_failure_async directly
+        await breaker._on_failure_async()
+
+        # Lock should now be initialized
+        assert isinstance(breaker._async_lock, asyncio.Lock)
+        assert breaker.failure_count == 1
+        assert breaker.last_failure_time is not None

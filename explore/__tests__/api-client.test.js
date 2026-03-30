@@ -1099,6 +1099,70 @@ describe('ApiClient', () => {
         });
     });
 
+    describe('askNlqStream SSE streaming', () => {
+        function makeReadableStream(chunks) {
+            let index = 0;
+            return {
+                getReader() {
+                    return {
+                        read() {
+                            if (index < chunks.length) {
+                                const chunk = chunks[index++];
+                                return Promise.resolve({
+                                    done: false,
+                                    value: new TextEncoder().encode(chunk),
+                                });
+                            }
+                            return Promise.resolve({ done: true, value: undefined });
+                        },
+                    };
+                },
+            };
+        }
+
+        it('should flush buffer on stream completion (done=true with remaining data)', async () => {
+            // The final chunk has data WITHOUT a trailing newline, so it stays in buffer
+            // until done=true triggers the flush
+            const stream = makeReadableStream([
+                'event: result\ndata: {"answer":"hello"}',
+            ]);
+
+            vi.stubGlobal('fetch', async () => ({
+                ok: true,
+                body: stream,
+            }));
+
+            const onResult = vi.fn();
+            window.apiClient.askNlqStream('test query', null, vi.fn(), onResult, vi.fn());
+
+            // Wait for async stream processing
+            await new Promise(r => setTimeout(r, 50));
+
+            expect(onResult).toHaveBeenCalledWith({ answer: 'hello' });
+        });
+
+        it('should persist eventType across chunk boundaries', async () => {
+            // event: line is in chunk 1, data: line is in chunk 2
+            const stream = makeReadableStream([
+                'event: status\n',
+                'data: {"step":"thinking"}\n\n',
+            ]);
+
+            vi.stubGlobal('fetch', async () => ({
+                ok: true,
+                body: stream,
+            }));
+
+            const onStatus = vi.fn();
+            window.apiClient.askNlqStream('test query', null, onStatus, vi.fn(), vi.fn());
+
+            // Wait for async stream processing
+            await new Promise(r => setTimeout(r, 50));
+
+            expect(onStatus).toHaveBeenCalledWith({ step: 'thinking' });
+        });
+    });
+
     describe('2FA methods', () => {
         it('twoFactorSetup should POST to /api/auth/2fa/setup with Authorization header', async () => {
             let capturedUrl, capturedOptions;

@@ -480,6 +480,102 @@ class TestLogComputationFailureDuringError:
             with pytest.raises(RuntimeError, match="API down"):
                 await compute_and_store_genre_trends(mock_client, mock_pool)
 
+    @pytest.mark.asyncio
+    async def test_label_longevity_original_exception_propagates_when_log_fails(self) -> None:
+        """Label longevity: original exception propagates even when _log_computation raises."""
+        from insights.computations import compute_and_store_label_longevity
+
+        mock_client = AsyncMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.execute = AsyncMock(side_effect=RuntimeError("DB log write failed"))
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = AsyncMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        with patch("insights.computations._fetch_from_api") as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("API unreachable")
+            with pytest.raises(RuntimeError, match="API unreachable"):
+                await compute_and_store_label_longevity(mock_client, mock_pool)
+
+    @pytest.mark.asyncio
+    async def test_anniversaries_original_exception_propagates_when_log_fails(self) -> None:
+        """Anniversaries: original exception propagates even when _log_computation raises."""
+        from insights.computations import compute_and_store_anniversaries
+
+        mock_client = AsyncMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.execute = AsyncMock(side_effect=RuntimeError("DB log write failed"))
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = AsyncMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        with patch("insights.computations._fetch_from_api") as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("API timeout")
+            with pytest.raises(RuntimeError, match="API timeout"):
+                await compute_and_store_anniversaries(mock_client, mock_pool, current_year=2026, current_month=3)
+
+    @pytest.mark.asyncio
+    async def test_data_completeness_original_exception_propagates_when_log_fails(self) -> None:
+        """Data completeness: original exception propagates even when _log_computation raises."""
+        from insights.computations import compute_and_store_data_completeness
+
+        mock_client = AsyncMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.execute = AsyncMock(side_effect=RuntimeError("DB log write failed"))
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = AsyncMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        with patch("insights.computations._fetch_from_api") as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("API connection refused")
+            with pytest.raises(RuntimeError, match="API connection refused"):
+                await compute_and_store_data_completeness(mock_client, mock_pool)
+
+    @pytest.mark.asyncio
+    async def test_rarity_original_exception_propagates_when_log_fails(self) -> None:
+        """Rarity: original exception propagates even when _log_computation raises."""
+        from insights.computations import compute_and_store_rarity
+
+        mock_client = AsyncMock()
+        mock_cursor = AsyncMock()
+        mock_cursor.execute = AsyncMock(side_effect=RuntimeError("DB log write failed"))
+        mock_cursor.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = AsyncMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor)
+        mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = AsyncMock()
+        mock_pool.connection = MagicMock(return_value=mock_conn)
+
+        with patch("insights.computations._fetch_from_api") as mock_fetch:
+            mock_fetch.side_effect = RuntimeError("API server error")
+            with pytest.raises(RuntimeError, match="API server error"):
+                await compute_and_store_rarity(mock_client, mock_pool)
+
 
 class TestRunAllComputations:
     @pytest.mark.asyncio
