@@ -1039,3 +1039,24 @@ fn test_is_version_complete_missing_entity() {
     let downloader = MbDownloader::new(dir.path().to_path_buf(), "https://example.com".to_string());
     assert!(!downloader.is_version_complete(dir.path()), "Should be incomplete with missing entity");
 }
+
+#[test]
+fn test_log_compression_progress_with_data() {
+    // Exercises all branches: elapsed > 0, input_size > 0
+    let filename = std::ffi::OsStr::new("artist.jsonl");
+    log_compression_progress(filename, 50_000_000, 100_000_000, 5.0);
+}
+
+#[test]
+fn test_log_compression_progress_zero_elapsed() {
+    // Exercises the elapsed == 0 branch (speed = 0.0)
+    let filename = std::ffi::OsStr::new("label.jsonl");
+    log_compression_progress(filename, 1000, 5000, 0.0);
+}
+
+#[test]
+fn test_log_compression_progress_zero_input_size() {
+    // Exercises the input_size == 0 branch (pct = 0.0)
+    let filename = std::ffi::OsStr::new("release.jsonl");
+    log_compression_progress(filename, 0, 0, 1.0);
+}

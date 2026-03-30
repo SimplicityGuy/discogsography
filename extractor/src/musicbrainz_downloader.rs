@@ -393,6 +393,19 @@ pub fn parse_sha256sums(content: &str) -> HashMap<String, String> {
         .collect()
 }
 
+/// Log compression progress for large files.
+pub fn log_compression_progress(filename: &std::ffi::OsStr, total_read: u64, input_size: u64, elapsed_secs: f64) {
+    let speed = if elapsed_secs > 0.0 { (total_read as f64 / 1_048_576.0) / elapsed_secs } else { 0.0 };
+    let pct = if input_size > 0 { (total_read as f64 / input_size as f64) * 100.0 } else { 0.0 };
+    info!(
+        "🧹 Compressing {:?} — {:.1}% ({:.1} MB read, {:.1} MB/s)",
+        filename,
+        pct,
+        total_read as f64 / 1_048_576.0,
+        speed,
+    );
+}
+
 /// Compress a `.jsonl` file to `.jsonl.xz` and delete the original.
 ///
 /// Uses XZ compression (level 6) to match the original MusicBrainz dump format.
@@ -417,6 +430,7 @@ pub fn compress_jsonl_to_xz(jsonl_path: &Path) -> Result<PathBuf> {
     let mut total_read: u64 = 0;
     let compress_start = std::time::Instant::now();
     let mut last_progress_log = compress_start;
+    let filename = jsonl_path.file_name().unwrap_or_default().to_owned();
 
     loop {
         let n = reader.read(&mut buf).context("Failed to read during compression")?;
@@ -428,16 +442,7 @@ pub fn compress_jsonl_to_xz(jsonl_path: &Path) -> Result<PathBuf> {
 
         let now = std::time::Instant::now();
         if now.duration_since(last_progress_log).as_secs() >= 10 {
-            let elapsed = compress_start.elapsed().as_secs_f64();
-            let speed = if elapsed > 0.0 { (total_read as f64 / 1_048_576.0) / elapsed } else { 0.0 };
-            let pct = if input_size > 0 { (total_read as f64 / input_size as f64) * 100.0 } else { 0.0 };
-            info!(
-                "🧹 Compressing {:?} — {:.1}% ({:.1} MB read, {:.1} MB/s)",
-                jsonl_path.file_name().unwrap_or_default(),
-                pct,
-                total_read as f64 / 1_048_576.0,
-                speed,
-            );
+            log_compression_progress(&filename, total_read, input_size, compress_start.elapsed().as_secs_f64());
             last_progress_log = now;
         }
     }

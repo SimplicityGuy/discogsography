@@ -1041,21 +1041,15 @@ pub async fn process_musicbrainz_data(
         // Compress JSONL to XZ to reclaim disk space (only for successfully processed plain .jsonl files)
         if file_success && file_path.extension().is_some_and(|e| e == "jsonl") {
             let compress_path = file_path.clone();
-            match tokio::task::spawn_blocking(move || compress_jsonl_to_xz(&compress_path)).await {
-                Ok(Ok(compressed_path)) => {
-                    // Register compressed filename in state marker so resume finds it as completed
-                    if let Some(compressed_name) = compressed_path.file_name().and_then(|n| n.to_str()) {
-                        state_marker.start_file_processing(compressed_name);
-                        state_marker.complete_file_processing(compressed_name, total_count);
-                        state_marker.save(&marker_path).await?;
-                    }
+            if let Ok(Ok(compressed_path)) = tokio::task::spawn_blocking(move || compress_jsonl_to_xz(&compress_path)).await {
+                // Register compressed filename in state marker so resume finds it as completed
+                if let Some(compressed_name) = compressed_path.file_name().and_then(|n| n.to_str()) {
+                    state_marker.start_file_processing(compressed_name);
+                    state_marker.complete_file_processing(compressed_name, total_count);
+                    state_marker.save(&marker_path).await?;
                 }
-                Ok(Err(e)) => {
-                    warn!("⚠️ Failed to compress {}: {} (continuing without compression)", file_name, e);
-                }
-                Err(e) => {
-                    warn!("⚠️ Compression task panicked for {}: {} (continuing without compression)", file_name, e);
-                }
+            } else {
+                warn!("⚠️ Failed to compress {} (continuing without compression)", file_name);
             }
         }
 

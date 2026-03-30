@@ -2009,3 +2009,42 @@ async fn test_process_musicbrainz_data_entity_failure_skips_compression() {
         "artist.jsonl.xz should NOT exist (pipeline failed)"
     );
 }
+
+#[tokio::test]
+async fn test_process_musicbrainz_data_send_file_complete_failure_still_compresses() {
+    // When send_file_complete fails, file_success is still true (it was set before send),
+    // so compression should still run. Only overall `success` is set to false.
+    let temp_dir = TempDir::new().unwrap();
+    let (_server, base_url) = mb_mock_server().await;
+
+    let versioned = temp_dir.path().join("20260322-000000");
+    std::fs::create_dir_all(&versioned).unwrap();
+    std::fs::write(versioned.join("artist.jsonl"), b"{\"id\":\"a1\",\"name\":\"A\",\"relations\":[]}\n").unwrap();
+    std::fs::write(versioned.join("label.jsonl"), b"").unwrap();
+    std::fs::write(versioned.join("release-group.jsonl"), b"").unwrap();
+    std::fs::write(versioned.join("release.jsonl"), b"").unwrap();
+
+    let config = Arc::new(mb_test_config(temp_dir.path(), &base_url));
+    let state = Arc::new(RwLock::new(ExtractorState::default()));
+    let shutdown = Arc::new(tokio::sync::Notify::new());
+
+    let mut mock_mq = MockMessagePublisher::new();
+    mock_mq.expect_setup_exchange().returning(|_| Ok(()));
+    mock_mq.expect_publish_batch().returning(|_, _| Ok(()));
+    // send_file_complete fails — sets success=false but file_success remains true
+    mock_mq.expect_send_file_complete().returning(|_, _, _| Err(anyhow::anyhow!("AMQP send error")));
+    mock_mq.expect_send_extraction_complete().returning(|_, _, _, _| Ok(()));
+    mock_mq.expect_close().returning(|| Ok(()));
+
+    let factory = Arc::new(MockMqFactory { publisher: Arc::new(mock_mq) });
+
+    let result = process_musicbrainz_data(config, state.clone(), shutdown, false, factory, None).await;
+
+    assert!(result.is_ok());
+    // Returns false because success=false (send_file_complete failed)
+    assert!(!result.unwrap(), "Should return false due to send_file_complete failure");
+
+    // Compression should still have run since file_success was true
+    assert!(!versioned.join("artist.jsonl").exists(), "artist.jsonl should be compressed despite send failure");
+    assert!(versioned.join("artist.jsonl.xz").exists(), "artist.jsonl.xz should exist");
+}
