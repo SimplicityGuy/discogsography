@@ -905,3 +905,76 @@ fn test_discover_finds_compressed_files_after_compression() {
     assert!(found.contains_key(&DataType::Releases));
     assert!(found.contains_key(&DataType::ReleaseGroups));
 }
+
+#[test]
+fn test_compress_jsonl_to_xz_multiline_content() {
+    let dir = TempDir::new().unwrap();
+    let jsonl_path = dir.path().join("release.jsonl");
+
+    // Write many lines to exercise the read loop more thoroughly
+    let mut content = String::new();
+    for i in 0..1000 {
+        content.push_str(&format!("{{\"id\":\"{}\",\"name\":\"Release {}\",\"relations\":[]}}\n", i, i));
+    }
+    std::fs::write(&jsonl_path, &content).unwrap();
+    let original_size = std::fs::metadata(&jsonl_path).unwrap().len();
+
+    let result = compress_jsonl_to_xz(&jsonl_path);
+    assert!(result.is_ok());
+
+    let xz_path = result.unwrap();
+    let compressed_size = std::fs::metadata(&xz_path).unwrap().len();
+
+    // XZ compression should significantly reduce size for repetitive JSONL
+    assert!(compressed_size < original_size, "Compressed should be smaller than original");
+
+    // Verify round-trip decompression
+    let file = std::fs::File::open(&xz_path).unwrap();
+    let mut decoder = xz2::read::XzDecoder::new(file);
+    let mut decompressed = String::new();
+    decoder.read_to_string(&mut decompressed).unwrap();
+    assert_eq!(decompressed, content);
+}
+
+#[test]
+fn test_compress_jsonl_to_xz_output_path_correct() {
+    // Verify .with_extension("jsonl.xz") produces correct path for various inputs
+    let dir = TempDir::new().unwrap();
+
+    for name in &["artist.jsonl", "release-group.jsonl", "label.jsonl"] {
+        let jsonl_path = dir.path().join(name);
+        std::fs::write(&jsonl_path, b"test\n").unwrap();
+
+        let result = compress_jsonl_to_xz(&jsonl_path).unwrap();
+        let expected = dir.path().join(format!("{}.xz", name));
+        assert_eq!(result, expected, "Compressed path should be {}.xz", name);
+        assert!(result.exists());
+    }
+}
+
+#[test]
+fn test_compress_jsonl_to_xz_preserves_other_files_in_directory() {
+    // Verify compression doesn't interfere with other files in the directory
+    let dir = TempDir::new().unwrap();
+
+    // Create an already-compressed file and a new .jsonl file
+    let existing_xz = dir.path().join("label.jsonl.xz");
+    let mut encoder = xz2::write::XzEncoder::new(Vec::new(), 6);
+    encoder.write_all(b"existing data\n").unwrap();
+    std::fs::write(&existing_xz, encoder.finish().unwrap()).unwrap();
+
+    let new_jsonl = dir.path().join("artist.jsonl");
+    std::fs::write(&new_jsonl, b"new data\n").unwrap();
+
+    // Compress only the new file
+    let result = compress_jsonl_to_xz(&new_jsonl).unwrap();
+    assert_eq!(result, dir.path().join("artist.jsonl.xz"));
+
+    // Existing XZ file should be untouched
+    assert!(existing_xz.exists(), "Existing .xz file should not be affected");
+    let file = std::fs::File::open(&existing_xz).unwrap();
+    let mut decoder = xz2::read::XzDecoder::new(file);
+    let mut content = String::new();
+    decoder.read_to_string(&mut content).unwrap();
+    assert_eq!(content, "existing data\n");
+}

@@ -1041,6 +1041,7 @@ pub async fn process_musicbrainz_data(
                 Ok(Ok(compressed_path)) => {
                     // Register compressed filename in state marker so resume finds it as completed
                     if let Some(compressed_name) = compressed_path.file_name().and_then(|n| n.to_str()) {
+                        state_marker.start_file_processing(compressed_name);
                         state_marker.complete_file_processing(compressed_name, total_count);
                         state_marker.save(&marker_path).await?;
                     }

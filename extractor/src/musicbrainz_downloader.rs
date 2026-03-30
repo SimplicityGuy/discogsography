@@ -248,11 +248,14 @@ impl MbDownloader {
     }
 
     /// Check whether a version directory contains all expected entity JSONL files.
+    /// Recognizes both uncompressed `.jsonl` and compressed `.jsonl.xz` variants.
     pub(crate) fn is_version_complete(&self, version_dir: &Path) -> bool {
         if !version_dir.is_dir() {
             return false;
         }
-        MB_ENTITIES.iter().all(|entity| version_dir.join(format!("{}.jsonl", entity)).exists())
+        MB_ENTITIES.iter().all(|entity| {
+            version_dir.join(format!("{}.jsonl", entity)).exists() || version_dir.join(format!("{}.jsonl.xz", entity)).exists()
+        })
     }
 
     /// Download a file with retry logic and SHA256 verification.
