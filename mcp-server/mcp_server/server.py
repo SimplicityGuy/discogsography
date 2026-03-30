@@ -81,16 +81,34 @@ def _ctx(ctx: Context) -> AppContext:
     return ctx.request_context.lifespan_context  # type: ignore[no-any-return]
 
 
-async def _api_get(app: AppContext, path: str, params: dict[str, Any] | None = None) -> httpx.Response:
-    """Make a GET request to the Discogsography API."""
+async def _api_get(app: AppContext, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Make a GET request to the Discogsography API and return parsed JSON."""
     url = f"{app.base_url}{path}"
-    return await app.client.get(url, params=params)
+    try:
+        resp = await app.client.get(url, params=params)
+        resp.raise_for_status()
+        return resp.json()  # type: ignore[no-any-return]
+    except httpx.HTTPStatusError as exc:
+        logger.error("API HTTP error", url=url, status=exc.response.status_code)
+        return {"error": f"API returned HTTP {exc.response.status_code}", "url": url}
+    except Exception as exc:
+        logger.error("API request failed", url=url, error=str(exc))
+        return {"error": f"API request failed: {exc}", "url": url}
 
 
-async def _api_post(app: AppContext, path: str, json_data: dict[str, Any] | None = None) -> httpx.Response:
-    """Make a POST request to the Discogsography API."""
+async def _api_post(app: AppContext, path: str, json_data: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Make a POST request to the Discogsography API and return parsed JSON."""
     url = f"{app.base_url}{path}"
-    return await app.client.post(url, json=json_data)
+    try:
+        resp = await app.client.post(url, json=json_data)
+        resp.raise_for_status()
+        return resp.json()  # type: ignore[no-any-return]
+    except httpx.HTTPStatusError as exc:
+        logger.error("API HTTP error", url=url, status=exc.response.status_code)
+        return {"error": f"API returned HTTP {exc.response.status_code}", "url": url}
+    except Exception as exc:
+        logger.error("API request failed", url=url, error=str(exc))
+        return {"error": f"API request failed: {exc}", "url": url}
 
 
 # ---------------------------------------------------------------------------
@@ -123,7 +141,7 @@ async def search(
         return {"error": f"Invalid type(s): {', '.join(invalid)}. Valid: {', '.join(_VALID_SEARCH_TYPES)}"}
 
     app = _ctx(ctx)
-    resp = await _api_get(
+    return await _api_get(
         app,
         "/api/search",
         {
@@ -132,7 +150,6 @@ async def search(
             "limit": min(max(limit, 1), 100),
         },
     )
-    return resp.json()  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -154,10 +171,7 @@ async def get_artist_details(
         artist_id: The Discogs artist ID (numeric string).
     """
     app = _ctx(ctx)
-    resp = await _api_get(app, f"/api/node/{artist_id}", {"type": "artist"})
-    if resp.status_code == 404:
-        return {"error": f"Artist '{artist_id}' not found"}
-    return resp.json()  # type: ignore[no-any-return]
+    return await _api_get(app, f"/api/node/{artist_id}", {"type": "artist"})
 
 
 @mcp.tool()
@@ -174,10 +188,7 @@ async def get_label_details(
         label_id: The Discogs label ID (numeric string).
     """
     app = _ctx(ctx)
-    resp = await _api_get(app, f"/api/node/{label_id}", {"type": "label"})
-    if resp.status_code == 404:
-        return {"error": f"Label '{label_id}' not found"}
-    return resp.json()  # type: ignore[no-any-return]
+    return await _api_get(app, f"/api/node/{label_id}", {"type": "label"})
 
 
 @mcp.tool()
@@ -194,10 +205,7 @@ async def get_release_details(
         release_id: The Discogs release ID (numeric string).
     """
     app = _ctx(ctx)
-    resp = await _api_get(app, f"/api/node/{release_id}", {"type": "release"})
-    if resp.status_code == 404:
-        return {"error": f"Release '{release_id}' not found"}
-    return resp.json()  # type: ignore[no-any-return]
+    return await _api_get(app, f"/api/node/{release_id}", {"type": "release"})
 
 
 @mcp.tool()
@@ -213,10 +221,7 @@ async def get_genre_details(
         genre_name: Exact genre name (e.g. "Jazz", "Electronic", "Rock").
     """
     app = _ctx(ctx)
-    resp = await _api_get(app, f"/api/node/{genre_name}", {"type": "genre"})
-    if resp.status_code == 404:
-        return {"error": f"Genre '{genre_name}' not found"}
-    return resp.json()  # type: ignore[no-any-return]
+    return await _api_get(app, f"/api/node/{genre_name}", {"type": "genre"})
 
 
 @mcp.tool()
@@ -232,10 +237,7 @@ async def get_style_details(
         style_name: Exact style name (e.g. "Acid Jazz", "Ambient", "Punk").
     """
     app = _ctx(ctx)
-    resp = await _api_get(app, f"/api/node/{style_name}", {"type": "style"})
-    if resp.status_code == 404:
-        return {"error": f"Style '{style_name}' not found"}
-    return resp.json()  # type: ignore[no-any-return]
+    return await _api_get(app, f"/api/node/{style_name}", {"type": "style"})
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +275,7 @@ async def find_path(
         return {"error": f"Invalid to_type: {to_type}. Must be one of: {', '.join(sorted(_VALID_ENTITY_TYPES))}"}
 
     app = _ctx(ctx)
-    resp = await _api_get(
+    return await _api_get(
         app,
         "/api/path",
         {
@@ -284,8 +286,6 @@ async def find_path(
             "max_depth": min(max(int(max_depth), 1), 15),
         },
     )
-
-    return resp.json()  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -312,7 +312,7 @@ async def get_trends(
         return {"error": f"Invalid type: {entity_type}. Must be artist, genre, label, or style"}
 
     app = _ctx(ctx)
-    resp = await _api_get(
+    return await _api_get(
         app,
         "/api/trends",
         {
@@ -320,7 +320,6 @@ async def get_trends(
             "type": entity_type_lower,
         },
     )
-    return resp.json()  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -338,8 +337,7 @@ async def get_graph_stats(
     Useful for understanding the size and scope of the database.
     """
     app = _ctx(ctx)
-    resp = await _api_get(app, "/api/graph/stats")
-    return resp.json()  # type: ignore[no-any-return]
+    return await _api_get(app, "/api/graph/stats")
 
 
 # ---------------------------------------------------------------------------
@@ -363,14 +361,11 @@ async def get_collaborators(
         limit: Maximum collaborators to return (1-100, default 20).
     """
     app = _ctx(ctx)
-    resp = await _api_get(
+    return await _api_get(
         app,
         f"/api/collaborators/{artist_id}",
         {"limit": min(max(limit, 1), 100)},
     )
-    if resp.status_code == 404:
-        return {"error": f"Artist '{artist_id}' not found"}
-    return resp.json()  # type: ignore[no-any-return]
 
 
 # ---------------------------------------------------------------------------
@@ -389,8 +384,7 @@ async def get_genre_tree(
     taxonomy of music in the database.
     """
     app = _ctx(ctx)
-    resp = await _api_get(app, "/api/genre-tree")
-    return resp.json()  # type: ignore[no-any-return]
+    return await _api_get(app, "/api/genre-tree")
 
 
 # ---------------------------------------------------------------------------
@@ -415,8 +409,7 @@ async def nlq_query(
     - "How are Kraftwerk and Afrika Bambaataa connected?"
     """
     app = _ctx(ctx)
-    resp = await _api_post(app, "/api/nlq/query", json_data={"query": query})
-    return resp.json()  # type: ignore[no-any-return]
+    return await _api_post(app, "/api/nlq/query", json_data={"query": query})
 
 
 # ---------------------------------------------------------------------------

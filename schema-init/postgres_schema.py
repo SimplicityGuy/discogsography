@@ -643,6 +643,7 @@ async def create_postgres_schema(pool: Any) -> int:
     failure_count = 0
 
     async with pool.connection() as conn:
+        await conn.set_autocommit(True)
         # psycopg async cursor types are not fully inferred by mypy
         async with conn.cursor() as cursor_cm:
             cursor = cast(Any, cursor_cm)

@@ -19,6 +19,7 @@ def get_message_from_queue(
     username = username or os.environ.get("RABBITMQ_USERNAME", "discogsography")
     password = password or get_secret("RABBITMQ_PASSWORD", "")
     """Peek at a message from the queue without consuming it."""
+    connection = None
     try:
         # Connect to RabbitMQ
         credentials = pika.PlainCredentials(username, password)
@@ -29,21 +30,21 @@ def get_message_from_queue(
         method, _properties, body = channel.basic_get(queue=queue_name, auto_ack=False)
 
         if method:
-            # Parse the message
-            message: dict[str, Any] = json.loads(body)
-
-            # Reject the message to put it back in the queue
+            # Reject the message to put it back in the queue before parsing
             channel.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
-            connection.close()
+            # Parse the message (safe to fail now — message is already requeued)
+            message: dict[str, Any] = json.loads(body)
             return message
         else:
-            connection.close()
             return None
 
     except Exception as e:
         print(f"Error: {e}")
         return None
+    finally:
+        if connection and not connection.is_closed:
+            connection.close()
 
 
 def analyze_message(message: dict[str, Any] | None, message_type: str) -> None:

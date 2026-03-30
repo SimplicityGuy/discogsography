@@ -215,8 +215,20 @@ fn test_source_serialize_deserialize() {
 }
 
 #[test]
+fn test_discogs_types() {
+    let discogs = DataType::discogs();
+    assert_eq!(discogs.len(), 4);
+    assert!(discogs.contains(&DataType::Artists));
+    assert!(discogs.contains(&DataType::Labels));
+    assert!(discogs.contains(&DataType::Masters));
+    assert!(discogs.contains(&DataType::Releases));
+    // Discogs does not have ReleaseGroups
+    assert!(!discogs.contains(&DataType::ReleaseGroups));
+}
+
+#[test]
 fn test_musicbrainz_types() {
-    let mb_types = DataType::musicbrainz_types();
+    let mb_types = DataType::musicbrainz();
     assert_eq!(mb_types.len(), 4);
     assert!(mb_types.contains(&DataType::Artists));
     assert!(mb_types.contains(&DataType::Labels));

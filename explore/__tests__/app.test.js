@@ -2495,6 +2495,30 @@ describe('app.js NLQ wiring (inline simulation)', () => {
         expect(document.getElementById('nlqPanel').style.display).toBe('none');
     });
 
+    it('onExploreEntity callback should call _switchPane and _loadExplore on exploreApp', () => {
+        const mockSwitchPane = vi.fn();
+        const mockLoadExplore = vi.fn();
+        window.exploreApp = { _switchPane: mockSwitchPane, _loadExplore: mockLoadExplore };
+
+        // Re-wire onExploreEntity to match actual app.js logic
+        nlqPanel.onExploreEntity = (name, type) => {
+            nlqPanel.hide();
+            if (window.exploreApp) {
+                window.exploreApp._switchPane('explore');
+                window.exploreApp._loadExplore(name, type);
+            }
+        };
+
+        nlqPanel.show();
+        nlqPanel.onExploreEntity('Miles Davis', 'artist');
+
+        expect(mockSwitchPane).toHaveBeenCalledWith('explore');
+        expect(mockLoadExplore).toHaveBeenCalledWith('Miles Davis', 'artist');
+        expect(document.getElementById('nlqPanel').style.display).toBe('none');
+
+        delete window.exploreApp;
+    });
+
     it('should keep toggle hidden when NLQ is disabled', async () => {
         globalThis.apiClient.checkNlqStatus = vi.fn(async () => ({ enabled: false }));
         const toggle = document.getElementById('searchAskToggle');

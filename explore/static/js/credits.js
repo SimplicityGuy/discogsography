@@ -214,8 +214,8 @@ class CreditsPanel {
             artistLink.onclick = (e) => {
                 e.preventDefault();
                 if (window.exploreApp) {
-                    window.exploreApp._doExplore(profile.artist_name || profile.name, 'artist');
                     window.exploreApp._switchPane('explore');
+                    window.exploreApp._loadExplore(profile.artist_name || profile.name, 'artist');
                 }
             };
         } else {

@@ -1459,8 +1459,9 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('searchModeBtn')?.classList.remove('bg-inner-bg', 'text-text-mid', 'border', 'border-border-color');
         nlqPanel.hide();
         // Trigger explore
-        if (window.graphController) {
-            window.graphController.loadEntity(name, type);
+        if (window.exploreApp) {
+            window.exploreApp._switchPane('explore');
+            window.exploreApp._loadExplore(name, type);
         }
     };
 

@@ -59,17 +59,19 @@ def get_service_logs(service: str, lines: int = 20) -> str:
 
 def check_neo4j_status() -> str:
     """Check Neo4j database status."""
+    neo4j_username = os.environ.get("NEO4J_USERNAME", "neo4j")
+    neo4j_password = get_secret("NEO4J_PASSWORD", "")
     try:
-        result = subprocess.run(  # nosec B603 B607
+        result = subprocess.run(  # noqa: S603  # nosec B603 B607
             [  # noqa: S607
                 "docker",
                 "exec",
                 "discogsography-neo4j",
                 "cypher-shell",
                 "-u",
-                "neo4j",
+                neo4j_username,
                 "-p",
-                "discogsography",
+                neo4j_password,
                 "MATCH (n) RETURN labels(n)[0] as label, count(n) as count ORDER BY count DESC LIMIT 10",
             ],
             capture_output=True,

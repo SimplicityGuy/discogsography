@@ -481,6 +481,11 @@ async def purge_stale_rows(data_type: str, started_at: str) -> None:
         )
         return
 
+    # Parse started_at as a timezone-aware UTC datetime to ensure correct comparison
+    started_at_dt = datetime.fromisoformat(started_at)
+    if started_at_dt.tzinfo is None:
+        started_at_dt = started_at_dt.replace(tzinfo=UTC)
+
     try:
         async with connection_pool.connection() as conn:
             async with conn.cursor() as cursor:
@@ -488,7 +493,7 @@ async def purge_stale_rows(data_type: str, started_at: str) -> None:
                     sql.SQL(
                         "DELETE FROM {table} WHERE updated_at < %s RETURNING data_id"
                     ).format(table=sql.Identifier(data_type)),
-                    (started_at,),
+                    (started_at_dt,),
                 )
                 deleted_rows = await cursor.fetchall()
                 deleted_count = len(deleted_rows)

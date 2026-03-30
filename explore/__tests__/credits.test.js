@@ -231,7 +231,7 @@ describe('CreditsPanel', () => {
         globalThis.d3 = createD3Mock();
 
         globalThis.window.exploreApp = {
-            _doExplore: vi.fn(),
+            _loadExplore: vi.fn(),
             _switchPane: vi.fn(),
         };
 
@@ -838,8 +838,8 @@ describe('CreditsPanel', () => {
             const link = document.getElementById('creditsArtistLink');
             link.click();
 
-            expect(window.exploreApp._doExplore).toHaveBeenCalledWith('Bob Ludwig', 'artist');
             expect(window.exploreApp._switchPane).toHaveBeenCalledWith('explore');
+            expect(window.exploreApp._loadExplore).toHaveBeenCalledWith('Bob Ludwig', 'artist');
         });
 
         it('should render role breakdown pills', () => {

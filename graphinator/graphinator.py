@@ -682,12 +682,10 @@ async def cleanup_stub_nodes(data_type: str) -> None:
     try:
         async with graph.session(database="neo4j") as session:
             result = await session.run(
-                f"MATCH (n:{label}) WHERE n.sha256 IS NULL "
-                "DETACH DELETE n "
-                "RETURN count(n) AS deleted",
+                f"MATCH (n:{label}) WHERE n.sha256 IS NULL DETACH DELETE n",
             )
-            record = await result.single()
-            deleted = record["deleted"] if record else 0
+            summary = await result.consume()
+            deleted = summary.counters.nodes_deleted
 
             if deleted > 0:
                 logger.info(
@@ -951,7 +949,8 @@ def process_release(tx: Any, record: dict[str, Any]) -> bool:
     master_id = record.get("master_id")
     if master_id:
         tx.run(
-            "MATCH (r:Release {id: $id}),(m_r:Master {id: $m_id}) "
+            "MATCH (r:Release {id: $id}) "
+            "MERGE (m_r:Master {id: $m_id}) "
             "MERGE (r)-[:DERIVED_FROM]->(m_r)",
             id=record["id"],
             m_id=master_id,
@@ -1536,7 +1535,8 @@ async def main() -> None:
 
             # Close async Neo4j driver
             try:
-                await graph.close()
+                if graph is not None:
+                    await graph.close()
                 logger.info("✅ Async Neo4j driver closed")
             except Exception as e:
                 logger.warning("⚠️ Error closing Neo4j driver", error=str(e))

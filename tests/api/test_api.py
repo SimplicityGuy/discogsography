@@ -208,7 +208,7 @@ class TestRegisterEndpoint:
         data = response.json()
         assert data["message"] == "Registration processed"
 
-    def test_register_duplicate_email_409(
+    def test_register_duplicate_email_returns_201_for_anti_enumeration(
         self,
         test_client: TestClient,
         mock_cur: AsyncMock,

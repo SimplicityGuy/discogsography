@@ -637,6 +637,129 @@ class TestCircuitBreakerEdgeCases:
         assert breaker.failure_count == 2
         assert breaker.state == CircuitState.OPEN
 
+    @pytest.mark.asyncio
+    async def test_call_async_lazy_lock_initialization(self) -> None:
+        """Test that call_async lazily creates the asyncio.Lock on first call."""
+        config = CircuitBreakerConfig(name="TestBreaker")
+        breaker = CircuitBreaker(config)
+
+        # Lock starts as None
+        assert breaker._async_lock is None
+
+        async def async_func() -> str:
+            return "result"
+
+        await breaker.call_async(async_func)
+
+        # After first call, lock should be initialized
+        import asyncio
+
+        assert isinstance(breaker._async_lock, asyncio.Lock)
+
+    def test_call_sync_half_open_executes_under_lock(self) -> None:
+        """Test synchronous call() executes trial call under lock in HALF_OPEN state."""
+        config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=2, recovery_timeout=1)
+        breaker = CircuitBreaker(config)
+
+        func_fail = Mock(side_effect=RuntimeError("Failed"))
+
+        # Open the circuit
+        for _ in range(2):
+            with pytest.raises(RuntimeError):
+                breaker.call(func_fail)
+
+        assert breaker.state == CircuitState.OPEN
+
+        # Wait for recovery timeout
+        time.sleep(1.1)
+
+        # Trial call should execute and close the circuit
+        func_success = Mock(return_value="recovered")
+        result = breaker.call(func_success)
+
+        assert result == "recovered"
+        assert breaker.state == CircuitState.CLOSED
+        assert breaker.failure_count == 0
+
+    def test_call_sync_half_open_failure_reopens_circuit(self) -> None:
+        """Test synchronous HALF_OPEN trial call failure re-opens circuit when threshold met."""
+        config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=2, recovery_timeout=1)
+        breaker = CircuitBreaker(config)
+
+        func_fail = Mock(side_effect=RuntimeError("Failed"))
+
+        # Open the circuit
+        for _ in range(2):
+            with pytest.raises(RuntimeError):
+                breaker.call(func_fail)
+
+        assert breaker.state == CircuitState.OPEN
+
+        # Wait for recovery timeout
+        time.sleep(1.1)
+
+        # Trial call fails again under lock — should re-open circuit
+        with pytest.raises(RuntimeError):
+            breaker.call(func_fail)
+
+        assert breaker.state == CircuitState.OPEN
+
+    @pytest.mark.asyncio
+    async def test_call_async_half_open_executes_under_lock(self) -> None:
+        """Test async call_async executes trial call under lock in HALF_OPEN state."""
+        import asyncio
+
+        config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=2, recovery_timeout=1)
+        breaker = CircuitBreaker(config)
+
+        async def fail_func() -> None:
+            raise RuntimeError("Failed")
+
+        # Open circuit
+        for _ in range(2):
+            with pytest.raises(RuntimeError):
+                await breaker.call_async(fail_func)
+
+        assert breaker.state == CircuitState.OPEN
+
+        # Wait for recovery timeout
+        await asyncio.sleep(1.1)
+
+        # Trial call with sync function under lock in HALF_OPEN state
+        def sync_success() -> str:
+            return "sync_recovered"
+
+        result = await breaker.call_async(sync_success)
+        assert result == "sync_recovered"
+        assert breaker.state == CircuitState.CLOSED
+
+    @pytest.mark.asyncio
+    async def test_call_async_half_open_failure_under_lock(self) -> None:
+        """Test async HALF_OPEN trial call failure under lock re-opens circuit."""
+        import asyncio
+
+        config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=2, recovery_timeout=1)
+        breaker = CircuitBreaker(config)
+
+        async def fail_func() -> None:
+            raise RuntimeError("Failed")
+
+        # Open circuit
+        for _ in range(2):
+            with pytest.raises(RuntimeError):
+                await breaker.call_async(fail_func)
+
+        assert breaker.state == CircuitState.OPEN
+
+        # Wait for recovery timeout
+        await asyncio.sleep(1.1)
+
+        # Trial call fails under lock — should re-open circuit
+        with pytest.raises(RuntimeError):
+            await breaker.call_async(fail_func)
+
+        assert breaker.state == CircuitState.OPEN
+
 
 class TestExponentialBackoffEdgeCases:
     """Additional edge case tests for ExponentialBackoff."""
@@ -880,3 +1003,44 @@ class TestConnectionTestFailures:
 
         mock_conn.close.assert_called_once()
         assert manager._connection is None
+
+
+class TestAsyncLazyLockInit:
+    """Tests for lazy asyncio.Lock initialization in _on_success_async and _on_failure_async."""
+
+    @pytest.mark.asyncio
+    async def test_on_success_async_creates_lock_when_none(self) -> None:
+        """Test _on_success_async lazily creates asyncio.Lock when _async_lock is None."""
+        import asyncio
+
+        config = CircuitBreakerConfig(name="TestBreaker")
+        breaker = CircuitBreaker(config)
+
+        # Ensure lock starts as None
+        assert breaker._async_lock is None
+
+        # Call _on_success_async directly
+        await breaker._on_success_async()
+
+        # Lock should now be initialized
+        assert isinstance(breaker._async_lock, asyncio.Lock)
+        assert breaker.failure_count == 0
+
+    @pytest.mark.asyncio
+    async def test_on_failure_async_creates_lock_when_none(self) -> None:
+        """Test _on_failure_async lazily creates asyncio.Lock when _async_lock is None."""
+        import asyncio
+
+        config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=5)
+        breaker = CircuitBreaker(config)
+
+        # Ensure lock starts as None
+        assert breaker._async_lock is None
+
+        # Call _on_failure_async directly
+        await breaker._on_failure_async()
+
+        # Lock should now be initialized
+        assert isinstance(breaker._async_lock, asyncio.Lock)
+        assert breaker.failure_count == 1
+        assert breaker.last_failure_time is not None

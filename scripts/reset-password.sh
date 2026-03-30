@@ -26,9 +26,10 @@ if [ ${#NEW_PASSWORD} -lt 8 ]; then
 fi
 
 # Generate the PBKDF2-SHA256 hash using Python (matches api/auth.py format)
-if HASHED=$(docker exec "${CONTAINER}" python3 -c "
+# Pass the password via environment variable to avoid shell injection
+if HASHED=$(docker exec -e RESET_PW="${NEW_PASSWORD}" "${CONTAINER}" python3 -c "
 import hashlib, os
-password = '''${NEW_PASSWORD}'''
+password = os.environ['RESET_PW']
 salt = os.urandom(32)
 key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100_000)
 print(salt.hex() + ':' + key.hex())
@@ -37,9 +38,9 @@ print(salt.hex() + ':' + key.hex())
 else
   # Alpine postgres image may not have python3; use the API container instead
   echo "python3 not available in '${CONTAINER}' container, trying API container..."
-  HASHED=$(docker exec discogsography-api python3 -c "
+  HASHED=$(docker exec -e RESET_PW="${NEW_PASSWORD}" discogsography-api python3 -c "
 import hashlib, os
-password = '''${NEW_PASSWORD}'''
+password = os.environ['RESET_PW']
 salt = os.urandom(32)
 key = hashlib.pbkdf2_hmac('sha256', password.encode('utf-8'), salt, 100_000)
 print(salt.hex() + ':' + key.hex())
@@ -56,8 +57,9 @@ fi
 
 echo "Updating password for: ${EMAIL}"
 
-RESULT=$(docker exec "${CONTAINER}" env PGPASSWORD="${PG_PASSWORD}" psql -U discogsography -d discogsography -t -A -c \
-  "UPDATE users SET hashed_password = '${HASHED}', password_changed_at = NOW(), updated_at = NOW() WHERE email = '${EMAIL}' RETURNING email;")
+RESULT=$(docker exec "${CONTAINER}" env PGPASSWORD="${PG_PASSWORD}" psql -U discogsography -d discogsography -t -A \
+  -v "hashed=${HASHED}" -v "email=${EMAIL}" -c \
+  "UPDATE users SET hashed_password = :'hashed', password_changed_at = NOW(), updated_at = NOW() WHERE email = :'email' RETURNING email;")
 
 if [ -z "$RESULT" ]; then
   echo "Error: No user found with email '${EMAIL}'."

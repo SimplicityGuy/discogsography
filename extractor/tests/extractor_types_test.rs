@@ -142,7 +142,7 @@ fn test_source_serde_roundtrip() {
 
 #[test]
 fn test_musicbrainz_types_excludes_masters() {
-    let mb_types = DataType::musicbrainz_types();
+    let mb_types = DataType::musicbrainz();
     assert_eq!(mb_types.len(), 4);
     assert!(mb_types.contains(&DataType::Artists));
     assert!(mb_types.contains(&DataType::Labels));

@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+from datetime import UTC
 import json
 import signal
 import time
@@ -1725,7 +1726,13 @@ class TestPurgeStaleRows:
 
         mock_cursor.execute.assert_called_once()
         call_args = mock_cursor.execute.call_args
-        assert "2026-01-01T00:00:00Z" in call_args[0][1]
+        param = call_args[0][1]
+        # After fix, started_at is parsed to a datetime with UTC timezone
+        if isinstance(param, tuple):
+            param = param[0]
+        from datetime import datetime
+
+        assert param == datetime(2026, 1, 1, tzinfo=UTC)
 
         tableinator.tableinator.connection_pool = None
 
@@ -1755,6 +1762,48 @@ class TestPurgeStaleRows:
             await purge_stale_rows("artists", "")
 
         mock_pool.connection.assert_not_called()
+        tableinator.tableinator.connection_pool = None
+
+    @pytest.mark.asyncio
+    async def test_purge_with_naive_datetime_adds_utc(self) -> None:
+        """Test purge_stale_rows with a timezone-naive timestamp adds UTC."""
+        mock_cursor = AsyncMock()
+        mock_cursor.fetchall = AsyncMock(return_value=[])
+
+        mock_cursor_cm = MagicMock()
+        mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
+        mock_cursor_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_conn = MagicMock()
+        mock_conn.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        mock_conn_cm = MagicMock()
+        mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
+        mock_conn_cm.__aexit__ = AsyncMock(return_value=False)
+
+        mock_pool = MagicMock()
+        mock_pool.connection.return_value = mock_conn_cm
+
+        import tableinator.tableinator
+
+        tableinator.tableinator.connection_pool = mock_pool
+
+        from tableinator.tableinator import purge_stale_rows
+
+        # Pass a timezone-naive timestamp (no trailing Z or +00:00)
+        await purge_stale_rows("artists", "2026-01-01T00:00:00")
+
+        mock_cursor.execute.assert_called_once()
+        call_args = mock_cursor.execute.call_args
+        param = call_args[0][1]
+        if isinstance(param, tuple):
+            param = param[0]
+        from datetime import datetime
+
+        # Should have been converted to UTC-aware datetime
+        assert param == datetime(2026, 1, 1, tzinfo=UTC)
+        assert param.tzinfo is not None
+
         tableinator.tableinator.connection_pool = None
 
 

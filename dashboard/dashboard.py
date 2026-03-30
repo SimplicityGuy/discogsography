@@ -348,6 +348,7 @@ class DashboardApp:
         databases = []
 
         # Check PostgreSQL
+        conn = None
         try:
             if self.postgres_conn is None:
                 raise RuntimeError("PostgreSQL resilient connection not initialized")
@@ -392,13 +393,18 @@ class DashboardApp:
                     error=str(e),
                 )
             )
+        finally:
+            if conn is not None:
+                with contextlib.suppress(Exception):
+                    await conn.rollback()
 
         # Check Neo4j
         try:
             if self.neo4j_driver:
                 async with self.neo4j_driver.session() as session:
                     result = await session.run("CALL dbms.components() YIELD name, versions")
-                    await result.single()  # Consume result
+                    await result.single()
+                    await result.consume()
 
                     # Get database size
                     result = await session.run("CALL apoc.meta.stats() YIELD nodeCount, relCount")

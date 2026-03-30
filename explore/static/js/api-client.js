@@ -566,25 +566,34 @@ class ApiClient {
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
             let buffer = '';
+            let eventType = null;
+            function processLines(lines) {
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        eventType = line.slice(7).trim();
+                    } else if (line.startsWith('data: ') && eventType) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (eventType === 'status' && onStatus) onStatus(data);
+                            if (eventType === 'result' && onResult) onResult(data);
+                        } catch { /* ignore parse errors */ }
+                        eventType = null;
+                    }
+                }
+            }
             function processChunk() {
                 reader.read().then(({ done, value }) => {
-                    if (done) return;
+                    if (done) {
+                        if (buffer.trim()) {
+                            const lines = buffer.split('\n');
+                            processLines(lines);
+                        }
+                        return;
+                    }
                     buffer += decoder.decode(value, { stream: true });
                     const lines = buffer.split('\n');
                     buffer = lines.pop() || '';
-                    let eventType = null;
-                    for (const line of lines) {
-                        if (line.startsWith('event: ')) {
-                            eventType = line.slice(7).trim();
-                        } else if (line.startsWith('data: ') && eventType) {
-                            try {
-                                const data = JSON.parse(line.slice(6));
-                                if (eventType === 'status' && onStatus) onStatus(data);
-                                if (eventType === 'result' && onResult) onResult(data);
-                            } catch { /* ignore parse errors */ }
-                            eventType = null;
-                        }
-                    }
+                    processLines(lines);
                     processChunk();
                 });
             }
