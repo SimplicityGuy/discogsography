@@ -248,11 +248,14 @@ impl MbDownloader {
     }
 
     /// Check whether a version directory contains all expected entity JSONL files.
+    /// Recognizes both uncompressed `.jsonl` and compressed `.jsonl.xz` variants.
     pub(crate) fn is_version_complete(&self, version_dir: &Path) -> bool {
         if !version_dir.is_dir() {
             return false;
         }
-        MB_ENTITIES.iter().all(|entity| version_dir.join(format!("{}.jsonl", entity)).exists())
+        MB_ENTITIES.iter().all(|entity| {
+            version_dir.join(format!("{}.jsonl", entity)).exists() || version_dir.join(format!("{}.jsonl.xz", entity)).exists()
+        })
     }
 
     /// Download a file with retry logic and SHA256 verification.
@@ -388,6 +391,81 @@ pub fn parse_sha256sums(content: &str) -> HashMap<String, String> {
             Some((filename, hash))
         })
         .collect()
+}
+
+/// Log compression progress for large files.
+pub fn log_compression_progress(filename: &std::ffi::OsStr, total_read: u64, input_size: u64, elapsed_secs: f64) {
+    let speed = if elapsed_secs > 0.0 { (total_read as f64 / 1_048_576.0) / elapsed_secs } else { 0.0 };
+    let pct = if input_size > 0 { (total_read as f64 / input_size as f64) * 100.0 } else { 0.0 };
+    info!(
+        "🧹 Compressing {:?} — {:.1}% ({:.1} MB read, {:.1} MB/s)",
+        filename,
+        pct,
+        total_read as f64 / 1_048_576.0,
+        speed,
+    );
+}
+
+/// Compress a `.jsonl` file to `.jsonl.xz` and delete the original.
+///
+/// Uses XZ compression (level 6) to match the original MusicBrainz dump format.
+/// Returns the path of the compressed file on success.
+/// Logs progress every 10 seconds for large files.
+pub fn compress_jsonl_to_xz(jsonl_path: &Path) -> Result<PathBuf> {
+    use xz2::write::XzEncoder;
+
+    let xz_path = jsonl_path.with_extension("jsonl.xz");
+
+    // `jsonl_path` and `xz_path` come from operator-controlled config, not HTTP input.
+    let input = std::fs::File::open(jsonl_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        .with_context(|| format!("Failed to open file for compression: {:?}", jsonl_path))?;
+    let input_size = input.metadata().map(|m| m.len()).unwrap_or(0);
+    let mut reader = std::io::BufReader::new(input);
+
+    let output = std::fs::File::create(&xz_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        .with_context(|| format!("Failed to create compressed file: {:?}", xz_path))?;
+    let mut encoder = XzEncoder::new(output, 6);
+
+    let mut buf = [0u8; 256 * 1024]; // 256 KB buffer
+    let mut total_read: u64 = 0;
+    let compress_start = std::time::Instant::now();
+    let mut last_progress_log = compress_start;
+    let filename = jsonl_path.file_name().unwrap_or_default().to_owned();
+
+    loop {
+        let n = reader.read(&mut buf).context("Failed to read during compression")?;
+        if n == 0 {
+            break;
+        }
+        encoder.write_all(&buf[..n]).context("Failed to write compressed data")?;
+        total_read += n as u64;
+
+        let now = std::time::Instant::now();
+        if now.duration_since(last_progress_log).as_secs() >= 10 {
+            log_compression_progress(&filename, total_read, input_size, compress_start.elapsed().as_secs_f64());
+            last_progress_log = now;
+        }
+    }
+
+    encoder.finish().context("Failed to finalize XZ compression")?;
+
+    let compressed_size = std::fs::metadata(&xz_path).map(|m| m.len()).unwrap_or(0);
+    let ratio = if total_read > 0 { (compressed_size as f64 / total_read as f64) * 100.0 } else { 0.0 };
+
+    // Remove the original uncompressed file
+    std::fs::remove_file(jsonl_path) // nosemgrep: rust.actix.path-traversal.tainted-path.tainted-path
+        .with_context(|| format!("Failed to remove original file: {:?}", jsonl_path))?;
+
+    info!(
+        "🧹 Compressed {:?} → {:?} ({:.1} MB → {:.1} MB, {:.1}% of original)",
+        jsonl_path.file_name().unwrap_or_default(),
+        xz_path.file_name().unwrap_or_default(),
+        total_read as f64 / 1_048_576.0,
+        compressed_size as f64 / 1_048_576.0,
+        ratio,
+    );
+
+    Ok(xz_path)
 }
 
 /// Extract the `mbdump/<entity>` file from a `.tar.xz` archive.

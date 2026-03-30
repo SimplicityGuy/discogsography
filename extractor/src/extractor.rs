@@ -841,7 +841,7 @@ pub async fn process_musicbrainz_data(
     _compiled_rules: Option<Arc<CompiledRulesConfig>>,
 ) -> Result<bool> {
     use crate::jsonl_parser::{build_mbid_discogs_map_from_file, parse_mb_jsonl_file};
-    use crate::musicbrainz_downloader::{MbDownloader, discover_mb_dump_files};
+    use crate::musicbrainz_downloader::{MbDownloader, compress_jsonl_to_xz, discover_mb_dump_files};
 
     let extraction_started_at = chrono::Utc::now();
 
@@ -985,6 +985,7 @@ pub async fn process_musicbrainz_data(
 
         // Wait for all stages — use per-file success flag to avoid cross-file bleed
         let mut file_success = true;
+
         let total_count = match parser_handle.await {
             Ok(Ok(count)) => count,
             Ok(Err(e)) => {
@@ -1030,10 +1031,25 @@ pub async fn process_musicbrainz_data(
         }
 
         // Send file_complete message only on success to avoid misleading consumers
-        if file_success {
-            if let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await {
-                error!("❌ Failed to send file_complete for {}: {}", data_type, e);
-                success = false;
+        if file_success
+            && let Err(e) = mq.send_file_complete(*data_type, file_name, total_count).await
+        {
+            error!("❌ Failed to send file_complete for {}: {}", data_type, e);
+            success = false;
+        }
+
+        // Compress JSONL to XZ to reclaim disk space (only for successfully processed plain .jsonl files)
+        if file_success && file_path.extension().is_some_and(|e| e == "jsonl") {
+            let compress_path = file_path.clone();
+            if let Ok(Ok(compressed_path)) = tokio::task::spawn_blocking(move || compress_jsonl_to_xz(&compress_path)).await {
+                // Register compressed filename in state marker so resume finds it as completed
+                if let Some(compressed_name) = compressed_path.file_name().and_then(|n| n.to_str()) {
+                    state_marker.start_file_processing(compressed_name);
+                    state_marker.complete_file_processing(compressed_name, total_count);
+                    state_marker.save(&marker_path).await?;
+                }
+            } else {
+                warn!("⚠️ Failed to compress {} (continuing without compression)", file_name);
             }
         }
 
