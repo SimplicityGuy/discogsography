@@ -10,6 +10,7 @@ import json
 import logging
 from typing import Any
 
+from psycopg import sql
 from psycopg.rows import dict_row
 
 from common.query_debug import execute_sql
@@ -63,6 +64,7 @@ async def get_queue_history(pool: Any, range_value: str) -> dict[str, Any]:
     spec = GRANULARITY_MAP[range_value]
     is_raw = spec["raw"]
 
+    query: str | sql.Composed
     if is_raw:
         query = """
             SELECT queue_name,
@@ -78,19 +80,19 @@ async def get_queue_history(pool: Any, range_value: str) -> dict[str, Any]:
         """
     else:
         trunc_unit = _bucket_to_trunc_unit(spec["bucket"])
-        query = f"""
-            SELECT queue_name,
-                   date_trunc('{trunc_unit}', recorded_at)::text AS ts,
-                   AVG(messages_ready) AS ready,
-                   AVG(messages_unacknowledged) AS unacked,
-                   AVG(consumers) AS consumers,
-                   AVG(publish_rate) AS publish_rate,
-                   AVG(ack_rate) AS deliver_rate
-            FROM queue_metrics
-            WHERE recorded_at >= NOW() - %s::interval
-            GROUP BY queue_name, date_trunc('{trunc_unit}', recorded_at)
-            ORDER BY queue_name, ts
-        """
+        query = sql.SQL(
+            "SELECT queue_name,"
+            " date_trunc({unit}, recorded_at)::text AS ts,"
+            " AVG(messages_ready) AS ready,"
+            " AVG(messages_unacknowledged) AS unacked,"
+            " AVG(consumers) AS consumers,"
+            " AVG(publish_rate) AS publish_rate,"
+            " AVG(ack_rate) AS deliver_rate"
+            " FROM queue_metrics"
+            " WHERE recorded_at >= NOW() - %s::interval"
+            " GROUP BY queue_name, date_trunc({unit}, recorded_at)"
+            " ORDER BY queue_name, ts"
+        ).format(unit=sql.Literal(trunc_unit))
 
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await execute_sql(cur, query, (spec["interval"],))

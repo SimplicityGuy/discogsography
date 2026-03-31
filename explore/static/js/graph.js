@@ -351,7 +351,7 @@ class GraphVisualization {
         }
 
         if (has_more) {
-            const remaining = total - (offset + children.length);
+            const remaining = Math.max(0, (total || 0) - (offset + children.length));
             this._addLoadMoreNode(d.categoryId, remaining);
         }
 
@@ -860,5 +860,7 @@ class GraphVisualization {
         for (const link of this.links) {
             delete link.compareStatus;
         }
+
+        this._render();
     }
 }

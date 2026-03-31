@@ -595,6 +595,10 @@ _MUSICBRAINZ_INDEXES: list[tuple[str, str]] = [
         "CREATE INDEX IF NOT EXISTS idx_mb_releases_discogs_id ON musicbrainz.releases (discogs_release_id) WHERE discogs_release_id IS NOT NULL",
     ),
     (
+        "idx_mb_release_groups_discogs_id",
+        "CREATE INDEX IF NOT EXISTS idx_mb_release_groups_discogs_id ON musicbrainz.release_groups (discogs_master_id) WHERE discogs_master_id IS NOT NULL",
+    ),
+    (
         "idx_mb_artists_name",
         "CREATE INDEX IF NOT EXISTS idx_mb_artists_name ON musicbrainz.artists (name)",
     ),

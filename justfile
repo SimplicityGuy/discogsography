@@ -561,7 +561,8 @@ build:
         brainztableinator \
         dashboard \
         explore \
-        extractor \
+        extractor-discogs \
+        extractor-musicbrainz \
         graphinator \
         insights \
         schema-init \

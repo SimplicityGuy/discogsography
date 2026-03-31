@@ -541,7 +541,6 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         # Check if this is a file completion message
         if data.get("type") == "file_complete":
-            completed_files.add(data_type)
             total_processed = data.get("total_processed", 0)
             logger.info(
                 f"✅ File processing complete for {data_type}! "
@@ -551,6 +550,9 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             # Flush remaining batches for this data type before cancellation
             if batch_processor is not None:
                 await batch_processor.flush_queue(data_type)
+
+            # Mark complete only after flush to prevent premature idle detection
+            completed_files.add(data_type)
 
             # Schedule consumer cancellation if enabled
             if CONSUMER_CANCEL_DELAY > 0 and data_type in queues:

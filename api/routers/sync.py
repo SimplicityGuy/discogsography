@@ -76,6 +76,8 @@ async def _get_current_user(
                         detail="Token has been revoked",
                         headers={"WWW-Authenticate": "Bearer"},
                     )
+        if payload.get("type") == "admin":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
         return payload
     except ValueError as exc:
         raise HTTPException(
@@ -158,10 +160,10 @@ async def trigger_sync(
                 await _redis.delete(f"sync:lock:{user_id}")
         raise
 
-    # Set per-user cooldown to prevent rapid re-triggers
+    # Set cooldown BEFORE releasing lock to prevent TOCTOU race
     if _redis:
         await _redis.setex(f"sync:cooldown:{user_id}", 600, "1")
-        await _redis.delete(f"sync:lock:{user_id}")
+        await _redis.delete(f"sync:lock:{user_id}")  # Safe: cooldown is already in place
 
     logger.info("🔄 Sync triggered", user_id=user_id, sync_id=sync_id)
     return JSONResponse(content={"sync_id": sync_id, "status": "started"}, status_code=status.HTTP_202_ACCEPTED)

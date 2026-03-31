@@ -223,7 +223,7 @@ def test_client(
     from api.nlq.config import NLQConfig
     import api.routers.nlq as _nlq_router
 
-    _nlq_router.configure(NLQConfig(), None, mock_redis)
+    _nlq_router.configure(NLQConfig(), None, mock_redis, jwt_secret=TEST_JWT_SECRET)
 
     import api.routers.credits as _credits_router
     import api.routers.musicbrainz as _musicbrainz_router

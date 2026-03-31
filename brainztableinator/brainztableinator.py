@@ -429,6 +429,7 @@ async def _recover_consumers() -> None:
             pass
         active_connection = None
         active_channel = None
+        queues = {}
 
 
 async def _insert_relationship(
@@ -703,16 +704,9 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
 
         data_id: str = data["id"]
 
-        # Increment counter and log progress
+        # Track last message time for progress reporting
         if data_type in message_counts:
-            message_counts[data_type] += 1
             last_message_time[data_type] = time.time()
-            if message_counts[data_type] % progress_interval == 0:
-                logger.info(
-                    "📊 Processed records in PostgreSQL",
-                    count=message_counts[data_type],
-                    data_type=data_type,
-                )
 
         # Extract record details for logging
         record_name = data.get("name", "Unknown")
@@ -750,6 +744,16 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             )
 
         await message.ack()
+
+        # Increment counter only after successful ack
+        if data_type in message_counts:
+            message_counts[data_type] += 1
+            if message_counts[data_type] % progress_interval == 0:
+                logger.info(
+                    "📊 Processed records in PostgreSQL",
+                    count=message_counts[data_type],
+                    data_type=data_type,
+                )
 
     except (InterfaceError, OperationalError) as e:
         logger.warning("⚠️ Database connection issue, will retry", error=str(e))

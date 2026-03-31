@@ -1026,7 +1026,9 @@ pub async fn process_musicbrainz_data(
         // Update shared state
         {
             let mut s = state.write().await;
-            s.completed_files.insert(file_name.to_string());
+            if file_success {
+                s.completed_files.insert(file_name.to_string());
+            }
             s.active_connections.remove(data_type);
         }
 

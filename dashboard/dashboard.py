@@ -408,11 +408,17 @@ class DashboardApp:
                     await result.single()
                     await result.consume()
 
-                    # Get database size
-                    result = await session.run("CALL apoc.meta.stats() YIELD nodeCount, relCount")
-                    stats = await result.single()
-                    node_count = stats["nodeCount"] if stats else 0
-                    rel_count = stats["relCount"] if stats else 0
+                    # Get database size — fall back to basic count if APOC is not installed
+                    try:
+                        result = await session.run("CALL apoc.meta.stats() YIELD nodeCount, relCount")
+                        stats = await result.single()
+                        node_count = stats["nodeCount"] if stats else 0
+                        rel_count = stats["relCount"] if stats else 0
+                    except Exception:
+                        result = await session.run("MATCH (n) RETURN count(n) AS cnt")
+                        stats = await result.single()
+                        node_count = stats["cnt"] if stats else 0
+                        rel_count = 0
 
                 databases.append(
                     DatabaseInfo(
@@ -449,7 +455,7 @@ class DashboardApp:
         ).decode()
 
         disconnected = set()
-        for websocket in self.websocket_connections:
+        for websocket in list(self.websocket_connections):
             try:
                 await websocket.send_text(message)
             except Exception:
@@ -602,9 +608,11 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 
 
 # Admin proxy routes (must be before StaticFiles catch-all)
-admin_api_host = os.getenv("API_HOST", "api")
-admin_api_port = int(os.getenv("API_PORT", "8004"))
-configure_admin_proxy(admin_api_host, admin_api_port)
+# Note: reads env vars at import time; this is acceptable because
+# Docker containers set env vars before module import.
+_admin_api_host = os.getenv("API_HOST", "api")
+_admin_api_port = int(os.getenv("API_PORT", "8004"))
+configure_admin_proxy(_admin_api_host, _admin_api_port)
 app.include_router(admin_router)
 
 

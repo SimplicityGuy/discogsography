@@ -61,21 +61,26 @@ def check_neo4j_status() -> str:
     """Check Neo4j database status."""
     neo4j_username = os.environ.get("NEO4J_USERNAME", "neo4j")
     neo4j_password = get_secret("NEO4J_PASSWORD", "")
+    env = os.environ.copy()
+    env["NEO4J_USERNAME"] = neo4j_username
+    env["NEO4J_PASSWORD"] = neo4j_password
     try:
         result = subprocess.run(  # noqa: S603  # nosec B603 B607
             [  # noqa: S607
                 "docker",
                 "exec",
-                "discogsography-neo4j",
-                "env",
+                "-e",
                 f"NEO4J_USERNAME={neo4j_username}",
+                "-e",
                 f"NEO4J_PASSWORD={neo4j_password}",
+                "discogsography-neo4j",
                 "cypher-shell",
                 "MATCH (n) RETURN labels(n)[0] as label, count(n) as count ORDER BY count DESC LIMIT 10",
             ],
             capture_output=True,
             text=True,
             check=True,
+            env=env,
         )
         return result.stdout
     except subprocess.CalledProcessError as e:
@@ -165,7 +170,7 @@ def monitor_system() -> None:
     # Check for recent errors in services
     print("\n⚠️  Recent Errors (last 50 lines):")
     print("-" * 40)
-    services = ["extractor", "graphinator", "tableinator"]
+    services = ["extractor", "graphinator", "tableinator", "brainzgraphinator", "brainztableinator"]
     error_found = False
     for service in services:
         logs = get_service_logs(service, 50)

@@ -435,8 +435,8 @@ class TestAsyncResilientConnection:
         assert manager._connection is None
 
     @pytest.mark.asyncio
-    async def test_close_without_prior_connection_creates_lock(self) -> None:
-        """Close without prior get_connection() should lazily create the lock."""
+    async def test_close_without_prior_connection(self) -> None:
+        """Close without prior get_connection() should not raise."""
         from unittest.mock import AsyncMock
 
         from common.db_resilience import AsyncResilientConnection
@@ -445,12 +445,10 @@ class TestAsyncResilientConnection:
         connection_test = AsyncMock(return_value=True)
 
         manager = AsyncResilientConnection(connection_factory, connection_test)
-        assert manager._lock is None
+        assert manager._lock is not None  # Lock is eagerly initialized
 
         # Close without ever connecting — should not raise
         await manager.close()
-
-        assert manager._lock is not None
         assert manager._connection is None
 
     @pytest.mark.asyncio
@@ -657,22 +655,22 @@ class TestCircuitBreakerEdgeCases:
         assert breaker.state == CircuitState.OPEN
 
     @pytest.mark.asyncio
-    async def test_call_async_lazy_lock_initialization(self) -> None:
-        """Test that call_async lazily creates the asyncio.Lock on first call."""
+    async def test_call_async_lock_initialized_eagerly(self) -> None:
+        """Test that asyncio.Lock is eagerly initialized in __init__."""
+        import asyncio
+
         config = CircuitBreakerConfig(name="TestBreaker")
         breaker = CircuitBreaker(config)
 
-        # Lock starts as None
-        assert breaker._async_lock is None
+        # Lock is eagerly initialized
+        assert isinstance(breaker._async_lock, asyncio.Lock)
 
         async def async_func() -> str:
             return "result"
 
         await breaker.call_async(async_func)
 
-        # After first call, lock should be initialized
-        import asyncio
-
+        # Lock still exists after call
         assert isinstance(breaker._async_lock, asyncio.Lock)
 
     def test_call_sync_half_open_executes_under_lock(self) -> None:
@@ -1028,38 +1026,36 @@ class TestAsyncLazyLockInit:
     """Tests for lazy asyncio.Lock initialization in _on_success_async and _on_failure_async."""
 
     @pytest.mark.asyncio
-    async def test_on_success_async_creates_lock_when_none(self) -> None:
-        """Test _on_success_async lazily creates asyncio.Lock when _async_lock is None."""
+    async def test_on_success_async_uses_eagerly_initialized_lock(self) -> None:
+        """Test _on_success_async uses the eagerly initialized asyncio.Lock."""
         import asyncio
 
         config = CircuitBreakerConfig(name="TestBreaker")
         breaker = CircuitBreaker(config)
 
-        # Ensure lock starts as None
-        assert breaker._async_lock is None
+        # Lock is eagerly initialized
+        assert isinstance(breaker._async_lock, asyncio.Lock)
 
         # Call _on_success_async directly
         await breaker._on_success_async()
 
-        # Lock should now be initialized
         assert isinstance(breaker._async_lock, asyncio.Lock)
         assert breaker.failure_count == 0
 
     @pytest.mark.asyncio
-    async def test_on_failure_async_creates_lock_when_none(self) -> None:
-        """Test _on_failure_async lazily creates asyncio.Lock when _async_lock is None."""
+    async def test_on_failure_async_uses_eagerly_initialized_lock(self) -> None:
+        """Test _on_failure_async uses the eagerly initialized asyncio.Lock."""
         import asyncio
 
         config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=5)
         breaker = CircuitBreaker(config)
 
-        # Ensure lock starts as None
-        assert breaker._async_lock is None
+        # Lock is eagerly initialized
+        assert isinstance(breaker._async_lock, asyncio.Lock)
 
         # Call _on_failure_async directly
         await breaker._on_failure_async()
 
-        # Lock should now be initialized
         assert isinstance(breaker._async_lock, asyncio.Lock)
         assert breaker.failure_count == 1
         assert breaker.last_failure_time is not None

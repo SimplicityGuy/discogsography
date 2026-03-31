@@ -194,7 +194,10 @@ class TimelineScrubber {
         let data = this._emergenceCache.get(year);
         if (!data) {
             data = await window.apiClient.getGenreEmergence(year);
-            this._emergenceCache.set(year, data);
+            // Only cache successful responses (non-empty genres or styles)
+            if (data.genres.length > 0 || data.styles.length > 0) {
+                this._emergenceCache.set(year, data);
+            }
         }
 
         const currentGenres = new Set([

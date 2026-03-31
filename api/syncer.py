@@ -93,7 +93,7 @@ async def sync_collection(
 
     logger.info("📋 Starting collection sync", user=discogs_username)
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         while True:
             url = f"{DISCOGS_API_BASE}/users/{discogs_username}/collection/folders/0/releases"
             params = {"page": str(page), "per_page": str(PAGE_SIZE), "sort": "added", "sort_order": "desc"}
@@ -270,7 +270,7 @@ async def sync_wantlist(
 
     logger.info("📋 Starting wantlist sync", user=discogs_username)
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         while True:
             url = f"{DISCOGS_API_BASE}/users/{discogs_username}/wants"
             params = {"page": str(page), "per_page": str(PAGE_SIZE)}

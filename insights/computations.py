@@ -146,7 +146,7 @@ async def compute_and_store_label_longevity(client: httpx.AsyncClient, pool: Any
             cursor = cast("Any", cursor)
             await cursor.execute("DELETE FROM insights.label_longevity")
             for rank, row in enumerate(results, 1):
-                still_active = row["last_year"] >= current_year - 2
+                still_active = row["last_year"] is not None and row["last_year"] >= current_year - 2
                 await cursor.execute(
                     """
                             INSERT INTO insights.label_longevity

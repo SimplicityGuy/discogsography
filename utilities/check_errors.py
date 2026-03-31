@@ -22,10 +22,10 @@ def check_service_errors(service: str, time_window: int = 60) -> list[str]:
         # Pattern to match error lines
         error_patterns = [
             r"ERROR.*Failed to process.*message.*'id'",
-            r"ERROR.*",
             r"Failed to process.*",
             r"Exception.*",
             r"Traceback.*",
+            r"ERROR.*",
         ]
 
         for line in logs.split("\n"):
@@ -41,7 +41,7 @@ def check_service_errors(service: str, time_window: int = 60) -> list[str]:
 
 
 def main() -> None:
-    services = ["extractor", "graphinator", "tableinator"]
+    services = ["extractor", "graphinator", "tableinator", "brainzgraphinator", "brainztableinator"]
     time_window = int(sys.argv[1]) if len(sys.argv) > 1 else 60
 
     print(f"Checking for errors in the last {time_window} minutes...")

@@ -45,7 +45,7 @@ class CircuitBreaker:
         self.last_failure_time: datetime | None = None
         self.state = CircuitState.CLOSED
         self._lock = Lock()
-        self._async_lock: asyncio.Lock | None = None
+        self._async_lock = asyncio.Lock()
 
     def call(self, func: Callable[..., T], *args: Any, **kwargs: Any) -> T:
         """Execute function with circuit breaker protection."""
@@ -88,8 +88,6 @@ class CircuitBreaker:
 
     async def call_async(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> Any:
         """Execute async function with circuit breaker protection."""
-        if self._async_lock is None:
-            self._async_lock = asyncio.Lock()  # Safe: first call always from single task in asyncio
         execute_under_lock = False
         async with self._async_lock:
             if self.state == CircuitState.OPEN:
@@ -157,8 +155,6 @@ class CircuitBreaker:
 
     async def _on_success_async(self) -> None:
         """Handle successful async call."""
-        if self._async_lock is None:
-            self._async_lock = asyncio.Lock()
         async with self._async_lock:
             self.failure_count = 0
             if self.state != CircuitState.CLOSED:
@@ -167,8 +163,6 @@ class CircuitBreaker:
 
     async def _on_failure_async(self) -> None:
         """Handle failed async call."""
-        if self._async_lock is None:
-            self._async_lock = asyncio.Lock()
         async with self._async_lock:
             self.failure_count += 1
             self.last_failure_time = datetime.now(UTC)
@@ -298,12 +292,10 @@ class AsyncResilientConnection[T]:
         self.max_retries = max_retries
         self.name = name
         self._connection: T | None = None
-        self._lock: asyncio.Lock | None = None
+        self._lock = asyncio.Lock()
 
     async def get_connection(self) -> T:
         """Get a healthy connection, creating or reconnecting if needed."""
-        if self._lock is None:
-            self._lock = asyncio.Lock()
         async with self._lock:
             if self._connection and await self._test_connection(self._connection):
                 return self._connection
@@ -361,8 +353,6 @@ class AsyncResilientConnection[T]:
 
     async def close(self) -> None:
         """Close the connection."""
-        if self._lock is None:
-            self._lock = asyncio.Lock()
         async with self._lock:
             if self._connection:
                 try:
