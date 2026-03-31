@@ -488,6 +488,10 @@ async def twofa_verify(request: Request, body: TwoFactorVerifyModel) -> JSONResp
         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
             await execute_sql(cur, lock_sql, tuple(params))
 
+        # Delete challenge on lockout to prevent further retries
+        if failed >= 5:
+            await _redis.delete(f"2fa_challenge:{jti}")
+
         logger.warning("⚠️ Failed 2FA attempt", user_id=user_id, attempts=failed)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid TOTP code")
 

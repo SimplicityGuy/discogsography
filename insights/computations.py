@@ -341,18 +341,29 @@ async def run_all_computations(
     """Run all insight computations and return row counts per type."""
     logger.info("🔄 Starting all insight computations...")
     results: dict[str, int] = {}
+    errors: dict[str, str] = {}
 
-    results["artist_centrality"] = await compute_and_store_artist_centrality(client, pool)
-    results["genre_trends"] = await compute_and_store_genre_trends(client, pool)
-    results["label_longevity"] = await compute_and_store_label_longevity(client, pool)
-    results["anniversaries"] = await compute_and_store_anniversaries(
-        client,
-        pool,
-        milestone_years=milestone_years,
-    )
-    results["data_completeness"] = await compute_and_store_data_completeness(client, pool)
-    results["release_rarity"] = await compute_and_store_rarity(client, pool)
+    computations: list[tuple[str, Any]] = [
+        ("artist_centrality", compute_and_store_artist_centrality(client, pool)),
+        ("genre_trends", compute_and_store_genre_trends(client, pool)),
+        ("label_longevity", compute_and_store_label_longevity(client, pool)),
+        (
+            "anniversaries",
+            compute_and_store_anniversaries(client, pool, milestone_years=milestone_years),
+        ),
+        ("data_completeness", compute_and_store_data_completeness(client, pool)),
+        ("release_rarity", compute_and_store_rarity(client, pool)),
+    ]
+
+    for name, coro in computations:
+        try:
+            results[name] = await coro
+        except Exception as e:
+            logger.error("❌ Computation failed — continuing with remaining computations", computation=name, error=str(e))
+            errors[name] = str(e)
 
     total = sum(results.values())
-    logger.info("✅ All insight computations complete", total_rows=total, breakdown=results)
+    logger.info("✅ All insight computations complete", total_rows=total, breakdown=results, failed=list(errors.keys()) or None)
+    if errors:
+        raise RuntimeError(f"Some computations failed: {', '.join(errors.keys())}")
     return results

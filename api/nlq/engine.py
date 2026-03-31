@@ -200,13 +200,19 @@ def _apply_off_topic_guardrail(summary: str) -> str:
     """Replace off-topic responses with a redirect message.
 
     If the summary contains refusal keywords, it's Claude already declining
-    — pass it through. Otherwise, replace with the standard redirect.
+    — pass it through. If the summary is empty, return the redirect.
+    Otherwise, pass through — a non-empty, non-refusal response without
+    tools may be a valid answer from system prompt context.
     """
+    if not summary.strip():
+        return _OFF_TOPIC_REDIRECT
     lower = summary.lower()
     for keyword in _REFUSAL_KEYWORDS:
         if keyword in lower:
             return summary
-    return _OFF_TOPIC_REDIRECT
+    # Non-empty response without refusal keywords — may be a valid on-topic
+    # answer from system prompt context. Pass through instead of replacing.
+    return summary
 
 
 def _deduplicate_entities(entities: list[dict[str, Any]]) -> list[dict[str, Any]]:

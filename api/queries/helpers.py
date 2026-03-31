@@ -89,8 +89,8 @@ async def run_query(
         async with driver.session(**session_kwargs) as session:
             result = await session.run(actual_cypher, params, **run_kwargs)
             records = [dict(record) async for record in result]
+            summary = await result.consume()
             if profiling:
-                summary = await result.consume()
                 log_profile_result(cypher, params, summary)
             return records
     except Exception as exc:
@@ -136,8 +136,8 @@ async def run_single(
         async with driver.session(**session_kwargs) as session:
             result = await session.run(actual_cypher, params, **run_kwargs)
             record = await result.single()
+            summary = await result.consume()
             if profiling:
-                summary = await result.consume()
                 log_profile_result(cypher, params, summary)
             return dict(record) if record else None
     except Exception as exc:
@@ -185,8 +185,8 @@ async def run_count(
         async with driver.session(**session_kwargs) as session:
             result = await session.run(actual_cypher, params, **run_kwargs)
             record = await result.single()
+            summary = await result.consume()
             if profiling:
-                summary = await result.consume()
                 log_profile_result(cypher, params, summary)
             return int(record["total"]) if record else 0
     except Exception as exc:

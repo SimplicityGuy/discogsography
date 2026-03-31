@@ -266,7 +266,7 @@ class BrainztableinatorConfig:
 
 
 # AMQP Configuration shared across all services
-AMQP_EXCHANGE_PREFIX = "discogsography"
+AMQP_EXCHANGE_PREFIX = getenv("AMQP_EXCHANGE_PREFIX", "discogsography")
 AMQP_EXCHANGE_TYPE = "fanout"  # Fanout exchanges for decoupled pub/sub
 AMQP_QUEUE_PREFIX_GRAPHINATOR = "discogsography-graphinator"
 AMQP_QUEUE_PREFIX_TABLEINATOR = "discogsography-tableinator"

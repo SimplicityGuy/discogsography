@@ -52,6 +52,9 @@ class _MockResult:
     async def single(self) -> dict[str, Any] | None:
         return self._single
 
+    async def consume(self) -> MagicMock:
+        return MagicMock()
+
 
 def _make_driver_with_side_effects(results: list[_MockResult]) -> MagicMock:
     """Build a driver whose session().run() returns different results on each call."""

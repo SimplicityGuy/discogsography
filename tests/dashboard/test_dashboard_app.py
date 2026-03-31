@@ -687,7 +687,7 @@ class TestDashboardAppDataCollection:
             # cursor() should return the cursor object (not be async)
             mock_pg_conn.cursor = Mock(return_value=mock_pg_cursor)
 
-            # Mock the resilient postgres connection
+            # Mock the resilient postgres connection — connection() is an async context manager
             mock_postgres_conn = AsyncMock()
             mock_postgres_conn.get_connection = AsyncMock(return_value=mock_pg_conn)
             app.postgres_conn = mock_postgres_conn

@@ -46,6 +46,9 @@ class _MockResult:
     async def single(self) -> dict[str, Any] | None:
         return self._single
 
+    async def consume(self) -> MagicMock:
+        return MagicMock()
+
 
 def _make_driver(records: list[dict[str, Any]] | None = None, single: dict[str, Any] | None = None) -> MagicMock:
     """Build a minimal mock AsyncResilientNeo4jDriver."""
@@ -615,6 +618,9 @@ def _make_capturing_driver(total: int = 10) -> tuple[MagicMock, list[str], list[
     class CapturingMockResult:
         async def single(self) -> dict[str, Any]:
             return {"total": total}
+
+        async def consume(self) -> MagicMock:
+            return MagicMock()
 
     mock_session = AsyncMock()
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)

@@ -211,18 +211,34 @@ class TestNLQEngineGuardrails:
     """Test off-topic guardrails."""
 
     @pytest.mark.asyncio
-    async def test_off_topic_guardrail_zero_tools(self) -> None:
-        """Zero tools used + substantive answer -> redirect message."""
+    async def test_off_topic_guardrail_zero_tools_passes_through(self) -> None:
+        """Zero tools used + substantive answer -> pass through (may be valid system prompt answer)."""
         config = _make_config()
         client = _make_client()
         runner = _make_tool_runner()
 
-        # Claude responds without using any tools — off-topic
+        # Claude responds without using any tools — could be off-topic or valid system prompt answer
         text_response = _make_text_response("The capital of France is Paris.")
         client.messages.create.return_value = text_response
 
         engine = NLQEngine(config=config, client=client, tool_runner=runner)
         result = await engine.run("What is the capital of France?", NLQContext())
+
+        assert result.tools_used == []
+        assert result.summary == "The capital of France is Paris."
+
+    @pytest.mark.asyncio
+    async def test_off_topic_guardrail_empty_response(self) -> None:
+        """Zero tools used + empty answer -> redirect message."""
+        config = _make_config()
+        client = _make_client()
+        runner = _make_tool_runner()
+
+        text_response = _make_text_response("")
+        client.messages.create.return_value = text_response
+
+        engine = NLQEngine(config=config, client=client, tool_runner=runner)
+        result = await engine.run("...", NLQContext())
 
         assert result.tools_used == []
         assert "I can only answer questions about the Discogsography music database" in result.summary

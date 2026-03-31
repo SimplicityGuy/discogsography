@@ -205,7 +205,7 @@ async def sync_collection(
             neo4j_releases = [
                 {
                     "release_id": item.get("basic_information", {}).get("id"),
-                    "instance_id": str(item.get("instance_id", "")),
+                    "instance_id": str(item["instance_id"]) if item.get("instance_id") else None,
                     "rating": item.get("rating", 0),
                     "folder_id": item.get("folder_id"),
                     "date_added": item.get("date_added"),
