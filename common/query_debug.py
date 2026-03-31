@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+import threading
 from typing import Any
 
 
@@ -34,6 +35,9 @@ def is_db_profiling() -> bool:
     return is_debug() and os.environ.get("DB_PROFILING", "").lower() == "true"
 
 
+_profiling_logger_lock = threading.Lock()
+
+
 def get_profiling_logger() -> logging.Logger:
     """Return a lazy-initialized logger that writes to the profiling log file.
 
@@ -46,24 +50,28 @@ def get_profiling_logger() -> logging.Logger:
     if _profiling_logger is not None:
         return _profiling_logger
 
-    logger = logging.getLogger("db_profiling")
-    logger.setLevel(logging.DEBUG)
-    logger.propagate = False
+    with _profiling_logger_lock:
+        # Double-check after acquiring lock
+        if _profiling_logger is None:
+            logger = logging.getLogger("db_profiling")
+            logger.setLevel(logging.DEBUG)
+            logger.propagate = False
 
-    # Remove any existing handlers to avoid duplicates
-    logger.handlers.clear()
+            # Remove any existing handlers to avoid duplicates
+            logger.handlers.clear()
 
-    # Ensure log directory exists
-    PROFILING_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+            # Ensure log directory exists
+            PROFILING_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    handler = logging.FileHandler(PROFILING_LOG_PATH)
-    handler.setLevel(logging.DEBUG)
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+            handler = logging.FileHandler(PROFILING_LOG_PATH)
+            handler.setLevel(logging.DEBUG)
+            formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
 
-    _profiling_logger = logger
-    return logger
+            _profiling_logger = logger
+
+    return _profiling_logger  # guaranteed non-None after lock block
 
 
 def log_cypher_query(cypher: str, params: dict[str, Any] | None) -> None:

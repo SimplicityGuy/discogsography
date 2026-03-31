@@ -354,13 +354,6 @@ class Neo4jBatchProcessor:
                 else 0,
                 total_processed=self.processed_counts[data_type],
             )
-        else:
-            # Nack all messages for retry
-            for msg in messages:
-                try:
-                    await msg.nack_callback()
-                except Exception as e:
-                    logger.warning("⚠️ Failed to nack message", error=str(e))
 
     async def _process_artists_batch(self, messages: list[PendingMessage]) -> None:
         """Process a batch of artist records.

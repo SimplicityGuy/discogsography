@@ -740,7 +740,8 @@ async def on_data_message(message: AbstractIncomingMessage, data_type: str) -> N
             return
 
         async with connection_pool.connection() as conn:
-            await processor(conn, data)
+            async with conn.transaction():
+                await processor(conn, data)
 
             logger.debug(
                 "🐘 Updated record in PostgreSQL",

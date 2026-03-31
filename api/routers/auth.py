@@ -179,6 +179,11 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: 
 
     # If TOTP 2FA is enabled, return a challenge instead of an access token
     if user.get("totp_enabled"):
+        if _redis is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Service not ready (Redis required for 2FA)",
+            )
         challenge = create_challenge_token(str(user["id"]), user["email"], _config.jwt_secret_key)
         challenge_payload = decode_token(challenge, _config.jwt_secret_key)
         jti = challenge_payload["jti"]

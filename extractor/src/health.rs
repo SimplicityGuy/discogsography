@@ -124,7 +124,7 @@ pub async fn trigger_handler(State((state, trigger)): State<AppState>, body: Opt
     let force_reprocess = body.map(|b| b.force_reprocess).unwrap_or(false);
 
     {
-        let mut t = trigger.lock().unwrap();
+        let mut t = trigger.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         *t = Some(force_reprocess);
     }
     info!("🔄 Extraction triggered via API (force_reprocess={})", force_reprocess);

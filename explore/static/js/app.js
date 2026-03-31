@@ -955,13 +955,23 @@ class ExploreApp {
         if (statusObj.in_collection) {
             const badge = document.createElement('span');
             badge.className = 'ownership-badge in-collection';
-            badge.innerHTML = '<span class="material-symbols-outlined mr-1" style="font-size:18px">check</span>In Collection';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined mr-1';
+            icon.style.fontSize = '18px';
+            icon.textContent = 'check';
+            badge.appendChild(icon);
+            badge.appendChild(document.createTextNode('In Collection'));
             container.appendChild(badge);
         }
         if (statusObj.in_wantlist) {
             const badge = document.createElement('span');
             badge.className = 'ownership-badge in-wantlist';
-            badge.innerHTML = '<span class="material-symbols-outlined mr-1" style="font-size:18px">favorite</span>In Wantlist';
+            const icon = document.createElement('span');
+            icon.className = 'material-symbols-outlined mr-1';
+            icon.style.fontSize = '18px';
+            icon.textContent = 'favorite';
+            badge.appendChild(icon);
+            badge.appendChild(document.createTextNode('In Wantlist'));
             container.appendChild(badge);
         }
 

@@ -435,6 +435,25 @@ class TestAsyncResilientConnection:
         assert manager._connection is None
 
     @pytest.mark.asyncio
+    async def test_close_without_prior_connection_creates_lock(self) -> None:
+        """Close without prior get_connection() should lazily create the lock."""
+        from unittest.mock import AsyncMock
+
+        from common.db_resilience import AsyncResilientConnection
+
+        connection_factory = AsyncMock(return_value=Mock())
+        connection_test = AsyncMock(return_value=True)
+
+        manager = AsyncResilientConnection(connection_factory, connection_test)
+        assert manager._lock is None
+
+        # Close without ever connecting — should not raise
+        await manager.close()
+
+        assert manager._lock is not None
+        assert manager._connection is None
+
+    @pytest.mark.asyncio
     async def test_close_with_sync_close(self) -> None:
         """Test closing async connection with sync close method.
 

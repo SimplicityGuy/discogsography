@@ -152,7 +152,10 @@ async def _run_results(
     like "Rock" from materializing 100K+ rows before outer LIMIT/OFFSET.
     Each table returns at most (limit + offset) rows pre-sorted by rank.
     """
-    per_table_limit = limit + offset
+    # Each entity table returns up to per_table_limit rows pre-sorted by rank.
+    # Use 2x multiplier to reduce result loss at higher page offsets while
+    # keeping the materialisation bounded.
+    per_table_limit = (limit + offset) * 2
     union_sql = _build_union(types, per_table_limit=per_table_limit)
     year_clause, year_params = _year_filter_clause(year_min, year_max)
     genre_clause, genre_params = _genre_filter_clause(genres)

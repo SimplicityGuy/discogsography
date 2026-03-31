@@ -213,9 +213,11 @@ class ResilientPostgreSQLPool:
                 try:
                     self.connections.put_nowait(conn)
                 except Full:
-                    # Pool is full, close connection
+                    # Pool is full, close excess connection
                     with contextlib.suppress(Exception):
                         conn.close()
+                    with self._lock:
+                        self.active_connections = max(0, self.active_connections - 1)
             elif conn:
                 # Close bad connections
                 with contextlib.suppress(Exception):

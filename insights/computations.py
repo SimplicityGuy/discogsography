@@ -38,6 +38,7 @@ async def _log_computation(
             """,
             (insight_type, status, started_at, completed_at, rows_affected, duration_ms, error_message),
         )
+        await conn.commit()
 
 
 async def _fetch_from_api(
@@ -76,19 +77,17 @@ async def compute_and_store_artist_centrality(client: httpx.AsyncClient, pool: A
             await _log_computation(pool, "artist_centrality", "completed", started_at, 0)
             return 0
 
-        async with pool.connection() as conn, conn.cursor() as cursor:
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
             cursor = cast("Any", cursor)
-            await cursor.execute("BEGIN")
             await cursor.execute("DELETE FROM insights.artist_centrality")
             for rank, row in enumerate(results, 1):
                 await cursor.execute(
                     """
-                    INSERT INTO insights.artist_centrality (rank, artist_id, artist_name, edge_count)
-                    VALUES (%s, %s, %s, %s)
-                    """,
+                            INSERT INTO insights.artist_centrality (rank, artist_id, artist_name, edge_count)
+                            VALUES (%s, %s, %s, %s)
+                            """,
                     (rank, row["artist_id"], row["artist_name"], row["edge_count"]),
                 )
-            await cursor.execute("COMMIT")
         logger.info("💾 Artist centrality stored", count=len(results))
         await _log_computation(pool, "artist_centrality", "completed", started_at, len(results))
         return len(results)
@@ -110,19 +109,17 @@ async def compute_and_store_genre_trends(client: httpx.AsyncClient, pool: Any) -
             await _log_computation(pool, "genre_trends", "completed", started_at, 0)
             return 0
 
-        async with pool.connection() as conn, conn.cursor() as cursor:
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
             cursor = cast("Any", cursor)
-            await cursor.execute("BEGIN")
             await cursor.execute("DELETE FROM insights.genre_trends")
             for row in results:
                 await cursor.execute(
                     """
-                    INSERT INTO insights.genre_trends (genre, decade, release_count)
-                    VALUES (%s, %s, %s)
-                    """,
+                            INSERT INTO insights.genre_trends (genre, decade, release_count)
+                            VALUES (%s, %s, %s)
+                            """,
                     (row["genre"], row["decade"], row["release_count"]),
                 )
-            await cursor.execute("COMMIT")
         logger.info("💾 Genre trends stored", count=len(results))
         await _log_computation(pool, "genre_trends", "completed", started_at, len(results))
         return len(results)
@@ -145,19 +142,18 @@ async def compute_and_store_label_longevity(client: httpx.AsyncClient, pool: Any
             return 0
 
         current_year = datetime.now(UTC).year
-        async with pool.connection() as conn, conn.cursor() as cursor:
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
             cursor = cast("Any", cursor)
-            await cursor.execute("BEGIN")
             await cursor.execute("DELETE FROM insights.label_longevity")
             for rank, row in enumerate(results, 1):
                 still_active = row["last_year"] >= current_year - 2
                 await cursor.execute(
                     """
-                    INSERT INTO insights.label_longevity
-                        (rank, label_id, label_name, first_year, last_year,
-                         years_active, total_releases, peak_decade, still_active)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
+                            INSERT INTO insights.label_longevity
+                                (rank, label_id, label_name, first_year, last_year,
+                                 years_active, total_releases, peak_decade, still_active)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
                     (
                         rank,
                         row["label_id"],
@@ -170,7 +166,6 @@ async def compute_and_store_label_longevity(client: httpx.AsyncClient, pool: Any
                         still_active,
                     ),
                 )
-            await cursor.execute("COMMIT")
         logger.info("💾 Label longevity stored", count=len(results))
         await _log_computation(pool, "label_longevity", "completed", started_at, len(results))
         return len(results)
@@ -210,9 +205,8 @@ async def compute_and_store_anniversaries(
             await _log_computation(pool, "anniversaries", "completed", started_at, 0)
             return 0
         rows_written = 0
-        async with pool.connection() as conn, conn.cursor() as cursor:
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
             cursor = cast("Any", cursor)
-            await cursor.execute("BEGIN")
             await cursor.execute(
                 "DELETE FROM insights.monthly_anniversaries WHERE computed_year = %s AND computed_month = %s",
                 (year, month),
@@ -222,18 +216,17 @@ async def compute_and_store_anniversaries(
                 if anniversary in milestone_years:
                     await cursor.execute(
                         """
-                        INSERT INTO insights.monthly_anniversaries
-                            (master_id, title, artist_name, release_year, anniversary,
-                             computed_month, computed_year)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (master_id, computed_year, computed_month) DO UPDATE
-                        SET title = EXCLUDED.title, artist_name = EXCLUDED.artist_name,
-                            anniversary = EXCLUDED.anniversary, computed_at = NOW()
-                        """,
+                                INSERT INTO insights.monthly_anniversaries
+                                    (master_id, title, artist_name, release_year, anniversary,
+                                     computed_month, computed_year)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                ON CONFLICT (master_id, computed_year, computed_month) DO UPDATE
+                                SET title = EXCLUDED.title, artist_name = EXCLUDED.artist_name,
+                                    anniversary = EXCLUDED.anniversary, computed_at = NOW()
+                                """,
                         (row["master_id"], row["title"], row.get("artist_name"), row["release_year"], anniversary, month, year),
                     )
                     rows_written += 1
-            await cursor.execute("COMMIT")
         logger.info("💾 Monthly anniversaries stored", count=rows_written, year=year, month=month)
         await _log_computation(pool, "anniversaries", "completed", started_at, rows_written)
         return rows_written
@@ -257,18 +250,17 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
             await _log_computation(pool, "data_completeness", "completed", started_at, 0)
             return 0
 
-        async with pool.connection() as conn, conn.cursor() as cursor:
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
             cursor = cast("Any", cursor)
-            await cursor.execute("BEGIN")
             await cursor.execute("DELETE FROM insights.data_completeness")
             for row in results:
                 await cursor.execute(
                     """
-                    INSERT INTO insights.data_completeness
-                        (entity_type, total_count, with_image, with_year,
-                         with_country, with_genre, completeness_pct)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    """,
+                            INSERT INTO insights.data_completeness
+                                (entity_type, total_count, with_image, with_year,
+                                 with_country, with_genre, completeness_pct)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            """,
                     (
                         row["entity_type"],
                         row["total_count"],
@@ -279,7 +271,6 @@ async def compute_and_store_data_completeness(client: httpx.AsyncClient, pool: A
                         row["completeness_pct"],
                     ),
                 )
-            await cursor.execute("COMMIT")
         logger.info("💾 Data completeness stored", count=len(results))
         await _log_computation(pool, "data_completeness", "completed", started_at, len(results))
         return len(results)
@@ -302,19 +293,18 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
             await _log_computation(pool, "release_rarity", "completed", started_at, 0)
             return 0
 
-        async with pool.connection() as conn, conn.cursor() as cursor:
+        async with pool.connection() as conn, conn.transaction(), conn.cursor() as cursor:
             cursor = cast("Any", cursor)
-            await cursor.execute("BEGIN")
             await cursor.execute("DELETE FROM insights.release_rarity")
             for row in results:
                 await cursor.execute(
                     """
-                    INSERT INTO insights.release_rarity
-                        (release_id, title, artist_name, year, rarity_score, tier,
-                         hidden_gem_score, pressing_scarcity, label_catalog,
-                         format_rarity, temporal_scarcity, graph_isolation)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """,
+                            INSERT INTO insights.release_rarity
+                                (release_id, title, artist_name, year, rarity_score, tier,
+                                 hidden_gem_score, pressing_scarcity, label_catalog,
+                                 format_rarity, temporal_scarcity, graph_isolation)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                            """,
                     (
                         row["release_id"],
                         row.get("title", ""),
@@ -330,7 +320,6 @@ async def compute_and_store_rarity(client: httpx.AsyncClient, pool: Any) -> int:
                         row.get("graph_isolation"),
                     ),
                 )
-            await cursor.execute("COMMIT")
         logger.info("💾 Release rarity scores stored", count=len(results))
         await _log_computation(pool, "release_rarity", "completed", started_at, len(results))
         return len(results)

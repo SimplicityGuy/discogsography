@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Callable
 import logging
+import re
 from typing import Any
 
 import aio_pika
@@ -56,7 +57,9 @@ class ResilientRabbitMQConnection(ResilientConnection[BlockingConnection]):
 
     def _create_connection(self) -> BlockingConnection:
         """Create a new RabbitMQ blocking connection."""
-        logger.info(f"🐰 Creating new RabbitMQ connection to {self.connection_url}")
+        # Redact password from URL for logging (never log credentials)
+        safe_url = re.sub(r"://([^:]+):([^@]+)@", r"://\1:***@", self.connection_url)
+        logger.info(f"🐰 Creating new RabbitMQ connection to {safe_url}")
 
         params = URLParameters(self.connection_url)
         params.heartbeat = self.heartbeat

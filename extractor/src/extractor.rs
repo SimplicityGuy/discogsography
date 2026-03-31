@@ -670,7 +670,7 @@ fn extract_version_from_filename(filename: &str) -> Option<String> {
 async fn wait_for_trigger(trigger: &Arc<std::sync::Mutex<Option<bool>>>) -> bool {
     loop {
         {
-            let mut t = trigger.lock().unwrap();
+            let mut t = trigger.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             if let Some(force_reprocess) = t.take() {
                 return force_reprocess;
             }

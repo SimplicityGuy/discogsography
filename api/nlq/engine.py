@@ -56,7 +56,7 @@ collection stats, taste fingerprint, blindspots, and gap analysis."""
 
 # ── Off-topic refusal keywords ──────────────────────────────────────────
 
-_REFUSAL_KEYWORDS = ("only help", "only answer", "can't help", "cannot help", "music database", "discogsography")
+_REFUSAL_KEYWORDS = ("i can only help", "i can only answer", "i can't help", "i cannot help", "not able to help", "outside my scope")
 
 _OFF_TOPIC_REDIRECT = "I can only answer questions about the Discogsography music database. Try asking about an artist, label, or genre!"
 
@@ -160,6 +160,13 @@ class NLQEngine:
                     )
 
             messages.append({"role": "assistant", "content": response.content})
+            if not tool_results:
+                # Non-tool stop (e.g., max_tokens) — treat as final response.
+                # Return directly without off-topic guardrail since the response
+                # was truncated, not intentionally off-topic.
+                summary = _extract_text(response)
+                deduped = _deduplicate_entities(entities)
+                return NLQResult(summary=summary, entities=deduped, tools_used=tools_used)
             messages.append({"role": "user", "content": tool_results})
 
         # Max iterations reached — return whatever we have

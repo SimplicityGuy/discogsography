@@ -1161,6 +1161,39 @@ describe('ApiClient', () => {
 
             expect(onStatus).toHaveBeenCalledWith({ step: 'thinking' });
         });
+
+        it('should call onError when reader.read() rejects mid-stream', async () => {
+            let readCount = 0;
+            const stream = {
+                getReader() {
+                    return {
+                        read() {
+                            readCount++;
+                            if (readCount === 1) {
+                                return Promise.resolve({
+                                    done: false,
+                                    value: new TextEncoder().encode('event: status\ndata: {"step":"ok"}\n\n'),
+                                });
+                            }
+                            return Promise.reject(new Error('stream aborted'));
+                        },
+                    };
+                },
+            };
+
+            vi.stubGlobal('fetch', async () => ({
+                ok: true,
+                body: stream,
+            }));
+
+            const onError = vi.fn();
+            window.apiClient.askNlqStream('test query', null, vi.fn(), vi.fn(), onError);
+
+            await new Promise(r => setTimeout(r, 50));
+
+            expect(onError).toHaveBeenCalled();
+            expect(onError.mock.calls[0][0].message).toBe('stream aborted');
+        });
     });
 
     describe('2FA methods', () => {

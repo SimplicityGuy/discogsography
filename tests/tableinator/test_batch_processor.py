@@ -556,7 +556,7 @@ class TestPostgreSQLBatchProcessor:
     @pytest.mark.asyncio
     async def test_process_batch_with_unchanged_records(self) -> None:
         """Test batch processing skips unchanged records."""
-        mock_connection = MagicMock()
+        mock_connection = AsyncMock()
         mock_cursor = AsyncMock()
         mock_cursor.fetchall = AsyncMock(return_value=[("1", "abc"), ("2", "def")])
 

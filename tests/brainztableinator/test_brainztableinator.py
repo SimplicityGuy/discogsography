@@ -433,6 +433,11 @@ class TestOnDataMessage:
 
         mock_pool = MagicMock()
         mock_conn = AsyncMock()
+        # Support conn.transaction() as an async context manager
+        mock_tx_cm = AsyncMock()
+        mock_tx_cm.__aenter__ = AsyncMock(return_value=None)
+        mock_tx_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_conn.transaction = MagicMock(return_value=mock_tx_cm)
         mock_conn_cm = AsyncMock()
         mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_conn_cm.__aexit__ = AsyncMock(return_value=None)
@@ -1639,6 +1644,11 @@ class TestOnDataMessageExtended:
 
         mock_pool = MagicMock()
         mock_conn = AsyncMock()
+        # Support conn.transaction() as an async context manager
+        mock_tx_cm = AsyncMock()
+        mock_tx_cm.__aenter__ = AsyncMock(return_value=None)
+        mock_tx_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_conn.transaction = MagicMock(return_value=mock_tx_cm)
         mock_conn_cm = AsyncMock()
         mock_conn_cm.__aenter__ = AsyncMock(return_value=mock_conn)
         mock_conn_cm.__aexit__ = AsyncMock(return_value=None)

@@ -16,6 +16,10 @@ def _make_mock_pool() -> MagicMock:
 
     mock_conn = AsyncMock()
     mock_conn.cursor = MagicMock(return_value=mock_cursor)
+    mock_tx_cm = AsyncMock()
+    mock_tx_cm.__aenter__ = AsyncMock(return_value=None)
+    mock_tx_cm.__aexit__ = AsyncMock(return_value=None)
+    mock_conn.transaction = MagicMock(return_value=mock_tx_cm)
     mock_conn.__aenter__ = AsyncMock(return_value=mock_conn)
     mock_conn.__aexit__ = AsyncMock(return_value=False)
 

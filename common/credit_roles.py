@@ -103,9 +103,11 @@ ROLE_CATEGORIES: dict[str, set[str]] = {
 }
 
 # Build reverse lookup: lowercase role fragment → category
+# Use ROLE_CATEGORIES (ordered dict) as iteration source to ensure deterministic
+# ordering — longer fragments first within each category for specificity.
 _ROLE_TO_CATEGORY: dict[str, str] = {}
 for _cat, _roles in ROLE_CATEGORIES.items():
-    for _role in _roles:
+    for _role in sorted(_roles, key=len, reverse=True):
         _ROLE_TO_CATEGORY[_role] = _cat
 
 

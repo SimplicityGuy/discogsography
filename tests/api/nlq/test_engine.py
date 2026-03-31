@@ -297,3 +297,31 @@ class TestNLQEngineEntityDedup:
         # Should be deduplicated to just one entity
         assert len(result.entities) == 1
         assert result.entities[0]["id"] == "a123"
+
+
+class TestNLQEngineNonToolStop:
+    """Test handling of non-tool, non-end_turn stop reasons (e.g., max_tokens)."""
+
+    @pytest.mark.asyncio
+    async def test_max_tokens_stop_returns_result(self) -> None:
+        """When Claude stops with max_tokens and no tool_use blocks, return the partial text."""
+        config = _make_config()
+        client = _make_client()
+        runner = _make_tool_runner()
+
+        # Simulate max_tokens stop with text content but no tool_use
+        block = MagicMock()
+        block.type = "text"
+        block.text = "Here is a partial answer about Radiohead..."
+        resp = MagicMock()
+        resp.content = [block]
+        resp.stop_reason = "max_tokens"
+        client.messages.create.return_value = resp
+
+        engine = NLQEngine(config=config, client=client, tool_runner=runner)
+        result = await engine.run("Tell me about Radiohead", NLQContext())
+
+        assert isinstance(result, NLQResult)
+        assert "partial answer" in result.summary
+        # Only one API call — no tool loop
+        assert client.messages.create.call_count == 1

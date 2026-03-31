@@ -504,9 +504,20 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
             if graph is None:
                 raise RuntimeError("Neo4j driver not initialized")
 
+            # Snapshot stats before transaction — execute_write may retry
+            # the transaction function, causing duplicate increments.
+            pre_enriched = enrichment_stats["entities_enriched"]
+            pre_skipped = enrichment_stats["entities_skipped_no_discogs_match"]
+            pre_rels = enrichment_stats["relationships_created"]
+
             async with graph.session(database="neo4j") as session:
 
                 async def tx_fn(tx: Any) -> bool:
+                    # Reset stats to pre-transaction values before each attempt
+                    # to prevent over-counting on retry
+                    enrichment_stats["entities_enriched"] = pre_enriched
+                    enrichment_stats["entities_skipped_no_discogs_match"] = pre_skipped
+                    enrichment_stats["relationships_created"] = pre_rels
                     return bool(await enrich_fn(tx, body))
 
                 await session.execute_write(tx_fn)

@@ -7,10 +7,11 @@ service can fetch data over HTTP instead of importing query modules directly.
 import json
 from typing import Any
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from fastapi.responses import JSONResponse
 import structlog
 
+from api.limiter import limiter
 from api.queries.insights_neo4j_queries import (
     query_artist_centrality,
     query_genre_trends,
@@ -86,7 +87,8 @@ async def anniversaries(
 
 
 @router.get("/data-completeness")
-async def data_completeness() -> JSONResponse:
+@limiter.limit("5/minute")
+async def data_completeness(request: Request) -> JSONResponse:  # noqa: ARG001
     """Return raw data completeness query results from PostgreSQL.
 
     Caches results in Redis (6h TTL) because the underlying queries do
@@ -117,7 +119,8 @@ async def data_completeness() -> JSONResponse:
 
 
 @router.get("/rarity-scores")
-async def rarity_scores() -> JSONResponse:
+@limiter.limit("5/minute")
+async def rarity_scores(request: Request) -> JSONResponse:  # noqa: ARG001
     """Return computed rarity scores for all releases from Neo4j."""
     if not _neo4j:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)

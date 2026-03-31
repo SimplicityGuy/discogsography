@@ -595,6 +595,8 @@ class ApiClient {
                     buffer = lines.pop() || '';
                     processLines(lines);
                     processChunk();
+                }).catch(err => {
+                    if (onError) onError(err);
                 });
             }
             processChunk();
