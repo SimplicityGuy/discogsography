@@ -195,10 +195,7 @@ class TimelineScrubber {
         if (!data) {
             data = await window.apiClient.getGenreEmergence(year);
             if (!data) return;
-            // Only cache successful responses (non-empty genres or styles)
-            if (data.genres.length > 0 || data.styles.length > 0) {
-                this._emergenceCache.set(year, data);
-            }
+            this._emergenceCache.set(year, data);
         }
 
         const currentGenres = new Set([
@@ -420,14 +417,20 @@ class ExploreApp {
             syncBtn?.classList.remove('hidden');
         } else if (loggedIn) {
             if (statusDisplay) {
-                statusDisplay.innerHTML = '<span class="badge bg-gray-600 text-text-mid discogs-badge">Not connected</span>';
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-gray-600 text-text-mid discogs-badge';
+                badge.textContent = 'Not connected';
+                statusDisplay.replaceChildren(badge);
             }
             connectBtn?.classList.remove('hidden');
             disconnectBtn?.classList.add('hidden');
             syncBtn?.classList.add('hidden');
         } else {
             if (statusDisplay) {
-                statusDisplay.innerHTML = '<span class="badge bg-gray-600 text-text-mid discogs-badge">Not connected</span>';
+                const badge = document.createElement('span');
+                badge.className = 'badge bg-gray-600 text-text-mid discogs-badge';
+                badge.textContent = 'Not connected';
+                statusDisplay.replaceChildren(badge);
             }
             connectBtn?.classList.add('hidden');
             disconnectBtn?.classList.add('hidden');
@@ -702,7 +705,12 @@ class ExploreApp {
         }
 
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="material-symbols-outlined spin mr-1" style="font-size:18px">progress_activity</span>Logging in...';
+        const loginSpinner = document.createElement('span');
+        loginSpinner.className = 'material-symbols-outlined spin mr-1';
+        loginSpinner.style.fontSize = '18px';
+        loginSpinner.textContent = 'progress_activity';
+        const loginText = document.createTextNode('Logging in...');
+        submitBtn.replaceChildren(loginSpinner, loginText);
         if (errorEl) errorEl.textContent = '';
 
         try {
@@ -739,7 +747,11 @@ class ExploreApp {
             document.getElementById('loginPassword').value = '';
         } finally {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<span class="material-symbols-outlined mr-1" style="font-size:18px">login</span>Login';
+            const loginIcon = document.createElement('span');
+            loginIcon.className = 'material-symbols-outlined mr-1';
+            loginIcon.style.fontSize = '18px';
+            loginIcon.textContent = 'login';
+            submitBtn.replaceChildren(loginIcon, document.createTextNode('Login'));
         }
     }
 
@@ -760,7 +772,12 @@ class ExploreApp {
         }
 
         submitBtn.disabled = true;
-        submitBtn.innerHTML = '<span class="material-symbols-outlined spin mr-1" style="font-size:18px">progress_activity</span>Creating account...';
+        const regSpinner = document.createElement('span');
+        regSpinner.className = 'material-symbols-outlined spin mr-1';
+        regSpinner.style.fontSize = '18px';
+        regSpinner.textContent = 'progress_activity';
+        const regText = document.createTextNode('Creating account...');
+        submitBtn.replaceChildren(regSpinner, regText);
         if (errorEl) errorEl.textContent = '';
         if (successEl) successEl.classList.add('hidden');
 
@@ -777,7 +794,11 @@ class ExploreApp {
             }
         } finally {
             submitBtn.disabled = false;
-            submitBtn.innerHTML = '<span class="material-symbols-outlined mr-1" style="font-size:18px">person_add</span>Create Account';
+            const regIcon = document.createElement('span');
+            regIcon.className = 'material-symbols-outlined mr-1';
+            regIcon.style.fontSize = '18px';
+            regIcon.textContent = 'person_add';
+            submitBtn.replaceChildren(regIcon, document.createTextNode('Create Account'));
         }
     }
 
@@ -1124,6 +1145,7 @@ class ExploreApp {
         if (type === 'release' && window.authManager.isLoggedIn()) {
             const token = window.authManager.getToken();
             const result = await window.apiClient.getUserStatus([nodeId], token);
+            if (requestId !== this._nodeClickRequestId) return;
             if (result?.status?.[nodeId]) {
                 this._addOwnershipBadges(nodeId, result.status[nodeId]);
             }

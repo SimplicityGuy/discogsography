@@ -305,14 +305,16 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:  # pragma: no cover
     yield
 
     logger.info("🔧 API service shutting down...")
-    for task in _running_syncs.values():
+    sync_tasks = list(_running_syncs.values())
+    for task in sync_tasks:
         task.cancel()
-    if _running_syncs:
-        await asyncio.gather(*_running_syncs.values(), return_exceptions=True)
-    for task in _admin_router._tracking_tasks.values():
+    if sync_tasks:
+        await asyncio.gather(*sync_tasks, return_exceptions=True)
+    admin_tasks = list(_admin_router._tracking_tasks.values())
+    for task in admin_tasks:
         task.cancel()
-    if _admin_router._tracking_tasks:
-        await asyncio.gather(*_admin_router._tracking_tasks.values(), return_exceptions=True)
+    if admin_tasks:
+        await asyncio.gather(*admin_tasks, return_exceptions=True)
     if hasattr(_app.state, "prewarm_task"):
         _app.state.prewarm_task.cancel()
         await asyncio.gather(_app.state.prewarm_task, return_exceptions=True)

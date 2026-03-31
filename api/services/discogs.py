@@ -70,7 +70,7 @@ async def request_oauth_token(
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(url, headers=headers)
 
     if response.status_code != 200:
@@ -135,7 +135,7 @@ async def exchange_oauth_verifier(
         "Content-Type": "application/x-www-form-urlencoded",
     }
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(url, headers=headers)
 
     if response.status_code != 200:
@@ -190,7 +190,7 @@ async def fetch_discogs_identity(
         "Accept": "application/json",
     }
 
-    async with httpx.AsyncClient() as client:
+    async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.get(url, headers=headers)
 
     if response.status_code != 200:

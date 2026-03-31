@@ -43,7 +43,8 @@ def configure(neo4j: Any, pool: Any, redis: Any = None) -> None:
 
 
 @router.get("/artist-centrality")
-async def artist_centrality(limit: int = Query(100, ge=1, le=500)) -> JSONResponse:
+@limiter.limit("5/minute")
+async def artist_centrality(request: Request, limit: int = Query(100, ge=1, le=500)) -> JSONResponse:  # noqa: ARG001
     """Return raw artist centrality query results from Neo4j."""
     if not _neo4j:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
@@ -52,7 +53,8 @@ async def artist_centrality(limit: int = Query(100, ge=1, le=500)) -> JSONRespon
 
 
 @router.get("/genre-trends")
-async def genre_trends() -> JSONResponse:
+@limiter.limit("5/minute")
+async def genre_trends(request: Request) -> JSONResponse:  # noqa: ARG001
     """Return raw genre trends query results from Neo4j."""
     if not _neo4j:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
@@ -61,7 +63,8 @@ async def genre_trends() -> JSONResponse:
 
 
 @router.get("/label-longevity")
-async def label_longevity(limit: int = Query(50, ge=1, le=500)) -> JSONResponse:
+@limiter.limit("5/minute")
+async def label_longevity(request: Request, limit: int = Query(50, ge=1, le=500)) -> JSONResponse:  # noqa: ARG001
     """Return raw label longevity query results from Neo4j."""
     if not _neo4j:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
@@ -70,7 +73,9 @@ async def label_longevity(limit: int = Query(50, ge=1, le=500)) -> JSONResponse:
 
 
 @router.get("/anniversaries")
+@limiter.limit("5/minute")
 async def anniversaries(
+    request: Request,  # noqa: ARG001
     year: int = Query(...),
     month: int = Query(..., ge=1, le=12),
     milestones: str = Query("25,30,40,50,75,100"),

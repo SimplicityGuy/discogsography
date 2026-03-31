@@ -170,7 +170,7 @@ async def login(request: Request, body: LoginRequest) -> JSONResponse:  # noqa: 
         )
 
     password_ok = _verify_password(body.password, user["hashed_password"])
-    if not user["is_active"] or not password_ok:
+    if not password_ok or not user["is_active"]:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect email or password",

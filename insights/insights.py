@@ -74,7 +74,7 @@ async def _scheduler_loop(
     interval_seconds = interval_hours * 3600
 
     while True:
-        cycle_start = asyncio.get_event_loop().time()
+        cycle_start = asyncio.get_running_loop().time()
         try:
             logger.info("🔄 Scheduler: starting insight computations...")
             await run_all_computations(client, pool, milestone_years=milestone_years)
@@ -88,7 +88,7 @@ async def _scheduler_loop(
         except Exception:
             logger.exception("❌ Scheduler: computation cycle failed, will retry next interval")
 
-        elapsed = asyncio.get_event_loop().time() - cycle_start
+        elapsed = asyncio.get_running_loop().time() - cycle_start
         sleep_time = max(0, interval_seconds - elapsed)
         await asyncio.sleep(sleep_time)
 
@@ -189,13 +189,12 @@ async def health_check() -> JSONResponse:
 @app.get("/api/insights/top-artists")
 async def top_artists(
     limit: int = Query(100, ge=1, le=500),
-    metric: str = Query("centrality"),
 ) -> JSONResponse:
     """Return top artists by centrality (precomputed)."""
     if not _pool:
         return JSONResponse(content={"error": "Service not ready"}, status_code=503)
 
-    cache_key = f"insights:top-artists:{limit}:{metric}"
+    cache_key = f"insights:top-artists:{limit}"
     if _cache:
         cached = await _cache.get(cache_key)
         if cached is not None:
@@ -210,7 +209,7 @@ async def top_artists(
         rows = await cursor.fetchall()
 
     items = [ArtistCentralityItem(rank=r[0], artist_id=r[1], artist_name=r[2], edge_count=r[3]).model_dump() for r in rows]
-    result = {"metric": metric, "items": items, "count": len(items)}
+    result = {"metric": "centrality", "items": items, "count": len(items)}
     if _cache:
         await _cache.set(cache_key, result)
     return JSONResponse(content=result)

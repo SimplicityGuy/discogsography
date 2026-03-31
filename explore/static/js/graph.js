@@ -16,6 +16,7 @@ class GraphVisualization {
         // Track expanded categories
         this.expandedCategories = new Set();
         this._pendingExpands = 0;
+        this._loadingCategories = new Set();
 
         // Track per-category pagination state: categoryId → {offset, limit, total, parentName, parentType, category}
         this._categoryMeta = new Map();
@@ -313,53 +314,59 @@ class GraphVisualization {
     async _loadMoreCategory(d) {
         const meta = this._categoryMeta.get(d.categoryId);
         if (!meta) return;
+        if (this._loadingCategories.has(d.categoryId)) return;
+        this._loadingCategories.add(d.categoryId);
 
-        const { parentName, parentType, category, offset, limit, total } = meta;
-        const data = await window.apiClient.expand(parentName, parentType, category, limit, offset, this.beforeYear);
-        const { children, has_more } = data;
+        try {
+            const { parentName, parentType, category, offset, limit, total } = meta;
+            const data = await window.apiClient.expand(parentName, parentType, category, limit, offset, this.beforeYear);
+            const { children, has_more } = data;
 
-        // Remove the load-more node and its link
-        this.nodes = this.nodes.filter(n => n.id !== d.id);
-        this.links = this.links.filter(l => {
-            const srcId = typeof l.source === 'object' ? l.source.id : l.source;
-            const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
-            return srcId !== d.id && tgtId !== d.id;
-        });
-
-        // Append new child nodes
-        children.forEach(child => {
-            const childId = `child-${child.type}-${child.id}`;
-            if (this.nodes.find(n => n.id === childId)) return;
-
-            this.nodes.push({
-                id: childId,
-                name: child.name,
-                type: child.type,
-                isCenter: false,
-                isCategory: false,
-                nodeId: String(child.id),
+            // Remove the load-more node and its link
+            this.nodes = this.nodes.filter(n => n.id !== d.id);
+            this.links = this.links.filter(l => {
+                const srcId = typeof l.source === 'object' ? l.source.id : l.source;
+                const tgtId = typeof l.target === 'object' ? l.target.id : l.target;
+                return srcId !== d.id && tgtId !== d.id;
             });
-            this.links.push({ source: d.categoryId, target: childId });
-        });
 
-        // Update category label to reflect loaded count
-        const catNode = this.nodes.find(n => n.id === d.categoryId);
-        if (catNode) {
-            const newOffset = offset + children.length;
-            this._categoryMeta.set(d.categoryId, { ...meta, offset: newOffset });
-            catNode.name = `${catNode.displayName || catNode.name.replace(/ \(\d+\)$/, '')} (${newOffset} / ${total})`;
+            // Append new child nodes
+            children.forEach(child => {
+                const childId = `child-${child.type}-${child.id}`;
+                if (this.nodes.find(n => n.id === childId)) return;
+
+                this.nodes.push({
+                    id: childId,
+                    name: child.name,
+                    type: child.type,
+                    isCenter: false,
+                    isCategory: false,
+                    nodeId: String(child.id),
+                });
+                this.links.push({ source: d.categoryId, target: childId });
+            });
+
+            // Update category label to reflect loaded count
+            const catNode = this.nodes.find(n => n.id === d.categoryId);
+            if (catNode) {
+                const newOffset = offset + children.length;
+                this._categoryMeta.set(d.categoryId, { ...meta, offset: newOffset });
+                catNode.name = `${catNode.displayName || catNode.name.replace(/ \(\d+\)$/, '')} (${newOffset} / ${total})`;
+            }
+
+            if (has_more) {
+                const remaining = Math.max(0, (total || 0) - (offset + children.length));
+                this._addLoadMoreNode(d.categoryId, remaining);
+            }
+
+            this._render();
+        } finally {
+            this._loadingCategories.delete(d.categoryId);
         }
-
-        if (has_more) {
-            const remaining = Math.max(0, (total || 0) - (offset + children.length));
-            this._addLoadMoreNode(d.categoryId, remaining);
-        }
-
-        this._render();
     }
 
     _checkExpandsDone() {
-        if (this._pendingExpands <= 0) {
+        if (this._pendingExpands === 0) {
             this._render();
             if (this.onExpandsComplete) {
                 this.onExpandsComplete();

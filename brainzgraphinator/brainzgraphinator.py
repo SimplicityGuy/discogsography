@@ -504,27 +504,37 @@ def make_message_handler(data_type: str, enrich_fn: Any) -> Any:
             if graph is None:
                 raise RuntimeError("Neo4j driver not initialized")
 
-            # Snapshot stats before transaction — execute_write may retry
-            # the transaction function, causing duplicate increments.
-            pre_enriched = enrichment_stats["entities_enriched"]
-            pre_skipped = enrichment_stats["entities_skipped_no_discogs_match"]
-            pre_rels = enrichment_stats["relationships_created"]
-            pre_rels_skipped = enrichment_stats["relationships_skipped_missing_side"]
+            # Use local counters inside the transaction to avoid race conditions
+            # with concurrent messages mutating the global enrichment_stats dict.
+            # Temporarily swap global enrichment_stats to local_stats so enrich
+            # functions (which reference the global by name) write to local_stats.
+            global enrichment_stats
+            local_stats: dict[str, int] = {
+                "entities_enriched": 0,
+                "entities_skipped_no_discogs_match": 0,
+                "relationships_created": 0,
+                "relationships_skipped_missing_side": 0,
+            }
+            saved_stats = enrichment_stats
+            enrichment_stats = local_stats
 
-            async with graph.session(database="neo4j") as session:
+            try:
+                async with graph.session(database="neo4j") as session:
 
-                async def tx_fn(tx: Any) -> bool:
-                    # Reset stats to pre-transaction values before each attempt
-                    # to prevent over-counting on retry
-                    enrichment_stats["entities_enriched"] = pre_enriched
-                    enrichment_stats["entities_skipped_no_discogs_match"] = pre_skipped
-                    enrichment_stats["relationships_created"] = pre_rels
-                    enrichment_stats["relationships_skipped_missing_side"] = (
-                        pre_rels_skipped
-                    )
-                    return bool(await enrich_fn(tx, body))
+                    async def tx_fn(tx: Any) -> bool:
+                        # Reset local counters on each retry attempt
+                        for key in local_stats:
+                            local_stats[key] = 0
+                        return bool(await enrich_fn(tx, body))
 
-                await session.execute_write(tx_fn)
+                    await session.execute_write(tx_fn)
+            finally:
+                # Always restore the global reference
+                enrichment_stats = saved_stats
+
+            # Merge local counters into global stats only after transaction succeeds
+            for key in local_stats:
+                enrichment_stats[key] += local_stats[key]
 
             await message.ack()
         except (ServiceUnavailable, SessionExpired) as e:

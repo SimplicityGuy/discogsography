@@ -21,6 +21,8 @@ def _build_conninfo() -> str:
     """Build PostgreSQL connection string from environment variables."""
     host = getenv("POSTGRES_HOST", "localhost")
     port = getenv("POSTGRES_PORT", "5432")
+    if ":" in host:
+        host, port = host.rsplit(":", 1)
     user = get_secret("POSTGRES_USERNAME") or "postgres"
     password = get_secret("POSTGRES_PASSWORD") or "postgres"
     database = getenv("POSTGRES_DATABASE", "discogsography")

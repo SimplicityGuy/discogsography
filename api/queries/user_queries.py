@@ -51,9 +51,9 @@ async def get_user_collection(
     MATCH (u:User {id: $user_id})-[:COLLECTED]->(r:Release)
     RETURN count(r) AS total
     """
-    results, total = (
-        await run_query(driver, cypher, user_id=user_id, limit=limit, offset=offset),
-        await run_count(driver, count_cypher, user_id=user_id),
+    results, total = await asyncio.gather(
+        run_query(driver, cypher, user_id=user_id, limit=limit, offset=offset),
+        run_count(driver, count_cypher, user_id=user_id),
     )
     return results, total
 
@@ -90,9 +90,9 @@ async def get_user_wantlist(
     MATCH (u:User {id: $user_id})-[:WANTS]->(r:Release)
     RETURN count(r) AS total
     """
-    results, total = (
-        await run_query(driver, cypher, user_id=user_id, limit=limit, offset=offset),
-        await run_count(driver, count_cypher, user_id=user_id),
+    results, total = await asyncio.gather(
+        run_query(driver, cypher, user_id=user_id, limit=limit, offset=offset),
+        run_count(driver, count_cypher, user_id=user_id),
     )
     return results, total
 

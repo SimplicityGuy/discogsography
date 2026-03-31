@@ -357,7 +357,7 @@ async def _track_extraction(extraction_id: str) -> None:
                             (json.dumps(record_counts), extraction_id),
                         )
 
-                    if extraction_status in ("idle", "completed"):
+                    if extraction_status == "completed":
                         async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
                             await cur.execute(
                                 "UPDATE extraction_history SET status = 'completed', completed_at = NOW(), record_counts = %s WHERE id = %s",
@@ -416,6 +416,13 @@ async def trigger_extraction(
         row = await cur.fetchone()
 
     if not row:
+        # Update any dangling 'pending' record to 'failed' to avoid orphans
+        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = 'Failed to create extraction record' "
+                "WHERE triggered_by = %s::uuid AND status = 'pending'",
+                (admin_id,),
+            )
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to create extraction record")
 
     extraction_id = str(row["id"])

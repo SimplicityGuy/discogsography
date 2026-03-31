@@ -367,7 +367,7 @@ _INSIGHTS_TABLES: list[tuple[str, str]] = [
             label_id        TEXT NOT NULL,
             label_name      TEXT NOT NULL,
             first_year      INT NOT NULL,
-            last_year       INT NOT NULL,
+            last_year       INT,
             years_active    INT NOT NULL,
             total_releases  BIGINT NOT NULL,
             peak_decade     INT,
@@ -562,7 +562,7 @@ _MUSICBRAINZ_TABLES: list[tuple[str, str]] = [
             ended BOOLEAN DEFAULT FALSE,
             attributes JSONB,
             created_at TIMESTAMPTZ DEFAULT NOW(),
-            UNIQUE (source_mbid, target_mbid, relationship_type)
+            UNIQUE (source_mbid, target_mbid, source_entity_type, target_entity_type, relationship_type)
         )""",
     ),
     (

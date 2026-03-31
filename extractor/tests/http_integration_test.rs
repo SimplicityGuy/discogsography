@@ -142,7 +142,7 @@ async fn test_http_download_success() {
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
     // Create a file info for testing
-    let file_info = S3FileInfo { name: "test_file.xml.gz".to_string(), size: test_content.len() as u64 };
+    let file_info = S3FileInfo { name: "data/test_file.xml.gz".to_string(), size: test_content.len() as u64 };
 
     // Download the file
     let result = downloader.download_file(&file_info).await;
@@ -172,7 +172,7 @@ async fn test_http_download_failure() {
 
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo { name: "failed_file.xml.gz".to_string(), size: 1024 };
+    let file_info = S3FileInfo { name: "data/failed_file.xml.gz".to_string(), size: 1024 };
 
     // Download should fail
     let result = downloader.download_file(&file_info).await;
@@ -189,7 +189,7 @@ async fn test_http_download_404() {
 
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo { name: "nonexistent.xml.gz".to_string(), size: 1024 };
+    let file_info = S3FileInfo { name: "data/nonexistent.xml.gz".to_string(), size: 1024 };
 
     let result = downloader.download_file(&file_info).await;
     assert!(result.is_err());
@@ -212,7 +212,7 @@ async fn test_checksum_calculation_during_download() {
 
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo { name: "checksum_test.xml.gz".to_string(), size: test_content.len() as u64 };
+    let file_info = S3FileInfo { name: "data/checksum_test.xml.gz".to_string(), size: test_content.len() as u64 };
 
     downloader.download_file(&file_info).await.unwrap();
 
@@ -294,7 +294,7 @@ async fn test_download_failure_cleans_up_partial_file() {
 
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo { name: "partial_file.xml.gz".to_string(), size: 1024 };
+    let file_info = S3FileInfo { name: "data/partial_file.xml.gz".to_string(), size: 1024 };
 
     let result = downloader.download_file(&file_info).await;
     assert!(result.is_err());
@@ -365,7 +365,7 @@ async fn test_http_download_retries_on_failure_then_succeeds() {
 
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo { name: "retry_file.xml.gz".to_string(), size: test_content.len() as u64 };
+    let file_info = S3FileInfo { name: "data/retry_file.xml.gz".to_string(), size: test_content.len() as u64 };
 
     let result = downloader.download_file(&file_info).await;
     assert!(result.is_ok(), "Download should succeed after retry: {:?}", result.err());
@@ -393,7 +393,7 @@ async fn test_http_download_exhausts_all_retries() {
 
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo { name: "always_fails.xml.gz".to_string(), size: 1024 };
+    let file_info = S3FileInfo { name: "data/always_fails.xml.gz".to_string(), size: 1024 };
 
     let result = downloader.download_file(&file_info).await;
     assert!(result.is_err(), "Download should fail after exhausting all retries");
@@ -415,7 +415,7 @@ async fn test_http_download_cleans_partial_file_on_retry() {
 
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo { name: "partial_file.xml.gz".to_string(), size: 1024 };
+    let file_info = S3FileInfo { name: "data/partial_file.xml.gz".to_string(), size: 1024 };
 
     let _ = downloader.download_file(&file_info).await;
 
@@ -439,7 +439,7 @@ async fn test_url_encoding_in_download() {
 
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo { name: "file with spaces.xml.gz".to_string(), size: 7 };
+    let file_info = S3FileInfo { name: "data/file with spaces.xml.gz".to_string(), size: 7 };
 
     let result = downloader.download_file(&file_info).await;
     assert!(result.is_ok());
@@ -457,7 +457,7 @@ async fn test_large_file_streaming() {
 
     let mut downloader = Downloader::new_with_base_url(temp_dir.path().to_path_buf(), format!("{}/", server.url())).await.unwrap();
 
-    let file_info = S3FileInfo { name: "large_file.xml.gz".to_string(), size: test_content.len() as u64 };
+    let file_info = S3FileInfo { name: "data/large_file.xml.gz".to_string(), size: test_content.len() as u64 };
 
     let result = downloader.download_file(&file_info).await;
     assert!(result.is_ok());
@@ -491,7 +491,7 @@ async fn test_download_with_state_marker_save_failure() {
         .unwrap()
         .with_state_marker(marker, bad_marker_path.clone());
 
-    let file_info = S3FileInfo { name: "state_test.xml.gz".to_string(), size: test_content.len() as u64 };
+    let file_info = S3FileInfo { name: "data/state_test.xml.gz".to_string(), size: test_content.len() as u64 };
 
     // Download should succeed even though state marker save fails
     let result = downloader.download_file(&file_info).await;

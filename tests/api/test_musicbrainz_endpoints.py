@@ -1,5 +1,6 @@
 """Tests for MusicBrainz enrichment API endpoints."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -19,9 +20,21 @@ from api.queries.musicbrainz_queries import (
 
 
 def _make_neo4j_driver(data_return: list | None = None) -> MagicMock:
-    """Create a mock Neo4j driver whose session.run().data() returns *data_return*."""
+    """Create a mock Neo4j driver compatible with run_single/run_query helpers."""
+    rows = data_return if data_return is not None else []
+
     mock_result = AsyncMock()
-    mock_result.data = AsyncMock(return_value=data_return if data_return is not None else [])
+    # run_single uses result.single() -> dict(record)
+    mock_result.single = AsyncMock(return_value=rows[0] if rows else None)
+    mock_result.consume = AsyncMock(return_value=MagicMock())
+
+    # run_query uses `async for record in result` -> dict(record)
+    async def _aiter_records() -> Any:
+        for r in rows:
+            yield r
+
+    mock_result.__aiter__ = lambda _self: _aiter_records()
+
     mock_session = AsyncMock()
     mock_session.run = AsyncMock(return_value=mock_result)
     mock_session.__aenter__ = AsyncMock(return_value=mock_session)
@@ -296,12 +309,12 @@ class TestGetEnrichmentStatusQuery:
         pool = MagicMock()
         pool.connection = MagicMock(return_value=conn_ctx)
 
-        # Mock Neo4j driver - needs to return multiple results for the loop
-        neo4j_results = [
-            [{"count": 75}],  # artists enriched
-            [{"count": 25}],  # labels enriched
-            [{"count": 140}],  # releases enriched
-            [{"count": 450}],  # relationships created
+        # Mock Neo4j driver - needs to return multiple results for run_single
+        neo4j_single_results = [
+            {"total": 75},  # artists enriched
+            {"total": 25},  # labels enriched
+            {"total": 140},  # releases enriched
+            {"total": 450},  # relationships created
         ]
         mock_session = AsyncMock()
         call_idx = {"n": 0}
@@ -310,7 +323,8 @@ class TestGetEnrichmentStatusQuery:
             idx = call_idx["n"]
             call_idx["n"] += 1
             result = AsyncMock()
-            result.data = AsyncMock(return_value=neo4j_results[idx])
+            result.single = AsyncMock(return_value=neo4j_single_results[idx])
+            result.consume = AsyncMock(return_value=MagicMock())
             return result
 
         mock_session.run = mock_run

@@ -10,6 +10,7 @@ from enum import Enum, StrEnum
 import json
 import os
 from pathlib import Path
+import tempfile
 from typing import Any
 
 import structlog
@@ -144,16 +145,23 @@ class StateMarker:
         data = self._to_dict()
         data["last_updated"] = datetime.now(UTC).isoformat()
 
-        tmp_path = path.with_suffix(".json.tmp")
+        fd = None
+        tmp_path = None
         try:
-            with tmp_path.open("w") as f:
+            fd, tmp_path_str = tempfile.mkstemp(suffix=".json.tmp", dir=path.parent)
+            tmp_path = Path(tmp_path_str)
+            with os.fdopen(fd, "w") as f:
+                fd = None  # os.fdopen takes ownership of the fd
                 json.dump(data, f, indent=2, default=str)
                 f.flush()
                 os.fsync(f.fileno())
             tmp_path.replace(path)
         except BaseException:
             # Clean up partial tmp file on any failure
-            tmp_path.unlink(missing_ok=True)
+            if fd is not None:
+                os.close(fd)
+            if tmp_path is not None:
+                tmp_path.unlink(missing_ok=True)
             raise
 
         logger.debug("💾 Saved state marker", path=str(path))
