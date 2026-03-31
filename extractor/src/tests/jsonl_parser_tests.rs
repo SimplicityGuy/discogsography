@@ -406,7 +406,7 @@ fn test_enrich_relations_with_map() {
         }),
     ];
 
-    let enriched = enrich_relations(relations, &map);
+    let enriched = enrich_relations(relations, &map, "artists");
     assert_eq!(enriched.len(), 2);
     assert_eq!(enriched[0]["target_discogs_artist_id"], 200);
     assert!(enriched[1]["target_discogs_artist_id"].is_null());
@@ -419,7 +419,7 @@ fn test_enrich_relations_with_map() {
 fn test_enrich_relations_empty() {
     use std::collections::HashMap;
     let map: HashMap<String, i64> = HashMap::new();
-    let enriched = enrich_relations(vec![], &map);
+    let enriched = enrich_relations(vec![], &map, "artists");
     assert!(enriched.is_empty());
 }
 
@@ -431,9 +431,23 @@ fn test_enrich_relations_no_target_id() {
 
     // Relation with empty target_mbid — should get null
     let relations = vec![serde_json::json!({"type": "misc", "target_type": "artist", "target_mbid": ""})];
-    let enriched = enrich_relations(relations, &map);
+    let enriched = enrich_relations(relations, &map, "artists");
     assert_eq!(enriched.len(), 1);
     assert!(enriched[0]["target_discogs_artist_id"].is_null());
+}
+
+#[test]
+fn test_enrich_relations_skips_non_matching_target_type() {
+    use std::collections::HashMap;
+    let mut map = HashMap::new();
+    map.insert("label-mbid".to_string(), 500i64);
+
+    // Relation with target_type "label" should not be enriched when entity_type is "artists"
+    let relations = vec![serde_json::json!({"type": "misc", "target_type": "label", "target_mbid": "label-mbid"})];
+    let enriched = enrich_relations(relations, &map, "artists");
+    assert_eq!(enriched.len(), 1);
+    // Should not have the artist enrichment field since target_type doesn't match
+    assert!(enriched[0].get("target_discogs_artist_id").is_none());
 }
 
 // ─── parse_mb_jsonl_file with discogs_map ─────────────────────────────────────

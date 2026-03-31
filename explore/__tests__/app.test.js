@@ -627,6 +627,21 @@ describe('TimelineScrubber', () => {
             expect(onGenreEmergence).toHaveBeenCalledWith(expect.arrayContaining(['Electronic']));
         });
 
+        it('should reset genre tracking when scrubbing backward', async () => {
+            window.apiClient.getGenreEmergence = vi.fn().mockResolvedValue({ genres: [{ name: 'Rock' }], styles: [] });
+
+            const ts = new TimelineScrubber();
+            // First, scrub forward to 1990 to set _lastEmergenceYear
+            await ts._checkEmergence(1990);
+            expect(ts._lastEmergenceYear).toBe(1990);
+            expect(ts._previousGenres.size).toBeGreaterThan(0);
+
+            // Scrub backward to 1980 — should reset genre tracking
+            await ts._checkEmergence(1980);
+            expect(ts._lastEmergenceYear).toBe(1980);
+            expect(ts._previousGenres.size).toBe(0);
+        });
+
         it('should not call onGenreEmergence for already-known genres', async () => {
             window.apiClient.getGenreEmergence = vi.fn().mockResolvedValue({ genres: [{ name: 'Rock' }], styles: [] });
 

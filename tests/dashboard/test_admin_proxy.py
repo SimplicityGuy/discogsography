@@ -634,6 +634,18 @@ class TestMalformedJsonBody:
         assert resp.status_code == 400
         assert "JSON object" in resp.json()["detail"]
 
+    def test_trigger_musicbrainz_sanitised_body_decode_error_returns_400(self, proxy_client: TestClient) -> None:
+        """POST trigger-musicbrainz returns 400 when sanitised body fails json.loads (lines 189-190)."""
+        # Mock _validated_json_body to return bytes that fail json.loads
+        with patch("dashboard.admin_proxy._validated_json_body", new_callable=AsyncMock, return_value=b"\xff\xfe"):
+            resp = proxy_client.post(
+                "/admin/api/extractions/trigger-musicbrainz",
+                content=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+        assert resp.status_code == 400
+        assert "Malformed JSON" in resp.json()["detail"]
+
 
 class TestAuthHeaderForwarding:
     @patch("dashboard.admin_proxy.httpx.AsyncClient")

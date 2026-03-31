@@ -11,6 +11,7 @@ Graph model:
   (Release)-[:DERIVED_FROM]->(Master)
 """
 
+import asyncio
 import bisect
 from datetime import UTC, datetime
 from typing import Any
@@ -220,14 +221,25 @@ async def fetch_all_rarity_signals(driver: Any) -> list[dict[str, Any]]:
 
     logger.info("🔍 Fetching rarity signals from Neo4j...")
 
-    pressing_rows = await run_query(driver, pressing_query, database="neo4j")
-    label_rows = await run_query(driver, label_query, database="neo4j")
-    format_rows = await run_query(driver, format_query, database="neo4j")
-    temporal_rows = await run_query(driver, temporal_query, database="neo4j")
-    degree_rows = await run_query(driver, degree_query, database="neo4j")
-    artist_degree_rows = await run_query(driver, artist_degree_query, database="neo4j")
-    label_size_rows = await run_query(driver, label_size_query, database="neo4j")
-    genre_count_rows = await run_query(driver, genre_count_query, database="neo4j")
+    (
+        pressing_rows,
+        label_rows,
+        format_rows,
+        temporal_rows,
+        degree_rows,
+        artist_degree_rows,
+        label_size_rows,
+        genre_count_rows,
+    ) = await asyncio.gather(
+        run_query(driver, pressing_query, database="neo4j"),
+        run_query(driver, label_query, database="neo4j"),
+        run_query(driver, format_query, database="neo4j"),
+        run_query(driver, temporal_query, database="neo4j"),
+        run_query(driver, degree_query, database="neo4j"),
+        run_query(driver, artist_degree_query, database="neo4j"),
+        run_query(driver, label_size_query, database="neo4j"),
+        run_query(driver, genre_count_query, database="neo4j"),
+    )
 
     logger.info(
         "📊 Rarity signal data fetched",

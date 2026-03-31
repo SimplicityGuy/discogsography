@@ -566,6 +566,12 @@ class TestPostgreSQLBatchProcessor:
         mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
         mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
 
+        # Setup async transaction context manager
+        mock_tx_cm = AsyncMock()
+        mock_tx_cm.__aenter__ = AsyncMock(return_value=None)
+        mock_tx_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.transaction = MagicMock(return_value=mock_tx_cm)
+
         # Setup async connection context manager
         mock_connection_cm = AsyncMock()
         mock_connection_cm.__aenter__ = AsyncMock(return_value=mock_connection)
@@ -616,6 +622,12 @@ class TestPostgreSQLBatchProcessor:
         mock_cursor_cm.__aenter__ = AsyncMock(return_value=mock_cursor)
         mock_cursor_cm.__aexit__ = AsyncMock(return_value=None)
         mock_connection.cursor = MagicMock(return_value=mock_cursor_cm)
+
+        # Setup async transaction context manager
+        mock_tx_cm = AsyncMock()
+        mock_tx_cm.__aenter__ = AsyncMock(return_value=None)
+        mock_tx_cm.__aexit__ = AsyncMock(return_value=None)
+        mock_connection.transaction = MagicMock(return_value=mock_tx_cm)
 
         # Setup async connection context manager
         mock_connection_cm = AsyncMock()

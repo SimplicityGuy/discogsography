@@ -191,6 +191,15 @@ class TimelineScrubber {
     }
 
     async _checkEmergence(year) {
+        // When scrubbing backward, reset genre tracking to avoid
+        // re-highlighting known genres when scrubbing forward again
+        if (this._lastEmergenceYear !== undefined && year < this._lastEmergenceYear) {
+            this._previousGenres = new Set();
+            this._lastEmergenceYear = year;
+            return;
+        }
+        this._lastEmergenceYear = year;
+
         let data = this._emergenceCache.get(year);
         if (!data) {
             data = await window.apiClient.getGenreEmergence(year);

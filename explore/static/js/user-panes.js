@@ -631,13 +631,17 @@ class UserPanes {
         }
 
         const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'taste-card.svg';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(url), 100);
+        try {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'taste-card.svg';
+            a.style.display = 'none';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+        } finally {
+            setTimeout(() => URL.revokeObjectURL(url), 100);
+        }
         resetBtn();
     }
 
@@ -969,7 +973,10 @@ class UserPanes {
         const refreshBtn = document.createElement('button');
         refreshBtn.className = 'btn-refresh btn-sync';
         refreshBtn.id = refreshBtnId;
-        refreshBtn.innerHTML = '<span class="material-symbols-outlined">refresh</span> Refresh';
+        const refreshIcon = document.createElement('span');
+        refreshIcon.className = 'material-symbols-outlined';
+        refreshIcon.textContent = 'refresh';
+        refreshBtn.append(refreshIcon, ' Refresh');
 
         actions.appendChild(refreshBtn);
         header.append(titleArea, actions);
@@ -984,14 +991,29 @@ class UserPanes {
 
         // thead
         const thead = document.createElement('thead');
-        thead.innerHTML = `<tr>
-            <th class="col-artist sortable">Artist <span class="material-symbols-outlined" style="font-size:0.6rem;opacity:0.5">arrow_drop_down</span></th>
-            <th class="col-title sortable">Release Title <span class="material-symbols-outlined" style="font-size:0.6rem;opacity:0.5">arrow_drop_down</span></th>
-            <th class="col-label">Label</th>
-            <th class="col-year">Year</th>
-            <th class="col-genre">Genre / Style</th>
-            <th class="col-rating">Rating</th>
-        </tr>`;
+        const headerRow = document.createElement('tr');
+        const sortIconStyle = 'font-size:0.6rem;opacity:0.5';
+        [
+            { cls: 'col-artist sortable', text: 'Artist', sort: true },
+            { cls: 'col-title sortable', text: 'Release Title', sort: true },
+            { cls: 'col-label', text: 'Label', sort: false },
+            { cls: 'col-year', text: 'Year', sort: false },
+            { cls: 'col-genre', text: 'Genre / Style', sort: false },
+            { cls: 'col-rating', text: 'Rating', sort: false },
+        ].forEach(col => {
+            const th = document.createElement('th');
+            th.className = col.cls;
+            th.textContent = col.text + ' ';
+            if (col.sort) {
+                const sortIcon = document.createElement('span');
+                sortIcon.className = 'material-symbols-outlined';
+                sortIcon.style.cssText = sortIconStyle;
+                sortIcon.textContent = 'arrow_drop_down';
+                th.appendChild(sortIcon);
+            }
+            headerRow.appendChild(th);
+        });
+        thead.appendChild(headerRow);
         table.appendChild(thead);
 
         // tbody
@@ -1068,7 +1090,10 @@ class UserPanes {
         // Previous arrow
         const prevBtn = document.createElement('button');
         prevBtn.className = 'page-btn';
-        prevBtn.innerHTML = '<span class="material-symbols-outlined">chevron_left</span>';
+        const prevIcon = document.createElement('span');
+        prevIcon.className = 'material-symbols-outlined';
+        prevIcon.textContent = 'chevron_left';
+        prevBtn.appendChild(prevIcon);
         prevBtn.disabled = currentPage === 0;
         prevBtn.addEventListener('click', () => onPageChange(currentPage - 1));
         buttons.appendChild(prevBtn);
@@ -1093,7 +1118,10 @@ class UserPanes {
         // Next arrow
         const nextBtn = document.createElement('button');
         nextBtn.className = 'page-btn';
-        nextBtn.innerHTML = '<span class="material-symbols-outlined">chevron_right</span>';
+        const nextIcon = document.createElement('span');
+        nextIcon.className = 'material-symbols-outlined';
+        nextIcon.textContent = 'chevron_right';
+        nextBtn.appendChild(nextIcon);
         nextBtn.disabled = currentPage >= totalPages - 1;
         nextBtn.addEventListener('click', () => onPageChange(currentPage + 1));
         buttons.appendChild(nextBtn);

@@ -421,9 +421,9 @@ class DashboardApp:
                         node_count = stats["nodeCount"] if stats else 0
                         rel_count = stats["relCount"] if stats else 0
                     except Exception:
-                        result = await session.run("MATCH (n) RETURN count(n) AS cnt")
-                        stats = await result.single()
-                        node_count = stats["cnt"] if stats else 0
+                        # APOC not installed — avoid full graph scan which is too
+                        # expensive for the 2-second metrics loop on large datasets
+                        node_count = 0
                         rel_count = 0
 
                 databases.append(

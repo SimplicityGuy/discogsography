@@ -291,13 +291,16 @@ async def get_redis_storage(redis: Any) -> dict[str, Any]:
 
     prefix_counts: dict[str, int] = {}
     cursor = 0
+    max_scan_keys = 10_000
+    total_scanned = 0
     while True:
         cursor, keys = await redis.scan(cursor=cursor, count=500)
         for key in keys:
             key_str = key if isinstance(key, str) else key.decode("utf-8", errors="replace")
             prefix = key_str.split(":")[0] + ":" if ":" in key_str else key_str
             prefix_counts[prefix] = prefix_counts.get(prefix, 0) + 1
-        if cursor == 0:
+        total_scanned += len(keys)
+        if cursor == 0 or total_scanned >= max_scan_keys:
             break
 
     keys_by_prefix = [{"prefix": prefix, "count": count} for prefix, count in sorted(prefix_counts.items(), key=lambda x: -x[1])]

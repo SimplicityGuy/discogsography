@@ -231,7 +231,8 @@ async def sync_collection(
                     },
                 )
                 async with neo4j_driver.session() as session:
-                    await session.run(cypher, cypher_params)
+                    result = await session.run(cypher, cypher_params)
+                    await result.consume()
 
             # Check if there are more pages
             pagination = data.get("pagination", {})
@@ -399,7 +400,8 @@ async def sync_wantlist(
                     },
                 )
                 async with neo4j_driver.session() as session:
-                    await session.run(cypher, cypher_params)
+                    result = await session.run(cypher, cypher_params)
+                    await result.consume()
 
             pagination = data.get("pagination", {})
             if page >= pagination.get("pages", 1):
