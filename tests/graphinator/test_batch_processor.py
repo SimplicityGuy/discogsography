@@ -551,6 +551,42 @@ class TestProcessArtistsBatch:
 
         mock_session.execute_write.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_process_artists_skips_messages_with_missing_id(self) -> None:
+        """Test that messages without 'id' field are skipped with a warning."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage("artists", {"name": "No ID Artist"}, AsyncMock(), AsyncMock()),
+            PendingMessage("artists", {"id": "1", "name": "Artist 1", "sha256": "h1"}, AsyncMock(), AsyncMock()),
+        ]
+
+        with patch("graphinator.batch_processor.logger") as mock_logger:
+            await processor._process_artists_batch(messages)
+
+        mock_logger.warning.assert_called()
+        mock_session.execute_write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_artists_all_missing_id_returns_early(self) -> None:
+        """Test early return when all messages lack an 'id' field."""
+        mock_driver, _mock_session = create_async_session_mock()
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage("artists", {"name": "No ID 1"}, AsyncMock(), AsyncMock()),
+            PendingMessage("artists", {"name": "No ID 2"}, AsyncMock(), AsyncMock()),
+        ]
+
+        with patch("graphinator.batch_processor.logger"):
+            await processor._process_artists_batch(messages)
+
+        mock_driver.session.assert_not_called()
+
 
 class TestProcessLabelsBatch:
     """Test _process_labels_batch functionality."""
@@ -584,6 +620,32 @@ class TestProcessLabelsBatch:
         await processor._process_labels_batch(messages)
 
         mock_session.execute_write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_labels_skips_messages_with_missing_id(self) -> None:
+        """Test that label messages without 'id' are skipped."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage("labels", {"name": "No ID Label"}, AsyncMock(), AsyncMock()),
+            PendingMessage("labels", {"id": "1", "name": "Label 1", "sha256": "h1"}, AsyncMock(), AsyncMock()),
+        ]
+        with patch("graphinator.batch_processor.logger"):
+            await processor._process_labels_batch(messages)
+        mock_session.execute_write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_labels_all_missing_id_returns_early(self) -> None:
+        """Test early return when all label messages lack an 'id' field."""
+        mock_driver, _mock_session = create_async_session_mock()
+        processor = Neo4jBatchProcessor(mock_driver)
+        messages = [PendingMessage("labels", {"name": "No ID"}, AsyncMock(), AsyncMock())]
+        with patch("graphinator.batch_processor.logger"):
+            await processor._process_labels_batch(messages)
+        mock_driver.session.assert_not_called()
 
 
 class TestProcessMastersBatch:
@@ -620,6 +682,32 @@ class TestProcessMastersBatch:
         await processor._process_masters_batch(messages)
 
         mock_session.execute_write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_masters_skips_messages_with_missing_id(self) -> None:
+        """Test that master messages without 'id' are skipped."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage("masters", {"title": "No ID"}, AsyncMock(), AsyncMock()),
+            PendingMessage("masters", {"id": "1", "title": "Master 1", "sha256": "h1"}, AsyncMock(), AsyncMock()),
+        ]
+        with patch("graphinator.batch_processor.logger"):
+            await processor._process_masters_batch(messages)
+        mock_session.execute_write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_masters_all_missing_id_returns_early(self) -> None:
+        """Test early return when all master messages lack an 'id' field."""
+        mock_driver, _mock_session = create_async_session_mock()
+        processor = Neo4jBatchProcessor(mock_driver)
+        messages = [PendingMessage("masters", {"title": "No ID"}, AsyncMock(), AsyncMock())]
+        with patch("graphinator.batch_processor.logger"):
+            await processor._process_masters_batch(messages)
+        mock_driver.session.assert_not_called()
 
 
 class TestProcessReleasesBatch:
@@ -756,6 +844,32 @@ class TestProcessReleasesBatch:
 
         await processor._process_releases_batch(messages)
         mock_session.execute_write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_releases_skips_messages_with_missing_id(self) -> None:
+        """Test that release messages without 'id' are skipped."""
+        mock_driver, mock_session = create_async_session_mock()
+        mock_result = create_async_result_mock([{"id": "1", "hash": None}])
+        mock_session.run = AsyncMock(return_value=mock_result)
+        processor = Neo4jBatchProcessor(mock_driver)
+
+        messages = [
+            PendingMessage("releases", {"title": "No ID"}, AsyncMock(), AsyncMock()),
+            PendingMessage("releases", {"id": "1", "title": "Release 1", "sha256": "h1"}, AsyncMock(), AsyncMock()),
+        ]
+        with patch("graphinator.batch_processor.logger"):
+            await processor._process_releases_batch(messages)
+        mock_session.execute_write.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_process_releases_all_missing_id_returns_early(self) -> None:
+        """Test early return when all release messages lack an 'id' field."""
+        mock_driver, _mock_session = create_async_session_mock()
+        processor = Neo4jBatchProcessor(mock_driver)
+        messages = [PendingMessage("releases", {"title": "No ID"}, AsyncMock(), AsyncMock())]
+        with patch("graphinator.batch_processor.logger"):
+            await processor._process_releases_batch(messages)
+        mock_driver.session.assert_not_called()
 
 
 class TestFlushAll:

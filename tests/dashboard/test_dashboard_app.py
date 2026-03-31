@@ -904,6 +904,49 @@ class TestDashboardAppDataCollection:
             assert databases[1].status == "unhealthy"
             assert "Neo4j connection failed" in databases[1].error
 
+    @pytest.mark.asyncio
+    async def test_get_database_info_neo4j_apoc_not_installed(self) -> None:
+        """Test that Neo4j reports 0 counts when APOC is not installed (lines 423-427)."""
+        mock_config = Mock()
+        mock_config.postgres_host = "localhost:5432"
+        mock_config.postgres_database = "testdb"
+        mock_config.postgres_username = "test"
+        mock_config.postgres_password = "test"
+
+        with patch("dashboard.dashboard.get_config", return_value=mock_config):
+            app = DashboardApp()
+            app.neo4j_driver = AsyncMock()
+            app.postgres_conn = None
+
+            # dbms.components succeeds, but apoc.meta.stats fails
+            mock_neo4j_result1 = AsyncMock()
+            mock_neo4j_result1.single = AsyncMock(return_value={"name": "neo4j", "versions": ["5.0"]})
+            mock_neo4j_result1.consume = AsyncMock()
+
+            mock_neo4j_session = AsyncMock()
+            call_count = 0
+
+            async def mock_run(query: str, **_kwargs: object) -> AsyncMock:
+                nonlocal call_count
+                call_count += 1
+                if "dbms.components" in query:
+                    return mock_neo4j_result1
+                # apoc.meta.stats — simulate not installed
+                raise Exception("No procedure with the name `apoc.meta.stats`")
+
+            mock_neo4j_session.run = mock_run
+            mock_neo4j_session.__aenter__ = AsyncMock(return_value=mock_neo4j_session)
+            mock_neo4j_session.__aexit__ = AsyncMock(return_value=None)
+
+            app.neo4j_driver.session = MagicMock(return_value=mock_neo4j_session)
+
+            databases = await app.get_database_info()
+
+            neo4j_db = next(d for d in databases if d.name == "Neo4j")
+            assert neo4j_db.status == "healthy"
+            assert "0 nodes" in neo4j_db.size
+            assert "0 relationships" in neo4j_db.size
+
 
 class TestFastAPIEndpoints:
     """Test FastAPI endpoint handlers."""

@@ -220,6 +220,20 @@ class TestEnrichRelease:
             mock_tx.run.assert_not_called()
             assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
 
+    @pytest.mark.asyncio
+    async def test_enrich_release_no_neo4j_match(self, mock_tx: AsyncMock) -> None:
+        """Release with discogs_release_id but no Neo4j node increments skipped counter."""
+        record = {"mbid": "abc", "discogs_release_id": 999}
+        mock_result = AsyncMock()
+        mock_result.single = AsyncMock(return_value=None)
+        mock_tx.run = AsyncMock(return_value=mock_result)
+
+        with patch.dict(bgmod.enrichment_stats, CLEAN_STATS):
+            result = await enrich_release(mock_tx, record)
+            assert result is True
+            assert bgmod.enrichment_stats["entities_skipped_no_discogs_match"] == 1
+            assert bgmod.enrichment_stats["entities_enriched"] == 0
+
 
 # ── Release-group enrichment tests ────────────────────────────────────────
 
