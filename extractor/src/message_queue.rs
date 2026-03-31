@@ -35,6 +35,7 @@ pub trait MessagePublisher: Send + Sync {
 pub struct MessageQueue {
     connection: Arc<RwLock<Option<Connection>>>,
     channel: Arc<RwLock<Option<Channel>>>,
+    reconnect_mutex: tokio::sync::Mutex<()>,
     url: String,
     max_retries: u32,
     exchange_prefix: String,
@@ -53,6 +54,7 @@ impl MessageQueue {
         let mq = Self {
             connection: Arc::new(RwLock::new(None)),
             channel: Arc::new(RwLock::new(None)),
+            reconnect_mutex: tokio::sync::Mutex::new(()),
             url: normalized_url,
             max_retries,
             exchange_prefix: exchange_prefix.to_string(),
@@ -130,17 +132,31 @@ impl MessageQueue {
     }
 
     async fn get_channel(&self) -> Result<Channel> {
-        let channel_guard = self.channel.read().await;
-
-        if let Some(channel) = &*channel_guard
-            && channel.status().connected()
+        // Fast path: check if channel is connected under read lock
         {
-            return Ok(channel.clone());
+            let channel_guard = self.channel.read().await;
+            if let Some(channel) = &*channel_guard
+                && channel.status().connected()
+            {
+                return Ok(channel.clone());
+            }
         }
 
-        drop(channel_guard);
+        // Slow path: serialize reconnection attempts to prevent multiple
+        // concurrent callers from racing to create separate connections.
+        let _reconnect_guard = self.reconnect_mutex.lock().await;
 
-        // Channel is not connected, try to reconnect
+        // Re-check after acquiring the mutex — another caller may have
+        // already reconnected while we were waiting.
+        {
+            let channel_guard = self.channel.read().await;
+            if let Some(channel) = &*channel_guard
+                && channel.status().connected()
+            {
+                return Ok(channel.clone());
+            }
+        }
+
         warn!("⚠️ AMQP channel lost, attempting to reconnect...");
         self.connect().await?;
 

@@ -449,7 +449,9 @@ async def get_rarity_by_artist(
     if not release_rows:
         return [], 0
 
-    release_ids = [int(r["release_id"]) for r in release_rows]
+    release_ids = [int(r["release_id"]) for r in release_rows if str(r["release_id"]).isdigit()]
+    if not release_ids:
+        return [], 0
     offset = (page - 1) * page_size
 
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
@@ -505,7 +507,9 @@ async def get_rarity_by_label(
     if not release_rows:
         return [], 0
 
-    release_ids = [int(r["release_id"]) for r in release_rows]
+    release_ids = [int(r["release_id"]) for r in release_rows if str(r["release_id"]).isdigit()]
+    if not release_ids:
+        return [], 0
     offset = (page - 1) * page_size
 
     async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:

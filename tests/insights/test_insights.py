@@ -180,7 +180,7 @@ class TestLabelLongevityCacheIntegration:
 
 
 class TestThisMonthCacheIntegration:
-    def test_cache_miss_queries_pg_and_stores(
+    def test_cache_miss_queries_pg_empty_result_not_cached(
         self,
         test_client_with_cache: TestClient,
         mock_cache: AsyncMock,
@@ -191,7 +191,8 @@ class TestThisMonthCacheIntegration:
         # Cache key includes year-month
         call_key = mock_cache.get.call_args[0][0]
         assert call_key.startswith("insights:this-month:")
-        mock_cache.set.assert_called_once()
+        # Empty results are NOT cached to avoid caching stale data on month boundaries
+        mock_cache.set.assert_not_called()
 
     def test_cache_hit_returns_cached_data(
         self,

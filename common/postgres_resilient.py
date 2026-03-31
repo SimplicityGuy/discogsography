@@ -157,8 +157,10 @@ class ResilientPostgreSQLPool:
         while retry_count < self.max_retries:
             try:
                 # Try to get existing connection
+                from_pool = False
                 try:
                     conn = self.connections.get_nowait()
+                    from_pool = True
                 except Empty:
                     # Create new connection if pool is not at max
                     with self._lock:
@@ -176,11 +178,23 @@ class ResilientPostgreSQLPool:
                     with contextlib.suppress(Exception):
                         conn.close()
                     # Replace the unhealthy connection — no net change in active_connections
+                    # for pool-retrieved connections (already tracked); new connections were
+                    # already incremented above.
                     try:
                         conn = self._create_connection()
+                        if from_pool:
+                            # Pool connection was already tracked; the replacement is a
+                            # 1-for-1 swap, so no counter change needed.
+                            pass
+                        else:
+                            # We failed health check on a newly created conn (unusual).
+                            # Counter was incremented above, replacement keeps it accurate.
+                            pass
                     except Exception:
-                        with self._lock:
-                            self.active_connections -= 1
+                        if not from_pool:
+                            # Only decrement if we previously incremented for a new connection
+                            with self._lock:
+                                self.active_connections = max(0, self.active_connections - 1)
                         raise
 
                 if conn:

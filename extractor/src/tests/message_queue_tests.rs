@@ -5,6 +5,7 @@ fn test_exchange_names_default_prefix() {
     let mq = MessageQueue {
         connection: Arc::new(RwLock::new(None)),
         channel: Arc::new(RwLock::new(None)),
+        reconnect_mutex: tokio::sync::Mutex::new(()),
         url: String::new(),
         max_retries: 1,
         exchange_prefix: DEFAULT_EXCHANGE_PREFIX.to_string(),
@@ -20,6 +21,7 @@ fn test_exchange_names_custom_prefix() {
     let mq = MessageQueue {
         connection: Arc::new(RwLock::new(None)),
         channel: Arc::new(RwLock::new(None)),
+        reconnect_mutex: tokio::sync::Mutex::new(()),
         url: String::new(),
         max_retries: 1,
         exchange_prefix: "musicbrainz".to_string(),

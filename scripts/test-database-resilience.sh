@@ -78,14 +78,14 @@ check_health "Extractor" 8000
 check_health "Graphinator" 8001
 check_health "Tableinator" 8002
 check_health "Dashboard" 8003
-check_health "Discovery" 8004
+check_health "API" 8004
 
 # Get initial queue depths
 echo -e "\n${BLUE}📊 Initial Queue Depths${NC}"
 echo "======================="
 for data_type in artists labels masters releases; do
-  graphinator_queue="graphinator-${data_type}"
-  tableinator_queue="tableinator-${data_type}"
+  graphinator_queue="discogsography-graphinator-${data_type}"
+  tableinator_queue="discogsography-tableinator-${data_type}"
 
   g_depth=$(get_queue_depth "$graphinator_queue")
   t_depth=$(get_queue_depth "$tableinator_queue")

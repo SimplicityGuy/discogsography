@@ -688,22 +688,22 @@ class TestCircuitBreakerEdgeCases:
         assert breaker.state == CircuitState.OPEN
 
     @pytest.mark.asyncio
-    async def test_call_async_lock_initialized_lazily(self) -> None:
-        """Test that asyncio.Lock is lazily initialized on first async use."""
+    async def test_call_async_lock_initialized_eagerly(self) -> None:
+        """Test that asyncio.Lock is eagerly initialized at construction time."""
         import asyncio
 
         config = CircuitBreakerConfig(name="TestBreaker")
         breaker = CircuitBreaker(config)
 
-        # Lock is not created at init time (safe outside event loop)
-        assert breaker._async_lock is None
+        # Lock is created eagerly in __init__ (safe since Python 3.10+)
+        assert isinstance(breaker._async_lock, asyncio.Lock)
 
         async def async_func() -> str:
             return "result"
 
         await breaker.call_async(async_func)
 
-        # Lock is created after first async call
+        # Lock still exists after async call
         assert isinstance(breaker._async_lock, asyncio.Lock)
 
     def test_call_sync_half_open_executes_under_lock(self) -> None:
@@ -1059,34 +1059,34 @@ class TestAsyncLazyLockInit:
     """Tests for lazy asyncio.Lock initialization in _on_success_async and _on_failure_async."""
 
     @pytest.mark.asyncio
-    async def test_on_success_async_lazily_initializes_lock(self) -> None:
-        """Test _on_success_async lazily initializes the asyncio.Lock."""
+    async def test_on_success_async_uses_eager_lock(self) -> None:
+        """Test _on_success_async uses the eagerly initialized asyncio.Lock."""
         import asyncio
 
         config = CircuitBreakerConfig(name="TestBreaker")
         breaker = CircuitBreaker(config)
 
-        # Lock is not created at init time
-        assert breaker._async_lock is None
+        # Lock is created eagerly in __init__
+        assert isinstance(breaker._async_lock, asyncio.Lock)
 
-        # Call _on_success_async directly — triggers lazy init
+        # Call _on_success_async directly
         await breaker._on_success_async()
 
         assert isinstance(breaker._async_lock, asyncio.Lock)
         assert breaker.failure_count == 0
 
     @pytest.mark.asyncio
-    async def test_on_failure_async_lazily_initializes_lock(self) -> None:
-        """Test _on_failure_async lazily initializes the asyncio.Lock."""
+    async def test_on_failure_async_uses_eager_lock(self) -> None:
+        """Test _on_failure_async uses the eagerly initialized asyncio.Lock."""
         import asyncio
 
         config = CircuitBreakerConfig(name="TestBreaker", failure_threshold=5)
         breaker = CircuitBreaker(config)
 
-        # Lock is not created at init time
-        assert breaker._async_lock is None
+        # Lock is created eagerly in __init__
+        assert isinstance(breaker._async_lock, asyncio.Lock)
 
-        # Call _on_failure_async directly — triggers lazy init
+        # Call _on_failure_async directly
         await breaker._on_failure_async()
 
         assert isinstance(breaker._async_lock, asyncio.Lock)

@@ -9,7 +9,6 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
 import structlog
 
-import api.dependencies as _dependencies
 from api.dependencies import get_optional_user, require_user
 from api.queries.recommend_queries import (
     get_blindspot_candidates,
@@ -40,10 +39,9 @@ _TIMELINE_CACHE_MAX = 128
 _TIMELINE_CACHE_TTL = 300  # 5 minutes
 
 
-def configure(neo4j: Any, jwt_secret: str | None) -> None:
+def configure(neo4j: Any, jwt_secret: str | None) -> None:  # noqa: ARG001
     global _neo4j_driver
     _neo4j_driver = neo4j
-    _dependencies.configure(jwt_secret)
 
 
 def _get_cached(key: str) -> dict[str, Any] | None:

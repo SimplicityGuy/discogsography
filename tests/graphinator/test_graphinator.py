@@ -81,6 +81,10 @@ class TestOnArtistMessage:
         # Verify message was acknowledged
         mock_message.ack.assert_called_once()
 
+        # Verify the update was actually skipped (only the hash-check query ran,
+        # not a full MERGE upsert) — tx.run should be called exactly once for lookup
+        assert mock_tx.run.call_count == 1
+
     @pytest.mark.asyncio
     @patch("graphinator.graphinator.shutdown_requested", True)
     async def test_reject_on_shutdown(self) -> None:

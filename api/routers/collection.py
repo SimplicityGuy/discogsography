@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 from psycopg.rows import dict_row
 import structlog
 
-import api.dependencies as _dependencies
 from api.dependencies import require_user
 from api.queries.gap_queries import (
     get_artist_gap_summary,
@@ -38,11 +37,10 @@ _SUMMARY_CACHE_MAX = 256
 _SUMMARY_CACHE_TTL = 300  # 5 minutes
 
 
-def configure(neo4j: Any, pg_pool: Any, jwt_secret: str | None) -> None:
+def configure(neo4j: Any, pg_pool: Any, jwt_secret: str | None) -> None:  # noqa: ARG001
     global _neo4j_driver, _pg_pool
     _neo4j_driver = neo4j
     _pg_pool = pg_pool
-    _dependencies.configure(jwt_secret)
 
 
 def _get_cached_summary(user_id: str, entity_type: str, entity_id: str) -> dict[str, Any] | None:

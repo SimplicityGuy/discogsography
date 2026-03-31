@@ -126,6 +126,10 @@ async def trigger_sync(
             )
             existing = await cur.fetchone()
         if existing:
+            # Release the Redis lock since we won't be starting a new sync
+            if _redis:
+                with contextlib.suppress(Exception):
+                    await _redis.delete(f"sync:lock:{user_id}")
             return JSONResponse(
                 content={"sync_id": str(existing["id"]), "status": "already_running"},
                 status_code=status.HTTP_202_ACCEPTED,

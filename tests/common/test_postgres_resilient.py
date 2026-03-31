@@ -1432,10 +1432,12 @@ class TestResilientPostgreSQLPoolUncoveredLines:
 
     @patch("common.postgres_resilient.psycopg.connect")
     @patch("common.postgres_resilient.threading.Thread")
-    def test_unhealthy_connection_replacement_failure_decrements_active(
+    def test_unhealthy_connection_replacement_failure_preserves_active_for_pool_conn(
         self, _mock_thread: Mock, mock_connect: Mock, connection_params: dict, mock_connection: Mock
     ) -> None:
-        """Lines 179-184: When replacement of unhealthy connection fails, active_connections is decremented."""
+        """Lines 179-184: When a pool-retrieved connection is unhealthy and replacement
+        fails, active_connections should NOT be decremented because the connection was
+        retrieved from the pool (already tracked), not newly created."""
         mock_connect.return_value = mock_connection
 
         pool = ResilientPostgreSQLPool(connection_params=connection_params, min_connections=0, max_connections=5, max_retries=1)
@@ -1455,18 +1457,17 @@ class TestResilientPostgreSQLPoolUncoveredLines:
         pool.active_connections = 1
 
         # Make _create_connection raise so the replacement fails.
-        # This exercises lines 181-184: except block decrements active_connections.
         pool._create_connection = Mock(side_effect=OperationalError("DB down"))  # type: ignore[method-assign]
 
         # With max_retries=1, only one loop iteration runs. After the replacement
-        # failure, active_connections is decremented. The stale conn reference means
-        # the context manager yields the (closed) unhealthy connection rather than raising,
-        # but the key behavior we're testing is the active_connections bookkeeping.
+        # failure, active_connections is NOT decremented because the connection came
+        # from the pool (was already counted). This prevents counter underflow.
         with pool.connection():
             pass
 
-        # active_connections should have been decremented when replacement failed
-        assert pool.active_connections == 0
+        # active_connections should remain 1 — pool-retrieved connections don't
+        # decrement on replacement failure to prevent counter drift
+        assert pool.active_connections == 1
         # The unhealthy connection should have been closed
         unhealthy_conn.close.assert_called()
 

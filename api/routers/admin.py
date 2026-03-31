@@ -323,6 +323,9 @@ async def admin_health_history(
 # ---------------------------------------------------------------------------
 
 
+_MAX_TRACKING_ITERATIONS = 8640  # 10s * 8640 = 24 hours max tracking time
+
+
 async def _track_extraction(extraction_id: str) -> None:
     """Background task: poll extractor /health and update extraction record."""
     if _pool is None or _config is None:
@@ -331,9 +334,11 @@ async def _track_extraction(extraction_id: str) -> None:
     url = f"http://{_config.extractor_host}:{_config.extractor_health_port}/health"
     consecutive_failures = 0
     max_failures = 5
+    iterations = 0
 
     try:
-        while True:
+        while iterations < _MAX_TRACKING_ITERATIONS:
+            iterations += 1
             await asyncio.sleep(10)
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
@@ -390,6 +395,14 @@ async def _track_extraction(extraction_id: str) -> None:
                     )
                 logger.error("❌ Extraction tracking failed — extractor unreachable after %d attempts", max_failures, extraction_id=extraction_id)
                 return
+
+        # Wall-clock timeout reached
+        async with _pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "UPDATE extraction_history SET status = 'failed', completed_at = NOW(), error_message = %s WHERE id = %s",
+                ("Extraction tracking timed out after 24 hours", extraction_id),
+            )
+        logger.error("❌ Extraction tracking timed out", extraction_id=extraction_id)
     except asyncio.CancelledError:
         logger.info("🛑 Extraction tracking cancelled", extraction_id=extraction_id)
     finally:

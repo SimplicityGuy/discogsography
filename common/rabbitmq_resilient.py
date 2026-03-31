@@ -319,3 +319,4 @@ async def process_message_with_retry(
             await message.ack()
         except Exception as e:
             logger.error(f"❌ Failed to ack message after successful processing: {e}")
+            raise

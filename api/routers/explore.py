@@ -11,7 +11,6 @@ from fastapi.responses import JSONResponse
 from neo4j.exceptions import ClientError as Neo4jClientError
 import structlog
 
-import api.dependencies as _dependencies
 from api.limiter import limiter
 from api.models import PathNode, PathResponse
 from api.queries import collaborator_queries, genre_tree_queries
@@ -42,11 +41,10 @@ _TRENDS_CACHE_TTL = 86400
 _EXPLORE_CACHE_TTL = 86400
 
 
-def configure(neo4j: Any, jwt_secret: str | None, redis: Any = None) -> None:
+def configure(neo4j: Any, jwt_secret: str | None, redis: Any = None) -> None:  # noqa: ARG001
     global _neo4j_driver, _redis
     _neo4j_driver = neo4j
     _redis = redis
-    _dependencies.configure(jwt_secret)
 
 
 _autocomplete_cache: OrderedDict[tuple[str, str, int], list[dict[str, Any]]] = OrderedDict()

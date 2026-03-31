@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import threading
 from typing import Any
 
 import structlog
@@ -109,7 +110,11 @@ class ProcessingDecision(StrEnum):
 
 @dataclass
 class StateMarker:
-    """Main state marker tracking all extraction phases."""
+    """Main state marker tracking all extraction phases.
+
+    Uses a threading lock to ensure save() captures a consistent snapshot
+    even when fields are being updated concurrently from another thread.
+    """
 
     metadata_version: str = "1.0"
     last_updated: datetime = field(default_factory=lambda: datetime.now(UTC))
@@ -118,6 +123,7 @@ class StateMarker:
     processing_phase: ProcessingPhase = field(default_factory=ProcessingPhase)
     publishing_phase: PublishingPhase = field(default_factory=PublishingPhase)
     summary: ExtractionSummary = field(default_factory=ExtractionSummary)
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False, compare=False)
 
     @classmethod
     def load(cls, path: Path) -> "StateMarker | None":
@@ -141,8 +147,9 @@ class StateMarker:
 
     def save(self, path: Path) -> None:
         """Save state marker to file atomically via tmp + rename."""
-        # Convert to dict and handle datetime serialization
-        data = self._to_dict()
+        # Snapshot under lock to ensure consistent state across fields
+        with self._lock:
+            data = self._to_dict()
         data["last_updated"] = datetime.now(UTC).isoformat()
 
         fd = None

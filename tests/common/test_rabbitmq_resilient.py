@@ -418,13 +418,14 @@ class TestProcessMessageAckFailure:
 
     @pytest.mark.asyncio
     async def test_process_message_ack_failure_after_success(self) -> None:
-        """Ack failure after successful handler is logged but does not re-process."""
+        """Ack failure after successful handler is re-raised to signal delivery failure."""
         message = AsyncMock()
         message.ack = AsyncMock(side_effect=Exception("ack failed"))
         handler = AsyncMock()  # succeeds
 
-        # Should not raise -- ack failure is logged but doesn't re-process
-        await process_message_with_retry(message, handler, max_retries=3)
+        # Ack failure is raised so the caller knows the message may be redelivered
+        with pytest.raises(Exception, match="ack failed"):
+            await process_message_with_retry(message, handler, max_retries=3)
         handler.assert_called_once()  # handler only called once
 
 

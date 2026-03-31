@@ -2,13 +2,14 @@
 
 from typing import Any
 
+from psycopg import sql
 from psycopg.rows import dict_row
 
 from api.queries.helpers import run_query, run_single
 from common.query_debug import execute_sql
 
 
-async def get_artist_musicbrainz(neo4j_driver: Any, discogs_id: int) -> dict[str, Any] | None:
+async def get_artist_musicbrainz(neo4j_driver: Any, discogs_id: int | str) -> dict[str, Any] | None:
     """Fetch MusicBrainz metadata for a Discogs artist from Neo4j."""
     row = await run_single(
         neo4j_driver,
@@ -35,7 +36,7 @@ async def get_artist_musicbrainz(neo4j_driver: Any, discogs_id: int) -> dict[str
     }
 
 
-async def get_artist_mb_relationships(neo4j_driver: Any, discogs_id: int) -> list[dict[str, Any]]:
+async def get_artist_mb_relationships(neo4j_driver: Any, discogs_id: int | str) -> list[dict[str, Any]]:
     """Fetch MusicBrainz-sourced relationships for a Discogs artist from Neo4j."""
     return await run_query(
         neo4j_driver,
@@ -84,14 +85,19 @@ async def get_enrichment_status(pool: Any, neo4j_driver: Any) -> dict[str, Any]:
             else:
                 discogs_col = "discogs_label_id"
 
-            await execute_sql(cur, f"SELECT COUNT(*) AS total FROM musicbrainz.{entity}")  # noqa: S608  # nosemgrep
+            # Safe: entity and discogs_col are from hardcoded lists, not user input.
+            # Using sql.Identifier for defense-in-depth.
+            total_query = sql.SQL(  # nosemgrep
+                "SELECT COUNT(*) AS total FROM {schema}.{table}"
+            ).format(schema=sql.Identifier("musicbrainz"), table=sql.Identifier(entity))
+            await cur.execute(total_query)  # nosemgrep
             total_row = await cur.fetchone()
             total = total_row["total"] if total_row else 0
 
-            await execute_sql(
-                cur,
-                f"SELECT COUNT(*) AS matched FROM musicbrainz.{entity} WHERE {discogs_col} IS NOT NULL",  # noqa: S608  # nosemgrep
-            )
+            matched_query = sql.SQL(  # nosemgrep
+                "SELECT COUNT(*) AS matched FROM {schema}.{table} WHERE {col} IS NOT NULL"
+            ).format(schema=sql.Identifier("musicbrainz"), table=sql.Identifier(entity), col=sql.Identifier(discogs_col))
+            await cur.execute(matched_query)  # nosemgrep
             matched_row = await cur.fetchone()
             matched = matched_row["matched"] if matched_row else 0
 

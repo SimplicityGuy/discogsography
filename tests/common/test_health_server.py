@@ -3,7 +3,7 @@
 from http.client import HTTPConnection
 import json
 import threading
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -127,17 +127,22 @@ class TestHealthServerStop:
         server.server_close()
 
     def test_stop_without_thread_skips_join(self) -> None:
-        """Test stop skips the thread.join() when thread is None (covers the if-branch)."""
+        """Test stop skips the thread.join() when thread is None (covers the if-branch).
+
+        Python 3.13's socketserver.shutdown() blocks if serve_forever() was never
+        called, so we mock shutdown() to isolate the thread-join branch logic.
+        """
         health_func = Mock(return_value={"status": "healthy"})
 
         server = HealthServer(0, health_func)
         try:
-            # Verify initial state: thread is None (the else-branch of stop's if-check)
             assert server.thread is None
-            # Don't call stop() directly here — calling shutdown() without
-            # serve_forever() running blocks in Python 3.13.
-            # The branch coverage for "if self.thread" being False is exercised
-            # by verifying the attribute, not by calling stop().
+            # Mock shutdown to avoid Python 3.13 blocking, then call stop()
+            # to exercise the "if self.thread" False branch
+            with patch.object(server, "shutdown"):
+                server.stop()
+            # Verify thread is still None (join was never called)
+            assert server.thread is None
         finally:
             server.server_close()
 

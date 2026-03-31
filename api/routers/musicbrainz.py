@@ -38,7 +38,7 @@ async def artist_musicbrainz(
     """Get MusicBrainz metadata for a Discogs artist."""
     if _neo4j_driver is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
-    data = await get_artist_musicbrainz(_neo4j_driver, artist_id)
+    data = await get_artist_musicbrainz(_neo4j_driver, str(artist_id))
     if data is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No MusicBrainz data for this artist")
     return JSONResponse(content=data)
@@ -53,7 +53,7 @@ async def artist_relationships(
     """Get MusicBrainz-sourced relationships for a Discogs artist."""
     if _neo4j_driver is None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Service not ready")
-    relationships = await get_artist_mb_relationships(_neo4j_driver, artist_id)
+    relationships = await get_artist_mb_relationships(_neo4j_driver, str(artist_id))
     return JSONResponse(content={"discogs_id": artist_id, "relationships": relationships})
 
 
