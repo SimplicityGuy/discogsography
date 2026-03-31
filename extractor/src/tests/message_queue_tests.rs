@@ -257,6 +257,30 @@ fn test_message_properties_content_type() {
 }
 
 #[tokio::test]
+async fn test_get_channel_with_no_channel_triggers_reconnect() {
+    // When channel is None, get_channel should attempt to reconnect.
+    // With an invalid URL, reconnection fails — exercising the slow path
+    // including the reconnect_mutex lock and double-check pattern.
+    let mq = MessageQueue {
+        connection: Arc::new(RwLock::new(None)),
+        channel: Arc::new(RwLock::new(None)),
+        reconnect_mutex: tokio::sync::Mutex::new(()),
+        url: "amqp://localhost:59999".to_string(),
+        max_retries: 1,
+        exchange_prefix: DEFAULT_EXCHANGE_PREFIX.to_string(),
+    };
+
+    let result = mq.get_channel().await;
+    assert!(result.is_err(), "Expected error when channel is None and reconnect fails");
+    let err_msg = format!("{}", result.err().unwrap());
+    assert!(
+        err_msg.contains("Failed to connect") || err_msg.contains("Failed to get channel"),
+        "Unexpected error: {}",
+        err_msg
+    );
+}
+
+#[tokio::test]
 async fn test_new_connection_failure_with_retries() {
     // Use 2 retries to exercise the retry backoff loop (lines 72-75):
     // - First attempt: try_connect fails, retry_count=1 < 2, warn + sleep(1s) + backoff doubled

@@ -182,14 +182,9 @@ class ResilientPostgreSQLPool:
                     # already incremented above.
                     try:
                         conn = self._create_connection()
-                        if from_pool:
-                            # Pool connection was already tracked; the replacement is a
-                            # 1-for-1 swap, so no counter change needed.
-                            pass
-                        else:
-                            # We failed health check on a newly created conn (unusual).
-                            # Counter was incremented above, replacement keeps it accurate.
-                            pass
+                        # Replacement succeeded. For pool-retrieved connections this is
+                        # a 1-for-1 swap (no counter change). For newly created connections,
+                        # the counter was already incremented above.
                     except Exception:
                         if not from_pool:
                             # Only decrement if we previously incremented for a new connection
